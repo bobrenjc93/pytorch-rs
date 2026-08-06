@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.92.0"
+          components: rustfmt, clippy
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets
+      - run: uv venv
+      - run: uv run --with maturin maturin develop --release --uv
+      - run: uv run python -m unittest discover -s tests -p 'test_*.py'

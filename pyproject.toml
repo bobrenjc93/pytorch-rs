@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.14,<2"]
+build-backend = "maturin"
+
+[project]
+name = "torch-rs"
+version = "0.1.0"
+description = "A PyTorch-compatible Python API backed by a native Rust tensor engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Rust",
+]
+
+[tool.maturin]
+features = ["extension-module"]
+module-name = "torch_rs"
+strip = true
