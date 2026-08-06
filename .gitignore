@@ -3,3 +3,5 @@
 /.burner/
 /.DS_Store
 *.profraw
+__pycache__/
+*.py[cod]
