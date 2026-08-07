@@ -269,21 +269,33 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         if self.shape != other.shape {
             return Err(TensorError::ShapeMismatch {
-                left: self.shape.clone(),
-                right: other.shape.clone(),
+                left: try_clone_result_shape(&self.shape, self.data.len())?,
+                right: try_clone_result_shape(&other.shape, other.data.len())?,
             });
         }
-        Ok(Self {
-            data: self
-                .data
-                .iter()
-                .copied()
-                .zip(other.data.iter().copied())
-                .map(|(left, right)| operation(left, right))
-                .collect(),
-            shape: self.shape.clone(),
-        })
+
+        let elements = self.data.len();
+        let mut data = try_result_vector(elements, elements)?;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        for (left, right) in self.data.iter().copied().zip(other.data.iter().copied()) {
+            data.push(operation(left, right));
+        }
+        Ok(Self { data, shape })
     }
+}
+
+fn try_result_vector<T>(capacity: usize, elements: usize) -> Result<Vec<T>, TensorError> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(capacity)
+        .map_err(|_| TensorError::AllocationFailed { elements })?;
+    Ok(values)
+}
+
+fn try_clone_result_shape(shape: &[usize], elements: usize) -> Result<Vec<usize>, TensorError> {
+    let mut cloned = try_result_vector(shape.len(), elements)?;
+    cloned.extend_from_slice(shape);
+    Ok(cloned)
 }
 
 fn element_count(shape: &[usize]) -> Result<usize, TensorError> {
@@ -331,4 +343,21 @@ fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
         return Err(TensorError::StorageCapacityOverflow { elements });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TensorError, try_result_vector};
+
+    #[test]
+    fn binary_result_reservation_failures_return_tensor_errors() {
+        let elements = 17;
+        let expected = Err(TensorError::AllocationFailed { elements });
+
+        assert_eq!(try_result_vector::<f32>(usize::MAX, elements), expected);
+        assert_eq!(
+            try_result_vector::<usize>(usize::MAX, elements),
+            Err(TensorError::AllocationFailed { elements })
+        );
+    }
 }
