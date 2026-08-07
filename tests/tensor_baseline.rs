@@ -20,6 +20,42 @@ fn empty_dimensions_have_zero_elements() {
 }
 
 #[test]
+fn full_handles_scalar_empty_and_multidimensional_shapes() {
+    let scalar = Tensor::full([], -2.5).unwrap();
+    assert!(scalar.shape().is_empty());
+    assert_eq!(scalar.numel(), 1);
+    assert!((scalar.item().unwrap() + 2.5).abs() < f32::EPSILON);
+
+    let empty = Tensor::full([2, 0, 3], 7.0).unwrap();
+    assert_eq!(empty.shape(), [2, 0, 3]);
+    assert_eq!(empty.numel(), 0);
+    assert!(empty.as_slice().is_empty());
+
+    let matrix = Tensor::full([2, 3], 1.25).unwrap();
+    assert_eq!(matrix.shape(), [2, 3]);
+    assert_eq!(matrix.as_slice(), [1.25; 6]);
+}
+
+#[test]
+fn full_preserves_non_finite_values() {
+    assert!(
+        Tensor::full([2], f32::NAN)
+            .unwrap()
+            .as_slice()
+            .iter()
+            .all(|value| value.is_nan())
+    );
+    assert_eq!(
+        Tensor::full([2], f32::INFINITY).unwrap().as_slice(),
+        [f32::INFINITY; 2]
+    );
+    assert_eq!(
+        Tensor::full([2], f32::NEG_INFINITY).unwrap().as_slice(),
+        [f32::NEG_INFINITY; 2]
+    );
+}
+
+#[test]
 fn elementwise_operations_preserve_shape() {
     let left = Tensor::from_vec(vec![-1.0, 2.0, 3.0, -4.0], [2, 2]).unwrap();
     let right = Tensor::ones([2, 2]).unwrap();

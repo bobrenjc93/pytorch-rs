@@ -104,6 +104,13 @@ fn ones(shape: Vec<usize>) -> PyResult<PyTensor> {
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction]
+fn full(shape: Vec<usize>, fill_value: f32) -> PyResult<PyTensor> {
+    CoreTensor::full(shape, fill_value)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| tensor_error(&error))
+}
+
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
     if let Ok(scalar) = value.extract::<f32>() {
         output.push(scalar);
@@ -169,6 +176,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
+    module.add_function(wrap_pyfunction!(full, module)?)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

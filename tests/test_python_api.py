@@ -1,3 +1,4 @@
+import math
 import unittest
 
 import torch_rs as torch
@@ -27,6 +28,27 @@ class PythonApiBaselineTests(unittest.TestCase):
     def test_ragged_input_is_rejected(self):
         with self.assertRaises(ValueError):
             torch.tensor([[1.0], [2.0, 3.0]])
+
+    def test_full_handles_scalar_empty_and_multidimensional_shapes(self):
+        scalar = torch.full([], -2.5)
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(scalar.numel(), 1)
+        self.assertEqual(scalar.item(), -2.5)
+
+        empty = torch.full([2, 0, 3], 7.0)
+        self.assertEqual(empty.shape, (2, 0, 3))
+        self.assertEqual(empty.numel(), 0)
+        self.assertEqual(empty.tolist(), [[], []])
+
+        matrix = torch.full((2, 3), 1.25)
+        self.assertEqual(matrix.shape, (2, 3))
+        self.assertEqual(matrix.tolist(), [[1.25] * 3] * 2)
+
+    def test_full_preserves_nan_and_infinities(self):
+        nan_values = torch.full([2], math.nan).tolist()
+        self.assertTrue(all(math.isnan(value) for value in nan_values))
+        self.assertEqual(torch.full([2], math.inf).tolist(), [math.inf, math.inf])
+        self.assertEqual(torch.full([2], -math.inf).tolist(), [-math.inf, -math.inf])
 
 
 if __name__ == "__main__":

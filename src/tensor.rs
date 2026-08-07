@@ -77,12 +77,7 @@ impl Tensor {
     ///
     /// Returns an error when the shape's element count overflows.
     pub fn zeros(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
-        let shape = shape.into();
-        let elements = element_count(&shape)?;
-        Ok(Self {
-            data: vec![0.0; elements],
-            shape,
-        })
+        Self::full(shape, 0.0)
     }
 
     /// Creates a one-filled tensor.
@@ -91,10 +86,19 @@ impl Tensor {
     ///
     /// Returns an error when the shape's element count overflows.
     pub fn ones(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
+        Self::full(shape, 1.0)
+    }
+
+    /// Creates a tensor filled with `fill_value`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shape's element count overflows.
+    pub fn full(shape: impl Into<Vec<usize>>, fill_value: f32) -> Result<Self, TensorError> {
         let shape = shape.into();
         let elements = element_count(&shape)?;
         Ok(Self {
-            data: vec![1.0; elements],
+            data: vec![fill_value; elements],
             shape,
         })
     }
