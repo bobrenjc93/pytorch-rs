@@ -168,6 +168,15 @@ impl Tensor {
         self.zip_map(other, |left, right| left + right)
     }
 
+    /// Subtracts tensors element by element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shapes differ.
+    pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
+        self.zip_map(other, |left, right| left - right)
+    }
+
     /// Multiplies tensors element by element.
     ///
     /// # Errors
@@ -175,6 +184,15 @@ impl Tensor {
     /// Returns an error when the shapes differ.
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
         self.zip_map(other, |left, right| left * right)
+    }
+
+    /// Divides tensors element by element using IEEE 754 true division.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shapes differ.
+    pub fn div(&self, other: &Self) -> Result<Self, TensorError> {
+        self.zip_map(other, |left, right| left / right)
     }
 
     #[must_use]

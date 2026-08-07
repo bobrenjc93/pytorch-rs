@@ -16,7 +16,7 @@ classifiers = [
 ]
 
 [dependency-groups]
-dev = ["numpy>=2"]
+dev = ["numpy>=2", "torch>=2"]
 
 [tool.maturin]
 features = ["extension-module"]

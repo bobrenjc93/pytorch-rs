@@ -57,9 +57,23 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
+    fn __sub__(&self, other: &Self) -> PyResult<Self> {
+        self.inner
+            .sub(&other.inner)
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn __mul__(&self, other: &Self) -> PyResult<Self> {
         self.inner
             .mul(&other.inner)
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
+    fn __truediv__(&self, other: &Self) -> PyResult<Self> {
+        self.inner
+            .div(&other.inner)
             .map(|inner| Self { inner })
             .map_err(|error| tensor_error(&error))
     }

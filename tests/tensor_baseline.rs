@@ -104,6 +104,153 @@ fn elementwise_operations_preserve_shape() {
 }
 
 #[test]
+fn subtraction_and_division_support_scalar_empty_and_multidimensional_tensors() {
+    let scalar_left = Tensor::from_vec(vec![7.0], []).unwrap();
+    let scalar_right = Tensor::from_vec(vec![2.0], []).unwrap();
+    assert_eq!(
+        scalar_left
+            .sub(&scalar_right)
+            .unwrap()
+            .item()
+            .unwrap()
+            .to_bits(),
+        5.0_f32.to_bits()
+    );
+    assert_eq!(
+        scalar_left
+            .div(&scalar_right)
+            .unwrap()
+            .item()
+            .unwrap()
+            .to_bits(),
+        3.5_f32.to_bits()
+    );
+
+    let empty_left = Tensor::zeros([2, 0, 3]).unwrap();
+    let empty_right = Tensor::ones([2, 0, 3]).unwrap();
+    for output in [
+        empty_left.sub(&empty_right).unwrap(),
+        empty_left.div(&empty_right).unwrap(),
+    ] {
+        assert_eq!(output.shape(), [2, 0, 3]);
+        assert!(output.as_slice().is_empty());
+    }
+
+    let left = Tensor::from_vec(vec![12.0, -8.0, 3.0, 0.5], [2, 1, 2]).unwrap();
+    let right = Tensor::from_vec(vec![3.0, 2.0, -1.5, 0.25], [2, 1, 2]).unwrap();
+    assert_eq!(
+        left.sub(&right).unwrap().as_slice(),
+        [9.0, -10.0, 4.5, 0.25]
+    );
+    assert_eq!(left.div(&right).unwrap().as_slice(), [4.0, -4.0, -2.0, 2.0]);
+}
+
+#[test]
+fn subtraction_matches_pytorch_non_finite_and_signed_zero_semantics() {
+    let left = Tensor::from_vec(
+        vec![
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            -0.0,
+            0.0,
+        ],
+        [7],
+    )
+    .unwrap();
+    let right = Tensor::from_vec(
+        vec![
+            1.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NEG_INFINITY,
+            f32::INFINITY,
+            0.0,
+            -0.0,
+        ],
+        [7],
+    )
+    .unwrap();
+    let output = left.sub(&right).unwrap();
+
+    assert!(output.as_slice()[..3].iter().all(|value| value.is_nan()));
+    assert_eq!(output.as_slice()[3].to_bits(), f32::INFINITY.to_bits());
+    assert_eq!(output.as_slice()[4].to_bits(), f32::NEG_INFINITY.to_bits());
+    assert_eq!(output.as_slice()[5].to_bits(), (-0.0_f32).to_bits());
+    assert_eq!(output.as_slice()[6].to_bits(), 0.0_f32.to_bits());
+}
+
+#[test]
+fn division_matches_pytorch_zero_non_finite_and_signed_zero_semantics() {
+    let left = Tensor::from_vec(
+        vec![
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            1.0,
+            -1.0,
+            1.0,
+            -1.0,
+            0.0,
+            -0.0,
+            0.0,
+            -0.0,
+        ],
+        [13],
+    )
+    .unwrap();
+    let right = Tensor::from_vec(
+        vec![
+            1.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            2.0,
+            2.0,
+            0.0,
+            0.0,
+            -0.0,
+            -0.0,
+            2.0,
+            2.0,
+            -2.0,
+            -2.0,
+        ],
+        [13],
+    )
+    .unwrap();
+    let output = left.div(&right).unwrap();
+
+    assert!(output.as_slice()[..3].iter().all(|value| value.is_nan()));
+    assert_eq!(output.as_slice()[3].to_bits(), f32::INFINITY.to_bits());
+    assert_eq!(output.as_slice()[4].to_bits(), f32::NEG_INFINITY.to_bits());
+    assert_eq!(output.as_slice()[5].to_bits(), f32::INFINITY.to_bits());
+    assert_eq!(output.as_slice()[6].to_bits(), f32::NEG_INFINITY.to_bits());
+    assert_eq!(output.as_slice()[7].to_bits(), f32::NEG_INFINITY.to_bits());
+    assert_eq!(output.as_slice()[8].to_bits(), f32::INFINITY.to_bits());
+    assert_eq!(output.as_slice()[9].to_bits(), 0.0_f32.to_bits());
+    assert_eq!(output.as_slice()[10].to_bits(), (-0.0_f32).to_bits());
+    assert_eq!(output.as_slice()[11].to_bits(), (-0.0_f32).to_bits());
+    assert_eq!(output.as_slice()[12].to_bits(), 0.0_f32.to_bits());
+}
+
+#[test]
+fn subtraction_and_division_reject_different_shapes() {
+    let left = Tensor::zeros([2, 2]).unwrap();
+    let right = Tensor::zeros([4]).unwrap();
+    let expected = TensorError::ShapeMismatch {
+        left: vec![2, 2],
+        right: vec![4],
+    };
+
+    assert_eq!(left.sub(&right), Err(expected.clone()));
+    assert_eq!(left.div(&right), Err(expected));
+}
+
+#[test]
 fn reductions_handle_ordinary_and_empty_tensors() {
     let sum = Tensor::from_vec(vec![1.0, 2.0, 3.0], [3])
         .unwrap()
