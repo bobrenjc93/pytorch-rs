@@ -66,6 +66,21 @@ fn full_rejects_storage_capacity_overflow_without_allocating() {
 }
 
 #[test]
+fn full_rejects_empty_shapes_with_unrepresentable_contiguous_strides() {
+    let large = 1_usize << 62;
+    for shape in [
+        vec![0, large, 2],
+        vec![2, 0, large, 2],
+        vec![1, large, 2, 0],
+    ] {
+        assert_eq!(
+            Tensor::full(shape, 1.0),
+            Err(TensorError::StrideCalculationOverflow)
+        );
+    }
+}
+
+#[test]
 fn elementwise_operations_preserve_shape() {
     let left = Tensor::from_vec(vec![-1.0, 2.0, 3.0, -4.0], [2, 2]).unwrap();
     let right = Tensor::ones([2, 2]).unwrap();

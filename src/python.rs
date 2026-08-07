@@ -1,7 +1,7 @@
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyInt, PyList, PyModule, PySequence, PyTuple};
+use pyo3::types::{PyAny, PyBool, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
 
 use crate::{Tensor as CoreTensor, TensorError};
 
@@ -127,7 +127,7 @@ fn validate_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
     let size = dimensions
         .into_iter()
         .map(|dimension| {
-            if dimension.is_instance_of::<PyBool>() || !dimension.is_instance_of::<PyInt>() {
+            if dimension.is_instance_of::<PyBool>() {
                 return Err(PyTypeError::new_err(
                     "full(): every size dimension must be an integer other than bool",
                 ));
@@ -154,6 +154,22 @@ fn validate_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
 }
 
 fn validate_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
+    if let Ok(tensor) = fill_value.cast::<PyTensor>() {
+        let tensor = tensor.try_borrow()?;
+        if !tensor.inner.shape().is_empty() {
+            return Err(PyTypeError::new_err(
+                "full(): fill_value tensor must be zero-dimensional",
+            ));
+        }
+        return tensor.inner.item().map_err(|error| tensor_error(&error));
+    }
+
+    if !fill_value.is_instance_of::<PyFloat>() && !fill_value.is_instance_of::<PyInt>() {
+        return Err(PyTypeError::new_err(
+            "full(): fill_value must be a number or zero-dimensional tensor",
+        ));
+    }
+
     let py = fill_value.py();
     let original = fill_value
         .extract::<f64>()
@@ -162,12 +178,8 @@ fn validate_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
         return Err(fill_value_overflow());
     }
 
-    let converted = fill_value
-        .extract::<f32>()
-        .map_err(|error| map_fill_value_error(error, py))?;
-    if original.is_finite() && !converted.is_finite() {
-        return Err(fill_value_overflow());
-    }
+    #[allow(clippy::cast_possible_truncation)]
+    let converted = original as f32;
     Ok(converted)
 }
 
@@ -238,6 +250,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
+        | TensorError::StrideCalculationOverflow
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),

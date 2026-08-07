@@ -1,6 +1,7 @@
 import math
 import sys
 import unittest
+from decimal import Decimal
 
 import torch_rs as torch
 
@@ -80,6 +81,52 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(size=size):
                 with self.assertRaises(TypeError):
                     torch.full(size, 3.0)
+
+    def test_full_accepts_index_protocol_dimensions(self):
+        class IndexDimension:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        dimension = IndexDimension(2)
+        result = torch.full([dimension], 3.0)
+        self.assertEqual(result.shape, (2,))
+        self.assertEqual(result.tolist(), [3.0, 3.0])
+        self.assertEqual(dimension.calls, 1)
+
+    def test_full_accepts_scalar_tensor_fill_value(self):
+        result = torch.full((2,), torch.tensor(3.0))
+        self.assertEqual(result.tolist(), [3.0, 3.0])
+
+        with self.assertRaises(TypeError):
+            torch.full((2,), torch.tensor([3.0]))
+
+    def test_full_rejects_non_scalar_numeric_coercions(self):
+        class FloatLike:
+            def __init__(self):
+                self.calls = 0
+
+            def __float__(self):
+                self.calls += 1
+                return 3.0
+
+        float_like = FloatLike()
+        for fill_value in (Decimal("3.0"), float_like):
+            with self.subTest(fill_value=fill_value):
+                with self.assertRaises(TypeError):
+                    torch.full((2,), fill_value)
+        self.assertEqual(float_like.calls, 0)
+
+    def test_full_validates_strides_for_empty_shapes(self):
+        large = 2**62
+        for size in ((0, large, 2), (2, 0, large, 2), (1, large, 2, 0)):
+            with self.subTest(size=size):
+                with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+                    torch.full(size, 1.0)
 
 
 if __name__ == "__main__":
