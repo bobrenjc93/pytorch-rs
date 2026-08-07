@@ -65,6 +65,22 @@ class PythonApiBaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "exceeds the platform capacity"):
             torch.full([oversized], 1.0)
 
+    def test_full_rejects_finite_fill_value_overflow(self):
+        for fill_value in (1e40, 2**200):
+            with self.subTest(fill_value=fill_value):
+                with self.assertRaisesRegex(RuntimeError, "float32 without overflow"):
+                    torch.full((2,), fill_value)
+
+    def test_full_maps_shape_product_overflow_to_runtime_error(self):
+        with self.assertRaisesRegex(RuntimeError, "element count overflowed"):
+            torch.full((2**62, 4), 1.0)
+
+    def test_full_rejects_invalid_size_arguments(self):
+        for size in ([True], (False,), range(2)):
+            with self.subTest(size=size):
+                with self.assertRaises(TypeError):
+                    torch.full(size, 3.0)
+
 
 if __name__ == "__main__":
     unittest.main()

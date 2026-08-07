@@ -1,7 +1,7 @@
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyList, PyModule, PySequence, PyTuple};
+use pyo3::types::{PyAny, PyBool, PyInt, PyList, PyModule, PySequence, PyTuple};
 
 use crate::{Tensor as CoreTensor, TensorError};
 
@@ -105,14 +105,37 @@ fn ones(shape: Vec<usize>) -> PyResult<PyTensor> {
 }
 
 #[pyfunction(signature = (size, fill_value))]
-fn full(size: Vec<i64>, fill_value: f32) -> PyResult<PyTensor> {
+fn full(size: &Bound<'_, PyAny>, fill_value: &Bound<'_, PyAny>) -> PyResult<PyTensor> {
     let shape = validate_size(size)?;
+    let fill_value = validate_fill_value(fill_value)?;
     CoreTensor::full(shape, fill_value)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
 
-fn validate_size(size: Vec<i64>) -> PyResult<Vec<usize>> {
+fn validate_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+    let dimensions = if let Ok(size) = size.cast::<PyList>() {
+        size.iter().collect::<Vec<_>>()
+    } else if let Ok(size) = size.cast::<PyTuple>() {
+        size.iter().collect::<Vec<_>>()
+    } else {
+        return Err(PyTypeError::new_err(
+            "full(): argument 'size' must be a tuple or list of integers",
+        ));
+    };
+
+    let size = dimensions
+        .into_iter()
+        .map(|dimension| {
+            if dimension.is_instance_of::<PyBool>() || !dimension.is_instance_of::<PyInt>() {
+                return Err(PyTypeError::new_err(
+                    "full(): every size dimension must be an integer other than bool",
+                ));
+            }
+            dimension.extract::<i64>()
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
     if let Some(dimension) = size.iter().find(|dimension| **dimension < 0) {
         return Err(PyRuntimeError::new_err(format!(
             "Trying to create tensor with negative dimension {dimension}: {size:?}"
@@ -128,6 +151,36 @@ fn validate_size(size: Vec<i64>) -> PyResult<Vec<usize>> {
             })
         })
         .collect()
+}
+
+fn validate_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
+    let py = fill_value.py();
+    let original = fill_value
+        .extract::<f64>()
+        .map_err(|error| map_fill_value_error(error, py))?;
+    if original.is_finite() && original.abs() > f64::from(f32::MAX) {
+        return Err(fill_value_overflow());
+    }
+
+    let converted = fill_value
+        .extract::<f32>()
+        .map_err(|error| map_fill_value_error(error, py))?;
+    if original.is_finite() && !converted.is_finite() {
+        return Err(fill_value_overflow());
+    }
+    Ok(converted)
+}
+
+fn map_fill_value_error(error: PyErr, py: Python<'_>) -> PyErr {
+    if error.is_instance_of::<PyOverflowError>(py) {
+        fill_value_overflow()
+    } else {
+        error
+    }
+}
+
+fn fill_value_overflow() -> PyErr {
+    PyRuntimeError::new_err("value cannot be converted to float32 without overflow")
 }
 
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
@@ -186,8 +239,8 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::MatmulInnerDimensionMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
         | TensorError::StorageCapacityOverflow { .. }
-        | TensorError::AllocationFailed { .. } => PyRuntimeError::new_err(error.to_string()),
-        TensorError::ElementCountOverflow => PyValueError::new_err(error.to_string()),
+        | TensorError::AllocationFailed { .. }
+        | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
     }
 }
 
