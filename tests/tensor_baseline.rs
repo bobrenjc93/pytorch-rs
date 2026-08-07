@@ -57,6 +57,20 @@ fn full_preserves_non_finite_values() {
 }
 
 #[test]
+fn full_preserves_signed_zero() {
+    let positive = Tensor::full([2], 0.0).unwrap();
+    let negative = Tensor::full([2], -0.0).unwrap();
+
+    assert!(positive.as_slice().iter().all(|value| value.to_bits() == 0));
+    assert!(
+        negative
+            .as_slice()
+            .iter()
+            .all(|value| value.to_bits() == (-0.0_f32).to_bits())
+    );
+}
+
+#[test]
 fn full_rejects_storage_capacity_overflow_without_allocating() {
     let elements = isize::MAX.unsigned_abs() / size_of::<f32>() + 1;
     assert_eq!(

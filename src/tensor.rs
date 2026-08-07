@@ -93,9 +93,15 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when the shape's element count, contiguous stride, or
-    /// storage size overflows, or when storage allocation fails.
+    /// storage size overflows.
     pub fn zeros(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
-        Self::full(shape, 0.0)
+        let shape = shape.into();
+        let elements = validated_element_count(&shape)?;
+        validate_storage_capacity(elements)?;
+        Ok(Self {
+            data: vec![0.0; elements],
+            shape,
+        })
     }
 
     /// Creates a one-filled tensor.
@@ -103,9 +109,15 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when the shape's element count, contiguous stride, or
-    /// storage size overflows, or when storage allocation fails.
+    /// storage size overflows.
     pub fn ones(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
-        Self::full(shape, 1.0)
+        let shape = shape.into();
+        let elements = validated_element_count(&shape)?;
+        validate_storage_capacity(elements)?;
+        Ok(Self {
+            data: vec![1.0; elements],
+            shape,
+        })
     }
 
     /// Creates a tensor filled with `fill_value`.
