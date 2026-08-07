@@ -277,9 +277,13 @@ impl Tensor {
         let elements = self.data.len();
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        for (left, right) in self.data.iter().copied().zip(other.data.iter().copied()) {
-            data.push(operation(left, right));
-        }
+        data.extend(
+            self.data
+                .iter()
+                .copied()
+                .zip(other.data.iter().copied())
+                .map(|(left, right)| operation(left, right)),
+        );
         Ok(Self { data, shape })
     }
 }

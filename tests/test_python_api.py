@@ -5,16 +5,14 @@ import unittest
 from decimal import Decimal
 
 import numpy as np
-import torch as pytorch
 import torch_rs as torch
 
 
 class PythonApiBaselineTests(unittest.TestCase):
-    def assert_tensor_matches_pytorch(self, actual, expected):
-        self.assertEqual(actual.shape, tuple(expected.shape))
-
+    def assert_tensor_values(self, actual, expected, shape):
+        self.assertEqual(actual.shape, shape)
         actual_values = np.asarray(actual.tolist(), dtype=np.float32).reshape(-1)
-        expected_values = expected.detach().cpu().numpy().reshape(-1)
+        expected_values = np.asarray(expected, dtype=np.float32).reshape(-1)
         self.assertEqual(actual_values.size, expected_values.size)
         for actual_value, expected_value in zip(actual_values, expected_values):
             if np.isnan(expected_value):
@@ -44,30 +42,29 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(output.shape, (2, 2))
         self.assertEqual(output.tolist(), [[58.0, 64.0], [139.0, 154.0]])
 
-    def test_subtraction_and_division_match_pytorch_for_general_same_shapes(self):
+    def test_subtraction_and_division_cover_general_same_shapes(self):
         cases = (
-            (torch.tensor(7.0), pytorch.tensor(7.0), torch.tensor(2.0), pytorch.tensor(2.0)),
+            (torch.tensor(7.0), torch.tensor(2.0), (), 5.0, 3.5),
             (
                 torch.tensor([[[12.0, -8.0]], [[3.0, 0.5]]]),
-                pytorch.tensor([[[12.0, -8.0]], [[3.0, 0.5]]]),
                 torch.tensor([[[3.0, 2.0]], [[-1.5, 0.25]]]),
-                pytorch.tensor([[[3.0, 2.0]], [[-1.5, 0.25]]]),
+                (2, 1, 2),
+                [[[9.0, -10.0]], [[4.5, 0.25]]],
+                [[[4.0, -4.0]], [[-2.0, 2.0]]],
             ),
             (
                 torch.full((2, 0, 3), 1.0),
-                pytorch.full((2, 0, 3), 1.0),
                 torch.full((2, 0, 3), 2.0),
-                pytorch.full((2, 0, 3), 2.0),
+                (2, 0, 3),
+                [[], []],
+                [[], []],
             ),
         )
 
-        for operation in (operator.sub, operator.truediv):
-            for actual_left, expected_left, actual_right, expected_right in cases:
-                with self.subTest(operation=operation, shape=actual_left.shape):
-                    self.assert_tensor_matches_pytorch(
-                        operation(actual_left, actual_right),
-                        operation(expected_left, expected_right),
-                    )
+        for left, right, shape, expected_sub, expected_div in cases:
+            with self.subTest(shape=shape):
+                self.assert_tensor_values(left - right, expected_sub, shape)
+                self.assert_tensor_values(left / right, expected_div, shape)
 
     def test_subtraction_and_division_match_pytorch_special_values(self):
         cases = (
@@ -111,28 +108,40 @@ class PythonApiBaselineTests(unittest.TestCase):
             ),
         )
 
-        for operation, left, right in cases:
+        expected = (
+            [math.nan, math.nan, math.nan, math.inf, -math.inf, -0.0, 0.0],
+            [
+                math.nan,
+                math.nan,
+                math.nan,
+                math.inf,
+                -math.inf,
+                math.inf,
+                -math.inf,
+                -math.inf,
+                math.inf,
+                0.0,
+                -0.0,
+                -0.0,
+                0.0,
+            ],
+        )
+        for (operation, left, right), expected_values in zip(cases, expected):
             with self.subTest(operation=operation):
-                self.assert_tensor_matches_pytorch(
+                self.assert_tensor_values(
                     operation(torch.tensor(left), torch.tensor(right)),
-                    operation(
-                        pytorch.tensor(left, dtype=pytorch.float32),
-                        pytorch.tensor(right, dtype=pytorch.float32),
-                    ),
+                    expected_values,
+                    (len(expected_values),),
                 )
 
-    def test_subtraction_and_division_shape_errors_match_pytorch(self):
-        actual_left = torch.zeros([2, 2])
-        actual_right = torch.zeros([3])
-        expected_left = pytorch.zeros([2, 2])
-        expected_right = pytorch.zeros([3])
+    def test_subtraction_and_division_reject_shape_mismatches(self):
+        left = torch.zeros([2, 2])
+        right = torch.zeros([3])
 
         for operation in (operator.sub, operator.truediv):
             with self.subTest(operation=operation):
                 with self.assertRaises(RuntimeError):
-                    operation(actual_left, actual_right)
-                with self.assertRaises(RuntimeError):
-                    operation(expected_left, expected_right)
+                    operation(left, right)
 
     def test_ragged_input_is_rejected(self):
         with self.assertRaises(ValueError):
