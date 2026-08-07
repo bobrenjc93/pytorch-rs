@@ -65,6 +65,22 @@
         "eval_b4945d15": 89,
         "eval_c8a1bfb9": 38
       }
+    },
+    {
+      "key": "pr:2",
+      "recordedAt": "2026-08-07T16:52:13.690Z",
+      "label": "PR #2",
+      "kind": "leaf",
+      "prNumber": 2,
+      "title": "Add PyTorch-compatible tensor subtraction and division",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 21.5,
+        "eval_63a24994": 76.3,
+        "eval_39340456": 9,
+        "eval_b4945d15": 92,
+        "eval_c8a1bfb9": 40
+      }
     }
   ]
 }
