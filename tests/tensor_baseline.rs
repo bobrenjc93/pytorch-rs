@@ -1,4 +1,5 @@
 use pytorch_rs::{Tensor, TensorError};
+use std::mem::size_of;
 
 #[test]
 fn construction_validates_shape() {
@@ -52,6 +53,15 @@ fn full_preserves_non_finite_values() {
     assert_eq!(
         Tensor::full([2], f32::NEG_INFINITY).unwrap().as_slice(),
         [f32::NEG_INFINITY; 2]
+    );
+}
+
+#[test]
+fn full_rejects_storage_capacity_overflow_without_allocating() {
+    let elements = isize::MAX.unsigned_abs() / size_of::<f32>() + 1;
+    assert_eq!(
+        Tensor::full([elements], 1.0),
+        Err(TensorError::StorageCapacityOverflow { elements })
     );
 }
 

@@ -1,4 +1,5 @@
 import math
+import sys
 import unittest
 
 import torch_rs as torch
@@ -49,6 +50,20 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertTrue(all(math.isnan(value) for value in nan_values))
         self.assertEqual(torch.full([2], math.inf).tolist(), [math.inf, math.inf])
         self.assertEqual(torch.full([2], -math.inf).tolist(), [-math.inf, -math.inf])
+
+    def test_full_accepts_pytorch_keyword_names(self):
+        result = torch.full(size=[2], fill_value=3.0)
+        self.assertEqual(result.shape, (2,))
+        self.assertEqual(result.tolist(), [3.0, 3.0])
+
+    def test_full_rejects_negative_sizes_as_runtime_error(self):
+        with self.assertRaisesRegex(RuntimeError, "negative dimension -1"):
+            torch.full([-1], 3.0)
+
+    def test_full_rejects_storage_capacity_overflow(self):
+        oversized = sys.maxsize // 4 + 1
+        with self.assertRaisesRegex(RuntimeError, "exceeds the platform capacity"):
+            torch.full([oversized], 1.0)
 
 
 if __name__ == "__main__":

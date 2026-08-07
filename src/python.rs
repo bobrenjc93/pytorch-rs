@@ -104,11 +104,30 @@ fn ones(shape: Vec<usize>) -> PyResult<PyTensor> {
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction]
-fn full(shape: Vec<usize>, fill_value: f32) -> PyResult<PyTensor> {
+#[pyfunction(signature = (size, fill_value))]
+fn full(size: Vec<i64>, fill_value: f32) -> PyResult<PyTensor> {
+    let shape = validate_size(size)?;
     CoreTensor::full(shape, fill_value)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
+}
+
+fn validate_size(size: Vec<i64>) -> PyResult<Vec<usize>> {
+    if let Some(dimension) = size.iter().find(|dimension| **dimension < 0) {
+        return Err(PyRuntimeError::new_err(format!(
+            "Trying to create tensor with negative dimension {dimension}: {size:?}"
+        )));
+    }
+
+    size.into_iter()
+        .map(|dimension| {
+            usize::try_from(dimension).map_err(|_| {
+                PyRuntimeError::new_err(format!(
+                    "tensor dimension {dimension} exceeds the platform size limit"
+                ))
+            })
+        })
+        .collect()
 }
 
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
@@ -165,7 +184,9 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ShapeMismatch { .. }
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
-        | TensorError::ItemRequiresOneElement { .. } => PyRuntimeError::new_err(error.to_string()),
+        | TensorError::ItemRequiresOneElement { .. }
+        | TensorError::StorageCapacityOverflow { .. }
+        | TensorError::AllocationFailed { .. } => PyRuntimeError::new_err(error.to_string()),
         TensorError::ElementCountOverflow => PyValueError::new_err(error.to_string()),
     }
 }

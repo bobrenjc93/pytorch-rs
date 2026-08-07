@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::mem::size_of;
 
 /// A contiguous, row-major, CPU `f32` tensor.
 ///
@@ -20,6 +21,8 @@ pub enum TensorError {
     MatmulInnerDimensionMismatch { left: Vec<usize>, right: Vec<usize> },
     ItemRequiresOneElement { elements: usize },
     ElementCountOverflow,
+    StorageCapacityOverflow { elements: usize },
+    AllocationFailed { elements: usize },
 }
 
 impl Display for TensorError {
@@ -45,6 +48,16 @@ impl Display for TensorError {
             }
             Self::ElementCountOverflow => {
                 write!(formatter, "tensor element count overflowed usize")
+            }
+            Self::StorageCapacityOverflow { elements } => write!(
+                formatter,
+                "storage for a tensor with {elements} elements exceeds the platform capacity"
+            ),
+            Self::AllocationFailed { elements } => {
+                write!(
+                    formatter,
+                    "failed to allocate storage for {elements} elements"
+                )
             }
         }
     }
@@ -75,7 +88,8 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when the shape's element count overflows.
+    /// Returns an error when the shape's element count or storage size
+    /// overflows, or when storage allocation fails.
     pub fn zeros(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
         Self::full(shape, 0.0)
     }
@@ -84,7 +98,8 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when the shape's element count overflows.
+    /// Returns an error when the shape's element count or storage size
+    /// overflows, or when storage allocation fails.
     pub fn ones(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
         Self::full(shape, 1.0)
     }
@@ -93,14 +108,13 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when the shape's element count overflows.
+    /// Returns an error when the shape's element count or storage size
+    /// overflows, or when storage allocation fails.
     pub fn full(shape: impl Into<Vec<usize>>, fill_value: f32) -> Result<Self, TensorError> {
         let shape = shape.into();
         let elements = element_count(&shape)?;
-        Ok(Self {
-            data: vec![fill_value; elements],
-            shape,
-        })
+        let data = filled_storage(elements, fill_value)?;
+        Ok(Self { data, shape })
     }
 
     #[must_use]
@@ -238,4 +252,17 @@ fn element_count(shape: &[usize]) -> Result<usize, TensorError> {
             .checked_mul(*dimension)
             .ok_or(TensorError::ElementCountOverflow)
     })
+}
+
+fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {
+    let maximum_elements = isize::MAX.unsigned_abs() / size_of::<f32>();
+    if elements > maximum_elements {
+        return Err(TensorError::StorageCapacityOverflow { elements });
+    }
+
+    let mut data = Vec::new();
+    data.try_reserve_exact(elements)
+        .map_err(|_| TensorError::AllocationFailed { elements })?;
+    data.resize(elements, fill_value);
+    Ok(data)
 }
