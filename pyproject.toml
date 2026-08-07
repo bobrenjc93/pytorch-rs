@@ -15,6 +15,9 @@ classifiers = [
   "Programming Language :: Rust",
 ]
 
+[dependency-groups]
+dev = ["numpy>=2"]
+
 [tool.maturin]
 features = ["extension-module"]
 module-name = "torch_rs"

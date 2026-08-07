@@ -3,6 +3,7 @@ import sys
 import unittest
 from decimal import Decimal
 
+import numpy as np
 import torch_rs as torch
 
 
@@ -67,13 +68,13 @@ class PythonApiBaselineTests(unittest.TestCase):
             torch.full([oversized], 1.0)
 
     def test_full_rejects_finite_fill_value_overflow(self):
-        for fill_value in (1e40, 2**200):
+        for fill_value in (1e40, -1e40):
             with self.subTest(fill_value=fill_value):
                 with self.assertRaisesRegex(RuntimeError, "float32 without overflow"):
                     torch.full((2,), fill_value)
 
     def test_full_maps_shape_product_overflow_to_runtime_error(self):
-        with self.assertRaisesRegex(RuntimeError, "element count overflowed"):
+        with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
             torch.full((2**62, 4), 1.0)
 
     def test_full_rejects_invalid_size_arguments(self):
@@ -114,6 +115,17 @@ class PythonApiBaselineTests(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             torch.full((2,), torch.tensor([3.0]))
+
+    def test_full_accepts_real_numpy_scalar_fill_values(self):
+        cases = (
+            (np.longdouble(1.25), [1.25, 1.25]),
+            (np.float32(1.25), [1.25, 1.25]),
+            (np.int64(3), [3.0, 3.0]),
+            (np.bool_(True), [1.0, 1.0]),
+        )
+        for fill_value, expected in cases:
+            with self.subTest(fill_value=fill_value):
+                self.assertEqual(torch.full((2,), fill_value).tolist(), expected)
 
     def test_full_rejects_non_scalar_numeric_coercions(self):
         class FloatLike:
@@ -158,8 +170,15 @@ class PythonApiBaselineTests(unittest.TestCase):
 
         for fill_value in (-(2**63) - 1, 2**64):
             with self.subTest(fill_value=fill_value):
-                with self.assertRaisesRegex(RuntimeError, "float32 without overflow"):
+                with self.assertRaises(OverflowError):
                     torch.full((1,), fill_value)
+
+    def test_full_matches_pytorch_validation_order(self):
+        with self.assertRaises(TypeError):
+            torch.full([-1], object())
+
+        with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
+            torch.full((2**62, 4), 1e40)
 
     def test_full_validates_strides_for_empty_shapes(self):
         large = 2**62

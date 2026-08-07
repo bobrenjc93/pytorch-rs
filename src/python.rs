@@ -1,7 +1,9 @@
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
+use pyo3::types::{
+    PyAny, PyBool, PyFloat, PyInt, PyList, PyMemoryView, PyModule, PySequence, PyTuple,
+};
 
 use crate::{Tensor as CoreTensor, TensorError};
 
@@ -10,6 +12,13 @@ use crate::{Tensor as CoreTensor, TensorError};
 #[derive(Clone)]
 struct PyTensor {
     inner: CoreTensor,
+}
+
+enum ParsedFillValue {
+    Float(f64),
+    SignedInteger(i64),
+    UnsignedInteger(u64),
+    TensorScalar(f32),
 }
 
 #[pymethods]
@@ -106,14 +115,17 @@ fn ones(shape: Vec<usize>) -> PyResult<PyTensor> {
 
 #[pyfunction(signature = (size, fill_value))]
 fn full(size: &Bound<'_, PyAny>, fill_value: &Bound<'_, PyAny>) -> PyResult<PyTensor> {
+    let size = parse_size(size)?;
+    let fill_value = parse_fill_value(fill_value)?;
     let shape = validate_size(size)?;
-    let fill_value = validate_fill_value(fill_value)?;
+    CoreTensor::validate_full_shape(&shape).map_err(|error| full_shape_error(&error, &shape))?;
+    let fill_value = fill_value.into_f32()?;
     CoreTensor::full(shape, fill_value)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
 
-fn validate_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
     let dimensions = if let Ok(size) = size.cast::<PyList>() {
         size.iter().collect::<Vec<_>>()
     } else if let Ok(size) = size.cast::<PyTuple>() {
@@ -124,7 +136,7 @@ fn validate_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
         ));
     };
 
-    let size = dimensions
+    dimensions
         .into_iter()
         .enumerate()
         .map(|(index, dimension)| {
@@ -138,8 +150,10 @@ fn validate_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
                 .extract::<i64>()
                 .map_err(|error| invalid_size_dimension(index, &error.to_string()))
         })
-        .collect::<PyResult<Vec<_>>>()?;
+        .collect()
+}
 
+fn validate_size(size: Vec<i64>) -> PyResult<Vec<usize>> {
     if let Some(dimension) = size.iter().find(|dimension| **dimension < 0) {
         return Err(PyRuntimeError::new_err(format!(
             "Trying to create tensor with negative dimension {dimension}: {size:?}"
@@ -163,7 +177,7 @@ fn invalid_size_dimension(index: usize, reason: &str) -> PyErr {
     ))
 }
 
-fn validate_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
+fn parse_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
     if let Ok(tensor) = fill_value.cast::<PyTensor>() {
         let tensor = tensor.try_borrow()?;
         if !tensor.inner.shape().is_empty() {
@@ -171,43 +185,135 @@ fn validate_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
                 "full(): fill_value tensor must be zero-dimensional",
             ));
         }
-        return tensor.inner.item().map_err(|error| tensor_error(&error));
+        return tensor
+            .inner
+            .item()
+            .map(ParsedFillValue::TensorScalar)
+            .map_err(|error| tensor_error(&error));
     }
 
     if fill_value.is_instance_of::<PyInt>() {
-        return validate_integer_fill_value(fill_value);
+        return parse_integer_fill_value(fill_value);
     }
 
-    if !fill_value.is_instance_of::<PyFloat>() {
-        return Err(PyTypeError::new_err(
-            "full(): fill_value must be a number or zero-dimensional tensor",
-        ));
+    if fill_value.is_instance_of::<PyFloat>() {
+        return fill_value.extract::<f64>().map(ParsedFillValue::Float);
     }
 
-    let original = fill_value.extract::<f64>()?;
-    if original.is_finite() && original.abs() > f64::from(f32::MAX) {
-        return Err(fill_value_overflow());
-    }
-
-    #[allow(clippy::cast_possible_truncation)]
-    let converted = original as f32;
-    Ok(converted)
+    parse_buffer_fill_value(fill_value)
 }
 
-fn validate_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
+fn parse_buffer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    let view = PyMemoryView::from(fill_value).map_err(|_| invalid_fill_value())?;
+    let dimensions = view
+        .getattr("ndim")
+        .and_then(|value| value.extract::<usize>())
+        .map_err(|_| invalid_fill_value())?;
+    if dimensions != 0 {
+        return Err(invalid_fill_value());
+    }
+
+    let format = view
+        .getattr("format")
+        .and_then(|value| value.extract::<String>())
+        .map_err(|_| invalid_fill_value())?;
+    if !is_real_numeric_buffer_format(&format) {
+        return Err(invalid_fill_value());
+    }
+
+    if let Ok(scalar) = view.call_method0("tolist") {
+        if scalar.is_instance_of::<PyInt>() {
+            return parse_integer_fill_value(&scalar);
+        }
+        if scalar.is_instance_of::<PyFloat>() {
+            return scalar.extract::<f64>().map(ParsedFillValue::Float);
+        }
+    }
+
+    fill_value
+        .extract::<f64>()
+        .map(ParsedFillValue::Float)
+        .map_err(|_| invalid_fill_value())
+}
+
+fn is_real_numeric_buffer_format(format: &str) -> bool {
+    let type_code = match format.as_bytes() {
+        [type_code] | [b'@' | b'=' | b'<' | b'>' | b'!', type_code] => *type_code,
+        _ => return false,
+    };
+    matches!(
+        type_code,
+        b'?' | b'b'
+            | b'B'
+            | b'h'
+            | b'H'
+            | b'i'
+            | b'I'
+            | b'l'
+            | b'L'
+            | b'q'
+            | b'Q'
+            | b'n'
+            | b'N'
+            | b'e'
+            | b'f'
+            | b'd'
+            | b'g'
+    )
+}
+
+fn parse_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
     if let Ok(value) = fill_value.extract::<i64>() {
-        #[allow(clippy::cast_precision_loss)]
-        let converted = value as f32;
-        return Ok(converted);
+        return Ok(ParsedFillValue::SignedInteger(value));
     }
 
     if let Ok(value) = fill_value.extract::<u64>() {
-        #[allow(clippy::cast_precision_loss)]
-        let converted = value as f32;
-        return Ok(converted);
+        return Ok(ParsedFillValue::UnsignedInteger(value));
     }
 
-    Err(fill_value_overflow())
+    Err(PyOverflowError::new_err(
+        "Python integer is outside the supported scalar range",
+    ))
+}
+
+fn invalid_fill_value() -> PyErr {
+    PyTypeError::new_err("full(): fill_value must be a number or zero-dimensional tensor")
+}
+
+fn full_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
+    if matches!(error, TensorError::ElementCountOverflow) {
+        PyRuntimeError::new_err(format!(
+            "Storage size calculation overflowed with size {shape:?}"
+        ))
+    } else {
+        tensor_error(error)
+    }
+}
+
+impl ParsedFillValue {
+    fn into_f32(self) -> PyResult<f32> {
+        match self {
+            Self::Float(value) => {
+                if value.is_finite() && value.abs() > f64::from(f32::MAX) {
+                    return Err(fill_value_overflow());
+                }
+                #[allow(clippy::cast_possible_truncation)]
+                let converted = value as f32;
+                Ok(converted)
+            }
+            Self::SignedInteger(value) => {
+                #[allow(clippy::cast_precision_loss)]
+                let converted = value as f32;
+                Ok(converted)
+            }
+            Self::UnsignedInteger(value) => {
+                #[allow(clippy::cast_precision_loss)]
+                let converted = value as f32;
+                Ok(converted)
+            }
+            Self::TensorScalar(value) => Ok(value),
+        }
+    }
 }
 
 fn fill_value_overflow() -> PyErr {

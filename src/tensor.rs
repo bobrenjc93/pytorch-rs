@@ -116,9 +116,15 @@ impl Tensor {
     /// storage size overflows, or when storage allocation fails.
     pub fn full(shape: impl Into<Vec<usize>>, fill_value: f32) -> Result<Self, TensorError> {
         let shape = shape.into();
-        let elements = validated_element_count(&shape)?;
+        let elements = Self::validate_full_shape(&shape)?;
         let data = filled_storage(elements, fill_value)?;
         Ok(Self { data, shape })
+    }
+
+    pub(crate) fn validate_full_shape(shape: &[usize]) -> Result<usize, TensorError> {
+        let elements = validated_element_count(shape)?;
+        validate_storage_capacity(elements)?;
+        Ok(elements)
     }
 
     #[must_use]
@@ -280,14 +286,19 @@ fn validate_contiguous_strides(shape: &[usize]) -> Result<(), TensorError> {
 }
 
 fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {
-    let maximum_elements = isize::MAX.unsigned_abs() / size_of::<f32>();
-    if elements > maximum_elements {
-        return Err(TensorError::StorageCapacityOverflow { elements });
-    }
+    validate_storage_capacity(elements)?;
 
     let mut data = Vec::new();
     data.try_reserve_exact(elements)
         .map_err(|_| TensorError::AllocationFailed { elements })?;
     data.resize(elements, fill_value);
     Ok(data)
+}
+
+fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
+    let maximum_elements = isize::MAX.unsigned_abs() / size_of::<f32>();
+    if elements > maximum_elements {
+        return Err(TensorError::StorageCapacityOverflow { elements });
+    }
+    Ok(())
 }
