@@ -1,5 +1,5 @@
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
 
@@ -126,13 +126,17 @@ fn validate_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
 
     let size = dimensions
         .into_iter()
-        .map(|dimension| {
+        .enumerate()
+        .map(|(index, dimension)| {
             if dimension.is_instance_of::<PyBool>() {
-                return Err(PyTypeError::new_err(
-                    "full(): every size dimension must be an integer other than bool",
+                return Err(invalid_size_dimension(
+                    index,
+                    "bool is not a valid size dimension",
                 ));
             }
-            dimension.extract::<i64>()
+            dimension
+                .extract::<i64>()
+                .map_err(|error| invalid_size_dimension(index, &error.to_string()))
         })
         .collect::<PyResult<Vec<_>>>()?;
 
@@ -153,6 +157,12 @@ fn validate_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
         .collect()
 }
 
+fn invalid_size_dimension(index: usize, reason: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "full(): size element at index {index} is invalid: {reason}"
+    ))
+}
+
 fn validate_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
     if let Ok(tensor) = fill_value.cast::<PyTensor>() {
         let tensor = tensor.try_borrow()?;
@@ -164,16 +174,17 @@ fn validate_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
         return tensor.inner.item().map_err(|error| tensor_error(&error));
     }
 
-    if !fill_value.is_instance_of::<PyFloat>() && !fill_value.is_instance_of::<PyInt>() {
+    if fill_value.is_instance_of::<PyInt>() {
+        return validate_integer_fill_value(fill_value);
+    }
+
+    if !fill_value.is_instance_of::<PyFloat>() {
         return Err(PyTypeError::new_err(
             "full(): fill_value must be a number or zero-dimensional tensor",
         ));
     }
 
-    let py = fill_value.py();
-    let original = fill_value
-        .extract::<f64>()
-        .map_err(|error| map_fill_value_error(error, py))?;
+    let original = fill_value.extract::<f64>()?;
     if original.is_finite() && original.abs() > f64::from(f32::MAX) {
         return Err(fill_value_overflow());
     }
@@ -183,12 +194,20 @@ fn validate_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
     Ok(converted)
 }
 
-fn map_fill_value_error(error: PyErr, py: Python<'_>) -> PyErr {
-    if error.is_instance_of::<PyOverflowError>(py) {
-        fill_value_overflow()
-    } else {
-        error
+fn validate_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<f32> {
+    if let Ok(value) = fill_value.extract::<i64>() {
+        #[allow(clippy::cast_precision_loss)]
+        let converted = value as f32;
+        return Ok(converted);
     }
+
+    if let Ok(value) = fill_value.extract::<u64>() {
+        #[allow(clippy::cast_precision_loss)]
+        let converted = value as f32;
+        return Ok(converted);
+    }
+
+    Err(fill_value_overflow())
 }
 
 fn fill_value_overflow() -> PyErr {

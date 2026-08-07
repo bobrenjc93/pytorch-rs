@@ -98,6 +98,16 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(result.tolist(), [3.0, 3.0])
         self.assertEqual(dimension.calls, 1)
 
+    def test_full_normalizes_invalid_index_dimensions_to_type_error(self):
+        class FailingIndex:
+            def __index__(self):
+                raise RuntimeError("index conversion failed")
+
+        for dimension in (2**63, -(2**63) - 1, FailingIndex()):
+            with self.subTest(dimension=dimension):
+                with self.assertRaisesRegex(TypeError, "size element at index 0"):
+                    torch.full([dimension], 3.0)
+
     def test_full_accepts_scalar_tensor_fill_value(self):
         result = torch.full((2,), torch.tensor(3.0))
         self.assertEqual(result.tolist(), [3.0, 3.0])
@@ -120,6 +130,36 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     torch.full((2,), fill_value)
         self.assertEqual(float_like.calls, 0)
+
+    def test_full_converts_integer_fill_values_without_double_rounding(self):
+        class IntWithFloat(int):
+            def __new__(cls, value):
+                instance = super().__new__(cls, value)
+                instance.float_calls = 0
+                return instance
+
+            def __float__(self):
+                self.float_calls += 1
+                return 0.0
+
+        fill_value = IntWithFloat(9007199791611905)
+        result = torch.full((1,), fill_value)
+        self.assertEqual(result.item(), 9007200328482816.0)
+        self.assertEqual(fill_value.float_calls, 0)
+
+    def test_full_enforces_python_integer_scalar_boundaries(self):
+        accepted = (
+            (-(2**63), -9223372036854775808.0),
+            (2**64 - 1, 18446744073709551616.0),
+        )
+        for fill_value, expected in accepted:
+            with self.subTest(fill_value=fill_value):
+                self.assertEqual(torch.full((1,), fill_value).item(), expected)
+
+        for fill_value in (-(2**63) - 1, 2**64):
+            with self.subTest(fill_value=fill_value):
+                with self.assertRaisesRegex(RuntimeError, "float32 without overflow"):
+                    torch.full((1,), fill_value)
 
     def test_full_validates_strides_for_empty_shapes(self):
         large = 2**62
