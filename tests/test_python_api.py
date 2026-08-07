@@ -47,6 +47,13 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(matrix.shape, (2, 3))
         self.assertEqual(matrix.tolist(), [[1.25] * 3] * 2)
 
+    def test_tolist_maps_zero_element_list_capacity_overflow_to_memory_error(self):
+        tensor = torch.full((sys.maxsize, 0), 1.0)
+        self.assertEqual(tensor.numel(), 0)
+
+        with self.assertRaises(MemoryError):
+            tensor.tolist()
+
     def test_full_preserves_nan_and_infinities(self):
         nan_values = torch.full([2], math.nan).tolist()
         self.assertTrue(all(math.isnan(value) for value in nan_values))

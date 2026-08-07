@@ -1,5 +1,5 @@
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
 
@@ -332,7 +332,10 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
     }
 
     let chunk_size = shape[1..].iter().product::<usize>();
-    let mut items = Vec::with_capacity(shape[0]);
+    let mut items = Vec::new();
+    items.try_reserve_exact(shape[0]).map_err(|_| {
+        PyMemoryError::new_err("unable to allocate Python list for tensor conversion")
+    })?;
     for index in 0..shape[0] {
         let start = index * chunk_size;
         items.push(nested_list(
