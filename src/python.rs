@@ -124,31 +124,39 @@ fn full(size: &Bound<'_, PyAny>, fill_value: &Bound<'_, PyAny>) -> PyResult<PyTe
 }
 
 fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
-    let dimensions = if let Ok(size) = size.cast::<PyList>() {
-        size.iter().collect::<Vec<_>>()
+    if let Ok(size) = size.cast::<PyList>() {
+        parse_size_dimensions(size.len(), size.iter())
     } else if let Ok(size) = size.cast::<PyTuple>() {
-        size.iter().collect::<Vec<_>>()
+        parse_size_dimensions(size.len(), size.iter())
     } else {
-        return Err(PyTypeError::new_err(
+        Err(PyTypeError::new_err(
             "full(): argument 'size' must be a tuple or list of integers",
-        ));
-    };
+        ))
+    }
+}
 
-    dimensions
-        .into_iter()
-        .enumerate()
-        .map(|(index, dimension)| {
-            if dimension.is_instance_of::<PyBool>() {
-                return Err(invalid_size_dimension(
-                    index,
-                    "bool is not a valid size dimension",
-                ));
-            }
+fn parse_size_dimensions<'py>(
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+) -> PyResult<Vec<i64>> {
+    let mut parsed = try_size_vector(length)?;
+
+    for (index, dimension) in dimensions.enumerate() {
+        if dimension.is_instance_of::<PyBool>() {
+            return Err(invalid_size_dimension(
+                index,
+                "bool is not a valid size dimension",
+            ));
+        }
+        try_push_size(
+            &mut parsed,
             dimension
                 .extract::<i64>()
-                .map_err(|error| invalid_size_dimension(index, &error.to_string()))
-        })
-        .collect()
+                .map_err(|error| invalid_size_dimension(index, &error.to_string()))?,
+        )?;
+    }
+
+    Ok(parsed)
 }
 
 fn validate_size(size: Vec<i64>) -> PyResult<Vec<usize>> {
@@ -158,15 +166,34 @@ fn validate_size(size: Vec<i64>) -> PyResult<Vec<usize>> {
         )));
     }
 
-    size.into_iter()
-        .map(|dimension| {
+    let mut shape = try_size_vector(size.len())?;
+    for dimension in size {
+        try_push_size(
+            &mut shape,
             usize::try_from(dimension).map_err(|_| {
                 PyRuntimeError::new_err(format!(
                     "tensor dimension {dimension} exceeds the platform size limit"
                 ))
-            })
-        })
-        .collect()
+            })?,
+        )?;
+    }
+    Ok(shape)
+}
+
+fn try_size_vector<T>(length: usize) -> PyResult<Vec<T>> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(length)
+        .map_err(|_| PyRuntimeError::new_err("std::bad_alloc"))?;
+    Ok(values)
+}
+
+fn try_push_size<T>(values: &mut Vec<T>, value: T) -> PyResult<()> {
+    values
+        .try_reserve(1)
+        .map_err(|_| PyRuntimeError::new_err("std::bad_alloc"))?;
+    values.push(value);
+    Ok(())
 }
 
 fn invalid_size_dimension(index: usize, reason: &str) -> PyErr {
@@ -370,4 +397,17 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(full, module)?)?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::try_size_vector;
+
+    #[test]
+    fn size_vector_capacity_overflow_returns_python_error() {
+        pyo3::Python::initialize();
+        let error = try_size_vector::<i64>(usize::MAX)
+            .expect_err("an impossible vector capacity must return an error");
+        assert_eq!(error.to_string(), "RuntimeError: std::bad_alloc");
+    }
 }
