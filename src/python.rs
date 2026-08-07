@@ -1,9 +1,7 @@
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{
-    PyAny, PyBool, PyFloat, PyInt, PyList, PyMemoryView, PyModule, PySequence, PyTuple,
-};
+use pyo3::types::{PyAny, PyBool, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
 
 use crate::{Tensor as CoreTensor, TensorError};
 
@@ -200,66 +198,44 @@ fn parse_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> 
         return fill_value.extract::<f64>().map(ParsedFillValue::Float);
     }
 
-    parse_buffer_fill_value(fill_value)
+    parse_numpy_fill_value(fill_value)
 }
 
-fn parse_buffer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
-    let view = PyMemoryView::from(fill_value).map_err(|_| invalid_fill_value())?;
-    let dimensions = view
-        .getattr("ndim")
-        .and_then(|value| value.extract::<usize>())
-        .map_err(|_| invalid_fill_value())?;
-    if dimensions != 0 {
+fn parse_numpy_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    let numpy = PyModule::import(fill_value.py(), "numpy").map_err(|_| invalid_fill_value())?;
+    let generic = numpy.getattr("generic").map_err(|_| invalid_fill_value())?;
+    if !fill_value.is_instance(&generic)? {
         return Err(invalid_fill_value());
     }
 
-    let format = view
-        .getattr("format")
-        .and_then(|value| value.extract::<String>())
+    let numpy_bool = numpy.getattr("bool_").map_err(|_| invalid_fill_value())?;
+    if fill_value.is_instance(&numpy_bool)? {
+        return fill_value
+            .is_truthy()
+            .map(|value| ParsedFillValue::SignedInteger(i64::from(value)));
+    }
+
+    let numpy_integer = numpy.getattr("integer").map_err(|_| invalid_fill_value())?;
+    if fill_value.is_instance(&numpy_integer)? {
+        return fill_value
+            .extract::<i64>()
+            .map(ParsedFillValue::SignedInteger)
+            .map_err(|_| {
+                PyTypeError::new_err("NumPy integer fill_value is outside the signed 64-bit range")
+            });
+    }
+
+    let numpy_floating = numpy
+        .getattr("floating")
         .map_err(|_| invalid_fill_value())?;
-    if !is_real_numeric_buffer_format(&format) {
-        return Err(invalid_fill_value());
+    if fill_value.is_instance(&numpy_floating)? {
+        return fill_value
+            .extract::<f64>()
+            .map(ParsedFillValue::Float)
+            .map_err(|_| invalid_fill_value());
     }
 
-    if let Ok(scalar) = view.call_method0("tolist") {
-        if scalar.is_instance_of::<PyInt>() {
-            return parse_integer_fill_value(&scalar);
-        }
-        if scalar.is_instance_of::<PyFloat>() {
-            return scalar.extract::<f64>().map(ParsedFillValue::Float);
-        }
-    }
-
-    fill_value
-        .extract::<f64>()
-        .map(ParsedFillValue::Float)
-        .map_err(|_| invalid_fill_value())
-}
-
-fn is_real_numeric_buffer_format(format: &str) -> bool {
-    let type_code = match format.as_bytes() {
-        [type_code] | [b'@' | b'=' | b'<' | b'>' | b'!', type_code] => *type_code,
-        _ => return false,
-    };
-    matches!(
-        type_code,
-        b'?' | b'b'
-            | b'B'
-            | b'h'
-            | b'H'
-            | b'i'
-            | b'I'
-            | b'l'
-            | b'L'
-            | b'q'
-            | b'Q'
-            | b'n'
-            | b'N'
-            | b'e'
-            | b'f'
-            | b'd'
-            | b'g'
-    )
+    Err(invalid_fill_value())
 }
 
 fn parse_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {

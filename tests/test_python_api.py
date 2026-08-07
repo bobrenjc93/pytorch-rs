@@ -127,6 +127,28 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(fill_value=fill_value):
                 self.assertEqual(torch.full((2,), fill_value).tolist(), expected)
 
+    def test_full_rejects_zero_dimensional_buffer_fill_values(self):
+        array = np.array(3.0)
+        for fill_value in (array, memoryview(array)):
+            with self.subTest(fill_value=fill_value):
+                with self.assertRaises(TypeError):
+                    torch.full((2,), fill_value)
+
+    def test_full_enforces_numpy_integer_signed_boundary(self):
+        accepted = (
+            np.int64(-(2**63)),
+            np.int64(2**63 - 1),
+            np.uint64(2**63 - 1),
+        )
+        for fill_value in accepted:
+            with self.subTest(fill_value=fill_value):
+                self.assertEqual(torch.full((1,), fill_value).numel(), 1)
+
+        for fill_value in (np.uint64(2**63), np.uint64(2**64 - 1)):
+            with self.subTest(fill_value=fill_value):
+                with self.assertRaises(TypeError):
+                    torch.full((1,), fill_value)
+
     def test_full_rejects_non_scalar_numeric_coercions(self):
         class FloatLike:
             def __init__(self):
