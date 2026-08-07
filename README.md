@@ -17,7 +17,7 @@ result = (x + y).relu()
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 ```
 
-The initial CPU core provides contiguous `float32` tensors, checked construction, same-shape addition and multiplication, ReLU, sum, and rank-2 matrix multiplication. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
+The initial CPU core provides contiguous `float32` tensors, checked construction, constant-filled creation, same-shape addition and multiplication, ReLU, sum, and rank-2 matrix multiplication. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
 
 ## Non-negotiable evaluation rules
 
@@ -50,3 +50,11 @@ The checked-in tests are only the public floor. Burner also uses independent gen
 ## License
 
 MIT
+
+<!-- burner-progress:start -->
+## Burner evaluation progress
+
+![Burner evaluation progress](docs/burner-evaluation-progress.svg)
+
+Burner updates this graph atomically after each successful merge. It validates a complete finite 0–100 score map for every enabled evaluation, then upserts the canonical baseline-commit or `pr:<number>` key; retrying a merge replaces the existing point instead of duplicating it. Missing or malformed scores abort artifact generation before any file is written. The [raw versioned history](docs/burner-evaluation-history.json) records this merge-coupled policy.
+<!-- burner-progress:end -->

@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::mem::size_of;
 
 /// A contiguous, row-major, CPU `f32` tensor.
 ///
@@ -20,6 +21,9 @@ pub enum TensorError {
     MatmulInnerDimensionMismatch { left: Vec<usize>, right: Vec<usize> },
     ItemRequiresOneElement { elements: usize },
     ElementCountOverflow,
+    StrideCalculationOverflow,
+    StorageCapacityOverflow { elements: usize },
+    AllocationFailed { elements: usize },
 }
 
 impl Display for TensorError {
@@ -46,6 +50,19 @@ impl Display for TensorError {
             Self::ElementCountOverflow => {
                 write!(formatter, "tensor element count overflowed usize")
             }
+            Self::StrideCalculationOverflow => {
+                write!(formatter, "Stride calculation overflowed")
+            }
+            Self::StorageCapacityOverflow { elements } => write!(
+                formatter,
+                "storage for a tensor with {elements} elements exceeds the platform capacity"
+            ),
+            Self::AllocationFailed { elements } => {
+                write!(
+                    formatter,
+                    "failed to allocate storage for {elements} elements"
+                )
+            }
         }
     }
 }
@@ -57,11 +74,11 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when the element count overflows or differs from the
-    /// supplied data length.
+    /// Returns an error when the element count or contiguous stride overflows,
+    /// or when the element count differs from the supplied data length.
     pub fn from_vec(data: Vec<f32>, shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
         let shape = shape.into();
-        let expected = element_count(&shape)?;
+        let expected = validated_element_count(&shape)?;
         if data.len() != expected {
             return Err(TensorError::ShapeDataMismatch {
                 shape,
@@ -75,10 +92,12 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when the shape's element count overflows.
+    /// Returns an error when the shape's element count, contiguous stride, or
+    /// storage size overflows.
     pub fn zeros(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
         let shape = shape.into();
-        let elements = element_count(&shape)?;
+        let elements = validated_element_count(&shape)?;
+        validate_storage_capacity(elements)?;
         Ok(Self {
             data: vec![0.0; elements],
             shape,
@@ -89,14 +108,35 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when the shape's element count overflows.
+    /// Returns an error when the shape's element count, contiguous stride, or
+    /// storage size overflows.
     pub fn ones(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
         let shape = shape.into();
-        let elements = element_count(&shape)?;
+        let elements = validated_element_count(&shape)?;
+        validate_storage_capacity(elements)?;
         Ok(Self {
             data: vec![1.0; elements],
             shape,
         })
+    }
+
+    /// Creates a tensor filled with `fill_value`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shape's element count, contiguous stride, or
+    /// storage size overflows, or when storage allocation fails.
+    pub fn full(shape: impl Into<Vec<usize>>, fill_value: f32) -> Result<Self, TensorError> {
+        let shape = shape.into();
+        let elements = Self::validate_full_shape(&shape)?;
+        let data = filled_storage(elements, fill_value)?;
+        Ok(Self { data, shape })
+    }
+
+    pub(crate) fn validate_full_shape(shape: &[usize]) -> Result<usize, TensorError> {
+        let elements = validated_element_count(shape)?;
+        validate_storage_capacity(elements)?;
+        Ok(elements)
     }
 
     #[must_use]
@@ -234,4 +274,43 @@ fn element_count(shape: &[usize]) -> Result<usize, TensorError> {
             .checked_mul(*dimension)
             .ok_or(TensorError::ElementCountOverflow)
     })
+}
+
+fn validated_element_count(shape: &[usize]) -> Result<usize, TensorError> {
+    let elements = element_count(shape)?;
+    validate_contiguous_strides(shape)?;
+    Ok(elements)
+}
+
+fn validate_contiguous_strides(shape: &[usize]) -> Result<(), TensorError> {
+    let maximum_stride = isize::MAX.unsigned_abs();
+    shape
+        .iter()
+        .skip(1)
+        .rev()
+        .try_fold(1_usize, |stride, dimension| {
+            stride
+                .checked_mul((*dimension).max(1))
+                .filter(|product| *product <= maximum_stride)
+                .ok_or(TensorError::StrideCalculationOverflow)
+        })?;
+    Ok(())
+}
+
+fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {
+    validate_storage_capacity(elements)?;
+
+    let mut data = Vec::new();
+    data.try_reserve_exact(elements)
+        .map_err(|_| TensorError::AllocationFailed { elements })?;
+    data.resize(elements, fill_value);
+    Ok(data)
+}
+
+fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
+    let maximum_elements = isize::MAX.unsigned_abs() / size_of::<f32>();
+    if elements > maximum_elements {
+        return Err(TensorError::StorageCapacityOverflow { elements });
+    }
+    Ok(())
 }

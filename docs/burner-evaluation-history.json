@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "updatePolicy": {
+    "trigger": "successful_merge",
+    "pointIdentity": "baseline_commit_or_pr_number",
+    "retryBehavior": "upsert_existing_key_preserving_original_timestamp",
+    "scoreValidation": "all_enabled_evaluations_finite_0_to_100",
+    "failureBehavior": "abort_before_artifact_write"
+  },
+  "evaluations": {
+    "eval_7af648fb": {
+      "name": "Correctness parity",
+      "color": "#ff6b35"
+    },
+    "eval_8417a4a8": {
+      "name": "PyTorch feature coverage",
+      "color": "#7c5cff"
+    },
+    "eval_63a24994": {
+      "name": "Performance parity",
+      "color": "#00a7a5"
+    },
+    "eval_39340456": {
+      "name": "Python API compatibility",
+      "color": "#e6a700"
+    },
+    "eval_b4945d15": {
+      "name": "Benchmark integrity",
+      "color": "#d94f8a"
+    },
+    "eval_c8a1bfb9": {
+      "name": "Sustainable architecture",
+      "color": "#2589bd"
+    }
+  },
+  "points": [
+    {
+      "key": "base:69d858ae261774b338c3aa93a78bd54553bf1966",
+      "commit": "69d858ae261774b338c3aa93a78bd54553bf1966",
+      "recordedAt": "2026-08-07T16:22:36.605Z",
+      "label": "base 69d858a",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 18.1,
+        "eval_63a24994": 66.3,
+        "eval_39340456": 7,
+        "eval_b4945d15": 86,
+        "eval_c8a1bfb9": 35
+      }
+    },
+    {
+      "key": "pr:1",
+      "recordedAt": "2026-08-07T16:22:36.605Z",
+      "label": "PR #1",
+      "kind": "leaf",
+      "prNumber": 1,
+      "title": "Add PyTorch-compatible full tensor creation",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 19.2,
+        "eval_63a24994": 68.8,
+        "eval_39340456": 8,
+        "eval_b4945d15": 89,
+        "eval_c8a1bfb9": 38
+      }
+    }
+  ]
+}
