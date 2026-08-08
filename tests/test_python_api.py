@@ -860,15 +860,13 @@ class PythonApiBaselineTests(unittest.TestCase):
             (np.longdouble(1.25), torch.float32, [1.25, 1.25]),
             (np.float32(1.25), torch.float32, [1.25, 1.25]),
             (np.int64(3), torch.int64, [3, 3]),
+            (np.bool_(True), torch.float32, [1.0, 1.0]),
         )
         for fill_value, expected_dtype, expected in cases:
             with self.subTest(fill_value=fill_value):
                 result = torch.full((2,), fill_value)
                 self.assertIs(result.dtype, expected_dtype)
                 self.assertEqual(result.tolist(), expected)
-
-        with self.assertRaisesRegex(RuntimeError, "bool tensor storage"):
-            torch.full((2,), np.bool_(True))
 
     def test_full_rejects_zero_dimensional_buffer_fill_values(self):
         array = np.array(3.0)

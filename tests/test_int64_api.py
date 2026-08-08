@@ -93,6 +93,19 @@ class Int64ApiTests(unittest.TestCase):
         wide_python = torch.tensor([2**100], dtype=torch.float32)
         self.assertEqual(wide_python.item(), np.float32(float(2**100)))
 
+    def test_tensor_rejects_numpy_scalars_in_int64_conversion(self):
+        for value in (np.float32(1.5), np.float64(-2.5), np.bool_(True)):
+            with self.subTest(explicit_int64=value):
+                with self.assertRaises(TypeError):
+                    torch.tensor([value], dtype=torch.int64)
+
+        with self.assertRaises(TypeError):
+            torch.tensor([1, np.bool_(True)])
+
+        floating = torch.tensor([np.float32(1.5)], dtype=torch.float32)
+        self.assertIs(floating.dtype, torch.float32)
+        self.assertEqual(floating.tolist(), [1.5])
+
     def test_creation_functions_materialize_int64_storage(self):
         cases = (
             (torch.zeros((2, 2), dtype=torch.int64), [[0, 0], [0, 0]]),
