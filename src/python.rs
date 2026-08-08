@@ -1,5 +1,7 @@
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{
+    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
+};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
 
@@ -45,6 +47,31 @@ impl PyTensor {
         PyTuple::new(py, self.inner.shape().iter().copied())
     }
 
+    #[pyo3(signature = (dim=None))]
+    fn stride(&self, py: Python<'_>, dim: Option<&Bound<'_, PyAny>>) -> PyResult<Py<PyAny>> {
+        let Some(dim) = dim else {
+            return Ok(PyTuple::new(py, self.inner.stride().iter().copied())?
+                .into_any()
+                .unbind());
+        };
+        let dim = parse_stride_dimension(dim)?;
+        let axis = normalize_dimension(dim, self.inner.shape().len())?;
+        self.inner.stride()[axis].into_py_any(py)
+    }
+
+    #[pyo3(signature = (*shape_dimensions, shape=None))]
+    fn reshape(
+        &self,
+        shape_dimensions: &Bound<'_, PyTuple>,
+        shape: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let shape = parse_reshape_shape(shape_dimensions, shape)?;
+        self.inner
+            .reshape(shape)
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     #[pyo3(signature = (dtype=None, copy=None))]
     fn __array__(
         &self,
@@ -72,10 +99,11 @@ impl PyTensor {
         self.inner.item().map_err(|error| tensor_error(&error))
     }
 
-    fn relu(&self) -> Self {
-        Self {
-            inner: self.inner.relu(),
-        }
+    fn relu(&self) -> PyResult<Self> {
+        self.inner
+            .relu()
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
     }
 
     fn sum(&self) -> Self {
@@ -289,6 +317,117 @@ fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
             "full(): argument 'size' must be a tuple or list of integers",
         ))
     }
+}
+
+fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+    if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
+        return dimension
+            .extract::<i64>()
+            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+    }
+
+    if let Ok(numpy) = PyModule::import(dimension.py(), "numpy") {
+        let numpy_integer = numpy.getattr("integer")?;
+        if dimension.is_instance(&numpy_integer)? {
+            return dimension
+                .extract::<i64>()
+                .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+        }
+    }
+
+    let type_name = dimension.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "stride(): argument 'dim' must be int, not {type_name}"
+    )))
+}
+
+fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
+    let rank = i64::try_from(rank)
+        .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    if rank == 0 {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension specified as {dimension} but tensor has no dimensions"
+        )));
+    }
+    if dimension < -rank || dimension >= rank {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension out of range (expected to be in range of [{}, {}], but got {dimension})",
+            -rank,
+            rank - 1
+        )));
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + rank
+    } else {
+        dimension
+    })
+    .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))
+}
+
+fn parse_reshape_shape(
+    shape_dimensions: &Bound<'_, PyTuple>,
+    keyword_shape: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Vec<i64>> {
+    if let Some(shape) = keyword_shape {
+        if !shape_dimensions.is_empty() {
+            return Err(PyTypeError::new_err(
+                "reshape() received both positional and keyword shape arguments",
+            ));
+        }
+        if let Ok(dimensions) = shape.cast::<PyList>() {
+            return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
+        }
+        if let Ok(dimensions) = shape.cast::<PyTuple>() {
+            return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
+        }
+        return Err(PyTypeError::new_err(
+            "reshape(): argument 'shape' must be a tuple or list of integers",
+        ));
+    }
+
+    if shape_dimensions.is_empty() {
+        return Err(PyTypeError::new_err(
+            "reshape() missing required shape arguments",
+        ));
+    }
+    if shape_dimensions.len() == 1 {
+        let shape = shape_dimensions.get_item(0)?;
+        if let Ok(dimensions) = shape.cast::<PyList>() {
+            return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
+        }
+        if let Ok(dimensions) = shape.cast::<PyTuple>() {
+            return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
+        }
+    }
+    parse_reshape_dimensions(shape_dimensions.len(), shape_dimensions.iter())
+}
+
+fn parse_reshape_dimensions<'py>(
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+) -> PyResult<Vec<i64>> {
+    let mut parsed = try_size_vector(length)?;
+    for (index, dimension) in dimensions.enumerate() {
+        if dimension.is_instance_of::<PyBool>() {
+            return Err(invalid_reshape_dimension(
+                index,
+                "bool is not a valid shape dimension",
+            ));
+        }
+        try_push_size(
+            &mut parsed,
+            dimension
+                .extract::<i64>()
+                .map_err(|error| invalid_reshape_dimension(index, &error.to_string()))?,
+        )?;
+    }
+    Ok(parsed)
+}
+
+fn invalid_reshape_dimension(index: usize, reason: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "reshape(): shape element at index {index} is invalid: {reason}"
+    ))
 }
 
 fn parse_size_dimensions<'py>(
@@ -635,11 +774,23 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
         return data[0].into_py_any(py);
     }
 
-    let chunk_size = shape[1..].iter().product::<usize>();
     let mut items = Vec::new();
     items.try_reserve_exact(shape[0]).map_err(|_| {
         PyMemoryError::new_err("unable to allocate Python list for tensor conversion")
     })?;
+    if shape[0] == 0 {
+        return Ok(PyList::new(py, items)?.into_any().unbind());
+    }
+    let chunk_size = if shape[1..].contains(&0) {
+        0
+    } else {
+        shape[1..]
+            .iter()
+            .try_fold(1_usize, |elements, dimension| {
+                elements.checked_mul(*dimension)
+            })
+            .ok_or_else(|| PyOverflowError::new_err("tensor shape product overflowed usize"))?
+    };
     for index in 0..shape[0] {
         let start = index * chunk_size;
         items.push(nested_list(
@@ -658,6 +809,10 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
+        | TensorError::ReshapeMultipleInferredDimensions
+        | TensorError::ReshapeInvalidDimension { .. }
+        | TensorError::ReshapeAmbiguousZeroElements { .. }
+        | TensorError::ReshapeElementCountMismatch { .. }
         | TensorError::StrideCalculationOverflow
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
@@ -678,7 +833,10 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::try_size_vector;
+    use pyo3::exceptions::PyTypeError;
+    use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyModule};
+
+    use super::{nested_list, torch_rs, try_size_vector};
 
     #[test]
     fn size_vector_capacity_overflow_returns_python_error() {
@@ -686,5 +844,53 @@ mod tests {
         let error = try_size_vector::<i64>(usize::MAX)
             .expect_err("an impossible vector capacity must return an error");
         assert_eq!(error.to_string(), "RuntimeError: std::bad_alloc");
+    }
+
+    #[test]
+    fn nested_list_short_circuits_a_leading_zero_before_shape_multiplication() {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let maximum = usize::try_from(i64::MAX).unwrap();
+            let list = nested_list(py, &[], &[0, maximum, maximum]).unwrap();
+            assert_eq!(list.bind(py).len().unwrap(), 0);
+        });
+    }
+
+    #[test]
+    fn reshape_binding_requires_shape_and_accepts_shape_keyword() {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let module = PyModule::new(py, "torch_rs").unwrap();
+            torch_rs(&module).unwrap();
+            let tensor = module
+                .getattr("tensor")
+                .unwrap()
+                .call1((vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0],))
+                .unwrap();
+
+            let keywords = PyDict::new(py);
+            keywords.set_item("shape", (2, 3)).unwrap();
+            let reshaped = tensor.call_method("reshape", (), Some(&keywords)).unwrap();
+            assert_eq!(
+                reshaped
+                    .getattr("shape")
+                    .unwrap()
+                    .extract::<Vec<usize>>()
+                    .unwrap(),
+                [2, 3]
+            );
+
+            let invalid_keywords = PyDict::new(py);
+            invalid_keywords.set_item("shape", -1).unwrap();
+            let error = tensor
+                .call_method("reshape", (), Some(&invalid_keywords))
+                .expect_err("a scalar keyword shape must fail");
+            assert!(error.is_instance_of::<PyTypeError>(py));
+
+            let error = tensor
+                .call_method0("reshape")
+                .expect_err("reshape without a shape must fail");
+            assert!(error.is_instance_of::<PyTypeError>(py));
+        });
     }
 }

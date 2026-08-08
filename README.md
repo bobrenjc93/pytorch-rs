@@ -17,7 +17,7 @@ result = (x + y).relu()
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 ```
 
-The initial CPU core provides contiguous `float32` tensors, checked construction, constant-filled creation, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
+The initial CPU core provides contiguous `float32` tensors, checked construction, constant-filled creation, layout queries and metadata-only reshape views, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
 
 ## Non-negotiable evaluation rules
 
@@ -40,9 +40,11 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets
 cargo test --doc
-uv venv
-uv run --with maturin maturin develop --release --uv
-uv run python -m unittest discover -s tests -p 'test_*.py'
+uv venv --clear
+uv sync --locked --no-install-project
+uv pip install --python .venv/bin/python 'maturin>=1.14,<2'
+.venv/bin/maturin develop --release --uv
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
 
 The checked-in tests are only the public floor. Burner also uses independent generated workloads and side-by-side `torch_rs`/`torch` differential runs.

@@ -100,7 +100,7 @@ fn elementwise_operations_preserve_shape() {
     let right = Tensor::ones([2, 2]).unwrap();
     assert_eq!(left.add(&right).unwrap().as_slice(), [0.0, 3.0, 4.0, -3.0]);
     assert_eq!(left.mul(&right).unwrap(), left);
-    assert_eq!(left.relu().as_slice(), [0.0, 2.0, 3.0, 0.0]);
+    assert_eq!(left.relu().unwrap().as_slice(), [0.0, 2.0, 3.0, 0.0]);
 }
 
 #[test]
@@ -423,4 +423,232 @@ fn matrix_multiplication_rejects_incompatible_shapes() {
         left.matmul(&right),
         Err(TensorError::MatmulInnerDimensionMismatch { .. })
     ));
+}
+
+#[test]
+fn contiguous_strides_cover_scalars_zero_dimensions_and_singletons() {
+    assert!(Tensor::from_vec(vec![1.0], []).unwrap().stride().is_empty());
+    assert_eq!(Tensor::zeros([2, 3, 4]).unwrap().stride(), [12, 4, 1]);
+    assert_eq!(Tensor::zeros([2, 0, 3]).unwrap().stride(), [3, 3, 1]);
+    assert_eq!(Tensor::zeros([1, 0, 1]).unwrap().stride(), [1, 1, 1]);
+}
+
+#[test]
+fn empty_elementwise_results_match_pytorch_strides() {
+    for (shape, expected) in [([1, 0, 1], [0, 1, 0]), ([2, 0, 3], [3, 3, 1])] {
+        assert_eq!(
+            Tensor::zeros(shape)
+                .unwrap()
+                .add_scalar(1.0)
+                .unwrap()
+                .stride(),
+            expected
+        );
+    }
+    assert_eq!(
+        Tensor::zeros([1, 0])
+            .unwrap()
+            .add_scalar(1.0)
+            .unwrap()
+            .stride(),
+        [1, 1]
+    );
+    assert_eq!(
+        Tensor::zeros([0, 1])
+            .unwrap()
+            .add_scalar(1.0)
+            .unwrap()
+            .stride(),
+        [1, 0]
+    );
+
+    let empty = Tensor::zeros([1, 0, 1]).unwrap();
+    assert_eq!(
+        empty
+            .add(&Tensor::ones([1, 0, 1]).unwrap())
+            .unwrap()
+            .stride(),
+        [1, 1, 1]
+    );
+
+    let broadcast = empty.add(&Tensor::ones([2, 1, 3]).unwrap()).unwrap();
+    assert_eq!(broadcast.shape(), [2, 0, 3]);
+    assert_eq!(broadcast.stride(), [3, 3, 1]);
+
+    let compatible = Tensor::zeros([0, 1])
+        .unwrap()
+        .add(&Tensor::ones([1, 1]).unwrap())
+        .unwrap();
+    assert_eq!(compatible.stride(), [1, 0]);
+
+    let chained = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
+    assert_eq!(chained.stride(), [1, 0]);
+    assert_eq!(chained.relu().unwrap().stride(), [1, 1]);
+}
+
+#[test]
+fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
+    let maximum = i64::MAX;
+    let tensor = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, maximum, 3])
+        .unwrap();
+
+    let scalar_output = tensor.add_scalar(1.0).unwrap();
+    assert_eq!(scalar_output.shape(), [0, usize::MAX / 2, 3]);
+    assert_eq!(scalar_output.stride(), [1, 0, 0]);
+    assert_eq!(tensor.relu(), Err(TensorError::StrideCalculationOverflow));
+
+    let wrapped_shape = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, 2, maximum, maximum])
+        .unwrap();
+    let wrapped_output = wrapped_shape.add_scalar(1.0).unwrap();
+    assert_eq!(
+        wrapped_output.shape(),
+        [0, 2, usize::MAX / 2, usize::MAX / 2]
+    );
+    assert_eq!(wrapped_output.stride(), [2, usize::MAX / 2, 1, 1]);
+
+    let zeroed_byte_stride = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, 1, 2, 1_i64 << 61])
+        .unwrap();
+    assert_eq!(
+        zeroed_byte_stride.add_scalar(1.0).unwrap().stride(),
+        [0, 0, 1, 2]
+    );
+}
+
+#[test]
+fn empty_reshape_preserves_compatible_source_strides() {
+    let source = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
+    let view = source.reshape([0, 1]).unwrap();
+
+    assert_eq!(source.stride(), [1, 0]);
+    assert_eq!(view.stride(), source.stride());
+    assert_eq!(view.shape(), source.shape());
+    assert_eq!(view.as_slice(), source.as_slice());
+}
+
+#[test]
+fn reshape_is_a_contiguous_shared_storage_view() {
+    let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
+    let view = tensor.reshape([3, 2]).unwrap();
+
+    assert_eq!(view.shape(), [3, 2]);
+    assert_eq!(view.stride(), [2, 1]);
+    assert_eq!(view.storage_offset(), tensor.storage_offset());
+    assert_eq!(view.as_slice(), tensor.as_slice());
+    assert!(std::ptr::eq(
+        view.as_slice().as_ptr(),
+        tensor.as_slice().as_ptr()
+    ));
+
+    let chained = view.reshape([1, 6, 1]).unwrap();
+    assert_eq!(chained.stride(), [6, 1, 1]);
+    assert!(std::ptr::eq(
+        chained.as_slice().as_ptr(),
+        tensor.as_slice().as_ptr()
+    ));
+
+    assert_eq!(
+        tensor.add_scalar(1.0).unwrap().as_slice(),
+        [2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    );
+    assert_eq!(view.into_vec(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+}
+
+#[test]
+fn reshape_infers_one_dimension_and_handles_scalars_and_empty_tensors() {
+    let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [6]).unwrap();
+    assert_eq!(tensor.reshape([2, -1]).unwrap().shape(), [2, 3]);
+    assert_eq!(tensor.reshape([-1]).unwrap().shape(), [6]);
+
+    let scalar = Tensor::from_vec(vec![7.0], [1])
+        .unwrap()
+        .reshape([])
+        .unwrap();
+    assert!(scalar.shape().is_empty());
+    assert!(scalar.stride().is_empty());
+    assert_eq!(scalar.item().unwrap().to_bits(), 7.0_f32.to_bits());
+    assert_eq!(scalar.reshape([1]).unwrap().shape(), [1]);
+
+    let empty = Tensor::zeros([0]).unwrap();
+    assert_eq!(empty.reshape([2, -1, 3]).unwrap().shape(), [2, 0, 3]);
+    assert_eq!(empty.reshape([2, -1, 3]).unwrap().stride(), [3, 3, 1]);
+    assert_eq!(empty.reshape([0, 2]).unwrap().shape(), [0, 2]);
+
+    let large = 1_i64 << 32;
+    let large_empty = empty.reshape([0, large, large]).unwrap();
+    assert_eq!(large_empty.shape(), [0, 1_usize << 32, 1_usize << 32]);
+    assert_eq!(large_empty.stride(), [0, 1_usize << 32, 1]);
+    assert_eq!(large_empty.numel(), 0);
+
+    let maximum = i64::MAX;
+    let wrapped_inference = empty.reshape([-1, maximum, maximum]).unwrap();
+    assert_eq!(
+        wrapped_inference.shape(),
+        [0, usize::MAX / 2, usize::MAX / 2]
+    );
+    assert_eq!(wrapped_inference.stride(), [1, usize::MAX / 2, 1]);
+
+    let one = Tensor::from_vec(vec![1.0], [1]).unwrap();
+    assert_eq!(
+        one.reshape([maximum, maximum, -1]),
+        Err(TensorError::ElementCountOverflow)
+    );
+    assert_eq!(
+        empty.reshape([3, maximum, -1]),
+        Err(TensorError::ElementCountOverflow)
+    );
+
+    assert_eq!(
+        empty.reshape([2, -1, 1_i64 << 62]),
+        Err(TensorError::ReshapeElementCountMismatch {
+            shape: vec![2, -1, 1_i64 << 62],
+            elements: 0,
+        })
+    );
+
+    assert_eq!(
+        empty.reshape([0, 1_i64 << 62, 3]),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+}
+
+#[test]
+fn reshape_reports_pytorch_compatible_invalid_shape_errors() {
+    let tensor = Tensor::zeros([6]).unwrap();
+
+    assert_eq!(
+        tensor.reshape([4, 2]).unwrap_err().to_string(),
+        "shape '[4, 2]' is invalid for input of size 6"
+    );
+    assert_eq!(
+        tensor.reshape([-1, -1]).unwrap_err().to_string(),
+        "only one dimension can be inferred"
+    );
+    assert_eq!(
+        tensor.reshape([-2, 3]).unwrap_err().to_string(),
+        "invalid shape dimension -2 at index 0 of shape [-2, 3]"
+    );
+    assert_eq!(
+        Tensor::zeros([0])
+            .unwrap()
+            .reshape([0, -1])
+            .unwrap_err()
+            .to_string(),
+        "cannot reshape tensor of 0 elements into shape [0, -1] because the unspecified dimension size -1 can be any value and is ambiguous"
+    );
+
+    let large = 1_i64 << 62;
+    assert_eq!(
+        tensor.reshape([large, 4, -2]).unwrap_err().to_string(),
+        "invalid shape dimension -2 at index 2 of shape [4611686018427387904, 4, -2]"
+    );
+    assert_eq!(
+        tensor.reshape([large, 4, -1, -1]).unwrap_err(),
+        TensorError::ReshapeMultipleInferredDimensions
+    );
 }

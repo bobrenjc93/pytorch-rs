@@ -35,6 +35,211 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(value.shape, ())
         self.assertEqual(value.item(), 10.0)
 
+    def test_stride_reports_contiguous_row_major_layout(self):
+        cases = (
+            (torch.tensor(1.0), ()),
+            (torch.zeros((2, 3, 4)), (12, 4, 1)),
+            (torch.zeros((2, 0, 3)), (3, 3, 1)),
+            (torch.zeros((1, 0, 1)), (1, 1, 1)),
+        )
+        for tensor, expected in cases:
+            with self.subTest(shape=tensor.shape):
+                self.assertEqual(tensor.stride(), expected)
+
+    def test_stride_accepts_positive_and_negative_dimensions(self):
+        class IntSubclass(int):
+            pass
+
+        class IndexLike:
+            def __index__(self):
+                return 0
+
+        tensor = torch.zeros((2, 3, 4))
+        self.assertEqual(tensor.stride(0), 12)
+        self.assertEqual(tensor.stride(1), 4)
+        self.assertEqual(tensor.stride(-1), 1)
+        self.assertEqual(tensor.stride(dim=-3), 12)
+        self.assertEqual(tensor.stride(IntSubclass(1)), 4)
+        self.assertEqual(tensor.stride(np.int64(-1)), 1)
+        self.assertEqual(tensor.stride(np.uint64(1)), 4)
+
+        for dimension in (3, -4):
+            with self.subTest(dimension=dimension):
+                with self.assertRaisesRegex(
+                    IndexError,
+                    r"Dimension out of range \(expected to be in range of \[-3, 2\]",
+                ):
+                    tensor.stride(dimension)
+
+        scalar = torch.tensor(1.0)
+        for dimension in (0, -1):
+            with self.subTest(scalar_dimension=dimension):
+                with self.assertRaisesRegex(IndexError, "tensor has no dimensions"):
+                    scalar.stride(dimension)
+
+        for dimension in (True, np.bool_(False), IndexLike()):
+            with self.subTest(invalid_type=type(dimension).__name__):
+                with self.assertRaises(TypeError):
+                    tensor.stride(dimension)
+
+        for dimension in (1 << 100, -(1 << 100), np.uint64(2**64 - 1)):
+            with self.subTest(overflow=dimension):
+                with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                    tensor.stride(dimension)
+
+    def test_empty_elementwise_results_match_pytorch_strides(self):
+        scalar_cases = (
+            ((1, 0), (1, 1)),
+            ((0, 1), (1, 0)),
+            ((1, 0, 1), (0, 1, 0)),
+            ((2, 0, 3), (3, 3, 1)),
+        )
+        for shape, expected in scalar_cases:
+            with self.subTest(operation="scalar", shape=shape):
+                self.assertEqual((torch.zeros(shape) + 1).stride(), expected)
+
+        empty = torch.zeros((1, 0, 1))
+        self.assertEqual((empty + torch.ones((1, 0, 1))).stride(), (1, 1, 1))
+
+        broadcast = empty + torch.ones((2, 1, 3))
+        self.assertEqual(broadcast.shape, (2, 0, 3))
+        self.assertEqual(broadcast.stride(), (3, 3, 1))
+
+        compatible = torch.zeros((0, 1)) + torch.ones((1, 1))
+        self.assertEqual(compatible.stride(), (1, 0))
+
+        chained = torch.zeros((0, 1)) + 1
+        self.assertEqual(chained.stride(), (1, 0))
+        self.assertEqual(chained.relu().stride(), (1, 1))
+
+    def test_extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries(self):
+        tensor = torch.zeros((0,)).reshape((0, sys.maxsize, 3))
+
+        scalar_output = tensor + 1
+        self.assertEqual(scalar_output.shape, (0, sys.maxsize, 3))
+        self.assertEqual(scalar_output.stride(), (1, 0, 0))
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            tensor.relu()
+
+        wrapped_shape = torch.zeros((0,)).reshape(
+            (0, 2, sys.maxsize, sys.maxsize)
+        )
+        wrapped_output = wrapped_shape + 1
+        self.assertEqual(wrapped_output.shape, wrapped_shape.shape)
+        self.assertEqual(wrapped_output.stride(), (2, sys.maxsize, 1, 1))
+
+        zeroed_byte_stride = torch.zeros((0,)).reshape((0, 1, 2, 1 << 61))
+        self.assertEqual((zeroed_byte_stride + 1).stride(), (0, 0, 1, 2))
+
+    def test_empty_reshape_preserves_compatible_source_strides(self):
+        source = torch.zeros((0, 1)) + 1
+        view = source.reshape((0, 1))
+
+        self.assertEqual(source.stride(), (1, 0))
+        self.assertEqual(view.stride(), (1, 0))
+        self.assertEqual(view.shape, source.shape)
+        self.assertEqual(view.tolist(), source.tolist())
+
+    def test_reshape_accepts_variadic_and_sequence_signatures(self):
+        source = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        variadic = source.reshape(3, 2)
+        tuple_shape = source.reshape((1, 6))
+        list_shape = source.reshape([6, 1])
+        keyword_shape = source.reshape(shape=(2, 3))
+
+        self.assertEqual(variadic.shape, (3, 2))
+        self.assertEqual(variadic.stride(), (2, 1))
+        self.assertEqual(variadic.tolist(), [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        self.assertEqual(tuple_shape.tolist(), [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]])
+        self.assertEqual(list_shape.tolist(), [[1.0], [2.0], [3.0], [4.0], [5.0], [6.0]])
+        self.assertEqual(keyword_shape.tolist(), source.tolist())
+        self.assertEqual(source.tolist(), [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+
+        with self.assertRaises(TypeError):
+            source.reshape(shape=-1)
+
+    def test_reshape_inference_scalar_and_empty_cases(self):
+        source = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        self.assertEqual(source.reshape(2, -1).shape, (2, 3))
+        self.assertEqual(source.reshape(-1).shape, (6,))
+
+        scalar = torch.tensor([7.0]).reshape(())
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(scalar.stride(), ())
+        self.assertEqual(scalar.item(), 7.0)
+        self.assertEqual(scalar.reshape([1]).tolist(), [7.0])
+
+        empty = torch.zeros((0,))
+        inferred = empty.reshape(2, -1, 3)
+        self.assertEqual(inferred.shape, (2, 0, 3))
+        self.assertEqual(inferred.stride(), (3, 3, 1))
+        self.assertEqual(inferred.tolist(), [[], []])
+        self.assertEqual(empty.reshape((0, 2)).shape, (0, 2))
+
+        large = 2**32
+        large_empty = empty.reshape((0, large, large))
+        self.assertEqual(large_empty.shape, (0, large, large))
+        self.assertEqual(large_empty.stride(), (0, large, 1))
+        self.assertEqual(large_empty.numel(), 0)
+
+        maximum = sys.maxsize
+        wrapped_inference = empty.reshape(-1, maximum, maximum)
+        self.assertEqual(wrapped_inference.shape, (0, maximum, maximum))
+        self.assertEqual(wrapped_inference.stride(), (1, maximum, 1))
+        self.assertEqual(wrapped_inference.tolist(), [])
+
+        with self.assertRaisesRegex(RuntimeError, "element count overflowed"):
+            torch.tensor([1.0]).reshape(maximum, maximum, -1)
+        with self.assertRaisesRegex(RuntimeError, "element count overflowed"):
+            empty.reshape(3, maximum, -1)
+
+        with self.assertRaisesRegex(RuntimeError, "is invalid for input of size 0"):
+            empty.reshape(2, -1, 1 << 62)
+
+        self.assertEqual(empty.reshape((0, maximum, maximum)).tolist(), [])
+
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            empty.reshape((0, 1 << 62, 3))
+
+    def test_reshape_reports_pytorch_compatible_errors(self):
+        tensor = torch.zeros((6,))
+        invalid = (
+            ((4, 2), "shape '\\[4, 2\\]' is invalid for input of size 6"),
+            ((-1, -1), "only one dimension can be inferred"),
+            ((-2, 3), "invalid shape dimension -2 at index 0 of shape \\[-2, 3\\]"),
+        )
+        for shape, message in invalid:
+            with self.subTest(shape=shape):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    tensor.reshape(shape)
+
+        with self.assertRaisesRegex(RuntimeError, "unspecified dimension size -1"):
+            torch.zeros((0,)).reshape(0, -1)
+
+        large = 2**62
+        with self.assertRaisesRegex(RuntimeError, "invalid shape dimension -2"):
+            tensor.reshape((large, 4, -2))
+        with self.assertRaisesRegex(RuntimeError, "only one dimension can be inferred"):
+            tensor.reshape((large, 4, -1, -1))
+
+        for shape in ((2.0, 3), (True, 6), [[2, 3]]):
+            with self.subTest(shape=shape):
+                with self.assertRaises(TypeError):
+                    tensor.reshape(shape)
+
+        with self.assertRaises(TypeError):
+            torch.tensor(1.0).reshape()
+
+    def test_reshape_observables_survive_source_lifetime_and_numpy_mutation(self):
+        source = torch.tensor([1.0, 2.0, 3.0, 4.0])
+        view = source.reshape(2, 2)
+        del source
+
+        copied = np.asarray(view)
+        copied[0, 0] = 99.0
+        self.assertEqual(view.tolist(), [[1.0, 2.0], [3.0, 4.0]])
+        self.assertEqual((view + 1.0).tolist(), [[2.0, 3.0], [4.0, 5.0]])
+
     def test_matrix_multiplication_operator(self):
         left = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         right = torch.tensor([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]])

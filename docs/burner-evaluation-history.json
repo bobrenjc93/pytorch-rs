@@ -113,6 +113,38 @@
         "eval_b4945d15": 95,
         "eval_c8a1bfb9": 45
       }
+    },
+    {
+      "key": "base:8b6f7657a0abad18a47117ef46beed1f31872143",
+      "commit": "8b6f7657a0abad18a47117ef46beed1f31872143",
+      "recordedAt": "2026-08-08T17:49:58.545Z",
+      "label": "base 8b6f765",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 23.8,
+        "eval_63a24994": 76.5,
+        "eval_39340456": 10,
+        "eval_b4945d15": 95,
+        "eval_c8a1bfb9": 35
+      }
+    },
+    {
+      "key": "pr:4",
+      "recordedAt": "2026-08-08T17:49:58.545Z",
+      "label": "PR #4",
+      "kind": "leaf",
+      "prNumber": 4,
+      "title": "Introduce shared storage layout and contiguous reshape views",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 27.6,
+        "eval_63a24994": 77.1,
+        "eval_39340456": 12,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 45
+      }
     }
   ]
 }
