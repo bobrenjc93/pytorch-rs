@@ -139,7 +139,7 @@ fn integer_kernels_wrap_and_preserve_dtype() {
 }
 
 #[test]
-fn integer_and_mixed_matmul_dispatch_to_the_promoted_dtype() {
+fn integer_matmul_preserves_dtype_and_mixed_matmul_is_rejected() {
     let left = Tensor::from_i64_vec(vec![1, 2, 3, 4, 5, 6], [2, 3]).unwrap();
     let right = Tensor::from_i64_vec(vec![7, 8, 9, 10, 11, 12], [3, 2]).unwrap();
     let integer = left.matmul(&right).unwrap();
@@ -147,13 +147,33 @@ fn integer_and_mixed_matmul_dispatch_to_the_promoted_dtype() {
     assert_eq!(integer.as_i64_slice(), Some(&[58, 64, 139, 154][..]));
 
     let float_right = Tensor::from_vec(vec![0.5, 1.0, 1.5, 2.0, 2.5, 3.0], [3, 2]).unwrap();
-    let mixed = left.matmul(&float_right).unwrap();
-    assert_eq!(mixed.dtype(), DType::Float32);
-    assert_eq!(mixed.as_f32_slice(), Some(&[11.0, 14.0, 24.5, 32.0][..]));
+    assert_eq!(
+        left.matmul(&float_right),
+        Err(TensorError::MatmulDTypeMismatch {
+            left: DType::Int64,
+            right: DType::Float32,
+        })
+    );
 
     let overflowing = Tensor::from_i64_vec(vec![i64::MAX], [1, 1])
         .unwrap()
         .matmul(&Tensor::from_i64_vec(vec![2], [1, 1]).unwrap())
         .unwrap();
     assert_eq!(overflowing.as_i64_slice(), Some(&[-2][..]));
+}
+
+#[test]
+fn dtype_promoting_empty_scalar_operations_use_common_dtype_strides() {
+    let source = Tensor::from_i64_vec(Vec::new(), [0])
+        .unwrap()
+        .reshape([0, 1, 2, 1_i64 << 61])
+        .unwrap();
+
+    let added = source.add_typed_scalar(Scalar::Float32(1.0)).unwrap();
+    assert_eq!(added.dtype(), DType::Float32);
+    assert_eq!(added.stride(), [0, 0, 1, 2]);
+
+    let divided = source.div_typed_scalar(Scalar::Int64(2), false).unwrap();
+    assert_eq!(divided.dtype(), DType::Float32);
+    assert_eq!(divided.stride(), [0, 0, 1, 2]);
 }

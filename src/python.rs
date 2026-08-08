@@ -88,6 +88,7 @@ struct PyTensor {
     inner: CoreTensor,
 }
 
+#[derive(Clone, Copy)]
 enum ParsedFillValue {
     Float(f64),
     SignedInteger(i64),
@@ -437,13 +438,18 @@ fn full(
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
-    let (dtype, device) = parse_metadata("full", dtype, device)?;
+    let dtype = parse_optional_dtype("full", dtype)?;
+    let device = parse_device("full", device)?;
     let size = parse_size(size)?;
     let fill_value = parse_fill_value(fill_value)?;
+    let dtype = match dtype {
+        Some(dtype) => dtype,
+        None => infer_full_dtype(fill_value)?,
+    };
     let shape = validate_size(size)?;
     CoreTensor::validate_full_shape(&shape, dtype)
         .map_err(|error| full_shape_error(&error, &shape))?;
-    let fill_value = fill_value.into_scalar(dtype)?;
+    let fill_value = fill_value.into_fill_scalar(dtype)?;
     CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
@@ -922,14 +928,14 @@ fn full_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
 }
 
 impl ParsedFillValue {
-    fn into_scalar(self, dtype: DType) -> PyResult<Scalar> {
+    fn into_fill_scalar(self, dtype: DType) -> PyResult<Scalar> {
         match dtype {
-            DType::Float32 => self.into_f32().map(Scalar::Float32),
-            DType::Int64 => self.into_i64().map(Scalar::Int64),
+            DType::Float32 => self.into_fill_f32().map(Scalar::Float32),
+            DType::Int64 => self.into_fill_i64().map(Scalar::Int64),
         }
     }
 
-    fn into_f32(self) -> PyResult<f32> {
+    fn into_fill_f32(self) -> PyResult<f32> {
         match self {
             Self::Float(value) => {
                 if value.is_finite() && value.abs() > f64::from(f32::MAX) {
@@ -954,7 +960,7 @@ impl ParsedFillValue {
         }
     }
 
-    fn into_i64(self) -> PyResult<i64> {
+    fn into_fill_i64(self) -> PyResult<i64> {
         match self {
             Self::Float(value) => float_to_i64(value),
             Self::SignedInteger(value) | Self::TensorScalar(Scalar::Int64(value)) => Ok(value),
@@ -963,6 +969,40 @@ impl ParsedFillValue {
             }
             Self::Boolean(value) => Ok(i64::from(value)),
             Self::TensorScalar(Scalar::Float32(value)) => float_to_i64(f64::from(value)),
+        }
+    }
+
+    fn into_tensor_f32(self) -> f32 {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+        let value = match self {
+            Self::Float(value) => value as f32,
+            Self::SignedInteger(value) => value as f32,
+            Self::UnsignedInteger(value) => value as f32,
+            Self::Boolean(value) => f32::from(u8::from(value)),
+            Self::TensorScalar(value) => value.as_f32(),
+        };
+        value
+    }
+
+    fn into_tensor_i64(self) -> PyResult<i64> {
+        match self {
+            Self::Float(value) => {
+                // Rust's float-to-int cast has the saturating behavior used by
+                // PyTorch's tensor constructor at the representable boundary.
+                #[allow(clippy::cast_possible_truncation)]
+                let converted = value as i64;
+                Ok(converted)
+            }
+            Self::SignedInteger(value) | Self::TensorScalar(Scalar::Int64(value)) => Ok(value),
+            Self::UnsignedInteger(value) => {
+                i64::try_from(value).map_err(|_| integer_conversion_overflow())
+            }
+            Self::Boolean(value) => Ok(i64::from(value)),
+            Self::TensorScalar(Scalar::Float32(value)) => {
+                #[allow(clippy::cast_possible_truncation)]
+                let converted = value as i64;
+                Ok(converted)
+            }
         }
     }
 
@@ -1082,14 +1122,35 @@ fn parse_tensor_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedFillVa
     };
     let generic = numpy.getattr("generic")?;
     if value.is_instance(&generic)? {
-        return parse_numpy_value(
-            value,
-            invalid_tensor_data,
-            "NumPy integer tensor value is outside the signed 64-bit range",
-        )
-        .map(Some);
+        return parse_numpy_tensor_value(value, &numpy).map(Some);
     }
     Ok(None)
+}
+
+fn parse_numpy_tensor_value(
+    value: &Bound<'_, PyAny>,
+    numpy: &Bound<'_, PyModule>,
+) -> PyResult<ParsedFillValue> {
+    if value.is_instance(&numpy.getattr("bool_")?)? {
+        return value.is_truthy().map(ParsedFillValue::Boolean);
+    }
+    if value.is_instance(&numpy.getattr("integer")?)? {
+        if let Ok(value) = value.extract::<i64>() {
+            return Ok(ParsedFillValue::SignedInteger(value));
+        }
+        return value
+            .extract::<u64>()
+            .map(ParsedFillValue::UnsignedInteger)
+            .map_err(|_| {
+                PyTypeError::new_err(
+                    "NumPy integer tensor value is outside the supported 64-bit range",
+                )
+            });
+    }
+    if value.is_instance(&numpy.getattr("floating")?)? {
+        return value.extract::<f64>().map(ParsedFillValue::Float);
+    }
+    Err(invalid_tensor_data())
 }
 
 fn invalid_tensor_data() -> PyErr {
@@ -1097,23 +1158,38 @@ fn invalid_tensor_data() -> PyErr {
 }
 
 fn infer_tensor_dtype(values: &[ParsedFillValue]) -> PyResult<DType> {
-    if values
-        .iter()
-        .any(|value| matches!(value, ParsedFillValue::Boolean(_)))
+    if values.is_empty()
+        || values
+            .iter()
+            .any(|value| matches!(value, ParsedFillValue::Float(_)))
     {
-        return Err(PyRuntimeError::new_err(
-            "bool tensor storage is not supported; specify dtype=torch.float32 or torch.int64",
-        ));
+        return Ok(DType::Float32);
     }
     if values
         .iter()
-        .any(|value| matches!(value, ParsedFillValue::Float(_)))
-        || values.is_empty()
+        .any(|value| !matches!(value, ParsedFillValue::Boolean(_)))
     {
-        Ok(DType::Float32)
-    } else {
-        Ok(DType::Int64)
+        return Ok(DType::Int64);
     }
+    Err(unsupported_bool_storage())
+}
+
+fn infer_full_dtype(value: ParsedFillValue) -> PyResult<DType> {
+    match value {
+        ParsedFillValue::Float(_) | ParsedFillValue::TensorScalar(Scalar::Float32(_)) => {
+            Ok(DType::Float32)
+        }
+        ParsedFillValue::SignedInteger(_)
+        | ParsedFillValue::UnsignedInteger(_)
+        | ParsedFillValue::TensorScalar(Scalar::Int64(_)) => Ok(DType::Int64),
+        ParsedFillValue::Boolean(_) => Err(unsupported_bool_storage()),
+    }
+}
+
+fn unsupported_bool_storage() -> PyErr {
+    PyRuntimeError::new_err(
+        "bool tensor storage is not supported; specify dtype=torch.float32 or torch.int64",
+    )
 }
 
 fn convert_tensor_data(values: Vec<ParsedFillValue>, dtype: DType) -> PyResult<TensorData> {
@@ -1121,14 +1197,14 @@ fn convert_tensor_data(values: Vec<ParsedFillValue>, dtype: DType) -> PyResult<T
         DType::Float32 => {
             let mut converted = try_size_vector(values.len())?;
             for value in values {
-                converted.push(value.into_f32()?);
+                converted.push(value.into_tensor_f32());
             }
             Ok(TensorData::Float32(converted))
         }
         DType::Int64 => {
             let mut converted = try_size_vector(values.len())?;
             for value in values {
-                converted.push(value.into_i64()?);
+                converted.push(value.into_tensor_i64()?);
             }
             Ok(TensorData::Int64(converted))
         }
@@ -1191,6 +1267,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ShapeMismatch { .. }
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
+        | TensorError::MatmulDTypeMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }

@@ -178,6 +178,10 @@ pub enum TensorError {
         left: Vec<usize>,
         right: Vec<usize>,
     },
+    MatmulDTypeMismatch {
+        left: DType,
+        right: DType,
+    },
     ItemRequiresOneElement {
         elements: usize,
     },
@@ -233,6 +237,10 @@ impl Display for TensorError {
             Self::MatmulInnerDimensionMismatch { left, right } => write!(
                 formatter,
                 "matmul inner dimensions differ for {left:?} and {right:?}"
+            ),
+            Self::MatmulDTypeMismatch { left, right } => write!(
+                formatter,
+                "matmul requires tensors with the same dtype, but got {left} and {right}"
             ),
             Self::ItemRequiresOneElement { elements } => {
                 write!(formatter, "item requires one element, got {elements}")
@@ -916,6 +924,12 @@ impl Tensor {
                 right: other.shape.clone(),
             });
         }
+        if self.dtype() != other.dtype() {
+            return Err(TensorError::MatmulDTypeMismatch {
+                left: self.dtype(),
+                right: other.dtype(),
+            });
+        }
         let (rows, inner) = (self.shape[0], self.shape[1]);
         let (other_inner, columns) = (other.shape[0], other.shape[1]);
         if inner != other_inner {
@@ -929,8 +943,7 @@ impl Tensor {
         output_shape.push(rows);
         output_shape.push(columns);
         let (output_elements, output_strides) = validated_layout(&output_shape)?;
-        let output_dtype =
-            promote_dtype(self.dtype(), other.dtype(), ArithmeticOperation::Multiply);
+        let output_dtype = self.dtype();
         validate_storage_capacity(output_elements, output_dtype)?;
         let output = match output_dtype {
             DType::Float32 => TensorData::Float32(matmul_kernel(
@@ -1292,14 +1305,17 @@ fn aligned_broadcast_stride_bytes(
     output_rank: usize,
     output_axis: usize,
     output_dimension: usize,
+    iteration_dtype: DType,
 ) -> i64 {
     // TensorIterator compares byte strides stored in signed 64-bit integers.
+    // Dtype-promoting pointwise operations plan against the common iteration
+    // dtype, including when an empty input needs no physical conversion.
     // Preserve its wrapping conversion at this boundary: an extreme but valid
     // empty view can therefore change the recovered output permutation without
     // accessing any storage.
     let stride =
         aligned_broadcast_stride(tensor, output_rank, output_axis, output_dimension).cast_signed();
-    let element_size = i64::try_from(dtype_size(tensor.dtype()))
+    let element_size = i64::try_from(dtype_size(iteration_dtype))
         .expect("a supported element size must fit in i64");
     i64::try_from(stride)
         .expect("an isize stride must fit in a signed 64-bit TensorIterator stride")
@@ -1371,6 +1387,7 @@ fn elementwise_output_strides(
                 operands,
                 permutation[dimension_0],
                 permutation[dimension_1],
+                output_dtype,
             );
             if comparison > 0 {
                 permutation.swap(dimension_0, dimension_1);
@@ -1424,12 +1441,23 @@ fn compare_elementwise_dimensions(
     operands: &[&Tensor],
     dimension_0: usize,
     dimension_1: usize,
+    iteration_dtype: DType,
 ) -> i8 {
     for tensor in operands {
-        let stride_0 =
-            aligned_broadcast_stride_bytes(tensor, shape.len(), dimension_0, shape[dimension_0]);
-        let stride_1 =
-            aligned_broadcast_stride_bytes(tensor, shape.len(), dimension_1, shape[dimension_1]);
+        let stride_0 = aligned_broadcast_stride_bytes(
+            tensor,
+            shape.len(),
+            dimension_0,
+            shape[dimension_0],
+            iteration_dtype,
+        );
+        let stride_1 = aligned_broadcast_stride_bytes(
+            tensor,
+            shape.len(),
+            dimension_1,
+            shape[dimension_1],
+            iteration_dtype,
+        );
         if stride_0 == 0 || stride_1 == 0 {
             continue;
         }

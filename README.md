@@ -17,7 +17,7 @@ result = (x + y).relu()
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 ```
 
-The CPU core provides contiguous `float32` and `int64` tensors with checked typed storage, PyTorch-style dtype inference and promotion, constant-filled creation, layout queries and metadata-only reshape views, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. Integral Python tensor data infers `int64`, floating or mixed data infers `float32`, and `torch.int64`/`torch.long` can be supplied explicitly. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
+The CPU core provides contiguous `float32` and `int64` tensors with checked typed storage, PyTorch-style dtype inference and promotion, constant-filled creation, layout queries and metadata-only reshape views, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. Integral Python tensor data infers `int64`, floating or mixed data infers `float32`, `full` infers from its fill value, and `torch.int64`/`torch.long` can be supplied explicitly. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
 
 ## Non-negotiable evaluation rules
 

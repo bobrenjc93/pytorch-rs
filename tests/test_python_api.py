@@ -857,14 +857,18 @@ class PythonApiBaselineTests(unittest.TestCase):
 
     def test_full_accepts_real_numpy_scalar_fill_values(self):
         cases = (
-            (np.longdouble(1.25), [1.25, 1.25]),
-            (np.float32(1.25), [1.25, 1.25]),
-            (np.int64(3), [3.0, 3.0]),
-            (np.bool_(True), [1.0, 1.0]),
+            (np.longdouble(1.25), torch.float32, [1.25, 1.25]),
+            (np.float32(1.25), torch.float32, [1.25, 1.25]),
+            (np.int64(3), torch.int64, [3, 3]),
         )
-        for fill_value, expected in cases:
+        for fill_value, expected_dtype, expected in cases:
             with self.subTest(fill_value=fill_value):
-                self.assertEqual(torch.full((2,), fill_value).tolist(), expected)
+                result = torch.full((2,), fill_value)
+                self.assertIs(result.dtype, expected_dtype)
+                self.assertEqual(result.tolist(), expected)
+
+        with self.assertRaisesRegex(RuntimeError, "bool tensor storage"):
+            torch.full((2,), np.bool_(True))
 
     def test_full_rejects_zero_dimensional_buffer_fill_values(self):
         array = np.array(3.0)
@@ -904,7 +908,7 @@ class PythonApiBaselineTests(unittest.TestCase):
                     torch.full((2,), fill_value)
         self.assertEqual(float_like.calls, 0)
 
-    def test_full_converts_integer_fill_values_without_double_rounding(self):
+    def test_full_preserves_inferred_integer_fill_values_exactly(self):
         class IntWithFloat(int):
             def __new__(cls, value):
                 instance = super().__new__(cls, value)
@@ -917,22 +921,28 @@ class PythonApiBaselineTests(unittest.TestCase):
 
         fill_value = IntWithFloat(9007199791611905)
         result = torch.full((1,), fill_value)
-        self.assertEqual(result.item(), 9007200328482816.0)
+        self.assertIs(result.dtype, torch.int64)
+        self.assertEqual(result.item(), 9007199791611905)
         self.assertEqual(fill_value.float_calls, 0)
 
     def test_full_enforces_python_integer_scalar_boundaries(self):
         accepted = (
-            (-(2**63), -9223372036854775808.0),
-            (2**64 - 1, 18446744073709551616.0),
+            (-(2**63), -(2**63)),
+            (2**63 - 1, 2**63 - 1),
         )
         for fill_value, expected in accepted:
             with self.subTest(fill_value=fill_value):
-                self.assertEqual(torch.full((1,), fill_value).item(), expected)
+                result = torch.full((1,), fill_value)
+                self.assertIs(result.dtype, torch.int64)
+                self.assertEqual(result.item(), expected)
 
-        for fill_value in (-(2**63) - 1, 2**64):
+        for fill_value in (-(2**63) - 1, 2**63, 2**64 - 1, 2**64):
             with self.subTest(fill_value=fill_value):
-                with self.assertRaises(OverflowError):
+                with self.assertRaises((RuntimeError, OverflowError)):
                     torch.full((1,), fill_value)
+
+        converted = torch.full((1,), 2**64 - 1, dtype=torch.float32)
+        self.assertEqual(converted.item(), 18446744073709551616.0)
 
     def test_full_matches_pytorch_validation_order(self):
         with self.assertRaises(TypeError):
