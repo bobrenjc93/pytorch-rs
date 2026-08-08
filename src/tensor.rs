@@ -331,20 +331,31 @@ impl Tensor {
         }
 
         let mut resolved = try_result_vector(requested.len(), self.elements)?;
-        let mut specified_elements = 1_usize;
         for dimension in requested.iter().copied() {
             let dimension = if dimension == -1 {
                 1
             } else {
                 usize::try_from(dimension).map_err(|_| TensorError::ElementCountOverflow)?
             };
-            specified_elements = specified_elements
-                .checked_mul(dimension)
-                .ok_or(TensorError::ElementCountOverflow)?;
             resolved.push(dimension);
         }
 
         if let Some(index) = inferred_index {
+            let specified_elements = requested
+                .iter()
+                .copied()
+                .filter(|dimension| *dimension != -1)
+                .fold(1_i64, i64::wrapping_mul);
+            let elements =
+                i64::try_from(self.elements).map_err(|_| TensorError::ElementCountOverflow)?;
+            if !((specified_elements > 0 && elements % specified_elements == 0)
+                || elements == specified_elements)
+            {
+                return Err(TensorError::ReshapeElementCountMismatch {
+                    shape: try_clone_reshape_shape(requested, self.elements)?,
+                    elements: self.elements,
+                });
+            }
             if specified_elements == 0 {
                 if self.elements == 0 {
                     return Err(TensorError::ReshapeAmbiguousZeroElements {
@@ -356,18 +367,16 @@ impl Tensor {
                     elements: self.elements,
                 });
             }
-            if !self.elements.is_multiple_of(specified_elements) {
+            resolved[index] = usize::try_from(elements / specified_elements)
+                .map_err(|_| TensorError::ElementCountOverflow)?;
+        } else {
+            let specified_elements = element_count(&resolved)?;
+            if specified_elements != self.elements {
                 return Err(TensorError::ReshapeElementCountMismatch {
                     shape: try_clone_reshape_shape(requested, self.elements)?,
                     elements: self.elements,
                 });
             }
-            resolved[index] = self.elements / specified_elements;
-        } else if specified_elements != self.elements {
-            return Err(TensorError::ReshapeElementCountMismatch {
-                shape: try_clone_reshape_shape(requested, self.elements)?,
-                elements: self.elements,
-            });
         }
 
         let strides = if self.elements == 0 && resolved == self.shape {
@@ -906,13 +915,31 @@ fn elementwise_output_strides(
         return contiguous_strides(shape, elements);
     }
 
+    let element_size =
+        i64::try_from(size_of::<f32>()).expect("an f32 element size must fit in i64");
+    let mut byte_strides = try_result_vector(rank, elements)?;
+    byte_strides.resize(rank, 0_i64);
+    let mut next_byte_stride = element_size;
+    for (position, axis) in permutation.into_iter().enumerate() {
+        byte_strides[axis] = next_byte_stride;
+        if position + 1 < rank {
+            let dimension =
+                i64::try_from(shape[axis]).map_err(|_| TensorError::StrideCalculationOverflow)?;
+            next_byte_stride = next_byte_stride.wrapping_mul(dimension);
+        }
+    }
+
     let mut strides = try_result_vector(rank, elements)?;
     strides.resize(rank, 0);
-    let mut stride = 1_usize;
-    for (position, axis) in permutation.into_iter().enumerate() {
-        strides[axis] = stride;
-        if position + 1 < rank {
-            stride = signed_wrapping_stride_product(stride, shape[axis])?;
+    for axis in (0..rank).rev() {
+        let stride = byte_strides[axis] / element_size;
+        if stride >= 0 {
+            strides[axis] =
+                usize::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?;
+        } else if axis + 1 == rank {
+            strides[axis] = 1;
+        } else {
+            strides[axis] = checked_stride_product(strides[axis + 1], shape[axis + 1])?;
         }
     }
     Ok(strides)

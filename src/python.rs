@@ -59,13 +59,13 @@ impl PyTensor {
         self.inner.stride()[axis].into_py_any(py)
     }
 
-    #[pyo3(signature = (shape, *shape_dimensions))]
+    #[pyo3(signature = (*shape_dimensions, shape=None))]
     fn reshape(
         &self,
-        shape: &Bound<'_, PyAny>,
         shape_dimensions: &Bound<'_, PyTuple>,
+        shape: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let shape = parse_reshape_shape(shape, shape_dimensions)?;
+        let shape = parse_reshape_shape(shape_dimensions, shape)?;
         self.inner
             .reshape(shape)
             .map(|inner| Self { inner })
@@ -365,10 +365,33 @@ fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
 }
 
 fn parse_reshape_shape(
-    shape: &Bound<'_, PyAny>,
     shape_dimensions: &Bound<'_, PyTuple>,
+    keyword_shape: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Vec<i64>> {
+    if let Some(shape) = keyword_shape {
+        if !shape_dimensions.is_empty() {
+            return Err(PyTypeError::new_err(
+                "reshape() received both positional and keyword shape arguments",
+            ));
+        }
+        if let Ok(dimensions) = shape.cast::<PyList>() {
+            return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
+        }
+        if let Ok(dimensions) = shape.cast::<PyTuple>() {
+            return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
+        }
+        return Err(PyTypeError::new_err(
+            "reshape(): argument 'shape' must be a tuple or list of integers",
+        ));
+    }
+
     if shape_dimensions.is_empty() {
+        return Err(PyTypeError::new_err(
+            "reshape() missing required shape arguments",
+        ));
+    }
+    if shape_dimensions.len() == 1 {
+        let shape = shape_dimensions.get_item(0)?;
         if let Ok(dimensions) = shape.cast::<PyList>() {
             return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
         }
@@ -376,12 +399,7 @@ fn parse_reshape_shape(
             return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
         }
     }
-    parse_reshape_dimensions(
-        shape_dimensions.len().checked_add(1).ok_or_else(|| {
-            PyRuntimeError::new_err("reshape(): shape length exceeds the platform limit")
-        })?,
-        std::iter::once(shape.clone()).chain(shape_dimensions.iter()),
-    )
+    parse_reshape_dimensions(shape_dimensions.len(), shape_dimensions.iter())
 }
 
 fn parse_reshape_dimensions<'py>(
@@ -756,11 +774,23 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
         return data[0].into_py_any(py);
     }
 
-    let chunk_size = shape[1..].iter().product::<usize>();
     let mut items = Vec::new();
     items.try_reserve_exact(shape[0]).map_err(|_| {
         PyMemoryError::new_err("unable to allocate Python list for tensor conversion")
     })?;
+    if shape[0] == 0 {
+        return Ok(PyList::new(py, items)?.into_any().unbind());
+    }
+    let chunk_size = if shape[1..].contains(&0) {
+        0
+    } else {
+        shape[1..]
+            .iter()
+            .try_fold(1_usize, |elements, dimension| {
+                elements.checked_mul(*dimension)
+            })
+            .ok_or_else(|| PyOverflowError::new_err("tensor shape product overflowed usize"))?
+    };
     for index in 0..shape[0] {
         let start = index * chunk_size;
         items.push(nested_list(
@@ -806,7 +836,7 @@ mod tests {
     use pyo3::exceptions::PyTypeError;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyModule};
 
-    use super::{torch_rs, try_size_vector};
+    use super::{nested_list, torch_rs, try_size_vector};
 
     #[test]
     fn size_vector_capacity_overflow_returns_python_error() {
@@ -814,6 +844,16 @@ mod tests {
         let error = try_size_vector::<i64>(usize::MAX)
             .expect_err("an impossible vector capacity must return an error");
         assert_eq!(error.to_string(), "RuntimeError: std::bad_alloc");
+    }
+
+    #[test]
+    fn nested_list_short_circuits_a_leading_zero_before_shape_multiplication() {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let maximum = usize::try_from(i64::MAX).unwrap();
+            let list = nested_list(py, &[], &[0, maximum, maximum]).unwrap();
+            assert_eq!(list.bind(py).len().unwrap(), 0);
+        });
     }
 
     #[test]
@@ -839,6 +879,13 @@ mod tests {
                     .unwrap(),
                 [2, 3]
             );
+
+            let invalid_keywords = PyDict::new(py);
+            invalid_keywords.set_item("shape", -1).unwrap();
+            let error = tensor
+                .call_method("reshape", (), Some(&invalid_keywords))
+                .expect_err("a scalar keyword shape must fail");
+            assert!(error.is_instance_of::<PyTypeError>(py));
 
             let error = tensor
                 .call_method0("reshape")

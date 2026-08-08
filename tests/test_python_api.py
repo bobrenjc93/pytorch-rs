@@ -121,6 +121,16 @@ class PythonApiBaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             tensor.relu()
 
+        wrapped_shape = torch.zeros((0,)).reshape(
+            (0, 2, sys.maxsize, sys.maxsize)
+        )
+        wrapped_output = wrapped_shape + 1
+        self.assertEqual(wrapped_output.shape, wrapped_shape.shape)
+        self.assertEqual(wrapped_output.stride(), (2, sys.maxsize, 1, 1))
+
+        zeroed_byte_stride = torch.zeros((0,)).reshape((0, 1, 2, 1 << 61))
+        self.assertEqual((zeroed_byte_stride + 1).stride(), (0, 0, 1, 2))
+
     def test_empty_reshape_preserves_compatible_source_strides(self):
         source = torch.zeros((0, 1)) + 1
         view = source.reshape((0, 1))
@@ -145,6 +155,9 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(keyword_shape.tolist(), source.tolist())
         self.assertEqual(source.tolist(), [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
 
+        with self.assertRaises(TypeError):
+            source.reshape(shape=-1)
+
     def test_reshape_inference_scalar_and_empty_cases(self):
         source = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         self.assertEqual(source.reshape(2, -1).shape, (2, 3))
@@ -168,6 +181,17 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(large_empty.shape, (0, large, large))
         self.assertEqual(large_empty.stride(), (0, large, 1))
         self.assertEqual(large_empty.numel(), 0)
+
+        maximum = sys.maxsize
+        wrapped_inference = empty.reshape(-1, maximum, maximum)
+        self.assertEqual(wrapped_inference.shape, (0, maximum, maximum))
+        self.assertEqual(wrapped_inference.stride(), (1, maximum, 1))
+        self.assertEqual(wrapped_inference.tolist(), [])
+
+        with self.assertRaisesRegex(RuntimeError, "is invalid for input of size 0"):
+            empty.reshape(2, -1, 1 << 62)
+
+        self.assertEqual(empty.reshape((0, maximum, maximum)).tolist(), [])
 
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             empty.reshape((0, 1 << 62, 3))

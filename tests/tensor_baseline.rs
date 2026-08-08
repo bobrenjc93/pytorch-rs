@@ -498,6 +498,26 @@ fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
     assert_eq!(scalar_output.shape(), [0, usize::MAX / 2, 3]);
     assert_eq!(scalar_output.stride(), [1, 0, 0]);
     assert_eq!(tensor.relu(), Err(TensorError::StrideCalculationOverflow));
+
+    let wrapped_shape = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, 2, maximum, maximum])
+        .unwrap();
+    let wrapped_output = wrapped_shape.add_scalar(1.0).unwrap();
+    assert_eq!(
+        wrapped_output.shape(),
+        [0, 2, usize::MAX / 2, usize::MAX / 2]
+    );
+    assert_eq!(wrapped_output.stride(), [2, usize::MAX / 2, 1, 1]);
+
+    let zeroed_byte_stride = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, 1, 2, 1_i64 << 61])
+        .unwrap();
+    assert_eq!(
+        zeroed_byte_stride.add_scalar(1.0).unwrap().stride(),
+        [0, 0, 1, 2]
+    );
 }
 
 #[test]
@@ -564,6 +584,22 @@ fn reshape_infers_one_dimension_and_handles_scalars_and_empty_tensors() {
     assert_eq!(large_empty.shape(), [0, 1_usize << 32, 1_usize << 32]);
     assert_eq!(large_empty.stride(), [0, 1_usize << 32, 1]);
     assert_eq!(large_empty.numel(), 0);
+
+    let maximum = i64::MAX;
+    let wrapped_inference = empty.reshape([-1, maximum, maximum]).unwrap();
+    assert_eq!(
+        wrapped_inference.shape(),
+        [0, usize::MAX / 2, usize::MAX / 2]
+    );
+    assert_eq!(wrapped_inference.stride(), [1, usize::MAX / 2, 1]);
+
+    assert_eq!(
+        empty.reshape([2, -1, 1_i64 << 62]),
+        Err(TensorError::ReshapeElementCountMismatch {
+            shape: vec![2, -1, 1_i64 << 62],
+            elements: 0,
+        })
+    );
 
     assert_eq!(
         empty.reshape([0, 1_i64 << 62, 3]),
