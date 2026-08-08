@@ -100,7 +100,7 @@ fn elementwise_operations_preserve_shape() {
     let right = Tensor::ones([2, 2]).unwrap();
     assert_eq!(left.add(&right).unwrap().as_slice(), [0.0, 3.0, 4.0, -3.0]);
     assert_eq!(left.mul(&right).unwrap(), left);
-    assert_eq!(left.relu().as_slice(), [0.0, 2.0, 3.0, 0.0]);
+    assert_eq!(left.relu().unwrap().as_slice(), [0.0, 2.0, 3.0, 0.0]);
 }
 
 #[test]
@@ -483,7 +483,21 @@ fn empty_elementwise_results_match_pytorch_strides() {
 
     let chained = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
     assert_eq!(chained.stride(), [1, 0]);
-    assert_eq!(chained.relu().stride(), [1, 1]);
+    assert_eq!(chained.relu().unwrap().stride(), [1, 1]);
+}
+
+#[test]
+fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
+    let maximum = i64::MAX;
+    let tensor = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, maximum, 3])
+        .unwrap();
+
+    let scalar_output = tensor.add_scalar(1.0).unwrap();
+    assert_eq!(scalar_output.shape(), [0, usize::MAX / 2, 3]);
+    assert_eq!(scalar_output.stride(), [1, 0, 0]);
+    assert_eq!(tensor.relu(), Err(TensorError::StrideCalculationOverflow));
 }
 
 #[test]

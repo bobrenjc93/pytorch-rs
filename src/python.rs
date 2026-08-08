@@ -48,12 +48,13 @@ impl PyTensor {
     }
 
     #[pyo3(signature = (dim=None))]
-    fn stride(&self, py: Python<'_>, dim: Option<i64>) -> PyResult<Py<PyAny>> {
+    fn stride(&self, py: Python<'_>, dim: Option<&Bound<'_, PyAny>>) -> PyResult<Py<PyAny>> {
         let Some(dim) = dim else {
             return Ok(PyTuple::new(py, self.inner.stride().iter().copied())?
                 .into_any()
                 .unbind());
         };
+        let dim = parse_stride_dimension(dim)?;
         let axis = normalize_dimension(dim, self.inner.shape().len())?;
         self.inner.stride()[axis].into_py_any(py)
     }
@@ -98,10 +99,11 @@ impl PyTensor {
         self.inner.item().map_err(|error| tensor_error(&error))
     }
 
-    fn relu(&self) -> Self {
-        Self {
-            inner: self.inner.relu(),
-        }
+    fn relu(&self) -> PyResult<Self> {
+        self.inner
+            .relu()
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
     }
 
     fn sum(&self) -> Self {
@@ -315,6 +317,28 @@ fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
             "full(): argument 'size' must be a tuple or list of integers",
         ))
     }
+}
+
+fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+    if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
+        return dimension
+            .extract::<i64>()
+            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+    }
+
+    if let Ok(numpy) = PyModule::import(dimension.py(), "numpy") {
+        let numpy_integer = numpy.getattr("integer")?;
+        if dimension.is_instance(&numpy_integer)? {
+            return dimension
+                .extract::<i64>()
+                .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+        }
+    }
+
+    let type_name = dimension.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "stride(): argument 'dim' must be int, not {type_name}"
+    )))
 }
 
 fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {

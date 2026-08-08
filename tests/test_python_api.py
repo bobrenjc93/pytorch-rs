@@ -47,11 +47,21 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertEqual(tensor.stride(), expected)
 
     def test_stride_accepts_positive_and_negative_dimensions(self):
+        class IntSubclass(int):
+            pass
+
+        class IndexLike:
+            def __index__(self):
+                return 0
+
         tensor = torch.zeros((2, 3, 4))
         self.assertEqual(tensor.stride(0), 12)
         self.assertEqual(tensor.stride(1), 4)
         self.assertEqual(tensor.stride(-1), 1)
         self.assertEqual(tensor.stride(dim=-3), 12)
+        self.assertEqual(tensor.stride(IntSubclass(1)), 4)
+        self.assertEqual(tensor.stride(np.int64(-1)), 1)
+        self.assertEqual(tensor.stride(np.uint64(1)), 4)
 
         for dimension in (3, -4):
             with self.subTest(dimension=dimension):
@@ -66,6 +76,16 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(scalar_dimension=dimension):
                 with self.assertRaisesRegex(IndexError, "tensor has no dimensions"):
                     scalar.stride(dimension)
+
+        for dimension in (True, np.bool_(False), IndexLike()):
+            with self.subTest(invalid_type=type(dimension).__name__):
+                with self.assertRaises(TypeError):
+                    tensor.stride(dimension)
+
+        for dimension in (1 << 100, -(1 << 100), np.uint64(2**64 - 1)):
+            with self.subTest(overflow=dimension):
+                with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                    tensor.stride(dimension)
 
     def test_empty_elementwise_results_match_pytorch_strides(self):
         scalar_cases = (
@@ -91,6 +111,15 @@ class PythonApiBaselineTests(unittest.TestCase):
         chained = torch.zeros((0, 1)) + 1
         self.assertEqual(chained.stride(), (1, 0))
         self.assertEqual(chained.relu().stride(), (1, 1))
+
+    def test_extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries(self):
+        tensor = torch.zeros((0,)).reshape((0, sys.maxsize, 3))
+
+        scalar_output = tensor + 1
+        self.assertEqual(scalar_output.shape, (0, sys.maxsize, 3))
+        self.assertEqual(scalar_output.stride(), (1, 0, 0))
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            tensor.relu()
 
     def test_empty_reshape_preserves_compatible_source_strides(self):
         source = torch.zeros((0, 1)) + 1

@@ -480,17 +480,22 @@ impl Tensor {
         self.map_scalar(scalar, |value, scalar| scalar * value.recip())
     }
 
-    #[must_use]
-    pub fn relu(&self) -> Self {
-        let mut strides = self.strides.clone();
-        if self.elements == 0 {
-            reset_empty_contiguous_strides(&mut strides, &self.shape);
-        }
-        Self::from_owned_parts(
-            self.as_slice().iter().map(|value| value.max(0.0)).collect(),
-            self.shape.clone(),
-            strides,
-        )
+    /// Applies rectified linear activation element by element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn relu(&self) -> Result<Self, TensorError> {
+        let elements = self.elements;
+        let mut data = try_result_vector(elements, elements)?;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = if elements == 0 {
+            contiguous_strides(&shape, elements)?
+        } else {
+            try_clone_result_shape(&self.strides, elements)?
+        };
+        data.extend(self.as_slice().iter().map(|value| value.max(0.0)));
+        Ok(Self::from_owned_parts(data, shape, strides))
     }
 
     #[must_use]
@@ -800,6 +805,25 @@ fn aligned_broadcast_stride(
     }
 }
 
+fn aligned_broadcast_stride_bytes(
+    tensor: &Tensor,
+    output_rank: usize,
+    output_axis: usize,
+    output_dimension: usize,
+) -> i64 {
+    // TensorIterator compares byte strides stored in signed 64-bit integers.
+    // Preserve its wrapping conversion at this boundary: an extreme but valid
+    // empty view can therefore change the recovered output permutation without
+    // accessing any storage.
+    let stride =
+        aligned_broadcast_stride(tensor, output_rank, output_axis, output_dimension).cast_signed();
+    let element_size =
+        i64::try_from(size_of::<f32>()).expect("an f32 element size must fit in i64");
+    i64::try_from(stride)
+        .expect("an isize stride must fit in a signed 64-bit TensorIterator stride")
+        .wrapping_mul(element_size)
+}
+
 fn try_result_vector<T>(capacity: usize, elements: usize) -> Result<Vec<T>, TensorError> {
     let mut values = Vec::new();
     values
@@ -894,16 +918,6 @@ fn elementwise_output_strides(
     Ok(strides)
 }
 
-fn reset_empty_contiguous_strides(strides: &mut [usize], shape: &[usize]) {
-    let mut stride = 1_usize;
-    for axis in (0..shape.len()).rev() {
-        strides[axis] = stride;
-        if axis > 0 {
-            stride = stride.wrapping_mul(shape[axis].max(1));
-        }
-    }
-}
-
 fn compare_elementwise_dimensions(
     shape: &[usize],
     operands: &[&Tensor],
@@ -912,9 +926,9 @@ fn compare_elementwise_dimensions(
 ) -> i8 {
     for tensor in operands {
         let stride_0 =
-            aligned_broadcast_stride(tensor, shape.len(), dimension_0, shape[dimension_0]);
+            aligned_broadcast_stride_bytes(tensor, shape.len(), dimension_0, shape[dimension_0]);
         let stride_1 =
-            aligned_broadcast_stride(tensor, shape.len(), dimension_1, shape[dimension_1]);
+            aligned_broadcast_stride_bytes(tensor, shape.len(), dimension_1, shape[dimension_1]);
         if stride_0 == 0 || stride_1 == 0 {
             continue;
         }
