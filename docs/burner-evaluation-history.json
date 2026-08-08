@@ -81,6 +81,38 @@
         "eval_b4945d15": 92,
         "eval_c8a1bfb9": 40
       }
+    },
+    {
+      "key": "base:7e655bbba717ec2f90d00fe0e7e0f99e1adf702e",
+      "commit": "7e655bbba717ec2f90d00fe0e7e0f99e1adf702e",
+      "recordedAt": "2026-08-08T16:16:18.448Z",
+      "label": "base 7e655bb",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 21.5,
+        "eval_63a24994": 76,
+        "eval_39340456": 9,
+        "eval_b4945d15": 92,
+        "eval_c8a1bfb9": 40
+      }
+    },
+    {
+      "key": "pr:3",
+      "recordedAt": "2026-08-08T16:16:18.448Z",
+      "label": "PR #3",
+      "kind": "leaf",
+      "prNumber": 3,
+      "title": "Add PyTorch-compatible broadcasting and scalar arithmetic",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 23.8,
+        "eval_63a24994": 76.4,
+        "eval_39340456": 12,
+        "eval_b4945d15": 95,
+        "eval_c8a1bfb9": 45
+      }
     }
   ]
 }
