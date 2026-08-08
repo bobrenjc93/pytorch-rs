@@ -76,6 +76,16 @@ pub enum TensorError {
     ItemRequiresOneElement {
         elements: usize,
     },
+    InvalidScalarIndex,
+    TooManyIndices {
+        dimensions: usize,
+    },
+    IndexOutOfBounds {
+        index: i64,
+        dimension: usize,
+        size: usize,
+    },
+    IndexCalculationOverflow,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -131,6 +141,27 @@ impl Display for TensorError {
             ),
             Self::ItemRequiresOneElement { elements } => {
                 write!(formatter, "item requires one element, got {elements}")
+            }
+            Self::InvalidScalarIndex => write!(
+                formatter,
+                "invalid index of a 0-dim tensor. Use `tensor.item()` in Python or `tensor.item<T>()` in C++ to convert a 0-dim tensor to a number"
+            ),
+            Self::TooManyIndices { dimensions } => {
+                write!(
+                    formatter,
+                    "too many indices for tensor of dimension {dimensions}"
+                )
+            }
+            Self::IndexOutOfBounds {
+                index,
+                dimension,
+                size,
+            } => write!(
+                formatter,
+                "index {index} is out of bounds for dimension {dimension} with size {size}"
+            ),
+            Self::IndexCalculationOverflow => {
+                write!(formatter, "tensor index calculation overflowed usize")
             }
             Self::ReshapeMultipleInferredDimensions => {
                 write!(formatter, "only one dimension can be inferred")
@@ -382,6 +413,12 @@ impl Tensor {
         self.offset
     }
 
+    /// Reports whether two tensors refer to the same underlying allocation.
+    #[must_use]
+    pub fn shares_storage_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.storage, &other.storage)
+    }
+
     /// Returns the scalar type physically represented by this tensor's storage.
     #[must_use]
     pub fn dtype(&self) -> DType {
@@ -405,6 +442,9 @@ impl Tensor {
     /// Panics only if the tensor's private, validated layout invariant has
     /// been violated.
     pub fn as_slice(&self) -> &[f32] {
+        if self.elements == 0 {
+            return &self.storage.data[0..0];
+        }
         let end = self
             .offset
             .checked_add(self.elements)
@@ -420,6 +460,9 @@ impl Tensor {
             elements,
             ..
         } = self;
+        if elements == 0 {
+            return Vec::new();
+        }
         match Arc::try_unwrap(storage) {
             Ok(storage) => {
                 if offset == 0 && elements == storage.data.len() {
@@ -430,6 +473,96 @@ impl Tensor {
             }
             Err(storage) => storage.data[offset..offset + elements].to_vec(),
         }
+    }
+
+    /// Selects the leading dimension with one integer, returning a shared-storage view.
+    ///
+    /// Negative indices wrap from the end of the dimension. This entry point
+    /// preserves the distinct `PyTorch` diagnostic for indexing a scalar with
+    /// the integer zero; [`Self::index`] models tuple indexing instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when this tensor is scalar, the index is out of
+    /// bounds, offset arithmetic overflows, or view metadata allocation fails.
+    pub fn index_integer(&self, index: i64) -> Result<Self, TensorError> {
+        if self.shape.is_empty() {
+            return if index == 0 {
+                Err(TensorError::InvalidScalarIndex)
+            } else {
+                Err(TensorError::IndexOutOfBounds {
+                    index,
+                    dimension: 0,
+                    size: 0,
+                })
+            };
+        }
+        self.index_dimensions(&[index])
+    }
+
+    /// Selects consecutive leading dimensions with integer indices.
+    ///
+    /// The returned tensor is a metadata-only view that retains the remaining
+    /// shape and strides and shares storage, dtype, and device with `self`.
+    /// Passing no indices returns an alias with identical metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for too many indices, an out-of-bounds index, checked
+    /// arithmetic overflow, or view metadata allocation failure.
+    pub fn index(&self, indices: impl AsRef<[i64]>) -> Result<Self, TensorError> {
+        self.index_dimensions(indices.as_ref())
+    }
+
+    fn index_dimensions(&self, indices: &[i64]) -> Result<Self, TensorError> {
+        if indices.len() > self.shape.len() {
+            return Err(TensorError::TooManyIndices {
+                dimensions: self.shape.len(),
+            });
+        }
+
+        let mut offset = self.offset;
+        for (dimension, index) in indices.iter().copied().enumerate() {
+            let size = self.shape[dimension];
+            let signed_size =
+                i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            if index < -signed_size || index >= signed_size {
+                return Err(TensorError::IndexOutOfBounds {
+                    index,
+                    dimension,
+                    size,
+                });
+            }
+            let normalized = if index < 0 {
+                signed_size
+                    .checked_add(index)
+                    .ok_or(TensorError::IndexCalculationOverflow)?
+            } else {
+                index
+            };
+            let normalized =
+                usize::try_from(normalized).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let contribution = normalized
+                .checked_mul(self.strides[dimension])
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            offset = offset
+                .checked_add(contribution)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+        }
+
+        let shape = try_clone_result_shape(&self.shape[indices.len()..], self.elements)?;
+        let strides = try_clone_result_shape(&self.strides[indices.len()..], self.elements)?;
+        let elements = element_count(&shape)?;
+        offset
+            .checked_add(elements)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        Ok(Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset,
+            elements,
+        })
     }
 
     /// Returns a contiguous metadata-only view with a new shape.

@@ -157,6 +157,31 @@ impl PyTensor {
         self.inner.stride()[axis].into_py_any(py)
     }
 
+    fn storage_offset(&self) -> usize {
+        self.inner.storage_offset()
+    }
+
+    fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let inner = if let Ok(indices) = index.cast::<PyTuple>() {
+            if indices.len() > self.inner.shape().len() {
+                return Err(PyIndexError::new_err(
+                    TensorError::TooManyIndices {
+                        dimensions: self.inner.shape().len(),
+                    }
+                    .to_string(),
+                ));
+            }
+            let indices = parse_integer_indices(indices.len(), indices.iter())?;
+            self.inner.index(indices)
+        } else {
+            let index = parse_integer_index(index)?;
+            self.inner.index_integer(index)
+        };
+        inner
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     #[pyo3(signature = (*shape_dimensions, shape=None))]
     fn reshape(
         &self,
@@ -630,6 +655,50 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     )))
 }
 
+fn parse_integer_indices<'py>(
+    length: usize,
+    indices: impl Iterator<Item = Bound<'py, PyAny>>,
+) -> PyResult<Vec<i64>> {
+    let mut parsed = try_size_vector(length)?;
+    for index in indices {
+        try_push_size(&mut parsed, parse_integer_index(&index)?)?;
+    }
+    Ok(parsed)
+}
+
+fn parse_integer_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
+    if index.is_instance_of::<PyBool>() {
+        return Err(invalid_index(index));
+    }
+    if index.is_instance_of::<PyInt>() {
+        return index
+            .extract::<i64>()
+            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+    }
+
+    let indexed = PyModule::import(index.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|operator_index| operator_index.call1((index,)));
+    match indexed {
+        Ok(indexed) => indexed
+            .extract::<i64>()
+            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long")),
+        Err(_) => Err(invalid_index(index)),
+    }
+}
+
+fn invalid_index(index: &Bound<'_, PyAny>) -> PyErr {
+    let type_name = index
+        .get_type()
+        .name()
+        .ok()
+        .and_then(|name| name.to_str().ok().map(str::to_owned))
+        .unwrap_or_else(|| "unknown".to_owned());
+    PyIndexError::new_err(format!(
+        "only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got {type_name})"
+    ))
+}
+
 fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
     let rank = i64::try_from(rank)
         .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
@@ -1098,6 +1167,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
+        | TensorError::IndexCalculationOverflow
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }
         | TensorError::ReshapeAmbiguousZeroElements { .. }
@@ -1106,6 +1176,9 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
+        TensorError::InvalidScalarIndex
+        | TensorError::TooManyIndices { .. }
+        | TensorError::IndexOutOfBounds { .. } => PyIndexError::new_err(error.to_string()),
     }
 }
 

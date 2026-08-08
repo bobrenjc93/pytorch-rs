@@ -732,6 +732,145 @@ fn reshape_is_a_contiguous_shared_storage_view() {
 }
 
 #[test]
+fn integer_indexing_returns_shared_storage_views_with_pytorch_layouts() {
+    let tensor = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+
+    let row = tensor.index_integer(-1).unwrap();
+    assert_eq!(row.shape(), [3, 4]);
+    assert_eq!(row.stride(), [4, 1]);
+    assert_eq!(row.storage_offset(), 12);
+    assert!(row.shares_storage_with(&tensor));
+    assert_eq!(
+        row.as_slice(),
+        (12_u8..24).map(f32::from).collect::<Vec<_>>()
+    );
+    assert_eq!(row.dtype(), tensor.dtype());
+    assert_eq!(row.device(), tensor.device());
+    assert!(std::ptr::eq(
+        row.as_slice().as_ptr(),
+        tensor.as_slice()[12..].as_ptr()
+    ));
+
+    let partial = tensor.index([-1, 1]).unwrap();
+    assert_eq!(partial.shape(), [4]);
+    assert_eq!(partial.stride(), [1]);
+    assert_eq!(partial.storage_offset(), 16);
+    assert_eq!(partial.as_slice(), [16.0, 17.0, 18.0, 19.0]);
+
+    let scalar = tensor.index([1, -1, -2]).unwrap();
+    assert!(scalar.shape().is_empty());
+    assert!(scalar.stride().is_empty());
+    assert_eq!(scalar.storage_offset(), 22);
+    assert_eq!(scalar.item().unwrap().to_bits(), 22.0_f32.to_bits());
+
+    let alias = tensor.index([]).unwrap();
+    assert_eq!(alias.shape(), tensor.shape());
+    assert_eq!(alias.stride(), tensor.stride());
+    assert_eq!(alias.storage_offset(), tensor.storage_offset());
+    assert!(alias.shares_storage_with(&tensor));
+    assert!(std::ptr::eq(
+        alias.as_slice().as_ptr(),
+        tensor.as_slice().as_ptr()
+    ));
+}
+
+#[test]
+fn integer_indexing_reports_pytorch_compatible_errors() {
+    let tensor = Tensor::zeros([2, 3, 4]).unwrap();
+    for (indices, expected) in [
+        (
+            vec![2],
+            TensorError::IndexOutOfBounds {
+                index: 2,
+                dimension: 0,
+                size: 2,
+            },
+        ),
+        (
+            vec![-4, 0],
+            TensorError::IndexOutOfBounds {
+                index: -4,
+                dimension: 0,
+                size: 2,
+            },
+        ),
+        (
+            vec![0, 3],
+            TensorError::IndexOutOfBounds {
+                index: 3,
+                dimension: 1,
+                size: 3,
+            },
+        ),
+    ] {
+        assert_eq!(tensor.index(indices), Err(expected));
+    }
+    assert_eq!(
+        tensor.index([0, 0, 0, 0]),
+        Err(TensorError::TooManyIndices { dimensions: 3 })
+    );
+
+    let scalar = Tensor::from_vec(vec![5.0], []).unwrap();
+    assert_eq!(
+        scalar.index_integer(0),
+        Err(TensorError::InvalidScalarIndex)
+    );
+    assert_eq!(
+        scalar.index_integer(-1),
+        Err(TensorError::IndexOutOfBounds {
+            index: -1,
+            dimension: 0,
+            size: 0,
+        })
+    );
+    assert_eq!(
+        scalar.index([0]),
+        Err(TensorError::TooManyIndices { dimensions: 0 })
+    );
+}
+
+#[test]
+fn integer_indexing_empty_dimensions_preserves_offsets_without_storage_access() {
+    let empty = Tensor::zeros([2, 0, 3]).unwrap();
+    let view = empty.index_integer(1).unwrap();
+
+    assert_eq!(view.shape(), [0, 3]);
+    assert_eq!(view.stride(), [3, 1]);
+    assert_eq!(view.storage_offset(), 3);
+    assert!(view.shares_storage_with(&empty));
+    assert_eq!(view.dtype(), empty.dtype());
+    assert_eq!(view.device(), empty.device());
+    assert!(view.as_slice().is_empty());
+    assert!(view.clone().into_vec().is_empty());
+    assert_eq!(
+        empty.index([1, 0]),
+        Err(TensorError::IndexOutOfBounds {
+            index: 0,
+            dimension: 1,
+            size: 0,
+        })
+    );
+}
+
+#[test]
+fn integer_indexing_uses_checked_offset_arithmetic() {
+    let maximum = usize::try_from(i64::MAX).unwrap();
+    let empty = Tensor::zeros([maximum, 0]).unwrap();
+    let once = empty.index_integer(i64::MAX - 1).unwrap();
+    let twice = once
+        .reshape([i64::MAX, 0])
+        .unwrap()
+        .index_integer(i64::MAX - 1)
+        .unwrap();
+    let error = twice
+        .reshape([i64::MAX, 0])
+        .unwrap()
+        .index_integer(i64::MAX - 1);
+
+    assert_eq!(error, Err(TensorError::IndexCalculationOverflow));
+}
+
+#[test]
 fn reshape_infers_one_dimension_and_handles_scalars_and_empty_tensors() {
     let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [6]).unwrap();
     assert_eq!(tensor.reshape([2, -1]).unwrap().shape(), [2, 3]);
