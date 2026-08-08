@@ -1018,7 +1018,7 @@ impl ParsedFillValue {
                 if !explicit_dtype {
                     return Err(invalid_inferred_numpy_uint64());
                 }
-                i64::try_from(value).map_err(|_| integer_conversion_overflow())
+                i64::try_from(value).map_err(|_| tensor_integer_conversion_overflow())
             }
             Self::WideInteger(_) => Err(tensor_integer_conversion_overflow()),
             Self::Boolean(value) => Ok(i64::from(value)),

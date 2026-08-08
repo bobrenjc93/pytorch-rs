@@ -124,7 +124,7 @@ class Int64ApiTests(unittest.TestCase):
 
         for value in (np.uint64(2**63), np.uint64(2**64 - 1)):
             with self.subTest(value=value, dtype="overflowing int64"):
-                with self.assertRaises(RuntimeError):
+                with self.assertRaises(ValueError):
                     torch.tensor([value], dtype=torch.int64)
 
     def test_explicit_float32_tensor_uses_integer_subclass_float_protocol(self):
