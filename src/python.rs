@@ -94,7 +94,7 @@ enum ParsedFillValue {
     NumpyFloat(f64),
     SignedInteger(i64),
     UnsignedInteger(u64),
-    WideNumpyUnsigned(u64),
+    NumpyUint64(u64),
     WideInteger(f64),
     Boolean(bool),
     NumpyBoolean(bool),
@@ -394,12 +394,12 @@ fn tensor(
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
-    let dtype = parse_optional_dtype("tensor", dtype)?;
-    let explicit_dtype = dtype.is_some();
+    let requested_dtype = parse_optional_dtype("tensor", dtype)?;
+    let explicit_dtype = requested_dtype.is_some();
     let device = parse_device("tensor", device)?;
     let mut flattened = Vec::new();
-    let shape = flatten_rectangular(data, &mut flattened)?;
-    let dtype = match dtype {
+    let shape = flatten_rectangular(data, &mut flattened, requested_dtype)?;
+    let dtype = match requested_dtype {
         Some(dtype) => dtype,
         None => infer_tensor_dtype(&flattened)?,
     };
@@ -969,7 +969,7 @@ impl ParsedFillValue {
                 let converted = value as f32;
                 Ok(converted)
             }
-            Self::UnsignedInteger(value) | Self::WideNumpyUnsigned(value) => {
+            Self::UnsignedInteger(value) | Self::NumpyUint64(value) => {
                 #[allow(clippy::cast_precision_loss)]
                 let converted = value as f32;
                 Ok(converted)
@@ -986,7 +986,7 @@ impl ParsedFillValue {
             Self::UnsignedInteger(value) => {
                 i64::try_from(value).map_err(|_| integer_conversion_overflow())
             }
-            Self::WideNumpyUnsigned(_) | Self::WideInteger(_) => Err(integer_conversion_overflow()),
+            Self::NumpyUint64(_) | Self::WideInteger(_) => Err(integer_conversion_overflow()),
             Self::Boolean(value) | Self::NumpyBoolean(value) => Ok(i64::from(value)),
             Self::TensorScalar(Scalar::Float32(value)) => checked_float_to_i64(f64::from(value)),
         }
@@ -997,7 +997,7 @@ impl ParsedFillValue {
         let value = match self {
             Self::Float(value) | Self::NumpyFloat(value) | Self::WideInteger(value) => value as f32,
             Self::SignedInteger(value) => value as f32,
-            Self::UnsignedInteger(value) | Self::WideNumpyUnsigned(value) => value as f32,
+            Self::UnsignedInteger(value) | Self::NumpyUint64(value) => value as f32,
             Self::Boolean(value) | Self::NumpyBoolean(value) => f32::from(u8::from(value)),
             Self::TensorScalar(value) => value.as_f32(),
         };
@@ -1012,16 +1012,15 @@ impl ParsedFillValue {
             }
             Self::SignedInteger(value) | Self::TensorScalar(Scalar::Int64(value)) => Ok(value),
             Self::UnsignedInteger(value) => {
+                i64::try_from(value).map_err(|_| tensor_integer_conversion_overflow())
+            }
+            Self::NumpyUint64(value) => {
+                if !explicit_dtype {
+                    return Err(invalid_inferred_numpy_uint64());
+                }
                 i64::try_from(value).map_err(|_| integer_conversion_overflow())
             }
-            Self::WideNumpyUnsigned(_) => {
-                if explicit_dtype {
-                    Err(integer_conversion_overflow())
-                } else {
-                    Err(invalid_inferred_numpy_uint64())
-                }
-            }
-            Self::WideInteger(_) => Err(integer_conversion_overflow()),
+            Self::WideInteger(_) => Err(tensor_integer_conversion_overflow()),
             Self::Boolean(value) => Ok(i64::from(value)),
             Self::TensorScalar(Scalar::Float32(value)) => checked_float_to_i64(f64::from(value)),
         }
@@ -1035,17 +1034,15 @@ impl ParsedFillValue {
                 Ok(Scalar::Float32(converted))
             }
             Self::SignedInteger(value) => Ok(Scalar::Int64(value)),
-            Self::UnsignedInteger(value) | Self::WideNumpyUnsigned(value) => {
-                match i64::try_from(value) {
-                    Ok(value) => Ok(Scalar::Int64(value)),
-                    Err(_) if matches!(tensor_dtype, DType::Float32) => {
-                        #[allow(clippy::cast_precision_loss)]
-                        let converted = value as f32;
-                        Ok(Scalar::Float32(converted))
-                    }
-                    Err(_) => Err(integer_conversion_overflow()),
+            Self::UnsignedInteger(value) | Self::NumpyUint64(value) => match i64::try_from(value) {
+                Ok(value) => Ok(Scalar::Int64(value)),
+                Err(_) if matches!(tensor_dtype, DType::Float32) => {
+                    #[allow(clippy::cast_precision_loss)]
+                    let converted = value as f32;
+                    Ok(Scalar::Float32(converted))
                 }
-            }
+                Err(_) => Err(integer_conversion_overflow()),
+            },
             Self::WideInteger(_) => Err(integer_conversion_overflow()),
             Self::Boolean(value) => Ok(Scalar::Int64(i64::from(value))),
             Self::NumpyBoolean(value) => Ok(Scalar::Float32(f32::from(u8::from(value)))),
@@ -1086,12 +1083,16 @@ fn integer_conversion_overflow() -> PyErr {
     PyRuntimeError::new_err("value cannot be converted to int64 without overflow")
 }
 
+fn tensor_integer_conversion_overflow() -> PyErr {
+    PyValueError::new_err("integer value is outside the int64 range")
+}
+
 fn invalid_numpy_tensor_int64_conversion() -> PyErr {
     PyTypeError::new_err("NumPy floating and boolean scalars cannot be converted to int64")
 }
 
 fn invalid_inferred_numpy_uint64() -> PyErr {
-    PyTypeError::new_err("wide NumPy uint64 values require an explicit supported dtype")
+    PyTypeError::new_err("NumPy uint64 tensor values require an explicit supported dtype")
 }
 
 fn checked_float_to_i64(value: f64) -> PyResult<i64> {
@@ -1113,8 +1114,9 @@ fn fill_value_overflow() -> PyErr {
 fn flatten_rectangular(
     value: &Bound<'_, PyAny>,
     output: &mut Vec<ParsedFillValue>,
+    requested_dtype: Option<DType>,
 ) -> PyResult<Vec<usize>> {
-    if let Some(scalar) = parse_tensor_scalar(value)? {
+    if let Some(scalar) = parse_tensor_scalar(value, requested_dtype)? {
         try_push_size(output, scalar)?;
         return Ok(Vec::new());
     }
@@ -1134,9 +1136,9 @@ fn flatten_rectangular(
         return Ok(vec![0]);
     }
 
-    let first_shape = flatten_rectangular(&sequence.get_item(0)?, output)?;
+    let first_shape = flatten_rectangular(&sequence.get_item(0)?, output, requested_dtype)?;
     for index in 1..length {
-        let shape = flatten_rectangular(&sequence.get_item(index)?, output)?;
+        let shape = flatten_rectangular(&sequence.get_item(index)?, output, requested_dtype)?;
         if shape != first_shape {
             return Err(PyValueError::new_err(
                 "expected a rectangular sequence, but nested shapes differ",
@@ -1154,11 +1156,14 @@ fn flatten_rectangular(
     Ok(shape)
 }
 
-fn parse_tensor_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedFillValue>> {
+fn parse_tensor_scalar(
+    value: &Bound<'_, PyAny>,
+    requested_dtype: Option<DType>,
+) -> PyResult<Option<ParsedFillValue>> {
     if value.is_instance_of::<PyBool>() {
         return value.is_truthy().map(ParsedFillValue::Boolean).map(Some);
     }
-    if value.is_instance_of::<PyInt>() {
+    if value.is_exact_instance_of::<PyInt>() {
         return parse_integer_value(value).map(Some);
     }
     if value.is_instance_of::<PyFloat>() {
@@ -1166,13 +1171,26 @@ fn parse_tensor_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedFillVa
     }
 
     let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
-        return Ok(None);
+        return parse_tensor_integer_subclass(value, requested_dtype);
     };
     let generic = numpy.getattr("generic")?;
     if value.is_instance(&generic)? {
         return parse_numpy_tensor_value(value, &numpy).map(Some);
     }
-    Ok(None)
+    parse_tensor_integer_subclass(value, requested_dtype)
+}
+
+fn parse_tensor_integer_subclass(
+    value: &Bound<'_, PyAny>,
+    requested_dtype: Option<DType>,
+) -> PyResult<Option<ParsedFillValue>> {
+    if !value.is_instance_of::<PyInt>() {
+        return Ok(None);
+    }
+    if matches!(requested_dtype, Some(DType::Float32)) {
+        return value.extract::<f64>().map(ParsedFillValue::Float).map(Some);
+    }
+    parse_integer_value(value).map(Some)
 }
 
 fn parse_numpy_tensor_value(
@@ -1182,13 +1200,13 @@ fn parse_numpy_tensor_value(
     if value.is_instance(&numpy.getattr("bool_")?)? {
         return value.is_truthy().map(ParsedFillValue::NumpyBoolean);
     }
+    if value.is_instance(&numpy.getattr("uint64")?)? {
+        return value.extract::<u64>().map(ParsedFillValue::NumpyUint64);
+    }
     if value.is_instance(&numpy.getattr("integer")?)? {
-        if let Ok(value) = value.extract::<i64>() {
-            return Ok(ParsedFillValue::SignedInteger(value));
-        }
         return value
-            .extract::<u64>()
-            .map(ParsedFillValue::WideNumpyUnsigned)
+            .extract::<i64>()
+            .map(ParsedFillValue::SignedInteger)
             .map_err(|_| {
                 PyTypeError::new_err(
                     "NumPy integer tensor value is outside the supported 64-bit range",
@@ -1235,7 +1253,7 @@ fn infer_full_dtype(value: ParsedFillValue) -> PyResult<DType> {
         | ParsedFillValue::TensorScalar(Scalar::Float32(_)) => Ok(DType::Float32),
         ParsedFillValue::SignedInteger(_)
         | ParsedFillValue::UnsignedInteger(_)
-        | ParsedFillValue::WideNumpyUnsigned(_)
+        | ParsedFillValue::NumpyUint64(_)
         | ParsedFillValue::WideInteger(_)
         | ParsedFillValue::TensorScalar(Scalar::Int64(_)) => Ok(DType::Int64),
         ParsedFillValue::Boolean(_) => Err(unsupported_bool_storage()),

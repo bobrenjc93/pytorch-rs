@@ -59,7 +59,7 @@ class Int64ApiTests(unittest.TestCase):
             for dtype in (None, torch.int64):
                 with self.subTest(integer_overflow=value, dtype=dtype):
                     kwargs = {} if dtype is None else {"dtype": dtype}
-                    with self.assertRaises(RuntimeError):
+                    with self.assertRaises(ValueError):
                         torch.tensor([value], **kwargs)
 
         for value in (
@@ -110,14 +110,38 @@ class Int64ApiTests(unittest.TestCase):
         self.assertIs(floating.dtype, torch.float32)
         self.assertEqual(floating.tolist(), [1.5])
 
-    def test_wide_numpy_uint64_has_context_specific_tensor_errors(self):
-        for value in (np.uint64(2**63), np.uint64(2**64 - 1)):
-            with self.subTest(value=value, dtype="inferred"):
-                with self.assertRaises(TypeError):
-                    torch.tensor([value])
+    def test_numpy_uint64_has_context_specific_tensor_errors(self):
+        for value in (np.uint64(1), np.uint64(2**63), np.uint64(2**64 - 1)):
+            for data in (value, [value]):
+                with self.subTest(value=value, shape="scalar" if data is value else "list"):
+                    with self.assertRaises(TypeError):
+                        torch.tensor(data)
+
+        for value in (np.uint64(1), np.uint64(2**63 - 1)):
             with self.subTest(value=value, dtype="explicit int64"):
+                converted = torch.tensor([value], dtype=torch.int64)
+                self.assertEqual(converted.tolist(), [int(value)])
+
+        for value in (np.uint64(2**63), np.uint64(2**64 - 1)):
+            with self.subTest(value=value, dtype="overflowing int64"):
                 with self.assertRaises(RuntimeError):
                     torch.tensor([value], dtype=torch.int64)
+
+    def test_explicit_float32_tensor_uses_integer_subclass_float_protocol(self):
+        class IntegerWithFloat(int):
+            def __new__(cls, value):
+                instance = super().__new__(cls, value)
+                instance.float_calls = 0
+                return instance
+
+            def __float__(self):
+                self.float_calls += 1
+                return 99.0
+
+        value = IntegerWithFloat(3)
+        converted = torch.tensor([value], dtype=torch.float32)
+        self.assertEqual(converted.tolist(), [99.0])
+        self.assertEqual(value.float_calls, 1)
 
     def test_creation_functions_materialize_int64_storage(self):
         cases = (
