@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::mem::size_of;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// Native scalar types implemented by tensor storage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -41,18 +41,116 @@ struct Storage {
     device: Device,
 }
 
-/// A contiguous, row-major tensor with native storage metadata.
+/// A row-major tensor view over immutable, reference-counted native storage.
 ///
-/// This deliberately narrow representation is the campaign's baseline, not a
-/// claim of `PyTorch` feature parity. Later iterations may generalize storage as
-/// long as these observable semantics remain compatible.
-#[derive(Clone)]
+/// Strides are measured in elements and may describe a positive-stride,
+/// non-contiguous layout. Every non-empty layout is validated to remain inside
+/// its storage span. Empty layouts may carry a virtual offset, matching
+/// `PyTorch`'s metadata behavior without accessing storage.
 pub struct Tensor {
     storage: Arc<Storage>,
     shape: Vec<usize>,
     strides: Vec<usize>,
     offset: usize,
     elements: usize,
+    logical_cache: OnceLock<Vec<f32>>,
+}
+
+impl Clone for Tensor {
+    fn clone(&self) -> Self {
+        Self {
+            storage: Arc::clone(&self.storage),
+            shape: self.shape.clone(),
+            strides: self.strides.clone(),
+            offset: self.offset,
+            elements: self.elements,
+            logical_cache: OnceLock::new(),
+        }
+    }
+}
+
+/// One dimension of a basic tensor index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TensorIndex {
+    /// Removes a dimension by selecting one element. Negative values wrap.
+    Integer(i64),
+    /// Retains a dimension while selecting a positive-step range.
+    Slice(Slice),
+}
+
+/// Bounds and step for one basic slice dimension.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Slice {
+    pub start: Option<i64>,
+    pub stop: Option<i64>,
+    pub step: Option<i64>,
+}
+
+impl Slice {
+    /// Creates a slice with optional bounds and step.
+    #[must_use]
+    pub const fn new(
+        bound_start: Option<i64>,
+        bound_end: Option<i64>,
+        step_size: Option<i64>,
+    ) -> Self {
+        Self {
+            start: bound_start,
+            stop: bound_end,
+            step: step_size,
+        }
+    }
+
+    /// Creates the full-dimension slice `..`.
+    #[must_use]
+    pub const fn full() -> Self {
+        Self::new(None, None, None)
+    }
+
+    fn normalize(self, size: usize) -> Result<NormalizedSlice, TensorError> {
+        let size = i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        let step_size = self.step.unwrap_or(1);
+        if step_size <= 0 {
+            return Err(TensorError::SliceStepMustBePositive { step: step_size });
+        }
+
+        let first_index = normalize_slice_bound(self.start.unwrap_or(0), size);
+        let end_index = normalize_slice_bound(self.stop.unwrap_or(size), size);
+        let length = if end_index <= first_index {
+            0
+        } else {
+            let distance = end_index
+                .checked_sub(first_index)
+                .and_then(|value| value.checked_sub(1))
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            distance
+                .checked_div(step_size)
+                .and_then(|value| value.checked_add(1))
+                .ok_or(TensorError::IndexCalculationOverflow)?
+        };
+
+        Ok(NormalizedSlice {
+            start: usize::try_from(first_index)
+                .map_err(|_| TensorError::IndexCalculationOverflow)?,
+            length: usize::try_from(length).map_err(|_| TensorError::IndexCalculationOverflow)?,
+            step: usize::try_from(step_size).map_err(|_| TensorError::IndexCalculationOverflow)?,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct NormalizedSlice {
+    start: usize,
+    length: usize,
+    step: usize,
+}
+
+fn normalize_slice_bound(bound: i64, size: i64) -> i64 {
+    if bound < 0 {
+        bound.saturating_add(size).max(0)
+    } else {
+        bound.min(size)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,6 +187,14 @@ pub enum TensorError {
         offset: i64,
     },
     IndexCalculationOverflow,
+    SliceStepMustBePositive {
+        step: i64,
+    },
+    LayoutOutOfStorage {
+        offset: usize,
+        span: usize,
+        storage_elements: usize,
+    },
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -113,6 +219,7 @@ pub enum TensorError {
 }
 
 impl Display for TensorError {
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ShapeDataMismatch { shape, elements } => write!(
@@ -169,6 +276,20 @@ impl Display for TensorError {
             Self::IndexCalculationOverflow => {
                 write!(formatter, "tensor index calculation overflowed usize")
             }
+            Self::SliceStepMustBePositive { step } => {
+                write!(
+                    formatter,
+                    "slice step must be greater than zero, got {step}"
+                )
+            }
+            Self::LayoutOutOfStorage {
+                offset,
+                span,
+                storage_elements,
+            } => write!(
+                formatter,
+                "tensor layout at offset {offset} with span {span} exceeds storage of {storage_elements} elements"
+            ),
             Self::ReshapeMultipleInferredDimensions => {
                 write!(formatter, "only one dimension can be inferred")
             }
@@ -389,6 +510,7 @@ impl Tensor {
         device: Device,
     ) -> Self {
         let elements = data.len();
+        debug_assert_eq!(validate_layout(&shape, &strides, 0, elements), Ok(elements));
         Self {
             storage: Arc::new(Storage {
                 data,
@@ -399,7 +521,25 @@ impl Tensor {
             strides,
             offset: 0,
             elements,
+            logical_cache: OnceLock::new(),
         }
+    }
+
+    fn shared_view(
+        &self,
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+        offset: usize,
+    ) -> Result<Self, TensorError> {
+        let elements = validate_layout(&shape, &strides, offset, self.storage.data.len())?;
+        Ok(Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset,
+            elements,
+            logical_cache: OnceLock::new(),
+        })
     }
 
     #[must_use]
@@ -442,43 +582,88 @@ impl Tensor {
         self.elements
     }
 
+    /// Reports whether logical row-major iteration visits one dense storage span.
     #[must_use]
+    pub fn is_contiguous(&self) -> bool {
+        if self.elements == 0 {
+            return true;
+        }
+
+        let mut expected = 1_usize;
+        for (&dimension, &stride) in self.shape.iter().zip(&self.strides).rev() {
+            if dimension == 1 {
+                continue;
+            }
+            if stride != expected {
+                return false;
+            }
+            let Some(next) = expected.checked_mul(dimension) else {
+                return false;
+            };
+            expected = next;
+        }
+        true
+    }
+
+    fn dense_slice(&self) -> Option<&[f32]> {
+        if !self.is_contiguous() {
+            return None;
+        }
+        if self.elements == 0 {
+            return Some(&self.storage.data[0..0]);
+        }
+        let end = self.offset.checked_add(self.elements)?;
+        self.storage.data.get(self.offset..end)
+    }
+
+    /// Returns the tensor's values in logical row-major order.
+    ///
+    /// Dense tensors borrow their storage directly. A non-contiguous view is
+    /// materialized lazily for this borrowed-slice compatibility API; tensor
+    /// operations themselves traverse the shared strided storage directly.
+    ///
     /// # Panics
     ///
-    /// Panics only if the tensor's private, validated layout invariant has
-    /// been violated.
+    /// Panics if materializing a non-contiguous view cannot allocate memory, or
+    /// if the tensor's private, validated layout invariant has been violated.
+    #[must_use]
     pub fn as_slice(&self) -> &[f32] {
-        if self.elements == 0 {
-            return &self.storage.data[0..0];
+        if let Some(data) = self.dense_slice() {
+            return data;
         }
-        let end = self
-            .offset
-            .checked_add(self.elements)
-            .expect("validated tensor view end must fit in usize");
-        &self.storage.data[self.offset..end]
+        self.logical_cache
+            .get_or_init(|| self.values().collect())
+            .as_slice()
     }
 
     #[must_use]
     pub fn into_vec(self) -> Vec<f32> {
-        let Self {
-            storage,
-            offset,
-            elements,
-            ..
-        } = self;
-        if elements == 0 {
+        if self.elements == 0 {
             return Vec::new();
         }
-        match Arc::try_unwrap(storage) {
-            Ok(storage) => {
-                if offset == 0 && elements == storage.data.len() {
-                    storage.data
-                } else {
-                    storage.data[offset..offset + elements].to_vec()
+        if self.is_contiguous() {
+            let Self {
+                storage,
+                offset,
+                elements,
+                ..
+            } = self;
+            return match Arc::try_unwrap(storage) {
+                Ok(storage) => {
+                    if offset == 0 && elements == storage.data.len() {
+                        storage.data
+                    } else {
+                        storage.data[offset..offset + elements].to_vec()
+                    }
                 }
-            }
-            Err(storage) => storage.data[offset..offset + elements].to_vec(),
+                Err(storage) => storage.data[offset..offset + elements].to_vec(),
+            };
         }
+        self.values().collect()
+    }
+
+    fn values(&self) -> TensorValues<'_> {
+        TensorValues::new(self)
     }
 
     /// Selects the leading dimension with one integer, returning a shared-storage view.
@@ -520,6 +705,62 @@ impl Tensor {
         self.index_dimensions(indices.as_ref())
     }
 
+    /// Applies integer and positive-step basic indices to leading dimensions.
+    ///
+    /// Missing trailing dimensions are retained. The result contains only new
+    /// metadata and shares storage, dtype, and device with this tensor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for too many indices, invalid integers, zero or
+    /// negative slice steps, metadata overflow, allocation failure, or a view
+    /// whose non-empty storage span would escape the underlying allocation.
+    pub fn slice(&self, indices: impl AsRef<[TensorIndex]>) -> Result<Self, TensorError> {
+        let indices = indices.as_ref();
+        if indices.len() > self.shape.len() {
+            return Err(TensorError::TooManyIndices {
+                dimensions: self.shape.len(),
+            });
+        }
+
+        let result_rank = self
+            .shape
+            .len()
+            .checked_sub(
+                indices
+                    .iter()
+                    .filter(|index| matches!(index, TensorIndex::Integer(_)))
+                    .count(),
+            )
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let mut shape = try_result_vector(result_rank, self.elements)?;
+        let mut strides = try_result_vector(result_rank, self.elements)?;
+        let mut offset = self.offset;
+
+        for (dimension, index) in indices.iter().copied().enumerate() {
+            match index {
+                TensorIndex::Integer(index) => {
+                    offset = self.checked_index_offset(offset, dimension, index)?;
+                }
+                TensorIndex::Slice(slice) => {
+                    let normalized = slice.normalize(self.shape[dimension])?;
+                    let contribution = normalized
+                        .start
+                        .checked_mul(self.strides[dimension])
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
+                    offset = checked_storage_offset_add(offset, contribution)?;
+                    let stride = checked_stride_product(self.strides[dimension], normalized.step)?;
+                    shape.push(normalized.length);
+                    strides.push(stride);
+                }
+            }
+        }
+
+        shape.extend_from_slice(&self.shape[indices.len()..]);
+        strides.extend_from_slice(&self.strides[indices.len()..]);
+        self.shared_view(shape, strides, offset)
+    }
+
     fn index_dimensions(&self, indices: &[i64]) -> Result<Self, TensorError> {
         if indices.len() > self.shape.len() {
             return Err(TensorError::TooManyIndices {
@@ -534,17 +775,7 @@ impl Tensor {
 
         let shape = try_clone_result_shape(&self.shape[indices.len()..], self.elements)?;
         let strides = try_clone_result_shape(&self.strides[indices.len()..], self.elements)?;
-        let elements = element_count(&shape)?;
-        offset
-            .checked_add(elements)
-            .ok_or(TensorError::IndexCalculationOverflow)?;
-        Ok(Self {
-            storage: Arc::clone(&self.storage),
-            shape,
-            strides,
-            offset,
-            elements,
-        })
+        self.shared_view(shape, strides, offset)
     }
 
     pub(crate) fn checked_index_offset(
@@ -580,22 +811,15 @@ impl Tensor {
         let contribution = normalized
             .checked_mul(self.strides[dimension])
             .ok_or(TensorError::IndexCalculationOverflow)?;
-        let offset = offset
-            .checked_add(contribution)
-            .ok_or(TensorError::IndexCalculationOverflow)?;
-        if i64::try_from(offset).is_err() {
-            let offset = i64::try_from(offset.cast_signed())
-                .expect("an isize storage offset must fit in i64");
-            return Err(TensorError::InvalidStorageOffset { offset });
-        }
-        Ok(offset)
+        checked_storage_offset_add(offset, contribution)
     }
 
-    /// Returns a contiguous metadata-only view with a new shape.
+    /// Returns a tensor with a new shape and the same logical values.
     ///
     /// One dimension may be `-1`, in which case it is inferred from the
-    /// tensor's element count. The returned tensor shares immutable storage
-    /// with `self`.
+    /// tensor's element count. View-compatible layouts share immutable storage;
+    /// other non-contiguous layouts are copied into a contiguous allocation,
+    /// matching `PyTorch` reshape semantics.
     ///
     /// # Errors
     ///
@@ -672,18 +896,28 @@ impl Tensor {
             });
         }
 
-        let strides = if self.elements == 0 && resolved == self.shape {
-            try_clone_result_shape(&self.strides, self.elements)?
-        } else {
-            reshape_strides(&resolved, self.elements)?
-        };
-        Ok(Self {
-            storage: Arc::clone(&self.storage),
-            shape: resolved,
+        if self.elements == 0 {
+            let strides = if resolved == self.shape {
+                try_clone_result_shape(&self.strides, self.elements)?
+            } else {
+                reshape_strides(&resolved, self.elements)?
+            };
+            return self.shared_view(resolved, strides, self.offset);
+        }
+
+        if let Some(strides) = compute_reshape_view_strides(self, &resolved)? {
+            return self.shared_view(resolved, strides, self.offset);
+        }
+
+        let strides = reshape_strides(&resolved, self.elements)?;
+        let data = self.try_logical_vec()?;
+        Ok(Self::from_owned_parts(
+            data,
+            resolved,
             strides,
-            offset: self.offset,
-            elements: self.elements,
-        })
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     /// Adds tensors element by element with trailing-dimension broadcasting.
@@ -802,8 +1036,11 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
+        let value = self
+            .dense_slice()
+            .map_or_else(|| self.values().sum(), |data| data.iter().sum());
         Self::from_owned_parts(
-            vec![self.as_slice().iter().sum()],
+            vec![value],
             Vec::new(),
             Vec::new(),
             self.dtype(),
@@ -822,7 +1059,7 @@ impl Tensor {
                 elements: self.elements,
             });
         }
-        Ok(self.as_slice()[0])
+        Ok(self.storage.data[self.offset])
     }
 
     /// Multiplies two rank-2 matrices.
@@ -852,13 +1089,14 @@ impl Tensor {
         output_shape.push(columns);
         let (output_elements, output_strides) = validated_layout(&output_shape)?;
         let mut output = filled_storage(output_elements, 0.0)?;
-        let left_data = self.as_slice();
-        let right_data = other.as_slice();
         for row in 0..rows {
             for depth in 0..inner {
-                let left = left_data[row * inner + depth];
+                let left_offset = self.offset + row * self.strides[0] + depth * self.strides[1];
+                let left = self.storage.data[left_offset];
                 for column in 0..columns {
-                    output[row * columns + column] += left * right_data[depth * columns + column];
+                    let right_offset =
+                        other.offset + depth * other.strides[0] + column * other.strides[1];
+                    output[row * columns + column] += left * other.storage.data[right_offset];
                 }
             }
         }
@@ -896,11 +1134,11 @@ impl Tensor {
         coordinates.resize(plan.shape.len(), 0_usize);
         let mut left_offset = 0_usize;
         let mut right_offset = 0_usize;
-        let left_data = self.as_slice();
-        let right_data = other.as_slice();
-
         for output_offset in 0..plan.elements {
-            data.push(operation(left_data[left_offset], right_data[right_offset]));
+            data.push(operation(
+                self.storage.data[self.offset + left_offset],
+                other.storage.data[other.offset + right_offset],
+            ));
             if output_offset + 1 == plan.elements {
                 break;
             }
@@ -946,18 +1184,21 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 {
-            contiguous_strides(&shape, elements)?
+        let strides = contiguous_strides(&shape, elements)?;
+        if let (Some(left), Some(right)) = (self.dense_slice(), other.dense_slice()) {
+            data.extend(
+                left.iter()
+                    .copied()
+                    .zip(right.iter().copied())
+                    .map(|(left, right)| operation(left, right)),
+            );
         } else {
-            try_clone_result_shape(&self.strides, elements)?
-        };
-        data.extend(
-            self.as_slice()
-                .iter()
-                .copied()
-                .zip(other.as_slice().iter().copied())
-                .map(|(left, right)| operation(left, right)),
-        );
+            data.extend(
+                self.values()
+                    .zip(other.values())
+                    .map(|(left, right)| operation(left, right)),
+            );
+        }
         Ok(Self::from_owned_parts(
             data,
             shape,
@@ -978,14 +1219,13 @@ impl Tensor {
         let strides = if elements == 0 {
             elementwise_output_strides(&shape, &[self], elements)?
         } else {
-            try_clone_result_shape(&self.strides, elements)?
+            contiguous_strides(&shape, elements)?
         };
-        data.extend(
-            self.as_slice()
-                .iter()
-                .copied()
-                .map(|value| operation(value, scalar)),
-        );
+        if let Some(values) = self.dense_slice() {
+            data.extend(values.iter().copied().map(|value| operation(value, scalar)));
+        } else {
+            data.extend(self.values().map(|value| operation(value, scalar)));
+        }
         Ok(Self::from_owned_parts(
             data,
             shape,
@@ -999,12 +1239,12 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 {
-            contiguous_strides(&shape, elements)?
+        let strides = contiguous_strides(&shape, elements)?;
+        if let Some(values) = self.dense_slice() {
+            data.extend(values.iter().copied().map(operation));
         } else {
-            try_clone_result_shape(&self.strides, elements)?
-        };
-        data.extend(self.as_slice().iter().copied().map(operation));
+            data.extend(self.values().map(operation));
+        }
         Ok(Self::from_owned_parts(
             data,
             shape,
@@ -1012,6 +1252,190 @@ impl Tensor {
             self.dtype(),
             self.device(),
         ))
+    }
+
+    fn try_logical_vec(&self) -> Result<Vec<f32>, TensorError> {
+        let mut data = try_result_vector(self.elements, self.elements)?;
+        if let Some(dense) = self.dense_slice() {
+            data.extend_from_slice(dense);
+        } else {
+            data.extend(self.values());
+        }
+        Ok(data)
+    }
+}
+
+struct TensorValues<'a> {
+    tensor: &'a Tensor,
+    coordinates: Vec<usize>,
+    storage_index: usize,
+    remaining: usize,
+}
+
+impl<'a> TensorValues<'a> {
+    fn new(tensor: &'a Tensor) -> Self {
+        Self {
+            tensor,
+            coordinates: vec![0; tensor.shape.len()],
+            storage_index: tensor.offset,
+            remaining: tensor.elements,
+        }
+    }
+}
+
+impl Iterator for TensorValues<'_> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+
+        let value = self.tensor.storage.data[self.storage_index];
+        self.remaining -= 1;
+        if self.remaining == 0 {
+            return Some(value);
+        }
+
+        for axis in (0..self.tensor.shape.len()).rev() {
+            self.coordinates[axis] += 1;
+            if self.coordinates[axis] < self.tensor.shape[axis] {
+                self.storage_index += self.tensor.strides[axis];
+                break;
+            }
+            self.storage_index -=
+                self.coordinates[axis].saturating_sub(1) * self.tensor.strides[axis];
+            self.coordinates[axis] = 0;
+        }
+        Some(value)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+impl ExactSizeIterator for TensorValues<'_> {}
+
+fn checked_storage_offset_add(offset: usize, contribution: usize) -> Result<usize, TensorError> {
+    let offset = offset
+        .checked_add(contribution)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    if i64::try_from(offset).is_err() {
+        let offset =
+            i64::try_from(offset.cast_signed()).expect("an isize storage offset must fit in i64");
+        return Err(TensorError::InvalidStorageOffset { offset });
+    }
+    Ok(offset)
+}
+
+fn validate_layout(
+    shape: &[usize],
+    strides: &[usize],
+    offset: usize,
+    storage_elements: usize,
+) -> Result<usize, TensorError> {
+    if shape.len() != strides.len() {
+        return Err(TensorError::StrideCalculationOverflow);
+    }
+    let elements = element_count(shape)?;
+    if i64::try_from(offset).is_err() {
+        let offset =
+            i64::try_from(offset.cast_signed()).expect("an isize storage offset must fit in i64");
+        return Err(TensorError::InvalidStorageOffset { offset });
+    }
+    if elements == 0 {
+        return Ok(elements);
+    }
+
+    let max_displacement =
+        shape
+            .iter()
+            .zip(strides)
+            .try_fold(0_usize, |displacement, (&dimension, &stride)| {
+                let axis_displacement = dimension
+                    .saturating_sub(1)
+                    .checked_mul(stride)
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                displacement
+                    .checked_add(axis_displacement)
+                    .ok_or(TensorError::IndexCalculationOverflow)
+            })?;
+    let span = max_displacement
+        .checked_add(1)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    let end = offset
+        .checked_add(span)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    if end > storage_elements {
+        return Err(TensorError::LayoutOutOfStorage {
+            offset,
+            span,
+            storage_elements,
+        });
+    }
+    Ok(elements)
+}
+
+fn compute_reshape_view_strides(
+    tensor: &Tensor,
+    new_shape: &[usize],
+) -> Result<Option<Vec<usize>>, TensorError> {
+    if tensor.is_contiguous() {
+        return contiguous_strides(new_shape, tensor.elements).map(Some);
+    }
+    if tensor.shape.is_empty() {
+        return contiguous_strides(new_shape, tensor.elements).map(Some);
+    }
+
+    let mut new_strides = try_result_vector(new_shape.len(), tensor.elements)?;
+    new_strides.resize(new_shape.len(), 0);
+    let mut view_axis = new_shape.len();
+    let mut chunk_elements = 1_usize;
+    let mut view_elements = 1_usize;
+    let mut chunk_base_stride = *tensor
+        .strides
+        .last()
+        .expect("a non-scalar tensor has a final stride");
+
+    for tensor_axis in (0..tensor.shape.len()).rev() {
+        chunk_elements = chunk_elements
+            .checked_mul(tensor.shape[tensor_axis])
+            .ok_or(TensorError::StrideCalculationOverflow)?;
+        let chunk_boundary = tensor_axis == 0 || {
+            let previous_dimension = tensor.shape[tensor_axis - 1];
+            let expected_previous_stride = chunk_elements
+                .checked_mul(chunk_base_stride)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            previous_dimension != 1 && tensor.strides[tensor_axis - 1] != expected_previous_stride
+        };
+
+        if chunk_boundary {
+            while view_axis > 0 && (view_elements < chunk_elements || new_shape[view_axis - 1] == 1)
+            {
+                view_axis -= 1;
+                new_strides[view_axis] = view_elements
+                    .checked_mul(chunk_base_stride)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                view_elements = view_elements
+                    .checked_mul(new_shape[view_axis])
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+            }
+            if view_elements != chunk_elements {
+                return Ok(None);
+            }
+            if tensor_axis > 0 {
+                chunk_base_stride = tensor.strides[tensor_axis - 1];
+                chunk_elements = 1;
+                view_elements = 1;
+            }
+        }
+    }
+
+    if view_axis == 0 {
+        Ok(Some(new_strides))
+    } else {
+        Ok(None)
     }
 }
 

@@ -5,10 +5,11 @@ use pyo3::exceptions::{
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyString, PyTuple,
+    PyAny, PyBool, PyDict, PyEllipsis, PyFloat, PyInt, PyList, PyModule, PySequence, PySlice,
+    PySliceMethods, PyString, PyTuple,
 };
 
-use crate::{DType, Device, Tensor as CoreTensor, TensorError};
+use crate::{DType, Device, Slice as CoreSlice, Tensor as CoreTensor, TensorError, TensorIndex};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
 
@@ -161,22 +162,17 @@ impl PyTensor {
         self.inner.storage_offset()
     }
 
+    fn is_contiguous(&self) -> bool {
+        self.inner.is_contiguous()
+    }
+
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = if let Ok(indices) = index.cast::<PyTuple>() {
-            if indices.len() > self.inner.shape().len() {
-                return Err(too_many_indices(self.inner.shape().len()));
-            }
-            let indices = parse_integer_indices(&self.inner, indices.len(), indices.iter())?;
-            self.inner.index(indices)
-        } else if is_fast_integer_index(index)? {
+        let inner = if index.cast::<PyTuple>().is_err() && is_fast_integer_index(index)? {
             let index = parse_integer_index(index)?;
             self.inner.index_integer(index)
         } else {
-            if self.inner.shape().is_empty() {
-                return Err(too_many_indices(0));
-            }
-            let index = parse_integer_index(index)?;
-            self.inner.index([index])
+            let indices = parse_basic_indices(&self.inner, index)?;
+            self.inner.slice(indices)
         };
         inner
             .map(|inner| Self { inner })
@@ -656,19 +652,92 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     )))
 }
 
-fn parse_integer_indices<'py>(
+fn parse_basic_indices(
     tensor: &CoreTensor,
-    length: usize,
-    indices: impl Iterator<Item = Bound<'py, PyAny>>,
-) -> PyResult<Vec<i64>> {
-    let mut parsed = try_size_vector(length)?;
+    index: &Bound<'_, PyAny>,
+) -> PyResult<Vec<TensorIndex>> {
+    let objects = if let Ok(tuple) = index.cast::<PyTuple>() {
+        let mut objects = try_size_vector(tuple.len())?;
+        for item in tuple.iter() {
+            try_push_size(&mut objects, item)?;
+        }
+        objects
+    } else {
+        let mut objects = try_size_vector(1)?;
+        try_push_size(&mut objects, index.clone())?;
+        objects
+    };
+
+    let ellipses = objects
+        .iter()
+        .filter(|item| item.is_instance_of::<PyEllipsis>())
+        .count();
+    if ellipses > 1 {
+        return Err(PyIndexError::new_err(
+            "an index can only have a single ellipsis ('...')",
+        ));
+    }
+    if let Some(item) = objects.iter().find(|item| item.is_none()) {
+        return Err(unsupported_basic_index(item, "None/newaxis"));
+    }
+
+    let consuming = objects.len().saturating_sub(ellipses);
+    if consuming > tensor.shape().len() {
+        return Err(too_many_indices(tensor.shape().len()));
+    }
+
+    let ellipsis_dimensions = if ellipses == 1 {
+        tensor.shape().len() - consuming
+    } else {
+        0
+    };
+    let parsed_capacity = objects
+        .len()
+        .checked_sub(ellipses)
+        .and_then(|length| length.checked_add(ellipsis_dimensions))
+        .ok_or_else(|| PyOverflowError::new_err("tensor index rank overflowed usize"))?;
+    let mut parsed = try_size_vector(parsed_capacity)?;
     let mut offset = tensor.storage_offset();
-    for (dimension, index) in indices.enumerate() {
-        let index = parse_integer_index(&index)?;
+    let mut dimension = 0;
+    for object in &objects {
+        if object.is_instance_of::<PyEllipsis>() {
+            for _ in 0..ellipsis_dimensions {
+                try_push_size(&mut parsed, TensorIndex::Slice(CoreSlice::full()))?;
+                dimension += 1;
+            }
+            continue;
+        }
+        if let Ok(slice) = object.cast::<PySlice>() {
+            let size = isize::try_from(tensor.shape()[dimension])
+                .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds isize"))?;
+            let normalized = slice.indices(size)?;
+            if normalized.step < 0 {
+                return Err(PyValueError::new_err("step must be greater than zero"));
+            }
+            let normalized_start = i64::try_from(normalized.start)
+                .map_err(|_| PyOverflowError::new_err("slice start exceeds i64"))?;
+            let normalized_end = i64::try_from(normalized.stop)
+                .map_err(|_| PyOverflowError::new_err("slice stop exceeds i64"))?;
+            let normalized_step = i64::try_from(normalized.step)
+                .map_err(|_| PyOverflowError::new_err("slice step exceeds i64"))?;
+            try_push_size(
+                &mut parsed,
+                TensorIndex::Slice(CoreSlice::new(
+                    Some(normalized_start),
+                    Some(normalized_end),
+                    Some(normalized_step),
+                )),
+            )?;
+            dimension += 1;
+            continue;
+        }
+
+        let integer = parse_integer_index(object)?;
         offset = tensor
-            .checked_index_offset(offset, dimension, index)
+            .checked_index_offset(offset, dimension, integer)
             .map_err(|error| tensor_error(&error))?;
-        try_push_size(&mut parsed, index)?;
+        try_push_size(&mut parsed, TensorIndex::Integer(integer))?;
+        dimension += 1;
     }
     Ok(parsed)
 }
@@ -716,6 +785,18 @@ fn invalid_index(index: &Bound<'_, PyAny>) -> PyErr {
         .unwrap_or_else(|| "unknown".to_owned());
     PyIndexError::new_err(format!(
         "only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got {type_name})"
+    ))
+}
+
+fn unsupported_basic_index(index: &Bound<'_, PyAny>, kind: &str) -> PyErr {
+    let type_name = index
+        .get_type()
+        .name()
+        .ok()
+        .and_then(|name| name.to_str().ok().map(str::to_owned))
+        .unwrap_or_else(|| "unknown".to_owned());
+    PyIndexError::new_err(format!(
+        "{kind} indexing is not supported (got {type_name})"
     ))
 }
 
@@ -1193,6 +1274,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ItemRequiresOneElement { .. }
         | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow
+        | TensorError::LayoutOutOfStorage { .. }
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }
         | TensorError::ReshapeAmbiguousZeroElements { .. }
@@ -1201,6 +1283,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
+        TensorError::SliceStepMustBePositive { .. } => PyValueError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. } => PyIndexError::new_err(error.to_string()),

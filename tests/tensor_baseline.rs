@@ -1,4 +1,4 @@
-use pytorch_rs::{DType, Device, Tensor, TensorError};
+use pytorch_rs::{DType, Device, Slice, Tensor, TensorError, TensorIndex};
 use std::mem::size_of;
 
 #[test]
@@ -868,6 +868,181 @@ fn integer_indexing_uses_checked_offset_arithmetic() {
         TensorError::InvalidStorageOffset { offset: -4 }.to_string(),
         "Tensor: invalid storage offset -4"
     );
+}
+
+#[test]
+fn basic_slicing_builds_positive_stride_shared_storage_views() {
+    use TensorIndex::{Integer, Slice as SliceIndex};
+
+    let tensor = Tensor::from_vec((0_u8..60).map(f32::from).collect(), [3, 4, 5]).unwrap();
+    let view = tensor
+        .slice([
+            Integer(1),
+            SliceIndex(Slice::new(Some(-4), None, Some(2))),
+            SliceIndex(Slice::new(Some(1), Some(5), Some(2))),
+        ])
+        .unwrap();
+
+    assert_eq!(view.shape(), [2, 2]);
+    assert_eq!(view.stride(), [10, 2]);
+    assert_eq!(view.storage_offset(), 21);
+    assert_eq!(view.as_slice(), [21.0, 23.0, 31.0, 33.0]);
+    assert_eq!(view.clone().into_vec(), vec![21.0, 23.0, 31.0, 33.0]);
+    assert!(!view.is_contiguous());
+    assert!(view.shares_storage_with(&tensor));
+    assert_eq!(view.dtype(), tensor.dtype());
+    assert_eq!(view.device(), tensor.device());
+
+    let partial = tensor
+        .slice([SliceIndex(Slice::new(Some(1), None, None))])
+        .unwrap();
+    assert_eq!(partial.shape(), [2, 4, 5]);
+    assert_eq!(partial.stride(), [20, 5, 1]);
+    assert_eq!(partial.storage_offset(), 20);
+    assert!(partial.is_contiguous());
+    assert!(std::ptr::eq(
+        partial.as_slice().as_ptr(),
+        tensor.as_slice()[20..].as_ptr()
+    ));
+}
+
+#[test]
+fn basic_slicing_supports_empty_scalar_and_chained_views() {
+    use TensorIndex::{Integer, Slice as SliceIndex};
+
+    let tensor = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let chained = tensor
+        .slice([SliceIndex(Slice::new(None, None, Some(2)))])
+        .unwrap()
+        .slice([
+            Integer(0),
+            SliceIndex(Slice::new(Some(1), None, None)),
+            SliceIndex(Slice::new(None, None, Some(2))),
+        ])
+        .unwrap();
+    assert_eq!(chained.shape(), [2, 2]);
+    assert_eq!(chained.stride(), [4, 2]);
+    assert_eq!(chained.storage_offset(), 4);
+    assert_eq!(chained.as_slice(), [4.0, 6.0, 8.0, 10.0]);
+    assert!(chained.shares_storage_with(&tensor));
+
+    let scalar = tensor
+        .slice([Integer(-1), Integer(-1), Integer(-1)])
+        .unwrap();
+    assert!(scalar.shape().is_empty());
+    assert!(scalar.stride().is_empty());
+    assert_eq!(scalar.storage_offset(), 23);
+    assert_eq!(scalar.item().unwrap().to_bits(), 23.0_f32.to_bits());
+
+    let empty = tensor
+        .slice([SliceIndex(Slice::new(Some(2), None, None))])
+        .unwrap();
+    assert_eq!(empty.shape(), [0, 3, 4]);
+    assert_eq!(empty.stride(), [12, 4, 1]);
+    assert_eq!(empty.storage_offset(), 24);
+    assert!(empty.as_slice().is_empty());
+    assert!(empty.is_contiguous());
+
+    let zero_axis = Tensor::zeros([2, 0, 3])
+        .unwrap()
+        .slice([
+            SliceIndex(Slice::full()),
+            SliceIndex(Slice::new(Some(-10), Some(10), Some(3))),
+        ])
+        .unwrap();
+    assert_eq!(zero_axis.shape(), [2, 0, 3]);
+    assert_eq!(zero_axis.stride(), [3, 9, 1]);
+    assert!(zero_axis.as_slice().is_empty());
+}
+
+#[test]
+fn basic_slicing_rejects_invalid_steps_and_too_many_indices() {
+    use TensorIndex::Slice as SliceIndex;
+
+    let tensor = Tensor::zeros([2, 3]).unwrap();
+    for step in [0, -1, i64::MIN] {
+        assert_eq!(
+            tensor.slice([SliceIndex(Slice::new(None, None, Some(step)))]),
+            Err(TensorError::SliceStepMustBePositive { step })
+        );
+    }
+    assert_eq!(
+        tensor.slice([
+            SliceIndex(Slice::full()),
+            SliceIndex(Slice::full()),
+            SliceIndex(Slice::full()),
+        ]),
+        Err(TensorError::TooManyIndices { dimensions: 2 })
+    );
+
+    let maximum = usize::try_from(i64::MAX).unwrap();
+    assert_eq!(
+        Tensor::zeros([0, maximum])
+            .unwrap()
+            .slice([SliceIndex(Slice::new(None, None, Some(2)))]),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+}
+
+#[test]
+fn sliced_layouts_work_in_pointwise_reduction_reshape_and_matmul() {
+    use TensorIndex::Slice as SliceIndex;
+
+    let source = Tensor::from_vec(
+        vec![
+            -1.0, 99.0, 2.0, 99.0, 3.0, 99.0, -4.0, 99.0, 5.0, 99.0, 6.0, 99.0,
+        ],
+        [3, 4],
+    )
+    .unwrap();
+    let view = source
+        .slice([
+            SliceIndex(Slice::full()),
+            SliceIndex(Slice::new(None, None, Some(2))),
+        ])
+        .unwrap();
+    assert_eq!(view.shape(), [3, 2]);
+    assert_eq!(view.as_slice(), [-1.0, 2.0, 3.0, -4.0, 5.0, 6.0]);
+    assert_eq!(
+        view.relu().unwrap().as_slice(),
+        [0.0, 2.0, 3.0, 0.0, 5.0, 6.0]
+    );
+    assert_eq!(
+        view.add_scalar(1.0).unwrap().as_slice(),
+        [0.0, 3.0, 4.0, -3.0, 6.0, 7.0]
+    );
+    assert_eq!(
+        view.add(&Tensor::ones([1, 2]).unwrap()).unwrap().as_slice(),
+        [0.0, 3.0, 4.0, -3.0, 6.0, 7.0]
+    );
+    assert_eq!(view.sum().item().unwrap().to_bits(), 11.0_f32.to_bits());
+
+    let compatible = view.reshape([3, 2, 1]).unwrap();
+    assert!(compatible.shares_storage_with(&source));
+    assert_eq!(compatible.stride(), [4, 2, 2]);
+
+    let checkerboard = Tensor::from_vec((0_u8..16).map(f32::from).collect(), [4, 4])
+        .unwrap()
+        .slice([
+            SliceIndex(Slice::new(None, None, Some(2))),
+            SliceIndex(Slice::new(None, None, Some(2))),
+        ])
+        .unwrap();
+    let flattened = checkerboard.reshape([4]).unwrap();
+    assert_eq!(flattened.as_slice(), [0.0, 2.0, 8.0, 10.0]);
+    assert_eq!(flattened.stride(), [1]);
+    assert!(!flattened.shares_storage_with(&checkerboard));
+
+    let right = Tensor::from_vec(vec![1.0, 50.0, 2.0, 50.0, 3.0, 50.0, 4.0, 50.0], [2, 4])
+        .unwrap()
+        .slice([
+            SliceIndex(Slice::full()),
+            SliceIndex(Slice::new(None, None, Some(2))),
+        ])
+        .unwrap();
+    let product = view.matmul(&right).unwrap();
+    assert_eq!(product.shape(), [3, 2]);
+    assert_eq!(product.as_slice(), [5.0, 6.0, -9.0, -10.0, 23.0, 34.0]);
 }
 
 #[test]

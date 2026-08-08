@@ -562,10 +562,7 @@ class PythonApiBaselineTests(unittest.TestCase):
             np.bool_(True),
             1.0,
             np.float64(1.0),
-            slice(None),
             [0],
-            None,
-            Ellipsis,
             IntOnly(),
             FailingIndex(),
         )
@@ -580,6 +577,133 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(index=index):
                 with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
                     tensor[index]
+
+    def test_basic_slicing_matches_pytorch_shapes_strides_offsets_and_values(self):
+        source = torch.tensor(
+            [
+                [[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0], [8.0, 9.0, 10.0, 11.0]],
+                [[12.0, 13.0, 14.0, 15.0], [16.0, 17.0, 18.0, 19.0], [20.0, 21.0, 22.0, 23.0]],
+            ]
+        )
+
+        view = source[1:, ::2, 1:4:2]
+        self.assertEqual(view.shape, (1, 2, 2))
+        self.assertEqual(view.stride(), (12, 8, 2))
+        self.assertEqual(view.storage_offset(), 13)
+        self.assertFalse(view.is_contiguous())
+        self.assertEqual(view.tolist(), [[[13.0, 15.0], [21.0, 23.0]]])
+        self.assertIs(view.dtype, source.dtype)
+        self.assertEqual(view.device, source.device)
+
+        cases = (
+            (source[:, 1], (2, 4), (12, 1), 4, [[4.0, 5.0, 6.0, 7.0], [16.0, 17.0, 18.0, 19.0]]),
+            (source[..., 1:4:2], (2, 3, 2), (12, 4, 2), 1, [[[1.0, 3.0], [5.0, 7.0], [9.0, 11.0]], [[13.0, 15.0], [17.0, 19.0], [21.0, 23.0]]]),
+            (source[1, ..., 2], (3,), (4,), 14, [14.0, 18.0, 22.0]),
+            (source[-100:100:2], (1, 3, 4), (24, 4, 1), 0, source.tolist()[:1]),
+        )
+        for actual, shape, stride, offset, values in cases:
+            with self.subTest(shape=shape, offset=offset):
+                self.assertEqual(actual.shape, shape)
+                self.assertEqual(actual.stride(), stride)
+                self.assertEqual(actual.storage_offset(), offset)
+                self.assertEqual(actual.tolist(), values)
+
+        alias = source[()]
+        ellipsis_alias = source[...]
+        for actual in (alias, ellipsis_alias):
+            self.assertEqual(actual.shape, source.shape)
+            self.assertEqual(actual.stride(), source.stride())
+            self.assertEqual(actual.storage_offset(), source.storage_offset())
+            self.assertEqual(actual.tolist(), source.tolist())
+            self.assertTrue(actual.is_contiguous())
+
+        scalar = source[1, 2, 3]
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(scalar.stride(), ())
+        self.assertEqual(scalar.storage_offset(), 23)
+        self.assertEqual(scalar.item(), 23.0)
+        self.assertEqual(scalar[...].item(), 23.0)
+
+    def test_basic_slicing_supports_empty_and_chained_views(self):
+        source = torch.tensor(
+            [
+                [[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0], [8.0, 9.0, 10.0, 11.0]],
+                [[12.0, 13.0, 14.0, 15.0], [16.0, 17.0, 18.0, 19.0], [20.0, 21.0, 22.0, 23.0]],
+            ]
+        )
+        chained = source[:, ::2][:, :, 1::2]
+        self.assertEqual(chained.shape, (2, 2, 2))
+        self.assertEqual(chained.stride(), (12, 8, 2))
+        self.assertEqual(chained.storage_offset(), 1)
+        self.assertEqual(chained.tolist(), [[[1.0, 3.0], [9.0, 11.0]], [[13.0, 15.0], [21.0, 23.0]]])
+
+        empty_leading = source[2:]
+        self.assertEqual(empty_leading.shape, (0, 3, 4))
+        self.assertEqual(empty_leading.stride(), (12, 4, 1))
+        self.assertEqual(empty_leading.storage_offset(), 24)
+        self.assertEqual(empty_leading.tolist(), [])
+        self.assertEqual(np.asarray(empty_leading).shape, (0, 3, 4))
+
+        empty_middle = source[:, 3:]
+        self.assertEqual(empty_middle.shape, (2, 0, 4))
+        self.assertEqual(empty_middle.stride(), (12, 4, 1))
+        self.assertEqual(empty_middle.storage_offset(), 12)
+        self.assertEqual(empty_middle.tolist(), [[], []])
+
+        zero_axis = torch.zeros((2, 0, 3))[:, ::2]
+        self.assertEqual(zero_axis.shape, (2, 0, 3))
+        self.assertEqual(zero_axis.stride(), (3, 6, 1))
+        self.assertEqual(zero_axis.tolist(), [[], []])
+
+    def test_non_contiguous_slices_work_in_all_existing_consumers(self):
+        source = torch.tensor(
+            [[-1.0, 99.0, 2.0, 99.0], [3.0, 99.0, -4.0, 99.0], [5.0, 99.0, 6.0, 99.0]]
+        )
+        view = source[:, ::2]
+        expected = np.array([[-1.0, 2.0], [3.0, -4.0], [5.0, 6.0]], dtype=np.float32)
+        self.assertEqual(view.tolist(), expected.tolist())
+        np.testing.assert_array_equal(np.asarray(view), expected)
+        self.assertEqual(view[1:2, 1:2].item(), -4.0)
+        self.assertEqual(view.relu().tolist(), np.maximum(expected, 0).tolist())
+        np.testing.assert_allclose(np.asarray(view.sin()), np.sin(expected), rtol=1e-6, atol=1e-6)
+        self.assertEqual((view + 1).tolist(), (expected + 1).tolist())
+        self.assertEqual((view + torch.ones((1, 2))).tolist(), (expected + 1).tolist())
+        self.assertEqual((view * view).tolist(), (expected * expected).tolist())
+        self.assertEqual(view.sum().item(), float(expected.sum()))
+
+        compatible = view.reshape(3, 2, 1)
+        self.assertEqual(compatible.stride(), (4, 2, 2))
+        self.assertEqual(compatible.tolist(), expected.reshape(3, 2, 1).tolist())
+        copied = torch.tensor([[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0], [8.0, 9.0, 10.0, 11.0], [12.0, 13.0, 14.0, 15.0]])[::2, ::2].reshape(4)
+        self.assertEqual(copied.stride(), (1,))
+        self.assertEqual(copied.tolist(), [0.0, 2.0, 8.0, 10.0])
+
+        right = torch.tensor([[1.0, 50.0, 2.0, 50.0], [3.0, 50.0, 4.0, 50.0]])[:, ::2]
+        self.assertEqual((view @ right).tolist(), (expected @ np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)).tolist())
+
+        del source
+        copied_numpy = np.asarray(view)
+        copied_numpy[0, 0] = 1000.0
+        self.assertEqual(view[0, 0].item(), -1.0)
+
+    def test_basic_slicing_rejects_unsupported_and_invalid_indices(self):
+        tensor = torch.zeros((2, 3))
+        with self.assertRaisesRegex(ValueError, "slice step cannot be zero"):
+            tensor[::0]
+        for index in (slice(None, None, -1), slice(None, None, -3)):
+            with self.subTest(index=index):
+                with self.assertRaisesRegex(ValueError, "step must be greater than zero"):
+                    tensor[index]
+        with self.assertRaisesRegex(IndexError, "too many indices"):
+            tensor[:, :, :]
+        with self.assertRaisesRegex(IndexError, "single ellipsis"):
+            tensor[..., ...]
+        for index in (None, (slice(None), None), [0], np.array([0]), True):
+            with self.subTest(index=repr(index)):
+                with self.assertRaises(IndexError):
+                    tensor[index]
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            torch.zeros((0, sys.maxsize))[::2]
 
     def test_integer_indexing_matches_pytorch_errors_and_empty_offsets(self):
         tensor = torch.zeros((2, 3, 4))
