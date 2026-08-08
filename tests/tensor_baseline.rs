@@ -198,6 +198,79 @@ fn elementwise_operations_preserve_shape() {
 }
 
 #[test]
+fn sine_matches_pytorch_float32_values_and_special_cases() {
+    const ATOL: f32 = 1.0e-6;
+    const RTOL: f32 = 1.0e-6;
+
+    let input = Tensor::from_vec(
+        vec![
+            0.25,
+            -0.5,
+            1.0,
+            -2.0,
+            std::f32::consts::PI,
+            1.0e10,
+            -1.0e10,
+            f32::MAX,
+        ],
+        [2, 2, 2],
+    )
+    .unwrap();
+    // PyTorch 2.x CPU float32 reference values. Transcendental kernels are
+    // compared using the same small mixed absolute/relative tolerance as the
+    // differential suite rather than requiring backend-specific bit identity.
+    let pytorch_reference = [
+        0.247_403_96,
+        -0.479_425_55,
+        0.841_470_96,
+        -0.909_297_4,
+        -8.742_278e-8,
+        -0.487_506_03,
+        0.487_506_03,
+        -0.521_876_5,
+    ];
+    let output = input.sin().unwrap();
+
+    assert_eq!(output.shape(), input.shape());
+    assert_eq!(output.stride(), input.stride());
+    assert_eq!(output.dtype(), input.dtype());
+    assert_eq!(output.device(), input.device());
+    for (actual, expected) in output.as_slice().iter().zip(pytorch_reference) {
+        assert!((actual - expected).abs() <= ATOL + RTOL * expected.abs());
+    }
+
+    let special = Tensor::from_vec(
+        vec![0.0, -0.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY],
+        [5],
+    )
+    .unwrap()
+    .sin()
+    .unwrap();
+    assert_eq!(special.as_slice()[0].to_bits(), 0.0_f32.to_bits());
+    assert_eq!(special.as_slice()[1].to_bits(), (-0.0_f32).to_bits());
+    assert!(special.as_slice()[2..].iter().all(|value| value.is_nan()));
+}
+
+#[test]
+fn sine_handles_scalar_and_empty_tensors_with_pytorch_layouts() {
+    let scalar = Tensor::from_vec(vec![0.5], []).unwrap();
+    let scalar_output = scalar.sin().unwrap();
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert!((scalar_output.item().unwrap() - 0.479_425_55).abs() <= 1.0e-6);
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap();
+    let empty_output = empty.sin().unwrap();
+    assert_eq!(empty_output.shape(), empty.shape());
+    assert_eq!(empty_output.stride(), empty.stride());
+    assert!(empty_output.as_slice().is_empty());
+
+    let unusual_layout = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
+    assert_eq!(unusual_layout.stride(), [1, 0]);
+    assert_eq!(unusual_layout.sin().unwrap().stride(), [1, 1]);
+}
+
+#[test]
 fn binary_arithmetic_broadcasts_mixed_ranks_and_singleton_dimensions() {
     let left = Tensor::from_vec(vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0], [2, 1, 3]).unwrap();
     let right = Tensor::from_vec(vec![1.0, 2.0, 4.0], [3, 1]).unwrap();
@@ -592,6 +665,7 @@ fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
     assert_eq!(scalar_output.shape(), [0, usize::MAX / 2, 3]);
     assert_eq!(scalar_output.stride(), [1, 0, 0]);
     assert_eq!(tensor.relu(), Err(TensorError::StrideCalculationOverflow));
+    assert_eq!(tensor.sin(), Err(TensorError::StrideCalculationOverflow));
 
     let wrapped_shape = Tensor::zeros([0])
         .unwrap()
@@ -603,6 +677,10 @@ fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
         [0, 2, usize::MAX / 2, usize::MAX / 2]
     );
     assert_eq!(wrapped_output.stride(), [2, usize::MAX / 2, 1, 1]);
+    assert_eq!(
+        wrapped_shape.sin(),
+        Err(TensorError::StrideCalculationOverflow)
+    );
 
     let zeroed_byte_stride = Tensor::zeros([0])
         .unwrap()

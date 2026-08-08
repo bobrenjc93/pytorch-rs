@@ -30,6 +30,66 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(result.shape, (2, 2))
         self.assertEqual(result.tolist(), [[0.0, 3.0], [4.0, 0.0]])
 
+    def test_sin_matches_pytorch_float32_reference_and_metadata(self):
+        source = torch.tensor(
+            [
+                [[0.25, -0.5], [1.0, -2.0]],
+                [[np.pi, 1.0e10], [-1.0e10, np.finfo(np.float32).max]],
+            ],
+            dtype=torch.float32,
+            device="cpu",
+        )
+        # PyTorch 2.x CPU float32 reference values, checked with the
+        # differential suite's transcendental tolerance.
+        pytorch_reference = np.array(
+            [
+                0.24740396,
+                -0.47942555,
+                0.84147096,
+                -0.9092974,
+                -8.742278e-8,
+                -0.48750603,
+                0.48750603,
+                -0.5218765,
+            ],
+            dtype=np.float32,
+        ).reshape(2, 2, 2)
+
+        actual = source.sin()
+        self.assertEqual(actual.shape, source.shape)
+        self.assertEqual(actual.stride(), source.stride())
+        self.assertIs(actual.dtype, source.dtype)
+        self.assertEqual(actual.device, source.device)
+        np.testing.assert_allclose(
+            np.asarray(actual),
+            pytorch_reference,
+            rtol=1.0e-6,
+            atol=1.0e-6,
+        )
+
+    def test_sin_handles_scalar_empty_signed_zero_and_non_finite_values(self):
+        scalar = torch.tensor(0.5).sin()
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(scalar.stride(), ())
+        self.assertAlmostEqual(scalar.item(), 0.47942555, delta=1.0e-6)
+
+        empty = torch.zeros((2, 0, 3))
+        empty_output = empty.sin()
+        self.assertEqual(empty_output.shape, empty.shape)
+        self.assertEqual(empty_output.stride(), empty.stride())
+        self.assertEqual(empty_output.tolist(), [[], []])
+
+        unusual_layout = torch.zeros((0, 1)) + 1.0
+        self.assertEqual(unusual_layout.stride(), (1, 0))
+        self.assertEqual(unusual_layout.sin().stride(), (1, 1))
+
+        special = np.asarray(
+            torch.tensor([0.0, -0.0, float("nan"), float("inf"), -float("inf")]).sin()
+        )
+        self.assertEqual(special[0].view(np.uint32).item(), np.float32(0.0).view(np.uint32).item())
+        self.assertEqual(special[1].view(np.uint32).item(), np.float32(-0.0).view(np.uint32).item())
+        self.assertTrue(np.isnan(special[2:]).all())
+
     def test_float32_descriptor_identity_type_and_repr(self):
         self.assertIs(torch.float, torch.float32)
         self.assertIsInstance(torch.float32, torch.dtype)
@@ -411,6 +471,8 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(scalar_output.stride(), (1, 0, 0))
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             tensor.relu()
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            tensor.sin()
 
         wrapped_shape = torch.zeros((0,)).reshape(
             (0, 2, sys.maxsize, sys.maxsize)
@@ -418,6 +480,8 @@ class PythonApiBaselineTests(unittest.TestCase):
         wrapped_output = wrapped_shape + 1
         self.assertEqual(wrapped_output.shape, wrapped_shape.shape)
         self.assertEqual(wrapped_output.stride(), (2, sys.maxsize, 1, 1))
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            wrapped_shape.sin()
 
         zeroed_byte_stride = torch.zeros((0,)).reshape((0, 1, 2, 1 << 61))
         self.assertEqual((zeroed_byte_stride + 1).stride(), (0, 0, 1, 2))

@@ -629,22 +629,16 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn relu(&self) -> Result<Self, TensorError> {
-        let elements = self.elements;
-        let mut data = try_result_vector(elements, elements)?;
-        let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 {
-            contiguous_strides(&shape, elements)?
-        } else {
-            try_clone_result_shape(&self.strides, elements)?
-        };
-        data.extend(self.as_slice().iter().map(|value| value.max(0.0)));
-        Ok(Self::from_owned_parts(
-            data,
-            shape,
-            strides,
-            self.dtype(),
-            self.device(),
-        ))
+        self.unary_map(|value| value.max(0.0))
+    }
+
+    /// Computes the sine of every element in radians.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn sin(&self) -> Result<Self, TensorError> {
+        self.unary_map(f32::sin)
     }
 
     #[must_use]
@@ -833,6 +827,25 @@ impl Tensor {
                 .copied()
                 .map(|value| operation(value, scalar)),
         );
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
+    }
+
+    fn unary_map(&self, operation: impl Fn(f32) -> f32) -> Result<Self, TensorError> {
+        let elements = self.elements;
+        let mut data = try_result_vector(elements, elements)?;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = if elements == 0 {
+            contiguous_strides(&shape, elements)?
+        } else {
+            try_clone_result_shape(&self.strides, elements)?
+        };
+        data.extend(self.as_slice().iter().copied().map(operation));
         Ok(Self::from_owned_parts(
             data,
             shape,

@@ -209,6 +209,38 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 47
       }
+    },
+    {
+      "key": "base:8547a42101316664c339e5774c6999cc138e88ea",
+      "commit": "8547a42101316664c339e5774c6999cc138e88ea",
+      "recordedAt": "2026-08-08T22:18:14.718Z",
+      "label": "base 8547a42",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 30.7,
+        "eval_63a24994": 76.9,
+        "eval_39340456": 13,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 47
+      }
+    },
+    {
+      "key": "pr:9",
+      "recordedAt": "2026-08-08T22:18:14.718Z",
+      "label": "PR #9",
+      "kind": "leaf",
+      "prNumber": 9,
+      "title": "Add PyTorch-compatible native sine",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 31.9,
+        "eval_63a24994": 77.2,
+        "eval_39340456": 14,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 48
+      }
     }
   ]
 }
