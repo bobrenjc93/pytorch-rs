@@ -464,6 +464,27 @@ fn full(
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction(signature = (input))]
+fn sin(input: &Bound<'_, PyTensor>) -> PyResult<PyTensor> {
+    let input = input.try_borrow()?;
+    input
+        .inner
+        .sin()
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| tensor_error(&error))
+}
+
+#[pyfunction(signature = (input, other))]
+fn matmul(input: &Bound<'_, PyTensor>, other: &Bound<'_, PyTensor>) -> PyResult<PyTensor> {
+    let input = input.try_borrow()?;
+    let other = other.try_borrow()?;
+    input
+        .inner
+        .matmul(&other.inner)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| tensor_error(&error))
+}
+
 fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
     FLOAT32.get_or_try_init(py, || {
         Py::new(
@@ -1120,6 +1141,8 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
+    module.add_function(wrap_pyfunction!(sin, module)?)?;
+    module.add_function(wrap_pyfunction!(matmul, module)?)?;
     let float32 = float32_object(py)?;
     module.add("float32", float32.clone_ref(py))?;
     module.add("float", float32.clone_ref(py))?;

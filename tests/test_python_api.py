@@ -1,3 +1,4 @@
+import inspect
 import math
 import operator
 import sys
@@ -89,6 +90,27 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(special[0].view(np.uint32).item(), np.float32(0.0).view(np.uint32).item())
         self.assertEqual(special[1].view(np.uint32).item(), np.float32(-0.0).view(np.uint32).item())
         self.assertTrue(np.isnan(special[2:]).all())
+
+    def test_top_level_sin_accepts_positional_and_input_keyword_forms(self):
+        source = torch.tensor(
+            [[0.25, -0.5], [1.0, -2.0]],
+            dtype=torch.float32,
+            device="cpu",
+        )
+        expected = source.sin()
+
+        for actual in (torch.sin(source), torch.sin(input=source)):
+            with self.subTest(call=actual):
+                self.assertEqual(actual.shape, expected.shape)
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertIs(actual.dtype, source.dtype)
+                self.assertEqual(actual.device, source.device)
+                np.testing.assert_allclose(
+                    np.asarray(actual),
+                    np.asarray(expected),
+                    rtol=1.0e-6,
+                    atol=1.0e-6,
+                )
 
     def test_float32_descriptor_identity_type_and_repr(self):
         self.assertIs(torch.float, torch.float32)
@@ -601,6 +623,69 @@ class PythonApiBaselineTests(unittest.TestCase):
         output = left @ right
         self.assertEqual(output.shape, (2, 2))
         self.assertEqual(output.tolist(), [[58.0, 64.0], [139.0, 154.0]])
+
+    def test_top_level_matmul_accepts_positional_and_keyword_forms(self):
+        left = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=torch.float32,
+            device="cpu",
+        )
+        right = torch.tensor([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]])
+        expected = [[58.0, 64.0], [139.0, 154.0]]
+
+        outputs = (
+            torch.matmul(left, right),
+            torch.matmul(left, other=right),
+            torch.matmul(input=left, other=right),
+        )
+        for output in outputs:
+            with self.subTest(call=output):
+                self.assertEqual(output.shape, (2, 2))
+                self.assertEqual(output.stride(), (2, 1))
+                self.assertIs(output.dtype, left.dtype)
+                self.assertEqual(output.device, left.device)
+                self.assertEqual(output.tolist(), expected)
+
+        empty = torch.matmul(torch.zeros((2, 0)), torch.zeros((0, 3)))
+        self.assertEqual(empty.shape, (2, 3))
+        self.assertEqual(empty.stride(), (3, 1))
+        self.assertEqual(empty.tolist(), [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+
+    def test_top_level_operation_signatures_types_and_error_precedence(self):
+        self.assertEqual(str(inspect.signature(torch.sin)), "(input)")
+        self.assertEqual(str(inspect.signature(torch.matmul)), "(input, other)")
+        self.assertFalse(hasattr(torch, "relu"))
+        self.assertFalse(hasattr(torch, "sum"))
+
+        matrix = torch.ones((2, 2))
+        rank_one = torch.ones((2,))
+        for operation in (
+            lambda: torch.sin(object()),
+            lambda: torch.matmul(object(), matrix),
+            lambda: torch.matmul(matrix, object()),
+            # Argument types are checked before native rank validation.
+            lambda: torch.matmul(rank_one, object()),
+        ):
+            with self.subTest(operation=operation):
+                with self.assertRaises(TypeError):
+                    operation()
+
+        for operation in (
+            lambda: torch.sin(),
+            lambda: torch.sin(matrix, matrix),
+            lambda: torch.sin(matrix, out=None),
+            lambda: torch.matmul(matrix),
+            lambda: torch.matmul(matrix, matrix, matrix),
+            lambda: torch.matmul(matrix, matrix, out=None),
+        ):
+            with self.subTest(operation=operation):
+                with self.assertRaises(TypeError):
+                    operation()
+
+        with self.assertRaises(RuntimeError):
+            torch.matmul(rank_one, matrix)
+        with self.assertRaises(RuntimeError):
+            torch.matmul(torch.ones((2, 3)), torch.ones((2, 2)))
 
     def test_binary_arithmetic_broadcasts_trailing_dimensions(self):
         left = torch.tensor([[[1.0, 2.0, 4.0]], [[8.0, 16.0, 32.0]]])
