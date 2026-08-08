@@ -370,7 +370,11 @@ impl Tensor {
             });
         }
 
-        let strides = reshape_strides(&resolved, self.elements)?;
+        let strides = if self.elements == 0 && resolved == self.shape {
+            try_clone_result_shape(&self.strides, self.elements)?
+        } else {
+            reshape_strides(&resolved, self.elements)?
+        };
         Ok(Self {
             storage: Arc::clone(&self.storage),
             shape: resolved,
@@ -478,10 +482,14 @@ impl Tensor {
 
     #[must_use]
     pub fn relu(&self) -> Self {
+        let mut strides = self.strides.clone();
+        if self.elements == 0 {
+            reset_empty_contiguous_strides(&mut strides, &self.shape);
+        }
         Self::from_owned_parts(
             self.as_slice().iter().map(|value| value.max(0.0)).collect(),
             self.shape.clone(),
-            self.strides.clone(),
+            strides,
         )
     }
 
@@ -866,6 +874,14 @@ fn elementwise_output_strides(
         }
     }
 
+    if permutation
+        .iter()
+        .enumerate()
+        .all(|(index, axis)| *axis == rank - index - 1)
+    {
+        return contiguous_strides(shape, elements);
+    }
+
     let mut strides = try_result_vector(rank, elements)?;
     strides.resize(rank, 0);
     let mut stride = 1_usize;
@@ -876,6 +892,16 @@ fn elementwise_output_strides(
         }
     }
     Ok(strides)
+}
+
+fn reset_empty_contiguous_strides(strides: &mut [usize], shape: &[usize]) {
+    let mut stride = 1_usize;
+    for axis in (0..shape.len()).rev() {
+        strides[axis] = stride;
+        if axis > 0 {
+            stride = stride.wrapping_mul(shape[axis].max(1));
+        }
+    }
 }
 
 fn compare_elementwise_dimensions(

@@ -435,8 +435,34 @@ fn contiguous_strides_cover_scalars_zero_dimensions_and_singletons() {
 
 #[test]
 fn empty_elementwise_results_match_pytorch_strides() {
+    for (shape, expected) in [([1, 0, 1], [0, 1, 0]), ([2, 0, 3], [3, 3, 1])] {
+        assert_eq!(
+            Tensor::zeros(shape)
+                .unwrap()
+                .add_scalar(1.0)
+                .unwrap()
+                .stride(),
+            expected
+        );
+    }
+    assert_eq!(
+        Tensor::zeros([1, 0])
+            .unwrap()
+            .add_scalar(1.0)
+            .unwrap()
+            .stride(),
+        [1, 1]
+    );
+    assert_eq!(
+        Tensor::zeros([0, 1])
+            .unwrap()
+            .add_scalar(1.0)
+            .unwrap()
+            .stride(),
+        [1, 0]
+    );
+
     let empty = Tensor::zeros([1, 0, 1]).unwrap();
-    assert_eq!(empty.add_scalar(1.0).unwrap().stride(), [0, 1, 0]);
     assert_eq!(
         empty
             .add(&Tensor::ones([1, 0, 1]).unwrap())
@@ -447,7 +473,28 @@ fn empty_elementwise_results_match_pytorch_strides() {
 
     let broadcast = empty.add(&Tensor::ones([2, 1, 3]).unwrap()).unwrap();
     assert_eq!(broadcast.shape(), [2, 0, 3]);
-    assert_eq!(broadcast.stride(), [0, 3, 1]);
+    assert_eq!(broadcast.stride(), [3, 3, 1]);
+
+    let compatible = Tensor::zeros([0, 1])
+        .unwrap()
+        .add(&Tensor::ones([1, 1]).unwrap())
+        .unwrap();
+    assert_eq!(compatible.stride(), [1, 0]);
+
+    let chained = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
+    assert_eq!(chained.stride(), [1, 0]);
+    assert_eq!(chained.relu().stride(), [1, 1]);
+}
+
+#[test]
+fn empty_reshape_preserves_compatible_source_strides() {
+    let source = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
+    let view = source.reshape([0, 1]).unwrap();
+
+    assert_eq!(source.stride(), [1, 0]);
+    assert_eq!(view.stride(), source.stride());
+    assert_eq!(view.shape(), source.shape());
+    assert_eq!(view.as_slice(), source.as_slice());
 }
 
 #[test]

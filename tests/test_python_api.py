@@ -46,14 +46,60 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(shape=tensor.shape):
                 self.assertEqual(tensor.stride(), expected)
 
+    def test_stride_accepts_positive_and_negative_dimensions(self):
+        tensor = torch.zeros((2, 3, 4))
+        self.assertEqual(tensor.stride(0), 12)
+        self.assertEqual(tensor.stride(1), 4)
+        self.assertEqual(tensor.stride(-1), 1)
+        self.assertEqual(tensor.stride(dim=-3), 12)
+
+        for dimension in (3, -4):
+            with self.subTest(dimension=dimension):
+                with self.assertRaisesRegex(
+                    IndexError,
+                    r"Dimension out of range \(expected to be in range of \[-3, 2\]",
+                ):
+                    tensor.stride(dimension)
+
+        scalar = torch.tensor(1.0)
+        for dimension in (0, -1):
+            with self.subTest(scalar_dimension=dimension):
+                with self.assertRaisesRegex(IndexError, "tensor has no dimensions"):
+                    scalar.stride(dimension)
+
     def test_empty_elementwise_results_match_pytorch_strides(self):
+        scalar_cases = (
+            ((1, 0), (1, 1)),
+            ((0, 1), (1, 0)),
+            ((1, 0, 1), (0, 1, 0)),
+            ((2, 0, 3), (3, 3, 1)),
+        )
+        for shape, expected in scalar_cases:
+            with self.subTest(operation="scalar", shape=shape):
+                self.assertEqual((torch.zeros(shape) + 1).stride(), expected)
+
         empty = torch.zeros((1, 0, 1))
-        self.assertEqual((empty + 1).stride(), (0, 1, 0))
         self.assertEqual((empty + torch.ones((1, 0, 1))).stride(), (1, 1, 1))
 
         broadcast = empty + torch.ones((2, 1, 3))
         self.assertEqual(broadcast.shape, (2, 0, 3))
-        self.assertEqual(broadcast.stride(), (0, 3, 1))
+        self.assertEqual(broadcast.stride(), (3, 3, 1))
+
+        compatible = torch.zeros((0, 1)) + torch.ones((1, 1))
+        self.assertEqual(compatible.stride(), (1, 0))
+
+        chained = torch.zeros((0, 1)) + 1
+        self.assertEqual(chained.stride(), (1, 0))
+        self.assertEqual(chained.relu().stride(), (1, 1))
+
+    def test_empty_reshape_preserves_compatible_source_strides(self):
+        source = torch.zeros((0, 1)) + 1
+        view = source.reshape((0, 1))
+
+        self.assertEqual(source.stride(), (1, 0))
+        self.assertEqual(view.stride(), (1, 0))
+        self.assertEqual(view.shape, source.shape)
+        self.assertEqual(view.tolist(), source.tolist())
 
     def test_reshape_accepts_variadic_and_sequence_signatures(self):
         source = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])

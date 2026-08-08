@@ -1,5 +1,7 @@
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{
+    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
+};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
 
@@ -45,8 +47,15 @@ impl PyTensor {
         PyTuple::new(py, self.inner.shape().iter().copied())
     }
 
-    fn stride<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
-        PyTuple::new(py, self.inner.stride().iter().copied())
+    #[pyo3(signature = (dim=None))]
+    fn stride(&self, py: Python<'_>, dim: Option<i64>) -> PyResult<Py<PyAny>> {
+        let Some(dim) = dim else {
+            return Ok(PyTuple::new(py, self.inner.stride().iter().copied())?
+                .into_any()
+                .unbind());
+        };
+        let axis = normalize_dimension(dim, self.inner.shape().len())?;
+        self.inner.stride()[axis].into_py_any(py)
     }
 
     #[pyo3(signature = (shape, *shape_dimensions))]
@@ -306,6 +315,29 @@ fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
             "full(): argument 'size' must be a tuple or list of integers",
         ))
     }
+}
+
+fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
+    let rank = i64::try_from(rank)
+        .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    if rank == 0 {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension specified as {dimension} but tensor has no dimensions"
+        )));
+    }
+    if dimension < -rank || dimension >= rank {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension out of range (expected to be in range of [{}, {}], but got {dimension})",
+            -rank,
+            rank - 1
+        )));
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + rank
+    } else {
+        dimension
+    })
+    .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))
 }
 
 fn parse_reshape_shape(
