@@ -119,6 +119,150 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     create()
 
+    def test_eye_creates_square_rectangular_and_empty_tensors(self):
+        cases = (
+            (lambda: torch.eye(3), (3, 3), (3, 1), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            (lambda: torch.eye(2, 4), (2, 4), (4, 1), [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]),
+            (lambda: torch.eye(4, m=2), (4, 2), (2, 1), [[1.0, 0.0], [0.0, 1.0], [0.0, 0.0], [0.0, 0.0]]),
+            (lambda: torch.eye(n=0), (0, 0), (1, 1), []),
+            (lambda: torch.eye(3, 0), (3, 0), (1, 1), [[], [], []]),
+            (lambda: torch.eye(0, 3), (0, 3), (3, 1), []),
+        )
+        for create, shape, stride, values in cases:
+            with self.subTest(shape=shape):
+                tensor = create()
+                self.assertEqual(tensor.shape, shape)
+                self.assertEqual(tensor.stride(), stride)
+                self.assertEqual(tensor.tolist(), values)
+                self.assertIs(tensor.dtype, torch.float32)
+                self.assertEqual(tensor.device, torch.device("cpu"))
+
+        for create in (lambda: torch.eye(2, None), lambda: torch.eye(2, m=None)):
+            with self.subTest(explicit_none=create):
+                with self.assertRaises(TypeError):
+                    create()
+
+    def test_eye_accepts_float32_cpu_metadata_and_rejects_unsupported_options(self):
+        tensor = torch.eye(
+            2,
+            3,
+            dtype=torch.float,
+            device=torch.device("cpu"),
+        )
+        self.assertEqual(tensor.tolist(), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        self.assertIs(tensor.dtype, torch.float32)
+        self.assertEqual(tensor.device, torch.device("cpu"))
+
+        for dtype in ("float32", np.dtype("float32"), np.float32, float, object()):
+            with self.subTest(argument="dtype", value=dtype):
+                with self.assertRaises(TypeError):
+                    torch.eye(1, dtype=dtype)
+        for device in ("cuda", "meta", "mps", "cpu:0"):
+            with self.subTest(argument="device", value=device):
+                with self.assertRaises(RuntimeError):
+                    torch.eye(1, device=device)
+        for keyword in ("out", "layout", "requires_grad", "pin_memory"):
+            with self.subTest(keyword=keyword):
+                with self.assertRaises(TypeError):
+                    torch.eye(1, **{keyword: None})
+
+        with self.assertRaises(TypeError):
+            torch.eye(1, 1, torch.float32)
+
+    def test_eye_uses_the_integer_index_protocol_and_rejects_bools(self):
+        class IntSubclass(int):
+            pass
+
+        class IndexDimension:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        class IntOnly:
+            def __int__(self):
+                return 2
+
+        rows = IndexDimension(2)
+        columns = IndexDimension(3)
+        tensor = torch.eye(rows, columns)
+        self.assertEqual(tensor.shape, (2, 3))
+        self.assertEqual(tensor.tolist(), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        self.assertEqual((rows.calls, columns.calls), (1, 1))
+
+        self.assertEqual(torch.eye(IntSubclass(2)).shape, (2, 2))
+        self.assertEqual(torch.eye(np.int64(2), np.uint32(3)).shape, (2, 3))
+
+        for dimensions in ((True,), (2, False), (np.bool_(True),), (IntOnly(),), (2.0,)):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaises(TypeError):
+                    torch.eye(*dimensions)
+
+    def test_eye_normalizes_integer_conversion_failures(self):
+        class FailingIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                raise RuntimeError("index conversion failed")
+
+        for dimensions in (
+            (2**63,),
+            (-(2**63) - 1,),
+            (1, 2**63),
+            (1, -(2**63) - 1),
+            (np.uint64(2**63),),
+        ):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                    torch.eye(*dimensions)
+
+        for position in ("n", "m"):
+            dimension = FailingIndex()
+            arguments = (dimension,) if position == "n" else (1, dimension)
+            with self.subTest(position=position):
+                with self.assertRaises(TypeError):
+                    torch.eye(*arguments)
+                self.assertEqual(dimension.calls, 1)
+
+    def test_eye_rejects_invalid_metadata_before_dimension_conversion(self):
+        invalid_metadata = (
+            {"dtype": object()},
+            {"device": object()},
+        )
+        for dimensions in ((2**63,), (1, 2**63)):
+            for metadata in invalid_metadata:
+                with self.subTest(dimensions=dimensions, metadata=metadata):
+                    with self.assertRaises(TypeError):
+                        torch.eye(*dimensions, **metadata)
+
+    def test_eye_reports_negative_dimensions_and_checked_overflow(self):
+        with self.assertRaisesRegex(RuntimeError, "n must be greater or equal to 0, got -1"):
+            torch.eye(-1)
+        with self.assertRaisesRegex(RuntimeError, "m must be greater or equal to 0, got -2"):
+            torch.eye(1, -2)
+
+        with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
+            torch.eye(sys.maxsize, 3)
+
+        oversized = sys.maxsize // 4 + 1
+        with self.assertRaisesRegex(RuntimeError, "exceeds the platform capacity"):
+            torch.eye(oversized, 1)
+
+        no_rows = torch.eye(0, sys.maxsize)
+        self.assertEqual(no_rows.shape, (0, sys.maxsize))
+        self.assertEqual(no_rows.stride(), (sys.maxsize, 1))
+        self.assertEqual(no_rows.numel(), 0)
+
+        no_columns = torch.eye(sys.maxsize, 0)
+        self.assertEqual(no_columns.shape, (sys.maxsize, 0))
+        self.assertEqual(no_columns.stride(), (1, 1))
+        self.assertEqual(no_columns.numel(), 0)
+
     def test_metadata_survives_views_and_native_kernels(self):
         source = torch.tensor([[-1.0, 2.0], [3.0, -4.0]], dtype=torch.float32, device="cpu")
         outputs = (

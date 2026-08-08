@@ -177,6 +177,38 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 45
       }
+    },
+    {
+      "key": "base:58a1229fa4d8d4385ad7757ec76a17d469d28369",
+      "commit": "58a1229fa4d8d4385ad7757ec76a17d469d28369",
+      "recordedAt": "2026-08-08T21:53:06.281Z",
+      "label": "base 58a1229",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 29.6,
+        "eval_63a24994": 76.9,
+        "eval_39340456": 14,
+        "eval_b4945d15": 94,
+        "eval_c8a1bfb9": 46
+      }
+    },
+    {
+      "key": "pr:8",
+      "recordedAt": "2026-08-08T21:53:06.281Z",
+      "label": "PR #8",
+      "kind": "leaf",
+      "prNumber": 8,
+      "title": "Add PyTorch-compatible eye tensor creation",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 30.7,
+        "eval_63a24994": 77.1,
+        "eval_39340456": 15,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 47
+      }
     }
   ]
 }
