@@ -607,7 +607,11 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = try_clone_result_shape(&self.strides, elements)?;
+        let strides = if elements == 0 {
+            contiguous_strides(&shape, elements)?
+        } else {
+            try_clone_result_shape(&self.strides, elements)?
+        };
         data.extend(
             self.as_slice()
                 .iter()
@@ -626,7 +630,11 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = try_clone_result_shape(&self.strides, elements)?;
+        let strides = if elements == 0 {
+            elementwise_output_strides(&shape, &[self], elements)?
+        } else {
+            try_clone_result_shape(&self.strides, elements)?
+        };
         data.extend(
             self.as_slice()
                 .iter()
@@ -689,7 +697,11 @@ impl BroadcastPlan {
                 .expect("broadcast compatibility was checked above"),
             );
         }
-        let strides = contiguous_strides(&shape, elements)?;
+        let strides = if elements == 0 {
+            elementwise_output_strides(&shape, &[left, right], elements)?
+        } else {
+            contiguous_strides(&shape, elements)?
+        };
 
         let mut dimensions = try_result_vector(rank, elements)?;
         if elements == 0 {
@@ -827,6 +839,69 @@ fn contiguous_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, Te
     Ok(strides)
 }
 
+fn elementwise_output_strides(
+    shape: &[usize],
+    operands: &[&Tensor],
+    elements: usize,
+) -> Result<Vec<usize>, TensorError> {
+    let rank = shape.len();
+    let mut permutation = try_result_vector(rank, elements)?;
+    permutation.extend((0..rank).rev());
+
+    for index in 1..rank {
+        let mut dimension_1 = index;
+        for dimension_0 in (0..index).rev() {
+            let comparison = compare_elementwise_dimensions(
+                shape,
+                operands,
+                permutation[dimension_0],
+                permutation[dimension_1],
+            );
+            if comparison > 0 {
+                permutation.swap(dimension_0, dimension_1);
+                dimension_1 = dimension_0;
+            } else if comparison < 0 {
+                break;
+            }
+        }
+    }
+
+    let mut strides = try_result_vector(rank, elements)?;
+    strides.resize(rank, 0);
+    let mut stride = 1_usize;
+    for (position, axis) in permutation.into_iter().enumerate() {
+        strides[axis] = stride;
+        if position + 1 < rank {
+            stride = signed_wrapping_stride_product(stride, shape[axis])?;
+        }
+    }
+    Ok(strides)
+}
+
+fn compare_elementwise_dimensions(
+    shape: &[usize],
+    operands: &[&Tensor],
+    dimension_0: usize,
+    dimension_1: usize,
+) -> i8 {
+    for tensor in operands {
+        let stride_0 =
+            aligned_broadcast_stride(tensor, shape.len(), dimension_0, shape[dimension_0]);
+        let stride_1 =
+            aligned_broadcast_stride(tensor, shape.len(), dimension_1, shape[dimension_1]);
+        if stride_0 == 0 || stride_1 == 0 {
+            continue;
+        }
+        if stride_0 < stride_1 {
+            return -1;
+        }
+        if stride_0 > stride_1 || shape[dimension_0] > shape[dimension_1] {
+            return 1;
+        }
+    }
+    0
+}
+
 fn reshape_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, TensorError> {
     if elements != 0 {
         return contiguous_strides(shape, elements);
@@ -839,11 +914,21 @@ fn reshape_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, Tenso
         strides[axis] = stride;
         if axis > 0 {
             // PyTorch treats empty-view strides as arbitrary metadata and its
-            // resize-style calculation wraps overflowing suffix products.
-            stride = stride.wrapping_mul(shape[axis].max(1));
+            // resize-style calculation permits non-negative signed wrapping.
+            stride = signed_wrapping_stride_product(stride, shape[axis].max(1))?;
         }
     }
     Ok(strides)
+}
+
+fn signed_wrapping_stride_product(stride: usize, dimension: usize) -> Result<usize, TensorError> {
+    if stride == 0 || dimension == 0 {
+        return Ok(0);
+    }
+    let stride = i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?;
+    let dimension = i64::try_from(dimension).map_err(|_| TensorError::StrideCalculationOverflow)?;
+    let product = stride.wrapping_mul(dimension);
+    usize::try_from(product).map_err(|_| TensorError::StrideCalculationOverflow)
 }
 
 fn checked_stride_product(stride: usize, dimension: usize) -> Result<usize, TensorError> {

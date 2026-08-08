@@ -434,6 +434,23 @@ fn contiguous_strides_cover_scalars_zero_dimensions_and_singletons() {
 }
 
 #[test]
+fn empty_elementwise_results_match_pytorch_strides() {
+    let empty = Tensor::zeros([1, 0, 1]).unwrap();
+    assert_eq!(empty.add_scalar(1.0).unwrap().stride(), [0, 1, 0]);
+    assert_eq!(
+        empty
+            .add(&Tensor::ones([1, 0, 1]).unwrap())
+            .unwrap()
+            .stride(),
+        [1, 1, 1]
+    );
+
+    let broadcast = empty.add(&Tensor::ones([2, 1, 3]).unwrap()).unwrap();
+    assert_eq!(broadcast.shape(), [2, 0, 3]);
+    assert_eq!(broadcast.stride(), [0, 3, 1]);
+}
+
+#[test]
 fn reshape_is_a_contiguous_shared_storage_view() {
     let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
     let view = tensor.reshape([3, 2]).unwrap();
@@ -486,6 +503,11 @@ fn reshape_infers_one_dimension_and_handles_scalars_and_empty_tensors() {
     assert_eq!(large_empty.shape(), [0, 1_usize << 32, 1_usize << 32]);
     assert_eq!(large_empty.stride(), [0, 1_usize << 32, 1]);
     assert_eq!(large_empty.numel(), 0);
+
+    assert_eq!(
+        empty.reshape([0, 1_i64 << 62, 3]),
+        Err(TensorError::StrideCalculationOverflow)
+    );
 }
 
 #[test]

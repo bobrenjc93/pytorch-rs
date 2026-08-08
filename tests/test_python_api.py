@@ -46,6 +46,15 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(shape=tensor.shape):
                 self.assertEqual(tensor.stride(), expected)
 
+    def test_empty_elementwise_results_match_pytorch_strides(self):
+        empty = torch.zeros((1, 0, 1))
+        self.assertEqual((empty + 1).stride(), (0, 1, 0))
+        self.assertEqual((empty + torch.ones((1, 0, 1))).stride(), (1, 1, 1))
+
+        broadcast = empty + torch.ones((2, 1, 3))
+        self.assertEqual(broadcast.shape, (2, 0, 3))
+        self.assertEqual(broadcast.stride(), (0, 3, 1))
+
     def test_reshape_accepts_variadic_and_sequence_signatures(self):
         source = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         variadic = source.reshape(3, 2)
@@ -84,6 +93,9 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(large_empty.shape, (0, large, large))
         self.assertEqual(large_empty.stride(), (0, large, 1))
         self.assertEqual(large_empty.numel(), 0)
+
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            empty.reshape((0, 1 << 62, 3))
 
     def test_reshape_reports_pytorch_compatible_errors(self):
         tensor = torch.zeros((6,))
