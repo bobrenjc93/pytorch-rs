@@ -438,6 +438,191 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
                     tensor.stride(dimension)
 
+    def test_integer_indexing_returns_shared_storage_views(self):
+        source = torch.tensor(
+            [
+                [[0.0, 1.0, 2.0, 3.0], [4.0, 5.0, 6.0, 7.0], [8.0, 9.0, 10.0, 11.0]],
+                [
+                    [12.0, 13.0, 14.0, 15.0],
+                    [16.0, 17.0, 18.0, 19.0],
+                    [20.0, 21.0, 22.0, 23.0],
+                ],
+            ]
+        )
+
+        row = source[-1]
+        self.assertEqual(row.shape, (3, 4))
+        self.assertEqual(row.stride(), (4, 1))
+        self.assertEqual(row.storage_offset(), 12)
+        self.assertEqual(row.tolist(), source.tolist()[1])
+        self.assertIs(row.dtype, source.dtype)
+        self.assertEqual(row.device, source.device)
+
+        partial = source[-1, 1]
+        self.assertEqual(partial.shape, (4,))
+        self.assertEqual(partial.stride(), (1,))
+        self.assertEqual(partial.storage_offset(), 16)
+        self.assertEqual(partial.tolist(), [16.0, 17.0, 18.0, 19.0])
+
+        scalar = source[1, -1, -2]
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(scalar.stride(), ())
+        self.assertEqual(scalar.storage_offset(), 22)
+        self.assertEqual(scalar.item(), 22.0)
+
+        tuple_partial = source[(1,)]
+        alias = source[()]
+        self.assertEqual(tuple_partial.tolist(), row.tolist())
+        self.assertEqual(alias.shape, source.shape)
+        self.assertEqual(alias.stride(), source.stride())
+        self.assertEqual(alias.storage_offset(), source.storage_offset())
+        self.assertEqual(alias.tolist(), source.tolist())
+
+        del source
+        copied = np.asarray(row)
+        copied[0, 0] = 99.0
+        self.assertEqual(row.tolist()[0][0], 12.0)
+        self.assertEqual((row + 1).tolist()[0][0], 13.0)
+
+    def test_integer_indexing_accepts_index_protocol_values(self):
+        class IntSubclass(int):
+            pass
+
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        tensor = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        first = IndexValue(-1)
+        second = IndexValue(0)
+        self.assertEqual(tensor[first, second].item(), 3.0)
+        self.assertEqual((first.calls, second.calls), (1, 1))
+        self.assertEqual(tensor[IntSubclass(1)].tolist(), [3.0, 4.0])
+        self.assertEqual(tensor[np.int64(-1)].tolist(), [3.0, 4.0])
+        self.assertEqual(tensor[np.uint64(0)].tolist(), [1.0, 2.0])
+
+        scalar_index = IndexValue(0)
+        with self.assertRaisesRegex(IndexError, "too many indices for tensor of dimension 0"):
+            torch.tensor(1.0)[scalar_index]
+        self.assertEqual(scalar_index.calls, 0)
+
+        with self.assertRaisesRegex(IndexError, "invalid index of a 0-dim tensor"):
+            torch.tensor(1.0)[np.int64(0)]
+
+    def test_integer_indexing_stops_converting_after_the_first_axis_error(self):
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        tensor = torch.zeros((2, 3))
+        later = IndexValue(0)
+        with self.assertRaisesRegex(
+            IndexError, "index 2 is out of bounds for dimension 0 with size 2"
+        ):
+            tensor[2, later]
+        self.assertEqual(later.calls, 0)
+
+        first = IndexValue(2)
+        later = IndexValue(0)
+        with self.assertRaisesRegex(
+            IndexError, "index 2 is out of bounds for dimension 0 with size 2"
+        ):
+            tensor[first, later]
+        self.assertEqual(first.calls, 1)
+        self.assertEqual(later.calls, 0)
+
+        with self.assertRaisesRegex(
+            IndexError, "index 2 is out of bounds for dimension 0 with size 2"
+        ):
+            tensor[2, 1 << 100]
+
+    def test_integer_indexing_rejects_bool_and_non_integer_forms(self):
+        class IntOnly:
+            def __int__(self):
+                return 0
+
+        class FailingIndex:
+            def __index__(self):
+                raise RuntimeError("conversion failed")
+
+        tensor = torch.zeros((2, 3))
+        invalid = (
+            True,
+            False,
+            np.bool_(True),
+            1.0,
+            np.float64(1.0),
+            slice(None),
+            [0],
+            None,
+            Ellipsis,
+            IntOnly(),
+            FailingIndex(),
+        )
+        for index in invalid:
+            with self.subTest(index=repr(index)):
+                with self.assertRaisesRegex(IndexError, "only integers"):
+                    tensor[index]
+
+        with self.assertRaisesRegex(IndexError, "only integers"):
+            tensor[0, True]
+        for index in (1 << 100, -(1 << 100), np.uint64(2**64 - 1)):
+            with self.subTest(index=index):
+                with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                    tensor[index]
+
+    def test_integer_indexing_matches_pytorch_errors_and_empty_offsets(self):
+        tensor = torch.zeros((2, 3, 4))
+        errors = (
+            (2, "index 2 is out of bounds for dimension 0 with size 2"),
+            (-3, "index -3 is out of bounds for dimension 0 with size 2"),
+            ((0, 3), "index 3 is out of bounds for dimension 1 with size 3"),
+        )
+        for index, message in errors:
+            with self.subTest(index=index):
+                with self.assertRaisesRegex(IndexError, message):
+                    tensor[index]
+
+        with self.assertRaisesRegex(IndexError, "too many indices for tensor of dimension 3"):
+            tensor[99, 0, 0, 0]
+
+        scalar = torch.tensor(5.0)
+        with self.assertRaisesRegex(IndexError, "invalid index of a 0-dim tensor"):
+            scalar[0]
+        with self.assertRaisesRegex(
+            IndexError, "index -1 is out of bounds for dimension 0 with size 0"
+        ):
+            scalar[-1]
+        with self.assertRaisesRegex(IndexError, "too many indices for tensor of dimension 0"):
+            scalar[(0,)]
+
+        empty = torch.zeros((2, 0, 3))
+        view = empty[1]
+        self.assertEqual(view.shape, (0, 3))
+        self.assertEqual(view.stride(), (3, 1))
+        self.assertEqual(view.storage_offset(), 3)
+        self.assertEqual(view.tolist(), [])
+        with self.assertRaisesRegex(
+            IndexError, "index 0 is out of bounds for dimension 1 with size 0"
+        ):
+            empty[1, 0]
+
+        maximum = sys.maxsize
+        extreme = torch.zeros((maximum, 0))[maximum - 1]
+        self.assertEqual(extreme.storage_offset(), maximum - 1)
+        with self.assertRaisesRegex(RuntimeError, "Tensor: invalid storage offset -4"):
+            extreme.reshape((maximum, 0))[maximum - 1]
+
     def test_empty_elementwise_results_match_pytorch_strides(self):
         scalar_cases = (
             ((1, 0), (1, 1)),
