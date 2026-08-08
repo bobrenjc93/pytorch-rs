@@ -59,7 +59,7 @@ class Int64ApiTests(unittest.TestCase):
             for dtype in (None, torch.int64):
                 with self.subTest(integer_overflow=value, dtype=dtype):
                     kwargs = {} if dtype is None else {"dtype": dtype}
-                    with self.assertRaises(ValueError):
+                    with self.assertRaises(RuntimeError):
                         torch.tensor([value], **kwargs)
 
         for value in (
@@ -94,10 +94,14 @@ class Int64ApiTests(unittest.TestCase):
         self.assertEqual(wide_python.item(), np.float32(float(2**100)))
 
     def test_tensor_rejects_numpy_scalars_in_int64_conversion(self):
-        for value in (np.float32(1.5), np.float64(-2.5), np.bool_(True)):
+        for value in (np.float32(1.5), np.longdouble(-2.5), np.bool_(True)):
             with self.subTest(explicit_int64=value):
                 with self.assertRaises(TypeError):
                     torch.tensor([value], dtype=torch.int64)
+
+        numpy_float64 = torch.tensor([np.float64(1.9)], dtype=torch.int64)
+        self.assertIs(numpy_float64.dtype, torch.int64)
+        self.assertEqual(numpy_float64.tolist(), [1])
 
         with self.assertRaises(TypeError):
             torch.tensor([1, np.bool_(True)])
@@ -105,6 +109,15 @@ class Int64ApiTests(unittest.TestCase):
         floating = torch.tensor([np.float32(1.5)], dtype=torch.float32)
         self.assertIs(floating.dtype, torch.float32)
         self.assertEqual(floating.tolist(), [1.5])
+
+    def test_wide_numpy_uint64_has_context_specific_tensor_errors(self):
+        for value in (np.uint64(2**63), np.uint64(2**64 - 1)):
+            with self.subTest(value=value, dtype="inferred"):
+                with self.assertRaises(TypeError):
+                    torch.tensor([value])
+            with self.subTest(value=value, dtype="explicit int64"):
+                with self.assertRaises(RuntimeError):
+                    torch.tensor([value], dtype=torch.int64)
 
     def test_creation_functions_materialize_int64_storage(self):
         cases = (
