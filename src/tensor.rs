@@ -369,14 +369,14 @@ impl Tensor {
             }
             resolved[index] = usize::try_from(elements / specified_elements)
                 .map_err(|_| TensorError::ElementCountOverflow)?;
-        } else {
-            let specified_elements = element_count(&resolved)?;
-            if specified_elements != self.elements {
-                return Err(TensorError::ReshapeElementCountMismatch {
-                    shape: try_clone_reshape_shape(requested, self.elements)?,
-                    elements: self.elements,
-                });
-            }
+        }
+
+        let resolved_elements = element_count(&resolved)?;
+        if resolved_elements != self.elements {
+            return Err(TensorError::ReshapeElementCountMismatch {
+                shape: try_clone_reshape_shape(requested, self.elements)?,
+                elements: self.elements,
+            });
         }
 
         let strides = if self.elements == 0 && resolved == self.shape {

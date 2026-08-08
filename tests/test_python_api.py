@@ -188,6 +188,11 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(wrapped_inference.stride(), (1, maximum, 1))
         self.assertEqual(wrapped_inference.tolist(), [])
 
+        with self.assertRaisesRegex(RuntimeError, "element count overflowed"):
+            torch.tensor([1.0]).reshape(maximum, maximum, -1)
+        with self.assertRaisesRegex(RuntimeError, "element count overflowed"):
+            empty.reshape(3, maximum, -1)
+
         with self.assertRaisesRegex(RuntimeError, "is invalid for input of size 0"):
             empty.reshape(2, -1, 1 << 62)
 

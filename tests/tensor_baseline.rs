@@ -593,6 +593,16 @@ fn reshape_infers_one_dimension_and_handles_scalars_and_empty_tensors() {
     );
     assert_eq!(wrapped_inference.stride(), [1, usize::MAX / 2, 1]);
 
+    let one = Tensor::from_vec(vec![1.0], [1]).unwrap();
+    assert_eq!(
+        one.reshape([maximum, maximum, -1]),
+        Err(TensorError::ElementCountOverflow)
+    );
+    assert_eq!(
+        empty.reshape([3, maximum, -1]),
+        Err(TensorError::ElementCountOverflow)
+    );
+
     assert_eq!(
         empty.reshape([2, -1, 1_i64 << 62]),
         Err(TensorError::ReshapeElementCountMismatch {
