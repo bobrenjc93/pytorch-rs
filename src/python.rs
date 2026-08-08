@@ -93,12 +93,14 @@ enum ParsedFillValue {
     Float(f64),
     SignedInteger(i64),
     UnsignedInteger(u64),
+    WideInteger(f64),
     Boolean(bool),
     TensorScalar(Scalar),
 }
 
 enum ParsedArithmeticScalar {
     PythonBool(bool),
+    NumpyBool(bool),
     Number(ParsedFillValue),
     WideNumpyUnsigned,
 }
@@ -340,7 +342,7 @@ impl PyTensor {
             }
             operation.apply_scalar(
                 &self.inner,
-                scalar.into_scalar(self.inner.dtype())?,
+                scalar.into_scalar(self.inner.dtype(), operation)?,
                 reverse,
             )
         };
@@ -767,7 +769,7 @@ fn parse_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> 
     }
 
     if fill_value.is_instance_of::<PyInt>() {
-        return parse_integer_fill_value(fill_value);
+        return parse_integer_value(fill_value);
     }
 
     if fill_value.is_instance_of::<PyFloat>() {
@@ -786,7 +788,7 @@ fn parse_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedAr
     }
 
     if value.is_instance_of::<PyInt>() {
-        return parse_integer_fill_value(value)
+        return parse_arithmetic_integer(value)
             .map(ParsedArithmeticScalar::Number)
             .map(Some);
     }
@@ -825,8 +827,7 @@ fn parse_numpy_arithmetic_scalar(
     if value.is_instance(&numpy_bool)? {
         return value
             .is_truthy()
-            .map(|value| ParsedFillValue::SignedInteger(i64::from(value)))
-            .map(ParsedArithmeticScalar::Number)
+            .map(ParsedArithmeticScalar::NumpyBool)
             .map(Some);
     }
 
@@ -890,15 +891,29 @@ fn parse_numpy_value(
     Err(invalid_value())
 }
 
-fn parse_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
-    if fill_value.is_exact_instance_of::<PyBool>() {
-        return fill_value.is_truthy().map(ParsedFillValue::Boolean);
+fn parse_integer_value(value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    match parse_arithmetic_integer(value) {
+        Ok(value) => Ok(value),
+        Err(_) => value
+            .extract::<f64>()
+            .map(ParsedFillValue::WideInteger)
+            .map_err(|_| {
+                PyOverflowError::new_err(
+                    "Python integer is too large to convert to a supported tensor dtype",
+                )
+            }),
     }
-    if let Ok(value) = fill_value.extract::<i64>() {
+}
+
+fn parse_arithmetic_integer(value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    if value.is_exact_instance_of::<PyBool>() {
+        return value.is_truthy().map(ParsedFillValue::Boolean);
+    }
+    if let Ok(value) = value.extract::<i64>() {
         return Ok(ParsedFillValue::SignedInteger(value));
     }
 
-    if let Ok(value) = fill_value.extract::<u64>() {
+    if let Ok(value) = value.extract::<u64>() {
         return Ok(ParsedFillValue::UnsignedInteger(value));
     }
 
@@ -937,7 +952,7 @@ impl ParsedFillValue {
 
     fn into_fill_f32(self) -> PyResult<f32> {
         match self {
-            Self::Float(value) => {
+            Self::Float(value) | Self::WideInteger(value) => {
                 if value.is_finite() && value.abs() > f64::from(f32::MAX) {
                     return Err(fill_value_overflow());
                 }
@@ -962,20 +977,21 @@ impl ParsedFillValue {
 
     fn into_fill_i64(self) -> PyResult<i64> {
         match self {
-            Self::Float(value) => float_to_i64(value),
+            Self::Float(value) => fill_float_to_i64(value),
             Self::SignedInteger(value) | Self::TensorScalar(Scalar::Int64(value)) => Ok(value),
             Self::UnsignedInteger(value) => {
                 i64::try_from(value).map_err(|_| integer_conversion_overflow())
             }
+            Self::WideInteger(_) => Err(integer_conversion_overflow()),
             Self::Boolean(value) => Ok(i64::from(value)),
-            Self::TensorScalar(Scalar::Float32(value)) => float_to_i64(f64::from(value)),
+            Self::TensorScalar(Scalar::Float32(value)) => fill_float_to_i64(f64::from(value)),
         }
     }
 
     fn into_tensor_f32(self) -> f32 {
         #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
         let value = match self {
-            Self::Float(value) => value as f32,
+            Self::Float(value) | Self::WideInteger(value) => value as f32,
             Self::SignedInteger(value) => value as f32,
             Self::UnsignedInteger(value) => value as f32,
             Self::Boolean(value) => f32::from(u8::from(value)),
@@ -986,23 +1002,14 @@ impl ParsedFillValue {
 
     fn into_tensor_i64(self) -> PyResult<i64> {
         match self {
-            Self::Float(value) => {
-                // Rust's float-to-int cast has the saturating behavior used by
-                // PyTorch's tensor constructor at the representable boundary.
-                #[allow(clippy::cast_possible_truncation)]
-                let converted = value as i64;
-                Ok(converted)
-            }
+            Self::Float(value) => tensor_float_to_i64(value),
             Self::SignedInteger(value) | Self::TensorScalar(Scalar::Int64(value)) => Ok(value),
             Self::UnsignedInteger(value) => {
                 i64::try_from(value).map_err(|_| integer_conversion_overflow())
             }
+            Self::WideInteger(_) => Err(integer_conversion_overflow()),
             Self::Boolean(value) => Ok(i64::from(value)),
-            Self::TensorScalar(Scalar::Float32(value)) => {
-                #[allow(clippy::cast_possible_truncation)]
-                let converted = value as i64;
-                Ok(converted)
-            }
+            Self::TensorScalar(Scalar::Float32(value)) => tensor_float_to_i64(f64::from(value)),
         }
     }
 
@@ -1023,6 +1030,7 @@ impl ParsedFillValue {
                 }
                 Err(_) => Err(integer_conversion_overflow()),
             },
+            Self::WideInteger(_) => Err(integer_conversion_overflow()),
             Self::Boolean(value) => Ok(Scalar::Int64(i64::from(value))),
             Self::TensorScalar(value) => Ok(value),
         }
@@ -1034,9 +1042,21 @@ impl ParsedArithmeticScalar {
         matches!(self, Self::PythonBool(_))
     }
 
-    fn into_scalar(self, tensor_dtype: DType) -> PyResult<Scalar> {
+    fn into_scalar(self, tensor_dtype: DType, operation: BinaryOperation) -> PyResult<Scalar> {
         match self {
             Self::PythonBool(value) => Ok(Scalar::Int64(i64::from(value))),
+            Self::NumpyBool(value) => Ok(Scalar::Float32(f32::from(u8::from(value)))),
+            Self::Number(ParsedFillValue::UnsignedInteger(value))
+                if value > i64::MAX.cast_unsigned() && matches!(tensor_dtype, DType::Int64) =>
+            {
+                if matches!(operation, BinaryOperation::Divide) {
+                    #[allow(clippy::cast_precision_loss)]
+                    let value = value as f32;
+                    Ok(Scalar::Float32(value))
+                } else {
+                    Ok(Scalar::Int64(value.cast_signed()))
+                }
+            }
             Self::Number(value) => value.into_arithmetic_scalar(tensor_dtype),
             Self::WideNumpyUnsigned => {
                 unreachable!("wide NumPy unsigned operands are dispatched before conversion")
@@ -1049,10 +1069,22 @@ fn integer_conversion_overflow() -> PyErr {
     PyRuntimeError::new_err("value cannot be converted to int64 without overflow")
 }
 
-fn float_to_i64(value: f64) -> PyResult<i64> {
+fn tensor_float_to_i64(value: f64) -> PyResult<i64> {
     const EXCLUSIVE_UPPER_BOUND: f64 = 9_223_372_036_854_775_808.0;
     if !value.is_finite() || !(-EXCLUSIVE_UPPER_BOUND..EXCLUSIVE_UPPER_BOUND).contains(&value) {
         return Err(integer_conversion_overflow());
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    Ok(value as i64)
+}
+
+fn fill_float_to_i64(value: f64) -> PyResult<i64> {
+    const INCLUSIVE_UPPER_BOUND: f64 = 9_223_372_036_854_775_808.0;
+    if !value.is_finite() || !(-INCLUSIVE_UPPER_BOUND..=INCLUSIVE_UPPER_BOUND).contains(&value) {
+        return Err(integer_conversion_overflow());
+    }
+    if value == INCLUSIVE_UPPER_BOUND {
+        return Ok(i64::MAX);
     }
     #[allow(clippy::cast_possible_truncation)]
     Ok(value as i64)
@@ -1111,7 +1143,7 @@ fn parse_tensor_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedFillVa
         return value.is_truthy().map(ParsedFillValue::Boolean).map(Some);
     }
     if value.is_instance_of::<PyInt>() {
-        return parse_integer_fill_value(value).map(Some);
+        return parse_integer_value(value).map(Some);
     }
     if value.is_instance_of::<PyFloat>() {
         return value.extract::<f64>().map(ParsedFillValue::Float).map(Some);
@@ -1181,6 +1213,7 @@ fn infer_full_dtype(value: ParsedFillValue) -> PyResult<DType> {
         }
         ParsedFillValue::SignedInteger(_)
         | ParsedFillValue::UnsignedInteger(_)
+        | ParsedFillValue::WideInteger(_)
         | ParsedFillValue::TensorScalar(Scalar::Int64(_)) => Ok(DType::Int64),
         ParsedFillValue::Boolean(_) => Err(unsupported_bool_storage()),
     }

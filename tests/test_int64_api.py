@@ -60,6 +60,16 @@ class Int64ApiTests(unittest.TestCase):
                 with self.assertRaises((RuntimeError, OverflowError)):
                     torch.tensor([value], dtype=torch.int64)
 
+        for value in (math.nan, math.inf, -math.inf, float(2**63), 1e40, -1e40):
+            with self.subTest(float_to_int64=value):
+                with self.assertRaises(RuntimeError):
+                    torch.tensor([value], dtype=torch.int64)
+
+        self.assertEqual(
+            torch.tensor([float(-(2**63))], dtype=torch.int64).item(),
+            -(2**63),
+        )
+
         large_float = torch.tensor([1e40], dtype=torch.float32)
         self.assertTrue(math.isinf(large_float.item()))
         self.assertGreater(large_float.item(), 0)
@@ -67,8 +77,10 @@ class Int64ApiTests(unittest.TestCase):
         wide_numpy = torch.tensor([np.uint64(2**64 - 1)], dtype=torch.float32)
         self.assertEqual(wide_numpy.item(), np.float32(np.uint64(2**64 - 1)))
 
-        saturated = torch.tensor([float(2**63)], dtype=torch.int64)
-        self.assertEqual(saturated.item(), 2**63 - 1)
+        wide_python = torch.tensor([2**100], dtype=torch.float32)
+        self.assertEqual(wide_python.item(), np.float32(float(2**100)))
+        with self.assertRaises(RuntimeError):
+            torch.tensor([2**100])
 
     def test_creation_functions_materialize_int64_storage(self):
         cases = (
@@ -108,6 +120,13 @@ class Int64ApiTests(unittest.TestCase):
             torch.full((2,), True)
         explicit_bool = torch.full((2,), True, dtype=torch.int64)
         self.assertEqual(explicit_bool.tolist(), [1, 1])
+
+        upper_boundary = torch.full((1,), float(2**63), dtype=torch.int64)
+        self.assertEqual(upper_boundary.item(), 2**63 - 1)
+        for value in (math.nan, math.inf, -math.inf, 1e40, -1e40):
+            with self.subTest(full_float_to_int64=value):
+                with self.assertRaises(RuntimeError):
+                    torch.full((1,), value, dtype=torch.int64)
 
     def test_same_and_mixed_dtype_broadcasting_matches_numpy(self):
         left = torch.tensor([[1], [2]], dtype=torch.int64)
@@ -172,8 +191,40 @@ class Int64ApiTests(unittest.TestCase):
         self.assertEqual((maximum * 2).tolist(), [-2])
         self.assertEqual(torch.tensor([2**63 - 1, 1]).sum().item(), -(2**63))
 
-        with self.assertRaises(RuntimeError):
-            maximum + 2**63
+        self.assertEqual((maximum + 2**63).tolist(), [-1])
+        self.assertEqual((maximum + (2**64 - 1)).tolist(), [2**63 - 2])
+        one = torch.tensor([1])
+        self.assertEqual((one - 2**63).tolist(), [-(2**63) + 1])
+        self.assertEqual((2**63 - one).tolist(), [2**63 - 1])
+        self.assertEqual((one * 2**63).tolist(), [-(2**63)])
+
+        denominator = torch.tensor([2])
+        divided = denominator / 2**63
+        reverse = 2**63 / denominator
+        self.assertIs(divided.dtype, torch.float32)
+        self.assertIs(reverse.dtype, torch.float32)
+        self.assertGreater(divided.item(), 0.0)
+        self.assertEqual(divided.item(), np.float32(2.0) / np.float32(2**63))
+        self.assertEqual(reverse.item(), np.float32(2**63) / np.float32(2.0))
+
+    def test_numpy_bool_scalars_promote_int64_tensors_to_float32(self):
+        tensor = torch.tensor([1, 2])
+        numpy_true = np.bool_(True)
+        cases = (
+            (tensor + numpy_true, [2.0, 3.0]),
+            (tensor - numpy_true, [0.0, 1.0]),
+            (tensor * numpy_true, [1.0, 2.0]),
+            (tensor / numpy_true, [1.0, 2.0]),
+            (numpy_true - tensor, [0.0, -1.0]),
+            (numpy_true / tensor, [1.0, 0.5]),
+        )
+        for actual, expected in cases:
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.tolist(), expected)
+
+        python_bool = tensor + True
+        self.assertIs(python_bool.dtype, torch.int64)
+        self.assertEqual(python_bool.tolist(), [2, 3])
 
     def test_relu_sum_views_and_items_keep_int64(self):
         source = torch.tensor([[-3, 0], [4, 5]])
