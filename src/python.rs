@@ -3,9 +3,80 @@ use pyo3::exceptions::{
     PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
 };
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{
+    PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyString, PyTuple,
+};
 
-use crate::{Tensor as CoreTensor, TensorError};
+use crate::{DType, Device, Tensor as CoreTensor, TensorError};
+
+static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
+
+/// Python scalar-type descriptor backed by a native [`DType`].
+#[pyclass(name = "dtype", module = "torch_rs", frozen, skip_from_py_object)]
+#[derive(Clone)]
+struct PyDType {
+    inner: DType,
+}
+
+#[pymethods]
+impl PyDType {
+    fn __repr__(&self) -> &'static str {
+        match self.inner {
+            DType::Float32 => "torch.float32",
+        }
+    }
+
+    fn __str__(&self) -> &'static str {
+        self.__repr__()
+    }
+}
+
+/// Python device descriptor backed by a native [`Device`].
+#[pyclass(
+    name = "device",
+    module = "torch_rs",
+    frozen,
+    eq,
+    hash,
+    skip_from_py_object
+)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct PyDevice {
+    inner: Device,
+}
+
+#[pymethods]
+impl PyDevice {
+    #[new]
+    fn new(r#type: &Bound<'_, PyAny>) -> PyResult<Self> {
+        parse_device_value("device", r#type).map(|inner| Self { inner })
+    }
+
+    #[getter]
+    fn r#type(&self) -> &'static str {
+        match self.inner {
+            Device::Cpu => "cpu",
+        }
+    }
+
+    #[getter]
+    fn index(&self) -> Option<usize> {
+        match self.inner {
+            Device::Cpu => None,
+        }
+    }
+
+    fn __repr__(&self) -> &'static str {
+        match self.inner {
+            Device::Cpu => "device(type='cpu')",
+        }
+    }
+
+    fn __str__(&self) -> &'static str {
+        self.r#type()
+    }
+}
 
 /// Python-facing tensor backed by the native Rust tensor core.
 #[pyclass(name = "Tensor", module = "torch_rs", skip_from_py_object)]
@@ -45,6 +116,20 @@ impl PyTensor {
     #[getter]
     fn shape<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
         PyTuple::new(py, self.inner.shape().iter().copied())
+    }
+
+    #[getter]
+    fn dtype(&self, py: Python<'_>) -> PyResult<Py<PyDType>> {
+        match self.inner.dtype() {
+            DType::Float32 => Ok(float32_object(py)?.clone_ref(py)),
+        }
+    }
+
+    #[getter]
+    fn device(&self) -> PyDevice {
+        PyDevice {
+            inner: self.inner.device(),
+        }
     }
 
     #[pyo3(signature = (dim=None))]
@@ -272,39 +357,152 @@ impl BinaryOperation {
     }
 }
 
-#[pyfunction]
-fn tensor(data: &Bound<'_, PyAny>) -> PyResult<PyTensor> {
+#[pyfunction(signature = (data, *, dtype=None, device=None))]
+fn tensor(
+    data: &Bound<'_, PyAny>,
+    dtype: Option<&Bound<'_, PyAny>>,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyTensor> {
+    let (dtype, device) = parse_metadata("tensor", dtype, device)?;
     let mut flattened = Vec::new();
     let shape = flatten_rectangular(data, &mut flattened)?;
-    CoreTensor::from_vec(flattened, shape)
+    CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction]
-fn zeros(shape: Vec<usize>) -> PyResult<PyTensor> {
-    CoreTensor::zeros(shape)
+#[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
+fn zeros(
+    size: Option<&Bound<'_, PyAny>>,
+    shape: Option<&Bound<'_, PyAny>>,
+    dtype: Option<&Bound<'_, PyAny>>,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyTensor> {
+    let size = parse_creation_size("zeros", size, shape)?;
+    let (dtype, device) = parse_metadata("zeros", dtype, device)?;
+    CoreTensor::zeros_with_metadata(size, dtype, device)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction]
-fn ones(shape: Vec<usize>) -> PyResult<PyTensor> {
-    CoreTensor::ones(shape)
+#[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
+fn ones(
+    size: Option<&Bound<'_, PyAny>>,
+    shape: Option<&Bound<'_, PyAny>>,
+    dtype: Option<&Bound<'_, PyAny>>,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyTensor> {
+    let size = parse_creation_size("ones", size, shape)?;
+    let (dtype, device) = parse_metadata("ones", dtype, device)?;
+    CoreTensor::ones_with_metadata(size, dtype, device)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction(signature = (size, fill_value))]
-fn full(size: &Bound<'_, PyAny>, fill_value: &Bound<'_, PyAny>) -> PyResult<PyTensor> {
+#[pyfunction(signature = (size, fill_value, *, dtype=None, device=None))]
+fn full(
+    size: &Bound<'_, PyAny>,
+    fill_value: &Bound<'_, PyAny>,
+    dtype: Option<&Bound<'_, PyAny>>,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyTensor> {
+    let (dtype, device) = parse_metadata("full", dtype, device)?;
     let size = parse_size(size)?;
     let fill_value = parse_fill_value(fill_value)?;
     let shape = validate_size(size)?;
     CoreTensor::validate_full_shape(&shape).map_err(|error| full_shape_error(&error, &shape))?;
     let fill_value = fill_value.into_f32()?;
-    CoreTensor::full(shape, fill_value)
+    CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
+}
+
+fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
+    FLOAT32.get_or_try_init(py, || {
+        Py::new(
+            py,
+            PyDType {
+                inner: DType::Float32,
+            },
+        )
+    })
+}
+
+fn parse_creation_size(
+    function: &str,
+    size: Option<&Bound<'_, PyAny>>,
+    shape: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Vec<usize>> {
+    let value = match (size, shape) {
+        (Some(_), Some(_)) => {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() received both 'size' and its compatibility alias 'shape'"
+            )));
+        }
+        (Some(value), None) | (None, Some(value)) => value,
+        (None, None) => {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() missing required argument 'size'"
+            )));
+        }
+    };
+    value.extract::<Vec<usize>>()
+}
+
+fn parse_metadata(
+    function: &str,
+    dtype: Option<&Bound<'_, PyAny>>,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<(DType, Device)> {
+    Ok((
+        parse_dtype(function, dtype)?,
+        parse_device(function, device)?,
+    ))
+}
+
+fn parse_dtype(function: &str, dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
+    let Some(dtype) = dtype else {
+        return Ok(DType::Float32);
+    };
+    if let Ok(dtype) = dtype.cast::<PyDType>() {
+        return Ok(dtype.try_borrow()?.inner);
+    }
+
+    let type_name = dtype.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "{function}(): argument 'dtype' must be torch.dtype, not {type_name}"
+    )))
+}
+
+fn parse_device(function: &str, device: Option<&Bound<'_, PyAny>>) -> PyResult<Device> {
+    device.map_or(Ok(Device::Cpu), |device| {
+        parse_device_value(function, device)
+    })
+}
+
+fn parse_device_value(function: &str, device: &Bound<'_, PyAny>) -> PyResult<Device> {
+    if let Ok(device) = device.cast::<PyDevice>() {
+        return Ok(device.try_borrow()?.inner);
+    }
+    if let Ok(device) = device.cast::<PyString>() {
+        let specification = device.to_str()?;
+        if specification == "cpu" {
+            return Ok(Device::Cpu);
+        }
+        return Err(PyRuntimeError::new_err(format!(
+            "{function}(): device '{specification}' is not supported; only 'cpu' is implemented"
+        )));
+    }
+
+    let argument = if function == "device" {
+        "type"
+    } else {
+        "device"
+    };
+    let type_name = device.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "{function}(): argument '{argument}' must be torch.device or str, not {type_name}"
+    )))
 }
 
 fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
@@ -822,11 +1020,17 @@ fn tensor_error(error: &TensorError) -> PyErr {
 
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
     module.add_class::<PyTensor>()?;
+    module.add_class::<PyDType>()?;
+    module.add_class::<PyDevice>()?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
+    let float32 = float32_object(py)?;
+    module.add("float32", float32.clone_ref(py))?;
+    module.add("float", float32.clone_ref(py))?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

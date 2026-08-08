@@ -145,6 +145,38 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 45
       }
+    },
+    {
+      "key": "base:bd44e93788a281997de71103c7c1ad8fc2d06d96",
+      "commit": "bd44e93788a281997de71103c7c1ad8fc2d06d96",
+      "recordedAt": "2026-08-08T18:38:48.212Z",
+      "label": "base bd44e93",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 27.6,
+        "eval_63a24994": 77,
+        "eval_39340456": 12,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 42
+      }
+    },
+    {
+      "key": "pr:5",
+      "recordedAt": "2026-08-08T18:38:48.212Z",
+      "label": "PR #5",
+      "kind": "leaf",
+      "prNumber": 5,
+      "title": "Add native float32 dtype and CPU device metadata",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 29.6,
+        "eval_63a24994": 77.2,
+        "eval_39340456": 15,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 45
+      }
     }
   ]
 }
