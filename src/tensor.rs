@@ -110,26 +110,6 @@ enum ArithmeticOperation {
     Divide,
 }
 
-impl ArithmeticOperation {
-    fn apply_f32(self, left: f32, right: f32) -> f32 {
-        match self {
-            Self::Add => left + right,
-            Self::Subtract => left - right,
-            Self::Multiply => left * right,
-            Self::Divide => left / right,
-        }
-    }
-
-    fn apply_i64(self, left: i64, right: i64) -> i64 {
-        match self {
-            Self::Add => left.wrapping_add(right),
-            Self::Subtract => left.wrapping_sub(right),
-            Self::Multiply => left.wrapping_mul(right),
-            Self::Divide => unreachable!("true division is always promoted to float32"),
-        }
-    }
-}
-
 fn promote_dtype(left: DType, right: DType, operation: ArithmeticOperation) -> DType {
     if matches!(operation, ArithmeticOperation::Divide)
         || matches!(left, DType::Float32)
@@ -708,7 +688,12 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
-        self.binary_operation(other, ArithmeticOperation::Add)
+        self.binary_operation(
+            other,
+            ArithmeticOperation::Add,
+            |left, right| left + right,
+            i64::wrapping_add,
+        )
     }
 
     /// Subtracts tensors element by element with trailing-dimension broadcasting.
@@ -718,7 +703,12 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
-        self.binary_operation(other, ArithmeticOperation::Subtract)
+        self.binary_operation(
+            other,
+            ArithmeticOperation::Subtract,
+            |left, right| left - right,
+            i64::wrapping_sub,
+        )
     }
 
     /// Multiplies tensors element by element with trailing-dimension broadcasting.
@@ -728,7 +718,12 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
-        self.binary_operation(other, ArithmeticOperation::Multiply)
+        self.binary_operation(
+            other,
+            ArithmeticOperation::Multiply,
+            |left, right| left * right,
+            i64::wrapping_mul,
+        )
     }
 
     /// Divides tensors element by element using IEEE 754 true division and
@@ -739,7 +734,12 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn div(&self, other: &Self) -> Result<Self, TensorError> {
-        self.binary_operation(other, ArithmeticOperation::Divide)
+        self.binary_operation(
+            other,
+            ArithmeticOperation::Divide,
+            |left, right| left / right,
+            |_, _| unreachable!("true division is always promoted to float32"),
+        )
     }
 
     /// Adds a scalar to every element.
@@ -748,7 +748,13 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.scalar_operation(Scalar::Float32(scalar), ArithmeticOperation::Add, false)
+        self.scalar_operation(
+            Scalar::Float32(scalar),
+            ArithmeticOperation::Add,
+            false,
+            |left, right| left + right,
+            i64::wrapping_add,
+        )
     }
 
     /// Subtracts a scalar from every element.
@@ -761,6 +767,8 @@ impl Tensor {
             Scalar::Float32(scalar),
             ArithmeticOperation::Subtract,
             false,
+            |left, right| left - right,
+            i64::wrapping_sub,
         )
     }
 
@@ -774,6 +782,8 @@ impl Tensor {
             Scalar::Float32(scalar),
             ArithmeticOperation::Multiply,
             false,
+            |left, right| left * right,
+            i64::wrapping_mul,
         )
     }
 
@@ -783,7 +793,13 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn div_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.scalar_operation(Scalar::Float32(scalar), ArithmeticOperation::Divide, false)
+        self.scalar_operation(
+            Scalar::Float32(scalar),
+            ArithmeticOperation::Divide,
+            false,
+            |left, right| left / right,
+            |_, _| unreachable!("true division is always promoted to float32"),
+        )
     }
 
     /// Subtracts every element from a scalar.
@@ -792,7 +808,13 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn scalar_sub(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.scalar_operation(Scalar::Float32(scalar), ArithmeticOperation::Subtract, true)
+        self.scalar_operation(
+            Scalar::Float32(scalar),
+            ArithmeticOperation::Subtract,
+            true,
+            |left, right| left - right,
+            i64::wrapping_sub,
+        )
     }
 
     /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal
@@ -802,7 +824,13 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.scalar_operation(Scalar::Float32(scalar), ArithmeticOperation::Divide, true)
+        self.scalar_operation(
+            Scalar::Float32(scalar),
+            ArithmeticOperation::Divide,
+            true,
+            |left, right| left / right,
+            |_, _| unreachable!("true division is always promoted to float32"),
+        )
     }
 
     /// Applies a typed scalar operation, preserving int64 when both operands
@@ -812,7 +840,13 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn add_typed_scalar(&self, scalar: Scalar) -> Result<Self, TensorError> {
-        self.scalar_operation(scalar, ArithmeticOperation::Add, false)
+        self.scalar_operation(
+            scalar,
+            ArithmeticOperation::Add,
+            false,
+            |left, right| left + right,
+            i64::wrapping_add,
+        )
     }
 
     /// See [`Tensor::add_typed_scalar`].
@@ -821,7 +855,13 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn sub_typed_scalar(&self, scalar: Scalar, reverse: bool) -> Result<Self, TensorError> {
-        self.scalar_operation(scalar, ArithmeticOperation::Subtract, reverse)
+        self.scalar_operation(
+            scalar,
+            ArithmeticOperation::Subtract,
+            reverse,
+            |left, right| left - right,
+            i64::wrapping_sub,
+        )
     }
 
     /// See [`Tensor::add_typed_scalar`].
@@ -830,7 +870,13 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn mul_typed_scalar(&self, scalar: Scalar) -> Result<Self, TensorError> {
-        self.scalar_operation(scalar, ArithmeticOperation::Multiply, false)
+        self.scalar_operation(
+            scalar,
+            ArithmeticOperation::Multiply,
+            false,
+            |left, right| left * right,
+            i64::wrapping_mul,
+        )
     }
 
     /// See [`Tensor::add_typed_scalar`].
@@ -839,7 +885,13 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn div_typed_scalar(&self, scalar: Scalar, reverse: bool) -> Result<Self, TensorError> {
-        self.scalar_operation(scalar, ArithmeticOperation::Divide, reverse)
+        self.scalar_operation(
+            scalar,
+            ArithmeticOperation::Divide,
+            reverse,
+            |left, right| left / right,
+            |_, _| unreachable!("true division is always promoted to float32"),
+        )
     }
 
     /// Applies rectified linear activation element by element.
@@ -947,14 +999,21 @@ impl Tensor {
         let output_dtype = self.dtype();
         validate_storage_capacity(output_elements, output_dtype)?;
         let output = match output_dtype {
-            DType::Float32 => TensorData::Float32(matmul_kernel(
-                (rows, inner, columns),
-                output_elements,
-                0.0_f32,
-                |index| self.value_as_f32(index),
-                |index| other.value_as_f32(index),
-                |output, left, right| output + left * right,
-            )?),
+            DType::Float32 => {
+                let (TensorDataRef::Float32(left), TensorDataRef::Float32(right)) =
+                    (self.data(), other.data())
+                else {
+                    unreachable!("matching float32 dtypes require two float32 tensors")
+                };
+                TensorData::Float32(matmul_kernel(
+                    (rows, inner, columns),
+                    output_elements,
+                    0.0_f32,
+                    |index| left[index],
+                    |index| right[index],
+                    |output, left, right| output + left * right,
+                )?)
+            }
             DType::Int64 => {
                 let (TensorDataRef::Int64(left), TensorDataRef::Int64(right)) =
                     (self.data(), other.data())
@@ -983,20 +1042,40 @@ impl Tensor {
         &self,
         other: &Self,
         operation: ArithmeticOperation,
+        float_kernel: impl Fn(f32, f32) -> f32 + Copy,
+        integer_kernel: impl Fn(i64, i64) -> i64 + Copy,
     ) -> Result<Self, TensorError> {
         let dtype = promote_dtype(self.dtype(), other.dtype(), operation);
-        let mut plan = BroadcastPlan::new(self, other, dtype)?;
         if self.shape == other.shape {
-            plan.strides = if plan.elements == 0 {
-                contiguous_strides(&plan.shape, plan.elements)?
-            } else {
-                try_clone_result_shape(&self.strides, plan.elements)?
-            };
+            return self.binary_operation_same_shape(other, dtype, float_kernel, integer_kernel);
         }
+        let plan = BroadcastPlan::new(self, other, dtype)?;
         let data = match dtype {
-            DType::Float32 => TensorData::Float32(Self::collect_binary(&plan, |left, right| {
-                operation.apply_f32(self.value_as_f32(left), other.value_as_f32(right))
-            })?),
+            DType::Float32 => TensorData::Float32(match (self.data(), other.data()) {
+                (TensorDataRef::Float32(left), TensorDataRef::Float32(right)) => {
+                    Self::collect_binary(&plan, |left_offset, right_offset| {
+                        float_kernel(left[left_offset], right[right_offset])
+                    })?
+                }
+                (TensorDataRef::Float32(left), TensorDataRef::Int64(right)) => {
+                    Self::collect_binary(&plan, |left_offset, right_offset| {
+                        float_kernel(left[left_offset], i64_as_f32(right[right_offset]))
+                    })?
+                }
+                (TensorDataRef::Int64(left), TensorDataRef::Float32(right)) => {
+                    Self::collect_binary(&plan, |left_offset, right_offset| {
+                        float_kernel(i64_as_f32(left[left_offset]), right[right_offset])
+                    })?
+                }
+                (TensorDataRef::Int64(left), TensorDataRef::Int64(right)) => {
+                    Self::collect_binary(&plan, |left_offset, right_offset| {
+                        float_kernel(
+                            i64_as_f32(left[left_offset]),
+                            i64_as_f32(right[right_offset]),
+                        )
+                    })?
+                }
+            }),
             DType::Int64 => {
                 let (TensorDataRef::Int64(left), TensorDataRef::Int64(right)) =
                     (self.data(), other.data())
@@ -1004,7 +1083,7 @@ impl Tensor {
                     unreachable!("int64 promotion requires two int64 tensors")
                 };
                 TensorData::Int64(Self::collect_binary(&plan, |left_offset, right_offset| {
-                    operation.apply_i64(left[left_offset], right[right_offset])
+                    integer_kernel(left[left_offset], right[right_offset])
                 })?)
             }
         };
@@ -1014,6 +1093,70 @@ impl Tensor {
             plan.strides,
             self.device(),
         ))
+    }
+
+    fn binary_operation_same_shape(
+        &self,
+        other: &Self,
+        dtype: DType,
+        float_kernel: impl Fn(f32, f32) -> f32,
+        integer_kernel: impl Fn(i64, i64) -> i64,
+    ) -> Result<Self, TensorError> {
+        let elements = self.elements;
+        validate_storage_capacity(elements, dtype)?;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = if elements == 0 {
+            contiguous_strides(&shape, elements)?
+        } else {
+            try_clone_result_shape(&self.strides, elements)?
+        };
+        let data = match dtype {
+            DType::Float32 => {
+                let mut output = try_result_vector(elements, elements)?;
+                match (self.data(), other.data()) {
+                    (TensorDataRef::Float32(left), TensorDataRef::Float32(right)) => output.extend(
+                        left.iter()
+                            .copied()
+                            .zip(right.iter().copied())
+                            .map(|(left, right)| float_kernel(left, right)),
+                    ),
+                    (TensorDataRef::Float32(left), TensorDataRef::Int64(right)) => output.extend(
+                        left.iter()
+                            .copied()
+                            .zip(right.iter().copied())
+                            .map(|(left, right)| float_kernel(left, i64_as_f32(right))),
+                    ),
+                    (TensorDataRef::Int64(left), TensorDataRef::Float32(right)) => output.extend(
+                        left.iter()
+                            .copied()
+                            .zip(right.iter().copied())
+                            .map(|(left, right)| float_kernel(i64_as_f32(left), right)),
+                    ),
+                    (TensorDataRef::Int64(left), TensorDataRef::Int64(right)) => {
+                        output.extend(left.iter().copied().zip(right.iter().copied()).map(
+                            |(left, right)| float_kernel(i64_as_f32(left), i64_as_f32(right)),
+                        ));
+                    }
+                }
+                TensorData::Float32(output)
+            }
+            DType::Int64 => {
+                let (TensorDataRef::Int64(left), TensorDataRef::Int64(right)) =
+                    (self.data(), other.data())
+                else {
+                    unreachable!("int64 promotion requires two int64 tensors")
+                };
+                let mut output = try_result_vector(elements, elements)?;
+                output.extend(
+                    left.iter()
+                        .copied()
+                        .zip(right.iter().copied())
+                        .map(|(left, right)| integer_kernel(left, right)),
+                );
+                TensorData::Int64(output)
+            }
+        };
+        Ok(Self::from_owned_parts(data, shape, strides, self.device()))
     }
 
     fn collect_binary<T>(
@@ -1043,6 +1186,8 @@ impl Tensor {
         scalar: Scalar,
         operation: ArithmeticOperation,
         reverse: bool,
+        float_kernel: impl Fn(f32, f32) -> f32 + Copy,
+        integer_kernel: impl Fn(i64, i64) -> i64 + Copy,
     ) -> Result<Self, TensorError> {
         let elements = self.elements;
         let dtype = promote_dtype(self.dtype(), scalar.dtype(), operation);
@@ -1057,16 +1202,19 @@ impl Tensor {
             DType::Float32 => {
                 let scalar = scalar.as_f32();
                 let mut output = try_result_vector(elements, elements)?;
-                output.extend((0..elements).map(|index| {
-                    let value = self.value_as_f32(index);
-                    if reverse && matches!(operation, ArithmeticOperation::Divide) {
-                        scalar * value.recip()
-                    } else if reverse {
-                        operation.apply_f32(scalar, value)
-                    } else {
-                        operation.apply_f32(value, scalar)
+                let apply = |value: f32| match (reverse, operation) {
+                    (true, ArithmeticOperation::Divide) => scalar * value.recip(),
+                    (true, _) => float_kernel(scalar, value),
+                    (false, _) => float_kernel(value, scalar),
+                };
+                match self.data() {
+                    TensorDataRef::Float32(values) => {
+                        output.extend(values.iter().copied().map(apply));
                     }
-                }));
+                    TensorDataRef::Int64(values) => {
+                        output.extend(values.iter().copied().map(i64_as_f32).map(apply));
+                    }
+                }
                 TensorData::Float32(output)
             }
             DType::Int64 => {
@@ -1077,9 +1225,9 @@ impl Tensor {
                 let mut output = try_result_vector(elements, elements)?;
                 output.extend(values.iter().map(|value| {
                     if reverse {
-                        operation.apply_i64(scalar, *value)
+                        integer_kernel(scalar, *value)
                     } else {
-                        operation.apply_i64(*value, scalar)
+                        integer_kernel(*value, scalar)
                     }
                 }));
                 TensorData::Int64(output)
@@ -1087,17 +1235,11 @@ impl Tensor {
         };
         Ok(Self::from_owned_parts(data, shape, strides, self.device()))
     }
+}
 
-    fn value_as_f32(&self, index: usize) -> f32 {
-        match self.data() {
-            TensorDataRef::Float32(values) => values[index],
-            TensorDataRef::Int64(values) => {
-                #[allow(clippy::cast_precision_loss)]
-                let value = values[index] as f32;
-                value
-            }
-        }
-    }
+#[allow(clippy::cast_precision_loss)]
+fn i64_as_f32(value: i64) -> f32 {
+    value as f32
 }
 
 fn matmul_kernel<T: Clone + Copy>(
