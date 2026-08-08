@@ -944,6 +944,11 @@ class PythonApiBaselineTests(unittest.TestCase):
         converted = torch.full((1,), 2**64 - 1, dtype=torch.float32)
         self.assertEqual(converted.item(), 18446744073709551616.0)
 
+        for fill_value in (-(2**63) - 1, 2**64, 2**100):
+            with self.subTest(explicit_float32=fill_value):
+                with self.assertRaises(OverflowError):
+                    torch.full((1,), fill_value, dtype=torch.float32)
+
     def test_full_matches_pytorch_validation_order(self):
         with self.assertRaises(TypeError):
             torch.full([-1], object())

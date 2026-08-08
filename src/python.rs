@@ -769,7 +769,7 @@ fn parse_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> 
     }
 
     if fill_value.is_instance_of::<PyInt>() {
-        return parse_integer_value(fill_value);
+        return parse_bounded_integer_value(fill_value);
     }
 
     if fill_value.is_instance_of::<PyFloat>() {
@@ -788,7 +788,7 @@ fn parse_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedAr
     }
 
     if value.is_instance_of::<PyInt>() {
-        return parse_arithmetic_integer(value)
+        return parse_bounded_integer_value(value)
             .map(ParsedArithmeticScalar::Number)
             .map(Some);
     }
@@ -892,7 +892,7 @@ fn parse_numpy_value(
 }
 
 fn parse_integer_value(value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
-    match parse_arithmetic_integer(value) {
+    match parse_bounded_integer_value(value) {
         Ok(value) => Ok(value),
         Err(_) => value
             .extract::<f64>()
@@ -905,7 +905,7 @@ fn parse_integer_value(value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
     }
 }
 
-fn parse_arithmetic_integer(value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+fn parse_bounded_integer_value(value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
     if value.is_exact_instance_of::<PyBool>() {
         return value.is_truthy().map(ParsedFillValue::Boolean);
     }
