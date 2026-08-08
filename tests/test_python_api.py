@@ -204,11 +204,17 @@ class PythonApiBaselineTests(unittest.TestCase):
 
         self.assertEqual(torch.tensor([-math.inf, -1.0, math.inf]).max().item(), math.inf)
 
-    def test_max_uses_pytorch_ordering_for_equal_signed_zeros(self):
-        negative_last = torch.tensor([0.0, -0.0]).max().item()
-        positive_last = torch.tensor([-0.0, 0.0]).max().item()
-        self.assertEqual(math.copysign(1.0, negative_last), -1.0)
-        self.assertEqual(math.copysign(1.0, positive_last), 1.0)
+    def test_max_uses_pytorch_ordering_for_signed_zeros(self):
+        cases = (
+            ([0.0, -0.0], 1.0),
+            ([-0.0, 0.0], 1.0),
+            ([-0.0, 0.0, -0.0], 1.0),
+            ([-1.0, -0.0, -0.0], -1.0),
+        )
+        for values, expected_sign in cases:
+            with self.subTest(values=values):
+                maximum = torch.tensor(values).max().item()
+                self.assertEqual(math.copysign(1.0, maximum), expected_sign)
 
     def test_max_rejects_empty_tensors_with_pytorch_error(self):
         message = (

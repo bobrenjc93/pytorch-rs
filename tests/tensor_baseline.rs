@@ -487,22 +487,18 @@ fn maximum_propagates_nan_and_handles_infinities() {
 }
 
 #[test]
-fn maximum_uses_pytorch_ordering_for_equal_signed_zeros() {
-    let negative_last = Tensor::from_vec(vec![0.0, -0.0], [2])
-        .unwrap()
-        .max()
-        .unwrap()
-        .item()
-        .unwrap();
-    assert_eq!(negative_last.to_bits(), (-0.0_f32).to_bits());
-
-    let positive_last = Tensor::from_vec(vec![-0.0, 0.0], [2])
-        .unwrap()
-        .max()
-        .unwrap()
-        .item()
-        .unwrap();
-    assert_eq!(positive_last.to_bits(), 0.0_f32.to_bits());
+fn maximum_uses_pytorch_ordering_for_signed_zeros() {
+    for (values, expected) in [
+        (vec![0.0, -0.0], 0.0_f32),
+        (vec![-0.0, 0.0], 0.0_f32),
+        (vec![-0.0, 0.0, -0.0], 0.0_f32),
+        (vec![-1.0, -0.0, -0.0], -0.0_f32),
+    ] {
+        let elements = values.len();
+        let maximum = Tensor::from_vec(values, [elements]).unwrap();
+        let maximum = maximum.max().unwrap().item().unwrap();
+        assert_eq!(maximum.to_bits(), expected.to_bits());
+    }
 }
 
 #[test]

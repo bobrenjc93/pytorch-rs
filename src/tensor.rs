@@ -628,8 +628,8 @@ impl Tensor {
 
     /// Returns the maximum value as a scalar tensor.
     ///
-    /// NaNs propagate. When values compare equal, the later value wins, which
-    /// preserves `PyTorch`'s observable ordering for signed zero.
+    /// NaNs propagate. Positive zero wins when both zero signs are present,
+    /// while an all-negative-zero maximum remains negative zero.
     ///
     /// # Errors
     ///
@@ -643,10 +643,8 @@ impl Tensor {
         for value in values {
             maximum = if maximum.is_nan() || value.is_nan() {
                 f32::NAN
-            } else if maximum > value {
-                maximum
             } else {
-                value
+                maximum.max(value)
             };
         }
 
