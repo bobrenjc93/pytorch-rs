@@ -85,6 +85,9 @@ pub enum TensorError {
         dimension: usize,
         size: usize,
     },
+    InvalidStorageOffset {
+        offset: i64,
+    },
     IndexCalculationOverflow,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
@@ -160,6 +163,9 @@ impl Display for TensorError {
                 formatter,
                 "index {index} is out of bounds for dimension {dimension} with size {size}"
             ),
+            Self::InvalidStorageOffset { offset } => {
+                write!(formatter, "Tensor: invalid storage offset {offset}")
+            }
             Self::IndexCalculationOverflow => {
                 write!(formatter, "tensor index calculation overflowed usize")
             }
@@ -523,31 +529,7 @@ impl Tensor {
 
         let mut offset = self.offset;
         for (dimension, index) in indices.iter().copied().enumerate() {
-            let size = self.shape[dimension];
-            let signed_size =
-                i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
-            if index < -signed_size || index >= signed_size {
-                return Err(TensorError::IndexOutOfBounds {
-                    index,
-                    dimension,
-                    size,
-                });
-            }
-            let normalized = if index < 0 {
-                signed_size
-                    .checked_add(index)
-                    .ok_or(TensorError::IndexCalculationOverflow)?
-            } else {
-                index
-            };
-            let normalized =
-                usize::try_from(normalized).map_err(|_| TensorError::IndexCalculationOverflow)?;
-            let contribution = normalized
-                .checked_mul(self.strides[dimension])
-                .ok_or(TensorError::IndexCalculationOverflow)?;
-            offset = offset
-                .checked_add(contribution)
-                .ok_or(TensorError::IndexCalculationOverflow)?;
+            offset = self.checked_index_offset(offset, dimension, index)?;
         }
 
         let shape = try_clone_result_shape(&self.shape[indices.len()..], self.elements)?;
@@ -563,6 +545,50 @@ impl Tensor {
             offset,
             elements,
         })
+    }
+
+    pub(crate) fn checked_index_offset(
+        &self,
+        offset: usize,
+        dimension: usize,
+        index: i64,
+    ) -> Result<usize, TensorError> {
+        let size = self
+            .shape
+            .get(dimension)
+            .copied()
+            .ok_or(TensorError::TooManyIndices {
+                dimensions: self.shape.len(),
+            })?;
+        let signed_size = i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        if index < -signed_size || index >= signed_size {
+            return Err(TensorError::IndexOutOfBounds {
+                index,
+                dimension,
+                size,
+            });
+        }
+        let normalized = if index < 0 {
+            signed_size
+                .checked_add(index)
+                .ok_or(TensorError::IndexCalculationOverflow)?
+        } else {
+            index
+        };
+        let normalized =
+            usize::try_from(normalized).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        let contribution = normalized
+            .checked_mul(self.strides[dimension])
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let offset = offset
+            .checked_add(contribution)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        if i64::try_from(offset).is_err() {
+            let offset = i64::try_from(offset.cast_signed())
+                .expect("an isize storage offset must fit in i64");
+            return Err(TensorError::InvalidStorageOffset { offset });
+        }
+        Ok(offset)
     }
 
     /// Returns a contiguous metadata-only view with a new shape.

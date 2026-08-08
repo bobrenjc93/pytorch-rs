@@ -164,18 +164,19 @@ impl PyTensor {
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
         let inner = if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() > self.inner.shape().len() {
-                return Err(PyIndexError::new_err(
-                    TensorError::TooManyIndices {
-                        dimensions: self.inner.shape().len(),
-                    }
-                    .to_string(),
-                ));
+                return Err(too_many_indices(self.inner.shape().len()));
             }
-            let indices = parse_integer_indices(indices.len(), indices.iter())?;
+            let indices = parse_integer_indices(&self.inner, indices.len(), indices.iter())?;
             self.inner.index(indices)
-        } else {
+        } else if is_fast_integer_index(index)? {
             let index = parse_integer_index(index)?;
             self.inner.index_integer(index)
+        } else {
+            if self.inner.shape().is_empty() {
+                return Err(too_many_indices(0));
+            }
+            let index = parse_integer_index(index)?;
+            self.inner.index([index])
         };
         inner
             .map(|inner| Self { inner })
@@ -656,14 +657,33 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
 }
 
 fn parse_integer_indices<'py>(
+    tensor: &CoreTensor,
     length: usize,
     indices: impl Iterator<Item = Bound<'py, PyAny>>,
 ) -> PyResult<Vec<i64>> {
     let mut parsed = try_size_vector(length)?;
-    for index in indices {
-        try_push_size(&mut parsed, parse_integer_index(&index)?)?;
+    let mut offset = tensor.storage_offset();
+    for (dimension, index) in indices.enumerate() {
+        let index = parse_integer_index(&index)?;
+        offset = tensor
+            .checked_index_offset(offset, dimension, index)
+            .map_err(|error| tensor_error(&error))?;
+        try_push_size(&mut parsed, index)?;
     }
     Ok(parsed)
+}
+
+fn is_fast_integer_index(index: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if index.is_instance_of::<PyBool>() {
+        return Ok(false);
+    }
+    if index.is_instance_of::<PyInt>() {
+        return Ok(true);
+    }
+    let Ok(numpy) = PyModule::import(index.py(), "numpy") else {
+        return Ok(false);
+    };
+    index.is_instance(&numpy.getattr("integer")?)
 }
 
 fn parse_integer_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
@@ -697,6 +717,10 @@ fn invalid_index(index: &Bound<'_, PyAny>) -> PyErr {
     PyIndexError::new_err(format!(
         "only integers, slices (`:`), ellipsis (`...`), None and long or byte Variables are valid indices (got {type_name})"
     ))
+}
+
+fn too_many_indices(dimensions: usize) -> PyErr {
+    PyIndexError::new_err(TensorError::TooManyIndices { dimensions }.to_string())
 }
 
 fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
@@ -1167,6 +1191,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
+        | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }

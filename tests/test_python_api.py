@@ -506,6 +506,46 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(tensor[np.int64(-1)].tolist(), [3.0, 4.0])
         self.assertEqual(tensor[np.uint64(0)].tolist(), [1.0, 2.0])
 
+        scalar_index = IndexValue(0)
+        with self.assertRaisesRegex(IndexError, "too many indices for tensor of dimension 0"):
+            torch.tensor(1.0)[scalar_index]
+        self.assertEqual(scalar_index.calls, 0)
+
+        with self.assertRaisesRegex(IndexError, "invalid index of a 0-dim tensor"):
+            torch.tensor(1.0)[np.int64(0)]
+
+    def test_integer_indexing_stops_converting_after_the_first_axis_error(self):
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        tensor = torch.zeros((2, 3))
+        later = IndexValue(0)
+        with self.assertRaisesRegex(
+            IndexError, "index 2 is out of bounds for dimension 0 with size 2"
+        ):
+            tensor[2, later]
+        self.assertEqual(later.calls, 0)
+
+        first = IndexValue(2)
+        later = IndexValue(0)
+        with self.assertRaisesRegex(
+            IndexError, "index 2 is out of bounds for dimension 0 with size 2"
+        ):
+            tensor[first, later]
+        self.assertEqual(first.calls, 1)
+        self.assertEqual(later.calls, 0)
+
+        with self.assertRaisesRegex(
+            IndexError, "index 2 is out of bounds for dimension 0 with size 2"
+        ):
+            tensor[2, 1 << 100]
+
     def test_integer_indexing_rejects_bool_and_non_integer_forms(self):
         class IntOnly:
             def __int__(self):
@@ -576,6 +616,12 @@ class PythonApiBaselineTests(unittest.TestCase):
             IndexError, "index 0 is out of bounds for dimension 1 with size 0"
         ):
             empty[1, 0]
+
+        maximum = sys.maxsize
+        extreme = torch.zeros((maximum, 0))[maximum - 1]
+        self.assertEqual(extreme.storage_offset(), maximum - 1)
+        with self.assertRaisesRegex(RuntimeError, "Tensor: invalid storage offset -4"):
+            extreme.reshape((maximum, 0))[maximum - 1]
 
     def test_empty_elementwise_results_match_pytorch_strides(self):
         scalar_cases = (

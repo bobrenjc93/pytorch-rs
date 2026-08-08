@@ -857,17 +857,17 @@ fn integer_indexing_uses_checked_offset_arithmetic() {
     let maximum = usize::try_from(i64::MAX).unwrap();
     let empty = Tensor::zeros([maximum, 0]).unwrap();
     let once = empty.index_integer(i64::MAX - 1).unwrap();
-    let twice = once
-        .reshape([i64::MAX, 0])
-        .unwrap()
-        .index_integer(i64::MAX - 1)
-        .unwrap();
-    let error = twice
+    assert_eq!(once.storage_offset(), maximum - 1);
+    let error = once
         .reshape([i64::MAX, 0])
         .unwrap()
         .index_integer(i64::MAX - 1);
 
-    assert_eq!(error, Err(TensorError::IndexCalculationOverflow));
+    assert_eq!(error, Err(TensorError::InvalidStorageOffset { offset: -4 }));
+    assert_eq!(
+        TensorError::InvalidStorageOffset { offset: -4 }.to_string(),
+        "Tensor: invalid storage offset -4"
+    );
 }
 
 #[test]
