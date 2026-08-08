@@ -140,6 +140,67 @@ class PythonApiBaselineTests(unittest.TestCase):
             18446744073709551616.0,
         )
 
+    def test_python_bool_subtraction_matches_pytorch_errors(self):
+        tensor = torch.tensor([1.0, 2.0])
+        for operation in (
+            lambda: tensor - True,
+            lambda: False - tensor,
+        ):
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(RuntimeError, "bool tensor is not supported"):
+                    operation()
+
+    def test_unsupported_operands_use_python_reflected_dispatch(self):
+        class ReflectedArithmetic:
+            def __init__(self):
+                self.calls = []
+
+            def reflected(self, name, tensor):
+                self.calls.append(name)
+                return name, tensor
+
+            def __radd__(self, tensor):
+                return self.reflected("add", tensor)
+
+            def __rsub__(self, tensor):
+                return self.reflected("sub", tensor)
+
+            def __rmul__(self, tensor):
+                return self.reflected("mul", tensor)
+
+            def __rtruediv__(self, tensor):
+                return self.reflected("truediv", tensor)
+
+        tensor = torch.tensor([1.0])
+        value = ReflectedArithmetic()
+        for operation, expected_name in (
+            (operator.add, "add"),
+            (operator.sub, "sub"),
+            (operator.mul, "mul"),
+            (operator.truediv, "truediv"),
+        ):
+            with self.subTest(operation=operation):
+                name, reflected_tensor = operation(tensor, value)
+                self.assertEqual(name, expected_name)
+                self.assertIs(reflected_tensor, tensor)
+        self.assertEqual(value.calls, ["add", "sub", "mul", "truediv"])
+
+    def test_recognized_scalar_errors_do_not_fall_back_to_reflection(self):
+        class OverflowingInteger(int):
+            def __new__(cls):
+                instance = super().__new__(cls, 2**64)
+                instance.reflected = False
+                return instance
+
+            def __rmul__(self, tensor):
+                self.reflected = True
+                return tensor
+
+        value = OverflowingInteger()
+        with self.assertRaises(OverflowError):
+            torch.ones((1,)) * value
+        self.assertFalse(value.reflected)
+
     def test_scalar_division_preserves_non_finite_and_signed_zero_results(self):
         tensor = torch.tensor([1.0, -1.0, 0.0, -0.0])
         self.assert_tensor_values(
