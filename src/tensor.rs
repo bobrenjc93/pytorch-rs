@@ -270,13 +270,14 @@ impl Tensor {
         self.map_scalar(scalar, |value, scalar| scalar - value)
     }
 
-    /// Divides a scalar by every element using IEEE 754 true division.
+    /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal
+    /// multiplication semantics.
     ///
     /// # Errors
     ///
     /// Returns an error when result allocation fails.
     pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| scalar / value)
+        self.map_scalar(scalar, |value, scalar| scalar * value.recip())
     }
 
     #[must_use]
@@ -470,7 +471,6 @@ impl BroadcastPlan {
         }
 
         let mut elements = 1_usize;
-        let mut output_stride = 1_usize;
         for axis in 0..rank {
             let dimension = broadcast_dimension(
                 aligned_dimension(&left.shape, rank, axis),
@@ -481,13 +481,16 @@ impl BroadcastPlan {
                 .checked_mul(dimension)
                 .ok_or(TensorError::ElementCountOverflow)?;
         }
-        for axis in (1..rank).rev() {
-            let dimension = broadcast_dimension(
-                aligned_dimension(&left.shape, rank, axis),
-                aligned_dimension(&right.shape, rank, axis),
-            )
-            .expect("broadcast compatibility was checked above");
-            output_stride = checked_stride_product(output_stride, dimension)?;
+        if elements != 0 {
+            let mut output_stride = 1_usize;
+            for axis in (1..rank).rev() {
+                let dimension = broadcast_dimension(
+                    aligned_dimension(&left.shape, rank, axis),
+                    aligned_dimension(&right.shape, rank, axis),
+                )
+                .expect("broadcast compatibility was checked above");
+                output_stride = checked_stride_product(output_stride, dimension)?;
+            }
         }
         validate_storage_capacity(elements)?;
 
@@ -503,6 +506,23 @@ impl BroadcastPlan {
         }
 
         let mut dimensions = try_result_vector(rank, elements)?;
+        if elements == 0 {
+            dimensions.resize(
+                rank,
+                BroadcastDimension {
+                    left_step: 0,
+                    right_step: 0,
+                    left_rewind: 0,
+                    right_rewind: 0,
+                },
+            );
+            return Ok(Self {
+                shape,
+                dimensions,
+                elements,
+            });
+        }
+
         let mut left_stride = 1_usize;
         let mut right_stride = 1_usize;
         for axis in (0..rank).rev() {
@@ -522,20 +542,12 @@ impl BroadcastPlan {
                 &mut right_stride,
             )?;
             let repeats = output_dimension.saturating_sub(1);
-            let left_rewind = if elements == 0 {
-                0
-            } else {
-                left_step
-                    .checked_mul(repeats)
-                    .ok_or(TensorError::StrideCalculationOverflow)?
-            };
-            let right_rewind = if elements == 0 {
-                0
-            } else {
-                right_step
-                    .checked_mul(repeats)
-                    .ok_or(TensorError::StrideCalculationOverflow)?
-            };
+            let left_rewind = left_step
+                .checked_mul(repeats)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            let right_rewind = right_step
+                .checked_mul(repeats)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
             dimensions.push(BroadcastDimension {
                 left_step,
                 right_step,

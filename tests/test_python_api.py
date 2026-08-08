@@ -115,6 +115,15 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(large_output.shape, (sys.maxsize, 0))
         self.assertEqual(large_output.numel(), 0)
 
+        large = sys.maxsize // 2 + 1
+        left = torch.full((0, large, 1), 1.0)
+        right = torch.tensor([[[1.0, 2.0]]])
+        for operation in (operator.add, operator.sub, operator.mul, operator.truediv):
+            with self.subTest(operation=operation, shape=(0, large, 2)):
+                output = operation(left, right)
+                self.assertEqual(output.shape, (0, large, 2))
+                self.assertEqual(output.numel(), 0)
+
     def test_python_real_scalar_and_reverse_arithmetic(self):
         tensor = torch.tensor([1.0, -2.0, 4.0])
         cases = (
@@ -136,9 +145,25 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual((zero + (-(2**63))).item(), -9223372036854775808.0)
         self.assertEqual((zero + (2**64 - 1)).item(), 18446744073709551616.0)
         self.assertEqual(
-            (zero + np.uint64(2**64 - 1)).item(),
-            18446744073709551616.0,
+            (zero + np.uint64(2**63 - 1)).item(),
+            9223372036854775808.0,
         )
+
+    def test_wide_numpy_unsigned_scalars_delegate_to_numpy(self):
+        tensor = torch.tensor([0.0])
+        value = np.uint64(2**63 + 2048)
+
+        result = tensor + value
+        self.assertIsInstance(result, np.ndarray)
+        self.assertEqual(result.dtype, np.dtype(np.float64))
+        self.assertEqual(result.shape, (1,))
+        self.assertEqual(result[0], np.float64(2**63 + 2048))
+        self.assertNotEqual(result[0], np.float64(2**63))
+
+        for operation in (operator.add, operator.sub, operator.mul):
+            with self.subTest(operation=operation):
+                with self.assertRaises(TypeError):
+                    operation(value, tensor)
 
     def test_python_bool_subtraction_matches_pytorch_errors(self):
         tensor = torch.tensor([1.0, 2.0])
@@ -149,6 +174,10 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(operation=operation):
                 with self.assertRaisesRegex(RuntimeError, "bool tensor is not supported"):
                     operation()
+
+        numpy_bool = np.bool_(True)
+        self.assert_tensor_values(tensor - numpy_bool, [0.0, 1.0], (2,))
+        self.assert_tensor_values(numpy_bool - tensor, [0.0, -1.0], (2,))
 
     def test_unsupported_operands_use_python_reflected_dispatch(self):
         class ReflectedArithmetic:
@@ -217,6 +246,28 @@ class PythonApiBaselineTests(unittest.TestCase):
             tensor + math.nan,
             [math.nan, math.nan, math.nan, math.nan],
             (4,),
+        )
+
+        self.assert_tensor_values(
+            1.0e-38 / torch.tensor([1.0e-39]),
+            [math.inf],
+            (1,),
+        )
+        self.assert_tensor_values(
+            0.0 / torch.tensor([1.0e-39]),
+            [math.nan],
+            (1,),
+        )
+
+        scalar = np.array([0xC25FB64C], dtype=np.uint32).view(np.float32)[0].item()
+        denominator = (
+            np.array([0xC27C80A7], dtype=np.uint32).view(np.float32)[0].item()
+        )
+        expected = np.array([0x3F62CF8F], dtype=np.uint32).view(np.float32)
+        self.assert_tensor_values(
+            scalar / torch.tensor([denominator]),
+            expected,
+            (1,),
         )
 
     def test_scalar_arithmetic_rejects_non_real_and_out_of_range_values(self):

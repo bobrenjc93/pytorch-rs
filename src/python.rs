@@ -1,7 +1,7 @@
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
+use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
 
 use crate::{Tensor as CoreTensor, TensorError};
 
@@ -34,9 +34,38 @@ enum BinaryOperation {
 
 #[pymethods]
 impl PyTensor {
+    #[classattr]
+    fn __array_priority__() -> f64 {
+        1000.0
+    }
+
     #[getter]
     fn shape<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
         PyTuple::new(py, self.inner.shape().iter().copied())
+    }
+
+    #[pyo3(signature = (dtype=None, copy=None))]
+    fn __array__(
+        &self,
+        py: Python<'_>,
+        dtype: Option<&Bound<'_, PyAny>>,
+        copy: Option<bool>,
+    ) -> PyResult<Py<PyAny>> {
+        let numpy = PyModule::import(py, "numpy")?;
+        let values = PyList::new(py, self.inner.as_slice().iter().copied())?;
+        let arguments = PyDict::new(py);
+        if let Some(dtype) = dtype {
+            arguments.set_item("dtype", dtype)?;
+        } else {
+            arguments.set_item("dtype", numpy.getattr("float32")?)?;
+        }
+        let array = numpy.getattr("array")?.call((values,), Some(&arguments))?;
+        let shape = PyTuple::new(py, self.inner.shape().iter().copied())?;
+        let mut array = array.call_method1("reshape", (shape,))?;
+        if copy == Some(true) {
+            array = array.call_method0("copy")?;
+        }
+        Ok(array.unbind())
     }
 
     fn numel(&self) -> usize {
@@ -323,7 +352,7 @@ fn parse_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> 
 }
 
 fn parse_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedArithmeticScalar>> {
-    if value.is_instance_of::<PyBool>() {
+    if value.is_exact_instance_of::<PyBool>() {
         return value
             .is_truthy()
             .map(ParsedArithmeticScalar::PythonBool)
@@ -377,19 +406,15 @@ fn parse_numpy_arithmetic_scalar(
 
     let numpy_integer = numpy.getattr("integer")?;
     if value.is_instance(&numpy_integer)? {
-        let parsed = if let Ok(value) = value.extract::<i64>() {
-            ParsedFillValue::SignedInteger(value)
-        } else {
-            value
-                .extract::<u64>()
-                .map(ParsedFillValue::UnsignedInteger)
-                .map_err(|_| {
-                    PyTypeError::new_err(
-                        "NumPy integer operand is outside the supported 64-bit range",
-                    )
-                })?
-        };
-        return Ok(Some(ParsedArithmeticScalar::Number(parsed)));
+        if let Ok(value) = value.extract::<i64>() {
+            return Ok(Some(ParsedArithmeticScalar::Number(
+                ParsedFillValue::SignedInteger(value),
+            )));
+        }
+        value.extract::<u64>().map_err(|_| {
+            PyTypeError::new_err("NumPy integer operand is outside the supported 64-bit range")
+        })?;
+        return Ok(None);
     }
 
     let numpy_floating = numpy.getattr("floating")?;

@@ -182,15 +182,23 @@ fn binary_arithmetic_broadcasts_rank_zero_and_zero_sized_tensors() {
 }
 
 #[test]
-fn broadcast_result_stride_overflow_is_reported_without_allocating() {
+fn empty_broadcast_skips_unused_result_stride_overflow() {
     let large = isize::MAX.unsigned_abs() / 2 + 1;
     let left = Tensor::from_vec(Vec::new(), [0, large, 1]).unwrap();
     let right = Tensor::from_vec(vec![1.0, 2.0], [1, 1, 2]).unwrap();
 
-    assert_eq!(
-        left.add(&right),
-        Err(TensorError::StrideCalculationOverflow)
-    );
+    for output in [
+        left.add(&right).unwrap(),
+        left.sub(&right).unwrap(),
+        left.mul(&right).unwrap(),
+        left.div(&right).unwrap(),
+    ] {
+        assert_eq!(output.shape(), [0, large, 2]);
+        assert_eq!(output.numel(), 0);
+
+        let scalar = Tensor::from_vec(vec![1.0], []).unwrap();
+        assert_eq!(output.add(&scalar).unwrap().shape(), [0, large, 2]);
+    }
 }
 
 #[test]
@@ -224,6 +232,19 @@ fn scalar_arithmetic_supports_both_operand_orders_and_signed_zero() {
     assert_eq!(reverse.as_slice()[1].to_bits(), 0.0_f32.to_bits());
     assert!(reverse.as_slice()[2].is_nan());
     assert!(reverse.as_slice()[3].is_nan());
+}
+
+#[test]
+fn reflected_scalar_division_uses_float32_reciprocal_multiplication() {
+    let ordinary_denominator = Tensor::from_vec(vec![f32::from_bits(0xc27c_80a7)], [1]).unwrap();
+    let ordinary = ordinary_denominator
+        .scalar_div(f32::from_bits(0xc25f_b64c))
+        .unwrap();
+    assert_eq!(ordinary.as_slice()[0].to_bits(), 0x3f62_cf8f);
+
+    let subnormal = Tensor::from_vec(vec![1.0e-39_f32], [1]).unwrap();
+    assert!(subnormal.scalar_div(1.0e-38).unwrap().as_slice()[0].is_infinite());
+    assert!(subnormal.scalar_div(0.0).unwrap().as_slice()[0].is_nan());
 }
 
 #[test]
