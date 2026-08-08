@@ -42,6 +42,271 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(output.shape, (2, 2))
         self.assertEqual(output.tolist(), [[58.0, 64.0], [139.0, 154.0]])
 
+    def test_binary_arithmetic_broadcasts_trailing_dimensions(self):
+        left = torch.tensor([[[1.0, 2.0, 4.0]], [[8.0, 16.0, 32.0]]])
+        right = torch.tensor([[1.0], [2.0], [4.0]])
+        cases = (
+            (
+                operator.add,
+                [
+                    [[2.0, 3.0, 5.0], [3.0, 4.0, 6.0], [5.0, 6.0, 8.0]],
+                    [
+                        [9.0, 17.0, 33.0],
+                        [10.0, 18.0, 34.0],
+                        [12.0, 20.0, 36.0],
+                    ],
+                ],
+            ),
+            (
+                operator.sub,
+                [
+                    [[0.0, 1.0, 3.0], [-1.0, 0.0, 2.0], [-3.0, -2.0, 0.0]],
+                    [
+                        [7.0, 15.0, 31.0],
+                        [6.0, 14.0, 30.0],
+                        [4.0, 12.0, 28.0],
+                    ],
+                ],
+            ),
+            (
+                operator.mul,
+                [
+                    [[1.0, 2.0, 4.0], [2.0, 4.0, 8.0], [4.0, 8.0, 16.0]],
+                    [
+                        [8.0, 16.0, 32.0],
+                        [16.0, 32.0, 64.0],
+                        [32.0, 64.0, 128.0],
+                    ],
+                ],
+            ),
+            (
+                operator.truediv,
+                [
+                    [[1.0, 2.0, 4.0], [0.5, 1.0, 2.0], [0.25, 0.5, 1.0]],
+                    [
+                        [8.0, 16.0, 32.0],
+                        [4.0, 8.0, 16.0],
+                        [2.0, 4.0, 8.0],
+                    ],
+                ],
+            ),
+        )
+
+        for operation, expected in cases:
+            with self.subTest(operation=operation):
+                self.assert_tensor_values(operation(left, right), expected, (2, 3, 3))
+
+    def test_binary_arithmetic_broadcasts_scalars_and_zero_dimensions(self):
+        scalar = torch.tensor(2.0)
+        matrix = torch.tensor([[1.0, 3.0], [5.0, 7.0]])
+        self.assert_tensor_values(matrix + scalar, [[3.0, 5.0], [7.0, 9.0]], (2, 2))
+        self.assert_tensor_values(scalar - matrix, [[1.0, -1.0], [-3.0, -5.0]], (2, 2))
+
+        empty = torch.zeros((2, 0, 3))
+        row = torch.ones((1, 1, 3))
+        for operation in (operator.add, operator.sub, operator.mul, operator.truediv):
+            with self.subTest(operation=operation):
+                self.assert_tensor_values(operation(empty, row), [[], []], (2, 0, 3))
+
+        self.assertEqual((torch.zeros((0,)) + torch.ones((1,))).shape, (0,))
+
+        large_empty = torch.full((sys.maxsize, 0), 1.0)
+        large_output = large_empty + torch.tensor(2.0)
+        self.assertEqual(large_output.shape, (sys.maxsize, 0))
+        self.assertEqual(large_output.numel(), 0)
+
+        large = sys.maxsize // 2 + 1
+        left = torch.full((0, large, 1), 1.0)
+        right = torch.tensor([[[1.0, 2.0]]])
+        for operation in (operator.add, operator.sub, operator.mul, operator.truediv):
+            with self.subTest(operation=operation, shape=(0, large, 2)):
+                with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+                    operation(left, right)
+
+    def test_python_real_scalar_and_reverse_arithmetic(self):
+        tensor = torch.tensor([1.0, -2.0, 4.0])
+        cases = (
+            (tensor + 2, [3.0, 0.0, 6.0]),
+            (2 + tensor, [3.0, 0.0, 6.0]),
+            (tensor - 2.0, [-1.0, -4.0, 2.0]),
+            (2.0 - tensor, [1.0, 4.0, -2.0]),
+            (tensor * np.float32(2.0), [2.0, -4.0, 8.0]),
+            (np.float32(2.0) * tensor, [2.0, -4.0, 8.0]),
+            (tensor / 2, [0.5, -1.0, 2.0]),
+            (2 / tensor, [2.0, -1.0, 0.5]),
+            (tensor + True, [2.0, -1.0, 5.0]),
+        )
+        for actual, expected in cases:
+            with self.subTest(expected=expected):
+                self.assert_tensor_values(actual, expected, (3,))
+
+        zero = torch.tensor(0.0)
+        self.assertEqual((zero + (-(2**63))).item(), -9223372036854775808.0)
+        self.assertEqual((zero + (2**64 - 1)).item(), 18446744073709551616.0)
+        self.assertEqual(
+            (zero + np.uint64(2**63 - 1)).item(),
+            9223372036854775808.0,
+        )
+
+    def test_wide_numpy_unsigned_scalars_delegate_to_numpy(self):
+        tensor = torch.tensor([0.0])
+        value = np.uint64(2**63 + 2048)
+
+        result = tensor + value
+        self.assertIsInstance(result, np.ndarray)
+        self.assertEqual(result.dtype, np.dtype(np.float64))
+        self.assertEqual(result.shape, (1,))
+        self.assertEqual(result[0], np.float64(2**63 + 2048))
+        self.assertNotEqual(result[0], np.float64(2**63))
+
+        for operation in (operator.add, operator.sub, operator.mul):
+            with self.subTest(operation=operation):
+                with self.assertRaises(TypeError):
+                    operation(value, tensor)
+
+        denominator = torch.tensor([2.0])
+        for numerator in (
+            np.uint64(2**63),
+            np.uint64(2**63 + 2048),
+            np.uint64(2**64 - 1),
+        ):
+            with self.subTest(numerator=numerator, operation=operator.truediv):
+                result = numerator / denominator
+                self.assertIsInstance(result, np.ndarray)
+                self.assertEqual(result.dtype, np.dtype(np.float64))
+                self.assertEqual(result.shape, (1,))
+                self.assertEqual(result[0], np.float64(numerator) / np.float64(2.0))
+
+    def test_numpy_array_conversion_rejects_requests_prohibiting_a_copy(self):
+        tensor = torch.tensor([1.0, 2.0])
+        with self.assertRaisesRegex(ValueError, "non-copying NumPy view"):
+            np.array(tensor, copy=False)
+
+        copied = np.array(tensor, copy=True)
+        self.assertEqual(copied.dtype, np.dtype(np.float32))
+        np.testing.assert_array_equal(copied, np.array([1.0, 2.0], dtype=np.float32))
+        copied[0] = 9.0
+        self.assertEqual(tensor.tolist(), [1.0, 2.0])
+
+    def test_python_bool_subtraction_matches_pytorch_errors(self):
+        tensor = torch.tensor([1.0, 2.0])
+        for operation in (
+            lambda: tensor - True,
+            lambda: False - tensor,
+        ):
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(RuntimeError, "bool tensor is not supported"):
+                    operation()
+
+        numpy_bool = np.bool_(True)
+        self.assert_tensor_values(tensor - numpy_bool, [0.0, 1.0], (2,))
+        self.assert_tensor_values(numpy_bool - tensor, [0.0, -1.0], (2,))
+
+    def test_unsupported_operands_use_python_reflected_dispatch(self):
+        class ReflectedArithmetic:
+            def __init__(self):
+                self.calls = []
+
+            def reflected(self, name, tensor):
+                self.calls.append(name)
+                return name, tensor
+
+            def __radd__(self, tensor):
+                return self.reflected("add", tensor)
+
+            def __rsub__(self, tensor):
+                return self.reflected("sub", tensor)
+
+            def __rmul__(self, tensor):
+                return self.reflected("mul", tensor)
+
+            def __rtruediv__(self, tensor):
+                return self.reflected("truediv", tensor)
+
+        tensor = torch.tensor([1.0])
+        value = ReflectedArithmetic()
+        for operation, expected_name in (
+            (operator.add, "add"),
+            (operator.sub, "sub"),
+            (operator.mul, "mul"),
+            (operator.truediv, "truediv"),
+        ):
+            with self.subTest(operation=operation):
+                name, reflected_tensor = operation(tensor, value)
+                self.assertEqual(name, expected_name)
+                self.assertIs(reflected_tensor, tensor)
+        self.assertEqual(value.calls, ["add", "sub", "mul", "truediv"])
+
+    def test_recognized_scalar_errors_do_not_fall_back_to_reflection(self):
+        class OverflowingInteger(int):
+            def __new__(cls):
+                instance = super().__new__(cls, 2**64)
+                instance.reflected = False
+                return instance
+
+            def __rmul__(self, tensor):
+                self.reflected = True
+                return tensor
+
+        value = OverflowingInteger()
+        with self.assertRaises(OverflowError):
+            torch.ones((1,)) * value
+        self.assertFalse(value.reflected)
+
+    def test_scalar_division_preserves_non_finite_and_signed_zero_results(self):
+        tensor = torch.tensor([1.0, -1.0, 0.0, -0.0])
+        self.assert_tensor_values(
+            tensor / -0.0,
+            [-math.inf, math.inf, math.nan, math.nan],
+            (4,),
+        )
+        self.assert_tensor_values(
+            -0.0 / tensor,
+            [-0.0, 0.0, math.nan, math.nan],
+            (4,),
+        )
+        self.assert_tensor_values(
+            tensor + math.nan,
+            [math.nan, math.nan, math.nan, math.nan],
+            (4,),
+        )
+
+        self.assert_tensor_values(
+            1.0e-38 / torch.tensor([1.0e-39]),
+            [math.inf],
+            (1,),
+        )
+        self.assert_tensor_values(
+            0.0 / torch.tensor([1.0e-39]),
+            [math.nan],
+            (1,),
+        )
+
+        scalar = np.array([0xC25FB64C], dtype=np.uint32).view(np.float32)[0].item()
+        denominator = (
+            np.array([0xC27C80A7], dtype=np.uint32).view(np.float32)[0].item()
+        )
+        expected = np.array([0x3F62CF8F], dtype=np.uint32).view(np.float32)
+        self.assert_tensor_values(
+            scalar / torch.tensor([denominator]),
+            expected,
+            (1,),
+        )
+
+    def test_scalar_arithmetic_rejects_non_real_and_out_of_range_values(self):
+        tensor = torch.ones((2,))
+        for value in (object(), Decimal("1.0"), 1 + 2j, [1.0]):
+            with self.subTest(value=value):
+                with self.assertRaises(TypeError):
+                    operator.add(tensor, value)
+                with self.assertRaises(TypeError):
+                    operator.add(value, tensor)
+
+        for value in (-(2**63) - 1, 2**64):
+            with self.subTest(value=value):
+                with self.assertRaises(OverflowError):
+                    tensor * value
+
     def test_subtraction_and_division_cover_general_same_shapes(self):
         cases = (
             (torch.tensor(7.0), torch.tensor(2.0), (), 5.0, 3.5),
@@ -134,11 +399,11 @@ class PythonApiBaselineTests(unittest.TestCase):
                     (len(expected_values),),
                 )
 
-    def test_subtraction_and_division_reject_shape_mismatches(self):
+    def test_binary_arithmetic_rejects_incompatible_shapes(self):
         left = torch.zeros([2, 2])
         right = torch.zeros([3])
 
-        for operation in (operator.sub, operator.truediv):
+        for operation in (operator.add, operator.sub, operator.mul, operator.truediv):
             with self.subTest(operation=operation):
                 with self.assertRaises(RuntimeError):
                     operation(left, right)

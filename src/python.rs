@@ -1,7 +1,7 @@
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
+use pyo3::types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyTuple};
 
 use crate::{Tensor as CoreTensor, TensorError};
 
@@ -19,11 +19,45 @@ enum ParsedFillValue {
     TensorScalar(f32),
 }
 
+enum ParsedArithmeticScalar {
+    PythonBool(bool),
+    Number(ParsedFillValue),
+    WideNumpyUnsigned,
+}
+
+#[derive(Clone, Copy)]
+enum BinaryOperation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
 #[pymethods]
 impl PyTensor {
+    #[classattr]
+    fn __array_priority__() -> f64 {
+        1000.0
+    }
+
     #[getter]
     fn shape<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
         PyTuple::new(py, self.inner.shape().iter().copied())
+    }
+
+    #[pyo3(signature = (dtype=None, copy=None))]
+    fn __array__(
+        &self,
+        py: Python<'_>,
+        dtype: Option<&Bound<'_, PyAny>>,
+        copy: Option<bool>,
+    ) -> PyResult<Py<PyAny>> {
+        if copy == Some(false) {
+            return Err(PyValueError::new_err(
+                "cannot create a non-copying NumPy view of tensor storage",
+            ));
+        }
+        self.numpy_array_copy(py, dtype)
     }
 
     fn numel(&self) -> usize {
@@ -50,32 +84,36 @@ impl PyTensor {
         }
     }
 
-    fn __add__(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .add(&other.inner)
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+    fn __add__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.binary_operation(py, other, BinaryOperation::Add, false)
     }
 
-    fn __sub__(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .sub(&other.inner)
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+    fn __radd__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.binary_operation(py, other, BinaryOperation::Add, true)
     }
 
-    fn __mul__(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .mul(&other.inner)
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+    fn __sub__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.binary_operation(py, other, BinaryOperation::Subtract, false)
     }
 
-    fn __truediv__(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .div(&other.inner)
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+    fn __rsub__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.binary_operation(py, other, BinaryOperation::Subtract, true)
+    }
+
+    fn __mul__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.binary_operation(py, other, BinaryOperation::Multiply, false)
+    }
+
+    fn __rmul__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.binary_operation(py, other, BinaryOperation::Multiply, true)
+    }
+
+    fn __truediv__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.binary_operation(py, other, BinaryOperation::Divide, false)
+    }
+
+    fn __rtruediv__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.binary_operation(py, other, BinaryOperation::Divide, true)
     }
 
     fn __matmul__(&self, other: &Self) -> PyResult<Self> {
@@ -99,6 +137,110 @@ impl PyTensor {
             self.inner.as_slice(),
             self.inner.shape()
         )
+    }
+}
+
+impl PyTensor {
+    fn numpy_array_copy(
+        &self,
+        py: Python<'_>,
+        dtype: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Py<PyAny>> {
+        let numpy = PyModule::import(py, "numpy")?;
+        let values = PyList::new(py, self.inner.as_slice().iter().copied())?;
+        let arguments = PyDict::new(py);
+        if let Some(dtype) = dtype {
+            arguments.set_item("dtype", dtype)?;
+        } else {
+            arguments.set_item("dtype", numpy.getattr("float32")?)?;
+        }
+        let array = numpy.getattr("array")?.call((values,), Some(&arguments))?;
+        let shape = PyTuple::new(py, self.inner.shape().iter().copied())?;
+        let array = array.call_method1("reshape", (shape,))?;
+        Ok(array.unbind())
+    }
+
+    fn numpy_reflected_divide(
+        &self,
+        py: Python<'_>,
+        numerator: &Bound<'_, PyAny>,
+    ) -> PyResult<Py<PyAny>> {
+        let denominator = self.numpy_array_copy(py, None)?;
+        let numpy = PyModule::import(py, "numpy")?;
+        let result = numpy
+            .getattr("true_divide")?
+            .call1((numerator, denominator.bind(py)))?;
+        Ok(result.unbind())
+    }
+
+    fn binary_operation(
+        &self,
+        py: Python<'_>,
+        other: &Bound<'_, PyAny>,
+        operation: BinaryOperation,
+        reverse: bool,
+    ) -> PyResult<Py<PyAny>> {
+        let result = if let Ok(other) = other.cast::<Self>() {
+            let other = other.try_borrow()?;
+            if reverse {
+                operation.apply_tensors(&other.inner, &self.inner)
+            } else {
+                operation.apply_tensors(&self.inner, &other.inner)
+            }
+        } else {
+            let Some(scalar) = parse_arithmetic_scalar(other)? else {
+                return Ok(py.NotImplemented());
+            };
+            let scalar = match scalar {
+                ParsedArithmeticScalar::WideNumpyUnsigned => {
+                    if reverse && matches!(operation, BinaryOperation::Divide) {
+                        return self.numpy_reflected_divide(py, other);
+                    }
+                    return Ok(py.NotImplemented());
+                }
+                scalar => scalar,
+            };
+            if matches!(operation, BinaryOperation::Subtract) && scalar.is_python_bool() {
+                return Err(bool_subtraction_error());
+            }
+            operation.apply_scalar(&self.inner, scalar.into_f32(), reverse)
+        };
+
+        Self {
+            inner: result.map_err(|error| tensor_error(&error))?,
+        }
+        .into_py_any(py)
+    }
+}
+
+impl BinaryOperation {
+    fn apply_tensors(
+        self,
+        left: &CoreTensor,
+        right: &CoreTensor,
+    ) -> Result<CoreTensor, TensorError> {
+        match self {
+            Self::Add => left.add(right),
+            Self::Subtract => left.sub(right),
+            Self::Multiply => left.mul(right),
+            Self::Divide => left.div(right),
+        }
+    }
+
+    fn apply_scalar(
+        self,
+        tensor: &CoreTensor,
+        scalar: f32,
+        reverse: bool,
+    ) -> Result<CoreTensor, TensorError> {
+        match (self, reverse) {
+            (Self::Add, _) => tensor.add_scalar(scalar),
+            (Self::Subtract, false) => tensor.sub_scalar(scalar),
+            (Self::Subtract, true) => tensor.scalar_sub(scalar),
+            (Self::Multiply, _) => tensor.mul_scalar(scalar),
+            (Self::Divide, false) => tensor.div_scalar(scalar),
+            (Self::Divide, true) => tensor.scalar_div(scalar),
+        }
     }
 }
 
@@ -242,41 +384,119 @@ fn parse_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> 
     parse_numpy_fill_value(fill_value)
 }
 
-fn parse_numpy_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
-    let numpy = PyModule::import(fill_value.py(), "numpy").map_err(|_| invalid_fill_value())?;
-    let generic = numpy.getattr("generic").map_err(|_| invalid_fill_value())?;
-    if !fill_value.is_instance(&generic)? {
-        return Err(invalid_fill_value());
+fn parse_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedArithmeticScalar>> {
+    if value.is_exact_instance_of::<PyBool>() {
+        return value
+            .is_truthy()
+            .map(ParsedArithmeticScalar::PythonBool)
+            .map(Some);
     }
 
-    let numpy_bool = numpy.getattr("bool_").map_err(|_| invalid_fill_value())?;
-    if fill_value.is_instance(&numpy_bool)? {
-        return fill_value
+    if value.is_instance_of::<PyInt>() {
+        return parse_integer_fill_value(value)
+            .map(ParsedArithmeticScalar::Number)
+            .map(Some);
+    }
+
+    if value.is_instance_of::<PyFloat>() {
+        return value
+            .extract::<f64>()
+            .map(ParsedFillValue::Float)
+            .map(ParsedArithmeticScalar::Number)
+            .map(Some);
+    }
+
+    parse_numpy_arithmetic_scalar(value)
+}
+
+fn parse_numpy_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    parse_numpy_value(
+        fill_value,
+        invalid_fill_value,
+        "NumPy integer fill_value is outside the signed 64-bit range",
+    )
+}
+
+fn parse_numpy_arithmetic_scalar(
+    value: &Bound<'_, PyAny>,
+) -> PyResult<Option<ParsedArithmeticScalar>> {
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(None);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !value.is_instance(&generic)? {
+        return Ok(None);
+    }
+
+    let numpy_bool = numpy.getattr("bool_")?;
+    if value.is_instance(&numpy_bool)? {
+        return value
+            .is_truthy()
+            .map(|value| ParsedFillValue::SignedInteger(i64::from(value)))
+            .map(ParsedArithmeticScalar::Number)
+            .map(Some);
+    }
+
+    let numpy_integer = numpy.getattr("integer")?;
+    if value.is_instance(&numpy_integer)? {
+        if let Ok(value) = value.extract::<i64>() {
+            return Ok(Some(ParsedArithmeticScalar::Number(
+                ParsedFillValue::SignedInteger(value),
+            )));
+        }
+        value.extract::<u64>().map_err(|_| {
+            PyTypeError::new_err("NumPy integer operand is outside the supported 64-bit range")
+        })?;
+        return Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned));
+    }
+
+    let numpy_floating = numpy.getattr("floating")?;
+    if value.is_instance(&numpy_floating)? {
+        return value
+            .extract::<f64>()
+            .map(ParsedFillValue::Float)
+            .map(ParsedArithmeticScalar::Number)
+            .map(Some);
+    }
+
+    Ok(None)
+}
+
+fn parse_numpy_value(
+    value: &Bound<'_, PyAny>,
+    invalid_value: fn() -> PyErr,
+    integer_range_error: &'static str,
+) -> PyResult<ParsedFillValue> {
+    let numpy = PyModule::import(value.py(), "numpy").map_err(|_| invalid_value())?;
+    let generic = numpy.getattr("generic").map_err(|_| invalid_value())?;
+    if !value.is_instance(&generic)? {
+        return Err(invalid_value());
+    }
+
+    let numpy_bool = numpy.getattr("bool_").map_err(|_| invalid_value())?;
+    if value.is_instance(&numpy_bool)? {
+        return value
             .is_truthy()
             .map(|value| ParsedFillValue::SignedInteger(i64::from(value)));
     }
 
-    let numpy_integer = numpy.getattr("integer").map_err(|_| invalid_fill_value())?;
-    if fill_value.is_instance(&numpy_integer)? {
-        return fill_value
+    let numpy_integer = numpy.getattr("integer").map_err(|_| invalid_value())?;
+    if value.is_instance(&numpy_integer)? {
+        return value
             .extract::<i64>()
             .map(ParsedFillValue::SignedInteger)
-            .map_err(|_| {
-                PyTypeError::new_err("NumPy integer fill_value is outside the signed 64-bit range")
-            });
+            .map_err(|_| PyTypeError::new_err(integer_range_error));
     }
 
-    let numpy_floating = numpy
-        .getattr("floating")
-        .map_err(|_| invalid_fill_value())?;
-    if fill_value.is_instance(&numpy_floating)? {
-        return fill_value
+    let numpy_floating = numpy.getattr("floating").map_err(|_| invalid_value())?;
+    if value.is_instance(&numpy_floating)? {
+        return value
             .extract::<f64>()
             .map(ParsedFillValue::Float)
-            .map_err(|_| invalid_fill_value());
+            .map_err(|_| invalid_value());
     }
 
-    Err(invalid_fill_value())
+    Err(invalid_value())
 }
 
 fn parse_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
@@ -295,6 +515,12 @@ fn parse_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFil
 
 fn invalid_fill_value() -> PyErr {
     PyTypeError::new_err("full(): fill_value must be a number or zero-dimensional tensor")
+}
+
+fn bool_subtraction_error() -> PyErr {
+    PyRuntimeError::new_err(
+        "Subtraction, the `-` operator, with a bool tensor is not supported. If you are trying to invert a mask, use the `~` or `logical_not()` operator instead.",
+    )
 }
 
 fn full_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
@@ -329,6 +555,43 @@ impl ParsedFillValue {
                 Ok(converted)
             }
             Self::TensorScalar(value) => Ok(value),
+        }
+    }
+
+    fn into_arithmetic_f32(self) -> f32 {
+        match self {
+            Self::Float(value) => {
+                #[allow(clippy::cast_possible_truncation)]
+                let converted = value as f32;
+                converted
+            }
+            Self::SignedInteger(value) => {
+                #[allow(clippy::cast_precision_loss)]
+                let converted = value as f32;
+                converted
+            }
+            Self::UnsignedInteger(value) => {
+                #[allow(clippy::cast_precision_loss)]
+                let converted = value as f32;
+                converted
+            }
+            Self::TensorScalar(value) => value,
+        }
+    }
+}
+
+impl ParsedArithmeticScalar {
+    fn is_python_bool(&self) -> bool {
+        matches!(self, Self::PythonBool(_))
+    }
+
+    fn into_f32(self) -> f32 {
+        match self {
+            Self::PythonBool(value) => f32::from(u8::from(value)),
+            Self::Number(value) => value.into_arithmetic_f32(),
+            Self::WideNumpyUnsigned => {
+                unreachable!("wide NumPy unsigned operands are dispatched before conversion")
+            }
         }
     }
 }

@@ -34,7 +34,19 @@ impl Display for TensorError {
                 "shape {shape:?} does not describe {elements} elements"
             ),
             Self::ShapeMismatch { left, right } => {
-                write!(formatter, "tensor shapes differ: {left:?} and {right:?}")
+                if let Some((left_dimension, right_dimension, axis)) =
+                    first_broadcast_mismatch(left, right)
+                {
+                    write!(
+                        formatter,
+                        "The size of tensor a ({left_dimension}) must match the size of tensor b ({right_dimension}) at non-singleton dimension {axis}"
+                    )
+                } else {
+                    write!(
+                        formatter,
+                        "tensor shapes are not broadcastable: {left:?} and {right:?}"
+                    )
+                }
             }
             Self::MatmulRequiresMatrices { left, right } => write!(
                 formatter,
@@ -68,6 +80,19 @@ impl Display for TensorError {
 }
 
 impl Error for TensorError {}
+
+fn first_broadcast_mismatch(left: &[usize], right: &[usize]) -> Option<(usize, usize, usize)> {
+    let rank = left.len().max(right.len());
+    for trailing_axis in 0..rank {
+        let axis = rank - trailing_axis - 1;
+        let left_dimension = aligned_dimension(left, rank, axis);
+        let right_dimension = aligned_dimension(right, rank, axis);
+        if broadcast_dimension(left_dimension, right_dimension).is_none() {
+            return Some((left_dimension, right_dimension, axis));
+        }
+    }
+    None
+}
 
 impl Tensor {
     /// Creates a tensor after validating that `shape` describes `data`.
@@ -159,40 +184,100 @@ impl Tensor {
         self.data
     }
 
-    /// Adds tensors element by element.
+    /// Adds tensors element by element with trailing-dimension broadcasting.
     ///
     /// # Errors
     ///
-    /// Returns an error when the shapes differ.
+    /// Returns an error when the shapes are not broadcastable or when result
+    /// shape calculation or allocation fails.
     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
         self.zip_map(other, |left, right| left + right)
     }
 
-    /// Subtracts tensors element by element.
+    /// Subtracts tensors element by element with trailing-dimension broadcasting.
     ///
     /// # Errors
     ///
-    /// Returns an error when the shapes differ.
+    /// Returns an error when the shapes are not broadcastable or when result
+    /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
         self.zip_map(other, |left, right| left - right)
     }
 
-    /// Multiplies tensors element by element.
+    /// Multiplies tensors element by element with trailing-dimension broadcasting.
     ///
     /// # Errors
     ///
-    /// Returns an error when the shapes differ.
+    /// Returns an error when the shapes are not broadcastable or when result
+    /// shape calculation or allocation fails.
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
         self.zip_map(other, |left, right| left * right)
     }
 
-    /// Divides tensors element by element using IEEE 754 true division.
+    /// Divides tensors element by element using IEEE 754 true division and
+    /// trailing-dimension broadcasting.
     ///
     /// # Errors
     ///
-    /// Returns an error when the shapes differ.
+    /// Returns an error when the shapes are not broadcastable or when result
+    /// shape calculation or allocation fails.
     pub fn div(&self, other: &Self) -> Result<Self, TensorError> {
         self.zip_map(other, |left, right| left / right)
+    }
+
+    /// Adds a scalar to every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
+        self.map_scalar(scalar, |value, scalar| value + scalar)
+    }
+
+    /// Subtracts a scalar from every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn sub_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
+        self.map_scalar(scalar, |value, scalar| value - scalar)
+    }
+
+    /// Multiplies every element by a scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn mul_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
+        self.map_scalar(scalar, |value, scalar| value * scalar)
+    }
+
+    /// Divides every element by a scalar using IEEE 754 true division.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn div_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
+        self.map_scalar(scalar, |value, scalar| value / scalar)
+    }
+
+    /// Subtracts every element from a scalar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn scalar_sub(&self, scalar: f32) -> Result<Self, TensorError> {
+        self.map_scalar(scalar, |value, scalar| scalar - value)
+    }
+
+    /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal
+    /// multiplication semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
+        self.map_scalar(scalar, |value, scalar| scalar * value.recip())
     }
 
     #[must_use]
@@ -267,13 +352,65 @@ impl Tensor {
         other: &Self,
         operation: impl Fn(f32, f32) -> f32,
     ) -> Result<Self, TensorError> {
-        if self.shape != other.shape {
-            return Err(TensorError::ShapeMismatch {
-                left: try_clone_result_shape(&self.shape, self.data.len())?,
-                right: try_clone_result_shape(&other.shape, other.data.len())?,
+        if self.shape == other.shape {
+            return self.zip_map_same_shape(other, operation);
+        }
+
+        let plan = BroadcastPlan::new(self, other)?;
+        let mut data = try_result_vector(plan.elements, plan.elements)?;
+        if plan.elements == 0 {
+            return Ok(Self {
+                data,
+                shape: plan.shape,
             });
         }
 
+        let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
+        coordinates.resize(plan.shape.len(), 0_usize);
+        let mut left_offset = 0_usize;
+        let mut right_offset = 0_usize;
+
+        for output_offset in 0..plan.elements {
+            data.push(operation(self.data[left_offset], other.data[right_offset]));
+            if output_offset + 1 == plan.elements {
+                break;
+            }
+
+            for axis in (0..plan.shape.len()).rev() {
+                coordinates[axis] = coordinates[axis]
+                    .checked_add(1)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                if coordinates[axis] < plan.shape[axis] {
+                    left_offset = left_offset
+                        .checked_add(plan.dimensions[axis].left_step)
+                        .ok_or(TensorError::StrideCalculationOverflow)?;
+                    right_offset = right_offset
+                        .checked_add(plan.dimensions[axis].right_step)
+                        .ok_or(TensorError::StrideCalculationOverflow)?;
+                    break;
+                }
+
+                coordinates[axis] = 0;
+                left_offset = left_offset
+                    .checked_sub(plan.dimensions[axis].left_rewind)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                right_offset = right_offset
+                    .checked_sub(plan.dimensions[axis].right_rewind)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+            }
+        }
+
+        Ok(Self {
+            data,
+            shape: plan.shape,
+        })
+    }
+
+    fn zip_map_same_shape(
+        &self,
+        other: &Self,
+        operation: impl Fn(f32, f32) -> f32,
+    ) -> Result<Self, TensorError> {
         let elements = self.data.len();
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
@@ -286,6 +423,190 @@ impl Tensor {
         );
         Ok(Self { data, shape })
     }
+
+    fn map_scalar(
+        &self,
+        scalar: f32,
+        operation: impl Fn(f32, f32) -> f32,
+    ) -> Result<Self, TensorError> {
+        let elements = self.data.len();
+        let mut data = try_result_vector(elements, elements)?;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        data.extend(
+            self.data
+                .iter()
+                .copied()
+                .map(|value| operation(value, scalar)),
+        );
+        Ok(Self { data, shape })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct BroadcastDimension {
+    left_step: usize,
+    right_step: usize,
+    left_rewind: usize,
+    right_rewind: usize,
+}
+
+struct BroadcastPlan {
+    shape: Vec<usize>,
+    dimensions: Vec<BroadcastDimension>,
+    elements: usize,
+}
+
+impl BroadcastPlan {
+    fn new(left: &Tensor, right: &Tensor) -> Result<Self, TensorError> {
+        let rank = left.shape.len().max(right.shape.len());
+        for axis in 0..rank {
+            let left_dimension = aligned_dimension(&left.shape, rank, axis);
+            let right_dimension = aligned_dimension(&right.shape, rank, axis);
+            if broadcast_dimension(left_dimension, right_dimension).is_none() {
+                return Err(TensorError::ShapeMismatch {
+                    left: try_clone_result_shape(&left.shape, left.data.len())?,
+                    right: try_clone_result_shape(&right.shape, right.data.len())?,
+                });
+            }
+        }
+
+        let mut elements = 1_usize;
+        let mut output_stride = 1_usize;
+        for axis in 0..rank {
+            let dimension = broadcast_dimension(
+                aligned_dimension(&left.shape, rank, axis),
+                aligned_dimension(&right.shape, rank, axis),
+            )
+            .expect("broadcast compatibility was checked above");
+            elements = elements
+                .checked_mul(dimension)
+                .ok_or(TensorError::ElementCountOverflow)?;
+        }
+        for axis in (1..rank).rev() {
+            let dimension = broadcast_dimension(
+                aligned_dimension(&left.shape, rank, axis),
+                aligned_dimension(&right.shape, rank, axis),
+            )
+            .expect("broadcast compatibility was checked above");
+            output_stride = checked_stride_product(output_stride, dimension)?;
+        }
+        validate_storage_capacity(elements)?;
+
+        let mut shape = try_result_vector(rank, elements)?;
+        for axis in 0..rank {
+            shape.push(
+                broadcast_dimension(
+                    aligned_dimension(&left.shape, rank, axis),
+                    aligned_dimension(&right.shape, rank, axis),
+                )
+                .expect("broadcast compatibility was checked above"),
+            );
+        }
+
+        let mut dimensions = try_result_vector(rank, elements)?;
+        if elements == 0 {
+            dimensions.resize(
+                rank,
+                BroadcastDimension {
+                    left_step: 0,
+                    right_step: 0,
+                    left_rewind: 0,
+                    right_rewind: 0,
+                },
+            );
+            return Ok(Self {
+                shape,
+                dimensions,
+                elements,
+            });
+        }
+
+        let mut left_stride = 1_usize;
+        let mut right_stride = 1_usize;
+        for axis in (0..rank).rev() {
+            let output_dimension = shape[axis];
+            let left_step = aligned_broadcast_stride(
+                &left.shape,
+                rank,
+                axis,
+                output_dimension,
+                &mut left_stride,
+            )?;
+            let right_step = aligned_broadcast_stride(
+                &right.shape,
+                rank,
+                axis,
+                output_dimension,
+                &mut right_stride,
+            )?;
+            let repeats = output_dimension.saturating_sub(1);
+            let left_rewind = left_step
+                .checked_mul(repeats)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            let right_rewind = right_step
+                .checked_mul(repeats)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            dimensions.push(BroadcastDimension {
+                left_step,
+                right_step,
+                left_rewind,
+                right_rewind,
+            });
+        }
+        dimensions.reverse();
+
+        Ok(Self {
+            shape,
+            dimensions,
+            elements,
+        })
+    }
+}
+
+fn aligned_dimension(shape: &[usize], output_rank: usize, output_axis: usize) -> usize {
+    let leading_dimensions = output_rank - shape.len();
+    if output_axis < leading_dimensions {
+        1
+    } else {
+        shape[output_axis - leading_dimensions]
+    }
+}
+
+fn broadcast_dimension(left: usize, right: usize) -> Option<usize> {
+    if left == right {
+        Some(left)
+    } else if left == 1 {
+        Some(right)
+    } else if right == 1 {
+        Some(left)
+    } else {
+        None
+    }
+}
+
+fn aligned_broadcast_stride(
+    shape: &[usize],
+    output_rank: usize,
+    output_axis: usize,
+    output_dimension: usize,
+    contiguous_stride: &mut usize,
+) -> Result<usize, TensorError> {
+    let leading_dimensions = output_rank - shape.len();
+    if output_axis < leading_dimensions {
+        return Ok(0);
+    }
+
+    let input_axis = output_axis - leading_dimensions;
+    let input_dimension = shape[input_axis];
+    let step = if input_dimension == 1 && output_dimension != 1 {
+        0
+    } else {
+        *contiguous_stride
+    };
+    if input_axis > 0 {
+        *contiguous_stride = checked_stride_product(*contiguous_stride, input_dimension)?;
+    }
+    Ok(step)
 }
 
 fn try_result_vector<T>(capacity: usize, elements: usize) -> Result<Vec<T>, TensorError> {
@@ -317,18 +638,21 @@ fn validated_element_count(shape: &[usize]) -> Result<usize, TensorError> {
 }
 
 fn validate_contiguous_strides(shape: &[usize]) -> Result<(), TensorError> {
-    let maximum_stride = isize::MAX.unsigned_abs();
     shape
         .iter()
         .skip(1)
         .rev()
         .try_fold(1_usize, |stride, dimension| {
-            stride
-                .checked_mul((*dimension).max(1))
-                .filter(|product| *product <= maximum_stride)
-                .ok_or(TensorError::StrideCalculationOverflow)
+            checked_stride_product(stride, *dimension)
         })?;
     Ok(())
+}
+
+fn checked_stride_product(stride: usize, dimension: usize) -> Result<usize, TensorError> {
+    stride
+        .checked_mul(dimension.max(1))
+        .filter(|product| *product <= isize::MAX.unsigned_abs())
+        .ok_or(TensorError::StrideCalculationOverflow)
 }
 
 fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {

@@ -17,7 +17,7 @@ result = (x + y).relu()
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 ```
 
-The initial CPU core provides contiguous `float32` tensors, checked construction, constant-filled creation, same-shape addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
+The initial CPU core provides contiguous `float32` tensors, checked construction, constant-filled creation, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
 
 ## Non-negotiable evaluation rules
 
