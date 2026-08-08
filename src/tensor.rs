@@ -9,12 +9,15 @@ pub enum DType {
     /// IEEE 754 single-precision floating point.
     #[default]
     Float32,
+    /// Signed 64-bit integer.
+    Int64,
 }
 
 impl Display for DType {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Float32 => formatter.write_str("float32"),
+            Self::Int64 => formatter.write_str("int64"),
         }
     }
 }
@@ -35,9 +38,111 @@ impl Display for Device {
     }
 }
 
+/// Owned, type-safe tensor payload.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TensorData {
+    /// IEEE 754 single-precision values.
+    Float32(Vec<f32>),
+    /// Signed 64-bit integer values.
+    Int64(Vec<i64>),
+}
+
+/// Borrowed, type-safe tensor payload.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TensorDataRef<'a> {
+    /// IEEE 754 single-precision values.
+    Float32(&'a [f32]),
+    /// Signed 64-bit integer values.
+    Int64(&'a [i64]),
+}
+
+impl TensorData {
+    #[must_use]
+    fn len(&self) -> usize {
+        match self {
+            Self::Float32(values) => values.len(),
+            Self::Int64(values) => values.len(),
+        }
+    }
+
+    #[must_use]
+    fn dtype(&self) -> DType {
+        match self {
+            Self::Float32(_) => DType::Float32,
+            Self::Int64(_) => DType::Int64,
+        }
+    }
+}
+
+/// A scalar value whose variant records its native dtype.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Scalar {
+    /// IEEE 754 single-precision value.
+    Float32(f32),
+    /// Signed 64-bit integer value.
+    Int64(i64),
+}
+
+impl Scalar {
+    #[must_use]
+    pub fn dtype(self) -> DType {
+        match self {
+            Self::Float32(_) => DType::Float32,
+            Self::Int64(_) => DType::Int64,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn as_f32(self) -> f32 {
+        match self {
+            Self::Float32(value) => value,
+            #[allow(clippy::cast_precision_loss)]
+            Self::Int64(value) => value as f32,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ArithmeticOperation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
+impl ArithmeticOperation {
+    fn apply_f32(self, left: f32, right: f32) -> f32 {
+        match self {
+            Self::Add => left + right,
+            Self::Subtract => left - right,
+            Self::Multiply => left * right,
+            Self::Divide => left / right,
+        }
+    }
+
+    fn apply_i64(self, left: i64, right: i64) -> i64 {
+        match self {
+            Self::Add => left.wrapping_add(right),
+            Self::Subtract => left.wrapping_sub(right),
+            Self::Multiply => left.wrapping_mul(right),
+            Self::Divide => unreachable!("true division is always promoted to float32"),
+        }
+    }
+}
+
+fn promote_dtype(left: DType, right: DType, operation: ArithmeticOperation) -> DType {
+    if matches!(operation, ArithmeticOperation::Divide)
+        || matches!(left, DType::Float32)
+        || matches!(right, DType::Float32)
+    {
+        DType::Float32
+    } else {
+        DType::Int64
+    }
+}
+
 struct Storage {
-    data: Vec<f32>,
-    dtype: DType,
+    data: TensorData,
     device: Device,
 }
 
@@ -180,7 +285,7 @@ impl std::fmt::Debug for Tensor {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("Tensor")
-            .field("data", &self.as_slice())
+            .field("data", &self.data())
             .field("shape", &self.shape)
             .finish()
     }
@@ -191,7 +296,7 @@ impl PartialEq for Tensor {
         self.shape == other.shape
             && self.dtype() == other.dtype()
             && self.device() == other.device()
-            && self.as_slice() == other.as_slice()
+            && self.data() == other.data()
     }
 }
 
@@ -216,13 +321,22 @@ impl Tensor {
     /// Returns an error when the element count or contiguous stride overflows,
     /// or when the element count differs from the supplied data length.
     pub fn from_vec(data: Vec<f32>, shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
-        Self::from_vec_with_metadata(data, shape, DType::Float32, Device::Cpu)
+        Self::from_data_with_metadata(TensorData::Float32(data), shape, Device::Cpu)
     }
 
-    pub(crate) fn from_vec_with_metadata(
-        data: Vec<f32>,
+    /// Creates an int64 tensor after validating that `shape` describes `data`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the element count or contiguous stride overflows,
+    /// or when the element count differs from the supplied data length.
+    pub fn from_i64_vec(data: Vec<i64>, shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
+        Self::from_data_with_metadata(TensorData::Int64(data), shape, Device::Cpu)
+    }
+
+    pub(crate) fn from_data_with_metadata(
+        data: TensorData,
         shape: impl Into<Vec<usize>>,
-        dtype: DType,
         device: Device,
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
@@ -233,7 +347,8 @@ impl Tensor {
                 elements: data.len(),
             });
         }
-        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+        validate_storage_capacity(expected, data.dtype())?;
+        Ok(Self::from_owned_parts(data, shape, strides, device))
     }
 
     /// Creates a zero-filled tensor.
@@ -253,8 +368,8 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
-        let data = filled_storage(elements, 0.0)?;
-        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+        let data = filled_storage(elements, Scalar::Int64(0), dtype)?;
+        Ok(Self::from_owned_parts(data, shape, strides, device))
     }
 
     /// Creates a one-filled tensor.
@@ -274,8 +389,8 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
-        let data = filled_storage(elements, 1.0)?;
-        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+        let data = filled_storage(elements, Scalar::Int64(1), dtype)?;
+        Ok(Self::from_owned_parts(data, shape, strides, device))
     }
 
     /// Creates a tensor filled with `fill_value`.
@@ -285,42 +400,50 @@ impl Tensor {
     /// Returns an error when the shape's element count, contiguous stride, or
     /// storage size overflows, or when storage allocation fails.
     pub fn full(shape: impl Into<Vec<usize>>, fill_value: f32) -> Result<Self, TensorError> {
-        Self::full_with_metadata(shape, fill_value, DType::Float32, Device::Cpu)
+        Self::full_with_metadata(
+            shape,
+            Scalar::Float32(fill_value),
+            DType::Float32,
+            Device::Cpu,
+        )
+    }
+
+    /// Creates an int64 tensor filled with `fill_value`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when layout or storage allocation fails.
+    pub fn full_i64(shape: impl Into<Vec<usize>>, fill_value: i64) -> Result<Self, TensorError> {
+        Self::full_with_metadata(shape, Scalar::Int64(fill_value), DType::Int64, Device::Cpu)
     }
 
     pub(crate) fn full_with_metadata(
         shape: impl Into<Vec<usize>>,
-        fill_value: f32,
+        fill_value: Scalar,
         dtype: DType,
         device: Device,
     ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
-        validate_storage_capacity(elements)?;
-        let data = filled_storage(elements, fill_value)?;
-        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+        let data = filled_storage(elements, fill_value, dtype)?;
+        Ok(Self::from_owned_parts(data, shape, strides, device))
     }
 
-    pub(crate) fn validate_full_shape(shape: &[usize]) -> Result<usize, TensorError> {
+    pub(crate) fn validate_full_shape(shape: &[usize], dtype: DType) -> Result<usize, TensorError> {
         let (elements, _) = validated_layout(shape)?;
-        validate_storage_capacity(elements)?;
+        validate_storage_capacity(elements, dtype)?;
         Ok(elements)
     }
 
     fn from_owned_parts(
-        data: Vec<f32>,
+        data: TensorData,
         shape: Vec<usize>,
         strides: Vec<usize>,
-        dtype: DType,
         device: Device,
     ) -> Self {
         let elements = data.len();
         Self {
-            storage: Arc::new(Storage {
-                data,
-                dtype,
-                device,
-            }),
+            storage: Arc::new(Storage { data, device }),
             shape,
             strides,
             offset: 0,
@@ -348,7 +471,7 @@ impl Tensor {
     /// Returns the scalar type physically represented by this tensor's storage.
     #[must_use]
     pub fn dtype(&self) -> DType {
-        self.storage.dtype
+        self.storage.data.dtype()
     }
 
     /// Returns the device owning this tensor's storage.
@@ -365,17 +488,67 @@ impl Tensor {
     #[must_use]
     /// # Panics
     ///
+    /// Panics if this tensor is not float32, or if its private, validated
+    /// layout invariant has been violated.
+    pub fn as_slice(&self) -> &[f32] {
+        self.as_f32_slice()
+            .expect("as_slice is only available for float32 tensors")
+    }
+
+    /// Returns this view's float32 values, or `None` for another dtype.
+    ///
+    /// # Panics
+    ///
     /// Panics only if the tensor's private, validated layout invariant has
     /// been violated.
-    pub fn as_slice(&self) -> &[f32] {
+    #[must_use]
+    pub fn as_f32_slice(&self) -> Option<&[f32]> {
         let end = self
             .offset
             .checked_add(self.elements)
             .expect("validated tensor view end must fit in usize");
-        &self.storage.data[self.offset..end]
+        match &self.storage.data {
+            TensorData::Float32(values) => Some(&values[self.offset..end]),
+            TensorData::Int64(_) => None,
+        }
+    }
+
+    /// Returns this view's int64 values, or `None` for another dtype.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the tensor's private, validated layout invariant has
+    /// been violated.
+    #[must_use]
+    pub fn as_i64_slice(&self) -> Option<&[i64]> {
+        let end = self
+            .offset
+            .checked_add(self.elements)
+            .expect("validated tensor view end must fit in usize");
+        match &self.storage.data {
+            TensorData::Float32(_) => None,
+            TensorData::Int64(values) => Some(&values[self.offset..end]),
+        }
+    }
+
+    /// Returns a borrowed, type-safe view of this tensor's payload.
+    #[must_use]
+    pub fn data(&self) -> TensorDataRef<'_> {
+        match &self.storage.data {
+            TensorData::Float32(values) => {
+                TensorDataRef::Float32(&values[self.offset..self.offset + self.elements])
+            }
+            TensorData::Int64(values) => {
+                TensorDataRef::Int64(&values[self.offset..self.offset + self.elements])
+            }
+        }
     }
 
     #[must_use]
+    /// # Panics
+    ///
+    /// Panics if this tensor is not float32, or if its private, validated
+    /// layout invariant has been violated.
     pub fn into_vec(self) -> Vec<f32> {
         let Self {
             storage,
@@ -384,14 +557,44 @@ impl Tensor {
             ..
         } = self;
         match Arc::try_unwrap(storage) {
-            Ok(storage) => {
-                if offset == 0 && elements == storage.data.len() {
-                    storage.data
-                } else {
-                    storage.data[offset..offset + elements].to_vec()
+            Ok(storage) => match storage.data {
+                TensorData::Float32(values) => owned_view(values, offset, elements),
+                TensorData::Int64(_) => panic!("into_vec is only available for float32 tensors"),
+            },
+            Err(storage) => match &storage.data {
+                TensorData::Float32(values) => values[offset..offset + elements].to_vec(),
+                TensorData::Int64(_) => panic!("into_vec is only available for float32 tensors"),
+            },
+        }
+    }
+
+    /// Consumes an int64 tensor and returns this view's values.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this tensor is not int64, or if its private, validated layout
+    /// invariant has been violated.
+    #[must_use]
+    pub fn into_i64_vec(self) -> Vec<i64> {
+        let Self {
+            storage,
+            offset,
+            elements,
+            ..
+        } = self;
+        match Arc::try_unwrap(storage) {
+            Ok(storage) => match storage.data {
+                TensorData::Int64(values) => owned_view(values, offset, elements),
+                TensorData::Float32(_) => {
+                    panic!("into_i64_vec is only available for int64 tensors")
                 }
-            }
-            Err(storage) => storage.data[offset..offset + elements].to_vec(),
+            },
+            Err(storage) => match &storage.data {
+                TensorData::Int64(values) => values[offset..offset + elements].to_vec(),
+                TensorData::Float32(_) => {
+                    panic!("into_i64_vec is only available for int64 tensors")
+                }
+            },
         }
     }
 
@@ -497,7 +700,7 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, |left, right| left + right)
+        self.binary_operation(other, ArithmeticOperation::Add)
     }
 
     /// Subtracts tensors element by element with trailing-dimension broadcasting.
@@ -507,7 +710,7 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, |left, right| left - right)
+        self.binary_operation(other, ArithmeticOperation::Subtract)
     }
 
     /// Multiplies tensors element by element with trailing-dimension broadcasting.
@@ -517,7 +720,7 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, |left, right| left * right)
+        self.binary_operation(other, ArithmeticOperation::Multiply)
     }
 
     /// Divides tensors element by element using IEEE 754 true division and
@@ -528,7 +731,7 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn div(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, |left, right| left / right)
+        self.binary_operation(other, ArithmeticOperation::Divide)
     }
 
     /// Adds a scalar to every element.
@@ -537,7 +740,7 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| value + scalar)
+        self.scalar_operation(Scalar::Float32(scalar), ArithmeticOperation::Add, false)
     }
 
     /// Subtracts a scalar from every element.
@@ -546,7 +749,11 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn sub_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| value - scalar)
+        self.scalar_operation(
+            Scalar::Float32(scalar),
+            ArithmeticOperation::Subtract,
+            false,
+        )
     }
 
     /// Multiplies every element by a scalar.
@@ -555,7 +762,11 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn mul_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| value * scalar)
+        self.scalar_operation(
+            Scalar::Float32(scalar),
+            ArithmeticOperation::Multiply,
+            false,
+        )
     }
 
     /// Divides every element by a scalar using IEEE 754 true division.
@@ -564,7 +775,7 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn div_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| value / scalar)
+        self.scalar_operation(Scalar::Float32(scalar), ArithmeticOperation::Divide, false)
     }
 
     /// Subtracts every element from a scalar.
@@ -573,7 +784,7 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn scalar_sub(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| scalar - value)
+        self.scalar_operation(Scalar::Float32(scalar), ArithmeticOperation::Subtract, true)
     }
 
     /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal
@@ -583,7 +794,44 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| scalar * value.recip())
+        self.scalar_operation(Scalar::Float32(scalar), ArithmeticOperation::Divide, true)
+    }
+
+    /// Applies a typed scalar operation, preserving int64 when both operands
+    /// are integral and promoting every true division to float32.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn add_typed_scalar(&self, scalar: Scalar) -> Result<Self, TensorError> {
+        self.scalar_operation(scalar, ArithmeticOperation::Add, false)
+    }
+
+    /// See [`Tensor::add_typed_scalar`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn sub_typed_scalar(&self, scalar: Scalar, reverse: bool) -> Result<Self, TensorError> {
+        self.scalar_operation(scalar, ArithmeticOperation::Subtract, reverse)
+    }
+
+    /// See [`Tensor::add_typed_scalar`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn mul_typed_scalar(&self, scalar: Scalar) -> Result<Self, TensorError> {
+        self.scalar_operation(scalar, ArithmeticOperation::Multiply, false)
+    }
+
+    /// See [`Tensor::add_typed_scalar`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn div_typed_scalar(&self, scalar: Scalar, reverse: bool) -> Result<Self, TensorError> {
+        self.scalar_operation(scalar, ArithmeticOperation::Divide, reverse)
     }
 
     /// Applies rectified linear activation element by element.
@@ -593,32 +841,40 @@ impl Tensor {
     /// Returns an error when result metadata or storage allocation fails.
     pub fn relu(&self) -> Result<Self, TensorError> {
         let elements = self.elements;
-        let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = if elements == 0 {
             contiguous_strides(&shape, elements)?
         } else {
             try_clone_result_shape(&self.strides, elements)?
         };
-        data.extend(self.as_slice().iter().map(|value| value.max(0.0)));
-        Ok(Self::from_owned_parts(
-            data,
-            shape,
-            strides,
-            self.dtype(),
-            self.device(),
-        ))
+        let data = match self.data() {
+            TensorDataRef::Float32(values) => {
+                let mut output = try_result_vector(elements, elements)?;
+                output.extend(
+                    values
+                        .iter()
+                        .map(|value| if *value <= 0.0 { 0.0 } else { *value }),
+                );
+                TensorData::Float32(output)
+            }
+            TensorDataRef::Int64(values) => {
+                let mut output = try_result_vector(elements, elements)?;
+                output.extend(values.iter().map(|value| (*value).max(0)));
+                TensorData::Int64(output)
+            }
+        };
+        Ok(Self::from_owned_parts(data, shape, strides, self.device()))
     }
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        Self::from_owned_parts(
-            vec![self.as_slice().iter().sum()],
-            Vec::new(),
-            Vec::new(),
-            self.dtype(),
-            self.device(),
-        )
+        let data = match self.data() {
+            TensorDataRef::Float32(values) => TensorData::Float32(vec![values.iter().sum()]),
+            TensorDataRef::Int64(values) => {
+                TensorData::Int64(vec![values.iter().copied().fold(0_i64, i64::wrapping_add)])
+            }
+        };
+        Self::from_owned_parts(data, Vec::new(), Vec::new(), self.device())
     }
 
     /// Extracts the value of a one-element tensor.
@@ -627,12 +883,24 @@ impl Tensor {
     ///
     /// Returns an error unless the tensor contains exactly one element.
     pub fn item(&self) -> Result<f32, TensorError> {
+        Ok(self.item_scalar()?.as_f32())
+    }
+
+    /// Extracts a one-element tensor without losing its dtype.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless the tensor contains exactly one element.
+    pub fn item_scalar(&self) -> Result<Scalar, TensorError> {
         if self.elements != 1 {
             return Err(TensorError::ItemRequiresOneElement {
                 elements: self.elements,
             });
         }
-        Ok(self.as_slice()[0])
+        Ok(match self.data() {
+            TensorDataRef::Float32(values) => Scalar::Float32(values[0]),
+            TensorDataRef::Int64(values) => Scalar::Int64(values[0]),
+        })
     }
 
     /// Multiplies two rank-2 matrices.
@@ -661,149 +929,184 @@ impl Tensor {
         output_shape.push(rows);
         output_shape.push(columns);
         let (output_elements, output_strides) = validated_layout(&output_shape)?;
-        let mut output = filled_storage(output_elements, 0.0)?;
-        let left_data = self.as_slice();
-        let right_data = other.as_slice();
-        for row in 0..rows {
-            for depth in 0..inner {
-                let left = left_data[row * inner + depth];
-                for column in 0..columns {
-                    output[row * columns + column] += left * right_data[depth * columns + column];
-                }
+        let output_dtype =
+            promote_dtype(self.dtype(), other.dtype(), ArithmeticOperation::Multiply);
+        validate_storage_capacity(output_elements, output_dtype)?;
+        let output = match output_dtype {
+            DType::Float32 => TensorData::Float32(matmul_kernel(
+                (rows, inner, columns),
+                output_elements,
+                0.0_f32,
+                |index| self.value_as_f32(index),
+                |index| other.value_as_f32(index),
+                |output, left, right| output + left * right,
+            )?),
+            DType::Int64 => {
+                let (TensorDataRef::Int64(left), TensorDataRef::Int64(right)) =
+                    (self.data(), other.data())
+                else {
+                    unreachable!("int64 promotion requires two int64 tensors")
+                };
+                TensorData::Int64(matmul_kernel(
+                    (rows, inner, columns),
+                    output_elements,
+                    0_i64,
+                    |index| left[index],
+                    |index| right[index],
+                    |output, left, right| output.wrapping_add(left.wrapping_mul(right)),
+                )?)
             }
-        }
+        };
         Ok(Self::from_owned_parts(
             output,
             output_shape,
             output_strides,
-            self.dtype(),
             self.device(),
         ))
     }
 
-    fn zip_map(
+    fn binary_operation(
         &self,
         other: &Self,
-        operation: impl Fn(f32, f32) -> f32,
+        operation: ArithmeticOperation,
     ) -> Result<Self, TensorError> {
+        let dtype = promote_dtype(self.dtype(), other.dtype(), operation);
+        let mut plan = BroadcastPlan::new(self, other, dtype)?;
         if self.shape == other.shape {
-            return self.zip_map_same_shape(other, operation);
+            plan.strides = if plan.elements == 0 {
+                contiguous_strides(&plan.shape, plan.elements)?
+            } else {
+                try_clone_result_shape(&self.strides, plan.elements)?
+            };
         }
-
-        let plan = BroadcastPlan::new(self, other)?;
-        let mut data = try_result_vector(plan.elements, plan.elements)?;
-        if plan.elements == 0 {
-            return Ok(Self::from_owned_parts(
-                data,
-                plan.shape,
-                plan.strides,
-                self.dtype(),
-                self.device(),
-            ));
-        }
-
-        let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
-        coordinates.resize(plan.shape.len(), 0_usize);
-        let mut left_offset = 0_usize;
-        let mut right_offset = 0_usize;
-        let left_data = self.as_slice();
-        let right_data = other.as_slice();
-
-        for output_offset in 0..plan.elements {
-            data.push(operation(left_data[left_offset], right_data[right_offset]));
-            if output_offset + 1 == plan.elements {
-                break;
+        let data = match dtype {
+            DType::Float32 => TensorData::Float32(Self::collect_binary(&plan, |left, right| {
+                operation.apply_f32(self.value_as_f32(left), other.value_as_f32(right))
+            })?),
+            DType::Int64 => {
+                let (TensorDataRef::Int64(left), TensorDataRef::Int64(right)) =
+                    (self.data(), other.data())
+                else {
+                    unreachable!("int64 promotion requires two int64 tensors")
+                };
+                TensorData::Int64(Self::collect_binary(&plan, |left_offset, right_offset| {
+                    operation.apply_i64(left[left_offset], right[right_offset])
+                })?)
             }
-
-            for axis in (0..plan.shape.len()).rev() {
-                coordinates[axis] = coordinates[axis]
-                    .checked_add(1)
-                    .ok_or(TensorError::StrideCalculationOverflow)?;
-                if coordinates[axis] < plan.shape[axis] {
-                    left_offset = left_offset
-                        .checked_add(plan.dimensions[axis].left_step)
-                        .ok_or(TensorError::StrideCalculationOverflow)?;
-                    right_offset = right_offset
-                        .checked_add(plan.dimensions[axis].right_step)
-                        .ok_or(TensorError::StrideCalculationOverflow)?;
-                    break;
-                }
-
-                coordinates[axis] = 0;
-                left_offset = left_offset
-                    .checked_sub(plan.dimensions[axis].left_rewind)
-                    .ok_or(TensorError::StrideCalculationOverflow)?;
-                right_offset = right_offset
-                    .checked_sub(plan.dimensions[axis].right_rewind)
-                    .ok_or(TensorError::StrideCalculationOverflow)?;
-            }
-        }
-
+        };
         Ok(Self::from_owned_parts(
             data,
             plan.shape,
             plan.strides,
-            self.dtype(),
             self.device(),
         ))
     }
 
-    fn zip_map_same_shape(
-        &self,
-        other: &Self,
-        operation: impl Fn(f32, f32) -> f32,
-    ) -> Result<Self, TensorError> {
-        let elements = self.elements;
-        let mut data = try_result_vector(elements, elements)?;
-        let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 {
-            contiguous_strides(&shape, elements)?
-        } else {
-            try_clone_result_shape(&self.strides, elements)?
-        };
-        data.extend(
-            self.as_slice()
-                .iter()
-                .copied()
-                .zip(other.as_slice().iter().copied())
-                .map(|(left, right)| operation(left, right)),
-        );
-        Ok(Self::from_owned_parts(
-            data,
-            shape,
-            strides,
-            self.dtype(),
-            self.device(),
-        ))
+    fn collect_binary<T>(
+        plan: &BroadcastPlan,
+        mut operation: impl FnMut(usize, usize) -> T,
+    ) -> Result<Vec<T>, TensorError> {
+        let mut data = try_result_vector(plan.elements, plan.elements)?;
+        if plan.elements == 0 {
+            return Ok(data);
+        }
+        let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
+        coordinates.resize(plan.shape.len(), 0_usize);
+        let mut left_offset = 0_usize;
+        let mut right_offset = 0_usize;
+        for output_offset in 0..plan.elements {
+            data.push(operation(left_offset, right_offset));
+            if output_offset + 1 == plan.elements {
+                break;
+            }
+            advance_broadcast_offsets(plan, &mut coordinates, &mut left_offset, &mut right_offset)?;
+        }
+        Ok(data)
     }
 
-    fn map_scalar(
+    fn scalar_operation(
         &self,
-        scalar: f32,
-        operation: impl Fn(f32, f32) -> f32,
+        scalar: Scalar,
+        operation: ArithmeticOperation,
+        reverse: bool,
     ) -> Result<Self, TensorError> {
         let elements = self.elements;
-        let mut data = try_result_vector(elements, elements)?;
+        let dtype = promote_dtype(self.dtype(), scalar.dtype(), operation);
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = if elements == 0 {
-            elementwise_output_strides(&shape, &[self], elements)?
+            elementwise_output_strides(&shape, &[self], elements, dtype)?
         } else {
             try_clone_result_shape(&self.strides, elements)?
         };
-        data.extend(
-            self.as_slice()
-                .iter()
-                .copied()
-                .map(|value| operation(value, scalar)),
-        );
-        Ok(Self::from_owned_parts(
-            data,
-            shape,
-            strides,
-            self.dtype(),
-            self.device(),
-        ))
+        validate_storage_capacity(elements, dtype)?;
+        let data = match dtype {
+            DType::Float32 => {
+                let scalar = scalar.as_f32();
+                let mut output = try_result_vector(elements, elements)?;
+                output.extend((0..elements).map(|index| {
+                    let value = self.value_as_f32(index);
+                    if reverse && matches!(operation, ArithmeticOperation::Divide) {
+                        scalar * value.recip()
+                    } else if reverse {
+                        operation.apply_f32(scalar, value)
+                    } else {
+                        operation.apply_f32(value, scalar)
+                    }
+                }));
+                TensorData::Float32(output)
+            }
+            DType::Int64 => {
+                let (TensorDataRef::Int64(values), Scalar::Int64(scalar)) = (self.data(), scalar)
+                else {
+                    unreachable!("int64 promotion requires int64 tensor and scalar storage")
+                };
+                let mut output = try_result_vector(elements, elements)?;
+                output.extend(values.iter().map(|value| {
+                    if reverse {
+                        operation.apply_i64(scalar, *value)
+                    } else {
+                        operation.apply_i64(*value, scalar)
+                    }
+                }));
+                TensorData::Int64(output)
+            }
+        };
+        Ok(Self::from_owned_parts(data, shape, strides, self.device()))
     }
+
+    fn value_as_f32(&self, index: usize) -> f32 {
+        match self.data() {
+            TensorDataRef::Float32(values) => values[index],
+            TensorDataRef::Int64(values) => {
+                #[allow(clippy::cast_precision_loss)]
+                let value = values[index] as f32;
+                value
+            }
+        }
+    }
+}
+
+fn matmul_kernel<T: Clone + Copy>(
+    dimensions: (usize, usize, usize),
+    output_elements: usize,
+    zero: T,
+    mut left_value: impl FnMut(usize) -> T,
+    mut right_value: impl FnMut(usize) -> T,
+    mut multiply_add: impl FnMut(T, T, T) -> T,
+) -> Result<Vec<T>, TensorError> {
+    let (rows, inner, columns) = dimensions;
+    let mut output = filled_vector(output_elements, zero)?;
+    for row in 0..rows {
+        for depth in 0..inner {
+            let left = left_value(row * inner + depth);
+            for column in 0..columns {
+                let offset = row * columns + column;
+                output[offset] =
+                    multiply_add(output[offset], left, right_value(depth * columns + column));
+            }
+        }
+    }
+    Ok(output)
 }
 
 #[derive(Clone, Copy)]
@@ -822,7 +1125,7 @@ struct BroadcastPlan {
 }
 
 impl BroadcastPlan {
-    fn new(left: &Tensor, right: &Tensor) -> Result<Self, TensorError> {
+    fn new(left: &Tensor, right: &Tensor, output_dtype: DType) -> Result<Self, TensorError> {
         let rank = left.shape.len().max(right.shape.len());
         for axis in 0..rank {
             let left_dimension = aligned_dimension(&left.shape, rank, axis);
@@ -846,7 +1149,7 @@ impl BroadcastPlan {
                 .checked_mul(dimension)
                 .ok_or(TensorError::ElementCountOverflow)?;
         }
-        validate_storage_capacity(elements)?;
+        validate_storage_capacity(elements, output_dtype)?;
 
         let mut shape = try_result_vector(rank, elements)?;
         for axis in 0..rank {
@@ -859,7 +1162,7 @@ impl BroadcastPlan {
             );
         }
         let strides = if elements == 0 {
-            elementwise_output_strides(&shape, &[left, right], elements)?
+            elementwise_output_strides(&shape, &[left, right], elements, output_dtype)?
         } else {
             contiguous_strides(&shape, elements)?
         };
@@ -910,6 +1213,37 @@ impl BroadcastPlan {
             elements,
         })
     }
+}
+
+fn advance_broadcast_offsets(
+    plan: &BroadcastPlan,
+    coordinates: &mut [usize],
+    left_offset: &mut usize,
+    right_offset: &mut usize,
+) -> Result<(), TensorError> {
+    for axis in (0..plan.shape.len()).rev() {
+        coordinates[axis] = coordinates[axis]
+            .checked_add(1)
+            .ok_or(TensorError::StrideCalculationOverflow)?;
+        if coordinates[axis] < plan.shape[axis] {
+            *left_offset = left_offset
+                .checked_add(plan.dimensions[axis].left_step)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            *right_offset = right_offset
+                .checked_add(plan.dimensions[axis].right_step)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            return Ok(());
+        }
+
+        coordinates[axis] = 0;
+        *left_offset = left_offset
+            .checked_sub(plan.dimensions[axis].left_rewind)
+            .ok_or(TensorError::StrideCalculationOverflow)?;
+        *right_offset = right_offset
+            .checked_sub(plan.dimensions[axis].right_rewind)
+            .ok_or(TensorError::StrideCalculationOverflow)?;
+    }
+    Ok(())
 }
 
 fn aligned_dimension(shape: &[usize], output_rank: usize, output_axis: usize) -> usize {
@@ -965,8 +1299,8 @@ fn aligned_broadcast_stride_bytes(
     // accessing any storage.
     let stride =
         aligned_broadcast_stride(tensor, output_rank, output_axis, output_dimension).cast_signed();
-    let element_size =
-        i64::try_from(size_of::<f32>()).expect("an f32 element size must fit in i64");
+    let element_size = i64::try_from(dtype_size(tensor.dtype()))
+        .expect("a supported element size must fit in i64");
     i64::try_from(stride)
         .expect("an isize stride must fit in a signed 64-bit TensorIterator stride")
         .wrapping_mul(element_size)
@@ -1023,6 +1357,7 @@ fn elementwise_output_strides(
     shape: &[usize],
     operands: &[&Tensor],
     elements: usize,
+    output_dtype: DType,
 ) -> Result<Vec<usize>, TensorError> {
     let rank = shape.len();
     let mut permutation = try_result_vector(rank, elements)?;
@@ -1055,7 +1390,7 @@ fn elementwise_output_strides(
     }
 
     let element_size =
-        i64::try_from(size_of::<f32>()).expect("an f32 element size must fit in i64");
+        i64::try_from(dtype_size(output_dtype)).expect("a supported element size must fit in i64");
     let mut byte_strides = try_result_vector(rank, elements)?;
     byte_strides.resize(rank, 0_i64);
     let mut next_byte_stride = element_size;
@@ -1144,9 +1479,26 @@ fn checked_stride_product(stride: usize, dimension: usize) -> Result<usize, Tens
         .ok_or(TensorError::StrideCalculationOverflow)
 }
 
-fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {
-    validate_storage_capacity(elements)?;
+fn filled_storage(
+    elements: usize,
+    fill_value: Scalar,
+    dtype: DType,
+) -> Result<TensorData, TensorError> {
+    validate_storage_capacity(elements, dtype)?;
+    Ok(match dtype {
+        DType::Float32 => TensorData::Float32(filled_vector(elements, fill_value.as_f32())?),
+        DType::Int64 => {
+            let value = match fill_value {
+                Scalar::Int64(value) => value,
+                #[allow(clippy::cast_possible_truncation)]
+                Scalar::Float32(value) => value as i64,
+            };
+            TensorData::Int64(filled_vector(elements, value)?)
+        }
+    })
+}
 
+fn filled_vector<T: Clone>(elements: usize, fill_value: T) -> Result<Vec<T>, TensorError> {
     let mut data = Vec::new();
     data.try_reserve_exact(elements)
         .map_err(|_| TensorError::AllocationFailed { elements })?;
@@ -1154,12 +1506,27 @@ fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorEr
     Ok(data)
 }
 
-fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
-    let maximum_elements = isize::MAX.unsigned_abs() / size_of::<f32>();
+fn validate_storage_capacity(elements: usize, dtype: DType) -> Result<(), TensorError> {
+    let maximum_elements = isize::MAX.unsigned_abs() / dtype_size(dtype);
     if elements > maximum_elements {
         return Err(TensorError::StorageCapacityOverflow { elements });
     }
     Ok(())
+}
+
+const fn dtype_size(dtype: DType) -> usize {
+    match dtype {
+        DType::Float32 => size_of::<f32>(),
+        DType::Int64 => size_of::<i64>(),
+    }
+}
+
+fn owned_view<T: Clone>(values: Vec<T>, offset: usize, elements: usize) -> Vec<T> {
+    if offset == 0 && elements == values.len() {
+        values
+    } else {
+        values[offset..offset + elements].to_vec()
+    }
 }
 
 #[cfg(test)]

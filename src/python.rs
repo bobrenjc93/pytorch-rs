@@ -5,12 +5,14 @@ use pyo3::exceptions::{
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyString, PyTuple,
+    PyAny, PyBool, PyByteArray, PyBytes, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence,
+    PyString, PyTuple,
 };
 
-use crate::{DType, Device, Tensor as CoreTensor, TensorError};
+use crate::{DType, Device, Scalar, Tensor as CoreTensor, TensorData, TensorDataRef, TensorError};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
+static INT64: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
 
 /// Python scalar-type descriptor backed by a native [`DType`].
 #[pyclass(name = "dtype", module = "torch_rs", frozen, skip_from_py_object)]
@@ -24,6 +26,7 @@ impl PyDType {
     fn __repr__(&self) -> &'static str {
         match self.inner {
             DType::Float32 => "torch.float32",
+            DType::Int64 => "torch.int64",
         }
     }
 
@@ -89,7 +92,8 @@ enum ParsedFillValue {
     Float(f64),
     SignedInteger(i64),
     UnsignedInteger(u64),
-    TensorScalar(f32),
+    Boolean(bool),
+    TensorScalar(Scalar),
 }
 
 enum ParsedArithmeticScalar {
@@ -122,6 +126,7 @@ impl PyTensor {
     fn dtype(&self, py: Python<'_>) -> PyResult<Py<PyDType>> {
         match self.inner.dtype() {
             DType::Float32 => Ok(float32_object(py)?.clone_ref(py)),
+            DType::Int64 => Ok(int64_object(py)?.clone_ref(py)),
         }
     }
 
@@ -177,11 +182,16 @@ impl PyTensor {
     }
 
     fn tolist(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        nested_list(py, self.inner.as_slice(), self.inner.shape())
+        nested_list(py, self.inner.data(), self.inner.shape())
     }
 
-    fn item(&self) -> PyResult<f32> {
-        self.inner.item().map_err(|error| tensor_error(&error))
+    fn item(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        scalar_into_py(
+            py,
+            self.inner
+                .item_scalar()
+                .map_err(|error| tensor_error(&error))?,
+        )
     }
 
     fn relu(&self) -> PyResult<Self> {
@@ -245,11 +255,15 @@ impl PyTensor {
     }
 
     fn __repr__(&self) -> String {
-        format!(
-            "tensor({:?}, shape={:?})",
-            self.inner.as_slice(),
-            self.inner.shape()
-        )
+        match self.inner.data() {
+            TensorDataRef::Float32(values) => {
+                format!("tensor({values:?}, shape={:?})", self.inner.shape())
+            }
+            TensorDataRef::Int64(values) => format!(
+                "tensor({values:?}, shape={:?}, dtype=torch.int64)",
+                self.inner.shape()
+            ),
+        }
     }
 }
 
@@ -260,12 +274,19 @@ impl PyTensor {
         dtype: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
         let numpy = PyModule::import(py, "numpy")?;
-        let values = PyList::new(py, self.inner.as_slice().iter().copied())?;
+        let values = match self.inner.data() {
+            TensorDataRef::Float32(values) => PyList::new(py, values.iter().copied())?,
+            TensorDataRef::Int64(values) => PyList::new(py, values.iter().copied())?,
+        };
         let arguments = PyDict::new(py);
         if let Some(dtype) = dtype {
             arguments.set_item("dtype", dtype)?;
         } else {
-            arguments.set_item("dtype", numpy.getattr("float32")?)?;
+            let numpy_dtype = match self.inner.dtype() {
+                DType::Float32 => "float32",
+                DType::Int64 => "int64",
+            };
+            arguments.set_item("dtype", numpy.getattr(numpy_dtype)?)?;
         }
         let array = numpy.getattr("array")?.call((values,), Some(&arguments))?;
         let shape = PyTuple::new(py, self.inner.shape().iter().copied())?;
@@ -316,7 +337,11 @@ impl PyTensor {
             if matches!(operation, BinaryOperation::Subtract) && scalar.is_python_bool() {
                 return Err(bool_subtraction_error());
             }
-            operation.apply_scalar(&self.inner, scalar.into_f32(), reverse)
+            operation.apply_scalar(
+                &self.inner,
+                scalar.into_scalar(self.inner.dtype())?,
+                reverse,
+            )
         };
 
         Self {
@@ -343,16 +368,16 @@ impl BinaryOperation {
     fn apply_scalar(
         self,
         tensor: &CoreTensor,
-        scalar: f32,
+        scalar: Scalar,
         reverse: bool,
     ) -> Result<CoreTensor, TensorError> {
         match (self, reverse) {
-            (Self::Add, _) => tensor.add_scalar(scalar),
-            (Self::Subtract, false) => tensor.sub_scalar(scalar),
-            (Self::Subtract, true) => tensor.scalar_sub(scalar),
-            (Self::Multiply, _) => tensor.mul_scalar(scalar),
-            (Self::Divide, false) => tensor.div_scalar(scalar),
-            (Self::Divide, true) => tensor.scalar_div(scalar),
+            (Self::Add, _) => tensor.add_typed_scalar(scalar),
+            (Self::Subtract, false) => tensor.sub_typed_scalar(scalar, false),
+            (Self::Subtract, true) => tensor.sub_typed_scalar(scalar, true),
+            (Self::Multiply, _) => tensor.mul_typed_scalar(scalar),
+            (Self::Divide, false) => tensor.div_typed_scalar(scalar, false),
+            (Self::Divide, true) => tensor.div_typed_scalar(scalar, true),
         }
     }
 }
@@ -363,10 +388,16 @@ fn tensor(
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
-    let (dtype, device) = parse_metadata("tensor", dtype, device)?;
+    let dtype = parse_optional_dtype("tensor", dtype)?;
+    let device = parse_device("tensor", device)?;
     let mut flattened = Vec::new();
     let shape = flatten_rectangular(data, &mut flattened)?;
-    CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+    let dtype = match dtype {
+        Some(dtype) => dtype,
+        None => infer_tensor_dtype(&flattened)?,
+    };
+    let data = convert_tensor_data(flattened, dtype)?;
+    CoreTensor::from_data_with_metadata(data, shape, device)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
@@ -410,8 +441,9 @@ fn full(
     let size = parse_size(size)?;
     let fill_value = parse_fill_value(fill_value)?;
     let shape = validate_size(size)?;
-    CoreTensor::validate_full_shape(&shape).map_err(|error| full_shape_error(&error, &shape))?;
-    let fill_value = fill_value.into_f32()?;
+    CoreTensor::validate_full_shape(&shape, dtype)
+        .map_err(|error| full_shape_error(&error, &shape))?;
+    let fill_value = fill_value.into_scalar(dtype)?;
     CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
@@ -423,6 +455,17 @@ fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
             py,
             PyDType {
                 inner: DType::Float32,
+            },
+        )
+    })
+}
+
+fn int64_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
+    INT64.get_or_try_init(py, || {
+        Py::new(
+            py,
+            PyDType {
+                inner: DType::Int64,
             },
         )
     })
@@ -461,11 +504,18 @@ fn parse_metadata(
 }
 
 fn parse_dtype(function: &str, dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DType> {
+    Ok(parse_optional_dtype(function, dtype)?.unwrap_or(DType::Float32))
+}
+
+fn parse_optional_dtype(
+    function: &str,
+    dtype: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<DType>> {
     let Some(dtype) = dtype else {
-        return Ok(DType::Float32);
+        return Ok(None);
     };
     if let Ok(dtype) = dtype.cast::<PyDType>() {
-        return Ok(dtype.try_borrow()?.inner);
+        return Ok(Some(dtype.try_borrow()?.inner));
     }
 
     let type_name = dtype.get_type().name()?;
@@ -705,7 +755,7 @@ fn parse_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> 
         }
         return tensor
             .inner
-            .item()
+            .item_scalar()
             .map(ParsedFillValue::TensorScalar)
             .map_err(|error| tensor_error(&error));
     }
@@ -812,9 +862,7 @@ fn parse_numpy_value(
 
     let numpy_bool = numpy.getattr("bool_").map_err(|_| invalid_value())?;
     if value.is_instance(&numpy_bool)? {
-        return value
-            .is_truthy()
-            .map(|value| ParsedFillValue::SignedInteger(i64::from(value)));
+        return value.is_truthy().map(ParsedFillValue::Boolean);
     }
 
     let numpy_integer = numpy.getattr("integer").map_err(|_| invalid_value())?;
@@ -837,6 +885,9 @@ fn parse_numpy_value(
 }
 
 fn parse_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    if fill_value.is_exact_instance_of::<PyBool>() {
+        return fill_value.is_truthy().map(ParsedFillValue::Boolean);
+    }
     if let Ok(value) = fill_value.extract::<i64>() {
         return Ok(ParsedFillValue::SignedInteger(value));
     }
@@ -871,6 +922,13 @@ fn full_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
 }
 
 impl ParsedFillValue {
+    fn into_scalar(self, dtype: DType) -> PyResult<Scalar> {
+        match dtype {
+            DType::Float32 => self.into_f32().map(Scalar::Float32),
+            DType::Int64 => self.into_i64().map(Scalar::Int64),
+        }
+    }
+
     fn into_f32(self) -> PyResult<f32> {
         match self {
             Self::Float(value) => {
@@ -891,28 +949,42 @@ impl ParsedFillValue {
                 let converted = value as f32;
                 Ok(converted)
             }
-            Self::TensorScalar(value) => Ok(value),
+            Self::Boolean(value) => Ok(f32::from(u8::from(value))),
+            Self::TensorScalar(value) => Ok(value.as_f32()),
         }
     }
 
-    fn into_arithmetic_f32(self) -> f32 {
+    fn into_i64(self) -> PyResult<i64> {
+        match self {
+            Self::Float(value) => float_to_i64(value),
+            Self::SignedInteger(value) | Self::TensorScalar(Scalar::Int64(value)) => Ok(value),
+            Self::UnsignedInteger(value) => {
+                i64::try_from(value).map_err(|_| integer_conversion_overflow())
+            }
+            Self::Boolean(value) => Ok(i64::from(value)),
+            Self::TensorScalar(Scalar::Float32(value)) => float_to_i64(f64::from(value)),
+        }
+    }
+
+    fn into_arithmetic_scalar(self, tensor_dtype: DType) -> PyResult<Scalar> {
         match self {
             Self::Float(value) => {
                 #[allow(clippy::cast_possible_truncation)]
                 let converted = value as f32;
-                converted
+                Ok(Scalar::Float32(converted))
             }
-            Self::SignedInteger(value) => {
-                #[allow(clippy::cast_precision_loss)]
-                let converted = value as f32;
-                converted
-            }
-            Self::UnsignedInteger(value) => {
-                #[allow(clippy::cast_precision_loss)]
-                let converted = value as f32;
-                converted
-            }
-            Self::TensorScalar(value) => value,
+            Self::SignedInteger(value) => Ok(Scalar::Int64(value)),
+            Self::UnsignedInteger(value) => match i64::try_from(value) {
+                Ok(value) => Ok(Scalar::Int64(value)),
+                Err(_) if matches!(tensor_dtype, DType::Float32) => {
+                    #[allow(clippy::cast_precision_loss)]
+                    let converted = value as f32;
+                    Ok(Scalar::Float32(converted))
+                }
+                Err(_) => Err(integer_conversion_overflow()),
+            },
+            Self::Boolean(value) => Ok(Scalar::Int64(i64::from(value))),
+            Self::TensorScalar(value) => Ok(value),
         }
     }
 }
@@ -922,10 +994,10 @@ impl ParsedArithmeticScalar {
         matches!(self, Self::PythonBool(_))
     }
 
-    fn into_f32(self) -> f32 {
+    fn into_scalar(self, tensor_dtype: DType) -> PyResult<Scalar> {
         match self {
-            Self::PythonBool(value) => f32::from(u8::from(value)),
-            Self::Number(value) => value.into_arithmetic_f32(),
+            Self::PythonBool(value) => Ok(Scalar::Int64(i64::from(value))),
+            Self::Number(value) => value.into_arithmetic_scalar(tensor_dtype),
             Self::WideNumpyUnsigned => {
                 unreachable!("wide NumPy unsigned operands are dispatched before conversion")
             }
@@ -933,14 +1005,37 @@ impl ParsedArithmeticScalar {
     }
 }
 
+fn integer_conversion_overflow() -> PyErr {
+    PyRuntimeError::new_err("value cannot be converted to int64 without overflow")
+}
+
+fn float_to_i64(value: f64) -> PyResult<i64> {
+    const EXCLUSIVE_UPPER_BOUND: f64 = 9_223_372_036_854_775_808.0;
+    if !value.is_finite() || !(-EXCLUSIVE_UPPER_BOUND..EXCLUSIVE_UPPER_BOUND).contains(&value) {
+        return Err(integer_conversion_overflow());
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    Ok(value as i64)
+}
+
 fn fill_value_overflow() -> PyErr {
     PyRuntimeError::new_err("value cannot be converted to float32 without overflow")
 }
 
-fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
-    if let Ok(scalar) = value.extract::<f32>() {
-        output.push(scalar);
+fn flatten_rectangular(
+    value: &Bound<'_, PyAny>,
+    output: &mut Vec<ParsedFillValue>,
+) -> PyResult<Vec<usize>> {
+    if let Some(scalar) = parse_tensor_scalar(value)? {
+        try_push_size(output, scalar)?;
         return Ok(Vec::new());
+    }
+
+    if value.is_instance_of::<PyString>()
+        || value.is_instance_of::<PyBytes>()
+        || value.is_instance_of::<PyByteArray>()
+    {
+        return Err(invalid_tensor_data());
     }
 
     let sequence = value.cast::<PySequence>().map_err(|_| {
@@ -961,15 +1056,98 @@ fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyRes
         }
     }
 
-    let mut shape = Vec::with_capacity(first_shape.len() + 1);
+    let shape_capacity = first_shape
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("unable to allocate tensor shape"))?;
+    let mut shape = try_size_vector(shape_capacity)?;
     shape.push(length);
     shape.extend(first_shape);
     Ok(shape)
 }
 
-fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyAny>> {
+fn parse_tensor_scalar(value: &Bound<'_, PyAny>) -> PyResult<Option<ParsedFillValue>> {
+    if value.is_instance_of::<PyBool>() {
+        return value.is_truthy().map(ParsedFillValue::Boolean).map(Some);
+    }
+    if value.is_instance_of::<PyInt>() {
+        return parse_integer_fill_value(value).map(Some);
+    }
+    if value.is_instance_of::<PyFloat>() {
+        return value.extract::<f64>().map(ParsedFillValue::Float).map(Some);
+    }
+
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(None);
+    };
+    let generic = numpy.getattr("generic")?;
+    if value.is_instance(&generic)? {
+        return parse_numpy_value(
+            value,
+            invalid_tensor_data,
+            "NumPy integer tensor value is outside the signed 64-bit range",
+        )
+        .map(Some);
+    }
+    Ok(None)
+}
+
+fn invalid_tensor_data() -> PyErr {
+    PyTypeError::new_err("tensor data must contain real numbers in a rectangular sequence")
+}
+
+fn infer_tensor_dtype(values: &[ParsedFillValue]) -> PyResult<DType> {
+    if values
+        .iter()
+        .any(|value| matches!(value, ParsedFillValue::Boolean(_)))
+    {
+        return Err(PyRuntimeError::new_err(
+            "bool tensor storage is not supported; specify dtype=torch.float32 or torch.int64",
+        ));
+    }
+    if values
+        .iter()
+        .any(|value| matches!(value, ParsedFillValue::Float(_)))
+        || values.is_empty()
+    {
+        Ok(DType::Float32)
+    } else {
+        Ok(DType::Int64)
+    }
+}
+
+fn convert_tensor_data(values: Vec<ParsedFillValue>, dtype: DType) -> PyResult<TensorData> {
+    match dtype {
+        DType::Float32 => {
+            let mut converted = try_size_vector(values.len())?;
+            for value in values {
+                converted.push(value.into_f32()?);
+            }
+            Ok(TensorData::Float32(converted))
+        }
+        DType::Int64 => {
+            let mut converted = try_size_vector(values.len())?;
+            for value in values {
+                converted.push(value.into_i64()?);
+            }
+            Ok(TensorData::Int64(converted))
+        }
+    }
+}
+
+fn scalar_into_py(py: Python<'_>, scalar: Scalar) -> PyResult<Py<PyAny>> {
+    match scalar {
+        Scalar::Float32(value) => value.into_py_any(py),
+        Scalar::Int64(value) => value.into_py_any(py),
+    }
+}
+
+fn nested_list(py: Python<'_>, data: TensorDataRef<'_>, shape: &[usize]) -> PyResult<Py<PyAny>> {
     if shape.is_empty() {
-        return data[0].into_py_any(py);
+        return match data {
+            TensorDataRef::Float32(values) => values[0].into_py_any(py),
+            TensorDataRef::Int64(values) => values[0].into_py_any(py),
+        };
     }
 
     let mut items = Vec::new();
@@ -993,7 +1171,14 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
         let start = index * chunk_size;
         items.push(nested_list(
             py,
-            &data[start..start + chunk_size],
+            match data {
+                TensorDataRef::Float32(values) => {
+                    TensorDataRef::Float32(&values[start..start + chunk_size])
+                }
+                TensorDataRef::Int64(values) => {
+                    TensorDataRef::Int64(&values[start..start + chunk_size])
+                }
+            },
             &shape[1..],
         )?);
     }
@@ -1031,6 +1216,9 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let float32 = float32_object(py)?;
     module.add("float32", float32.clone_ref(py))?;
     module.add("float", float32.clone_ref(py))?;
+    let int64 = int64_object(py)?;
+    module.add("int64", int64.clone_ref(py))?;
+    module.add("long", int64.clone_ref(py))?;
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
@@ -1039,6 +1227,8 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
 mod tests {
     use pyo3::exceptions::PyTypeError;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyModule};
+
+    use crate::TensorDataRef;
 
     use super::{nested_list, torch_rs, try_size_vector};
 
@@ -1055,7 +1245,8 @@ mod tests {
         pyo3::Python::initialize();
         pyo3::Python::attach(|py| {
             let maximum = usize::try_from(i64::MAX).unwrap();
-            let list = nested_list(py, &[], &[0, maximum, maximum]).unwrap();
+            let list =
+                nested_list(py, TensorDataRef::Float32(&[]), &[0, maximum, maximum]).unwrap();
             assert_eq!(list.bind(py).len().unwrap(), 0);
         });
     }

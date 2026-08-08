@@ -6,8 +6,8 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 | Area | Weight | Baseline |
 | --- | ---: | --- |
-| tensor storage, shapes, strides, views, indexing | 15% | contiguous CPU `f32` subset |
-| dtypes, promotion, devices, dispatch | 10% | CPU `f32` only |
+| tensor storage, shapes, strides, views, indexing | 15% | contiguous CPU `float32`/`int64` subset |
+| dtypes, promotion, devices, dispatch | 10% | CPU `float32` and `int64` with native promotion |
 | creation, elementwise, reductions | 15% | six basic operations |
 | linear algebra and signal operations | 10% | rank-2 matmul only |
 | autograd and higher-order differentiation | 15% | unsupported |
