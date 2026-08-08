@@ -19,6 +19,14 @@ enum ParsedFillValue {
     TensorScalar(f32),
 }
 
+#[derive(Clone, Copy)]
+enum BinaryOperation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
 #[pymethods]
 impl PyTensor {
     #[getter]
@@ -50,32 +58,36 @@ impl PyTensor {
         }
     }
 
-    fn __add__(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .add(&other.inner)
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        self.binary_operation(other, BinaryOperation::Add, false)
     }
 
-    fn __sub__(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .sub(&other.inner)
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+    fn __radd__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        self.binary_operation(other, BinaryOperation::Add, true)
     }
 
-    fn __mul__(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .mul(&other.inner)
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+    fn __sub__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        self.binary_operation(other, BinaryOperation::Subtract, false)
     }
 
-    fn __truediv__(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .div(&other.inner)
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+    fn __rsub__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        self.binary_operation(other, BinaryOperation::Subtract, true)
+    }
+
+    fn __mul__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        self.binary_operation(other, BinaryOperation::Multiply, false)
+    }
+
+    fn __rmul__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        self.binary_operation(other, BinaryOperation::Multiply, true)
+    }
+
+    fn __truediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        self.binary_operation(other, BinaryOperation::Divide, false)
+    }
+
+    fn __rtruediv__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        self.binary_operation(other, BinaryOperation::Divide, true)
     }
 
     fn __matmul__(&self, other: &Self) -> PyResult<Self> {
@@ -99,6 +111,62 @@ impl PyTensor {
             self.inner.as_slice(),
             self.inner.shape()
         )
+    }
+}
+
+impl PyTensor {
+    fn binary_operation(
+        &self,
+        other: &Bound<'_, PyAny>,
+        operation: BinaryOperation,
+        reverse: bool,
+    ) -> PyResult<Self> {
+        let result = if let Ok(other) = other.cast::<Self>() {
+            let other = other.try_borrow()?;
+            if reverse {
+                operation.apply_tensors(&other.inner, &self.inner)
+            } else {
+                operation.apply_tensors(&self.inner, &other.inner)
+            }
+        } else {
+            let scalar = parse_arithmetic_scalar(other)?.into_arithmetic_f32();
+            operation.apply_scalar(&self.inner, scalar, reverse)
+        };
+
+        result
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+}
+
+impl BinaryOperation {
+    fn apply_tensors(
+        self,
+        left: &CoreTensor,
+        right: &CoreTensor,
+    ) -> Result<CoreTensor, TensorError> {
+        match self {
+            Self::Add => left.add(right),
+            Self::Subtract => left.sub(right),
+            Self::Multiply => left.mul(right),
+            Self::Divide => left.div(right),
+        }
+    }
+
+    fn apply_scalar(
+        self,
+        tensor: &CoreTensor,
+        scalar: f32,
+        reverse: bool,
+    ) -> Result<CoreTensor, TensorError> {
+        match (self, reverse) {
+            (Self::Add, _) => tensor.add_scalar(scalar),
+            (Self::Subtract, false) => tensor.sub_scalar(scalar),
+            (Self::Subtract, true) => tensor.scalar_sub(scalar),
+            (Self::Multiply, _) => tensor.mul_scalar(scalar),
+            (Self::Divide, false) => tensor.div_scalar(scalar),
+            (Self::Divide, true) => tensor.scalar_div(scalar),
+        }
     }
 }
 
@@ -242,41 +310,77 @@ fn parse_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> 
     parse_numpy_fill_value(fill_value)
 }
 
-fn parse_numpy_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
-    let numpy = PyModule::import(fill_value.py(), "numpy").map_err(|_| invalid_fill_value())?;
-    let generic = numpy.getattr("generic").map_err(|_| invalid_fill_value())?;
-    if !fill_value.is_instance(&generic)? {
-        return Err(invalid_fill_value());
+fn parse_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    if value.is_instance_of::<PyInt>() {
+        return parse_integer_fill_value(value);
     }
 
-    let numpy_bool = numpy.getattr("bool_").map_err(|_| invalid_fill_value())?;
-    if fill_value.is_instance(&numpy_bool)? {
-        return fill_value
+    if value.is_instance_of::<PyFloat>() {
+        return value.extract::<f64>().map(ParsedFillValue::Float);
+    }
+
+    parse_numpy_value(
+        value,
+        invalid_arithmetic_scalar,
+        "NumPy integer operand is outside the supported 64-bit range",
+        true,
+    )
+}
+
+fn parse_numpy_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    parse_numpy_value(
+        fill_value,
+        invalid_fill_value,
+        "NumPy integer fill_value is outside the signed 64-bit range",
+        false,
+    )
+}
+
+fn parse_numpy_value(
+    value: &Bound<'_, PyAny>,
+    invalid_value: fn() -> PyErr,
+    integer_range_error: &'static str,
+    allow_unsigned_integer: bool,
+) -> PyResult<ParsedFillValue> {
+    let numpy = PyModule::import(value.py(), "numpy").map_err(|_| invalid_value())?;
+    let generic = numpy.getattr("generic").map_err(|_| invalid_value())?;
+    if !value.is_instance(&generic)? {
+        return Err(invalid_value());
+    }
+
+    let numpy_bool = numpy.getattr("bool_").map_err(|_| invalid_value())?;
+    if value.is_instance(&numpy_bool)? {
+        return value
             .is_truthy()
             .map(|value| ParsedFillValue::SignedInteger(i64::from(value)));
     }
 
-    let numpy_integer = numpy.getattr("integer").map_err(|_| invalid_fill_value())?;
-    if fill_value.is_instance(&numpy_integer)? {
-        return fill_value
+    let numpy_integer = numpy.getattr("integer").map_err(|_| invalid_value())?;
+    if value.is_instance(&numpy_integer)? {
+        if allow_unsigned_integer {
+            if let Ok(value) = value.extract::<i64>() {
+                return Ok(ParsedFillValue::SignedInteger(value));
+            }
+            return value
+                .extract::<u64>()
+                .map(ParsedFillValue::UnsignedInteger)
+                .map_err(|_| PyTypeError::new_err(integer_range_error));
+        }
+        return value
             .extract::<i64>()
             .map(ParsedFillValue::SignedInteger)
-            .map_err(|_| {
-                PyTypeError::new_err("NumPy integer fill_value is outside the signed 64-bit range")
-            });
+            .map_err(|_| PyTypeError::new_err(integer_range_error));
     }
 
-    let numpy_floating = numpy
-        .getattr("floating")
-        .map_err(|_| invalid_fill_value())?;
-    if fill_value.is_instance(&numpy_floating)? {
-        return fill_value
+    let numpy_floating = numpy.getattr("floating").map_err(|_| invalid_value())?;
+    if value.is_instance(&numpy_floating)? {
+        return value
             .extract::<f64>()
             .map(ParsedFillValue::Float)
-            .map_err(|_| invalid_fill_value());
+            .map_err(|_| invalid_value());
     }
 
-    Err(invalid_fill_value())
+    Err(invalid_value())
 }
 
 fn parse_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
@@ -295,6 +399,10 @@ fn parse_integer_fill_value(fill_value: &Bound<'_, PyAny>) -> PyResult<ParsedFil
 
 fn invalid_fill_value() -> PyErr {
     PyTypeError::new_err("full(): fill_value must be a number or zero-dimensional tensor")
+}
+
+fn invalid_arithmetic_scalar() -> PyErr {
+    PyTypeError::new_err("tensor arithmetic operand must be a tensor or real scalar")
 }
 
 fn full_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
@@ -329,6 +437,27 @@ impl ParsedFillValue {
                 Ok(converted)
             }
             Self::TensorScalar(value) => Ok(value),
+        }
+    }
+
+    fn into_arithmetic_f32(self) -> f32 {
+        match self {
+            Self::Float(value) => {
+                #[allow(clippy::cast_possible_truncation)]
+                let converted = value as f32;
+                converted
+            }
+            Self::SignedInteger(value) => {
+                #[allow(clippy::cast_precision_loss)]
+                let converted = value as f32;
+                converted
+            }
+            Self::UnsignedInteger(value) => {
+                #[allow(clippy::cast_precision_loss)]
+                let converted = value as f32;
+                converted
+            }
+            Self::TensorScalar(value) => value,
         }
     }
 }
