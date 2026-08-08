@@ -81,7 +81,7 @@ class PythonApiBaselineTests(unittest.TestCase):
 
         unusual_layout = torch.zeros((0, 1)) + 1.0
         self.assertEqual(unusual_layout.stride(), (1, 0))
-        self.assertEqual(unusual_layout.sin().stride(), (1, 0))
+        self.assertEqual(unusual_layout.sin().stride(), (1, 1))
 
         special = np.asarray(
             torch.tensor([0.0, -0.0, float("nan"), float("inf"), -float("inf")]).sin()
@@ -471,6 +471,8 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(scalar_output.stride(), (1, 0, 0))
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             tensor.relu()
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            tensor.sin()
 
         wrapped_shape = torch.zeros((0,)).reshape(
             (0, 2, sys.maxsize, sys.maxsize)
@@ -478,6 +480,8 @@ class PythonApiBaselineTests(unittest.TestCase):
         wrapped_output = wrapped_shape + 1
         self.assertEqual(wrapped_output.shape, wrapped_shape.shape)
         self.assertEqual(wrapped_output.stride(), (2, sys.maxsize, 1, 1))
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            wrapped_shape.sin()
 
         zeroed_byte_stride = torch.zeros((0,)).reshape((0, 1, 2, 1 << 61))
         self.assertEqual((zeroed_byte_stride + 1).stride(), (0, 0, 1, 2))

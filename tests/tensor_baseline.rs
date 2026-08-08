@@ -252,7 +252,7 @@ fn sine_matches_pytorch_float32_values_and_special_cases() {
 }
 
 #[test]
-fn sine_handles_scalar_and_empty_tensors_without_changing_layout() {
+fn sine_handles_scalar_and_empty_tensors_with_pytorch_layouts() {
     let scalar = Tensor::from_vec(vec![0.5], []).unwrap();
     let scalar_output = scalar.sin().unwrap();
     assert!(scalar_output.shape().is_empty());
@@ -267,7 +267,7 @@ fn sine_handles_scalar_and_empty_tensors_without_changing_layout() {
 
     let unusual_layout = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
     assert_eq!(unusual_layout.stride(), [1, 0]);
-    assert_eq!(unusual_layout.sin().unwrap().stride(), [1, 0]);
+    assert_eq!(unusual_layout.sin().unwrap().stride(), [1, 1]);
 }
 
 #[test]
@@ -665,6 +665,7 @@ fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
     assert_eq!(scalar_output.shape(), [0, usize::MAX / 2, 3]);
     assert_eq!(scalar_output.stride(), [1, 0, 0]);
     assert_eq!(tensor.relu(), Err(TensorError::StrideCalculationOverflow));
+    assert_eq!(tensor.sin(), Err(TensorError::StrideCalculationOverflow));
 
     let wrapped_shape = Tensor::zeros([0])
         .unwrap()
@@ -676,6 +677,10 @@ fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
         [0, 2, usize::MAX / 2, usize::MAX / 2]
     );
     assert_eq!(wrapped_output.stride(), [2, usize::MAX / 2, 1, 1]);
+    assert_eq!(
+        wrapped_shape.sin(),
+        Err(TensorError::StrideCalculationOverflow)
+    );
 
     let zeroed_byte_stride = Tensor::zeros([0])
         .unwrap()

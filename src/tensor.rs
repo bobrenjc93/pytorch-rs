@@ -629,22 +629,7 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn relu(&self) -> Result<Self, TensorError> {
-        let elements = self.elements;
-        let mut data = try_result_vector(elements, elements)?;
-        let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 {
-            contiguous_strides(&shape, elements)?
-        } else {
-            try_clone_result_shape(&self.strides, elements)?
-        };
-        data.extend(self.as_slice().iter().map(|value| value.max(0.0)));
-        Ok(Self::from_owned_parts(
-            data,
-            shape,
-            strides,
-            self.dtype(),
-            self.device(),
-        ))
+        self.unary_map(|value| value.max(0.0))
     }
 
     /// Computes the sine of every element in radians.
@@ -855,7 +840,11 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = try_clone_result_shape(&self.strides, elements)?;
+        let strides = if elements == 0 {
+            contiguous_strides(&shape, elements)?
+        } else {
+            try_clone_result_shape(&self.strides, elements)?
+        };
         data.extend(self.as_slice().iter().copied().map(operation));
         Ok(Self::from_owned_parts(
             data,
