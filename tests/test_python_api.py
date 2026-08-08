@@ -137,9 +137,10 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertIs(tensor.dtype, torch.float32)
                 self.assertEqual(tensor.device, torch.device("cpu"))
 
-        explicit_none = torch.eye(2, None)
-        self.assertEqual(explicit_none.shape, (2, 2))
-        self.assertEqual(explicit_none.tolist(), [[1.0, 0.0], [0.0, 1.0]])
+        for create in (lambda: torch.eye(2, None), lambda: torch.eye(2, m=None)):
+            with self.subTest(explicit_none=create):
+                with self.assertRaises(TypeError):
+                    create()
 
     def test_eye_accepts_float32_cpu_metadata_and_rejects_unsupported_options(self):
         tensor = torch.eye(
@@ -199,6 +200,34 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(dimensions=dimensions):
                 with self.assertRaises(TypeError):
                     torch.eye(*dimensions)
+
+    def test_eye_normalizes_integer_conversion_failures(self):
+        class FailingIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                raise RuntimeError("index conversion failed")
+
+        for dimensions in (
+            (2**63,),
+            (-(2**63) - 1,),
+            (1, 2**63),
+            (1, -(2**63) - 1),
+            (np.uint64(2**63),),
+        ):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                    torch.eye(*dimensions)
+
+        for position in ("n", "m"):
+            dimension = FailingIndex()
+            arguments = (dimension,) if position == "n" else (1, dimension)
+            with self.subTest(position=position):
+                with self.assertRaises(TypeError):
+                    torch.eye(*arguments)
+                self.assertEqual(dimension.calls, 1)
 
     def test_eye_reports_negative_dimensions_and_checked_overflow(self):
         with self.assertRaisesRegex(RuntimeError, "n must be greater or equal to 0, got -1"):

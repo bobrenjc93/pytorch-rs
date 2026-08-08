@@ -98,6 +98,19 @@ enum ParsedArithmeticScalar {
     WideNumpyUnsigned,
 }
 
+enum EyeDimensionArgument {
+    Omitted,
+    Provided(Py<PyAny>),
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for EyeDimensionArgument {
+    type Error = PyErr;
+
+    fn extract(object: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        Ok(Self::Provided(object.into()))
+    }
+}
+
 #[derive(Clone, Copy)]
 enum BinaryOperation {
     Add,
@@ -399,15 +412,22 @@ fn ones(
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction(signature = (n, m=None, *, dtype=None, device=None))]
+#[pyfunction(
+    signature = (n, m=EyeDimensionArgument::Omitted, *, dtype=None, device=None),
+    text_signature = "(n, m=None, *, dtype=None, device=None)"
+)]
 fn eye(
     n: &Bound<'_, PyAny>,
-    m: Option<&Bound<'_, PyAny>>,
+    m: EyeDimensionArgument,
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
+    let py = n.py();
     let n = parse_eye_dimension("n", n)?;
-    let m = m.map_or(Ok(n), |m| parse_eye_dimension("m", m))?;
+    let m = match m {
+        EyeDimensionArgument::Omitted => n,
+        EyeDimensionArgument::Provided(m) => parse_eye_dimension("m", m.bind(py))?,
+    };
     let (dtype, device) = parse_metadata("eye", dtype, device)?;
     let n = validate_eye_dimension("n", n)?;
     let m = validate_eye_dimension("m", m)?;
@@ -527,11 +547,33 @@ fn parse_device_value(function: &str, device: &Bound<'_, PyAny>) -> PyResult<Dev
 
 fn parse_eye_dimension(argument: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     if dimension.is_instance_of::<PyBool>() {
-        return Err(PyTypeError::new_err(format!(
-            "eye(): argument '{argument}' must be int, not bool"
-        )));
+        return Err(eye_dimension_type_error(argument, "bool"));
     }
-    dimension.extract::<i64>()
+
+    if dimension.is_instance_of::<PyInt>() {
+        return dimension
+            .extract::<i64>()
+            .map_err(|_| eye_dimension_overflow());
+    }
+
+    let type_name = dimension.get_type().name()?.to_str()?.to_owned();
+    let indexed = PyModule::import(dimension.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|index| index.call1((dimension,)))
+        .map_err(|_| eye_dimension_type_error(argument, &type_name))?;
+    indexed
+        .extract::<i64>()
+        .map_err(|_| eye_dimension_overflow())
+}
+
+fn eye_dimension_type_error(argument: &str, type_name: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "eye(): argument '{argument}' must be int, not {type_name}"
+    ))
+}
+
+fn eye_dimension_overflow() -> PyErr {
+    PyValueError::new_err("Overflow when unpacking long long")
 }
 
 fn validate_eye_dimension(argument: &str, dimension: i64) -> PyResult<usize> {
