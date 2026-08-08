@@ -60,7 +60,14 @@ class Int64ApiTests(unittest.TestCase):
                 with self.assertRaises((RuntimeError, OverflowError)):
                     torch.tensor([value], dtype=torch.int64)
 
-        for value in (math.nan, math.inf, -math.inf, float(2**63), 1e40, -1e40):
+        for value in (
+            math.nan,
+            math.inf,
+            -math.inf,
+            math.nextafter(float(2**63), math.inf),
+            1e40,
+            -1e40,
+        ):
             with self.subTest(float_to_int64=value):
                 with self.assertRaises(RuntimeError):
                     torch.tensor([value], dtype=torch.int64)
@@ -68,6 +75,10 @@ class Int64ApiTests(unittest.TestCase):
         self.assertEqual(
             torch.tensor([float(-(2**63))], dtype=torch.int64).item(),
             -(2**63),
+        )
+        self.assertEqual(
+            torch.tensor([float(2**63)], dtype=torch.int64).item(),
+            2**63 - 1,
         )
 
         large_float = torch.tensor([1e40], dtype=torch.float32)
@@ -250,6 +261,10 @@ class Int64ApiTests(unittest.TestCase):
         mixed_right = torch.tensor([[0.5, 1.0], [1.5, 2.0], [2.5, 3.0]])
         with self.assertRaisesRegex(RuntimeError, "same dtype"):
             left @ mixed_right
+
+        incompatible_float = torch.ones((4, 5), dtype=torch.float32)
+        with self.assertRaisesRegex(RuntimeError, "inner dimensions differ"):
+            left @ incompatible_float
 
         empty = torch.zeros((2, 0), dtype=torch.int64) @ torch.ones(
             (0, 3), dtype=torch.int64

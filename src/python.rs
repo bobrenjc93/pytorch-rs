@@ -977,14 +977,14 @@ impl ParsedFillValue {
 
     fn into_fill_i64(self) -> PyResult<i64> {
         match self {
-            Self::Float(value) => fill_float_to_i64(value),
+            Self::Float(value) => checked_float_to_i64(value),
             Self::SignedInteger(value) | Self::TensorScalar(Scalar::Int64(value)) => Ok(value),
             Self::UnsignedInteger(value) => {
                 i64::try_from(value).map_err(|_| integer_conversion_overflow())
             }
             Self::WideInteger(_) => Err(integer_conversion_overflow()),
             Self::Boolean(value) => Ok(i64::from(value)),
-            Self::TensorScalar(Scalar::Float32(value)) => fill_float_to_i64(f64::from(value)),
+            Self::TensorScalar(Scalar::Float32(value)) => checked_float_to_i64(f64::from(value)),
         }
     }
 
@@ -1002,14 +1002,14 @@ impl ParsedFillValue {
 
     fn into_tensor_i64(self) -> PyResult<i64> {
         match self {
-            Self::Float(value) => tensor_float_to_i64(value),
+            Self::Float(value) => checked_float_to_i64(value),
             Self::SignedInteger(value) | Self::TensorScalar(Scalar::Int64(value)) => Ok(value),
             Self::UnsignedInteger(value) => {
                 i64::try_from(value).map_err(|_| integer_conversion_overflow())
             }
             Self::WideInteger(_) => Err(integer_conversion_overflow()),
             Self::Boolean(value) => Ok(i64::from(value)),
-            Self::TensorScalar(Scalar::Float32(value)) => tensor_float_to_i64(f64::from(value)),
+            Self::TensorScalar(Scalar::Float32(value)) => checked_float_to_i64(f64::from(value)),
         }
     }
 
@@ -1069,16 +1069,7 @@ fn integer_conversion_overflow() -> PyErr {
     PyRuntimeError::new_err("value cannot be converted to int64 without overflow")
 }
 
-fn tensor_float_to_i64(value: f64) -> PyResult<i64> {
-    const EXCLUSIVE_UPPER_BOUND: f64 = 9_223_372_036_854_775_808.0;
-    if !value.is_finite() || !(-EXCLUSIVE_UPPER_BOUND..EXCLUSIVE_UPPER_BOUND).contains(&value) {
-        return Err(integer_conversion_overflow());
-    }
-    #[allow(clippy::cast_possible_truncation)]
-    Ok(value as i64)
-}
-
-fn fill_float_to_i64(value: f64) -> PyResult<i64> {
+fn checked_float_to_i64(value: f64) -> PyResult<i64> {
     const INCLUSIVE_UPPER_BOUND: f64 = 9_223_372_036_854_775_808.0;
     if !value.is_finite() || !(-INCLUSIVE_UPPER_BOUND..=INCLUSIVE_UPPER_BOUND).contains(&value) {
         return Err(integer_conversion_overflow());

@@ -916,18 +916,13 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error unless both tensors are matrices with compatible inner
-    /// dimensions.
+    /// dimensions and matching dtypes. Shape validation takes precedence over
+    /// dtype validation, matching `PyTorch` diagnostics.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
         if self.shape.len() != 2 || other.shape.len() != 2 {
             return Err(TensorError::MatmulRequiresMatrices {
                 left: self.shape.clone(),
                 right: other.shape.clone(),
-            });
-        }
-        if self.dtype() != other.dtype() {
-            return Err(TensorError::MatmulDTypeMismatch {
-                left: self.dtype(),
-                right: other.dtype(),
             });
         }
         let (rows, inner) = (self.shape[0], self.shape[1]);
@@ -936,6 +931,12 @@ impl Tensor {
             return Err(TensorError::MatmulInnerDimensionMismatch {
                 left: self.shape.clone(),
                 right: other.shape.clone(),
+            });
+        }
+        if self.dtype() != other.dtype() {
+            return Err(TensorError::MatmulDTypeMismatch {
+                left: self.dtype(),
+                right: other.dtype(),
             });
         }
 

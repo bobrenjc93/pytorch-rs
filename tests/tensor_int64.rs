@@ -155,6 +155,15 @@ fn integer_matmul_preserves_dtype_and_mixed_matmul_is_rejected() {
         })
     );
 
+    let incompatible_float = Tensor::ones([4, 5]).unwrap();
+    assert_eq!(
+        left.matmul(&incompatible_float),
+        Err(TensorError::MatmulInnerDimensionMismatch {
+            left: vec![2, 3],
+            right: vec![4, 5],
+        })
+    );
+
     let overflowing = Tensor::from_i64_vec(vec![i64::MAX], [1, 1])
         .unwrap()
         .matmul(&Tensor::from_i64_vec(vec![2], [1, 1]).unwrap())
