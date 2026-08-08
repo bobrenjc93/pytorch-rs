@@ -3,14 +3,52 @@ use std::fmt::{Display, Formatter};
 use std::mem::size_of;
 use std::sync::Arc;
 
-/// A contiguous, row-major, CPU `f32` tensor.
+/// Native scalar types implemented by tensor storage.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum DType {
+    /// IEEE 754 single-precision floating point.
+    #[default]
+    Float32,
+}
+
+impl Display for DType {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Float32 => formatter.write_str("float32"),
+        }
+    }
+}
+
+/// Native execution devices implemented by tensor storage.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Device {
+    /// Host CPU memory and kernels.
+    #[default]
+    Cpu,
+}
+
+impl Display for Device {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cpu => formatter.write_str("cpu"),
+        }
+    }
+}
+
+struct Storage {
+    data: Vec<f32>,
+    dtype: DType,
+    device: Device,
+}
+
+/// A contiguous, row-major tensor with native storage metadata.
 ///
 /// This deliberately narrow representation is the campaign's baseline, not a
 /// claim of `PyTorch` feature parity. Later iterations may generalize storage as
 /// long as these observable semantics remain compatible.
 #[derive(Clone)]
 pub struct Tensor {
-    storage: Arc<Vec<f32>>,
+    storage: Arc<Storage>,
     shape: Vec<usize>,
     strides: Vec<usize>,
     offset: usize,
@@ -150,7 +188,10 @@ impl std::fmt::Debug for Tensor {
 
 impl PartialEq for Tensor {
     fn eq(&self, other: &Self) -> bool {
-        self.shape == other.shape && self.as_slice() == other.as_slice()
+        self.shape == other.shape
+            && self.dtype() == other.dtype()
+            && self.device() == other.device()
+            && self.as_slice() == other.as_slice()
     }
 }
 
@@ -175,6 +216,15 @@ impl Tensor {
     /// Returns an error when the element count or contiguous stride overflows,
     /// or when the element count differs from the supplied data length.
     pub fn from_vec(data: Vec<f32>, shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
+        Self::from_vec_with_metadata(data, shape, DType::Float32, Device::Cpu)
+    }
+
+    pub(crate) fn from_vec_with_metadata(
+        data: Vec<f32>,
+        shape: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (expected, strides) = validated_layout(&shape)?;
         if data.len() != expected {
@@ -183,7 +233,7 @@ impl Tensor {
                 elements: data.len(),
             });
         }
-        Ok(Self::from_owned_parts(data, shape, strides))
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
     /// Creates a zero-filled tensor.
@@ -193,10 +243,18 @@ impl Tensor {
     /// Returns an error when the shape's element count, contiguous stride, or
     /// storage size overflows.
     pub fn zeros(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
+        Self::zeros_with_metadata(shape, DType::Float32, Device::Cpu)
+    }
+
+    pub(crate) fn zeros_with_metadata(
+        shape: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
         let data = filled_storage(elements, 0.0)?;
-        Ok(Self::from_owned_parts(data, shape, strides))
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
     /// Creates a one-filled tensor.
@@ -206,10 +264,18 @@ impl Tensor {
     /// Returns an error when the shape's element count, contiguous stride, or
     /// storage size overflows.
     pub fn ones(shape: impl Into<Vec<usize>>) -> Result<Self, TensorError> {
+        Self::ones_with_metadata(shape, DType::Float32, Device::Cpu)
+    }
+
+    pub(crate) fn ones_with_metadata(
+        shape: impl Into<Vec<usize>>,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
         let data = filled_storage(elements, 1.0)?;
-        Ok(Self::from_owned_parts(data, shape, strides))
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
     /// Creates a tensor filled with `fill_value`.
@@ -219,11 +285,20 @@ impl Tensor {
     /// Returns an error when the shape's element count, contiguous stride, or
     /// storage size overflows, or when storage allocation fails.
     pub fn full(shape: impl Into<Vec<usize>>, fill_value: f32) -> Result<Self, TensorError> {
+        Self::full_with_metadata(shape, fill_value, DType::Float32, Device::Cpu)
+    }
+
+    pub(crate) fn full_with_metadata(
+        shape: impl Into<Vec<usize>>,
+        fill_value: f32,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
         let shape = shape.into();
         let (elements, strides) = validated_layout(&shape)?;
         validate_storage_capacity(elements)?;
         let data = filled_storage(elements, fill_value)?;
-        Ok(Self::from_owned_parts(data, shape, strides))
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
     pub(crate) fn validate_full_shape(shape: &[usize]) -> Result<usize, TensorError> {
@@ -232,10 +307,20 @@ impl Tensor {
         Ok(elements)
     }
 
-    fn from_owned_parts(data: Vec<f32>, shape: Vec<usize>, strides: Vec<usize>) -> Self {
+    fn from_owned_parts(
+        data: Vec<f32>,
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+        dtype: DType,
+        device: Device,
+    ) -> Self {
         let elements = data.len();
         Self {
-            storage: Arc::new(data),
+            storage: Arc::new(Storage {
+                data,
+                dtype,
+                device,
+            }),
             shape,
             strides,
             offset: 0,
@@ -260,6 +345,18 @@ impl Tensor {
         self.offset
     }
 
+    /// Returns the scalar type physically represented by this tensor's storage.
+    #[must_use]
+    pub fn dtype(&self) -> DType {
+        self.storage.dtype
+    }
+
+    /// Returns the device owning this tensor's storage.
+    #[must_use]
+    pub fn device(&self) -> Device {
+        self.storage.device
+    }
+
     #[must_use]
     pub fn numel(&self) -> usize {
         self.elements
@@ -275,7 +372,7 @@ impl Tensor {
             .offset
             .checked_add(self.elements)
             .expect("validated tensor view end must fit in usize");
-        &self.storage[self.offset..end]
+        &self.storage.data[self.offset..end]
     }
 
     #[must_use]
@@ -287,14 +384,14 @@ impl Tensor {
             ..
         } = self;
         match Arc::try_unwrap(storage) {
-            Ok(data) => {
-                if offset == 0 && elements == data.len() {
-                    data
+            Ok(storage) => {
+                if offset == 0 && elements == storage.data.len() {
+                    storage.data
                 } else {
-                    data[offset..offset + elements].to_vec()
+                    storage.data[offset..offset + elements].to_vec()
                 }
             }
-            Err(storage) => storage[offset..offset + elements].to_vec(),
+            Err(storage) => storage.data[offset..offset + elements].to_vec(),
         }
     }
 
@@ -504,12 +601,24 @@ impl Tensor {
             try_clone_result_shape(&self.strides, elements)?
         };
         data.extend(self.as_slice().iter().map(|value| value.max(0.0)));
-        Ok(Self::from_owned_parts(data, shape, strides))
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        Self::from_owned_parts(vec![self.as_slice().iter().sum()], Vec::new(), Vec::new())
+        Self::from_owned_parts(
+            vec![self.as_slice().iter().sum()],
+            Vec::new(),
+            Vec::new(),
+            self.dtype(),
+            self.device(),
+        )
     }
 
     /// Extracts the value of a one-element tensor.
@@ -563,7 +672,13 @@ impl Tensor {
                 }
             }
         }
-        Ok(Self::from_owned_parts(output, output_shape, output_strides))
+        Ok(Self::from_owned_parts(
+            output,
+            output_shape,
+            output_strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     fn zip_map(
@@ -578,7 +693,13 @@ impl Tensor {
         let plan = BroadcastPlan::new(self, other)?;
         let mut data = try_result_vector(plan.elements, plan.elements)?;
         if plan.elements == 0 {
-            return Ok(Self::from_owned_parts(data, plan.shape, plan.strides));
+            return Ok(Self::from_owned_parts(
+                data,
+                plan.shape,
+                plan.strides,
+                self.dtype(),
+                self.device(),
+            ));
         }
 
         let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
@@ -618,7 +739,13 @@ impl Tensor {
             }
         }
 
-        Ok(Self::from_owned_parts(data, plan.shape, plan.strides))
+        Ok(Self::from_owned_parts(
+            data,
+            plan.shape,
+            plan.strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     fn zip_map_same_shape(
@@ -641,7 +768,13 @@ impl Tensor {
                 .zip(other.as_slice().iter().copied())
                 .map(|(left, right)| operation(left, right)),
         );
-        Ok(Self::from_owned_parts(data, shape, strides))
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     fn map_scalar(
@@ -663,7 +796,13 @@ impl Tensor {
                 .copied()
                 .map(|value| operation(value, scalar)),
         );
-        Ok(Self::from_owned_parts(data, shape, strides))
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 }
 

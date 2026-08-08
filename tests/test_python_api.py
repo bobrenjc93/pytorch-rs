@@ -30,6 +30,129 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(result.shape, (2, 2))
         self.assertEqual(result.tolist(), [[0.0, 3.0], [4.0, 0.0]])
 
+    def test_float32_descriptor_identity_type_and_repr(self):
+        self.assertIs(torch.float, torch.float32)
+        self.assertIsInstance(torch.float32, torch.dtype)
+        self.assertEqual(repr(torch.float32), "torch.float32")
+        self.assertEqual(str(torch.float32), "torch.float32")
+        self.assertEqual(hash(torch.float), hash(torch.float32))
+
+        with self.assertRaises(TypeError):
+            torch.dtype()
+
+    def test_cpu_device_constructor_value_repr_and_equality(self):
+        cpu = torch.device("cpu")
+        copied = torch.device(cpu)
+
+        self.assertIsInstance(cpu, torch.device)
+        self.assertEqual(cpu, copied)
+        self.assertEqual(hash(cpu), hash(copied))
+        self.assertNotEqual(cpu, "cpu")
+        self.assertEqual(cpu.type, "cpu")
+        self.assertIsNone(cpu.index)
+        self.assertEqual(str(cpu), "cpu")
+        self.assertEqual(repr(cpu), "device(type='cpu')")
+        self.assertEqual(torch.device(type="cpu"), cpu)
+
+    def test_device_constructor_rejects_unsupported_values_and_types(self):
+        for specification in ("cuda", "meta", "cpu:0", "CPU", ""):
+            with self.subTest(specification=specification):
+                with self.assertRaisesRegex(RuntimeError, "only 'cpu' is implemented"):
+                    torch.device(specification)
+
+        for specification in (object(), 0, b"cpu", torch.float32):
+            with self.subTest(specification=specification):
+                with self.assertRaises(TypeError):
+                    torch.device(specification)
+
+        with self.assertRaises(TypeError):
+            torch.device()
+
+    def test_creation_metadata_keywords_preserve_values_for_all_shapes(self):
+        creators = (
+            ("tensor scalar", lambda **kw: torch.tensor(-2.5, **kw), (), -2.5),
+            ("zeros empty", lambda **kw: torch.zeros((2, 0, 3), **kw), (2, 0, 3), [[], []]),
+            ("ones ordinary", lambda **kw: torch.ones((2, 2), **kw), (2, 2), [[1.0, 1.0], [1.0, 1.0]]),
+            ("full ordinary", lambda **kw: torch.full((2,), 3.25, **kw), (2,), [3.25, 3.25]),
+        )
+        metadata = (
+            (None, None),
+            (torch.float32, None),
+            (torch.float, "cpu"),
+            (None, torch.device("cpu")),
+            (torch.float32, torch.device("cpu")),
+        )
+
+        for name, create, shape, values in creators:
+            for dtype, device in metadata:
+                with self.subTest(name=name, dtype=dtype, device=device):
+                    tensor = create(dtype=dtype, device=device)
+                    self.assertEqual(tensor.shape, shape)
+                    self.assertEqual(tensor.tolist(), values)
+                    self.assertIs(tensor.dtype, torch.float32)
+                    self.assertEqual(tensor.device, torch.device("cpu"))
+
+        self.assertEqual(torch.zeros(size=(2,), dtype=torch.float32).tolist(), [0.0, 0.0])
+        self.assertEqual(torch.ones(size=(2,), device="cpu").tolist(), [1.0, 1.0])
+
+    def test_metadata_survives_views_and_native_kernels(self):
+        source = torch.tensor([[-1.0, 2.0], [3.0, -4.0]], dtype=torch.float32, device="cpu")
+        outputs = (
+            source.reshape(4),
+            source + torch.ones((2, 2)),
+            source * 2.0,
+            source.relu(),
+            source @ torch.ones((2, 2)),
+            source.sum(),
+        )
+        for output in outputs:
+            with self.subTest(shape=output.shape):
+                self.assertIs(output.dtype, torch.float32)
+                self.assertEqual(output.device, torch.device("cpu"))
+
+    def test_creation_rejects_invalid_dtype_and_device_types(self):
+        creators = (
+            lambda **kw: torch.tensor([1.0], **kw),
+            lambda **kw: torch.zeros((1,), **kw),
+            lambda **kw: torch.ones((1,), **kw),
+            lambda **kw: torch.full((1,), 2.0, **kw),
+        )
+        invalid_dtypes = ("float32", np.dtype("float32"), np.float32, float, object(), torch.device("cpu"))
+        invalid_devices = (object(), 0, b"cpu", torch.float32)
+
+        for create in creators:
+            for dtype in invalid_dtypes:
+                with self.subTest(argument="dtype", value=dtype):
+                    with self.assertRaises(TypeError):
+                        create(dtype=dtype)
+            for device in invalid_devices:
+                with self.subTest(argument="device", value=device):
+                    with self.assertRaises(TypeError):
+                        create(device=device)
+
+    def test_creation_rejects_every_unimplemented_device(self):
+        creators = (
+            lambda **kw: torch.tensor(1.0, **kw),
+            lambda **kw: torch.zeros((), **kw),
+            lambda **kw: torch.ones((), **kw),
+            lambda **kw: torch.full((), 2.0, **kw),
+        )
+        for create in creators:
+            for device in ("cuda", "meta", "mps", "cpu:0"):
+                with self.subTest(device=device):
+                    with self.assertRaises(RuntimeError):
+                        create(device=device)
+
+    def test_creation_metadata_parameters_are_keyword_only(self):
+        with self.assertRaises(TypeError):
+            torch.tensor([1.0], torch.float32)
+        with self.assertRaises(TypeError):
+            torch.zeros((1,), torch.float32)
+        with self.assertRaises(TypeError):
+            torch.ones((1,), torch.float32)
+        with self.assertRaises(TypeError):
+            torch.full((1,), 2.0, torch.float32)
+
     def test_scalar_reduction_and_item(self):
         value = torch.tensor([[1.0, 2.0], [3.0, 4.0]]).sum()
         self.assertEqual(value.shape, ())

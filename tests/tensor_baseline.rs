@@ -1,5 +1,42 @@
-use pytorch_rs::{Tensor, TensorError};
+use pytorch_rs::{DType, Device, Tensor, TensorError};
 use std::mem::size_of;
+
+#[test]
+fn native_metadata_describes_all_supported_storage_shapes() {
+    assert_eq!(DType::default(), DType::Float32);
+    assert_eq!(Device::default(), Device::Cpu);
+    assert_eq!(DType::Float32.to_string(), "float32");
+    assert_eq!(Device::Cpu.to_string(), "cpu");
+
+    for tensor in [
+        Tensor::from_vec(vec![2.5], []).unwrap(),
+        Tensor::zeros([2, 0, 3]).unwrap(),
+        Tensor::ones([2, 3]).unwrap(),
+        Tensor::full([4], -1.25).unwrap(),
+    ] {
+        assert_eq!(tensor.dtype(), DType::Float32);
+        assert_eq!(tensor.device(), Device::Cpu);
+    }
+}
+
+#[test]
+fn native_metadata_survives_views_kernels_and_reductions() {
+    let source = Tensor::from_vec(vec![-1.0, 2.0, 3.0, -4.0], [2, 2]).unwrap();
+    let matrix = Tensor::ones([2, 2]).unwrap();
+    let outputs = [
+        source.reshape([4]).unwrap(),
+        source.add(&matrix).unwrap(),
+        source.mul_scalar(2.0).unwrap(),
+        source.relu().unwrap(),
+        source.matmul(&matrix).unwrap(),
+        source.sum(),
+    ];
+
+    for output in outputs {
+        assert_eq!(output.dtype(), source.dtype());
+        assert_eq!(output.device(), source.device());
+    }
+}
 
 #[test]
 fn construction_validates_shape() {
