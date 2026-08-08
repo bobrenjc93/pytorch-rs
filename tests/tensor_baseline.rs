@@ -480,6 +480,12 @@ fn reshape_infers_one_dimension_and_handles_scalars_and_empty_tensors() {
     assert_eq!(empty.reshape([2, -1, 3]).unwrap().shape(), [2, 0, 3]);
     assert_eq!(empty.reshape([2, -1, 3]).unwrap().stride(), [3, 3, 1]);
     assert_eq!(empty.reshape([0, 2]).unwrap().shape(), [0, 2]);
+
+    let large = 1_i64 << 32;
+    let large_empty = empty.reshape([0, large, large]).unwrap();
+    assert_eq!(large_empty.shape(), [0, 1_usize << 32, 1_usize << 32]);
+    assert_eq!(large_empty.stride(), [0, 1_usize << 32, 1]);
+    assert_eq!(large_empty.numel(), 0);
 }
 
 #[test]
@@ -505,5 +511,15 @@ fn reshape_reports_pytorch_compatible_invalid_shape_errors() {
             .unwrap_err()
             .to_string(),
         "cannot reshape tensor of 0 elements into shape [0, -1] because the unspecified dimension size -1 can be any value and is ambiguous"
+    );
+
+    let large = 1_i64 << 62;
+    assert_eq!(
+        tensor.reshape([large, 4, -2]).unwrap_err().to_string(),
+        "invalid shape dimension -2 at index 2 of shape [4611686018427387904, 4, -2]"
+    );
+    assert_eq!(
+        tensor.reshape([large, 4, -1, -1]).unwrap_err(),
+        TensorError::ReshapeMultipleInferredDimensions
     );
 }

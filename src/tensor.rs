@@ -312,16 +312,13 @@ impl Tensor {
     /// failure.
     pub fn reshape(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
         let requested = shape.as_ref();
-        let mut resolved = try_result_vector(requested.len(), self.elements)?;
         let mut inferred_index = None;
-        let mut specified_elements = 1_usize;
 
         for (index, dimension) in requested.iter().copied().enumerate() {
             if dimension == -1 {
                 if inferred_index.replace(index).is_some() {
                     return Err(TensorError::ReshapeMultipleInferredDimensions);
                 }
-                resolved.push(1);
                 continue;
             }
             if dimension < 0 {
@@ -331,8 +328,16 @@ impl Tensor {
                     shape: try_clone_reshape_shape(requested, self.elements)?,
                 });
             }
-            let dimension =
-                usize::try_from(dimension).map_err(|_| TensorError::ElementCountOverflow)?;
+        }
+
+        let mut resolved = try_result_vector(requested.len(), self.elements)?;
+        let mut specified_elements = 1_usize;
+        for dimension in requested.iter().copied() {
+            let dimension = if dimension == -1 {
+                1
+            } else {
+                usize::try_from(dimension).map_err(|_| TensorError::ElementCountOverflow)?
+            };
             specified_elements = specified_elements
                 .checked_mul(dimension)
                 .ok_or(TensorError::ElementCountOverflow)?;
@@ -365,7 +370,7 @@ impl Tensor {
             });
         }
 
-        let strides = contiguous_strides(&resolved, self.elements)?;
+        let strides = reshape_strides(&resolved, self.elements)?;
         Ok(Self {
             storage: Arc::clone(&self.storage),
             shape: resolved,
@@ -817,6 +822,25 @@ fn contiguous_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, Te
         strides[axis] = stride;
         if axis > 0 {
             stride = checked_stride_product(stride, shape[axis])?;
+        }
+    }
+    Ok(strides)
+}
+
+fn reshape_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, TensorError> {
+    if elements != 0 {
+        return contiguous_strides(shape, elements);
+    }
+
+    let mut strides = try_result_vector(shape.len(), elements)?;
+    strides.resize(shape.len(), 0);
+    let mut stride = 1_usize;
+    for axis in (0..shape.len()).rev() {
+        strides[axis] = stride;
+        if axis > 0 {
+            // PyTorch treats empty-view strides as arbitrary metadata and its
+            // resize-style calculation wraps overflowing suffix products.
+            stride = stride.wrapping_mul(shape[axis].max(1));
         }
     }
     Ok(strides)

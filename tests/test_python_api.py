@@ -79,6 +79,12 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(inferred.tolist(), [[], []])
         self.assertEqual(empty.reshape((0, 2)).shape, (0, 2))
 
+        large = 2**32
+        large_empty = empty.reshape((0, large, large))
+        self.assertEqual(large_empty.shape, (0, large, large))
+        self.assertEqual(large_empty.stride(), (0, large, 1))
+        self.assertEqual(large_empty.numel(), 0)
+
     def test_reshape_reports_pytorch_compatible_errors(self):
         tensor = torch.zeros((6,))
         invalid = (
@@ -93,6 +99,12 @@ class PythonApiBaselineTests(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "unspecified dimension size -1"):
             torch.zeros((0,)).reshape(0, -1)
+
+        large = 2**62
+        with self.assertRaisesRegex(RuntimeError, "invalid shape dimension -2"):
+            tensor.reshape((large, 4, -2))
+        with self.assertRaisesRegex(RuntimeError, "only one dimension can be inferred"):
+            tensor.reshape((large, 4, -1, -1))
 
         for shape in ((2.0, 3), (True, 6), [[2, 3]]):
             with self.subTest(shape=shape):

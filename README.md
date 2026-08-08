@@ -40,9 +40,11 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets
 cargo test --doc
-uv venv
-uv run --with maturin maturin develop --release --uv
-uv run python -m unittest discover -s tests -p 'test_*.py'
+uv venv --clear
+uv sync --locked --no-install-project
+uv pip install --python .venv/bin/python 'maturin>=1.14,<2'
+.venv/bin/maturin develop --release --uv
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
 
 The checked-in tests are only the public floor. Burner also uses independent generated workloads and side-by-side `torch_rs`/`torch` differential runs.

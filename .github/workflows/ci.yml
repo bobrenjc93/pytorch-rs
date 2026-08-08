@@ -20,6 +20,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all-targets
-      - run: uv venv
-      - run: uv run --with maturin maturin develop --release --uv
-      - run: uv run python -m unittest discover -s tests -p 'test_*.py'
+      - run: uv venv --clear
+      - run: uv sync --locked --no-install-project
+      - run: uv pip install --python .venv/bin/python 'maturin>=1.14,<2'
+      - run: .venv/bin/maturin develop --release --uv
+      - run: .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
