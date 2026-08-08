@@ -76,6 +76,7 @@ pub enum TensorError {
     ItemRequiresOneElement {
         elements: usize,
     },
+    MaxRequiresNonEmptyTensor,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -132,6 +133,10 @@ impl Display for TensorError {
             Self::ItemRequiresOneElement { elements } => {
                 write!(formatter, "item requires one element, got {elements}")
             }
+            Self::MaxRequiresNonEmptyTensor => write!(
+                formatter,
+                "max(): Expected reduction dim to be specified for input.numel() == 0. Specify the reduction dim with the 'dim' argument."
+            ),
             Self::ReshapeMultipleInferredDimensions => {
                 write!(formatter, "only one dimension can be inferred")
             }
@@ -619,6 +624,39 @@ impl Tensor {
             self.dtype(),
             self.device(),
         )
+    }
+
+    /// Returns the maximum value as a scalar tensor.
+    ///
+    /// NaNs propagate. When values compare equal, the later value wins, which
+    /// preserves `PyTorch`'s observable ordering for signed zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the tensor has no elements.
+    pub fn max(&self) -> Result<Self, TensorError> {
+        let mut values = self.as_slice().iter().copied();
+        let Some(mut maximum) = values.next() else {
+            return Err(TensorError::MaxRequiresNonEmptyTensor);
+        };
+
+        for value in values {
+            maximum = if maximum.is_nan() || value.is_nan() {
+                f32::NAN
+            } else if maximum > value {
+                maximum
+            } else {
+                value
+            };
+        }
+
+        Ok(Self::from_owned_parts(
+            vec![maximum],
+            Vec::new(),
+            Vec::new(),
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     /// Extracts the value of a one-element tensor.

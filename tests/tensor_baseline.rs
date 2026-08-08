@@ -30,6 +30,7 @@ fn native_metadata_survives_views_kernels_and_reductions() {
         source.relu().unwrap(),
         source.matmul(&matrix).unwrap(),
         source.sum(),
+        source.max().unwrap(),
     ];
 
     for output in outputs {
@@ -441,6 +442,78 @@ fn reductions_handle_ordinary_and_empty_tensors() {
         .unwrap();
     assert!((sum - 6.0).abs() < f32::EPSILON);
     assert!(Tensor::zeros([0]).unwrap().sum().item().unwrap().abs() < f32::EPSILON);
+}
+
+#[test]
+fn maximum_handles_scalars_and_multidimensional_tensors() {
+    let scalar = Tensor::from_vec(vec![-3.25], []).unwrap().max().unwrap();
+    assert!(scalar.shape().is_empty());
+    assert_eq!(scalar.item().unwrap().to_bits(), (-3.25_f32).to_bits());
+
+    let tensor = Tensor::from_vec(
+        vec![-8.0, 4.5, 2.0, f32::NEG_INFINITY, 4.5, -1.0],
+        [2, 1, 3],
+    )
+    .unwrap();
+    let maximum = tensor.max().unwrap();
+    assert!(maximum.shape().is_empty());
+    assert_eq!(maximum.item().unwrap().to_bits(), 4.5_f32.to_bits());
+}
+
+#[test]
+fn maximum_propagates_nan_and_handles_infinities() {
+    for values in [
+        vec![f32::NAN, 1.0, f32::INFINITY],
+        vec![1.0, f32::INFINITY, f32::NAN],
+    ] {
+        assert!(
+            Tensor::from_vec(values, [3])
+                .unwrap()
+                .max()
+                .unwrap()
+                .item()
+                .unwrap()
+                .is_nan()
+        );
+    }
+
+    let maximum = Tensor::from_vec(vec![f32::NEG_INFINITY, -1.0, f32::INFINITY], [3])
+        .unwrap()
+        .max()
+        .unwrap()
+        .item()
+        .unwrap();
+    assert_eq!(maximum.to_bits(), f32::INFINITY.to_bits());
+}
+
+#[test]
+fn maximum_uses_pytorch_ordering_for_equal_signed_zeros() {
+    let negative_last = Tensor::from_vec(vec![0.0, -0.0], [2])
+        .unwrap()
+        .max()
+        .unwrap()
+        .item()
+        .unwrap();
+    assert_eq!(negative_last.to_bits(), (-0.0_f32).to_bits());
+
+    let positive_last = Tensor::from_vec(vec![-0.0, 0.0], [2])
+        .unwrap()
+        .max()
+        .unwrap()
+        .item()
+        .unwrap();
+    assert_eq!(positive_last.to_bits(), 0.0_f32.to_bits());
+}
+
+#[test]
+fn maximum_rejects_empty_tensors_with_pytorch_error() {
+    let expected = TensorError::MaxRequiresNonEmptyTensor;
+    assert_eq!(
+        expected.to_string(),
+        "max(): Expected reduction dim to be specified for input.numel() == 0. Specify the reduction dim with the 'dim' argument."
+    );
+    assert_eq!(Tensor::zeros([0]).unwrap().max(), Err(expected.clone()));
+    assert_eq!(Tensor::zeros([2, 0, 3]).unwrap().max(), Err(expected));
 }
 
 #[test]

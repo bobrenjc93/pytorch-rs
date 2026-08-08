@@ -128,6 +128,7 @@ class PythonApiBaselineTests(unittest.TestCase):
             source.relu(),
             source @ torch.ones((2, 2)),
             source.sum(),
+            source.max(),
         )
         for output in outputs:
             with self.subTest(shape=output.shape):
@@ -181,6 +182,44 @@ class PythonApiBaselineTests(unittest.TestCase):
         value = torch.tensor([[1.0, 2.0], [3.0, 4.0]]).sum()
         self.assertEqual(value.shape, ())
         self.assertEqual(value.item(), 10.0)
+
+    def test_max_reduces_scalars_and_multidimensional_tensors(self):
+        scalar = torch.tensor(-3.25).max()
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(scalar.item(), -3.25)
+
+        maximum = torch.tensor([[[-8.0, 4.5, 2.0]], [[-math.inf, 4.5, -1.0]]]).max()
+        self.assertEqual(maximum.shape, ())
+        self.assertEqual(maximum.item(), 4.5)
+        self.assertIs(maximum.dtype, torch.float32)
+        self.assertEqual(maximum.device, torch.device("cpu"))
+
+    def test_max_propagates_nan_and_handles_infinities(self):
+        for values in (
+            [math.nan, 1.0, math.inf],
+            [1.0, math.inf, math.nan],
+        ):
+            with self.subTest(values=values):
+                self.assertTrue(math.isnan(torch.tensor(values).max().item()))
+
+        self.assertEqual(torch.tensor([-math.inf, -1.0, math.inf]).max().item(), math.inf)
+
+    def test_max_uses_pytorch_ordering_for_equal_signed_zeros(self):
+        negative_last = torch.tensor([0.0, -0.0]).max().item()
+        positive_last = torch.tensor([-0.0, 0.0]).max().item()
+        self.assertEqual(math.copysign(1.0, negative_last), -1.0)
+        self.assertEqual(math.copysign(1.0, positive_last), 1.0)
+
+    def test_max_rejects_empty_tensors_with_pytorch_error(self):
+        message = (
+            "max(): Expected reduction dim to be specified for input.numel() == 0. "
+            "Specify the reduction dim with the 'dim' argument."
+        )
+        for shape in ((0,), (2, 0, 3)):
+            with self.subTest(shape=shape):
+                with self.assertRaises(RuntimeError) as raised:
+                    torch.zeros(shape).max()
+                self.assertEqual(str(raised.exception), message)
 
     def test_stride_reports_contiguous_row_major_layout(self):
         cases = (

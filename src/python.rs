@@ -197,6 +197,13 @@ impl PyTensor {
         }
     }
 
+    fn max(&self) -> PyResult<Self> {
+        self.inner
+            .max()
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn __add__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         self.binary_operation(py, other, BinaryOperation::Add, false)
     }
@@ -1007,6 +1014,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
+        | TensorError::MaxRequiresNonEmptyTensor
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }
         | TensorError::ReshapeAmbiguousZeroElements { .. }
