@@ -647,6 +647,15 @@ impl Tensor {
         ))
     }
 
+    /// Computes the sine of every element in radians.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn sin(&self) -> Result<Self, TensorError> {
+        self.unary_map(f32::sin)
+    }
+
     #[must_use]
     pub fn sum(&self) -> Self {
         Self::from_owned_parts(
@@ -833,6 +842,21 @@ impl Tensor {
                 .copied()
                 .map(|value| operation(value, scalar)),
         );
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
+    }
+
+    fn unary_map(&self, operation: impl Fn(f32) -> f32) -> Result<Self, TensorError> {
+        let elements = self.elements;
+        let mut data = try_result_vector(elements, elements)?;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = try_clone_result_shape(&self.strides, elements)?;
+        data.extend(self.as_slice().iter().copied().map(operation));
         Ok(Self::from_owned_parts(
             data,
             shape,

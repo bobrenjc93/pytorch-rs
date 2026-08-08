@@ -204,6 +204,13 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
+    fn sin(&self) -> PyResult<Self> {
+        self.inner
+            .sin()
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn sum(&self) -> Self {
         Self {
             inner: self.inner.sum(),
