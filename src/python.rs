@@ -371,24 +371,28 @@ fn tensor(
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction(signature = (size, *, dtype=None, device=None))]
+#[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
 fn zeros(
-    size: Vec<usize>,
+    size: Option<&Bound<'_, PyAny>>,
+    shape: Option<&Bound<'_, PyAny>>,
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
+    let size = parse_creation_size("zeros", size, shape)?;
     let (dtype, device) = parse_metadata("zeros", dtype, device)?;
     CoreTensor::zeros_with_metadata(size, dtype, device)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction(signature = (size, *, dtype=None, device=None))]
+#[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
 fn ones(
-    size: Vec<usize>,
+    size: Option<&Bound<'_, PyAny>>,
+    shape: Option<&Bound<'_, PyAny>>,
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
+    let size = parse_creation_size("ones", size, shape)?;
     let (dtype, device) = parse_metadata("ones", dtype, device)?;
     CoreTensor::ones_with_metadata(size, dtype, device)
         .map(|inner| PyTensor { inner })
@@ -422,6 +426,27 @@ fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
             },
         )
     })
+}
+
+fn parse_creation_size(
+    function: &str,
+    size: Option<&Bound<'_, PyAny>>,
+    shape: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Vec<usize>> {
+    let value = match (size, shape) {
+        (Some(_), Some(_)) => {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() received both 'size' and its compatibility alias 'shape'"
+            )));
+        }
+        (Some(value), None) | (None, Some(value)) => value,
+        (None, None) => {
+            return Err(PyTypeError::new_err(format!(
+                "{function}() missing required argument 'size'"
+            )));
+        }
+    };
+    value.extract::<Vec<usize>>()
 }
 
 fn parse_metadata(

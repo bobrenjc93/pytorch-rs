@@ -95,6 +95,30 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(torch.zeros(size=(2,), dtype=torch.float32).tolist(), [0.0, 0.0])
         self.assertEqual(torch.ones(size=(2,), device="cpu").tolist(), [1.0, 1.0])
 
+    def test_zeros_and_ones_accept_size_and_legacy_shape_keywords(self):
+        for name, create, expected in (
+            ("zeros", torch.zeros, [[0.0, 0.0], [0.0, 0.0]]),
+            ("ones", torch.ones, [[1.0, 1.0], [1.0, 1.0]]),
+        ):
+            for keyword in ("size", "shape"):
+                with self.subTest(function=name, keyword=keyword):
+                    tensor = create(
+                        **{keyword: (2, 2)},
+                        dtype=torch.float32,
+                        device=torch.device("cpu"),
+                    )
+                    self.assertEqual(tensor.tolist(), expected)
+                    self.assertIs(tensor.dtype, torch.float32)
+                    self.assertEqual(tensor.device, torch.device("cpu"))
+
+            with self.subTest(function=name, error="conflicting aliases"):
+                with self.assertRaises(TypeError):
+                    create(size=(1,), shape=(1,))
+
+            with self.subTest(function=name, error="missing size"):
+                with self.assertRaises(TypeError):
+                    create()
+
     def test_metadata_survives_views_and_native_kernels(self):
         source = torch.tensor([[-1.0, 2.0], [3.0, -4.0]], dtype=torch.float32, device="cpu")
         outputs = (
