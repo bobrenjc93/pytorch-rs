@@ -423,12 +423,12 @@ fn eye(
     device: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
     let py = n.py();
+    let (dtype, device) = parse_metadata("eye", dtype, device)?;
     let n = parse_eye_dimension("n", n)?;
     let m = match m {
         EyeDimensionArgument::Omitted => n,
         EyeDimensionArgument::Provided(m) => parse_eye_dimension("m", m.bind(py))?,
     };
-    let (dtype, device) = parse_metadata("eye", dtype, device)?;
     let n = validate_eye_dimension("n", n)?;
     let m = validate_eye_dimension("m", m)?;
     let shape = [n, m];

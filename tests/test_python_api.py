@@ -229,6 +229,17 @@ class PythonApiBaselineTests(unittest.TestCase):
                     torch.eye(*arguments)
                 self.assertEqual(dimension.calls, 1)
 
+    def test_eye_rejects_invalid_metadata_before_dimension_conversion(self):
+        invalid_metadata = (
+            {"dtype": object()},
+            {"device": object()},
+        )
+        for dimensions in ((2**63,), (1, 2**63)):
+            for metadata in invalid_metadata:
+                with self.subTest(dimensions=dimensions, metadata=metadata):
+                    with self.assertRaises(TypeError):
+                        torch.eye(*dimensions, **metadata)
+
     def test_eye_reports_negative_dimensions_and_checked_overflow(self):
         with self.assertRaisesRegex(RuntimeError, "n must be greater or equal to 0, got -1"):
             torch.eye(-1)
