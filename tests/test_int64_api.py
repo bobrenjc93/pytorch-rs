@@ -55,10 +55,12 @@ class Int64ApiTests(unittest.TestCase):
         self.assertIs(floats.dtype, torch.float32)
         self.assertEqual(floats.tolist(), [1.0, -2.0, 1.0, 0.0])
 
-        for value in (2**63, -(2**63) - 1):
-            with self.subTest(value=value):
-                with self.assertRaises((RuntimeError, OverflowError)):
-                    torch.tensor([value], dtype=torch.int64)
+        for value in (2**63, -(2**63) - 1, 2**64 - 1, 2**100):
+            for dtype in (None, torch.int64):
+                with self.subTest(integer_overflow=value, dtype=dtype):
+                    kwargs = {} if dtype is None else {"dtype": dtype}
+                    with self.assertRaises(ValueError):
+                        torch.tensor([value], **kwargs)
 
         for value in (
             math.nan,
@@ -90,8 +92,6 @@ class Int64ApiTests(unittest.TestCase):
 
         wide_python = torch.tensor([2**100], dtype=torch.float32)
         self.assertEqual(wide_python.item(), np.float32(float(2**100)))
-        with self.assertRaises(RuntimeError):
-            torch.tensor([2**100])
 
     def test_creation_functions_materialize_int64_storage(self):
         cases = (

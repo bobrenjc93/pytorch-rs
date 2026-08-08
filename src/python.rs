@@ -1005,9 +1005,9 @@ impl ParsedFillValue {
             Self::Float(value) => checked_float_to_i64(value),
             Self::SignedInteger(value) | Self::TensorScalar(Scalar::Int64(value)) => Ok(value),
             Self::UnsignedInteger(value) => {
-                i64::try_from(value).map_err(|_| integer_conversion_overflow())
+                i64::try_from(value).map_err(|_| tensor_integer_conversion_overflow())
             }
-            Self::WideInteger(_) => Err(integer_conversion_overflow()),
+            Self::WideInteger(_) => Err(tensor_integer_conversion_overflow()),
             Self::Boolean(value) => Ok(i64::from(value)),
             Self::TensorScalar(Scalar::Float32(value)) => checked_float_to_i64(f64::from(value)),
         }
@@ -1067,6 +1067,10 @@ impl ParsedArithmeticScalar {
 
 fn integer_conversion_overflow() -> PyErr {
     PyRuntimeError::new_err("value cannot be converted to int64 without overflow")
+}
+
+fn tensor_integer_conversion_overflow() -> PyErr {
+    PyValueError::new_err("integer value is outside the int64 range")
 }
 
 fn checked_float_to_i64(value: f64) -> PyResult<i64> {
