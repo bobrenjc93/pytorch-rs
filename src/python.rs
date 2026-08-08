@@ -702,7 +702,12 @@ fn parse_basic_indices(
     for object in &objects {
         if object.is_instance_of::<PyEllipsis>() {
             for _ in 0..ellipsis_dimensions {
-                try_push_size(&mut parsed, TensorIndex::Slice(CoreSlice::full()))?;
+                let slice = CoreSlice::full();
+                offset = tensor
+                    .checked_slice_layout(offset, dimension, slice)
+                    .map_err(|error| tensor_error(&error))?
+                    .offset;
+                try_push_size(&mut parsed, TensorIndex::Slice(slice))?;
                 dimension += 1;
             }
             continue;
@@ -720,14 +725,16 @@ fn parse_basic_indices(
                 .map_err(|_| PyOverflowError::new_err("slice stop exceeds i64"))?;
             let normalized_step = i64::try_from(normalized.step)
                 .map_err(|_| PyOverflowError::new_err("slice step exceeds i64"))?;
-            try_push_size(
-                &mut parsed,
-                TensorIndex::Slice(CoreSlice::new(
-                    Some(normalized_start),
-                    Some(normalized_end),
-                    Some(normalized_step),
-                )),
-            )?;
+            let slice = CoreSlice::new(
+                Some(normalized_start),
+                Some(normalized_end),
+                Some(normalized_step),
+            );
+            offset = tensor
+                .checked_slice_layout(offset, dimension, slice)
+                .map_err(|error| tensor_error(&error))?
+                .offset;
+            try_push_size(&mut parsed, TensorIndex::Slice(slice))?;
             dimension += 1;
             continue;
         }

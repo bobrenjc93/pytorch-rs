@@ -145,6 +145,12 @@ struct NormalizedSlice {
     step: usize,
 }
 
+pub(crate) struct CheckedSlice {
+    pub(crate) offset: usize,
+    length: usize,
+    stride: usize,
+}
+
 fn normalize_slice_bound(bound: i64, size: i64) -> i64 {
     if bound < 0 {
         bound.saturating_add(size).max(0)
@@ -743,15 +749,10 @@ impl Tensor {
                     offset = self.checked_index_offset(offset, dimension, index)?;
                 }
                 TensorIndex::Slice(slice) => {
-                    let normalized = slice.normalize(self.shape[dimension])?;
-                    let contribution = normalized
-                        .start
-                        .checked_mul(self.strides[dimension])
-                        .ok_or(TensorError::IndexCalculationOverflow)?;
-                    offset = checked_storage_offset_add(offset, contribution)?;
-                    let stride = checked_stride_product(self.strides[dimension], normalized.step)?;
-                    shape.push(normalized.length);
-                    strides.push(stride);
+                    let checked = self.checked_slice_layout(offset, dimension, slice)?;
+                    offset = checked.offset;
+                    shape.push(checked.length);
+                    strides.push(checked.stride);
                 }
             }
         }
@@ -812,6 +813,38 @@ impl Tensor {
             .checked_mul(self.strides[dimension])
             .ok_or(TensorError::IndexCalculationOverflow)?;
         checked_storage_offset_add(offset, contribution)
+    }
+
+    pub(crate) fn checked_slice_layout(
+        &self,
+        offset: usize,
+        dimension: usize,
+        slice: Slice,
+    ) -> Result<CheckedSlice, TensorError> {
+        let size = self
+            .shape
+            .get(dimension)
+            .copied()
+            .ok_or(TensorError::TooManyIndices {
+                dimensions: self.shape.len(),
+            })?;
+        let source_stride = self
+            .strides
+            .get(dimension)
+            .copied()
+            .ok_or(TensorError::StrideCalculationOverflow)?;
+        let normalized = slice.normalize(size)?;
+        let contribution = normalized
+            .start
+            .checked_mul(source_stride)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let offset = checked_storage_offset_add(offset, contribution)?;
+        let stride = checked_stride_product(source_stride, normalized.step)?;
+        Ok(CheckedSlice {
+            offset,
+            length: normalized.length,
+            stride,
+        })
     }
 
     /// Returns a tensor with a new shape and the same logical values.

@@ -687,6 +687,14 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(view[0, 0].item(), -1.0)
 
     def test_basic_slicing_rejects_unsupported_and_invalid_indices(self):
+        class CountingIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return 0
+
         tensor = torch.zeros((2, 3))
         with self.assertRaisesRegex(ValueError, "slice step cannot be zero"):
             tensor[::0]
@@ -704,6 +712,11 @@ class PythonApiBaselineTests(unittest.TestCase):
                     tensor[index]
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             torch.zeros((0, sys.maxsize))[::2]
+
+        later_index = CountingIndex()
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            torch.zeros((0, sys.maxsize))[::2, later_index]
+        self.assertEqual(later_index.calls, 0)
 
     def test_integer_indexing_matches_pytorch_errors_and_empty_offsets(self):
         tensor = torch.zeros((2, 3, 4))
