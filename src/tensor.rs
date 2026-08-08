@@ -278,6 +278,43 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    /// Creates a two-dimensional tensor with ones on the main diagonal and
+    /// zeros elsewhere.
+    ///
+    /// Passing [`None`] for `m` creates a square `n` by `n` tensor. A column
+    /// count may be passed directly or as [`Some`] to create a rectangular
+    /// tensor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shape's element count, contiguous stride, or
+    /// storage size overflows, or when storage allocation fails.
+    pub fn eye(n: usize, m: impl Into<Option<usize>>) -> Result<Self, TensorError> {
+        Self::eye_with_metadata(n, m.into().unwrap_or(n), DType::Float32, Device::Cpu)
+    }
+
+    pub(crate) fn eye_with_metadata(
+        n: usize,
+        m: usize,
+        dtype: DType,
+        device: Device,
+    ) -> Result<Self, TensorError> {
+        let mut shape = try_result_vector(2, 0)?;
+        shape.push(n);
+        shape.push(m);
+        let (elements, strides) = validated_layout(&shape)?;
+        let mut data = filled_storage(elements, 0.0)?;
+
+        let diagonal = n.min(m);
+        if diagonal > 0 {
+            for (index, row) in data.chunks_exact_mut(m).take(diagonal).enumerate() {
+                row[index] = 1.0;
+            }
+        }
+
+        Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
+    }
+
     /// Creates a tensor filled with `fill_value`.
     ///
     /// # Errors

@@ -399,6 +399,25 @@ fn ones(
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction(signature = (n, m=None, *, dtype=None, device=None))]
+fn eye(
+    n: &Bound<'_, PyAny>,
+    m: Option<&Bound<'_, PyAny>>,
+    dtype: Option<&Bound<'_, PyAny>>,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyTensor> {
+    let n = parse_eye_dimension("n", n)?;
+    let m = m.map_or(Ok(n), |m| parse_eye_dimension("m", m))?;
+    let (dtype, device) = parse_metadata("eye", dtype, device)?;
+    let n = validate_eye_dimension("n", n)?;
+    let m = validate_eye_dimension("m", m)?;
+    let shape = [n, m];
+
+    CoreTensor::eye_with_metadata(n, m, dtype, device)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| creation_shape_error(&error, &shape))
+}
+
 #[pyfunction(signature = (size, fill_value, *, dtype=None, device=None))]
 fn full(
     size: &Bound<'_, PyAny>,
@@ -410,7 +429,8 @@ fn full(
     let size = parse_size(size)?;
     let fill_value = parse_fill_value(fill_value)?;
     let shape = validate_size(size)?;
-    CoreTensor::validate_full_shape(&shape).map_err(|error| full_shape_error(&error, &shape))?;
+    CoreTensor::validate_full_shape(&shape)
+        .map_err(|error| creation_shape_error(&error, &shape))?;
     let fill_value = fill_value.into_f32()?;
     CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
         .map(|inner| PyTensor { inner })
@@ -503,6 +523,28 @@ fn parse_device_value(function: &str, device: &Bound<'_, PyAny>) -> PyResult<Dev
     Err(PyTypeError::new_err(format!(
         "{function}(): argument '{argument}' must be torch.device or str, not {type_name}"
     )))
+}
+
+fn parse_eye_dimension(argument: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+    if dimension.is_instance_of::<PyBool>() {
+        return Err(PyTypeError::new_err(format!(
+            "eye(): argument '{argument}' must be int, not bool"
+        )));
+    }
+    dimension.extract::<i64>()
+}
+
+fn validate_eye_dimension(argument: &str, dimension: i64) -> PyResult<usize> {
+    if dimension < 0 {
+        return Err(PyRuntimeError::new_err(format!(
+            "{argument} must be greater or equal to 0, got {dimension}"
+        )));
+    }
+    usize::try_from(dimension).map_err(|_| {
+        PyRuntimeError::new_err(format!(
+            "eye(): argument '{argument}' exceeds the platform size limit"
+        ))
+    })
 }
 
 fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
@@ -860,7 +902,7 @@ fn bool_subtraction_error() -> PyErr {
     )
 }
 
-fn full_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
+fn creation_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
     if matches!(error, TensorError::ElementCountOverflow) {
         PyRuntimeError::new_err(format!(
             "Storage size calculation overflowed with size {shape:?}"
@@ -1027,6 +1069,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
+    module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
     let float32 = float32_object(py)?;
     module.add("float32", float32.clone_ref(py))?;

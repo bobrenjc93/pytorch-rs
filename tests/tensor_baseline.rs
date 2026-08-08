@@ -12,6 +12,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
         Tensor::from_vec(vec![2.5], []).unwrap(),
         Tensor::zeros([2, 0, 3]).unwrap(),
         Tensor::ones([2, 3]).unwrap(),
+        Tensor::eye(2, None).unwrap(),
         Tensor::full([4], -1.25).unwrap(),
     ] {
         assert_eq!(tensor.dtype(), DType::Float32);
@@ -55,6 +56,62 @@ fn empty_dimensions_have_zero_elements() {
     let tensor = Tensor::zeros([3, 0, 4]).unwrap();
     assert_eq!(tensor.shape(), [3, 0, 4]);
     assert_eq!(tensor.numel(), 0);
+}
+
+#[test]
+fn eye_creates_square_wide_and_tall_matrices() {
+    let square = Tensor::eye(3, None).unwrap();
+    assert_eq!(square.shape(), [3, 3]);
+    assert_eq!(square.stride(), [3, 1]);
+    assert_eq!(
+        square.as_slice(),
+        [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    );
+
+    let wide = Tensor::eye(2, 4).unwrap();
+    assert_eq!(wide.shape(), [2, 4]);
+    assert_eq!(wide.stride(), [4, 1]);
+    assert_eq!(wide.as_slice(), [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+
+    let tall = Tensor::eye(4, Some(2)).unwrap();
+    assert_eq!(tall.shape(), [4, 2]);
+    assert_eq!(tall.stride(), [2, 1]);
+    assert_eq!(tall.as_slice(), [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
+    assert_eq!(tall.dtype(), DType::Float32);
+    assert_eq!(tall.device(), Device::Cpu);
+}
+
+#[test]
+fn eye_handles_zero_dimensions_without_allocating_storage() {
+    let square = Tensor::eye(0, None).unwrap();
+    assert_eq!(square.shape(), [0, 0]);
+    assert_eq!(square.stride(), [1, 1]);
+    assert!(square.as_slice().is_empty());
+
+    let maximum = isize::MAX.unsigned_abs();
+    let no_rows = Tensor::eye(0, maximum).unwrap();
+    assert_eq!(no_rows.shape(), [0, maximum]);
+    assert_eq!(no_rows.stride(), [maximum, 1]);
+    assert_eq!(no_rows.numel(), 0);
+
+    let no_columns = Tensor::eye(maximum, 0).unwrap();
+    assert_eq!(no_columns.shape(), [maximum, 0]);
+    assert_eq!(no_columns.stride(), [1, 1]);
+    assert_eq!(no_columns.numel(), 0);
+}
+
+#[test]
+fn eye_rejects_shape_and_storage_overflow_before_allocation() {
+    assert_eq!(
+        Tensor::eye(usize::MAX, 2),
+        Err(TensorError::ElementCountOverflow)
+    );
+
+    let elements = isize::MAX.unsigned_abs() / size_of::<f32>() + 1;
+    assert_eq!(
+        Tensor::eye(elements, 1),
+        Err(TensorError::StorageCapacityOverflow { elements })
+    );
 }
 
 #[test]
