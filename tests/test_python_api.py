@@ -120,9 +120,8 @@ class PythonApiBaselineTests(unittest.TestCase):
         right = torch.tensor([[[1.0, 2.0]]])
         for operation in (operator.add, operator.sub, operator.mul, operator.truediv):
             with self.subTest(operation=operation, shape=(0, large, 2)):
-                output = operation(left, right)
-                self.assertEqual(output.shape, (0, large, 2))
-                self.assertEqual(output.numel(), 0)
+                with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+                    operation(left, right)
 
     def test_python_real_scalar_and_reverse_arithmetic(self):
         tensor = torch.tensor([1.0, -2.0, 4.0])
@@ -164,6 +163,30 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(operation=operation):
                 with self.assertRaises(TypeError):
                     operation(value, tensor)
+
+        denominator = torch.tensor([2.0])
+        for numerator in (
+            np.uint64(2**63),
+            np.uint64(2**63 + 2048),
+            np.uint64(2**64 - 1),
+        ):
+            with self.subTest(numerator=numerator, operation=operator.truediv):
+                result = numerator / denominator
+                self.assertIsInstance(result, np.ndarray)
+                self.assertEqual(result.dtype, np.dtype(np.float64))
+                self.assertEqual(result.shape, (1,))
+                self.assertEqual(result[0], np.float64(numerator) / np.float64(2.0))
+
+    def test_numpy_array_conversion_rejects_requests_prohibiting_a_copy(self):
+        tensor = torch.tensor([1.0, 2.0])
+        with self.assertRaisesRegex(ValueError, "non-copying NumPy view"):
+            np.array(tensor, copy=False)
+
+        copied = np.array(tensor, copy=True)
+        self.assertEqual(copied.dtype, np.dtype(np.float32))
+        np.testing.assert_array_equal(copied, np.array([1.0, 2.0], dtype=np.float32))
+        copied[0] = 9.0
+        self.assertEqual(tensor.tolist(), [1.0, 2.0])
 
     def test_python_bool_subtraction_matches_pytorch_errors(self):
         tensor = torch.tensor([1.0, 2.0])

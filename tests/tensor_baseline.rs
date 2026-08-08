@@ -182,22 +182,18 @@ fn binary_arithmetic_broadcasts_rank_zero_and_zero_sized_tensors() {
 }
 
 #[test]
-fn empty_broadcast_skips_unused_result_stride_overflow() {
+fn empty_broadcast_rejects_unrepresentable_result_strides() {
     let large = isize::MAX.unsigned_abs() / 2 + 1;
     let left = Tensor::from_vec(Vec::new(), [0, large, 1]).unwrap();
     let right = Tensor::from_vec(vec![1.0, 2.0], [1, 1, 2]).unwrap();
 
-    for output in [
-        left.add(&right).unwrap(),
-        left.sub(&right).unwrap(),
-        left.mul(&right).unwrap(),
-        left.div(&right).unwrap(),
+    for result in [
+        left.add(&right),
+        left.sub(&right),
+        left.mul(&right),
+        left.div(&right),
     ] {
-        assert_eq!(output.shape(), [0, large, 2]);
-        assert_eq!(output.numel(), 0);
-
-        let scalar = Tensor::from_vec(vec![1.0], []).unwrap();
-        assert_eq!(output.add(&scalar).unwrap().shape(), [0, large, 2]);
+        assert_eq!(result, Err(TensorError::StrideCalculationOverflow));
     }
 }
 

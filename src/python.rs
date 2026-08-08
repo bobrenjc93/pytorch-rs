@@ -22,6 +22,7 @@ enum ParsedFillValue {
 enum ParsedArithmeticScalar {
     PythonBool(bool),
     Number(ParsedFillValue),
+    WideNumpyUnsigned,
 }
 
 #[derive(Clone, Copy)]
@@ -51,21 +52,12 @@ impl PyTensor {
         dtype: Option<&Bound<'_, PyAny>>,
         copy: Option<bool>,
     ) -> PyResult<Py<PyAny>> {
-        let numpy = PyModule::import(py, "numpy")?;
-        let values = PyList::new(py, self.inner.as_slice().iter().copied())?;
-        let arguments = PyDict::new(py);
-        if let Some(dtype) = dtype {
-            arguments.set_item("dtype", dtype)?;
-        } else {
-            arguments.set_item("dtype", numpy.getattr("float32")?)?;
+        if copy == Some(false) {
+            return Err(PyValueError::new_err(
+                "cannot create a non-copying NumPy view of tensor storage",
+            ));
         }
-        let array = numpy.getattr("array")?.call((values,), Some(&arguments))?;
-        let shape = PyTuple::new(py, self.inner.shape().iter().copied())?;
-        let mut array = array.call_method1("reshape", (shape,))?;
-        if copy == Some(true) {
-            array = array.call_method0("copy")?;
-        }
-        Ok(array.unbind())
+        self.numpy_array_copy(py, dtype)
     }
 
     fn numel(&self) -> usize {
@@ -149,6 +141,38 @@ impl PyTensor {
 }
 
 impl PyTensor {
+    fn numpy_array_copy(
+        &self,
+        py: Python<'_>,
+        dtype: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Py<PyAny>> {
+        let numpy = PyModule::import(py, "numpy")?;
+        let values = PyList::new(py, self.inner.as_slice().iter().copied())?;
+        let arguments = PyDict::new(py);
+        if let Some(dtype) = dtype {
+            arguments.set_item("dtype", dtype)?;
+        } else {
+            arguments.set_item("dtype", numpy.getattr("float32")?)?;
+        }
+        let array = numpy.getattr("array")?.call((values,), Some(&arguments))?;
+        let shape = PyTuple::new(py, self.inner.shape().iter().copied())?;
+        let array = array.call_method1("reshape", (shape,))?;
+        Ok(array.unbind())
+    }
+
+    fn numpy_reflected_divide(
+        &self,
+        py: Python<'_>,
+        numerator: &Bound<'_, PyAny>,
+    ) -> PyResult<Py<PyAny>> {
+        let denominator = self.numpy_array_copy(py, None)?;
+        let numpy = PyModule::import(py, "numpy")?;
+        let result = numpy
+            .getattr("true_divide")?
+            .call1((numerator, denominator.bind(py)))?;
+        Ok(result.unbind())
+    }
+
     fn binary_operation(
         &self,
         py: Python<'_>,
@@ -166,6 +190,15 @@ impl PyTensor {
         } else {
             let Some(scalar) = parse_arithmetic_scalar(other)? else {
                 return Ok(py.NotImplemented());
+            };
+            let scalar = match scalar {
+                ParsedArithmeticScalar::WideNumpyUnsigned => {
+                    if reverse && matches!(operation, BinaryOperation::Divide) {
+                        return self.numpy_reflected_divide(py, other);
+                    }
+                    return Ok(py.NotImplemented());
+                }
+                scalar => scalar,
             };
             if matches!(operation, BinaryOperation::Subtract) && scalar.is_python_bool() {
                 return Err(bool_subtraction_error());
@@ -414,7 +447,7 @@ fn parse_numpy_arithmetic_scalar(
         value.extract::<u64>().map_err(|_| {
             PyTypeError::new_err("NumPy integer operand is outside the supported 64-bit range")
         })?;
-        return Ok(None);
+        return Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned));
     }
 
     let numpy_floating = numpy.getattr("floating")?;
@@ -556,6 +589,9 @@ impl ParsedArithmeticScalar {
         match self {
             Self::PythonBool(value) => f32::from(u8::from(value)),
             Self::Number(value) => value.into_arithmetic_f32(),
+            Self::WideNumpyUnsigned => {
+                unreachable!("wide NumPy unsigned operands are dispatched before conversion")
+            }
         }
     }
 }

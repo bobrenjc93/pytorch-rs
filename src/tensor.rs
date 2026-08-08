@@ -471,6 +471,7 @@ impl BroadcastPlan {
         }
 
         let mut elements = 1_usize;
+        let mut output_stride = 1_usize;
         for axis in 0..rank {
             let dimension = broadcast_dimension(
                 aligned_dimension(&left.shape, rank, axis),
@@ -481,16 +482,13 @@ impl BroadcastPlan {
                 .checked_mul(dimension)
                 .ok_or(TensorError::ElementCountOverflow)?;
         }
-        if elements != 0 {
-            let mut output_stride = 1_usize;
-            for axis in (1..rank).rev() {
-                let dimension = broadcast_dimension(
-                    aligned_dimension(&left.shape, rank, axis),
-                    aligned_dimension(&right.shape, rank, axis),
-                )
-                .expect("broadcast compatibility was checked above");
-                output_stride = checked_stride_product(output_stride, dimension)?;
-            }
+        for axis in (1..rank).rev() {
+            let dimension = broadcast_dimension(
+                aligned_dimension(&left.shape, rank, axis),
+                aligned_dimension(&right.shape, rank, axis),
+            )
+            .expect("broadcast compatibility was checked above");
+            output_stride = checked_stride_product(output_stride, dimension)?;
         }
         validate_storage_capacity(elements)?;
 
