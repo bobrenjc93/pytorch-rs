@@ -1046,6 +1046,75 @@ fn sliced_layouts_work_in_pointwise_reduction_reshape_and_matmul() {
 }
 
 #[test]
+fn singleton_slice_strides_survive_reshape_and_pointwise_outputs() {
+    use TensorIndex::Slice as SliceIndex;
+
+    let singleton = Tensor::from_vec(vec![0.0, 1.0, 2.0], [3])
+        .unwrap()
+        .slice([SliceIndex(Slice::new(None, None, Some(3)))])
+        .unwrap();
+    assert_eq!(singleton.shape(), [1]);
+    assert_eq!(singleton.stride(), [3]);
+    let reshaped = singleton.reshape([1, 1]).unwrap();
+    assert_eq!(reshaped.stride(), [3, 3]);
+    assert!(reshaped.shares_storage_with(&singleton));
+
+    let view = Tensor::from_vec((0_u8..18).map(f32::from).collect(), [3, 3, 2])
+        .unwrap()
+        .slice([
+            SliceIndex(Slice::full()),
+            SliceIndex(Slice::full()),
+            SliceIndex(Slice::new(None, None, Some(3))),
+        ])
+        .unwrap();
+    assert_eq!(view.shape(), [3, 3, 1]);
+    assert_eq!(view.stride(), [6, 2, 3]);
+    for output in [
+        view.add_scalar(1.0).unwrap(),
+        view.relu().unwrap(),
+        view.add(&view).unwrap(),
+        view.add(&Tensor::from_vec(vec![1.0], []).unwrap()).unwrap(),
+    ] {
+        assert_eq!(output.stride(), [3, 1, 3]);
+    }
+}
+
+#[test]
+fn slicing_matches_pytorch_signed_wrapping_boundaries() {
+    use TensorIndex::Slice as SliceIndex;
+
+    let maximum = i64::MAX;
+    let once = Tensor::from_vec(vec![0.0], [1])
+        .unwrap()
+        .slice([SliceIndex(Slice::new(None, None, Some(maximum)))])
+        .unwrap();
+    assert_eq!(once.shape(), [1]);
+    assert_eq!(once.stride(), [usize::try_from(maximum).unwrap()]);
+    let twice = once
+        .slice([SliceIndex(Slice::new(None, None, Some(maximum)))])
+        .unwrap();
+    assert_eq!(twice.shape(), [1]);
+    assert_eq!(twice.stride(), [1]);
+    assert!(twice.shares_storage_with(&once));
+    assert_eq!(
+        once.slice([SliceIndex(Slice::new(None, None, Some(2)))]),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+
+    let source = Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0], [4]).unwrap();
+    let wrapped_empty = source
+        .slice([SliceIndex(Slice::new(None, None, Some(maximum)))])
+        .unwrap();
+    assert_eq!(wrapped_empty.shape(), [0]);
+    assert_eq!(wrapped_empty.stride(), [usize::try_from(maximum).unwrap()]);
+    assert!(wrapped_empty.as_slice().is_empty());
+    assert_eq!(
+        source.slice([SliceIndex(Slice::new(None, None, Some(maximum - 1),))]),
+        Err(TensorError::SliceLengthCalculationOverflow { length: -1 })
+    );
+}
+
+#[test]
 fn reshape_infers_one_dimension_and_handles_scalars_and_empty_tensors() {
     let tensor = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [6]).unwrap();
     assert_eq!(tensor.reshape([2, -1]).unwrap().shape(), [2, 3]);

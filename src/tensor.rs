@@ -119,14 +119,16 @@ impl Slice {
         let length = if end_index <= first_index {
             0
         } else {
-            let distance = end_index
+            let span = end_index
                 .checked_sub(first_index)
-                .and_then(|value| value.checked_sub(1))
                 .ok_or(TensorError::IndexCalculationOverflow)?;
-            distance
-                .checked_div(step_size)
-                .and_then(|value| value.checked_add(1))
-                .ok_or(TensorError::IndexCalculationOverflow)?
+            let wrapped_length = span.wrapping_add(step_size).wrapping_sub(1) / step_size;
+            if wrapped_length < 0 {
+                return Err(TensorError::SliceLengthCalculationOverflow {
+                    length: wrapped_length,
+                });
+            }
+            wrapped_length
         };
 
         Ok(NormalizedSlice {
@@ -195,6 +197,9 @@ pub enum TensorError {
     IndexCalculationOverflow,
     SliceStepMustBePositive {
         step: i64,
+    },
+    SliceLengthCalculationOverflow {
+        length: i64,
     },
     LayoutOutOfStorage {
         offset: usize,
@@ -288,6 +293,10 @@ impl Display for TensorError {
                     "slice step must be greater than zero, got {step}"
                 )
             }
+            Self::SliceLengthCalculationOverflow { length } => write!(
+                formatter,
+                "Storage size calculation overflowed with slice length {length}"
+            ),
             Self::LayoutOutOfStorage {
                 offset,
                 span,
@@ -839,7 +848,7 @@ impl Tensor {
             .checked_mul(source_stride)
             .ok_or(TensorError::IndexCalculationOverflow)?;
         let offset = checked_storage_offset_add(offset, contribution)?;
-        let stride = checked_stride_product(source_stride, normalized.step)?;
+        let stride = signed_wrapping_stride_product(source_stride, normalized.step)?;
         Ok(CheckedSlice {
             offset,
             length: normalized.length,
@@ -1217,7 +1226,11 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = contiguous_strides(&shape, elements)?;
+        let strides = if elements == 0 {
+            contiguous_strides(&shape, elements)?
+        } else {
+            elementwise_output_strides(&shape, &[self, other], elements)?
+        };
         if let (Some(left), Some(right)) = (self.dense_slice(), other.dense_slice()) {
             data.extend(
                 left.iter()
@@ -1249,11 +1262,7 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 {
-            elementwise_output_strides(&shape, &[self], elements)?
-        } else {
-            contiguous_strides(&shape, elements)?
-        };
+        let strides = elementwise_output_strides(&shape, &[self], elements)?;
         if let Some(values) = self.dense_slice() {
             data.extend(values.iter().copied().map(|value| operation(value, scalar)));
         } else {
@@ -1272,7 +1281,11 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = contiguous_strides(&shape, elements)?;
+        let strides = if elements == 0 {
+            contiguous_strides(&shape, elements)?
+        } else {
+            elementwise_output_strides(&shape, &[self], elements)?
+        };
         if let Some(values) = self.dense_slice() {
             data.extend(values.iter().copied().map(operation));
         } else {
@@ -1414,9 +1427,6 @@ fn compute_reshape_view_strides(
     tensor: &Tensor,
     new_shape: &[usize],
 ) -> Result<Option<Vec<usize>>, TensorError> {
-    if tensor.is_contiguous() {
-        return contiguous_strides(new_shape, tensor.elements).map(Some);
-    }
     if tensor.shape.is_empty() {
         return contiguous_strides(new_shape, tensor.elements).map(Some);
     }
@@ -1524,11 +1534,7 @@ impl BroadcastPlan {
                 .expect("broadcast compatibility was checked above"),
             );
         }
-        let strides = if elements == 0 {
-            elementwise_output_strides(&shape, &[left, right], elements)?
-        } else {
-            contiguous_strides(&shape, elements)?
-        };
+        let strides = elementwise_output_strides(&shape, &[left, right], elements)?;
 
         let mut dimensions = try_result_vector(rank, elements)?;
         if elements == 0 {

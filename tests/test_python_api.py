@@ -686,6 +686,46 @@ class PythonApiBaselineTests(unittest.TestCase):
         copied_numpy[0, 0] = 1000.0
         self.assertEqual(view[0, 0].item(), -1.0)
 
+    def test_singleton_slice_strides_survive_reshape_and_pointwise_results(self):
+        singleton = torch.tensor([0.0, 1.0, 2.0])[::3]
+        self.assertEqual(singleton.shape, (1,))
+        self.assertEqual(singleton.stride(), (3,))
+        self.assertEqual(singleton.reshape(1, 1).stride(), (3, 3))
+
+        source = torch.tensor(np.arange(18, dtype=np.float32).reshape(3, 3, 2).tolist())
+        view = source[:, :, ::3]
+        self.assertEqual(view.shape, (3, 3, 1))
+        self.assertEqual(view.stride(), (6, 2, 3))
+        outputs = (
+            view + 1,
+            view.relu(),
+            view + view,
+            view + torch.ones((1,)),
+        )
+        for output in outputs:
+            self.assertEqual(output.stride(), (3, 1, 3))
+        np.testing.assert_array_equal(np.asarray(outputs[0]), np.asarray(view) + 1)
+
+    def test_extreme_slice_stride_and_length_boundaries_match_pytorch(self):
+        maximum = sys.maxsize
+        once = torch.tensor([0.0])[::maximum]
+        self.assertEqual(once.shape, (1,))
+        self.assertEqual(once.stride(), (maximum,))
+        twice = once[::maximum]
+        self.assertEqual(twice.shape, (1,))
+        self.assertEqual(twice.stride(), (1,))
+        self.assertEqual(twice.tolist(), [0.0])
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            once[::2]
+
+        source = torch.tensor([0.0, 1.0, 2.0, 3.0])
+        wrapped_empty = source[::maximum]
+        self.assertEqual(wrapped_empty.shape, (0,))
+        self.assertEqual(wrapped_empty.stride(), (maximum,))
+        self.assertEqual(wrapped_empty.tolist(), [])
+        with self.assertRaisesRegex(RuntimeError, "Storage size calculation overflowed"):
+            source[slice(None, None, maximum - 1)]
+
     def test_basic_slicing_rejects_unsupported_and_invalid_indices(self):
         class CountingIndex:
             def __init__(self):

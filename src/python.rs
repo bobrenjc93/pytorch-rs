@@ -1281,6 +1281,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ItemRequiresOneElement { .. }
         | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow
+        | TensorError::SliceLengthCalculationOverflow { .. }
         | TensorError::LayoutOutOfStorage { .. }
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }
