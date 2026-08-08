@@ -747,7 +747,10 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::try_size_vector;
+    use pyo3::exceptions::PyTypeError;
+    use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyModule};
+
+    use super::{torch_rs, try_size_vector};
 
     #[test]
     fn size_vector_capacity_overflow_returns_python_error() {
@@ -755,5 +758,36 @@ mod tests {
         let error = try_size_vector::<i64>(usize::MAX)
             .expect_err("an impossible vector capacity must return an error");
         assert_eq!(error.to_string(), "RuntimeError: std::bad_alloc");
+    }
+
+    #[test]
+    fn reshape_binding_requires_shape_and_accepts_shape_keyword() {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let module = PyModule::new(py, "torch_rs").unwrap();
+            torch_rs(&module).unwrap();
+            let tensor = module
+                .getattr("tensor")
+                .unwrap()
+                .call1((vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0],))
+                .unwrap();
+
+            let keywords = PyDict::new(py);
+            keywords.set_item("shape", (2, 3)).unwrap();
+            let reshaped = tensor.call_method("reshape", (), Some(&keywords)).unwrap();
+            assert_eq!(
+                reshaped
+                    .getattr("shape")
+                    .unwrap()
+                    .extract::<Vec<usize>>()
+                    .unwrap(),
+                [2, 3]
+            );
+
+            let error = tensor
+                .call_method0("reshape")
+                .expect_err("reshape without a shape must fail");
+            assert!(error.is_instance_of::<PyTypeError>(py));
+        });
     }
 }
