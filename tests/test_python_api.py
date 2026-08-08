@@ -35,6 +35,83 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(value.shape, ())
         self.assertEqual(value.item(), 10.0)
 
+    def test_stride_reports_contiguous_row_major_layout(self):
+        cases = (
+            (torch.tensor(1.0), ()),
+            (torch.zeros((2, 3, 4)), (12, 4, 1)),
+            (torch.zeros((2, 0, 3)), (3, 3, 1)),
+            (torch.zeros((1, 0, 1)), (1, 1, 1)),
+        )
+        for tensor, expected in cases:
+            with self.subTest(shape=tensor.shape):
+                self.assertEqual(tensor.stride(), expected)
+
+    def test_reshape_accepts_variadic_and_sequence_signatures(self):
+        source = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        variadic = source.reshape(3, 2)
+        tuple_shape = source.reshape((1, 6))
+        list_shape = source.reshape([6, 1])
+        keyword_shape = source.reshape(shape=(2, 3))
+
+        self.assertEqual(variadic.shape, (3, 2))
+        self.assertEqual(variadic.stride(), (2, 1))
+        self.assertEqual(variadic.tolist(), [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        self.assertEqual(tuple_shape.tolist(), [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]])
+        self.assertEqual(list_shape.tolist(), [[1.0], [2.0], [3.0], [4.0], [5.0], [6.0]])
+        self.assertEqual(keyword_shape.tolist(), source.tolist())
+        self.assertEqual(source.tolist(), [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+
+    def test_reshape_inference_scalar_and_empty_cases(self):
+        source = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        self.assertEqual(source.reshape(2, -1).shape, (2, 3))
+        self.assertEqual(source.reshape(-1).shape, (6,))
+
+        scalar = torch.tensor([7.0]).reshape(())
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(scalar.stride(), ())
+        self.assertEqual(scalar.item(), 7.0)
+        self.assertEqual(scalar.reshape([1]).tolist(), [7.0])
+
+        empty = torch.zeros((0,))
+        inferred = empty.reshape(2, -1, 3)
+        self.assertEqual(inferred.shape, (2, 0, 3))
+        self.assertEqual(inferred.stride(), (3, 3, 1))
+        self.assertEqual(inferred.tolist(), [[], []])
+        self.assertEqual(empty.reshape((0, 2)).shape, (0, 2))
+
+    def test_reshape_reports_pytorch_compatible_errors(self):
+        tensor = torch.zeros((6,))
+        invalid = (
+            ((4, 2), "shape '\\[4, 2\\]' is invalid for input of size 6"),
+            ((-1, -1), "only one dimension can be inferred"),
+            ((-2, 3), "invalid shape dimension -2 at index 0 of shape \\[-2, 3\\]"),
+        )
+        for shape, message in invalid:
+            with self.subTest(shape=shape):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    tensor.reshape(shape)
+
+        with self.assertRaisesRegex(RuntimeError, "unspecified dimension size -1"):
+            torch.zeros((0,)).reshape(0, -1)
+
+        for shape in ((2.0, 3), (True, 6), [[2, 3]]):
+            with self.subTest(shape=shape):
+                with self.assertRaises(TypeError):
+                    tensor.reshape(shape)
+
+        with self.assertRaises(TypeError):
+            torch.tensor(1.0).reshape()
+
+    def test_reshape_observables_survive_source_lifetime_and_numpy_mutation(self):
+        source = torch.tensor([1.0, 2.0, 3.0, 4.0])
+        view = source.reshape(2, 2)
+        del source
+
+        copied = np.asarray(view)
+        copied[0, 0] = 99.0
+        self.assertEqual(view.tolist(), [[1.0, 2.0], [3.0, 4.0]])
+        self.assertEqual((view + 1.0).tolist(), [[2.0, 3.0], [4.0, 5.0]])
+
     def test_matrix_multiplication_operator(self):
         left = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
         right = torch.tensor([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]])

@@ -45,6 +45,23 @@ impl PyTensor {
         PyTuple::new(py, self.inner.shape().iter().copied())
     }
 
+    fn stride<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
+        PyTuple::new(py, self.inner.stride().iter().copied())
+    }
+
+    #[pyo3(signature = (shape, *shape_dimensions))]
+    fn reshape(
+        &self,
+        shape: &Bound<'_, PyAny>,
+        shape_dimensions: &Bound<'_, PyTuple>,
+    ) -> PyResult<Self> {
+        let shape = parse_reshape_shape(shape, shape_dimensions)?;
+        self.inner
+            .reshape(shape)
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     #[pyo3(signature = (dtype=None, copy=None))]
     fn __array__(
         &self,
@@ -289,6 +306,54 @@ fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
             "full(): argument 'size' must be a tuple or list of integers",
         ))
     }
+}
+
+fn parse_reshape_shape(
+    shape: &Bound<'_, PyAny>,
+    shape_dimensions: &Bound<'_, PyTuple>,
+) -> PyResult<Vec<i64>> {
+    if shape_dimensions.is_empty() {
+        if let Ok(dimensions) = shape.cast::<PyList>() {
+            return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
+        }
+        if let Ok(dimensions) = shape.cast::<PyTuple>() {
+            return parse_reshape_dimensions(dimensions.len(), dimensions.iter());
+        }
+    }
+    parse_reshape_dimensions(
+        shape_dimensions.len().checked_add(1).ok_or_else(|| {
+            PyRuntimeError::new_err("reshape(): shape length exceeds the platform limit")
+        })?,
+        std::iter::once(shape.clone()).chain(shape_dimensions.iter()),
+    )
+}
+
+fn parse_reshape_dimensions<'py>(
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+) -> PyResult<Vec<i64>> {
+    let mut parsed = try_size_vector(length)?;
+    for (index, dimension) in dimensions.enumerate() {
+        if dimension.is_instance_of::<PyBool>() {
+            return Err(invalid_reshape_dimension(
+                index,
+                "bool is not a valid shape dimension",
+            ));
+        }
+        try_push_size(
+            &mut parsed,
+            dimension
+                .extract::<i64>()
+                .map_err(|error| invalid_reshape_dimension(index, &error.to_string()))?,
+        )?;
+    }
+    Ok(parsed)
+}
+
+fn invalid_reshape_dimension(index: usize, reason: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "reshape(): shape element at index {index} is invalid: {reason}"
+    ))
 }
 
 fn parse_size_dimensions<'py>(
@@ -658,6 +723,10 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
+        | TensorError::ReshapeMultipleInferredDimensions
+        | TensorError::ReshapeInvalidDimension { .. }
+        | TensorError::ReshapeAmbiguousZeroElements { .. }
+        | TensorError::ReshapeElementCountMismatch { .. }
         | TensorError::StrideCalculationOverflow
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
