@@ -407,6 +407,18 @@ impl Tensor {
         &self.shape
     }
 
+    /// Returns the number of tensor dimensions.
+    #[must_use]
+    pub fn dim(&self) -> usize {
+        self.shape.len()
+    }
+
+    /// Alias for [`Self::dim`].
+    #[must_use]
+    pub fn ndimension(&self) -> usize {
+        self.dim()
+    }
+
     /// Returns the tensor's row-major element strides.
     #[must_use]
     pub fn stride(&self) -> &[usize] {
@@ -440,6 +452,34 @@ impl Tensor {
     #[must_use]
     pub fn numel(&self) -> usize {
         self.elements
+    }
+
+    /// Reports whether the tensor uses a contiguous row-major layout.
+    ///
+    /// Empty tensors are contiguous regardless of their strides, and strides
+    /// on singleton dimensions do not affect contiguity. These match
+    /// `PyTorch`'s layout rules and cover the unusual, but contiguous, empty
+    /// layouts produced by pointwise operations.
+    #[must_use]
+    pub fn is_contiguous(&self) -> bool {
+        if self.elements == 0 {
+            return true;
+        }
+
+        let mut expected_stride = 1;
+        for (&dimension, &stride) in self.shape.iter().zip(&self.strides).rev() {
+            if dimension == 1 {
+                continue;
+            }
+            if stride != expected_stride {
+                return false;
+            }
+            let Some(next_stride) = expected_stride.checked_mul(dimension) else {
+                return false;
+            };
+            expected_stride = next_stride;
+        }
+        true
     }
 
     #[must_use]

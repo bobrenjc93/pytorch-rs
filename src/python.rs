@@ -11,6 +11,37 @@ use pyo3::types::{
 use crate::{DType, Device, Tensor as CoreTensor, TensorError};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
+static SIZE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+const SIZE_CLASS: &std::ffi::CStr = pyo3::ffi::c_str!(
+    r#"
+class Size(tuple):
+    __slots__ = ()
+    __module__ = "torch_rs"
+
+    def __new__(cls, dimensions=()):
+        converted = []
+        for index, dimension in enumerate(dimensions):
+            try:
+                converted.append(operator.index(dimension))
+            except TypeError:
+                name = type(dimension).__name__
+                raise TypeError(
+                    f"torch.Size() takes an iterable of 'int' "
+                    f"(item {index} is '{name}')"
+                ) from None
+        return tuple.__new__(cls, converted)
+
+    def __repr__(self):
+        return f"torch.Size([{', '.join(map(str, self))}])"
+
+    def numel(self):
+        result = 1
+        for dimension in self:
+            result *= dimension
+        return result
+"#
+);
 
 /// Python scalar-type descriptor backed by a native [`DType`].
 #[pyclass(name = "dtype", module = "torch_rs", frozen, skip_from_py_object)]
@@ -131,6 +162,30 @@ impl PyTensor {
         PyTuple::new(py, self.inner.shape().iter().copied())
     }
 
+    #[pyo3(signature = (dim=None))]
+    fn size(&self, py: Python<'_>, dim: Option<&Bound<'_, PyAny>>) -> PyResult<Py<PyAny>> {
+        let Some(dim) = dim else {
+            let dimensions = PyTuple::new(py, self.inner.shape().iter().copied())?;
+            return Ok(size_type(py)?.bind(py).call1((dimensions,))?.unbind());
+        };
+        let dim = parse_dimension("size", dim)?;
+        let axis = normalize_dimension(dim, self.inner.dim())?;
+        self.inner.shape()[axis].into_py_any(py)
+    }
+
+    fn dim(&self) -> usize {
+        self.inner.dim()
+    }
+
+    fn ndimension(&self) -> usize {
+        self.inner.ndimension()
+    }
+
+    #[getter]
+    fn ndim(&self) -> usize {
+        self.inner.dim()
+    }
+
     #[getter]
     fn dtype(&self, py: Python<'_>) -> PyResult<Py<PyDType>> {
         match self.inner.dtype() {
@@ -152,9 +207,20 @@ impl PyTensor {
                 .into_any()
                 .unbind());
         };
-        let dim = parse_stride_dimension(dim)?;
-        let axis = normalize_dimension(dim, self.inner.shape().len())?;
+        let dim = parse_dimension("stride", dim)?;
+        let axis = normalize_dimension(dim, self.inner.dim())?;
         self.inner.stride()[axis].into_py_any(py)
+    }
+
+    #[pyo3(signature = (*, memory_format=None))]
+    fn is_contiguous(&self, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+        if let Some(memory_format) = memory_format {
+            let type_name = memory_format.get_type().name()?;
+            return Err(PyTypeError::new_err(format!(
+                "is_contiguous(): memory format {type_name} is not supported; only None is implemented"
+            )));
+        }
+        Ok(self.inner.is_contiguous())
     }
 
     fn storage_offset(&self) -> usize {
@@ -490,6 +556,11 @@ fn full(
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction]
+fn numel(input: &PyTensor) -> usize {
+    input.inner.numel()
+}
+
 fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
     FLOAT32.get_or_try_init(py, || {
         Py::new(
@@ -498,6 +569,18 @@ fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
                 inner: DType::Float32,
             },
         )
+    })
+}
+
+fn size_type(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+    SIZE.get_or_try_init(py, || {
+        let globals = PyDict::new(py);
+        globals.set_item("operator", PyModule::import(py, "operator")?)?;
+        py.run(SIZE_CLASS, Some(&globals), None)?;
+        globals
+            .get_item("Size")?
+            .ok_or_else(|| PyRuntimeError::new_err("failed to initialize torch.Size"))
+            .map(Bound::unbind)
     })
 }
 
@@ -634,7 +717,7 @@ fn parse_size(size: &Bound<'_, PyAny>) -> PyResult<Vec<i64>> {
     }
 }
 
-fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+fn parse_dimension(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
         return dimension
             .extract::<i64>()
@@ -652,7 +735,7 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
 
     let type_name = dimension.get_type().name()?;
     Err(PyTypeError::new_err(format!(
-        "stride(): argument 'dim' must be int, not {type_name}"
+        "{function}(): argument 'dim' must be int, not {type_name}"
     )))
 }
 
@@ -1218,6 +1301,8 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
+    module.add_function(wrap_pyfunction!(numel, module)?)?;
+    module.add("Size", size_type(py)?.clone_ref(py))?;
     let float32 = float32_object(py)?;
     module.add("float32", float32.clone_ref(py))?;
     module.add("float", float32.clone_ref(py))?;

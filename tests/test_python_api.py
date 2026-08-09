@@ -438,6 +438,107 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
                     tensor.stride(dimension)
 
+    def test_size_rank_and_numel_metadata_match_pytorch(self):
+        ordinary = torch.tensor(
+            [
+                [[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]],
+                [[6.0, 7.0], [8.0, 9.0], [10.0, 11.0]],
+            ]
+        )
+        cases = (
+            (torch.tensor(1.0), (), 0, 1),
+            (torch.zeros((2, 0, 3)), (2, 0, 3), 3, 0),
+            (ordinary, (2, 3, 2), 3, 12),
+            (ordinary.reshape(3, 4), (3, 4), 2, 12),
+            (ordinary[1, 2], (2,), 1, 2),
+        )
+
+        for tensor, expected_size, expected_rank, expected_numel in cases:
+            with self.subTest(shape=expected_size):
+                size = tensor.size()
+                self.assertIs(type(size), torch.Size)
+                self.assertIsInstance(size, tuple)
+                self.assertEqual(size, expected_size)
+                self.assertEqual(repr(size), f"torch.Size({list(expected_size)})")
+                self.assertEqual(size.numel(), expected_numel)
+                self.assertEqual(tensor.dim(), expected_rank)
+                self.assertEqual(tensor.ndimension(), expected_rank)
+                self.assertEqual(tensor.ndim, expected_rank)
+                self.assertEqual(tensor.numel(), expected_numel)
+                self.assertEqual(torch.numel(tensor), expected_numel)
+
+    def test_size_dimension_conversion_and_errors_match_pytorch(self):
+        class IntSubclass(int):
+            pass
+
+        class IndexLike:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return 0
+
+        tensor = torch.zeros((2, 3, 4))
+        self.assertEqual(tensor.size(0), 2)
+        self.assertEqual(tensor.size(-1), 4)
+        self.assertEqual(tensor.size(dim=-2), 3)
+        self.assertEqual(tensor.size(IntSubclass(1)), 3)
+        self.assertEqual(tensor.size(np.int64(-3)), 2)
+        self.assertEqual(tensor.size(np.uint64(2)), 4)
+        self.assertIs(type(tensor.size(0)), int)
+
+        for dimension in (3, -4):
+            with self.subTest(dimension=dimension):
+                with self.assertRaisesRegex(
+                    IndexError,
+                    r"Dimension out of range \(expected to be in range of \[-3, 2\]",
+                ):
+                    tensor.size(dimension)
+
+        scalar = torch.tensor(1.0)
+        for dimension in (0, -1):
+            with self.subTest(scalar_dimension=dimension):
+                with self.assertRaisesRegex(IndexError, "tensor has no dimensions"):
+                    scalar.size(dimension)
+
+        index_like = IndexLike()
+        for dimension in (True, np.bool_(False), index_like, 1.0):
+            with self.subTest(invalid_type=type(dimension).__name__):
+                with self.assertRaises(TypeError):
+                    tensor.size(dimension)
+        self.assertEqual(index_like.calls, 0)
+
+        for dimension in (1 << 100, -(1 << 100), np.uint64(2**64 - 1)):
+            with self.subTest(overflow=dimension):
+                with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                    tensor.size(dimension)
+
+    def test_is_contiguous_reports_supported_layouts_and_rejects_formats(self):
+        ordinary = torch.zeros((2, 3, 4))
+        layouts = (
+            torch.tensor(1.0),
+            torch.zeros((2, 0, 3)),
+            ordinary,
+            ordinary.reshape(4, 6),
+            ordinary[1, 2],
+            torch.zeros((0, 1)) + 1,
+        )
+        for tensor in layouts:
+            with self.subTest(shape=tensor.shape, stride=tensor.stride()):
+                self.assertIs(tensor.is_contiguous(), True)
+                self.assertIs(tensor.is_contiguous(memory_format=None), True)
+
+        with self.assertRaises(TypeError):
+            ordinary.is_contiguous(None)
+        for memory_format in ("contiguous_format", object(), 0, False):
+            with self.subTest(memory_format=memory_format):
+                with self.assertRaisesRegex(TypeError, "only None is implemented"):
+                    ordinary.is_contiguous(memory_format=memory_format)
+
+        with self.assertRaises(TypeError):
+            torch.numel(object())
+
     def test_integer_indexing_returns_shared_storage_views(self):
         source = torch.tensor(
             [

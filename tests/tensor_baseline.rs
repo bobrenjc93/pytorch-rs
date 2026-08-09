@@ -40,6 +40,31 @@ fn native_metadata_survives_views_kernels_and_reductions() {
 }
 
 #[test]
+fn native_metadata_introspection_covers_all_constructible_layout_kinds() {
+    let ordinary = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let reshaped = ordinary.reshape([4, 6]).unwrap();
+    let indexed = ordinary.index([1, 2]).unwrap();
+    let cases = [
+        (Tensor::from_vec(vec![2.5], []).unwrap(), 0, 1),
+        (Tensor::zeros([2, 0, 3]).unwrap(), 3, 0),
+        (ordinary, 3, 24),
+        (reshaped, 2, 24),
+        (indexed, 1, 4),
+    ];
+
+    for (tensor, dimensions, elements) in cases {
+        assert_eq!(tensor.dim(), dimensions);
+        assert_eq!(tensor.ndimension(), dimensions);
+        assert_eq!(tensor.numel(), elements);
+        assert!(tensor.is_contiguous());
+    }
+
+    let unusual_empty_layout = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
+    assert_eq!(unusual_empty_layout.stride(), [1, 0]);
+    assert!(unusual_empty_layout.is_contiguous());
+}
+
+#[test]
 fn construction_validates_shape() {
     let error = Tensor::from_vec(vec![1.0, 2.0], [3]).unwrap_err();
     assert_eq!(
