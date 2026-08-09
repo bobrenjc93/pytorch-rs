@@ -1,6 +1,7 @@
 use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use num_bigint::BigInt;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
     PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
@@ -922,14 +923,25 @@ fn create_constant_tensor(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyTensor> {
     let function = factory.name();
-    let size_keyword = match kwargs {
+    let raw_size_keyword = match kwargs {
         Some(kwargs) => kwargs.get_item("size")?,
         None => None,
     };
-    let shape_keyword = match kwargs {
+    let raw_shape_keyword = match kwargs {
         Some(kwargs) => kwargs.get_item("shape")?,
         None => None,
     };
+    // The former Option-based binding treated explicit None as omission for
+    // the compatibility alias. Keep that behavior without changing PyTorch's
+    // duplicate positional/size-keyword semantics.
+    let size_keyword = raw_size_keyword
+        .as_ref()
+        .filter(|value| !value.is_none())
+        .cloned();
+    let shape_keyword = raw_shape_keyword
+        .as_ref()
+        .filter(|value| !value.is_none())
+        .cloned();
 
     if args.is_empty() && size_keyword.is_none() && shape_keyword.is_none() {
         return Err(PyTypeError::new_err(format!(
@@ -950,30 +962,6 @@ fn create_constant_tensor(
         prepare_positional_factory_size(function, args)?
     };
 
-    if !args.is_empty() && size_keyword.is_some() {
-        return Err(PyTypeError::new_err(format!(
-            "{function}() got multiple values for argument 'size'"
-        )));
-    }
-    if !args.is_empty() && shape_keyword.is_some()
-        || size_keyword.is_some() && shape_keyword.is_some()
-    {
-        return Err(PyTypeError::new_err(format!(
-            "{function}() got an unexpected keyword argument 'shape'"
-        )));
-    }
-
-    if let Some(kwargs) = kwargs {
-        for (key, _) in kwargs {
-            let key = key.extract::<String>()?;
-            if !matches!(key.as_str(), "size" | "shape" | "dtype" | "device") {
-                return Err(PyTypeError::new_err(format!(
-                    "{function}() got an unexpected keyword argument '{key}'"
-                )));
-            }
-        }
-    }
-
     let dtype = match kwargs {
         Some(kwargs) => kwargs.get_item("dtype")?,
         None => None,
@@ -983,6 +971,32 @@ fn create_constant_tensor(
         None => None,
     };
     let (dtype, device) = parse_metadata(function, dtype.as_ref(), device.as_ref())?;
+
+    if let Some(kwargs) = kwargs {
+        for (key, value) in kwargs {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "size" if !args.is_empty() => {
+                    return Err(PyTypeError::new_err(format!(
+                        "{function}() got multiple values for argument 'size'"
+                    )));
+                }
+                "shape" if value.is_none() => {}
+                "shape" if !args.is_empty() || size_keyword.is_some() => {
+                    return Err(PyTypeError::new_err(format!(
+                        "{function}() got an unexpected keyword argument 'shape'"
+                    )));
+                }
+                "dtype" | "device" | "size" | "shape" => {}
+                _ => {
+                    return Err(PyTypeError::new_err(format!(
+                        "{function}() got an unexpected keyword argument '{key}'"
+                    )));
+                }
+            }
+        }
+    }
+
     let signed_size = parsed_size.finish(function)?;
     let shape = validate_factory_size(factory, signed_size)?;
 
@@ -1100,8 +1114,7 @@ fn prepare_factory_list_dimensions<'py>(
     dimensions: &Bound<'py, PyList>,
     first_error_style: &FirstSizeErrorStyle,
 ) -> PyResult<PreparedFactorySize<'py>> {
-    let length = dimensions.len();
-    if length > 0 {
+    if !dimensions.is_empty() {
         let value = parse_size_dimension(&dimensions.get_item(0)?, true)?;
         if let ParsedSizeDimension::Invalid(type_name) = &value {
             return Err(first_factory_size_error(
@@ -1111,6 +1124,9 @@ fn prepare_factory_list_dimensions<'py>(
             ));
         }
     }
+    // The overload probe may resize a list. PyTorch fixes the final rank only
+    // after that probe, then evaluates the resulting live slots in order.
+    let length = dimensions.len();
     Ok(PreparedFactorySize::LiveList {
         dimensions: dimensions.clone(),
         length,
@@ -1138,25 +1154,24 @@ fn parse_size_dimension(
         return Ok(ParsedSizeDimension::Invalid(type_name));
     }
 
-    let extracted = if dimension.is_instance_of::<PyInt>() {
-        dimension.extract::<i64>()
-    } else {
-        // Calling the index protocol separately distinguishes a user
-        // exception (which makes the object an invalid dimension) from a
-        // valid integer result outside the signed 64-bit size range.
-        let Ok(indexed) = PyModule::import(dimension.py(), "operator")
-            .and_then(|operator| operator.getattr("index"))
-            .and_then(|index| index.call1((dimension,)))
-        else {
-            return Ok(ParsedSizeDimension::Invalid(type_name));
+    if dimension.is_instance_of::<PyInt>() {
+        return match dimension.extract::<i64>() {
+            Ok(value) => Ok(ParsedSizeDimension::Value(value)),
+            Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
+                Ok(ParsedSizeDimension::Overflow)
+            }
+            Err(_) => Ok(ParsedSizeDimension::Invalid(type_name)),
         };
-        indexed.extract::<i64>()
-    };
-    match extracted {
-        Ok(value) => Ok(ParsedSizeDimension::Value(value)),
-        Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
-            Ok(ParsedSizeDimension::Overflow)
-        }
+    }
+
+    // PyO3's BigInt conversion calls PyNumber_Index directly. It is immune to
+    // monkeypatching operator.index and separates protocol exceptions from a
+    // valid arbitrary-precision result outside the signed size range.
+    match dimension.extract::<BigInt>() {
+        Ok(indexed) => match i64::try_from(indexed) {
+            Ok(value) => Ok(ParsedSizeDimension::Value(value)),
+            Err(_) => Ok(ParsedSizeDimension::Overflow),
+        },
         Err(_) => Ok(ParsedSizeDimension::Invalid(type_name)),
     }
 }

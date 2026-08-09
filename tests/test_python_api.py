@@ -280,6 +280,17 @@ class PythonApiBaselineTests(unittest.TestCase):
                     self.assertIs(tensor.dtype, torch.float32)
                     self.assertEqual(tensor.device, torch.device("cpu"))
 
+            for case, call in (
+                ("None shape with positional size", lambda: create((2,), shape=None)),
+                (
+                    "None size with shape alias",
+                    lambda: create(size=None, shape=(2,)),
+                ),
+                ("None shape with size keyword", lambda: create(size=(2,), shape=None)),
+            ):
+                with self.subTest(function=name, compatibility_case=case):
+                    self.assertEqual(call().shape, (2,))
+
             with self.subTest(function=name, error="conflicting aliases"):
                 with self.assertRaises(TypeError):
                     create(size=(1,), shape=(1,))
@@ -287,6 +298,8 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(function=name, error="missing size"):
                 with self.assertRaises(TypeError):
                     create()
+                with self.assertRaises(TypeError):
+                    create(size=None)
 
     def test_zeros_and_ones_accept_variadic_and_integer_subclass_sizes(self):
         class IntSubclass(int):
@@ -403,6 +416,32 @@ class PythonApiBaselineTests(unittest.TestCase):
                     )
                     self.assertEqual(tensor.shape, (2, 2, 4))
 
+            for mutation, expected_shape in (("pop", (2,)), ("append", (2, 3, 4))):
+                for keyword in (False, True):
+                    dimensions = []
+                    events = []
+
+                    class ResizingProbe:
+                        def __index__(self):
+                            events.append("index")
+                            if len(events) == 1:
+                                if mutation == "pop":
+                                    dimensions.pop()
+                                else:
+                                    dimensions.append(4)
+                            return 2
+
+                    dimensions.extend((ResizingProbe(), 3))
+                    with self.subTest(
+                        function=name,
+                        list_resize=mutation,
+                        keyword=keyword,
+                    ):
+                        tensor = (
+                            create(size=dimensions) if keyword else create(dimensions)
+                        )
+                        self.assertEqual(tensor.shape, expected_shape)
+
             stateful_forms = (
                 ("direct first", lambda probe: create(probe), 3),
                 ("variadic first", lambda probe: create(probe, 3), 3),
@@ -423,6 +462,63 @@ class PythonApiBaselineTests(unittest.TestCase):
                     with self.assertRaises(RuntimeError):
                         call(StatefulProbe())
                     self.assertEqual(events, ["index"] * expected_calls)
+
+    def test_factory_size_index_protocol_ignores_operator_monkeypatch(self):
+        import operator
+
+        class Indexable:
+            def __index__(self):
+                return 3
+
+        original_index = operator.index
+        try:
+            operator.index = lambda _: 7
+            for create in (torch.zeros, torch.ones):
+                self.assertEqual(create(Indexable()).shape, (3,))
+                with self.assertRaises(TypeError):
+                    create(object())
+
+            def broken_index(_):
+                raise RuntimeError("monkeypatched")
+
+            operator.index = broken_index
+            for create in (torch.zeros, torch.ones):
+                self.assertEqual(create(Indexable()).shape, (3,))
+        finally:
+            operator.index = original_index
+
+    def test_factory_metadata_and_binding_error_precedence(self):
+        for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
+            for case, kwargs, message in (
+                (
+                    "dtype before unknown",
+                    {"bogus": True, "dtype": "bad"},
+                    "argument 'dtype' must be torch.dtype",
+                ),
+                (
+                    "dtype before duplicate",
+                    {"size": (2,), "dtype": "bad"},
+                    "argument 'dtype' must be torch.dtype",
+                ),
+                (
+                    "device before unknown",
+                    {"bogus": True, "device": object()},
+                    "argument 'device' must be torch.device",
+                ),
+                (
+                    "duplicate before unknown",
+                    {"size": (2,), "bogus": True},
+                    "multiple values for argument 'size'",
+                ),
+                (
+                    "unknown before duplicate",
+                    {"bogus": True, "size": (2,)},
+                    "unexpected keyword argument 'bogus'",
+                ),
+            ):
+                with self.subTest(function=name, precedence_case=case):
+                    with self.assertRaisesRegex(TypeError, re.escape(message)):
+                        create(2, 3, **kwargs)
 
     def test_eye_creates_square_rectangular_and_empty_tensors(self):
         cases = (

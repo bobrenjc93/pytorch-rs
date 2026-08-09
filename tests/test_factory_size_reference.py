@@ -225,6 +225,40 @@ class FactorySizeReferenceTests(unittest.TestCase):
                     self.assertEqual(actual, expected)
                     self.assertEqual(actual[0], (2, 2, 4))
 
+            for keyword in (False, True):
+                for mutation in ("pop", "append"):
+                    def resize(factory):
+                        dimensions = []
+                        events = []
+
+                        class ResizingProbe:
+                            def __index__(self):
+                                events.append("index")
+                                if len(events) == 1:
+                                    if mutation == "pop":
+                                        dimensions.pop()
+                                    else:
+                                        dimensions.append(4)
+                                return 2
+
+                        dimensions.extend((ResizingProbe(), 3))
+                        tensor = (
+                            factory(size=dimensions)
+                            if keyword
+                            else factory(dimensions)
+                        )
+                        return tensor.shape, len(dimensions), events
+
+                    with self.subTest(
+                        factory=factory_name,
+                        keyword=keyword,
+                        mutation=mutation,
+                    ):
+                        self.assertEqual(
+                            resize(actual_factory),
+                            resize(expected_factory),
+                        )
+
     def test_stateful_first_dimension_is_reconverted_like_pytorch_2_13(self):
         def outcome(factory, call):
             events = []
@@ -256,6 +290,64 @@ class FactorySizeReferenceTests(unittest.TestCase):
                     self.assertEqual(
                         outcome(actual_factory, call),
                         outcome(expected_factory, call),
+                    )
+
+    def test_size_index_protocol_is_independent_of_operator_module(self):
+        import operator
+
+        class Indexable:
+            def __index__(self):
+                return 3
+
+        def outcome(factory, value):
+            try:
+                tensor = factory(value)
+                return "ok", tensor.shape
+            except Exception as error:
+                return type(error).__name__, str(error)
+
+        original_index = operator.index
+        try:
+            for replacement in (
+                lambda _: 7,
+                lambda _: (_ for _ in ()).throw(RuntimeError("monkeypatched")),
+            ):
+                operator.index = replacement
+                for factory_name in ("zeros", "ones"):
+                    actual_factory = getattr(torch, factory_name)
+                    expected_factory = getattr(reference_torch, factory_name)
+                    for value in (Indexable(), object()):
+                        with self.subTest(
+                            factory=factory_name,
+                            replacement=replacement,
+                            value=type(value).__name__,
+                        ):
+                            self.assertEqual(
+                                outcome(actual_factory, value),
+                                outcome(expected_factory, value),
+                            )
+        finally:
+            operator.index = original_index
+
+    def test_combined_metadata_and_keyword_errors_match_pytorch_2_13(self):
+        cases = (
+            {"dtype": "bad", "bogus": True},
+            {"bogus": True, "dtype": "bad"},
+            {"dtype": "bad", "size": (2,)},
+            {"size": (2,), "dtype": "bad"},
+            {"device": object(), "bogus": True},
+            {"bogus": True, "device": object()},
+            {"size": (2,), "bogus": True},
+            {"bogus": True, "size": (2,)},
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for case, kwargs in enumerate(cases):
+                with self.subTest(factory=factory_name, case=case):
+                    self.assert_error_matches(
+                        lambda kwargs=kwargs: actual_factory(2, 3, **kwargs),
+                        lambda kwargs=kwargs: expected_factory(2, 3, **kwargs),
                     )
 
     def test_empty_metadata_negative_and_overflow_shapes_match(self):
