@@ -681,6 +681,7 @@ class PythonApiBaselineTests(unittest.TestCase):
                     dtype=None,
                     layout=None,
                     device=None,
+                    requires_grad=None,
                     memory_format=None,
                 )
                 self.assertEqual(result.shape, source.shape)
@@ -727,6 +728,7 @@ class PythonApiBaselineTests(unittest.TestCase):
             {"layout": object()},
             {"device": object()},
             {"requires_grad": 1},
+            {"requires_grad": np.bool_(False)},
             {"memory_format": object()},
         )
         unsupported_options = (

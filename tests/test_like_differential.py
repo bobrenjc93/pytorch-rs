@@ -1,5 +1,6 @@
 import unittest
 
+import numpy as np
 import torch as pytorch
 import torch_rs
 
@@ -85,6 +86,7 @@ class LikeFactoryDifferentialTests(unittest.TestCase):
                     dtype=None,
                     layout=None,
                     device=None,
+                    requires_grad=None,
                     memory_format=None,
                 ),
                 reference_factory(
@@ -92,6 +94,7 @@ class LikeFactoryDifferentialTests(unittest.TestCase):
                     dtype=None,
                     layout=None,
                     device=None,
+                    requires_grad=None,
                     memory_format=None,
                 ),
             )
@@ -121,6 +124,15 @@ class LikeFactoryDifferentialTests(unittest.TestCase):
                 (
                     lambda: local_factory(local_input, requires_grad=1),
                     lambda: reference_factory(reference_input, requires_grad=1),
+                    TypeError,
+                ),
+                (
+                    lambda: local_factory(
+                        local_input, requires_grad=np.bool_(False)
+                    ),
+                    lambda: reference_factory(
+                        reference_input, requires_grad=np.bool_(False)
+                    ),
                     TypeError,
                 ),
                 (

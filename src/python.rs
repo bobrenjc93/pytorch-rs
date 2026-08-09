@@ -512,7 +512,7 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
 /// `requires_grad=False`, and preserve or contiguous memory format.
 #[allow(clippy::doc_markdown)]
 #[pyfunction(
-    signature = (input, *, dtype=None, layout=None, device=None, requires_grad=false, memory_format=None),
+    signature = (input, *, dtype=None, layout=None, device=None, requires_grad=None, memory_format=None),
     text_signature = "(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format)"
 )]
 fn zeros_like(
@@ -520,7 +520,7 @@ fn zeros_like(
     dtype: Option<&Bound<'_, PyAny>>,
     layout: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
-    requires_grad: bool,
+    requires_grad: Option<&Bound<'_, PyAny>>,
     memory_format: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
     let memory_format = parse_like_options(
@@ -546,7 +546,7 @@ fn zeros_like(
 /// `requires_grad=False`, and preserve or contiguous memory format.
 #[allow(clippy::doc_markdown)]
 #[pyfunction(
-    signature = (input, *, dtype=None, layout=None, device=None, requires_grad=false, memory_format=None),
+    signature = (input, *, dtype=None, layout=None, device=None, requires_grad=None, memory_format=None),
     text_signature = "(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format)"
 )]
 fn ones_like(
@@ -554,7 +554,7 @@ fn ones_like(
     dtype: Option<&Bound<'_, PyAny>>,
     layout: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
-    requires_grad: bool,
+    requires_grad: Option<&Bound<'_, PyAny>>,
     memory_format: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
     let memory_format = parse_like_options(
@@ -709,18 +709,35 @@ fn parse_like_options(
     dtype: Option<&Bound<'_, PyAny>>,
     layout: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
-    requires_grad: bool,
+    requires_grad: Option<&Bound<'_, PyAny>>,
     memory_format: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<MemoryFormat> {
     parse_dtype(function, dtype)?;
     parse_layout(function, layout)?;
     parse_device(function, device)?;
+    let requires_grad = parse_like_requires_grad(function, requires_grad)?;
     if requires_grad {
         return Err(PyRuntimeError::new_err(format!(
             "{function}(): requires_grad=True is not supported; autograd is not implemented"
         )));
     }
     parse_like_memory_format(function, memory_format)
+}
+
+fn parse_like_requires_grad(
+    function: &str,
+    requires_grad: Option<&Bound<'_, PyAny>>,
+) -> PyResult<bool> {
+    let Some(requires_grad) = requires_grad else {
+        return Ok(false);
+    };
+    if !requires_grad.is_exact_instance_of::<PyBool>() {
+        let type_name = requires_grad.get_type().name()?;
+        return Err(PyTypeError::new_err(format!(
+            "{function}(): argument 'requires_grad' must be bool, not {type_name}"
+        )));
+    }
+    requires_grad.is_truthy()
 }
 
 fn parse_layout(function: &str, layout: Option<&Bound<'_, PyAny>>) -> PyResult<Layout> {
