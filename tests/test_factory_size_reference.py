@@ -293,6 +293,7 @@ class FactorySizeReferenceTests(unittest.TestCase):
                     )
 
     def test_size_index_protocol_is_independent_of_operator_module(self):
+        import _operator
         import operator
 
         class Indexable:
@@ -307,12 +308,14 @@ class FactorySizeReferenceTests(unittest.TestCase):
                 return type(error).__name__, str(error)
 
         original_index = operator.index
+        original_native_index = _operator.index
         try:
             for replacement in (
                 lambda _: 7,
                 lambda _: (_ for _ in ()).throw(RuntimeError("monkeypatched")),
             ):
                 operator.index = replacement
+                _operator.index = replacement
                 for factory_name in ("zeros", "ones"):
                     actual_factory = getattr(torch, factory_name)
                     expected_factory = getattr(reference_torch, factory_name)
@@ -328,6 +331,101 @@ class FactorySizeReferenceTests(unittest.TestCase):
                             )
         finally:
             operator.index = original_index
+            _operator.index = original_native_index
+
+    def test_index_protocol_warnings_match_pytorch_2_13(self):
+        import warnings
+
+        class IntSubclass(int):
+            pass
+
+        class ReturnsBool:
+            def __index__(self):
+                return True
+
+        class ReturnsSubclass:
+            def __index__(self):
+                return IntSubclass(2)
+
+        def outcome(factory, value, form, warning_filter):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter(warning_filter, DeprecationWarning)
+                try:
+                    tensor = form(factory, value)
+                    result = "ok", tensor.shape
+                except Exception as error:
+                    result = type(error).__name__, str(error).splitlines()[0]
+                emitted = tuple(
+                    (warning.category.__name__, str(warning.message))
+                    for warning in caught
+                )
+                return result, emitted
+
+        forms = (
+            ("direct", lambda factory, value: factory(value)),
+            ("later", lambda factory, value: factory(2, value)),
+            ("tuple", lambda factory, value: factory((value, 2))),
+            ("size", lambda factory, value: factory(size=(value, 2))),
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for value_name, value_type in (
+                ("bool", ReturnsBool),
+                ("int subclass", ReturnsSubclass),
+            ):
+                for form_name, form in forms:
+                    for warning_filter in ("always", "error"):
+                        with self.subTest(
+                            factory=factory_name,
+                            value=value_name,
+                            form=form_name,
+                            warning_filter=warning_filter,
+                        ):
+                            self.assertEqual(
+                                outcome(
+                                    actual_factory,
+                                    value_type(),
+                                    form,
+                                    warning_filter,
+                                ),
+                                outcome(
+                                    expected_factory,
+                                    value_type(),
+                                    form,
+                                    warning_filter,
+                                ),
+                            )
+
+    def test_boolean_scalar_tensor_dimensions_match_pytorch_2_13(self):
+        forms = (
+            ("direct", lambda factory, value: factory(value)),
+            ("later", lambda factory, value: factory(2, value)),
+            ("tuple", lambda factory, value: factory((value, 2))),
+            ("list", lambda factory, value: factory([value, 2])),
+            ("size tuple", lambda factory, value: factory(size=(value, 2))),
+            ("size list", lambda factory, value: factory(size=[value, 2])),
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for boolean in (True, False):
+                for form_name, form in forms:
+                    with self.subTest(
+                        factory=factory_name,
+                        value=boolean,
+                        form=form_name,
+                    ):
+                        self.assert_error_matches(
+                            lambda: form(
+                                actual_factory,
+                                reference_torch.tensor(boolean),
+                            ),
+                            lambda: form(
+                                expected_factory,
+                                reference_torch.tensor(boolean),
+                            ),
+                        )
 
     def test_large_index_results_use_bounded_conversion(self):
         huge_integer = 1 << 8_000_000

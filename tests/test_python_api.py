@@ -470,6 +470,7 @@ class PythonApiBaselineTests(unittest.TestCase):
                     self.assertEqual(events, ["index"] * expected_calls)
 
     def test_factory_size_index_protocol_ignores_operator_monkeypatch(self):
+        import _operator
         import operator
 
         class Indexable:
@@ -477,8 +478,10 @@ class PythonApiBaselineTests(unittest.TestCase):
                 return 3
 
         original_index = operator.index
+        original_native_index = _operator.index
         try:
             operator.index = lambda _: 7
+            _operator.index = lambda _: 8
             for create in (torch.zeros, torch.ones):
                 self.assertEqual(create(Indexable()).shape, (3,))
                 with self.assertRaises(TypeError):
@@ -492,6 +495,83 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertEqual(create(Indexable()).shape, (3,))
         finally:
             operator.index = original_index
+            _operator.index = original_native_index
+
+    def test_factory_index_protocol_preserves_strict_int_warnings(self):
+        import warnings
+
+        class IntSubclass(int):
+            pass
+
+        class ReturnsBool:
+            def __index__(self):
+                return True
+
+        class ReturnsSubclass:
+            def __index__(self):
+                return IntSubclass(2)
+
+        message_suffix = (
+            "The ability to return an instance of a strict subclass of int is "
+            "deprecated, and may be removed in a future version of Python."
+        )
+        for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
+            for case, value, expected_shape in (
+                ("bool", ReturnsBool(), (1,)),
+                ("int subclass", ReturnsSubclass(), (2,)),
+            ):
+                with self.subTest(function=name, warning_case=case):
+                    with warnings.catch_warnings(record=True) as caught:
+                        warnings.simplefilter("always", DeprecationWarning)
+                        self.assertEqual(create(value).shape, expected_shape)
+                    self.assertEqual(len(caught), 3)
+                    for warning in caught:
+                        self.assertIs(warning.category, DeprecationWarning)
+                        self.assertIn(message_suffix, str(warning.message))
+
+                with self.subTest(function=name, warning_error=case):
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("error", DeprecationWarning)
+                        with self.assertRaises(TypeError):
+                            create(value)
+
+                with self.subTest(function=name, later_warning_error=case):
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("error", DeprecationWarning)
+                        with self.assertRaises(TypeError):
+                            create(2, value)
+
+    def test_factory_rejects_boolean_scalar_tensor_dimensions(self):
+        class BoolDType:
+            def __str__(self):
+                return "torch.bool"
+
+        class Tensor:
+            __module__ = "torch"
+            dtype = BoolDType()
+
+            def __init__(self, value):
+                self.value = value
+
+            def __index__(self):
+                return int(self.value)
+
+        message = "Expected scalar.isIntegral( false) to be true, but got false"
+        for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
+            for value in (True, False):
+                dimension = Tensor(value)
+                calls = (
+                    ("direct", lambda: create(dimension)),
+                    ("later", lambda: create(2, dimension)),
+                    ("tuple", lambda: create((dimension, 2))),
+                    ("list", lambda: create([dimension, 2])),
+                    ("size tuple", lambda: create(size=(dimension, 2))),
+                    ("size list", lambda: create(size=[dimension, 2])),
+                )
+                for form, call in calls:
+                    with self.subTest(function=name, value=value, form=form):
+                        with self.assertRaisesRegex(RuntimeError, re.escape(message)):
+                            call()
 
     def test_factory_size_index_results_use_bounded_integer_conversion(self):
         huge_integer = 1 << 8_000_000

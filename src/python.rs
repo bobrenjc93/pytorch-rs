@@ -15,6 +15,7 @@ use pyo3::types::{
 use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
+static NUMBER_INDEX: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -206,6 +207,7 @@ enum ConstantFactory {
 enum ParsedSizeDimension {
     Value(i64),
     Overflow,
+    BooleanTensor,
     Invalid,
 }
 
@@ -1150,34 +1152,50 @@ fn probe_variadic_first_dimension(function: &str, dimension: &Bound<'_, PyAny>) 
 }
 
 fn call_factory_index_protocol<'py>(dimension: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    NUMBER_INDEX
+        .import(dimension.py(), "_operator", "index")?
+        .call1((dimension,))
+}
+
+fn is_boolean_tensor_dimension(dimension: &Bound<'_, PyAny>) -> bool {
     let type_getattribute = dimension
         .py()
         .get_type::<PyType>()
-        .getattr("__getattribute__")?;
+        .getattr("__getattribute__");
+    let Ok(type_getattribute) = type_getattribute else {
+        return false;
+    };
     let dimension_type = dimension.get_type();
     let mro = type_getattribute
-        .call1((&dimension_type, "__mro__"))?
-        .cast_into::<PyTuple>()?;
-    let mut index_descriptor = None;
+        .call1((&dimension_type, "__mro__"))
+        .and_then(|mro| mro.cast_into::<PyTuple>().map_err(Into::into));
+    let Ok(mro) = mro else {
+        return false;
+    };
+    let mut is_torch_tensor = false;
     for base in mro.iter() {
-        let namespace = type_getattribute.call1((&base, "__dict__"))?;
-        if let Ok(descriptor) = namespace.get_item("__index__") {
-            index_descriptor = Some(descriptor);
+        let name = type_getattribute
+            .call1((&base, "__name__"))
+            .and_then(|name| name.extract::<String>());
+        let module = type_getattribute
+            .call1((&base, "__module__"))
+            .and_then(|module| module.extract::<String>());
+        if matches!(
+            (module.as_deref(), name.as_deref()),
+            (Ok("torch"), Ok("Tensor"))
+        ) {
+            is_torch_tensor = true;
             break;
         }
     }
-    let descriptor = index_descriptor
-        .ok_or_else(|| PyTypeError::new_err("object does not implement the index protocol"))?;
-
-    // Bind the raw class descriptor to the object. Looking through the MRO
-    // deliberately ignores instance attributes, as Python does for special
-    // numeric methods.
-    let descriptor_type = descriptor.get_type();
-    let index = match type_getattribute.call1((&descriptor_type, "__get__")) {
-        Ok(descriptor_get) => descriptor_get.call1((&descriptor, dimension, &dimension_type))?,
-        Err(_) => descriptor,
-    };
-    index.call0()
+    if !is_torch_tensor {
+        return false;
+    }
+    dimension
+        .getattr("dtype")
+        .and_then(|dtype| dtype.str())
+        .and_then(|dtype| dtype.extract::<String>())
+        .is_ok_and(|dtype| dtype == "torch.bool")
 }
 
 fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> ParsedSizeDimension {
@@ -1204,6 +1222,9 @@ fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> Pars
     let Ok(indexed) = indexed.cast::<PyInt>() else {
         return ParsedSizeDimension::Invalid;
     };
+    if is_boolean_tensor_dimension(dimension) {
+        return ParsedSizeDimension::BooleanTensor;
+    }
     match indexed.extract::<i64>() {
         Ok(value) => ParsedSizeDimension::Value(value),
         Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
@@ -1319,6 +1340,9 @@ fn unpack_factory_size_dimension(
             function,
             index + 1,
             "Overflow when unpacking long long",
+        )),
+        ParsedSizeDimension::BooleanTensor => Err(PyRuntimeError::new_err(
+            "Expected scalar.isIntegral( false) to be true, but got false.  (Could this error message be improved?  If so, please report an enhancement request to PyTorch.)",
         )),
         ParsedSizeDimension::Invalid => {
             let type_name = factory_size_type_name(source)?;
@@ -2932,6 +2956,7 @@ fn transpose_error(error: &TensorError) -> PyErr {
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
+    NUMBER_INDEX.import(py, "_operator", "index")?;
     module.add_class::<PyTensor>()?;
     module.add_class::<PyDType>()?;
     module.add_class::<PyDevice>()?;
