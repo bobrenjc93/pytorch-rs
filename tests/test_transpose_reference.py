@@ -155,8 +155,31 @@ class TransposeReferenceTests(unittest.TestCase):
             operation="reflected_division",
         )
 
-        actual_extreme = torch.zeros((2, 0, sys.maxsize)).transpose(0, 1)
-        expected_extreme = reference_torch.zeros((2, 0, sys.maxsize)).transpose(0, 1)
+        empty_cases = (
+            (
+                torch.zeros((1, 0)).transpose(0, 1),
+                reference_torch.zeros((1, 0)).transpose(0, 1),
+            ),
+            (torch.zeros((1, 0, 1)), reference_torch.zeros((1, 0, 1))),
+            (
+                torch.zeros((2, 0, 3)).transpose(0, 2),
+                reference_torch.zeros((2, 0, 3)).transpose(0, 2),
+            ),
+        )
+        for case, (actual_empty, expected_empty) in enumerate(empty_cases):
+            self.assert_matches(
+                1.0 / actual_empty,
+                1.0 / expected_empty,
+                case=f"reflected_empty_{case}",
+                operation="reflected_division",
+            )
+
+        actual_large = torch.zeros((2, 0, sys.maxsize))
+        expected_large = reference_torch.zeros((2, 0, sys.maxsize))
+        self.assertEqual((1.0 / actual_large).stride(), (1.0 / expected_large).stride())
+
+        actual_extreme = actual_large.transpose(0, 1)
+        expected_extreme = expected_large.transpose(0, 1)
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             1.0 / actual_extreme
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):

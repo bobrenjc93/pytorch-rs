@@ -668,7 +668,11 @@ impl Tensor {
             MemoryFormat::Preserve if elements == 0 || self.is_non_overlapping_and_dense() => {
                 try_clone_result_shape(&self.strides, elements)?
             }
-            MemoryFormat::Preserve => elementwise_output_strides(&shape, &[self], elements)?,
+            MemoryFormat::Preserve => elementwise_output_strides(
+                &shape,
+                &[ElementwiseLayout::from_tensor(self)],
+                elements,
+            )?,
             MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
                 return Err(TensorError::UnsupportedMemoryFormat { memory_format });
@@ -1113,7 +1117,18 @@ impl Tensor {
     pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = self.unary_output_strides(&shape, elements)?;
+        // PyTorch plans reflected division like a reciprocal followed by a
+        // scalar pointwise operation. The second pass is observable for empty
+        // singleton dimensions even though the numerical work remains fused.
+        let reciprocal_strides = self.unary_output_strides(&shape, elements)?;
+        let strides = elementwise_output_strides(
+            &shape,
+            &[ElementwiseLayout {
+                shape: &shape,
+                strides: &reciprocal_strides,
+            }],
+            elements,
+        )?;
         let data = self.materialize_with_strides(&strides, |value| scalar * value.recip())?;
         Ok(Self::from_owned_parts(
             data,
@@ -1334,7 +1349,14 @@ impl Tensor {
         {
             try_clone_result_shape(&self.strides, elements)?
         } else {
-            elementwise_output_strides(&shape, &[self, other], elements)?
+            elementwise_output_strides(
+                &shape,
+                &[
+                    ElementwiseLayout::from_tensor(self),
+                    ElementwiseLayout::from_tensor(other),
+                ],
+                elements,
+            )?
         };
         if let (Some(left), Some(right)) = (self.contiguous_slice(), other.contiguous_slice()) {
             let mut data = try_result_vector(elements, elements)?;
@@ -1376,7 +1398,8 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = elementwise_output_strides(&shape, &[self], elements)?;
+        let strides =
+            elementwise_output_strides(&shape, &[ElementwiseLayout::from_tensor(self)], elements)?;
         let data = self.materialize_with_strides(&strides, |value| operation(value, scalar))?;
         Ok(Self::from_owned_parts(
             data,
@@ -1414,7 +1437,7 @@ impl Tensor {
         } else if self.is_non_overlapping_and_dense() {
             try_clone_result_shape(&self.strides, elements)
         } else {
-            elementwise_output_strides(shape, &[self], elements)
+            elementwise_output_strides(shape, &[ElementwiseLayout::from_tensor(self)], elements)
         }
     }
 
@@ -1475,7 +1498,14 @@ impl BroadcastPlan {
                 .expect("broadcast compatibility was checked above"),
             );
         }
-        let strides = elementwise_output_strides(&shape, &[left, right], elements)?;
+        let strides = elementwise_output_strides(
+            &shape,
+            &[
+                ElementwiseLayout::from_tensor(left),
+                ElementwiseLayout::from_tensor(right),
+            ],
+            elements,
+        )?;
 
         let mut dimensions = try_result_vector(rank, elements)?;
         if elements == 0 {
@@ -1761,8 +1791,43 @@ fn aligned_broadcast_stride(
     }
 }
 
+#[derive(Clone, Copy)]
+struct ElementwiseLayout<'a> {
+    shape: &'a [usize],
+    strides: &'a [usize],
+}
+
+impl<'a> ElementwiseLayout<'a> {
+    fn from_tensor(tensor: &'a Tensor) -> Self {
+        Self {
+            shape: &tensor.shape,
+            strides: &tensor.strides,
+        }
+    }
+
+    fn aligned_broadcast_stride(
+        self,
+        output_rank: usize,
+        output_axis: usize,
+        output_dimension: usize,
+    ) -> usize {
+        let leading_dimensions = output_rank - self.shape.len();
+        if output_axis < leading_dimensions {
+            return 0;
+        }
+
+        let input_axis = output_axis - leading_dimensions;
+        let input_dimension = self.shape[input_axis];
+        if input_dimension == 1 && output_dimension != 1 {
+            0
+        } else {
+            self.strides[input_axis]
+        }
+    }
+}
+
 fn aligned_broadcast_stride_bytes(
-    tensor: &Tensor,
+    layout: ElementwiseLayout<'_>,
     output_rank: usize,
     output_axis: usize,
     output_dimension: usize,
@@ -1771,8 +1836,9 @@ fn aligned_broadcast_stride_bytes(
     // Preserve its wrapping conversion at this boundary: an extreme but valid
     // empty view can therefore change the recovered output permutation without
     // accessing any storage.
-    let stride =
-        aligned_broadcast_stride(tensor, output_rank, output_axis, output_dimension).cast_signed();
+    let stride = layout
+        .aligned_broadcast_stride(output_rank, output_axis, output_dimension)
+        .cast_signed();
     let element_size =
         i64::try_from(size_of::<f32>()).expect("an f32 element size must fit in i64");
     i64::try_from(stride)
@@ -1845,7 +1911,7 @@ fn channels_last_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>,
 
 fn elementwise_output_strides(
     shape: &[usize],
-    operands: &[&Tensor],
+    operands: &[ElementwiseLayout<'_>],
     elements: usize,
 ) -> Result<Vec<usize>, TensorError> {
     let rank = shape.len();
@@ -1910,15 +1976,15 @@ fn elementwise_output_strides(
 
 fn compare_elementwise_dimensions(
     shape: &[usize],
-    operands: &[&Tensor],
+    operands: &[ElementwiseLayout<'_>],
     dimension_0: usize,
     dimension_1: usize,
 ) -> i8 {
-    for tensor in operands {
+    for layout in operands {
         let stride_0 =
-            aligned_broadcast_stride_bytes(tensor, shape.len(), dimension_0, shape[dimension_0]);
+            aligned_broadcast_stride_bytes(*layout, shape.len(), dimension_0, shape[dimension_0]);
         let stride_1 =
-            aligned_broadcast_stride_bytes(tensor, shape.len(), dimension_1, shape[dimension_1]);
+            aligned_broadcast_stride_bytes(*layout, shape.len(), dimension_1, shape[dimension_1]);
         if stride_0 == 0 || stride_1 == 0 {
             continue;
         }

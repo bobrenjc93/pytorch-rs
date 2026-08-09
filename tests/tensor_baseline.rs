@@ -550,11 +550,28 @@ fn reflected_division_uses_unary_layout_planning_and_checks_stride_overflow() {
     assert_eq!(reflected.stride(), [1, 1]);
     assert_eq!(reflected.logical_values().collect::<Vec<_>>(), [1.0, 0.5]);
 
+    let empty_cases = [
+        (
+            Tensor::zeros([1, 0]).unwrap().transpose(0, 1).unwrap(),
+            vec![1, 0],
+        ),
+        (Tensor::zeros([1, 0, 1]).unwrap(), vec![0, 1, 0]),
+        (
+            Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap(),
+            vec![2, 2, 1],
+        ),
+    ];
+    for (empty, expected_strides) in empty_cases {
+        let output = empty.scalar_div(1.0).unwrap();
+        assert_eq!(output.shape(), empty.shape());
+        assert_eq!(output.stride(), expected_strides);
+        assert_eq!(output.numel(), 0);
+    }
+
     let maximum = isize::MAX.unsigned_abs();
-    let extreme = Tensor::zeros([2, 0, maximum])
-        .unwrap()
-        .transpose(0, 1)
-        .unwrap();
+    let large = Tensor::zeros([2, 0, maximum]).unwrap();
+    assert_eq!(large.scalar_div(1.0).unwrap().stride(), [0, 1, 0]);
+    let extreme = large.transpose(0, 1).unwrap();
     assert_eq!(
         extreme.scalar_div(1.0),
         Err(TensorError::StrideCalculationOverflow)

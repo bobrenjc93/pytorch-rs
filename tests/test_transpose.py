@@ -181,7 +181,21 @@ class TransposeTests(unittest.TestCase):
         reflected = 1.0 / view
         self.assert_tensor(reflected, [[1.0], [0.5]], (2, 1), (1, 1))
 
-        extreme = torch.zeros((2, 0, sys.maxsize)).transpose(0, 1)
+        empty_cases = (
+            (torch.zeros((1, 0)).transpose(0, 1), (1, 0)),
+            (torch.zeros((1, 0, 1)), (0, 1, 0)),
+            (torch.zeros((2, 0, 3)).transpose(0, 2), (2, 2, 1)),
+        )
+        for empty, expected_stride in empty_cases:
+            with self.subTest(shape=empty.shape, stride=empty.stride()):
+                output = 1.0 / empty
+                self.assertEqual(output.shape, empty.shape)
+                self.assertEqual(output.stride(), expected_stride)
+                self.assertEqual(output.numel(), 0)
+
+        large = torch.zeros((2, 0, sys.maxsize))
+        self.assertEqual((1.0 / large).stride(), (0, 1, 0))
+        extreme = large.transpose(0, 1)
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             1.0 / extreme
 
