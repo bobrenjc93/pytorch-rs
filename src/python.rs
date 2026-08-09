@@ -207,6 +207,7 @@ enum ParsedSizeDimension {
     Value(i64),
     Overflow,
     BooleanTensor,
+    DeferredInvalid,
     Invalid,
 }
 
@@ -1118,11 +1119,9 @@ fn prepare_legacy_shape_factory_size<'py>(
             "{function}(): compatibility alias 'shape' must be a sequence"
         )));
     }
-    let length = value.len().map_err(|_| {
-        PyTypeError::new_err(format!(
-            "{function}(): compatibility alias 'shape' must be a sequence"
-        ))
-    })?;
+    // Vec extraction used len() only to reserve capacity. A missing or
+    // failing length did not prevent its iterator from supplying dimensions.
+    let length = value.len().unwrap_or(0);
     let mut prepared = try_size_vector(length)?;
     for (index, dimension) in value.try_iter()?.enumerate() {
         let dimension = dimension?;
@@ -1323,8 +1322,48 @@ fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> Pars
         {
             ParsedSizeDimension::Overflow
         }
+        Err(_) if reject_bool && is_numpy_integer_scalar(dimension) => {
+            ParsedSizeDimension::DeferredInvalid
+        }
         Err(_) => ParsedSizeDimension::Invalid,
     }
+}
+
+fn is_numpy_integer_scalar(dimension: &Bound<'_, PyAny>) -> bool {
+    const PY_TPFLAGS_IMMUTABLETYPE: u64 = 1 << 8;
+
+    let type_getattribute = dimension
+        .py()
+        .get_type::<PyType>()
+        .getattr("__getattribute__");
+    let Ok(type_getattribute) = type_getattribute else {
+        return false;
+    };
+    let dimension_type = dimension.get_type();
+    let mro = type_getattribute
+        .call1((&dimension_type, "__mro__"))
+        .and_then(|mro| mro.cast_into::<PyTuple>().map_err(Into::into));
+    let Ok(mro) = mro else {
+        return false;
+    };
+    mro.iter().any(|base| {
+        let flags = type_getattribute
+            .call1((&base, "__flags__"))
+            .and_then(|flags| flags.extract::<u64>());
+        if !flags.is_ok_and(|flags| flags & PY_TPFLAGS_IMMUTABLETYPE != 0) {
+            return false;
+        }
+        let name = type_getattribute
+            .call1((&base, "__name__"))
+            .and_then(|name| name.extract::<String>());
+        let module = type_getattribute
+            .call1((&base, "__module__"))
+            .and_then(|module| module.extract::<String>());
+        matches!(
+            (module.as_deref(), name.as_deref()),
+            (Ok("numpy"), Ok("integer"))
+        )
+    })
 }
 
 fn factory_size_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
@@ -1445,7 +1484,7 @@ fn unpack_factory_size_dimension(
         ParsedSizeDimension::BooleanTensor => Err(PyRuntimeError::new_err(
             "Expected scalar.isIntegral( false) to be true, but got false.  (Could this error message be improved?  If so, please report an enhancement request to PyTorch.)",
         )),
-        ParsedSizeDimension::Invalid => {
+        ParsedSizeDimension::DeferredInvalid | ParsedSizeDimension::Invalid => {
             let type_name = factory_size_type_name(source)?;
             Err(factory_size_unpack_error(
                 function,
@@ -1463,7 +1502,13 @@ fn factory_size_unpack_error(function: &str, position: usize, reason: &str) -> P
 }
 
 fn validate_factory_size(factory: ConstantFactory, size: Vec<i64>) -> PyResult<Vec<usize>> {
-    if matches!(factory, ConstantFactory::Ones) && size.contains(&i64::MIN) {
+    const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
+
+    if matches!(factory, ConstantFactory::Ones)
+        && size
+            .iter()
+            .any(|dimension| *dimension < MIN_CONCRETE_SYMINT)
+    {
         return Err(PyRuntimeError::new_err(
             "SymIntArrayRef expected to contain only concrete integers",
         ));

@@ -276,6 +276,16 @@ class PythonApiBaselineTests(unittest.TestCase):
             def __getitem__(self, index):
                 return self.values[index]
 
+        class LengthlessSequence:
+            def __getitem__(self, index):
+                if index >= 2:
+                    raise IndexError
+                return 2
+
+        class FailingLengthSequence(LengthlessSequence):
+            def __len__(self):
+                raise RuntimeError("length is only a capacity hint")
+
         for name, create, expected in (
             ("zeros", torch.zeros, [[0.0, 0.0], [0.0, 0.0]]),
             ("ones", torch.ones, [[1.0, 1.0], [1.0, 1.0]]),
@@ -296,6 +306,8 @@ class PythonApiBaselineTests(unittest.TestCase):
                 ("numpy", np.array((2, 2), dtype=np.int64)),
                 ("memoryview", memoryview(array.array("q", (2, 2)))),
                 ("custom", CustomSequence((2, 2))),
+                ("lengthless", LengthlessSequence()),
+                ("failing length", FailingLengthSequence()),
             )
             for sequence_name, sequence in legacy_sequences:
                 with self.subTest(function=name, legacy_sequence=sequence_name):
@@ -757,15 +769,15 @@ for factory in (torch_rs.zeros, torch_rs.ones):
                 with self.assertRaisesRegex(TypeError, "not HostileInvalid"):
                     create(HostileInvalid())
 
-    def test_ones_preserves_the_minimum_signed_size_sentinel(self):
-        minimum = -(1 << 63)
+    def test_ones_preserves_the_reserved_symint_range(self):
+        reserved = -(1 << 62) - 1
         calls = (
-            ("scalar", lambda: torch.ones(minimum)),
-            ("tuple", lambda: torch.ones((minimum,))),
-            ("list", lambda: torch.ones([minimum])),
-            ("size tuple", lambda: torch.ones(size=(minimum,))),
-            ("size list", lambda: torch.ones(size=[minimum])),
-            ("mixed variadic", lambda: torch.ones(-1, minimum)),
+            ("scalar", lambda: torch.ones(reserved)),
+            ("tuple", lambda: torch.ones((reserved,))),
+            ("list", lambda: torch.ones([reserved])),
+            ("size tuple", lambda: torch.ones(size=(reserved,))),
+            ("size list", lambda: torch.ones(size=[reserved])),
+            ("mixed variadic", lambda: torch.ones(-1, reserved)),
         )
         for case, call in calls:
             with self.subTest(case=case):
@@ -778,7 +790,13 @@ for factory in (torch_rs.zeros, torch_rs.ones):
         with self.assertRaisesRegex(
             RuntimeError, "zeros: Dimension size must be non-negative"
         ):
-            torch.zeros(minimum)
+            torch.zeros(reserved)
+
+        boundary = -(1 << 62)
+        with self.assertRaisesRegex(RuntimeError, "negative dimension"):
+            torch.ones(boundary)
+        with self.assertRaisesRegex(RuntimeError, "negative dimension"):
+            torch.ones(boundary + 1)
 
     def test_factory_metadata_and_binding_error_precedence(self):
         for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
@@ -812,6 +830,41 @@ for factory in (torch_rs.zeros, torch_rs.ones):
                 with self.subTest(function=name, precedence_case=case):
                     with self.assertRaisesRegex(TypeError, re.escape(message)):
                         create(2, 3, **kwargs)
+
+    def test_numpy_timedelta_size_errors_are_deferred_until_after_binding(self):
+        value = np.timedelta64(3, "D")
+        for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
+            cases = (
+                (
+                    "plain",
+                    lambda: create(value),
+                    "failed to unpack the object at pos 1",
+                ),
+                (
+                    "dtype",
+                    lambda: create(value, dtype="bad"),
+                    "argument 'dtype' must be torch.dtype",
+                ),
+                (
+                    "device",
+                    lambda: create(value, device=object()),
+                    "argument 'device' must be torch.device",
+                ),
+                (
+                    "duplicate",
+                    lambda: create(value, size=(2,)),
+                    "multiple values for argument 'size'",
+                ),
+                (
+                    "unknown",
+                    lambda: create(value, bogus=True),
+                    "unexpected keyword argument 'bogus'",
+                ),
+            )
+            for case, call, message in cases:
+                with self.subTest(function=name, precedence_case=case):
+                    with self.assertRaisesRegex(TypeError, re.escape(message)):
+                        call()
 
     def test_eye_creates_square_rectangular_and_empty_tensors(self):
         cases = (

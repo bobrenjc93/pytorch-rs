@@ -677,36 +677,49 @@ class FactorySizeReferenceTests(unittest.TestCase):
                     lambda: expected_factory(HostileInvalid()),
                 )
 
-    def test_minimum_signed_size_sentinel_matches_pytorch_2_13(self):
+    def test_reserved_symint_range_matches_pytorch_2_13(self):
         minimum = -(1 << 63)
+        boundary = -(1 << 62)
         calls = (
-            ("scalar", lambda factory: factory(minimum)),
-            ("tuple", lambda factory: factory((minimum,))),
-            ("list", lambda factory: factory([minimum])),
-            ("size tuple", lambda factory: factory(size=(minimum,))),
-            ("size list", lambda factory: factory(size=[minimum])),
-            ("mixed variadic", lambda factory: factory(-1, minimum)),
+            ("scalar", lambda factory, value: factory(value)),
+            ("tuple", lambda factory, value: factory((value,))),
+            ("list", lambda factory, value: factory([value])),
+            ("size tuple", lambda factory, value: factory(size=(value,))),
+            ("size list", lambda factory, value: factory(size=[value])),
+            ("mixed variadic", lambda factory, value: factory(-1, value)),
         )
         for factory_name in ("zeros", "ones"):
             actual_factory = getattr(torch, factory_name)
             expected_factory = getattr(reference_torch, factory_name)
-            for case, call in calls:
-                with self.subTest(factory=factory_name, form=case):
-                    with self.assertRaises(RuntimeError) as actual_raised:
-                        call(actual_factory)
-                    with self.assertRaises(RuntimeError) as expected_raised:
-                        call(expected_factory)
-                    if factory_name == "ones":
-                        message = (
-                            "SymIntArrayRef expected to contain only concrete integers"
-                        )
-                        self.assertIn(message, str(actual_raised.exception))
-                        self.assertIn(message, str(expected_raised.exception))
-                    else:
-                        self.assertEqual(
-                            str(actual_raised.exception),
-                            str(expected_raised.exception),
-                        )
+            for value in (minimum, boundary - 1):
+                for case, call in calls:
+                    with self.subTest(
+                        factory=factory_name,
+                        value=value,
+                        form=case,
+                    ):
+                        with self.assertRaises(RuntimeError) as actual_raised:
+                            call(actual_factory, value)
+                        with self.assertRaises(RuntimeError) as expected_raised:
+                            call(expected_factory, value)
+                        if factory_name == "ones":
+                            message = (
+                                "SymIntArrayRef expected to contain only concrete integers"
+                            )
+                            self.assertIn(message, str(actual_raised.exception))
+                            self.assertIn(message, str(expected_raised.exception))
+                        else:
+                            self.assertEqual(
+                                str(actual_raised.exception),
+                                str(expected_raised.exception),
+                            )
+
+            for value in (boundary, boundary + 1):
+                with self.subTest(factory=factory_name, ordinary_negative=value):
+                    self.assert_error_matches(
+                        lambda value=value: actual_factory(value),
+                        lambda value=value: expected_factory(value),
+                    )
 
     def test_combined_metadata_and_keyword_errors_match_pytorch_2_13(self):
         cases = (
@@ -727,6 +740,28 @@ class FactorySizeReferenceTests(unittest.TestCase):
                     self.assert_error_matches(
                         lambda kwargs=kwargs: actual_factory(2, 3, **kwargs),
                         lambda kwargs=kwargs: expected_factory(2, 3, **kwargs),
+                    )
+
+    def test_numpy_timedelta_binding_precedence_matches_pytorch_2_13(self):
+        value = np.timedelta64(3, "D")
+        calls = (
+            ("plain", lambda factory: factory(value)),
+            ("dtype", lambda factory: factory(value, dtype="bad")),
+            ("device", lambda factory: factory(value, device=object())),
+            ("duplicate", lambda factory: factory(value, size=(2,))),
+            ("unknown", lambda factory: factory(value, bogus=True)),
+            ("tuple dtype", lambda factory: factory((value,), dtype="bad")),
+            ("list device", lambda factory: factory([value], device=object())),
+            ("size tuple dtype", lambda factory: factory(size=(value,), dtype="bad")),
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for case, call in calls:
+                with self.subTest(factory=factory_name, case=case):
+                    self.assert_error_matches(
+                        lambda call=call: call(actual_factory),
+                        lambda call=call: call(expected_factory),
                     )
 
     def test_empty_metadata_negative_and_overflow_shapes_match(self):
