@@ -798,29 +798,19 @@ fn parse_unsqueeze_method_arguments(
 
     if let Some(positional) = positional {
         validate_unsqueeze_dimension_type(&positional, 1)?;
-        if keyword_dim.is_some() {
-            return Err(unsqueeze_duplicate_argument("dim"));
-        }
-        if axis.is_some() {
-            return Err(unsqueeze_unexpected_keyword("axis"));
-        }
-        reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
+        validate_unsqueeze_method_keywords(kwargs, UnsqueezeArgumentOrigin::Positional)?;
         return unpack_unsqueeze_dimension(&positional);
     }
 
     if let Some(keyword_dim) = keyword_dim {
         validate_unsqueeze_dimension_type(&keyword_dim, 0)?;
-        if axis.is_some() {
-            return Err(unsqueeze_unexpected_keyword("axis"));
-        }
-        reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
+        validate_unsqueeze_method_keywords(kwargs, UnsqueezeArgumentOrigin::Keyword)?;
         return unpack_unsqueeze_dimension(&keyword_dim);
     }
 
     if let Some(axis) = axis {
         validate_unsqueeze_dimension_type(&axis, 0)?;
-        reject_axis_with_unknown_keywords(kwargs, &["dim"])?;
-        reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
+        validate_unsqueeze_method_keywords(kwargs, UnsqueezeArgumentOrigin::Alias)?;
         return unpack_unsqueeze_dimension(&axis);
     }
 
@@ -926,7 +916,16 @@ fn validate_unsqueeze_function_keywords(
             !["input", "a", "x", "dim", "axis"].contains(&keyword)
         })
     });
+    let has_duplicate = kwargs.iter().any(|(keyword, _)| {
+        keyword.extract::<&str>().is_ok_and(|keyword| {
+            (keyword == "input"
+                && matches!(state.input_origin, UnsqueezeArgumentOrigin::Positional))
+                || (keyword == "dim"
+                    && matches!(state.dimension_origin, UnsqueezeArgumentOrigin::Positional))
+        })
+    });
     let aliases_valid = !has_unknown
+        && !has_duplicate
         && (state.input_aliases == 0 || accepted_input_alias.is_some())
         && (!state.axis_present || accepted_axis);
 
@@ -944,6 +943,32 @@ fn validate_unsqueeze_function_keywords(
             "input" | "dim" => {}
             "a" | "x" if aliases_valid && accepted_input_alias == Some(keyword) => {}
             "axis" if aliases_valid && accepted_axis => {}
+            _ => return Err(unsqueeze_unexpected_keyword(keyword)),
+        }
+    }
+    Ok(())
+}
+
+fn validate_unsqueeze_method_keywords(
+    kwargs: Option<&Bound<'_, PyDict>>,
+    dimension_origin: UnsqueezeArgumentOrigin,
+) -> PyResult<()> {
+    let Some(kwargs) = kwargs else {
+        return Ok(());
+    };
+    let accepted_axis =
+        matches!(dimension_origin, UnsqueezeArgumentOrigin::Alias) && kwargs.len() == 1;
+
+    for (keyword, _) in kwargs.iter() {
+        let Ok(keyword) = keyword.extract::<&str>() else {
+            continue;
+        };
+        match keyword {
+            "dim" if matches!(dimension_origin, UnsqueezeArgumentOrigin::Positional) => {
+                return Err(unsqueeze_duplicate_argument("dim"));
+            }
+            "dim" if matches!(dimension_origin, UnsqueezeArgumentOrigin::Keyword) => {}
+            "axis" if accepted_axis => {}
             _ => return Err(unsqueeze_unexpected_keyword(keyword)),
         }
     }
@@ -1049,52 +1074,6 @@ fn unsqueeze_missing_arguments(arguments: &[&str]) -> PyErr {
         "unsqueeze() missing 2 required positional argument: \"{}\", \"{}\"",
         arguments[0], arguments[1]
     ))
-}
-
-fn reject_unknown_unsqueeze_keywords(
-    kwargs: Option<&Bound<'_, PyDict>>,
-    accepted: &[&str],
-) -> PyResult<()> {
-    let Some(kwargs) = kwargs else {
-        return Ok(());
-    };
-    for (keyword, _) in kwargs.iter() {
-        let Ok(keyword) = keyword.extract::<&str>() else {
-            continue;
-        };
-        if !accepted.contains(&keyword) {
-            return Err(unsqueeze_unexpected_keyword(keyword));
-        }
-    }
-    Ok(())
-}
-
-fn reject_axis_with_unknown_keywords(
-    kwargs: Option<&Bound<'_, PyDict>>,
-    canonical: &[&str],
-) -> PyResult<()> {
-    let Some(kwargs) = kwargs else {
-        return Ok(());
-    };
-    let mut first_noncanonical = None;
-    let mut noncanonical_count = 0;
-    for (keyword, _) in kwargs.iter() {
-        let Ok(keyword) = keyword.extract::<&str>() else {
-            continue;
-        };
-        if !canonical.contains(&keyword) {
-            first_noncanonical.get_or_insert_with(|| keyword.to_owned());
-            noncanonical_count += 1;
-        }
-    }
-    if noncanonical_count > 1 {
-        return Err(unsqueeze_unexpected_keyword(
-            first_noncanonical
-                .as_deref()
-                .expect("two noncanonical keywords must have a first keyword"),
-        ));
-    }
-    Ok(())
 }
 
 fn parse_integer_indices<'py>(

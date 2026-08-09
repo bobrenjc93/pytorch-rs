@@ -712,6 +712,30 @@ class PythonApiBaselineTests(unittest.TestCase):
                 lambda: torch.unsqueeze(source, np.uint64(2**64 - 1), input=source),
                 "multiple values for argument 'input'",
             ),
+            (
+                lambda: source.unsqueeze(
+                    0, **{"input": source, "dim": 0}
+                ),
+                "unexpected keyword argument 'input'",
+            ),
+            (
+                lambda: source.unsqueeze(
+                    0, **{"dim": 0, "input": source}
+                ),
+                "multiple values for argument 'dim'",
+            ),
+            (
+                lambda: torch.unsqueeze(
+                    source, **{"axis": 0, "input": source}
+                ),
+                "unexpected keyword argument 'axis'",
+            ),
+            (
+                lambda: torch.unsqueeze(
+                    source, **{"input": source, "axis": 0}
+                ),
+                "multiple values for argument 'input'",
+            ),
         )
         for call, message in precedence_cases:
             with self.subTest(message=message):
