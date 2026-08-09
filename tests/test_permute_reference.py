@@ -40,6 +40,18 @@ class PermuteReferenceTests(unittest.TestCase):
         )
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
+    def assert_error_prefix_matches(self, actual_call, expected_call, prefix):
+        with self.assertRaises(Exception) as actual_raised:
+            actual_call()
+        with self.assertRaises(Exception) as expected_raised:
+            expected_call()
+        self.assertEqual(
+            type(actual_raised.exception).__name__,
+            type(expected_raised.exception).__name__,
+        )
+        self.assertTrue(str(actual_raised.exception).startswith(prefix))
+        self.assertTrue(str(expected_raised.exception).startswith(prefix))
+
     def test_seeded_permutations_and_stride_aware_consumers_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         rng = np.random.default_rng(0x0E213)
@@ -217,6 +229,22 @@ class PermuteReferenceTests(unittest.TestCase):
                 lambda: expected.permute(dims=(0.0, 1, 2)),
             ),
             (lambda: actual.permute(range(3)), lambda: expected.permute(range(3))),
+            (
+                lambda: actual.permute([True, 0, 2]),
+                lambda: expected.permute([True, 0, 2]),
+            ),
+            (
+                lambda: actual.permute((True, 0, 2)),
+                lambda: expected.permute((True, 0, 2)),
+            ),
+            (
+                lambda: actual.permute(None, 1, 2, nope=1),
+                lambda: expected.permute(None, 1, 2, nope=1),
+            ),
+            (
+                lambda: actual.permute((0, 1, 2), 0, dims=(0, 1, 2)),
+                lambda: expected.permute((0, 1, 2), 0, dims=(0, 1, 2)),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(error_cases):
             with self.subTest(error_case=case):
@@ -235,6 +263,18 @@ class PermuteReferenceTests(unittest.TestCase):
             lambda: actual_extreme.permute(0, 2, 3, 1),
             lambda: expected_extreme.permute(0, 2, 3, 1),
         )
+
+        overflow_prefix = (
+            "permute(): argument 'dims' failed to unpack the object at pos 1 "
+            'with error "Overflow when unpacking long long'
+        )
+        for dimensions in ((2**100, 1, 2), [2**100, 1, 2]):
+            with self.subTest(overflow_dimensions=dimensions):
+                self.assert_error_prefix_matches(
+                    lambda dimensions=dimensions: actual.permute(dimensions),
+                    lambda dimensions=dimensions: expected.permute(dimensions),
+                    overflow_prefix,
+                )
 
     def test_integer_protocol_dimension_forms_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")

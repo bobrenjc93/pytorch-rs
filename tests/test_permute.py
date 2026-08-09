@@ -141,6 +141,16 @@ class PermuteTests(unittest.TestCase):
                 IndexError,
                 "Dimension out of range (expected to be in range of [-3, 2], but got -4)",
             ),
+            (
+                lambda: tensor.permute(None, 1, 2, nope=1),
+                TypeError,
+                "permute() takes 1 positional argument but 3 were given",
+            ),
+            (
+                lambda: tensor.permute((0, 1, 2), 0, dims=(0, 1, 2)),
+                TypeError,
+                "permute() takes 1 positional argument but 2 were given",
+            ),
         )
         for call, error_type, message in cases:
             with self.subTest(message=message):
@@ -174,6 +184,26 @@ class PermuteTests(unittest.TestCase):
         for view in accepted:
             self.assertEqual(view.shape, tensor.shape)
             self.assertEqual(view.stride(), tensor.stride())
+
+        leading_bool_message = (
+            "permute(): argument 'dims' (position 1) must be tuple of ints, "
+            "but found element of type bool at pos 0"
+        )
+        for dimensions in ((True, 0, 2), [True, 0, 2]):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaises(TypeError) as raised:
+                    tensor.permute(dimensions)
+                self.assertEqual(str(raised.exception), leading_bool_message)
+
+        overflow_prefix = (
+            "permute(): argument 'dims' failed to unpack the object at pos 1 "
+            'with error "Overflow when unpacking long long'
+        )
+        for dimensions in ((2**100, 1, 2), [2**100, 1, 2]):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaises(TypeError) as raised:
+                    tensor.permute(dimensions)
+                self.assertTrue(str(raised.exception).startswith(overflow_prefix))
 
         for call in (
             lambda: tensor.permute(0.0, 1, 2),

@@ -1012,6 +1012,26 @@ fn parse_permute_arguments(
         return parse_permute_sequence(&dimensions, None);
     }
 
+    let first = positional.get_item(0)?;
+    let dimensions = if positional.len() == 1 {
+        if first.cast::<PyTuple>().is_ok() || first.cast::<PyList>().is_ok() {
+            parse_permute_sequence(&first, Some(1))?
+        } else {
+            if !is_permute_variadic_leading_dimension(&first)? {
+                return Err(permute_argument_type_error(&first, Some(1))?);
+            }
+            parse_permute_dimensions(1, std::iter::once(first), None)?
+        }
+    } else {
+        if !is_permute_variadic_leading_dimension(&first)? {
+            return Err(PyTypeError::new_err(format!(
+                "permute() takes 1 positional argument but {} were given",
+                positional.len()
+            )));
+        }
+        parse_permute_dimensions(positional.len(), positional.iter(), None)?
+    };
+
     if keyword_dimensions.is_some() {
         return Err(PyTypeError::new_err(
             "permute() got multiple values for argument 'dims'",
@@ -1020,25 +1040,7 @@ fn parse_permute_arguments(
     if let Some(error) = keyword_error {
         return Err(error);
     }
-
-    let first = positional.get_item(0)?;
-    if positional.len() == 1 {
-        if first.cast::<PyTuple>().is_ok() || first.cast::<PyList>().is_ok() {
-            return parse_permute_sequence(&first, Some(1));
-        }
-        if !is_permute_variadic_leading_dimension(&first)? {
-            return Err(permute_argument_type_error(&first, Some(1))?);
-        }
-        return parse_permute_dimensions(1, std::iter::once(first), None);
-    }
-
-    if !is_permute_variadic_leading_dimension(&first)? {
-        return Err(PyTypeError::new_err(format!(
-            "permute() takes 1 positional argument but {} were given",
-            positional.len()
-        )));
-    }
-    parse_permute_dimensions(positional.len(), positional.iter(), None)
+    Ok(dimensions)
 }
 
 fn parse_permute_sequence(
@@ -1069,12 +1071,28 @@ fn parse_permute_dimensions<'py>(
 ) -> PyResult<Vec<i64>> {
     let mut parsed = try_size_vector(length)?;
     for (index, dimension) in dimensions.enumerate() {
+        if let Some((sequence_type, positional)) = sequence_argument
+            && index == 0
+            && dimension.is_instance_of::<PyBool>()
+        {
+            let type_name = transpose_type_name(&dimension)?;
+            return if positional {
+                Err(PyTypeError::new_err(format!(
+                    "permute(): argument 'dims' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
+                )))
+            } else {
+                Err(PyTypeError::new_err(format!(
+                    "permute(): argument 'dims' must be tuple of ints, not {sequence_type}"
+                )))
+            };
+        }
         match parse_permute_dimension(&dimension) {
             Ok(dimension) => parsed.push(dimension),
             Err(error) => {
                 let type_name = transpose_type_name(&dimension)?;
                 if let Some((sequence_type, positional)) = sequence_argument
                     && index == 0
+                    && !error.is_instance_of::<PyOverflowError>(dimension.py())
                 {
                     if positional {
                         return Err(PyTypeError::new_err(format!(
