@@ -31,6 +31,7 @@ fn native_metadata_survives_views_kernels_and_reductions() {
         source.reshape([4]).unwrap(),
         source.add(&matrix).unwrap(),
         source.mul_scalar(2.0).unwrap(),
+        source.abs().unwrap(),
         source.relu().unwrap(),
         source.matmul(&matrix).unwrap(),
         source.sum(),
@@ -198,6 +199,72 @@ fn elementwise_operations_preserve_shape() {
     assert_eq!(left.add(&right).unwrap().as_slice(), [0.0, 3.0, 4.0, -3.0]);
     assert_eq!(left.mul(&right).unwrap(), left);
     assert_eq!(left.relu().unwrap().as_slice(), [0.0, 2.0, 3.0, 0.0]);
+}
+
+#[test]
+fn absolute_value_matches_float32_bits_and_preserves_metadata() {
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x3fa0_0000,
+        0xbfa0_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc1_2345,
+    ];
+    let input = Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [2, 2, 2]).unwrap();
+    let output = input.abs().unwrap();
+    let expected_bits = [
+        0x0000_0000,
+        0x0000_0000,
+        0x3fa0_0000,
+        0x3fa0_0000,
+        0x7f80_0000,
+        0x7f80_0000,
+        0x7fc1_2345,
+        0x7fc1_2345,
+    ];
+
+    assert_eq!(output.shape(), input.shape());
+    assert_eq!(output.stride(), input.stride());
+    assert_eq!(output.storage_offset(), 0);
+    assert_eq!(output.dtype(), input.dtype());
+    assert_eq!(output.device(), input.device());
+    assert!(!output.shares_storage_with(&input));
+    assert_eq!(
+        output
+            .as_slice()
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        expected_bits
+    );
+}
+
+#[test]
+fn absolute_value_handles_scalars_empty_tensors_and_logical_views() {
+    let scalar = Tensor::from_vec(vec![-3.5], []).unwrap();
+    let scalar_output = scalar.abs().unwrap();
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert_eq!(scalar_output.item().unwrap().to_bits(), 3.5_f32.to_bits());
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap();
+    let empty_output = empty.abs().unwrap();
+    assert_eq!(empty_output.shape(), empty.shape());
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    assert!(empty_output.as_slice().is_empty());
+    assert!(!empty_output.shares_storage_with(&empty));
+
+    let source = Tensor::from_vec(vec![-1.0, 2.0, -3.0, 4.0, -5.0, 6.0], [2, 3]).unwrap();
+    let view = source.index_integer(1).unwrap().reshape([3, 1]).unwrap();
+    let view_output = view.abs().unwrap();
+    assert_eq!(view_output.shape(), [3, 1]);
+    assert_eq!(view_output.stride(), [1, 1]);
+    assert_eq!(view_output.storage_offset(), 0);
+    assert_eq!(view_output.as_slice(), [4.0, 5.0, 6.0]);
+    assert!(!view_output.shares_storage_with(&view));
 }
 
 #[test]
@@ -668,6 +735,7 @@ fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
     assert_eq!(scalar_output.shape(), [0, usize::MAX / 2, 3]);
     assert_eq!(scalar_output.stride(), [1, 0, 0]);
     assert_eq!(tensor.relu(), Err(TensorError::StrideCalculationOverflow));
+    assert_eq!(tensor.abs(), Err(TensorError::StrideCalculationOverflow));
     assert_eq!(tensor.sin(), Err(TensorError::StrideCalculationOverflow));
 
     let wrapped_shape = Tensor::zeros([0])

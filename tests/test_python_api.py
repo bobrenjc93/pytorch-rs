@@ -1,3 +1,4 @@
+import inspect
 import math
 import operator
 import sys
@@ -89,6 +90,83 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(special[0].view(np.uint32).item(), np.float32(0.0).view(np.uint32).item())
         self.assertEqual(special[1].view(np.uint32).item(), np.float32(-0.0).view(np.uint32).item())
         self.assertTrue(np.isnan(special[2:]).all())
+
+    def test_abs_supports_method_function_and_python_builtin(self):
+        source = torch.tensor(
+            [[[-1.0, 2.0], [-3.0, 4.0]], [[-5.0, 6.0], [-7.0, 8.0]]],
+            dtype=torch.float32,
+            device="cpu",
+        )
+        view = source[1].reshape((4, 1))
+
+        for operation in (lambda value: value.abs(), torch.abs, abs):
+            with self.subTest(operation=operation):
+                actual = operation(view)
+                self.assert_tensor_values(actual, [[5.0], [6.0], [7.0], [8.0]], (4, 1))
+                self.assertEqual(actual.stride(), (1, 1))
+                self.assertEqual(actual.storage_offset(), 0)
+                self.assertIs(actual.dtype, source.dtype)
+                self.assertEqual(actual.device, source.device)
+
+        self.assertEqual(torch.abs(input=view, out=None).tolist(), [[5.0], [6.0], [7.0], [8.0]])
+
+    def test_abs_preserves_special_float32_results_and_empty_metadata(self):
+        input_bits = np.array(
+            [
+                0x00000000,
+                0x80000000,
+                0x3FA00000,
+                0xBFA00000,
+                0x7F800000,
+                0xFF800000,
+                0x7FC12345,
+                0xFFC12345,
+            ],
+            dtype=np.uint32,
+        )
+        expected_bits = input_bits & np.uint32(0x7FFFFFFF)
+        source = torch.tensor(input_bits.view(np.float32).reshape(2, 2, 2).tolist())
+
+        for actual in (source.abs(), torch.abs(source), abs(source)):
+            with self.subTest(operation=actual):
+                np.testing.assert_array_equal(np.asarray(actual).view(np.uint32), expected_bits.reshape(2, 2, 2))
+
+        scalar = abs(torch.tensor(-0.0))
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(scalar.stride(), ())
+        self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0)
+
+        empty = torch.zeros((2, 0, 3))
+        empty_output = torch.abs(empty)
+        self.assertEqual(empty_output.shape, (2, 0, 3))
+        self.assertEqual(empty_output.stride(), (3, 3, 1))
+        self.assertEqual(empty_output.tolist(), [[], []])
+
+    def test_abs_validates_exact_call_surfaces_and_unsupported_out(self):
+        tensor = torch.tensor([-1.0])
+        self.assertEqual(str(inspect.signature(torch.abs)), "(input, *, out=None)")
+        self.assertEqual(str(inspect.signature(torch.Tensor.abs)), "(self, /)")
+        self.assertEqual(str(inspect.signature(torch.Tensor.__abs__)), "(self, /)")
+
+        for call in (
+            lambda: tensor.abs(None),
+            lambda: tensor.abs(out=None),
+            lambda: abs(tensor, None),
+            lambda: torch.abs(),
+            lambda: torch.abs([-1.0]),
+            lambda: torch.abs(-1.0),
+            lambda: torch.abs(np.array([-1.0], dtype=np.float32)),
+            lambda: torch.abs(tensor, None),
+            lambda: torch.abs(tensor, unexpected=None),
+        ):
+            with self.subTest(call=call):
+                with self.assertRaises(TypeError):
+                    call()
+
+        for out in (tensor, torch.zeros((1,)), object(), 0):
+            with self.subTest(out=out):
+                with self.assertRaisesRegex(NotImplementedError, "out tensors are not supported"):
+                    torch.abs(tensor, out=out)
 
     def test_float32_descriptor_identity_type_and_repr(self):
         self.assertIs(torch.float, torch.float32)

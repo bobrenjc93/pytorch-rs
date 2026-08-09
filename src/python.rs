@@ -1,6 +1,7 @@
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
+    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
+    PyTypeError, PyValueError,
 };
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
@@ -261,6 +262,14 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
+    fn abs(&self) -> PyResult<Self> {
+        self.absolute_value()
+    }
+
+    fn __abs__(&self) -> PyResult<Self> {
+        self.absolute_value()
+    }
+
     fn relu(&self) -> PyResult<Self> {
         self.inner
             .relu()
@@ -338,6 +347,13 @@ impl PyTensor {
 }
 
 impl PyTensor {
+    fn absolute_value(&self) -> PyResult<Self> {
+        self.inner
+            .abs()
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn numpy_array_copy(
         &self,
         py: Python<'_>,
@@ -463,6 +479,16 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
         .try_clone_with_memory_format(memory_format)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
+}
+
+#[pyfunction(signature = (input, *, out=None))]
+fn abs(input: &PyTensor, out: Option<&Bound<'_, PyAny>>) -> PyResult<PyTensor> {
+    if out.is_some_and(|out| !out.is_none()) {
+        return Err(PyNotImplementedError::new_err(
+            "abs(): out tensors are not supported because mutable tensor storage is not implemented",
+        ));
+    }
+    input.absolute_value()
 }
 
 #[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
@@ -1302,6 +1328,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyMemoryFormat>()?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
+    module.add_function(wrap_pyfunction!(abs, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;

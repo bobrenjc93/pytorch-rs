@@ -868,6 +868,15 @@ impl Tensor {
         self.map_scalar(scalar, |value, scalar| scalar * value.recip())
     }
 
+    /// Computes the absolute value of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn abs(&self) -> Result<Self, TensorError> {
+        self.unary_map(f32::abs)
+    }
+
     /// Applies rectified linear activation element by element.
     ///
     /// # Errors
