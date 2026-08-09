@@ -149,6 +149,18 @@ class TransposeTests(unittest.TestCase):
                 lambda: torch.transpose(tensor, 0, dim1=1.5),
                 "transpose(): argument 'dim1' must be int, not float",
             ),
+            (
+                lambda: tensor.transpose(np.float64(1.5), 0),
+                "transpose(): argument 'dim0' (position 1) must be int, not numpy.float64",
+            ),
+            (
+                lambda: tensor.transpose(dim0=np.bool_(True), dim1=0),
+                "transpose(): argument 'dim0' must be int, not numpy.bool",
+            ),
+            (
+                lambda: torch.transpose(tensor, np.float32(1.5), 0),
+                "transpose(): argument 'dim0' (position 2) must be int, not numpy.float32",
+            ),
         )
         for call, expected in cases:
             with self.subTest(expected=expected):
@@ -173,6 +185,30 @@ class TransposeTests(unittest.TestCase):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
                     call()
+
+        gap_cases = (
+            (
+                lambda: tensor.transpose(dim1=0),
+                'transpose() missing 2 required positional argument: "dim0", "dim1"',
+            ),
+            (
+                lambda: tensor.transpose(dim1=0, unexpected=None),
+                'transpose() missing 2 required positional argument: "dim0", "dim1"',
+            ),
+            (
+                lambda: torch.transpose(dim0=0),
+                'transpose() missing 3 required positional argument: "input", "dim0", "dim1"',
+            ),
+            (
+                lambda: torch.transpose(input=tensor, dim1=0),
+                'transpose() missing 2 required positional argument: "dim0", "dim1"',
+            ),
+        )
+        for call, expected in gap_cases:
+            with self.subTest(expected=expected):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), expected)
 
     def test_stride_aware_consumers_and_materialized_outputs(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)

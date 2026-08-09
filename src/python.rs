@@ -535,7 +535,7 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
 #[pyfunction(signature = (*args, **kwargs))]
 fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let [input, dim0, dim1] = bind_transpose_arguments(args, kwargs, ["input", "dim0", "dim1"])?;
-    let input_type = input.value.get_type().name()?.to_str()?.to_owned();
+    let input_type = transpose_type_name(&input.value)?;
     let input_tensor = input.value.cast::<PyTensor>().map_err(|_| {
         transpose_argument_type_error("input", input.position, "Tensor", &input_type)
     })?;
@@ -856,7 +856,7 @@ fn parse_transpose_dimension(
         }
     }
 
-    let type_name = dimension.get_type().name()?.to_str()?.to_owned();
+    let type_name = transpose_type_name(dimension)?;
     Err(transpose_argument_type_error(
         argument, position, "int", &type_name,
     ))
@@ -882,19 +882,26 @@ fn bind_transpose_arguments<'py, const N: usize>(
         });
     }
 
+    let mut keyword_error = None;
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
             let key = key.extract::<String>()?;
             let Some(index) = names.iter().position(|name| *name == key) else {
-                return Err(PyTypeError::new_err(format!(
-                    "transpose() got an unexpected keyword argument '{key}'"
-                )));
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "transpose() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+                continue;
             };
             if arguments[index].is_some() {
-                return Err(PyTypeError::new_err(format!(
-                    "transpose() got multiple values for argument '{}'",
-                    names[index]
-                )));
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "transpose() got multiple values for argument '{}'",
+                        names[index]
+                    ))
+                });
+                continue;
             }
             arguments[index] = Some(ParsedCallArgument {
                 value,
@@ -903,12 +910,8 @@ fn bind_transpose_arguments<'py, const N: usize>(
         }
     }
 
-    let missing = names
-        .iter()
-        .enumerate()
-        .filter_map(|(index, name)| arguments[index].is_none().then_some(*name))
-        .collect::<Vec<_>>();
-    if !missing.is_empty() {
+    if let Some(first_missing) = arguments.iter().position(Option::is_none) {
+        let missing = &names[first_missing..];
         let quoted_names = missing
             .iter()
             .map(|name| format!("\"{name}\""))
@@ -925,8 +928,30 @@ fn bind_transpose_arguments<'py, const N: usize>(
         )));
     }
 
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+
     Ok(arguments
         .map(|argument| argument.expect("all required transpose arguments were checked above")))
+}
+
+fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    // PyTorch reports CPython's `tp_name`: heap types use their unqualified
+    // class name, while static extension types retain their module prefix.
+    const PY_TPFLAGS_HEAPTYPE: u64 = 1 << 9;
+
+    let value_type = value.get_type();
+    let name = value_type.name()?.to_str()?.to_owned();
+    let module = value_type.getattr("__module__")?.extract::<String>()?;
+    let flags = value_type.getattr("__flags__")?.extract::<u64>()?;
+    if module == "torch_rs" && matches!(name.as_str(), "dtype" | "device" | "memory_format") {
+        Ok(format!("torch.{name}"))
+    } else if flags & PY_TPFLAGS_HEAPTYPE == 0 && module != "builtins" {
+        Ok(format!("{module}.{name}"))
+    } else {
+        Ok(name)
+    }
 }
 
 fn transpose_argument_type_error(

@@ -204,6 +204,38 @@ class TransposeReferenceTests(unittest.TestCase):
                 lambda: torch.transpose(input=actual, dim0=0, dim1=1.5),
                 lambda: reference_torch.transpose(input=expected, dim0=0, dim1=1.5),
             ),
+            (
+                lambda: actual.transpose(dim1=0),
+                lambda: expected.transpose(dim1=0),
+            ),
+            (
+                lambda: actual.transpose(dim1=0, unexpected=None),
+                lambda: expected.transpose(dim1=0, unexpected=None),
+            ),
+            (
+                lambda: torch.transpose(dim0=0),
+                lambda: reference_torch.transpose(dim0=0),
+            ),
+            (
+                lambda: torch.transpose(input=actual, dim1=0),
+                lambda: reference_torch.transpose(input=expected, dim1=0),
+            ),
+            (
+                lambda: actual.transpose(np.float64(1.5), 0),
+                lambda: expected.transpose(np.float64(1.5), 0),
+            ),
+            (
+                lambda: actual.transpose(dim0=np.bool_(True), dim1=0),
+                lambda: expected.transpose(dim0=np.bool_(True), dim1=0),
+            ),
+            (
+                lambda: torch.transpose(actual, np.float32(1.5), 0),
+                lambda: reference_torch.transpose(expected, np.float32(1.5), 0),
+            ),
+            (
+                lambda: torch.transpose(np.zeros((2, 3)), 0, 1),
+                lambda: reference_torch.transpose(np.zeros((2, 3)), 0, 1),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(error_cases):
             with self.subTest(error_case=case):
