@@ -1013,24 +1013,17 @@ fn parse_permute_arguments(
     }
 
     let first = positional.get_item(0)?;
-    let dimensions = if positional.len() == 1 {
-        if first.cast::<PyTuple>().is_ok() || first.cast::<PyList>().is_ok() {
-            parse_permute_sequence(&first, Some(1))?
-        } else {
-            if !is_permute_variadic_leading_dimension(&first)? {
-                return Err(permute_argument_type_error(&first, Some(1))?);
-            }
-            parse_permute_dimensions(1, std::iter::once(first), None)?
+    let sequence_form = positional.len() == 1
+        && (first.cast::<PyTuple>().is_ok() || first.cast::<PyList>().is_ok());
+    if !sequence_form && !is_permute_variadic_leading_dimension(&first)? {
+        if positional.len() == 1 {
+            return Err(permute_argument_type_error(&first, Some(1))?);
         }
-    } else {
-        if !is_permute_variadic_leading_dimension(&first)? {
-            return Err(PyTypeError::new_err(format!(
-                "permute() takes 1 positional argument but {} were given",
-                positional.len()
-            )));
-        }
-        parse_permute_dimensions(positional.len(), positional.iter(), None)?
-    };
+        return Err(PyTypeError::new_err(format!(
+            "permute() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
 
     if keyword_dimensions.is_some() {
         return Err(PyTypeError::new_err(
@@ -1040,7 +1033,12 @@ fn parse_permute_arguments(
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    Ok(dimensions)
+
+    if sequence_form {
+        parse_permute_sequence(&first, Some(1))
+    } else {
+        parse_permute_dimensions(positional.len(), positional.iter(), None)
+    }
 }
 
 fn parse_permute_sequence(

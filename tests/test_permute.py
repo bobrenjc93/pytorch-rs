@@ -151,6 +151,26 @@ class PermuteTests(unittest.TestCase):
                 TypeError,
                 "permute() takes 1 positional argument but 2 were given",
             ),
+            (
+                lambda: tensor.permute(0, 1.0, 2, dims=(0, 1, 2)),
+                TypeError,
+                "permute() got multiple values for argument 'dims'",
+            ),
+            (
+                lambda: tensor.permute(0, 1.0, 2, nope=1),
+                TypeError,
+                "permute() got an unexpected keyword argument 'nope'",
+            ),
+            (
+                lambda: tensor.permute((0, 1.0, 2), dims=(0, 1, 2)),
+                TypeError,
+                "permute() got multiple values for argument 'dims'",
+            ),
+            (
+                lambda: tensor.permute((0, 1.0, 2), nope=1),
+                TypeError,
+                "permute() got an unexpected keyword argument 'nope'",
+            ),
         )
         for call, error_type, message in cases:
             with self.subTest(message=message):
@@ -166,6 +186,23 @@ class PermuteTests(unittest.TestCase):
             tensor.permute(dims=(0, 1, 2), unexpected=True)
         with self.assertRaises(TypeError):
             tensor.permute(dims=0)
+
+        index_calls = 0
+
+        class IndexProbe:
+            def __index__(self):
+                nonlocal index_calls
+                index_calls += 1
+                return 1
+
+        probe = IndexProbe()
+        with self.assertRaisesRegex(TypeError, "got multiple values"):
+            tensor.permute(0, probe, 2, dims=(0, 1, 2))
+        with self.assertRaisesRegex(TypeError, "unexpected keyword argument 'nope'"):
+            tensor.permute((0, probe, 2), nope=1)
+        self.assertEqual(index_calls, 0)
+        self.assertEqual(tensor.permute(0, probe, 2).shape, tensor.shape)
+        self.assertEqual(index_calls, 1)
 
     def test_integer_protocol_and_argument_type_behavior(self):
         class IntSubclass(int):

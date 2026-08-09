@@ -245,6 +245,22 @@ class PermuteReferenceTests(unittest.TestCase):
                 lambda: actual.permute((0, 1, 2), 0, dims=(0, 1, 2)),
                 lambda: expected.permute((0, 1, 2), 0, dims=(0, 1, 2)),
             ),
+            (
+                lambda: actual.permute(0, 1.0, 2, dims=(0, 1, 2)),
+                lambda: expected.permute(0, 1.0, 2, dims=(0, 1, 2)),
+            ),
+            (
+                lambda: actual.permute(0, 1.0, 2, nope=1),
+                lambda: expected.permute(0, 1.0, 2, nope=1),
+            ),
+            (
+                lambda: actual.permute((0, 1.0, 2), dims=(0, 1, 2)),
+                lambda: expected.permute((0, 1.0, 2), dims=(0, 1, 2)),
+            ),
+            (
+                lambda: actual.permute((0, 1.0, 2), nope=1),
+                lambda: expected.permute((0, 1.0, 2), nope=1),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(error_cases):
             with self.subTest(error_case=case):
@@ -275,6 +291,34 @@ class PermuteReferenceTests(unittest.TestCase):
                     lambda dimensions=dimensions: expected.permute(dimensions),
                     overflow_prefix,
                 )
+
+        actual_index_calls = 0
+        expected_index_calls = 0
+
+        class ActualIndexProbe:
+            def __index__(self):
+                nonlocal actual_index_calls
+                actual_index_calls += 1
+                return 1
+
+        class ExpectedIndexProbe:
+            def __index__(self):
+                nonlocal expected_index_calls
+                expected_index_calls += 1
+                return 1
+
+        actual_probe = ActualIndexProbe()
+        expected_probe = ExpectedIndexProbe()
+        self.assert_error_matches(
+            lambda: actual.permute(0, actual_probe, 2, dims=(0, 1, 2)),
+            lambda: expected.permute(0, expected_probe, 2, dims=(0, 1, 2)),
+        )
+        self.assert_error_matches(
+            lambda: actual.permute((0, actual_probe, 2), nope=1),
+            lambda: expected.permute((0, expected_probe, 2), nope=1),
+        )
+        self.assertEqual(actual_index_calls, expected_index_calls)
+        self.assertEqual(actual_index_calls, 0)
 
     def test_integer_protocol_dimension_forms_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
