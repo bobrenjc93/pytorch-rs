@@ -1,3 +1,4 @@
+import array
 import math
 import operator
 import re
@@ -265,6 +266,16 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(torch.ones(size=(2,), device="cpu").tolist(), [1.0, 1.0])
 
     def test_zeros_and_ones_accept_size_and_legacy_shape_keywords(self):
+        class CustomSequence:
+            def __init__(self, values):
+                self.values = values
+
+            def __len__(self):
+                return len(self.values)
+
+            def __getitem__(self, index):
+                return self.values[index]
+
         for name, create, expected in (
             ("zeros", torch.zeros, [[0.0, 0.0], [0.0, 0.0]]),
             ("ones", torch.ones, [[1.0, 1.0], [1.0, 1.0]]),
@@ -279,6 +290,18 @@ class PythonApiBaselineTests(unittest.TestCase):
                     self.assertEqual(tensor.tolist(), expected)
                     self.assertIs(tensor.dtype, torch.float32)
                     self.assertEqual(tensor.device, torch.device("cpu"))
+
+            legacy_sequences = (
+                ("array", array.array("q", (2, 2))),
+                ("numpy", np.array((2, 2), dtype=np.int64)),
+                ("memoryview", memoryview(array.array("q", (2, 2)))),
+                ("custom", CustomSequence((2, 2))),
+            )
+            for sequence_name, sequence in legacy_sequences:
+                with self.subTest(function=name, legacy_sequence=sequence_name):
+                    self.assertEqual(create(shape=sequence).shape, (2, 2))
+                    with self.assertRaises(TypeError):
+                        create(size=sequence)
 
             for case, call in (
                 ("None shape with positional size", lambda: create((2,), shape=None)),
@@ -590,7 +613,7 @@ for factory in (torch_rs.zeros, torch_rs.ones):
                         with self.assertRaises(TypeError):
                             create(2, value)
 
-    def test_factory_rejects_boolean_scalar_tensor_dimensions(self):
+    def test_factory_tensor_detection_ignores_spoofed_metadata(self):
         class BoolDType:
             def __str__(self):
                 return "torch.bool"
@@ -599,45 +622,22 @@ for factory in (torch_rs.zeros, torch_rs.ones):
             __module__ = "torch"
             dtype = BoolDType()
 
-            def __init__(self, value):
-                self.value = value
-
             def __index__(self):
-                return int(self.value)
+                return 2
 
-        class HiddenDTypeTensor(Tensor):
-            dtype = object()
-
-        class RaisingDTypeTensor(Tensor):
-            def __getattribute__(self, name):
-                if name == "dtype":
-                    raise RuntimeError("hidden dtype")
-                return super().__getattribute__(name)
-
-        message = "Expected scalar.isIntegral( false) to be true, but got false"
         for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
-            for tensor_type in (Tensor, HiddenDTypeTensor, RaisingDTypeTensor):
-                for value in (True, False):
-                    dimension = tensor_type(value)
-                    calls = (
-                        ("direct", lambda: create(dimension)),
-                        ("later", lambda: create(2, dimension)),
-                        ("tuple", lambda: create((dimension, 2))),
-                        ("list", lambda: create([dimension, 2])),
-                        ("size tuple", lambda: create(size=(dimension, 2))),
-                        ("size list", lambda: create(size=[dimension, 2])),
-                    )
-                    for form, call in calls:
-                        with self.subTest(
-                            function=name,
-                            tensor_type=tensor_type.__name__,
-                            value=value,
-                            form=form,
-                        ):
-                            with self.assertRaisesRegex(
-                                RuntimeError, re.escape(message)
-                            ):
-                                call()
+            dimension = Tensor()
+            calls = (
+                ("direct", lambda: create(dimension), (2,)),
+                ("later", lambda: create(3, dimension), (3, 2)),
+                ("tuple", lambda: create((dimension, 3)), (2, 3)),
+                ("list", lambda: create([dimension, 3]), (2, 3)),
+                ("size tuple", lambda: create(size=(dimension, 3)), (2, 3)),
+                ("size list", lambda: create(size=[dimension, 3]), (2, 3)),
+            )
+            for form, call, expected_shape in calls:
+                with self.subTest(function=name, form=form):
+                    self.assertEqual(call().shape, expected_shape)
 
     def test_factory_size_diagnostics_qualify_extension_heap_types(self):
         for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):

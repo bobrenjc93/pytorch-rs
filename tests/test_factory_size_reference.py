@@ -490,6 +490,44 @@ class FactorySizeReferenceTests(unittest.TestCase):
                                 lambda: form(expected_factory, tensor_value()),
                             )
 
+    def test_tensor_subclass_index_overrides_match_pytorch_2_13(self):
+        forms = (
+            ("direct", lambda factory, value: factory(value)),
+            ("later", lambda factory, value: factory(2, value)),
+            ("tuple", lambda factory, value: factory((value, 2))),
+            ("list", lambda factory, value: factory([value, 2])),
+            ("size tuple", lambda factory, value: factory(size=(value, 2))),
+            ("size list", lambda factory, value: factory(size=[value, 2])),
+        )
+
+        def outcome(factory, form, raises):
+            events = []
+
+            class OverrideIndexTensor(reference_torch.Tensor):
+                def __index__(self):
+                    events.append("override")
+                    if raises:
+                        raise RuntimeError("subclass override must not run")
+                    return 3
+
+            value = reference_torch.tensor(1).as_subclass(OverrideIndexTensor)
+            return tuple(form(factory, value).shape), events
+
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for form_name, form in forms:
+                for raises in (False, True):
+                    with self.subTest(
+                        factory=factory_name,
+                        form=form_name,
+                        override_raises=raises,
+                    ):
+                        actual = outcome(actual_factory, form, raises)
+                        expected = outcome(expected_factory, form, raises)
+                        self.assertEqual(actual, expected)
+                        self.assertEqual(actual[1], [])
+
     def test_large_index_results_use_bounded_conversion(self):
         huge_integer = 1 << 8_000_000
 

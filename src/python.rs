@@ -958,11 +958,16 @@ fn create_constant_tensor(
     // binds metadata or reports duplicate keywords. Preparing the input here
     // preserves that order while deferring later element conversion errors.
     let parsed_size = if args.is_empty() || sole_positional_none {
-        let value = size_keyword
-            .as_ref()
-            .or(shape_keyword.as_ref())
-            .expect("a size source was checked above");
-        prepare_keyword_factory_size(function, value)?
+        if let Some(value) = size_keyword.as_ref() {
+            prepare_keyword_factory_size(function, value)?
+        } else {
+            prepare_legacy_shape_factory_size(
+                function,
+                shape_keyword
+                    .as_ref()
+                    .expect("a size source was checked above"),
+            )?
+        }
     } else {
         prepare_positional_factory_size(function, args)?
     };
@@ -1090,6 +1095,52 @@ fn prepare_keyword_factory_size<'py>(
     )))
 }
 
+fn prepare_legacy_shape_factory_size<'py>(
+    function: &str,
+    value: &Bound<'py, PyAny>,
+) -> PyResult<PreparedFactorySize<'py>> {
+    if value.cast::<PyList>().is_ok() || value.cast::<PyTuple>().is_ok() {
+        return prepare_keyword_factory_size(function, value);
+    }
+    // PyO3's historical Vec extraction follows CPython's sequence protocol,
+    // which is broader than collections.abc.Sequence (notably for ndarray
+    // and ordinary classes implementing __getitem__). Preserve that contract
+    // without the extractor's infallible native Vec allocation.
+    let type_getattribute = value
+        .py()
+        .get_type::<PyType>()
+        .getattr("__getattribute__")?;
+    let has_sequence_getitem = type_getattribute
+        .call1((&value.get_type(), "__getitem__"))
+        .is_ok();
+    if value.cast::<PyDict>().is_ok() || !has_sequence_getitem {
+        return Err(PyTypeError::new_err(format!(
+            "{function}(): compatibility alias 'shape' must be a sequence"
+        )));
+    }
+    let length = value.len().map_err(|_| {
+        PyTypeError::new_err(format!(
+            "{function}(): compatibility alias 'shape' must be a sequence"
+        ))
+    })?;
+    let mut prepared = try_size_vector(length)?;
+    for (index, dimension) in value.try_iter()?.enumerate() {
+        let dimension = dimension?;
+        if index == 0 {
+            let parsed = parse_size_dimension(&dimension, true);
+            if matches!(parsed, ParsedSizeDimension::Invalid) {
+                return Err(first_factory_size_error(
+                    function,
+                    &dimension,
+                    &FirstSizeErrorStyle::KeywordCollection(value.clone()),
+                )?);
+            }
+        }
+        try_push_size(&mut prepared, dimension)?;
+    }
+    Ok(PreparedFactorySize::Fixed(prepared))
+}
+
 fn prepare_factory_size_dimensions<'py>(
     function: &str,
     length: usize,
@@ -1154,24 +1205,31 @@ fn probe_variadic_first_dimension(function: &str, dimension: &Bound<'_, PyAny>) 
     Ok(())
 }
 
-fn is_boolean_tensor_dimension(dimension: &Bound<'_, PyAny>) -> bool {
+fn parse_torch_tensor_dimension(dimension: &Bound<'_, PyAny>) -> Option<ParsedSizeDimension> {
+    const PY_TPFLAGS_IMMUTABLETYPE: u64 = 1 << 8;
+
     let type_getattribute = dimension
         .py()
         .get_type::<PyType>()
         .getattr("__getattribute__");
     let Ok(type_getattribute) = type_getattribute else {
-        return false;
+        return None;
     };
     let dimension_type = dimension.get_type();
     let mro = type_getattribute
         .call1((&dimension_type, "__mro__"))
         .and_then(|mro| mro.cast_into::<PyTuple>().map_err(Into::into));
     let Ok(mro) = mro else {
-        return false;
+        return None;
     };
-    let mut dtype_descriptor = None;
-    let mut in_tensor_hierarchy = false;
+    let mut descriptors = None;
     for base in mro.iter() {
+        let flags = type_getattribute
+            .call1((&base, "__flags__"))
+            .and_then(|flags| flags.extract::<u64>());
+        if !flags.is_ok_and(|flags| flags & PY_TPFLAGS_IMMUTABLETYPE != 0) {
+            continue;
+        }
         let name = type_getattribute
             .call1((&base, "__name__"))
             .and_then(|name| name.extract::<String>());
@@ -1180,32 +1238,59 @@ fn is_boolean_tensor_dimension(dimension: &Bound<'_, PyAny>) -> bool {
             .and_then(|module| module.extract::<String>());
         if matches!(
             (module.as_deref(), name.as_deref()),
-            (Ok("torch"), Ok("Tensor"))
+            (Ok("torch._C"), Ok("TensorBase"))
         ) {
-            in_tensor_hierarchy = true;
-        }
-        if in_tensor_hierarchy {
-            dtype_descriptor = type_getattribute
+            let found = type_getattribute
                 .call1((&base, "__dict__"))
-                .and_then(|namespace| namespace.get_item("dtype"))
-                .ok();
-            if dtype_descriptor.is_some() {
+                .and_then(|namespace| {
+                    Ok((
+                        namespace.get_item("__index__")?,
+                        namespace.get_item("dtype")?,
+                    ))
+                });
+            if let Ok((index_descriptor, dtype_descriptor)) = found {
+                let index_owner = index_descriptor.getattr("__objclass__").ok();
+                let dtype_owner = dtype_descriptor.getattr("__objclass__").ok();
+                if index_owner
+                    .as_ref()
+                    .is_some_and(|owner| owner.as_ptr() == base.as_ptr())
+                    && dtype_owner
+                        .as_ref()
+                        .is_some_and(|owner| owner.as_ptr() == base.as_ptr())
+                {
+                    descriptors = Some((index_descriptor, dtype_descriptor));
+                }
+            }
+            if descriptors.is_some() {
                 break;
             }
         }
     }
-    let Some(dtype_descriptor) = dtype_descriptor else {
-        return false;
-    };
+    let (index_descriptor, dtype_descriptor) = descriptors?;
+
     let descriptor_type = dtype_descriptor.get_type();
     let dtype = match type_getattribute.call1((&descriptor_type, "__get__")) {
         Ok(descriptor_get) => descriptor_get.call1((&dtype_descriptor, dimension, &dimension_type)),
         Err(_) => Ok(dtype_descriptor),
     };
-    dtype
+    let is_boolean = dtype
         .and_then(|dtype| dtype.str())
         .and_then(|dtype| dtype.extract::<String>())
-        .is_ok_and(|dtype| dtype == "torch.bool")
+        .is_ok_and(|dtype| dtype == "torch.bool");
+    if is_boolean {
+        return Some(ParsedSizeDimension::BooleanTensor);
+    }
+
+    Some(match index_descriptor.call1((dimension,)) {
+        Ok(indexed) => match indexed.extract::<i64>() {
+            Ok(value) => ParsedSizeDimension::Value(value),
+            Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
+                ParsedSizeDimension::Overflow
+            }
+            Err(_) => ParsedSizeDimension::Invalid,
+        },
+        Err(_) => ParsedSizeDimension::Invalid,
+    })
 }
 
 fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> ParsedSizeDimension {
@@ -1223,11 +1308,14 @@ fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> Pars
         };
     }
 
+    if let Some(parsed) = parse_torch_tensor_dimension(dimension) {
+        return parsed;
+    }
+
     // PyO3's bounded i64 extraction delegates to PyLong_AsLongLong, which
     // invokes PyNumber_Index without consulting mutable Python modules and
     // does not copy arbitrary-precision digits into native storage.
     match dimension.extract::<i64>() {
-        Ok(_) if is_boolean_tensor_dimension(dimension) => ParsedSizeDimension::BooleanTensor,
         Ok(value) => ParsedSizeDimension::Value(value),
         Err(error)
             if error.is_instance_of::<PyOverflowError>(dimension.py())
