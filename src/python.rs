@@ -145,6 +145,12 @@ struct ParsedCallArgument<'py> {
     position: Option<usize>,
 }
 
+enum ParsedSqueezeDimensions {
+    All,
+    Single(i64),
+    Multiple(Vec<i64>),
+}
+
 #[derive(Clone, Copy)]
 enum BinaryOperation {
     Add,
@@ -236,6 +242,18 @@ impl PyTensor {
             .transpose(dim0, dim1)
             .map(|inner| Self { inner })
             .map_err(|error| transpose_error(&error))
+    }
+
+    #[pyo3(signature = (*args, **kwargs), text_signature = "(dim=None)")]
+    fn squeeze(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let dimensions = bind_method_squeeze_arguments(args, kwargs)?;
+        apply_squeeze(&self.inner, dimensions)
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
     }
 
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -549,6 +567,32 @@ fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
         .map_err(|error| transpose_error(&error))
 }
 
+#[pyfunction(signature = (*args, **kwargs), text_signature = "(input, dim=None)")]
+fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let (input, input_position, dimension) = bind_top_level_squeeze_arguments(args, kwargs)?;
+    let input_type = transpose_type_name(&input)?;
+    let input = match input.cast::<PyTensor>() {
+        Ok(input) => input,
+        Err(_) if matches!(&dimension, ParsedSqueezeDimensions::All) => {
+            return Err(squeeze_argument_type_error(
+                "input",
+                input_position,
+                "Tensor",
+                &input_type,
+            ));
+        }
+        Err(_) => {
+            return Err(squeeze_top_level_input_with_dimension_error(
+                args, kwargs, &dimension,
+            )?);
+        }
+    };
+    let input = input.try_borrow()?;
+    apply_squeeze(&input.inner, dimension)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| tensor_error(&error))
+}
+
 #[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
 fn zeros(
     size: Option<&Bound<'_, PyAny>>,
@@ -859,6 +903,500 @@ fn parse_transpose_dimension(
     let type_name = transpose_type_name(dimension)?;
     Err(transpose_argument_type_error(
         argument, position, "int", &type_name,
+    ))
+}
+
+fn apply_squeeze(
+    input: &CoreTensor,
+    dimensions: ParsedSqueezeDimensions,
+) -> Result<CoreTensor, TensorError> {
+    match dimensions {
+        ParsedSqueezeDimensions::All => input.squeeze(),
+        ParsedSqueezeDimensions::Single(dimension) => input.squeeze_dim(dimension),
+        ParsedSqueezeDimensions::Multiple(dimensions) => input.squeeze_dims(dimensions),
+    }
+}
+
+fn bind_method_squeeze_arguments(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<ParsedSqueezeDimensions> {
+    let mut keyword_dimension = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            if !matches!(key.as_str(), "dim" | "axis") {
+                return Err(squeeze_method_binding_error(
+                    positional,
+                    Some(keywords),
+                    Some(&key),
+                )?);
+            }
+            if keyword_dimension.is_some() {
+                return Err(squeeze_method_binding_error(
+                    positional,
+                    Some(keywords),
+                    None,
+                )?);
+            }
+            keyword_dimension = Some((key, value));
+        }
+    }
+
+    if let Some((keyword, dimension)) = keyword_dimension {
+        if !positional.is_empty() {
+            return Err(squeeze_method_binding_error(positional, keywords, None)?);
+        }
+        return parse_squeeze_argument(&dimension, false, Some(&keyword), false, false);
+    }
+
+    match positional.len() {
+        0 => Ok(ParsedSqueezeDimensions::All),
+        1 => parse_squeeze_argument(&positional.get_item(0)?, true, None, false, false),
+        length => {
+            let mut dimensions = try_size_vector(length)?;
+            for dimension in positional.iter() {
+                let actual = transpose_type_name(&dimension)?;
+                let Some(dimension) = parse_squeeze_integer(&dimension, true)? else {
+                    return Err(squeeze_method_invalid_positional(&actual));
+                };
+                dimensions.push(dimension);
+            }
+            Ok(ParsedSqueezeDimensions::Multiple(dimensions))
+        }
+    }
+}
+
+fn bind_top_level_squeeze_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(Bound<'py, PyAny>, Option<usize>, ParsedSqueezeDimensions)> {
+    if positional.len() > 2 {
+        return Err(squeeze_top_level_binding_error(positional, keywords, None)?);
+    }
+
+    let mut input = positional
+        .get_item(0)
+        .ok()
+        .map(|value| (value, Some(1_usize)));
+    let mut dimension = positional
+        .get_item(1)
+        .ok()
+        .map(|value| (value, None::<String>, true));
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "input" if input.is_none() => input = Some((value, None)),
+                "dim" | "axis" if dimension.is_none() => {
+                    dimension = Some((value, Some(key), false));
+                }
+                "input" | "dim" | "axis" => {
+                    return Err(squeeze_top_level_binding_error(
+                        positional,
+                        Some(keywords),
+                        None,
+                    )?);
+                }
+                _ => {
+                    return Err(squeeze_top_level_binding_error(
+                        positional,
+                        Some(keywords),
+                        Some(&key),
+                    )?);
+                }
+            }
+        }
+    }
+
+    let Some((input, input_position)) = input else {
+        if dimension.is_some() {
+            return Err(PyTypeError::new_err(
+                "squeeze() missing 1 required positional arguments: \"input\"",
+            ));
+        }
+        return Err(squeeze_top_level_binding_error(positional, keywords, None)?);
+    };
+
+    let dimension = match dimension {
+        None => ParsedSqueezeDimensions::All,
+        Some((value, keyword, _)) => parse_squeeze_argument(
+            &value,
+            false,
+            keyword.as_deref(),
+            true,
+            input_position.is_none(),
+        )?,
+    };
+    Ok((input, input_position, dimension))
+}
+
+fn parse_squeeze_argument(
+    argument: &Bound<'_, PyAny>,
+    allow_index_protocol: bool,
+    keyword: Option<&str>,
+    top_level: bool,
+    top_input_is_keyword: bool,
+) -> PyResult<ParsedSqueezeDimensions> {
+    if let Ok(dimensions) = argument.cast::<PyTuple>() {
+        return parse_squeeze_sequence(
+            argument,
+            dimensions.len(),
+            dimensions.iter(),
+            keyword,
+            top_level,
+            top_input_is_keyword,
+        );
+    }
+    if let Ok(dimensions) = argument.cast::<PyList>() {
+        return parse_squeeze_sequence(
+            argument,
+            dimensions.len(),
+            dimensions.iter(),
+            keyword,
+            top_level,
+            top_input_is_keyword,
+        );
+    }
+
+    let actual = transpose_type_name(argument)?;
+    let Some(dimension) = parse_squeeze_integer(argument, allow_index_protocol)? else {
+        return Err(match (top_level, keyword) {
+            (true, Some(keyword)) => {
+                squeeze_top_level_invalid_keyword(keyword, &actual, &actual, top_input_is_keyword)
+            }
+            (true, None) => squeeze_top_level_invalid_positional(&actual),
+            (false, Some(keyword)) => squeeze_method_invalid_keyword(keyword, &actual, &actual),
+            (false, None) => squeeze_method_invalid_positional(&actual),
+        });
+    };
+    Ok(ParsedSqueezeDimensions::Single(dimension))
+}
+
+fn parse_squeeze_sequence<'py>(
+    sequence: &Bound<'_, PyAny>,
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+    keyword: Option<&str>,
+    top_level: bool,
+    top_input_is_keyword: bool,
+) -> PyResult<ParsedSqueezeDimensions> {
+    let mut parsed = try_size_vector(length)?;
+    for (index, dimension) in dimensions.enumerate() {
+        let actual = transpose_type_name(&dimension)?;
+        let parsed_dimension = parse_squeeze_integer(&dimension, true).map_err(|_| {
+            PyTypeError::new_err(format!(
+                "squeeze(): argument 'dim' failed to unpack the object at pos {} with error \"Overflow when unpacking long long\"",
+                index + 1
+            ))
+        })?;
+        let Some(dimension) = parsed_dimension else {
+            if index == 0 {
+                let sequence_type = transpose_type_name(sequence)?;
+                let detail = squeeze_sequence_type_description(sequence)?;
+                return Err(match (top_level, keyword) {
+                    (true, Some(keyword)) => squeeze_top_level_invalid_keyword(
+                        keyword,
+                        &sequence_type,
+                        &detail,
+                        top_input_is_keyword,
+                    ),
+                    (true, None) => {
+                        squeeze_top_level_invalid_positional_details(&sequence_type, &detail)
+                    }
+                    (false, Some(keyword)) => {
+                        squeeze_method_invalid_keyword(keyword, &sequence_type, &detail)
+                    }
+                    (false, None) => {
+                        squeeze_method_invalid_positional_details(&sequence_type, &detail)
+                    }
+                });
+            }
+            if dimension.is_instance_of::<PyBool>() {
+                parsed.push(dimension.extract::<i64>()?);
+                continue;
+            }
+            return Err(PyTypeError::new_err(format!(
+                "squeeze(): argument 'dim' failed to unpack the object at pos {} with error \"type must be tuple of ints,but got {actual}\"",
+                index + 1
+            )));
+        };
+        parsed.push(dimension);
+    }
+    Ok(ParsedSqueezeDimensions::Multiple(parsed))
+}
+
+fn parse_squeeze_integer(
+    dimension: &Bound<'_, PyAny>,
+    allow_index_protocol: bool,
+) -> PyResult<Option<i64>> {
+    if dimension.is_instance_of::<PyBool>() {
+        return Ok(None);
+    }
+    if dimension.is_instance_of::<PyInt>() {
+        return dimension
+            .extract::<i64>()
+            .map(Some)
+            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+    }
+
+    let mut accepts_index = allow_index_protocol;
+    if !accepts_index
+        && let Ok(numpy) = PyModule::import(dimension.py(), "numpy")
+        && let Ok(numpy_integer) = numpy.getattr("integer")
+    {
+        accepts_index = dimension.is_instance(&numpy_integer)?;
+    }
+    if !accepts_index {
+        return Ok(None);
+    }
+
+    let Ok(indexed) = PyModule::import(dimension.py(), "operator")
+        .and_then(|operator| operator.getattr("index"))
+        .and_then(|index| index.call1((dimension,)))
+    else {
+        return Ok(None);
+    };
+    indexed
+        .extract::<i64>()
+        .map(Some)
+        .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))
+}
+
+fn squeeze_sequence_type_description(sequence: &Bound<'_, PyAny>) -> PyResult<String> {
+    let (kind, opening, closing, trailing) = if let Ok(sequence) = sequence.cast::<PyTuple>() {
+        ("tuple", "(", ")", sequence.len() == 1)
+    } else {
+        sequence.cast::<PyList>()?;
+        ("list", "[", "]", false)
+    };
+    let sequence = sequence.cast::<PySequence>()?;
+    let mut names = try_size_vector(sequence.len()?)?;
+    for item in sequence.try_iter()? {
+        names.push(transpose_type_name(&item?)?);
+    }
+    let names = names.join(", ");
+    let trailing = if trailing { "," } else { "" };
+    Ok(format!("{kind} of {opening}{names}{trailing}{closing}"))
+}
+
+fn squeeze_call_summary(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<String> {
+    let mut positional_names = try_size_vector(positional.len())?;
+    for value in positional.iter() {
+        positional_names.push(transpose_type_name(&value)?);
+    }
+
+    let keyword_length = keywords.map_or(0, PyDictMethods::len);
+    let mut keyword_names = try_size_vector(keyword_length)?;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            keyword_names.push((key.extract::<String>()?, transpose_type_name(&value)?));
+        }
+        keyword_names.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    }
+    let keyword_names = keyword_names
+        .into_iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let positional_names = positional_names.join(", ");
+    match (positional_names.is_empty(), keyword_names.is_empty()) {
+        (true, true) => Ok(String::new()),
+        (false, true) => Ok(positional_names),
+        (true, false) => Ok(format!("{keyword_names}, ")),
+        (false, false) => Ok(format!("{positional_names}, {keyword_names}")),
+    }
+}
+
+fn squeeze_method_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    unknown_keyword: Option<&str>,
+) -> PyResult<PyErr> {
+    let summary = squeeze_call_summary(positional, keywords)?;
+    let mismatch = unknown_keyword.map_or_else(String::new, |keyword| {
+        format!("\n      didn't match because some of the keywords were incorrect: {keyword}")
+    });
+    Ok(PyTypeError::new_err(format!(
+        "squeeze() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (){mismatch}\n * (int dim){mismatch}\n * (tuple of ints dim){mismatch}\n"
+    )))
+}
+
+fn squeeze_top_level_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    unknown_keyword: Option<&str>,
+) -> PyResult<PyErr> {
+    let summary = squeeze_call_summary(positional, keywords)?;
+    let mismatch = unknown_keyword.map_or_else(String::new, |keyword| {
+        format!("\n      didn't match because some of the keywords were incorrect: {keyword}")
+    });
+    Ok(PyTypeError::new_err(format!(
+        "squeeze() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (Tensor input)\n * (Tensor input, int dim){mismatch}\n * (Tensor input, tuple of ints dim){mismatch}\n"
+    )))
+}
+
+fn squeeze_top_level_input_with_dimension_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    dimension: &ParsedSqueezeDimensions,
+) -> PyResult<PyErr> {
+    let summary = squeeze_call_summary(positional, keywords)?;
+    let input_is_keyword = positional.is_empty();
+    let input = if input_is_keyword {
+        let keywords = keywords.expect("a bound keyword input must have a keyword dictionary");
+        keywords
+            .get_item("input")?
+            .expect("a successfully bound keyword input must remain present")
+    } else {
+        positional.get_item(0)?
+    };
+    let input_type = transpose_type_name(&input)?;
+
+    let (dimension_value, dimension_keyword) = if positional.len() > 1 {
+        (positional.get_item(1)?, None)
+    } else {
+        let keywords = keywords.expect("a bound keyword dimension must have keyword arguments");
+        let mut found = None;
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            if matches!(key.as_str(), "dim" | "axis") {
+                found = Some((value, key));
+                break;
+            }
+        }
+        found
+            .map(|(value, keyword)| (value, Some(keyword)))
+            .expect("a non-omitted bound dimension must remain present")
+    };
+    let dimension_type = transpose_type_name(&dimension_value)?;
+    let dimension_detail_type = if dimension_value.is_instance_of::<PyTuple>()
+        || dimension_value.is_instance_of::<PyList>()
+    {
+        squeeze_sequence_type_description(&dimension_value)?
+    } else {
+        dimension_type.clone()
+    };
+    let integer_compatible =
+        !dimension_value.is_instance_of::<PyBool>() && dimension_value.is_instance_of::<PyInt>();
+    let tuple_compatible = dimension_value.is_instance_of::<PyTuple>()
+        && matches!(dimension, &ParsedSqueezeDimensions::Multiple(_));
+
+    let input_detail = if input_is_keyword {
+        format!("!input={input_type}!")
+    } else {
+        format!("!{input_type}!")
+    };
+    let dimension_detail = |invalid: bool| {
+        let detail = dimension_keyword.as_ref().map_or_else(
+            || {
+                if invalid {
+                    dimension_detail_type.clone()
+                } else {
+                    dimension_type.clone()
+                }
+            },
+            |keyword| {
+                if invalid {
+                    format!("{keyword}={dimension_detail_type}")
+                } else {
+                    format!("{keyword}={dimension_type}")
+                }
+            },
+        );
+        if invalid {
+            format!("!{detail}!")
+        } else {
+            detail
+        }
+    };
+    let trailing = if input_is_keyword { ", " } else { "" };
+    let integer_detail = format!(
+        "{input_detail}, {}{trailing}",
+        dimension_detail(!integer_compatible)
+    );
+    let tuple_detail = format!(
+        "{input_detail}, {}{trailing}",
+        dimension_detail(!tuple_compatible)
+    );
+    Ok(PyTypeError::new_err(format!(
+        "squeeze() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (Tensor input)\n * (Tensor input, int dim)\n      didn't match because some of the arguments have invalid types: ({integer_detail})\n * (Tensor input, tuple of ints dim)\n      didn't match because some of the arguments have invalid types: ({tuple_detail})\n"
+    )))
+}
+
+fn squeeze_method_invalid_positional(actual: &str) -> PyErr {
+    squeeze_method_invalid_positional_details(actual, actual)
+}
+
+fn squeeze_method_invalid_positional_details(actual: &str, detail: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "squeeze() received an invalid combination of arguments - got ({actual}), but expected one of:\n * ()\n      didn't match because some of the arguments have invalid types: (!{detail}!)\n * (int dim)\n      didn't match because some of the arguments have invalid types: (!{detail}!)\n * (tuple of ints dim)\n      didn't match because some of the arguments have invalid types: (!{detail}!)\n"
+    ))
+}
+
+fn squeeze_method_invalid_keyword(keyword: &str, actual: &str, detail: &str) -> PyErr {
+    if keyword == "axis" {
+        return PyTypeError::new_err(format!(
+            "squeeze() received an invalid combination of arguments - got ({keyword}={actual}, ), but expected one of:\n * ()\n      didn't match because some of the keywords were incorrect: {keyword}\n * (int dim)\n      didn't match because some of the keywords were incorrect: {keyword}\n * (tuple of ints dim)\n      didn't match because some of the keywords were incorrect: {keyword}\n"
+        ));
+    }
+    PyTypeError::new_err(format!(
+        "squeeze() received an invalid combination of arguments - got ({keyword}={actual}, ), but expected one of:\n * ()\n      didn't match because some of the keywords were incorrect: {keyword}\n * (int dim)\n      didn't match because some of the arguments have invalid types: (!{keyword}={detail}!, )\n * (tuple of ints dim)\n      didn't match because some of the arguments have invalid types: (!{keyword}={detail}!, )\n"
+    ))
+}
+
+fn squeeze_top_level_invalid_positional(actual: &str) -> PyErr {
+    squeeze_top_level_invalid_positional_details(actual, actual)
+}
+
+fn squeeze_top_level_invalid_positional_details(actual: &str, detail: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "squeeze() received an invalid combination of arguments - got (Tensor, {actual}), but expected one of:\n * (Tensor input)\n * (Tensor input, int dim)\n      didn't match because some of the arguments have invalid types: (Tensor, !{detail}!)\n * (Tensor input, tuple of ints dim)\n      didn't match because some of the arguments have invalid types: (Tensor, !{detail}!)\n"
+    ))
+}
+
+fn squeeze_top_level_invalid_keyword(
+    keyword: &str,
+    actual: &str,
+    detail: &str,
+    input_is_keyword: bool,
+) -> PyErr {
+    if input_is_keyword {
+        let mismatch = if keyword == "axis" {
+            format!("some of the keywords were incorrect: {keyword}")
+        } else {
+            format!(
+                "some of the arguments have invalid types: (input=Tensor, !{keyword}={detail}!, )"
+            )
+        };
+        return PyTypeError::new_err(format!(
+            "squeeze() received an invalid combination of arguments - got ({keyword}={actual}, input=Tensor, ), but expected one of:\n * (Tensor input)\n * (Tensor input, int dim)\n      didn't match because {mismatch}\n * (Tensor input, tuple of ints dim)\n      didn't match because {mismatch}\n"
+        ));
+    }
+    if keyword == "axis" {
+        return PyTypeError::new_err(format!(
+            "squeeze() received an invalid combination of arguments - got (Tensor, {keyword}={actual}), but expected one of:\n * (Tensor input)\n * (Tensor input, int dim)\n      didn't match because some of the keywords were incorrect: {keyword}\n * (Tensor input, tuple of ints dim)\n      didn't match because some of the keywords were incorrect: {keyword}\n"
+        ));
+    }
+    PyTypeError::new_err(format!(
+        "squeeze() received an invalid combination of arguments - got (Tensor, {keyword}={actual}), but expected one of:\n * (Tensor input)\n * (Tensor input, int dim)\n      didn't match because some of the arguments have invalid types: (Tensor, !{keyword}={detail}!)\n * (Tensor input, tuple of ints dim)\n      didn't match because some of the arguments have invalid types: (Tensor, !{keyword}={detail}!)\n"
+    ))
+}
+
+fn squeeze_argument_type_error(
+    argument: &str,
+    position: Option<usize>,
+    expected: &str,
+    actual: &str,
+) -> PyErr {
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    PyTypeError::new_err(format!(
+        "squeeze(): argument '{argument}'{position} must be {expected}, not {actual}"
     ))
 }
 
@@ -1511,6 +2049,8 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::UnsupportedMemoryFormat { .. }
+        | TensorError::DuplicateDimension { .. }
+        | TensorError::SqueezeDimensionsRankLimit
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }
@@ -1537,6 +2077,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;
+    module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;

@@ -15,9 +15,14 @@ x = torch.tensor([[-1.0, 2.0], [3.0, -4.0]])
 y = torch.ones([2, 2])
 result = (x + y).relu()
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
+
+# PyTorch-compatible view calls use the same conventional alias.
+batched = torch.zeros((1, 2, 1, 3))
+matrix = torch.squeeze(batched, dim=(0, 2))
+assert matrix.shape == (2, 3)
 ```
 
-The CPU core provides `float32` tensors, checked construction, constant-filled creation, layout queries, stride-aware indexing, metadata-only transpose and compatible reshape views, independent deep cloning, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
+The CPU core provides `float32` tensors, checked construction, constant-filled creation, layout queries, stride-aware indexing, metadata-only transpose and squeeze views, compatible reshape views, independent deep cloning, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. `Tensor.squeeze()`, `Tensor.squeeze(dim)`, and `torch.squeeze(input, dim)` retain shared storage, strides, and offsets just like PyTorch. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
 
 ## Non-negotiable evaluation rules
 
