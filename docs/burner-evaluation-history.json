@@ -369,6 +369,38 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 56
       }
+    },
+    {
+      "key": "base:4bd351b07191a812ae040125818de0c96ac8da8d",
+      "commit": "4bd351b07191a812ae040125818de0c96ac8da8d",
+      "recordedAt": "2026-08-09T14:44:28.978Z",
+      "label": "base 4bd351b",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.2,
+        "eval_39340456": 13,
+        "eval_b4945d15": 94,
+        "eval_c8a1bfb9": 46
+      }
+    },
+    {
+      "key": "pr:22",
+      "recordedAt": "2026-08-09T14:44:28.978Z",
+      "label": "PR #22",
+      "kind": "leaf",
+      "prNumber": 22,
+      "title": "Add metadata-only PyTorch-compatible squeeze views",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.3,
+        "eval_39340456": 14,
+        "eval_b4945d15": 95,
+        "eval_c8a1bfb9": 47
+      }
     }
   ]
 }
