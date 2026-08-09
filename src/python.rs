@@ -1,6 +1,10 @@
+use std::ffi::CStr;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyValueError,
+    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
+    PyValueError,
 };
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
@@ -15,6 +19,39 @@ static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
+static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "macos")]
+const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4317.)";
+#[cfg(target_os = "macos")]
+const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4322.)";
+#[cfg(target_os = "macos")]
+const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4374.)";
+
+#[cfg(target_os = "linux")]
+const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /pytorch/aten/src/ATen/native/TensorShape.cpp:4317.)";
+#[cfg(target_os = "linux")]
+const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /pytorch/aten/src/ATen/native/TensorShape.cpp:4322.)";
+#[cfg(target_os = "linux")]
+const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /pytorch/aten/src/ATen/native/TensorShape.cpp:4374.)";
+
+#[cfg(target_os = "windows")]
+const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at D:\\a\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4317.)";
+#[cfg(target_os = "windows")]
+const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at D:\\a\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4322.)";
+#[cfg(target_os = "windows")]
+const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at D:\\a\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4374.)";
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor.";
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+const T_SCALAR_WARNING: &CStr =
+    c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases.";
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+const MT_SCALAR_WARNING: &CStr =
+    c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases.";
 
 /// Python scalar-type descriptor backed by a native [`DType`].
 #[pyclass(name = "dtype", module = "torch_rs", frozen, skip_from_py_object)]
@@ -183,6 +220,35 @@ impl PyTensor {
         PyDevice {
             inner: self.inner.device(),
         }
+    }
+
+    /// NumPy-style transpose view with every dimension reversed.
+    #[getter(T)]
+    fn numpy_transpose(&self, py: Python<'_>) -> PyResult<Self> {
+        match self.inner.shape().len() {
+            0 => warn_once(py, &T_SCALAR_WARNING_EMITTED, T_SCALAR_WARNING)?,
+            2 => {}
+            _ => warn_once(py, &T_NON_MATRIX_WARNING_EMITTED, T_NON_MATRIX_WARNING)?,
+        }
+        self.inner
+            .reverse_dimensions()
+            .map(|inner| Self { inner })
+            .map_err(|error| transpose_error(&error))
+    }
+
+    /// Matrix transpose view with the final two dimensions swapped.
+    #[getter(mT)]
+    fn matrix_transpose(slf: PyRef<'_, Self>) -> PyResult<Py<Self>> {
+        let rank = slf.inner.shape().len();
+        if rank == 0 {
+            warn_once(slf.py(), &MT_SCALAR_WARNING_EMITTED, MT_SCALAR_WARNING)?;
+            return Ok(slf.into());
+        }
+        let inner = slf
+            .inner
+            .matrix_transpose()
+            .map_err(|error| transpose_error(&error))?;
+        Py::new(slf.py(), Self { inner })
     }
 
     #[pyo3(signature = (dim=None))]
@@ -779,6 +845,13 @@ fn memory_format_object(
             },
         )
     })
+}
+
+fn warn_once(py: Python<'_>, emitted: &AtomicBool, message: &CStr) -> PyResult<()> {
+    if emitted.swap(true, Ordering::Relaxed) {
+        return Ok(());
+    }
+    PyErr::warn(py, &py.get_type::<PyUserWarning>(), message, 1)
 }
 
 fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<MemoryFormat> {
@@ -2345,6 +2418,10 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::UnsupportedMemoryFormat { .. }
         | TensorError::ContiguousPreserveFormatUnsupported
         | TensorError::ContiguousMemoryFormatRankMismatch { .. }
+        | TensorError::PermutationRankMismatch { .. }
+        | TensorError::PermutationDimensionOutOfRange { .. }
+        | TensorError::DuplicatePermutationDimension { .. }
+        | TensorError::MatrixTransposeRequiresMatrix { .. }
         | TensorError::DuplicateDimension { .. }
         | TensorError::SqueezeDimensionsRankLimit
         | TensorError::FlattenStartAfterEnd

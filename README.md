@@ -16,6 +16,12 @@ y = torch.ones([2, 2])
 result = (x + y).relu()
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 
+# Read-only transpose properties are native shared-storage views. Tensor.T
+# reverses every dimension; Tensor.mT swaps the final matrix dimensions.
+assert x.T.shape == (2, 2)
+batched_matrices = torch.zeros((4, 2, 3))
+assert batched_matrices.mT.shape == (4, 3, 2)
+
 # PyTorch-compatible view calls use the same conventional alias.
 batched = torch.zeros((1, 2, 1, 3))
 matrix = torch.squeeze(batched, dim=(0, 2))
@@ -33,7 +39,7 @@ assert packed.is_contiguous()
 assert nhwc_storage.is_contiguous(memory_format=torch.channels_last)
 ```
 
-The CPU core provides `float32` tensors, checked construction, constant-filled creation, layout queries, stride-aware indexing, metadata-only transpose and squeeze views, compatible reshape views, PyTorch-compatible `Tensor.flatten()` and `torch.flatten()`, native `Tensor.contiguous()` materialization for row-major, channels-last, and channels-last-3d storage, independent deep cloning, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. Flatten preserves shared storage for stride-compatible ranges and eagerly creates an independent contiguous copy otherwise. Already-matching contiguous calls preserve Python object identity and shared storage; materializing calls copy logical values into independent storage with offset zero. `Tensor.squeeze()`, `Tensor.squeeze(dim)`, and `torch.squeeze(input, dim)` retain shared storage, strides, and offsets just like PyTorch. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
+The CPU core provides `float32` tensors, checked construction, constant-filled creation, layout queries, stride-aware indexing, metadata-only transpose and squeeze views, compatible reshape views, PyTorch-compatible read-only `Tensor.T` and `Tensor.mT` views, `Tensor.flatten()` and `torch.flatten()`, native `Tensor.contiguous()` materialization for row-major, channels-last, and channels-last-3d storage, independent deep cloning, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. `Tensor.T` reverses the complete shape and stride tables, while `Tensor.mT` swaps only the final two dimensions; both retain shared storage, offsets, dtype, and device. Flatten preserves shared storage for stride-compatible ranges and eagerly creates an independent contiguous copy otherwise. Already-matching contiguous calls preserve Python object identity and shared storage; materializing calls copy logical values into independent storage with offset zero. `Tensor.squeeze()`, `Tensor.squeeze(dim)`, and `torch.squeeze(input, dim)` retain shared storage, strides, and offsets just like PyTorch. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
 
 ## Non-negotiable evaluation rules
 

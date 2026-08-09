@@ -465,6 +465,38 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 48
       }
+    },
+    {
+      "key": "base:5ce8c48abdbeaf757f323caed4ab2d56f59d84ab",
+      "commit": "5ce8c48abdbeaf757f323caed4ab2d56f59d84ab",
+      "recordedAt": "2026-08-09T16:34:44.742Z",
+      "label": "base 5ce8c48",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.1,
+        "eval_39340456": 14,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 46
+      }
+    },
+    {
+      "key": "pr:25",
+      "recordedAt": "2026-08-09T16:34:44.742Z",
+      "label": "PR #25",
+      "kind": "leaf",
+      "prNumber": 25,
+      "title": "Add PyTorch-compatible Tensor.T and Tensor.mT views",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.3,
+        "eval_39340456": 15,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 48
+      }
     }
   ]
 }

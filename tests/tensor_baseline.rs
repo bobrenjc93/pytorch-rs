@@ -795,6 +795,148 @@ fn transpose_is_a_metadata_only_shared_storage_view() {
 }
 
 #[test]
+fn arbitrary_dimension_permutations_power_t_and_mt_views() {
+    let source = Tensor::from_vec((0_u8..120).map(f32::from).collect(), [2, 3, 4, 5]).unwrap();
+    let offset_view = source.transpose(0, 3).unwrap().index_integer(1).unwrap();
+    assert_eq!(offset_view.shape(), [3, 4, 2]);
+    assert_eq!(offset_view.stride(), [20, 5, 60]);
+    assert_eq!(offset_view.storage_offset(), 1);
+
+    let permuted = offset_view.permute_axes([2, 0, 1]).unwrap();
+    assert_eq!(permuted.shape(), [2, 3, 4]);
+    assert_eq!(permuted.stride(), [60, 20, 5]);
+    assert_eq!(permuted.storage_offset(), 1);
+    assert_eq!(permuted.numel(), offset_view.numel());
+    assert_eq!(permuted.dtype(), offset_view.dtype());
+    assert_eq!(permuted.device(), offset_view.device());
+    assert!(permuted.shares_storage_with(&source));
+
+    let reversed = offset_view.reverse_dimensions().unwrap();
+    assert_eq!(reversed.shape(), [2, 4, 3]);
+    assert_eq!(reversed.stride(), [60, 5, 20]);
+    assert_eq!(reversed.storage_offset(), 1);
+    let restored = reversed.reverse_dimensions().unwrap();
+    assert_eq!(restored.shape(), offset_view.shape());
+    assert_eq!(restored.stride(), offset_view.stride());
+    assert_eq!(restored.storage_offset(), offset_view.storage_offset());
+    assert!(restored.shares_storage_with(&offset_view));
+    assert_eq!(
+        restored.try_to_vec().unwrap(),
+        offset_view.try_to_vec().unwrap()
+    );
+
+    let matrix_transposed = offset_view.matrix_transpose().unwrap();
+    let explicit = offset_view.transpose(-2, -1).unwrap();
+    assert_eq!(matrix_transposed.shape(), explicit.shape());
+    assert_eq!(matrix_transposed.stride(), explicit.stride());
+    assert_eq!(
+        matrix_transposed.try_to_vec().unwrap(),
+        explicit.try_to_vec().unwrap()
+    );
+    assert!(matrix_transposed.shares_storage_with(&offset_view));
+}
+
+#[test]
+fn dimension_permutation_validation_is_safe_and_rank_independent() {
+    let tensor = Tensor::zeros([2, 3, 4]).unwrap();
+    assert_eq!(
+        tensor.permute_axes([0, 1]),
+        Err(TensorError::PermutationRankMismatch {
+            dimensions: 2,
+            rank: 3,
+        })
+    );
+    assert_eq!(
+        tensor.permute_axes([0, 1, 3]),
+        Err(TensorError::PermutationDimensionOutOfRange {
+            dimension: 3,
+            rank: 3,
+        })
+    );
+    assert_eq!(
+        tensor.permute_axes([0, 1, 1]),
+        Err(TensorError::DuplicatePermutationDimension { dimension: 1 })
+    );
+
+    let scalar = Tensor::from_vec(vec![2.5], []).unwrap();
+    let scalar_t = scalar.reverse_dimensions().unwrap();
+    assert!(scalar_t.shape().is_empty());
+    assert!(scalar_t.stride().is_empty());
+    assert!(scalar_t.shares_storage_with(&scalar));
+    assert!(
+        scalar
+            .matrix_transpose()
+            .unwrap()
+            .shares_storage_with(&scalar)
+    );
+
+    let vector = Tensor::from_vec(vec![1.0, 2.0], [2]).unwrap();
+    let vector_t = vector.reverse_dimensions().unwrap();
+    assert_eq!(vector_t.shape(), [2]);
+    assert_eq!(vector_t.stride(), [1]);
+    assert!(vector_t.shares_storage_with(&vector));
+    assert_eq!(
+        vector.matrix_transpose(),
+        Err(TensorError::MatrixTransposeRequiresMatrix { rank: 1 })
+    );
+    assert_eq!(
+        vector.matrix_transpose().unwrap_err().to_string(),
+        "tensor.mT is only supported on matrices or batches of matrices. Got 1-D tensor."
+    );
+
+    let mut high_rank_shape = vec![1; 96];
+    high_rank_shape[3] = 2;
+    high_rank_shape[47] = 0;
+    high_rank_shape[91] = 3;
+    let high_rank = Tensor::zeros(high_rank_shape.clone()).unwrap();
+    let high_rank_t = high_rank.reverse_dimensions().unwrap();
+    high_rank_shape.reverse();
+    assert_eq!(high_rank_t.shape(), high_rank_shape);
+    assert_eq!(
+        high_rank_t.stride(),
+        high_rank.stride().iter().rev().copied().collect::<Vec<_>>()
+    );
+    assert!(high_rank_t.shares_storage_with(&high_rank));
+    assert!(high_rank_t.logical_values().next().is_none());
+}
+
+#[test]
+fn t_and_mt_preserve_extreme_empty_metadata_without_materializing() {
+    let maximum = isize::MAX.unsigned_abs();
+    let source = Tensor::zeros([maximum, 0, maximum]).unwrap();
+
+    let reversed = source.reverse_dimensions().unwrap();
+    assert_eq!(reversed.shape(), [maximum, 0, maximum]);
+    assert_eq!(reversed.stride(), [1, maximum, maximum]);
+    assert_eq!(reversed.storage_offset(), 0);
+    assert_eq!(reversed.numel(), 0);
+    assert!(reversed.shares_storage_with(&source));
+
+    assert_eq!(
+        source.matrix_transpose(),
+        Err(TensorError::ElementCountOverflow)
+    );
+    assert_eq!(
+        source.transpose(-2, -1),
+        Err(TensorError::ElementCountOverflow)
+    );
+
+    let offset = Tensor::zeros([maximum, 0, 1])
+        .unwrap()
+        .index_integer(i64::MAX - 1)
+        .unwrap();
+    for view in [
+        offset.reverse_dimensions().unwrap(),
+        offset.matrix_transpose().unwrap(),
+    ] {
+        assert_eq!(view.storage_offset(), maximum - 1);
+        assert_eq!(view.numel(), 0);
+        assert!(view.shares_storage_with(&offset));
+        assert!(view.logical_values().next().is_none());
+    }
+}
+
+#[test]
 fn transpose_dimension_normalization_matches_pytorch_for_scalars_and_ranks() {
     let scalar = Tensor::from_vec(vec![3.5], []).unwrap();
     for dimensions in [(0, 0), (-1, -1), (0, -1), (-1, 0)] {
