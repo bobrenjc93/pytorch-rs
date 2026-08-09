@@ -49,10 +49,13 @@ class TensorBufferTests(unittest.TestCase):
             ("?", b"\x00\x01\x02\x03\xfe\xff", [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]),
             ("n", bytes(2 * ctypes.sizeof(ctypes.c_ssize_t)), [0.0, 0.0]),
             ("N", bytes(2 * ctypes.sizeof(ctypes.c_size_t)), [0.0, 0.0]),
-            ("e", struct.pack("@ee", 1.0, -2.0), [1.0, -2.0]),
         ):
             with self.subTest(format=format_code, input="cast memoryview"):
                 self.assert_tensor(memoryview(raw).cast(format_code), expected)
+        self.assert_tensor(
+            memoryview(np.asarray([1.0, -2.0], dtype=np.float16)),
+            [1.0, -2.0],
+        )
 
     def test_native_prefixed_formats(self):
         pointer_high_bit = 1 << (8 * struct.calcsize("@P") - 1)

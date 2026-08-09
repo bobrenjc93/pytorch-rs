@@ -81,7 +81,10 @@ class TensorBufferReferenceTests(unittest.TestCase):
                     "size_t",
                     memoryview(bytes(2 * ctypes.sizeof(ctypes.c_size_t))).cast("N"),
                 ),
-                ("float16", memoryview(struct.pack("@ee", 1.0, -2.0)).cast("e")),
+                (
+                    "float16",
+                    memoryview(np.asarray([1.0, -2.0], dtype=np.float16)),
+                ),
                 (
                     "native-prefixed int32",
                     memoryview(struct.pack("@ii", -7, 9)).cast("@i"),
@@ -111,8 +114,7 @@ class TensorBufferReferenceTests(unittest.TestCase):
 
     def test_float16_edge_value_bits_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
-        half_bits = array.array(
-            "H",
+        half_bits = np.asarray(
             (
                 0x0000,
                 0x8000,
@@ -125,8 +127,9 @@ class TensorBufferReferenceTests(unittest.TestCase):
                 0x7C01,
                 0xFFFF,
             ),
+            dtype=np.uint16,
         )
-        source = memoryview(half_bits.tobytes()).cast("e")
+        source = memoryview(half_bits.view(np.float16))
         actual = np.asarray(torch.tensor(source, dtype=torch.float32))
         expected = reference_torch.tensor(source, dtype=reference_torch.float32).numpy()
         np.testing.assert_array_equal(actual.view(np.uint32), expected.view(np.uint32))
