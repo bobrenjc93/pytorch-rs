@@ -196,6 +196,28 @@ enum BinaryOperation {
     Divide,
 }
 
+#[derive(Clone, Copy)]
+enum ConstantFactory {
+    Zeros,
+    Ones,
+}
+
+enum ParsedSizeDimension {
+    Value(i64),
+    Overflow,
+    Invalid(String),
+}
+
+struct ParsedFactorySize {
+    dimensions: Vec<ParsedSizeDimension>,
+}
+
+enum FirstSizeErrorStyle {
+    PositionalValue,
+    PositionalCollection,
+    KeywordCollection(String),
+}
+
 #[pymethods]
 impl PyTensor {
     #[classattr]
@@ -743,32 +765,20 @@ fn flatten(
     Py::new(args.py(), PyTensor { inner })
 }
 
-#[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
-fn zeros(
-    size: Option<&Bound<'_, PyAny>>,
-    shape: Option<&Bound<'_, PyAny>>,
-    dtype: Option<&Bound<'_, PyAny>>,
-    device: Option<&Bound<'_, PyAny>>,
-) -> PyResult<PyTensor> {
-    let size = parse_creation_size("zeros", size, shape)?;
-    let (dtype, device) = parse_metadata("zeros", dtype, device)?;
-    CoreTensor::zeros_with_metadata(size, dtype, device)
-        .map(|inner| PyTensor { inner })
-        .map_err(|error| tensor_error(&error))
+#[pyfunction(
+    signature = (*args, **kwargs),
+    text_signature = "(*size, shape=None, dtype=None, device=None)"
+)]
+fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    create_constant_tensor(ConstantFactory::Zeros, args, kwargs)
 }
 
-#[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
-fn ones(
-    size: Option<&Bound<'_, PyAny>>,
-    shape: Option<&Bound<'_, PyAny>>,
-    dtype: Option<&Bound<'_, PyAny>>,
-    device: Option<&Bound<'_, PyAny>>,
-) -> PyResult<PyTensor> {
-    let size = parse_creation_size("ones", size, shape)?;
-    let (dtype, device) = parse_metadata("ones", dtype, device)?;
-    CoreTensor::ones_with_metadata(size, dtype, device)
-        .map(|inner| PyTensor { inner })
-        .map_err(|error| tensor_error(&error))
+#[pyfunction(
+    signature = (*args, **kwargs),
+    text_signature = "(*size, shape=None, dtype=None, device=None)"
+)]
+fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    create_constant_tensor(ConstantFactory::Ones, args, kwargs)
 }
 
 #[pyfunction(
@@ -893,25 +903,291 @@ fn parse_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<
     )))
 }
 
-fn parse_creation_size(
+impl ConstantFactory {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Zeros => "zeros",
+            Self::Ones => "ones",
+        }
+    }
+}
+
+fn create_constant_tensor(
+    factory: ConstantFactory,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyTensor> {
+    let function = factory.name();
+    let size_keyword = match kwargs {
+        Some(kwargs) => kwargs.get_item("size")?,
+        None => None,
+    };
+    let shape_keyword = match kwargs {
+        Some(kwargs) => kwargs.get_item("shape")?,
+        None => None,
+    };
+
+    if args.is_empty() && size_keyword.is_none() && shape_keyword.is_none() {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() missing 1 required positional arguments: \"size\""
+        )));
+    }
+
+    // PyTorch chooses the overload from the first size element before it
+    // binds metadata or reports duplicate keywords. Preparing the input here
+    // preserves that order while deferring later element conversion errors.
+    let parsed_size = if args.is_empty() {
+        let value = size_keyword
+            .as_ref()
+            .or(shape_keyword.as_ref())
+            .expect("a size source was checked above");
+        prepare_keyword_factory_size(function, value)?
+    } else {
+        prepare_positional_factory_size(function, args)?
+    };
+
+    if !args.is_empty() && size_keyword.is_some() {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() got multiple values for argument 'size'"
+        )));
+    }
+    if !args.is_empty() && shape_keyword.is_some()
+        || size_keyword.is_some() && shape_keyword.is_some()
+    {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() got an unexpected keyword argument 'shape'"
+        )));
+    }
+
+    if let Some(kwargs) = kwargs {
+        for (key, _) in kwargs {
+            let key = key.extract::<String>()?;
+            if !matches!(key.as_str(), "size" | "shape" | "dtype" | "device") {
+                return Err(PyTypeError::new_err(format!(
+                    "{function}() got an unexpected keyword argument '{key}'"
+                )));
+            }
+        }
+    }
+
+    let dtype = match kwargs {
+        Some(kwargs) => kwargs.get_item("dtype")?,
+        None => None,
+    };
+    let device = match kwargs {
+        Some(kwargs) => kwargs.get_item("device")?,
+        None => None,
+    };
+    let (dtype, device) = parse_metadata(function, dtype.as_ref(), device.as_ref())?;
+    let signed_size = parsed_size.finish(function)?;
+    let shape = validate_factory_size(factory, signed_size)?;
+
+    let result = match factory {
+        ConstantFactory::Zeros => CoreTensor::zeros_with_metadata(shape.clone(), dtype, device),
+        ConstantFactory::Ones => CoreTensor::ones_with_metadata(shape.clone(), dtype, device),
+    };
+    result
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| constant_factory_shape_error(&error, &shape))
+}
+
+fn prepare_positional_factory_size(
     function: &str,
-    size: Option<&Bound<'_, PyAny>>,
-    shape: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Vec<usize>> {
-    let value = match (size, shape) {
-        (Some(_), Some(_)) => {
+    args: &Bound<'_, PyTuple>,
+) -> PyResult<ParsedFactorySize> {
+    if args.len() > 1 {
+        let first = parse_size_dimension(&args.get_item(0)?, true)?;
+        if matches!(first, ParsedSizeDimension::Invalid(_)) {
             return Err(PyTypeError::new_err(format!(
-                "{function}() received both 'size' and its compatibility alias 'shape'"
+                "{function}() takes 1 positional argument but {} were given",
+                args.len()
             )));
         }
-        (Some(value), None) | (None, Some(value)) => value,
-        (None, None) => {
-            return Err(PyTypeError::new_err(format!(
-                "{function}() missing required argument 'size'"
-            )));
+
+        let mut dimensions = try_size_vector(args.len())?;
+        try_push_size(&mut dimensions, first)?;
+        for dimension in args.iter().skip(1) {
+            try_push_size(&mut dimensions, parse_size_dimension(&dimension, false)?)?;
+        }
+        return Ok(ParsedFactorySize { dimensions });
+    }
+
+    let value = args.get_item(0)?;
+    if let Ok(dimensions) = value.cast::<PyList>() {
+        return prepare_factory_size_dimensions(
+            function,
+            dimensions.len(),
+            dimensions.iter(),
+            &FirstSizeErrorStyle::PositionalCollection,
+        );
+    }
+    if let Ok(dimensions) = value.cast::<PyTuple>() {
+        return prepare_factory_size_dimensions(
+            function,
+            dimensions.len(),
+            dimensions.iter(),
+            &FirstSizeErrorStyle::PositionalCollection,
+        );
+    }
+    prepare_factory_size_dimensions(
+        function,
+        1,
+        std::iter::once(value),
+        &FirstSizeErrorStyle::PositionalValue,
+    )
+}
+
+fn prepare_keyword_factory_size(
+    function: &str,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<ParsedFactorySize> {
+    let container_type = transpose_type_name(value)?;
+    if let Ok(dimensions) = value.cast::<PyList>() {
+        return prepare_factory_size_dimensions(
+            function,
+            dimensions.len(),
+            dimensions.iter(),
+            &FirstSizeErrorStyle::KeywordCollection(container_type),
+        );
+    }
+    if let Ok(dimensions) = value.cast::<PyTuple>() {
+        return prepare_factory_size_dimensions(
+            function,
+            dimensions.len(),
+            dimensions.iter(),
+            &FirstSizeErrorStyle::KeywordCollection(container_type),
+        );
+    }
+    Err(PyTypeError::new_err(format!(
+        "{function}(): argument 'size' must be tuple of ints, not {container_type}"
+    )))
+}
+
+fn prepare_factory_size_dimensions<'py>(
+    function: &str,
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+    first_error_style: &FirstSizeErrorStyle,
+) -> PyResult<ParsedFactorySize> {
+    let mut parsed = try_size_vector(length)?;
+    for (index, dimension) in dimensions.enumerate() {
+        let value = parse_size_dimension(&dimension, index == 0)?;
+        if index == 0
+            && let ParsedSizeDimension::Invalid(type_name) = &value
+        {
+            return Err(first_factory_size_error(
+                function,
+                type_name,
+                first_error_style,
+            ));
+        }
+        try_push_size(&mut parsed, value)?;
+    }
+    Ok(ParsedFactorySize { dimensions: parsed })
+}
+
+fn parse_size_dimension(
+    dimension: &Bound<'_, PyAny>,
+    reject_bool: bool,
+) -> PyResult<ParsedSizeDimension> {
+    let type_name = transpose_type_name(dimension)?;
+    if reject_bool && dimension.is_instance_of::<PyBool>() {
+        return Ok(ParsedSizeDimension::Invalid(type_name));
+    }
+    match dimension.extract::<i64>() {
+        Ok(value) => Ok(ParsedSizeDimension::Value(value)),
+        Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
+            Ok(ParsedSizeDimension::Overflow)
+        }
+        Err(_) => Ok(ParsedSizeDimension::Invalid(type_name)),
+    }
+}
+
+fn first_factory_size_error(function: &str, type_name: &str, style: &FirstSizeErrorStyle) -> PyErr {
+    let message = match style {
+        FirstSizeErrorStyle::PositionalValue => format!(
+            "{function}(): argument 'size' (position 1) must be tuple of ints, not {type_name}"
+        ),
+        FirstSizeErrorStyle::PositionalCollection => format!(
+            "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
+        ),
+        FirstSizeErrorStyle::KeywordCollection(container_type) => {
+            format!("{function}(): argument 'size' must be tuple of ints, not {container_type}")
         }
     };
-    value.extract::<Vec<usize>>()
+    PyTypeError::new_err(message)
+}
+
+impl ParsedFactorySize {
+    fn finish(self, function: &str) -> PyResult<Vec<i64>> {
+        let mut size = try_size_vector(self.dimensions.len())?;
+        for (index, dimension) in self.dimensions.into_iter().enumerate() {
+            let value = match dimension {
+                ParsedSizeDimension::Value(value) => value,
+                ParsedSizeDimension::Overflow => {
+                    return Err(factory_size_unpack_error(
+                        function,
+                        index + 1,
+                        "Overflow when unpacking long long",
+                    ));
+                }
+                ParsedSizeDimension::Invalid(type_name) => {
+                    return Err(factory_size_unpack_error(
+                        function,
+                        index + 1,
+                        &format!("type must be tuple of ints,but got {type_name}"),
+                    ));
+                }
+            };
+            try_push_size(&mut size, value)?;
+        }
+        Ok(size)
+    }
+}
+
+fn factory_size_unpack_error(function: &str, position: usize, reason: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "{function}(): argument 'size' failed to unpack the object at pos {position} with error \"{reason}\""
+    ))
+}
+
+fn validate_factory_size(factory: ConstantFactory, size: Vec<i64>) -> PyResult<Vec<usize>> {
+    if let Some(dimension) = size.iter().find(|dimension| **dimension < 0) {
+        return match factory {
+            ConstantFactory::Zeros => Err(PyRuntimeError::new_err(
+                "zeros: Dimension size must be non-negative.",
+            )),
+            ConstantFactory::Ones => Err(PyRuntimeError::new_err(format!(
+                "Trying to create tensor with negative dimension {dimension}: {size:?}"
+            ))),
+        };
+    }
+
+    let mut shape = try_size_vector(size.len())?;
+    for dimension in size {
+        try_push_size(
+            &mut shape,
+            usize::try_from(dimension).map_err(|_| {
+                PyRuntimeError::new_err(format!(
+                    "tensor dimension {dimension} exceeds the platform size limit"
+                ))
+            })?,
+        )?;
+    }
+    Ok(shape)
+}
+
+fn constant_factory_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
+    if matches!(
+        error,
+        TensorError::ElementCountOverflow | TensorError::StorageCapacityOverflow { .. }
+    ) {
+        PyRuntimeError::new_err(format!(
+            "Storage size calculation overflowed with sizes={shape:?}"
+        ))
+    } else {
+        tensor_error(error)
+    }
 }
 
 fn parse_metadata(
@@ -929,6 +1205,9 @@ fn parse_dtype(function: &str, dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DTy
     let Some(dtype) = dtype else {
         return Ok(DType::Float32);
     };
+    if dtype.is_none() {
+        return Ok(DType::Float32);
+    }
     if let Ok(dtype) = dtype.cast::<PyDType>() {
         return Ok(dtype.try_borrow()?.inner);
     }
@@ -940,9 +1219,11 @@ fn parse_dtype(function: &str, dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DTy
 }
 
 fn parse_device(function: &str, device: Option<&Bound<'_, PyAny>>) -> PyResult<Device> {
-    device.map_or(Ok(Device::Cpu), |device| {
-        parse_device_value(function, device)
-    })
+    match device {
+        None => Ok(Device::Cpu),
+        Some(device) if device.is_none() => Ok(Device::Cpu),
+        Some(device) => parse_device_value(function, device),
+    }
 }
 
 fn parse_device_value(function: &str, device: &Bound<'_, PyAny>) -> PyResult<Device> {
@@ -964,9 +1245,14 @@ fn parse_device_value(function: &str, device: &Bound<'_, PyAny>) -> PyResult<Dev
     } else {
         "device"
     };
+    let expected = if function == "device" {
+        "torch.device or str"
+    } else {
+        "torch.device"
+    };
     let type_name = device.get_type().name()?;
     Err(PyTypeError::new_err(format!(
-        "{function}(): argument '{argument}' must be torch.device or str, not {type_name}"
+        "{function}(): argument '{argument}' must be {expected}, not {type_name}"
     )))
 }
 
