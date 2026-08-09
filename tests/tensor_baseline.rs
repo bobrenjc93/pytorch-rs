@@ -274,6 +274,130 @@ fn sine_handles_scalar_and_empty_tensors_with_pytorch_layouts() {
 }
 
 #[test]
+fn exponential_matches_pytorch_float32_values_and_ieee_special_cases() {
+    const ATOL: f32 = f32::from_bits(1);
+    const RTOL: f32 = 2.0e-6;
+
+    let ordinary = Tensor::from_vec(
+        vec![
+            -80.0, -20.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 10.0, 20.0, 80.0,
+        ],
+        [2, 2, 3],
+    )
+    .unwrap()
+    .exp()
+    .unwrap();
+    let pytorch_reference = [
+        1.804_851_3e-35,
+        2.061_153_7e-9,
+        0.135_335_28,
+        0.367_879_45,
+        0.606_530_67,
+        1.0,
+        1.648_721_2,
+        2.718_281_7,
+        7.389_056,
+        22_026.465,
+        4.851_652e8,
+        5.540_622_5e34,
+    ];
+    for (actual, expected) in ordinary.as_slice().iter().zip(pytorch_reference) {
+        assert!((actual - expected).abs() <= ATOL + RTOL * expected.abs());
+    }
+
+    let smallest_subnormal = f32::from_bits(1);
+    let special = Tensor::from_vec(
+        vec![
+            0.0,
+            -0.0,
+            smallest_subnormal,
+            -smallest_subnormal,
+            -100.0,
+            -104.0,
+            88.0,
+            89.0,
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+        ],
+        [11],
+    )
+    .unwrap()
+    .exp()
+    .unwrap();
+    assert!(
+        special.as_slice()[..4]
+            .iter()
+            .all(|value| value.to_bits() == 1.0_f32.to_bits())
+    );
+    assert!(special.as_slice()[4].is_subnormal());
+    assert_eq!(special.as_slice()[5].to_bits(), 0.0_f32.to_bits());
+    assert!(special.as_slice()[6].is_finite());
+    assert_eq!(special.as_slice()[7].to_bits(), f32::INFINITY.to_bits());
+    assert!(special.as_slice()[8].is_nan());
+    assert_eq!(special.as_slice()[9].to_bits(), f32::INFINITY.to_bits());
+    assert_eq!(special.as_slice()[10].to_bits(), 0.0_f32.to_bits());
+}
+
+#[test]
+fn exponential_preserves_metadata_and_materializes_views_canonically() {
+    let scalar = Tensor::from_vec(vec![1.0], []).unwrap().exp().unwrap();
+    assert!(scalar.shape().is_empty());
+    assert!(scalar.stride().is_empty());
+    assert_eq!(scalar.dtype(), DType::Float32);
+    assert_eq!(scalar.device(), Device::Cpu);
+
+    let source = Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [2, 3]).unwrap();
+    let indexed = source.index_integer(1).unwrap();
+    assert_eq!(indexed.storage_offset(), 3);
+    let indexed_output = indexed.exp().unwrap();
+    assert_eq!(indexed_output.shape(), [3]);
+    assert_eq!(indexed_output.stride(), [1]);
+    assert_eq!(indexed_output.storage_offset(), 0);
+    assert!(!indexed_output.shares_storage_with(&source));
+    for (actual, expected) in indexed_output
+        .as_slice()
+        .iter()
+        .zip([20.085_537, 54.598_15, 148.413_16])
+    {
+        assert!((actual - expected).abs() <= 2.0e-6 * expected);
+    }
+
+    let reshaped = source.reshape([1, 2, 3]).unwrap();
+    let reshaped_output = reshaped.exp().unwrap();
+    assert_eq!(reshaped_output.shape(), [1, 2, 3]);
+    assert_eq!(reshaped_output.stride(), [6, 3, 1]);
+    assert_eq!(reshaped_output.dtype(), reshaped.dtype());
+    assert_eq!(reshaped_output.device(), reshaped.device());
+}
+
+#[test]
+fn exponential_handles_empty_shapes_and_reports_metadata_overflow() {
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().exp().unwrap();
+    assert_eq!(empty.shape(), [2, 0, 3]);
+    assert_eq!(empty.stride(), [3, 3, 1]);
+    assert!(empty.as_slice().is_empty());
+
+    let maximum = isize::MAX.unsigned_abs();
+    let offset_view = Tensor::zeros([maximum, 0])
+        .unwrap()
+        .index_integer(i64::try_from(maximum - 1).unwrap())
+        .unwrap();
+    assert!(offset_view.storage_offset() > 0);
+    let offset_output = offset_view.exp().unwrap();
+    assert_eq!(offset_output.shape(), [0]);
+    assert_eq!(offset_output.stride(), [1]);
+    assert_eq!(offset_output.storage_offset(), 0);
+    assert!(offset_output.as_slice().is_empty());
+
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3])
+        .unwrap();
+    assert_eq!(extreme.exp(), Err(TensorError::StrideCalculationOverflow));
+}
+
+#[test]
 fn binary_arithmetic_broadcasts_mixed_ranks_and_singleton_dimensions() {
     let left = Tensor::from_vec(vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0], [2, 1, 3]).unwrap();
     let right = Tensor::from_vec(vec![1.0, 2.0, 4.0], [3, 1]).unwrap();

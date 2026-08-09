@@ -305,6 +305,38 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 48
       }
+    },
+    {
+      "key": "base:9eef1f9a6adade2633051b341e28defa94fe98cc",
+      "commit": "9eef1f9a6adade2633051b341e28defa94fe98cc",
+      "recordedAt": "2026-08-09T07:07:10.361Z",
+      "label": "base 9eef1f9",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 33.8,
+        "eval_63a24994": 77.2,
+        "eval_39340456": 13,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 46
+      }
+    },
+    {
+      "key": "pr:18",
+      "recordedAt": "2026-08-09T07:07:10.361Z",
+      "label": "PR #18",
+      "kind": "leaf",
+      "prNumber": 18,
+      "title": "Add native PyTorch-compatible tensor exponential",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 34.9,
+        "eval_63a24994": 78.5,
+        "eval_39340456": 14,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 47
+      }
     }
   ]
 }
