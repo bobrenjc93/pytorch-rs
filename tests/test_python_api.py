@@ -461,6 +461,9 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertEqual(size, expected_size)
                 self.assertEqual(repr(size), f"torch.Size({list(expected_size)})")
                 self.assertEqual(size.numel(), expected_numel)
+                self.assertIs(type(tensor.shape), torch.Size)
+                self.assertEqual(tensor.shape, size)
+                self.assertEqual(tensor.shape.numel(), expected_numel)
                 self.assertEqual(tensor.dim(), expected_rank)
                 self.assertEqual(tensor.ndimension(), expected_rank)
                 self.assertEqual(tensor.ndim, expected_rank)
@@ -514,6 +517,40 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
                     tensor.size(dimension)
 
+    def test_size_sequence_operations_preserve_size_type(self):
+        size = torch.Size((2, 3, 4))
+        operations = (
+            (size[:], (2, 3, 4)),
+            (size[1:], (3, 4)),
+            (size[:-1], (2, 3)),
+            (size + (5,), (2, 3, 4, 5)),
+            ((1,) + size, (1, 2, 3, 4)),
+            (size * 2, (2, 3, 4, 2, 3, 4)),
+            (2 * size, (2, 3, 4, 2, 3, 4)),
+            (size * 0, ()),
+        )
+
+        self.assertIs(type(size[0]), int)
+        for result, expected in operations:
+            with self.subTest(expected=expected):
+                self.assertIs(type(result), torch.Size)
+                self.assertEqual(result, expected)
+                self.assertEqual(result.numel(), math.prod(expected))
+
+    def test_size_enforces_int64_dimensions_and_wrapping_numel(self):
+        minimum = -(1 << 63)
+        maximum = (1 << 63) - 1
+        self.assertEqual(torch.Size((minimum, maximum)), (minimum, maximum))
+        self.assertEqual(torch.Size(()).numel(), 1)
+        self.assertEqual(torch.Size((maximum, 2)).numel(), -2)
+        self.assertEqual(torch.Size((1 << 62, 4)).numel(), 0)
+        self.assertEqual(torch.Size((-2, 3)).numel(), -6)
+
+        for dimension in (minimum - 1, maximum + 1, 1 << 100, -(1 << 100)):
+            with self.subTest(dimension=dimension):
+                with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                    torch.Size((dimension,))
+
     def test_is_contiguous_reports_supported_layouts_and_rejects_formats(self):
         ordinary = torch.zeros((2, 3, 4))
         layouts = (
@@ -527,13 +564,12 @@ class PythonApiBaselineTests(unittest.TestCase):
         for tensor in layouts:
             with self.subTest(shape=tensor.shape, stride=tensor.stride()):
                 self.assertIs(tensor.is_contiguous(), True)
-                self.assertIs(tensor.is_contiguous(memory_format=None), True)
 
         with self.assertRaises(TypeError):
             ordinary.is_contiguous(None)
-        for memory_format in ("contiguous_format", object(), 0, False):
+        for memory_format in (None, "contiguous_format", object(), 0, False):
             with self.subTest(memory_format=memory_format):
-                with self.assertRaisesRegex(TypeError, "only None is implemented"):
+                with self.assertRaisesRegex(TypeError, "must be torch.memory_format"):
                     ordinary.is_contiguous(memory_format=memory_format)
 
         with self.assertRaises(TypeError):

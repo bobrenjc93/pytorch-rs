@@ -23,22 +23,45 @@ class Size(tuple):
         converted = []
         for index, dimension in enumerate(dimensions):
             try:
-                converted.append(operator.index(dimension))
+                dimension = operator.index(dimension)
             except TypeError:
                 name = type(dimension).__name__
                 raise TypeError(
                     f"torch.Size() takes an iterable of 'int' "
                     f"(item {index} is '{name}')"
                 ) from None
+            if dimension < -(1 << 63) or dimension >= 1 << 63:
+                raise ValueError("Overflow when unpacking long long")
+            converted.append(dimension)
         return tuple.__new__(cls, converted)
 
     def __repr__(self):
         return f"torch.Size([{', '.join(map(str, self))}])"
 
+    def __getitem__(self, index):
+        result = tuple.__getitem__(self, index)
+        return type(self)(result) if isinstance(index, slice) else result
+
+    def __add__(self, other):
+        if not isinstance(other, tuple):
+            return NotImplemented
+        return type(self)(tuple.__add__(self, other))
+
+    def __radd__(self, other):
+        if not isinstance(other, tuple):
+            return NotImplemented
+        return type(self)(tuple.__add__(other, self))
+
+    def __mul__(self, count):
+        return type(self)(tuple.__mul__(self, count))
+
+    def __rmul__(self, count):
+        return self.__mul__(count)
+
     def numel(self):
         result = 1
         for dimension in self:
-            result *= dimension
+            result = ((result * dimension + (1 << 63)) % (1 << 64)) - (1 << 63)
         return result
 "#
 );
@@ -134,6 +157,19 @@ enum EyeDimensionArgument {
     Provided(Py<PyAny>),
 }
 
+enum MemoryFormatArgument {
+    Omitted,
+    Provided(Py<PyAny>),
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for MemoryFormatArgument {
+    type Error = PyErr;
+
+    fn extract(object: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        Ok(Self::Provided(object.into()))
+    }
+}
+
 impl<'a, 'py> FromPyObject<'a, 'py> for EyeDimensionArgument {
     type Error = PyErr;
 
@@ -158,15 +194,14 @@ impl PyTensor {
     }
 
     #[getter]
-    fn shape<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
-        PyTuple::new(py, self.inner.shape().iter().copied())
+    fn shape(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        size_object(py, self.inner.shape())
     }
 
     #[pyo3(signature = (dim=None))]
     fn size(&self, py: Python<'_>, dim: Option<&Bound<'_, PyAny>>) -> PyResult<Py<PyAny>> {
         let Some(dim) = dim else {
-            let dimensions = PyTuple::new(py, self.inner.shape().iter().copied())?;
-            return Ok(size_type(py)?.bind(py).call1((dimensions,))?.unbind());
+            return size_object(py, self.inner.shape());
         };
         let dim = parse_dimension("size", dim)?;
         let axis = normalize_dimension(dim, self.inner.dim())?;
@@ -212,12 +247,15 @@ impl PyTensor {
         self.inner.stride()[axis].into_py_any(py)
     }
 
-    #[pyo3(signature = (*, memory_format=None))]
-    fn is_contiguous(&self, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
-        if let Some(memory_format) = memory_format {
-            let type_name = memory_format.get_type().name()?;
+    #[pyo3(
+        signature = (*, memory_format=MemoryFormatArgument::Omitted),
+        text_signature = "(*, memory_format=...)"
+    )]
+    fn is_contiguous(&self, py: Python<'_>, memory_format: MemoryFormatArgument) -> PyResult<bool> {
+        if let MemoryFormatArgument::Provided(memory_format) = memory_format {
+            let type_name = memory_format.bind(py).get_type().name()?;
             return Err(PyTypeError::new_err(format!(
-                "is_contiguous(): memory format {type_name} is not supported; only None is implemented"
+                "is_contiguous(): argument 'memory_format' must be torch.memory_format, not {type_name}"
             )));
         }
         Ok(self.inner.is_contiguous())
@@ -582,6 +620,11 @@ fn size_type(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
             .ok_or_else(|| PyRuntimeError::new_err("failed to initialize torch.Size"))
             .map(Bound::unbind)
     })
+}
+
+fn size_object(py: Python<'_>, dimensions: &[usize]) -> PyResult<Py<PyAny>> {
+    let dimensions = PyTuple::new(py, dimensions.iter().copied())?;
+    Ok(size_type(py)?.bind(py).call1((dimensions,))?.unbind())
 }
 
 fn parse_creation_size(
