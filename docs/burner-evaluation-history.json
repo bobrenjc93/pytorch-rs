@@ -497,6 +497,38 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 48
       }
+    },
+    {
+      "key": "base:9048e6796b69a53cc25f8e31edc8417359957f36",
+      "commit": "9048e6796b69a53cc25f8e31edc8417359957f36",
+      "recordedAt": "2026-08-09T20:26:05.082Z",
+      "label": "base 9048e67",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.3,
+        "eval_39340456": 13,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 47
+      }
+    },
+    {
+      "key": "pr:27",
+      "recordedAt": "2026-08-09T20:26:05.082Z",
+      "label": "PR #27",
+      "kind": "leaf",
+      "prNumber": 27,
+      "title": "Add PyTorch-compatible one-dimensional Python buffer tensor input",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.3,
+        "eval_39340456": 14,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 47
+      }
     }
   ]
 }
