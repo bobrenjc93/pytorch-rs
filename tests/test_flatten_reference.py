@@ -183,6 +183,20 @@ class FlattenReferenceTests(unittest.TestCase):
             lambda: expected_wrapping_error.flatten(1, 2),
         )
 
+        actual_symbolic = torch.zeros((0,)).reshape(
+            (2**31, 2**32, 0)
+        ).transpose(0, 2)
+        expected_symbolic = reference_torch.zeros((0,)).reshape(
+            (2**31, 2**32, 0)
+        ).transpose(0, 2)
+        with self.assertRaises(RuntimeError) as actual_symbolic_error:
+            actual_symbolic.flatten(1, 2)
+        with self.assertRaises(RuntimeError) as expected_symbolic_error:
+            expected_symbolic.flatten(1, 2)
+        message = "SymIntArrayRef expected to contain only concrete integers"
+        self.assertIn(message, str(actual_symbolic_error.exception))
+        self.assertIn(message, str(expected_symbolic_error.exception))
+
         actual = torch.zeros((2, 3, 4))
         expected = reference_torch.zeros((2, 3, 4))
         error_cases = (
@@ -200,6 +214,11 @@ class FlattenReferenceTests(unittest.TestCase):
             (lambda: torch.flatten(input=1), lambda: reference_torch.flatten(input=1)),
             (lambda: torch.flatten(actual, None), lambda: reference_torch.flatten(expected, None)),
             (lambda: torch.flatten(actual, input=actual), lambda: reference_torch.flatten(expected, input=expected)),
+            (lambda: torch.flatten(actual, None, input=actual), lambda: reference_torch.flatten(expected, None, input=expected)),
+            (lambda: torch.flatten(actual, 0, None, input=actual), lambda: reference_torch.flatten(expected, 0, None, input=expected)),
+            (lambda: torch.flatten(actual, 0, None, start_dim=1), lambda: reference_torch.flatten(expected, 0, None, start_dim=1)),
+            (lambda: actual.flatten(0, None, start_dim=1), lambda: expected.flatten(0, None, start_dim=1)),
+            (lambda: actual.flatten(0, start_dim=1, end_dim=None), lambda: expected.flatten(0, start_dim=1, end_dim=None)),
             (lambda: torch.flatten(actual, 0, -1, 1), lambda: reference_torch.flatten(expected, 0, -1, 1)),
             (lambda: actual.flatten(2**100), lambda: expected.flatten(2**100)),
             (lambda: torch.flatten(actual, end_dim=None), lambda: reference_torch.flatten(expected, end_dim=None)),

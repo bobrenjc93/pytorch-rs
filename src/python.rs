@@ -1052,10 +1052,16 @@ fn bind_method_flatten_arguments(
     let start_dim =
         bind_flatten_dimension(positional, 0, keyword_start.as_ref(), "start_dim", 1, 0)?;
     let end_dim = bind_flatten_dimension(positional, 1, keyword_end.as_ref(), "end_dim", 2, -1)?;
+    if start_dim.duplicated {
+        return Err(multiple_flatten_argument("start_dim"));
+    }
+    if end_dim.duplicated {
+        return Err(multiple_flatten_argument("end_dim"));
+    }
     if let Some(unexpected) = unexpected {
         return Err(unexpected_flatten_keyword(&unexpected));
     }
-    Ok((start_dim, end_dim))
+    Ok((start_dim.value, end_dim.value))
 }
 
 fn bind_top_level_flatten_arguments<'py>(
@@ -1088,15 +1094,15 @@ fn bind_top_level_flatten_arguments<'py>(
     }
     let unexpected = first_unexpected_flatten_keyword(keywords, true)?;
 
-    let input = if positional.is_empty() {
-        keyword_input.expect("the required keyword input was checked above")
+    let (input, input_duplicated) = if positional.is_empty() {
+        (
+            keyword_input.expect("the required keyword input was checked above"),
+            false,
+        )
     } else {
         let input = positional.get_item(0)?;
         validate_flatten_input(&input, Some(1))?;
-        if keyword_input.is_some() {
-            return Err(multiple_flatten_argument("input"));
-        }
-        input
+        (input, keyword_input.is_some())
     };
     if positional.is_empty() {
         validate_flatten_input(&input, None)?;
@@ -1105,10 +1111,24 @@ fn bind_top_level_flatten_arguments<'py>(
     let start_dim =
         bind_flatten_dimension(positional, 1, keyword_start.as_ref(), "start_dim", 2, 0)?;
     let end_dim = bind_flatten_dimension(positional, 2, keyword_end.as_ref(), "end_dim", 3, -1)?;
+    if input_duplicated {
+        return Err(multiple_flatten_argument("input"));
+    }
+    if start_dim.duplicated {
+        return Err(multiple_flatten_argument("start_dim"));
+    }
+    if end_dim.duplicated {
+        return Err(multiple_flatten_argument("end_dim"));
+    }
     if let Some(unexpected) = unexpected {
         return Err(unexpected_flatten_keyword(&unexpected));
     }
-    Ok((input, start_dim, end_dim))
+    Ok((input, start_dim.value, end_dim.value))
+}
+
+struct ParsedFlattenDimension {
+    value: i64,
+    duplicated: bool,
 }
 
 fn bind_flatten_dimension(
@@ -1118,17 +1138,19 @@ fn bind_flatten_dimension(
     name: &str,
     position: usize,
     default: i64,
-) -> PyResult<i64> {
+) -> PyResult<ParsedFlattenDimension> {
     if positional.len() > index {
         let value = positional.get_item(index)?;
-        let parsed = parse_flatten_dimension(name, Some(position), &value)?;
-        if keyword.is_some() {
-            return Err(multiple_flatten_argument(name));
-        }
-        return Ok(parsed);
+        return Ok(ParsedFlattenDimension {
+            value: parse_flatten_dimension(name, Some(position), &value)?,
+            duplicated: keyword.is_some(),
+        });
     }
-    keyword.map_or(Ok(default), |value| {
-        parse_flatten_dimension(name, None, value)
+    Ok(ParsedFlattenDimension {
+        value: keyword.map_or(Ok(default), |value| {
+            parse_flatten_dimension(name, None, value)
+        })?,
+        duplicated: false,
     })
 }
 
@@ -2326,6 +2348,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::DuplicateDimension { .. }
         | TensorError::SqueezeDimensionsRankLimit
         | TensorError::FlattenStartAfterEnd
+        | TensorError::FlattenNonConcreteInteger
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }

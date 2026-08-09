@@ -172,6 +172,7 @@ pub enum TensorError {
     },
     SqueezeDimensionsRankLimit,
     FlattenStartAfterEnd,
+    FlattenNonConcreteInteger,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -268,6 +269,7 @@ impl Display for TensorError {
                 format_squeeze_error(formatter, error)
             }
             Self::FlattenStartAfterEnd => format_flatten_error(formatter),
+            Self::FlattenNonConcreteInteger => format_flatten_non_concrete_error(formatter),
             Self::ReshapeMultipleInferredDimensions => format_reshape_inference_error(formatter),
             Self::ReshapeInvalidDimension {
                 dimension,
@@ -340,6 +342,10 @@ fn format_squeeze_error(formatter: &mut Formatter<'_>, error: &TensorError) -> s
 
 fn format_flatten_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
     formatter.write_str("flatten() has invalid args: start_dim cannot come after end_dim")
+}
+
+fn format_flatten_non_concrete_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
+    formatter.write_str("SymIntArrayRef expected to contain only concrete integers")
 }
 
 fn format_reshape_inference_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
@@ -856,6 +862,12 @@ impl Tensor {
             );
         }
 
+        // PyTorch's flatten kernel carries this wrapped product through an
+        // unchecked SymInt slot. The minimum signed value is interpreted as
+        // non-concrete metadata rather than as an ordinary negative shape.
+        if collapsed == i64::MIN {
+            return Err(TensorError::FlattenNonConcreteInteger);
+        }
         if collapsed < -1 {
             return Err(TensorError::ReshapeInvalidDimension {
                 dimension: collapsed,

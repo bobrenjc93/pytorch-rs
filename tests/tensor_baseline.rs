@@ -1047,6 +1047,30 @@ fn flatten_handles_scalars_lifetimes_empty_shapes_and_wrapping_metadata() {
         wrapping_negative_one.flatten(1, 2),
         Err(TensorError::ReshapeAmbiguousZeroElements { .. })
     ));
+
+    let symbolic_boundary = Tensor::zeros([0])
+        .unwrap()
+        .reshape([1_i64 << 31, 1_i64 << 32, 0])
+        .unwrap()
+        .transpose(0, 2)
+        .unwrap();
+    assert_eq!(
+        symbolic_boundary.flatten(1, 2),
+        Err(TensorError::FlattenNonConcreteInteger)
+    );
+    assert_eq!(
+        TensorError::FlattenNonConcreteInteger.to_string(),
+        "SymIntArrayRef expected to contain only concrete integers"
+    );
+
+    let wrapping_negative_two = Tensor::zeros([isize::MAX.unsigned_abs(), 0, 2])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    assert!(matches!(
+        wrapping_negative_two.flatten(1, 2),
+        Err(TensorError::ReshapeInvalidDimension { dimension: -2, .. })
+    ));
 }
 
 #[test]

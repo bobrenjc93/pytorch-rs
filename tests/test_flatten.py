@@ -97,6 +97,14 @@ class FlattenTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "unspecified dimension size -1"):
             wrapping_negative_one.flatten(1, 2)
 
+        symbolic_boundary = torch.zeros((0,)).reshape(
+            (2**31, 2**32, 0)
+        ).transpose(0, 2)
+        with self.assertRaisesRegex(
+            RuntimeError, "SymIntArrayRef expected to contain only concrete integers"
+        ):
+            symbolic_boundary.flatten(1, 2)
+
     def test_binding_types_dimension_order_and_diagnostics(self):
         tensor = torch.zeros((2, 3, 4))
         self.assertEqual(tensor.flatten(np.int64(1), np.int32(2)).shape, (2, 12))
@@ -117,6 +125,11 @@ class FlattenTests(unittest.TestCase):
             (lambda: torch.flatten(input=1), TypeError, "flatten(): argument 'input' must be Tensor, not int"),
             (lambda: torch.flatten(tensor, None), TypeError, "flatten(): argument 'start_dim' (position 2) must be int, not NoneType"),
             (lambda: torch.flatten(tensor, input=tensor), TypeError, "flatten() got multiple values for argument 'input'"),
+            (lambda: torch.flatten(tensor, None, input=tensor), TypeError, "flatten(): argument 'start_dim' (position 2) must be int, not NoneType"),
+            (lambda: torch.flatten(tensor, 0, None, input=tensor), TypeError, "flatten(): argument 'end_dim' (position 3) must be int, not NoneType"),
+            (lambda: torch.flatten(tensor, 0, None, start_dim=1), TypeError, "flatten(): argument 'end_dim' (position 3) must be int, not NoneType"),
+            (lambda: tensor.flatten(0, None, start_dim=1), TypeError, "flatten(): argument 'end_dim' (position 2) must be int, not NoneType"),
+            (lambda: tensor.flatten(0, start_dim=1, end_dim=None), TypeError, "flatten(): argument 'end_dim' must be int, not NoneType"),
             (lambda: torch.flatten(tensor, 0, -1, 1), TypeError, "flatten() takes from 1 to 3 positional arguments but 4 were given"),
         )
         for call, error_type, message in cases:
