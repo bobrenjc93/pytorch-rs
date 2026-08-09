@@ -235,7 +235,7 @@ impl PyTensor {
         self.inner
             .transpose(dim0, dim1)
             .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+            .map_err(|error| transpose_error(&error))
     }
 
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -546,7 +546,7 @@ fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
         .inner
         .transpose(dim0, dim1)
         .map(|inner| PyTensor { inner })
-        .map_err(|error| tensor_error(&error))
+        .map_err(|error| transpose_error(&error))
 }
 
 #[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
@@ -1491,6 +1491,14 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
         | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
+    }
+}
+
+fn transpose_error(error: &TensorError) -> PyErr {
+    if matches!(error, TensorError::ElementCountOverflow) {
+        PyRuntimeError::new_err("numel: integer multiplication overflow")
+    } else {
+        tensor_error(error)
     }
 }
 

@@ -996,6 +996,17 @@ fn transpose_preserves_exact_empty_and_extreme_strides() {
     assert_eq!(offset.storage_offset(), maximum - 1);
     assert!(offset.logical_values().next().is_none());
     assert_eq!(offset.try_clone().unwrap().storage_offset(), 0);
+
+    let overflow_order = Tensor::zeros([maximum, 0, 2, 2]).unwrap();
+    assert_eq!(
+        overflow_order.transpose(1, 3),
+        Err(TensorError::ElementCountOverflow)
+    );
+    assert_eq!(
+        overflow_order.transpose(-3, -1),
+        Err(TensorError::ElementCountOverflow)
+    );
+    assert_eq!(overflow_order.transpose(1, 1).unwrap().numel(), 0);
 }
 
 #[test]

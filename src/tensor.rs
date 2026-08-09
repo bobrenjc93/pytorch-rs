@@ -630,15 +630,19 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error for an out-of-range dimension or when view metadata
-    /// allocation fails.
+    /// Returns an error for an out-of-range dimension, when the reordered
+    /// shape's element count overflows, or when view metadata allocation
+    /// fails.
     pub fn transpose(&self, dim0: i64, dim1: i64) -> Result<Self, TensorError> {
         let axis0 = normalize_transpose_dimension(dim0, self.shape.len())?;
         let axis1 = normalize_transpose_dimension(dim1, self.shape.len())?;
         let mut shape = try_clone_result_shape(&self.shape, self.elements)?;
-        let mut strides = try_clone_result_shape(&self.strides, self.elements)?;
         if !shape.is_empty() {
             shape.swap(axis0, axis1);
+        }
+        let elements = element_count(&shape)?;
+        let mut strides = try_clone_result_shape(&self.strides, elements)?;
+        if !shape.is_empty() {
             strides.swap(axis0, axis1);
         }
         Ok(Self {
@@ -646,7 +650,7 @@ impl Tensor {
             shape,
             strides,
             offset: self.offset,
-            elements: self.elements,
+            elements,
         })
     }
 

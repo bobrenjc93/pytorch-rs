@@ -300,6 +300,19 @@ class TransposeTests(unittest.TestCase):
         self.assertEqual(offset.tolist(), [])
         self.assertEqual(offset.clone().storage_offset(), 0)
 
+        overflow_order = torch.zeros((sys.maxsize, 0, 2, 2))
+        for operation in (
+            lambda: overflow_order.transpose(1, 3),
+            lambda: overflow_order.transpose(-3, -1),
+            lambda: torch.transpose(overflow_order, 1, 3),
+        ):
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(
+                    RuntimeError, "^numel: integer multiplication overflow$"
+                ):
+                    operation()
+        self.assertEqual(overflow_order.transpose(1, 1).numel(), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

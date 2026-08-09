@@ -209,6 +209,26 @@ class TransposeReferenceTests(unittest.TestCase):
             with self.subTest(error_case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
+        actual_overflow = torch.zeros((sys.maxsize, 0, 2, 2))
+        expected_overflow = reference_torch.zeros((sys.maxsize, 0, 2, 2))
+        overflow_cases = (
+            (
+                lambda: actual_overflow.transpose(1, 3),
+                lambda: expected_overflow.transpose(1, 3),
+            ),
+            (
+                lambda: actual_overflow.transpose(-3, -1),
+                lambda: expected_overflow.transpose(-3, -1),
+            ),
+            (
+                lambda: torch.transpose(actual_overflow, 1, 3),
+                lambda: reference_torch.transpose(expected_overflow, 1, 3),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(overflow_cases):
+            with self.subTest(overflow_case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
     def test_singleton_pointwise_and_reflected_division_layouts_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         values = np.arange(4, dtype=np.float32).reshape(1, 1, 2, 2)
