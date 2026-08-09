@@ -15,7 +15,6 @@ use pyo3::types::{
 use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
-static NUMBER_INDEX: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -215,7 +214,7 @@ enum PreparedFactorySize<'py> {
     Fixed(Vec<Bound<'py, PyAny>>),
     LiveList {
         dimensions: Bound<'py, PyList>,
-        length: usize,
+        fallback: Vec<Bound<'py, PyAny>>,
     },
 }
 
@@ -1133,9 +1132,13 @@ fn prepare_factory_list_dimensions<'py>(
     // The overload probe may resize a list. PyTorch fixes the final rank only
     // after that probe, then evaluates the resulting live slots in order.
     let length = dimensions.len();
+    let mut fallback = try_size_vector(length)?;
+    for index in 0..length {
+        try_push_size(&mut fallback, dimensions.get_item(index)?)?;
+    }
     Ok(PreparedFactorySize::LiveList {
         dimensions: dimensions.clone(),
-        length,
+        fallback,
     })
 }
 
@@ -1149,12 +1152,6 @@ fn probe_variadic_first_dimension(function: &str, dimension: &Bound<'_, PyAny>) 
         )?);
     }
     Ok(())
-}
-
-fn call_factory_index_protocol<'py>(dimension: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    NUMBER_INDEX
-        .import(dimension.py(), "_operator", "index")?
-        .call1((dimension,))
 }
 
 fn is_boolean_tensor_dimension(dimension: &Bound<'_, PyAny>) -> bool {
@@ -1172,7 +1169,8 @@ fn is_boolean_tensor_dimension(dimension: &Bound<'_, PyAny>) -> bool {
     let Ok(mro) = mro else {
         return false;
     };
-    let mut is_torch_tensor = false;
+    let mut dtype_descriptor = None;
+    let mut in_tensor_hierarchy = false;
     for base in mro.iter() {
         let name = type_getattribute
             .call1((&base, "__name__"))
@@ -1184,15 +1182,27 @@ fn is_boolean_tensor_dimension(dimension: &Bound<'_, PyAny>) -> bool {
             (module.as_deref(), name.as_deref()),
             (Ok("torch"), Ok("Tensor"))
         ) {
-            is_torch_tensor = true;
-            break;
+            in_tensor_hierarchy = true;
+        }
+        if in_tensor_hierarchy {
+            dtype_descriptor = type_getattribute
+                .call1((&base, "__dict__"))
+                .and_then(|namespace| namespace.get_item("dtype"))
+                .ok();
+            if dtype_descriptor.is_some() {
+                break;
+            }
         }
     }
-    if !is_torch_tensor {
+    let Some(dtype_descriptor) = dtype_descriptor else {
         return false;
-    }
-    dimension
-        .getattr("dtype")
+    };
+    let descriptor_type = dtype_descriptor.get_type();
+    let dtype = match type_getattribute.call1((&descriptor_type, "__get__")) {
+        Ok(descriptor_get) => descriptor_get.call1((&dtype_descriptor, dimension, &dimension_type)),
+        Err(_) => Ok(dtype_descriptor),
+    };
+    dtype
         .and_then(|dtype| dtype.str())
         .and_then(|dtype| dtype.extract::<String>())
         .is_ok_and(|dtype| dtype == "torch.bool")
@@ -1213,21 +1223,16 @@ fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> Pars
         };
     }
 
-    // Keep the index result as a Python int so bounded i64 extraction can
-    // reject huge values without copying arbitrary-precision digits into
-    // native storage.
-    let Ok(indexed) = call_factory_index_protocol(dimension) else {
-        return ParsedSizeDimension::Invalid;
-    };
-    let Ok(indexed) = indexed.cast::<PyInt>() else {
-        return ParsedSizeDimension::Invalid;
-    };
-    if is_boolean_tensor_dimension(dimension) {
-        return ParsedSizeDimension::BooleanTensor;
-    }
-    match indexed.extract::<i64>() {
+    // PyO3's bounded i64 extraction delegates to PyLong_AsLongLong, which
+    // invokes PyNumber_Index without consulting mutable Python modules and
+    // does not copy arbitrary-precision digits into native storage.
+    match dimension.extract::<i64>() {
+        Ok(_) if is_boolean_tensor_dimension(dimension) => ParsedSizeDimension::BooleanTensor,
         Ok(value) => ParsedSizeDimension::Value(value),
-        Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
+        Err(error)
+            if error.is_instance_of::<PyOverflowError>(dimension.py())
+                && error.traceback(dimension.py()).is_none() =>
+        {
             ParsedSizeDimension::Overflow
         }
         Err(_) => ParsedSizeDimension::Invalid,
@@ -1235,6 +1240,7 @@ fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> Pars
 }
 
 fn factory_size_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    const PY_TPFLAGS_IMMUTABLETYPE: u64 = 1 << 8;
     const PY_TPFLAGS_HEAPTYPE: u64 = 1 << 9;
 
     if value.is_instance_of::<PyDType>() {
@@ -1260,7 +1266,7 @@ fn factory_size_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     let flags = type_getattribute
         .call1((&value_type, "__flags__"))?
         .extract::<u64>()?;
-    if flags & PY_TPFLAGS_HEAPTYPE != 0 {
+    if flags & PY_TPFLAGS_HEAPTYPE != 0 && flags & PY_TPFLAGS_IMMUTABLETYPE == 0 {
         return Ok(name);
     }
     let module = type_getattribute
@@ -1312,10 +1318,17 @@ impl PreparedFactorySize<'_> {
                 }
                 Ok(size)
             }
-            Self::LiveList { dimensions, length } => {
-                let mut size = try_size_vector(length)?;
-                for index in 0..length {
-                    let dimension = dimensions.get_item(index)?;
+            Self::LiveList {
+                dimensions,
+                fallback,
+            } => {
+                let mut size = try_size_vector(fallback.len())?;
+                for (index, fallback) in fallback.into_iter().enumerate() {
+                    let dimension = if index < dimensions.len() {
+                        dimensions.get_item(index)?
+                    } else {
+                        fallback
+                    };
                     let parsed = parse_size_dimension(&dimension, false);
                     try_push_size(
                         &mut size,
@@ -2956,7 +2969,6 @@ fn transpose_error(error: &TensorError) -> PyErr {
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
-    NUMBER_INDEX.import(py, "_operator", "index")?;
     module.add_class::<PyTensor>()?;
     module.add_class::<PyDType>()?;
     module.add_class::<PyDevice>()?;

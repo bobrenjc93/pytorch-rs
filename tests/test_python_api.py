@@ -448,6 +448,25 @@ class PythonApiBaselineTests(unittest.TestCase):
                         )
                         self.assertEqual(tensor.shape, expected_shape)
 
+            for keyword in (False, True):
+                dimensions = []
+
+                class LaterShrinkingProbe:
+                    def __index__(self):
+                        dimensions.pop()
+                        return 3
+
+                dimensions.extend((2, LaterShrinkingProbe(), 7))
+                with self.subTest(
+                    function=name,
+                    later_list_shrink=True,
+                    keyword=keyword,
+                ):
+                    tensor = (
+                        create(size=dimensions) if keyword else create(dimensions)
+                    )
+                    self.assertEqual(tensor.shape, (2, 3, 7))
+
             stateful_forms = (
                 ("direct first", lambda probe: create(probe), 3),
                 ("variadic first", lambda probe: create(probe, 3), 3),
@@ -496,6 +515,36 @@ class PythonApiBaselineTests(unittest.TestCase):
         finally:
             operator.index = original_index
             _operator.index = original_native_index
+
+    def test_factory_size_index_protocol_ignores_preimport_monkeypatch(self):
+        import subprocess
+
+        script = """
+import _operator
+_operator.index = lambda _: 99
+import torch_rs
+
+class Indexable:
+    def __index__(self):
+        return 3
+
+assert torch_rs.zeros(Indexable()).shape == (3,)
+assert torch_rs.ones(Indexable()).shape == (3,)
+for factory in (torch_rs.zeros, torch_rs.ones):
+    try:
+        factory(object())
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("object without __index__ was accepted")
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_factory_index_protocol_preserves_strict_int_warnings(self):
         import warnings
@@ -556,22 +605,48 @@ class PythonApiBaselineTests(unittest.TestCase):
             def __index__(self):
                 return int(self.value)
 
+        class HiddenDTypeTensor(Tensor):
+            dtype = object()
+
+        class RaisingDTypeTensor(Tensor):
+            def __getattribute__(self, name):
+                if name == "dtype":
+                    raise RuntimeError("hidden dtype")
+                return super().__getattribute__(name)
+
         message = "Expected scalar.isIntegral( false) to be true, but got false"
         for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
-            for value in (True, False):
-                dimension = Tensor(value)
-                calls = (
-                    ("direct", lambda: create(dimension)),
-                    ("later", lambda: create(2, dimension)),
-                    ("tuple", lambda: create((dimension, 2))),
-                    ("list", lambda: create([dimension, 2])),
-                    ("size tuple", lambda: create(size=(dimension, 2))),
-                    ("size list", lambda: create(size=[dimension, 2])),
-                )
-                for form, call in calls:
-                    with self.subTest(function=name, value=value, form=form):
-                        with self.assertRaisesRegex(RuntimeError, re.escape(message)):
-                            call()
+            for tensor_type in (Tensor, HiddenDTypeTensor, RaisingDTypeTensor):
+                for value in (True, False):
+                    dimension = tensor_type(value)
+                    calls = (
+                        ("direct", lambda: create(dimension)),
+                        ("later", lambda: create(2, dimension)),
+                        ("tuple", lambda: create((dimension, 2))),
+                        ("list", lambda: create([dimension, 2])),
+                        ("size tuple", lambda: create(size=(dimension, 2))),
+                        ("size list", lambda: create(size=[dimension, 2])),
+                    )
+                    for form, call in calls:
+                        with self.subTest(
+                            function=name,
+                            tensor_type=tensor_type.__name__,
+                            value=value,
+                            form=form,
+                        ):
+                            with self.assertRaisesRegex(
+                                RuntimeError, re.escape(message)
+                            ):
+                                call()
+
+    def test_factory_size_diagnostics_qualify_extension_heap_types(self):
+        for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
+            with self.subTest(function=name, position="first"):
+                with self.assertRaisesRegex(TypeError, "not decimal.Decimal"):
+                    create(Decimal(2))
+            with self.subTest(function=name, position="later"):
+                with self.assertRaisesRegex(TypeError, "got decimal.Decimal"):
+                    create(2, Decimal(3))
 
     def test_factory_size_index_results_use_bounded_integer_conversion(self):
         huge_integer = 1 << 8_000_000

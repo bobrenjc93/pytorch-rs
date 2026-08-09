@@ -1,5 +1,6 @@
 import sys
 import unittest
+from decimal import Decimal
 
 import numpy as np
 import torch_rs as torch
@@ -166,6 +167,23 @@ class FactorySizeReferenceTests(unittest.TestCase):
                         exact=exact,
                     )
 
+    def test_extension_heap_type_names_match_pytorch_2_13(self):
+        calls = (
+            ("direct", lambda factory: factory(Decimal(2))),
+            ("later", lambda factory: factory(2, Decimal(3))),
+            ("tuple", lambda factory: factory((2, Decimal(3)))),
+            ("size", lambda factory: factory(size=(2, Decimal(3)))),
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for form, call in calls:
+                with self.subTest(factory=factory_name, form=form):
+                    self.assert_error_matches(
+                        lambda call=call: call(actual_factory),
+                        lambda call=call: call(expected_factory),
+                    )
+
     def test_later_index_conversion_order_matches_pytorch_2_13(self):
         def error_outcome(factory, call):
             events = []
@@ -258,6 +276,32 @@ class FactorySizeReferenceTests(unittest.TestCase):
                             resize(actual_factory),
                             resize(expected_factory),
                         )
+
+            for keyword in (False, True):
+                def shrink_later(factory):
+                    dimensions = []
+
+                    class Probe:
+                        def __index__(self):
+                            dimensions.pop()
+                            return 3
+
+                    dimensions.extend((2, Probe(), 7))
+                    tensor = (
+                        factory(size=dimensions) if keyword else factory(dimensions)
+                    )
+                    return tensor.shape, tuple(dimensions)
+
+                with self.subTest(
+                    factory=factory_name,
+                    keyword=keyword,
+                    later_shrink=True,
+                ):
+                    actual_shape, actual_dimensions = shrink_later(actual_factory)
+                    expected_shape, expected_dimensions = shrink_later(expected_factory)
+                    self.assertEqual(actual_shape, expected_shape)
+                    self.assertEqual(actual_shape, (2, 3, 7))
+                    self.assertEqual(len(actual_dimensions), len(expected_dimensions))
 
     def test_stateful_first_dimension_is_reconverted_like_pytorch_2_13(self):
         def outcome(factory, call):
@@ -398,6 +442,17 @@ class FactorySizeReferenceTests(unittest.TestCase):
                             )
 
     def test_boolean_scalar_tensor_dimensions_match_pytorch_2_13(self):
+        class HiddenDTypeTensor(reference_torch.Tensor):
+            @property
+            def dtype(self):
+                return reference_torch.int64
+
+        class RaisingDTypeTensor(reference_torch.Tensor):
+            def __getattribute__(self, name):
+                if name == "dtype":
+                    raise RuntimeError("hidden dtype")
+                return super().__getattribute__(name)
+
         forms = (
             ("direct", lambda factory, value: factory(value)),
             ("later", lambda factory, value: factory(2, value)),
@@ -409,23 +464,31 @@ class FactorySizeReferenceTests(unittest.TestCase):
         for factory_name in ("zeros", "ones"):
             actual_factory = getattr(torch, factory_name)
             expected_factory = getattr(reference_torch, factory_name)
-            for boolean in (True, False):
-                for form_name, form in forms:
-                    with self.subTest(
-                        factory=factory_name,
-                        value=boolean,
-                        form=form_name,
-                    ):
-                        self.assert_error_matches(
-                            lambda: form(
-                                actual_factory,
-                                reference_torch.tensor(boolean),
-                            ),
-                            lambda: form(
-                                expected_factory,
-                                reference_torch.tensor(boolean),
-                            ),
-                        )
+            for tensor_kind, tensor_type in (
+                ("base", None),
+                ("overridden dtype", HiddenDTypeTensor),
+                ("hidden dtype", RaisingDTypeTensor),
+            ):
+                for boolean in (True, False):
+                    for form_name, form in forms:
+                        def tensor_value():
+                            value = reference_torch.tensor(boolean)
+                            return (
+                                value
+                                if tensor_type is None
+                                else value.as_subclass(tensor_type)
+                            )
+
+                        with self.subTest(
+                            factory=factory_name,
+                            tensor_kind=tensor_kind,
+                            value=boolean,
+                            form=form_name,
+                        ):
+                            self.assert_error_matches(
+                                lambda: form(actual_factory, tensor_value()),
+                                lambda: form(expected_factory, tensor_value()),
+                            )
 
     def test_large_index_results_use_bounded_conversion(self):
         huge_integer = 1 << 8_000_000
