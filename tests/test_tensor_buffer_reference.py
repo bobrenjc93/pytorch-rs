@@ -45,6 +45,8 @@ class TensorBufferReferenceTests(unittest.TestCase):
 
     def test_numeric_buffers_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        pointer_high_bit = 1 << (8 * struct.calcsize("@P") - 1)
+        pointer_bytes = struct.pack("@PP", 123, pointer_high_bit)
         cases = []
         for format_code, values in (
             ("b", [-128, 0, 127]),
@@ -89,6 +91,8 @@ class TensorBufferReferenceTests(unittest.TestCase):
                     memoryview(struct.pack("@ff", -2.5, 3.25)).cast("@f"),
                 ),
                 ("native-prefixed bool", memoryview(b"\x02\x03").cast("@?")),
+                ("pointer", memoryview(pointer_bytes).cast("P")),
+                ("native-prefixed pointer", memoryview(pointer_bytes).cast("@P")),
             )
         )
         for case, source in cases:

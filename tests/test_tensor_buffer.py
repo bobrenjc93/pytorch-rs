@@ -55,10 +55,14 @@ class TensorBufferTests(unittest.TestCase):
                 self.assert_tensor(memoryview(raw).cast(format_code), expected)
 
     def test_native_prefixed_formats(self):
+        pointer_high_bit = 1 << (8 * struct.calcsize("@P") - 1)
+        pointer_bytes = struct.pack("@PP", 123, pointer_high_bit)
         for format_code, raw, expected in (
             ("@i", struct.pack("@ii", -7, 9), [-7.0, 9.0]),
             ("@f", struct.pack("@ff", -2.5, 3.25), [-2.5, 3.25]),
             ("@?", b"\x02\x03", [0.0, 1.0]),
+            ("P", pointer_bytes, [123.0, pointer_high_bit]),
+            ("@P", pointer_bytes, [123.0, pointer_high_bit]),
         ):
             with self.subTest(format=format_code):
                 self.assert_tensor(memoryview(raw).cast(format_code), expected)

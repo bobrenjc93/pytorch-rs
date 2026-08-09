@@ -2447,7 +2447,7 @@ fn buffer_format_has_item_size(format: u8, item_size: usize) -> bool {
         b'i' | b'I' | b'f' => item_size == 4,
         b'q' | b'Q' | b'd' => item_size == 8,
         b'l' | b'L' => item_size == size_of::<c_long>(),
-        b'n' | b'N' => item_size == size_of::<usize>(),
+        b'n' | b'N' | b'P' => item_size == size_of::<usize>(),
         _ => false,
     }
 }
@@ -2461,9 +2461,9 @@ fn buffer_item_as_f32(format: u8, bytes: &[u8]) -> Option<f32> {
         (b'h', 2) => f32::from(i16::from_ne_bytes(bytes.try_into().ok()?)),
         (b'H', 2) => f32::from(u16::from_ne_bytes(bytes.try_into().ok()?)),
         (b'i' | b'l' | b'n', 4) => i32::from_ne_bytes(bytes.try_into().ok()?) as f32,
-        (b'I' | b'L' | b'N', 4) => u32::from_ne_bytes(bytes.try_into().ok()?) as f32,
+        (b'I' | b'L' | b'N' | b'P', 4) => u32::from_ne_bytes(bytes.try_into().ok()?) as f32,
         (b'l' | b'q' | b'n', 8) => i64::from_ne_bytes(bytes.try_into().ok()?) as f32,
-        (b'L' | b'Q' | b'N', 8) => u64::from_ne_bytes(bytes.try_into().ok()?) as f32,
+        (b'L' | b'Q' | b'N' | b'P', 8) => u64::from_ne_bytes(bytes.try_into().ok()?) as f32,
         (b'e', 2) => half_to_f32(u16::from_ne_bytes(bytes.try_into().ok()?)),
         (b'f', 4) => f32::from_ne_bytes(bytes.try_into().ok()?),
         (b'd', 8) => f64::from_ne_bytes(bytes.try_into().ok()?) as f32,
