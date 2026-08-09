@@ -1745,7 +1745,25 @@ impl Tensor {
         let right_inner_stride = other.strides[0];
         let right_column_stride = if right_rank == 2 { other.strides[1] } else { 0 };
 
-        if inner > 0 {
+        if let (2, 2, Some(left_data), Some(right_data)) = (
+            left_rank,
+            right_rank,
+            self.contiguous_slice(),
+            other.contiguous_slice(),
+        ) {
+            // Preserve the cache-friendly matrix kernel: each right-hand row
+            // is scanned contiguously and no checked view-offset arithmetic is
+            // needed once both validated inputs expose contiguous slices.
+            for row in 0..rows {
+                for depth in 0..inner {
+                    let left = left_data[row * inner + depth];
+                    for column in 0..columns {
+                        output[row * columns + column] +=
+                            left * right_data[depth * columns + column];
+                    }
+                }
+            }
+        } else if inner > 0 {
             for row in 0..rows {
                 let left_row_offset = checked_matmul_offset(self, row, left_row_stride)?;
                 for column in 0..columns {
