@@ -190,6 +190,19 @@ impl PyTensor {
         self.inner.storage_offset()
     }
 
+    #[pyo3(signature = (*args, **kwargs))]
+    fn unsqueeze(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let dimension = parse_unsqueeze_method_arguments(args, kwargs)?;
+        self.inner
+            .unsqueeze(dimension)
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
         let inner = if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() > self.inner.shape().len() {
@@ -461,6 +474,21 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
     input
         .inner
         .try_clone_with_memory_format(memory_format)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| tensor_error(&error))
+}
+
+#[pyfunction(signature = (*args, **kwargs))]
+fn unsqueeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let (input, dimension, dimension_position) = parse_unsqueeze_function_arguments(args, kwargs)?;
+    let input = input
+        .cast::<PyTensor>()
+        .map_err(|_| unsqueeze_input_type_error(&input, usize::from(!args.is_empty())))?;
+    let input = input.try_borrow()?;
+    let dimension = parse_unsqueeze_dimension(&dimension, dimension_position)?;
+    input
+        .inner
+        .unsqueeze(dimension)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
@@ -739,6 +767,202 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     Err(PyTypeError::new_err(format!(
         "stride(): argument 'dim' must be int, not {type_name}"
     )))
+}
+
+fn parse_unsqueeze_method_arguments(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<i64> {
+    if args.len() > 1 {
+        return Err(unsqueeze_positional_count_error(1, args.len()));
+    }
+
+    let positional = args.get_item(0).ok();
+    let keyword_dim = kwargs.and_then(|values| values.get_item("dim").ok().flatten());
+    if positional.is_some() && keyword_dim.is_some() {
+        return Err(unsqueeze_duplicate_argument("dim"));
+    }
+
+    let mut dimension = positional.or(keyword_dim);
+    let mut positional_index = usize::from(!args.is_empty());
+    if let Some(axis) = kwargs.and_then(|values| values.get_item("axis").ok().flatten()) {
+        reject_axis_with_unknown_keywords(kwargs, &["dim"])?;
+        if dimension.is_some() {
+            return Err(unsqueeze_unexpected_keyword("axis"));
+        }
+        dimension = Some(axis);
+        positional_index = 0;
+    }
+    let Some(dimension) = dimension else {
+        return Err(unsqueeze_missing_arguments(&["dim"]));
+    };
+    reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
+    parse_unsqueeze_dimension(&dimension, positional_index)
+}
+
+fn parse_unsqueeze_function_arguments<'py>(
+    args: &Bound<'py, PyTuple>,
+    kwargs: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>, usize)> {
+    if args.len() > 2 {
+        return Err(unsqueeze_positional_count_error(2, args.len()));
+    }
+
+    let positional_input = args.get_item(0).ok();
+    let positional_dimension = args.get_item(1).ok();
+    let keyword_input = kwargs.and_then(|values| values.get_item("input").ok().flatten());
+    let keyword_dimension = kwargs.and_then(|values| values.get_item("dim").ok().flatten());
+    if positional_input.is_some() && keyword_input.is_some() {
+        return Err(unsqueeze_duplicate_argument("input"));
+    }
+    if positional_dimension.is_some() && keyword_dimension.is_some() {
+        return Err(unsqueeze_duplicate_argument("dim"));
+    }
+
+    let input = positional_input.or(keyword_input);
+    let mut dimension = positional_dimension.or(keyword_dimension);
+    let mut dimension_position = usize::from(args.len() > 1) * 2;
+    if let Some(axis) = kwargs.and_then(|values| values.get_item("axis").ok().flatten()) {
+        reject_axis_with_unknown_keywords(kwargs, &["input", "dim"])?;
+        if dimension.is_some() {
+            return Err(unsqueeze_unexpected_keyword("axis"));
+        }
+        dimension = Some(axis);
+        dimension_position = 0;
+    }
+
+    let Some(input) = input else {
+        return Err(unsqueeze_missing_arguments(&["input", "dim"]));
+    };
+    let Some(dimension) = dimension else {
+        return Err(unsqueeze_missing_arguments(&["dim"]));
+    };
+    reject_unknown_unsqueeze_keywords(kwargs, &["input", "dim", "axis"])?;
+    Ok((input, dimension, dimension_position))
+}
+
+fn parse_unsqueeze_dimension(dimension: &Bound<'_, PyAny>, position: usize) -> PyResult<i64> {
+    if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
+        return dimension
+            .extract::<i64>()
+            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+    }
+
+    if let Ok(numpy) = PyModule::import(dimension.py(), "numpy") {
+        let numpy_integer = numpy.getattr("integer")?;
+        if dimension.is_instance(&numpy_integer)? {
+            return dimension
+                .extract::<i64>()
+                .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+        }
+    }
+
+    let type_name = dimension.get_type().name()?;
+    let position = if position == 0 {
+        String::new()
+    } else {
+        format!(" (position {position})")
+    };
+    Err(PyTypeError::new_err(format!(
+        "unsqueeze(): argument 'dim'{position} must be int, not {type_name}"
+    )))
+}
+
+fn unsqueeze_input_type_error(input: &Bound<'_, PyAny>, position: usize) -> PyErr {
+    let type_name = input
+        .get_type()
+        .name()
+        .map_or_else(|_| "unknown".into(), |name| name.to_string());
+    let position = if position == 0 {
+        String::new()
+    } else {
+        format!(" (position {position})")
+    };
+    PyTypeError::new_err(format!(
+        "unsqueeze(): argument 'input'{position} must be Tensor, not {type_name}"
+    ))
+}
+
+fn unsqueeze_positional_count_error(expected: usize, actual: usize) -> PyErr {
+    let argument = if expected == 1 {
+        "argument"
+    } else {
+        "arguments"
+    };
+    PyTypeError::new_err(format!(
+        "unsqueeze() takes {expected} positional {argument} but {actual} were given"
+    ))
+}
+
+fn unsqueeze_duplicate_argument(argument: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "unsqueeze() got multiple values for argument '{argument}'"
+    ))
+}
+
+fn unsqueeze_unexpected_keyword(keyword: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "unsqueeze() got an unexpected keyword argument '{keyword}'"
+    ))
+}
+
+fn unsqueeze_missing_arguments(arguments: &[&str]) -> PyErr {
+    if arguments.len() == 1 {
+        return PyTypeError::new_err(format!(
+            "unsqueeze() missing 1 required positional arguments: \"{}\"",
+            arguments[0]
+        ));
+    }
+    PyTypeError::new_err(format!(
+        "unsqueeze() missing 2 required positional argument: \"{}\", \"{}\"",
+        arguments[0], arguments[1]
+    ))
+}
+
+fn reject_unknown_unsqueeze_keywords(
+    kwargs: Option<&Bound<'_, PyDict>>,
+    accepted: &[&str],
+) -> PyResult<()> {
+    let Some(kwargs) = kwargs else {
+        return Ok(());
+    };
+    for (keyword, _) in kwargs.iter() {
+        let Ok(keyword) = keyword.extract::<&str>() else {
+            continue;
+        };
+        if !accepted.contains(&keyword) {
+            return Err(unsqueeze_unexpected_keyword(keyword));
+        }
+    }
+    Ok(())
+}
+
+fn reject_axis_with_unknown_keywords(
+    kwargs: Option<&Bound<'_, PyDict>>,
+    canonical: &[&str],
+) -> PyResult<()> {
+    let Some(kwargs) = kwargs else {
+        return Ok(());
+    };
+    let mut first_noncanonical = None;
+    let mut noncanonical_count = 0;
+    for (keyword, _) in kwargs.iter() {
+        let Ok(keyword) = keyword.extract::<&str>() else {
+            continue;
+        };
+        if !canonical.contains(&keyword) {
+            first_noncanonical.get_or_insert_with(|| keyword.to_owned());
+            noncanonical_count += 1;
+        }
+    }
+    if noncanonical_count > 1 {
+        return Err(unsqueeze_unexpected_keyword(
+            first_noncanonical
+                .as_deref()
+                .expect("two noncanonical keywords must have a first keyword"),
+        ));
+    }
+    Ok(())
 }
 
 fn parse_integer_indices<'py>(
@@ -1278,6 +1502,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ItemRequiresOneElement { .. }
         | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow
+        | TensorError::NegativeStrides { .. }
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }
         | TensorError::ReshapeAmbiguousZeroElements { .. }
@@ -1288,6 +1513,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::UnsupportedMemoryFormat { .. }
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
+        | TensorError::DimensionOutOfRange { .. }
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. } => PyIndexError::new_err(error.to_string()),
     }
@@ -1302,6 +1528,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyMemoryFormat>()?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
+    module.add_function(wrap_pyfunction!(unsqueeze, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;

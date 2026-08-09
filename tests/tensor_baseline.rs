@@ -43,6 +43,150 @@ fn native_metadata_survives_views_kernels_and_reductions() {
 }
 
 #[test]
+fn unsqueeze_is_a_shared_storage_view_for_ranks_zero_through_six() {
+    for rank in 0..=6 {
+        let shape = vec![2; rank];
+        let elements = 1_usize << rank;
+        let source = Tensor::from_vec(
+            (0..elements)
+                .map(|value| f32::from(u16::try_from(value).unwrap()))
+                .collect(),
+            shape,
+        )
+        .unwrap();
+
+        for axis in 0..=rank {
+            let view = source.unsqueeze(i64::try_from(axis).unwrap()).unwrap();
+            let negative = i64::try_from(axis).unwrap() - i64::try_from(rank + 1).unwrap();
+            let negative_view = source.unsqueeze(negative).unwrap();
+
+            let mut expected_shape = source.shape().to_vec();
+            expected_shape.insert(axis, 1);
+            let expected_stride = if axis == rank {
+                1
+            } else {
+                source.shape()[axis] * source.stride()[axis]
+            };
+            let mut expected_strides = source.stride().to_vec();
+            expected_strides.insert(axis, expected_stride);
+
+            for output in [&view, &negative_view] {
+                assert_eq!(output.shape(), expected_shape);
+                assert_eq!(output.stride(), expected_strides);
+                assert_eq!(output.storage_offset(), source.storage_offset());
+                assert_eq!(output.numel(), source.numel());
+                assert_eq!(output.dtype(), source.dtype());
+                assert_eq!(output.device(), source.device());
+                assert_eq!(output.as_slice(), source.as_slice());
+                assert!(output.shares_storage_with(&source));
+            }
+        }
+    }
+}
+
+#[test]
+fn unsqueeze_preserves_empty_and_indexed_view_geometry() {
+    let empty = Tensor::zeros([2, 0, 3]).unwrap();
+    let expected = [
+        ([1, 2, 0, 3], [6, 3, 3, 1]),
+        ([2, 1, 0, 3], [3, 0, 3, 1]),
+        ([2, 0, 1, 3], [3, 3, 3, 1]),
+        ([2, 0, 3, 1], [3, 3, 1, 1]),
+    ];
+    for (axis, (shape, strides)) in expected.into_iter().enumerate() {
+        let view = empty.unsqueeze(i64::try_from(axis).unwrap()).unwrap();
+        assert_eq!(view.shape(), shape);
+        assert_eq!(view.stride(), strides);
+        assert!(view.shares_storage_with(&empty));
+    }
+
+    let source = Tensor::from_vec((0_u16..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let indexed = source.index_integer(1).unwrap();
+    let view = indexed.unsqueeze(1).unwrap();
+    assert_eq!(view.shape(), [3, 1, 4]);
+    assert_eq!(view.stride(), [4, 4, 1]);
+    assert_eq!(view.storage_offset(), 12);
+    assert!(view.shares_storage_with(&source));
+    assert_eq!(
+        view.index([1, 0]).unwrap().as_slice(),
+        [16.0, 17.0, 18.0, 19.0]
+    );
+}
+
+#[test]
+fn unsqueeze_matches_signed_stride_wrapping_for_extreme_empty_shapes() {
+    let maximum = isize::MAX.unsigned_abs();
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::try_from(maximum).unwrap(), 3])
+        .unwrap();
+    assert_eq!(extreme.stride(), [maximum - 2, 3, 1]);
+    assert_eq!(
+        extreme.unsqueeze(0).unwrap().stride(),
+        [0, maximum - 2, 3, 1]
+    );
+    assert_eq!(
+        extreme.unsqueeze(1).unwrap().stride(),
+        [maximum - 2, maximum - 2, 3, 1]
+    );
+
+    let negative = Tensor::zeros([maximum, 0, 2]).unwrap().unsqueeze(0);
+    assert_eq!(
+        negative,
+        Err(TensorError::NegativeStrides {
+            strides: vec![-2, 2, 2, 1]
+        })
+    );
+    assert_eq!(
+        negative.unwrap_err().to_string(),
+        "as_strided: Negative strides are not supported at the moment, got strides: [-2, 2, 2, 1]"
+    );
+}
+
+#[test]
+fn unsqueeze_validates_dimensions_over_the_output_rank() {
+    let scalar = Tensor::from_vec(vec![3.0], []).unwrap();
+    assert_eq!(scalar.unsqueeze(-1).unwrap().shape(), [1]);
+    assert_eq!(scalar.unsqueeze(0).unwrap().stride(), [1]);
+    for dimension in [-2, 1] {
+        assert_eq!(
+            scalar.unsqueeze(dimension),
+            Err(TensorError::DimensionOutOfRange {
+                dimension,
+                minimum: -1,
+                maximum: 0,
+            })
+        );
+    }
+
+    let matrix = Tensor::zeros([2, 3]).unwrap();
+    for dimension in [-4, 3] {
+        let error = matrix.unsqueeze(dimension).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Dimension out of range (expected to be in range of [-3, 2], but got {dimension})"
+            )
+        );
+    }
+}
+
+#[test]
+fn unsqueeze_views_remain_valid_inputs_to_supported_operations() {
+    let source = Tensor::from_vec(vec![-1.0, 2.0, 3.0, -4.0], [2, 2]).unwrap();
+    let view = source.unsqueeze(1).unwrap();
+
+    assert_eq!(view.reshape([2, 2]).unwrap().as_slice(), source.as_slice());
+    assert_eq!(view.try_clone().unwrap().stride(), [2, 2, 1]);
+    assert_eq!(
+        view.add_scalar(1.0).unwrap().as_slice(),
+        [0.0, 3.0, 4.0, -3.0]
+    );
+    assert_eq!(view.relu().unwrap().as_slice(), [0.0, 2.0, 3.0, 0.0]);
+    assert!(!view.try_clone().unwrap().shares_storage_with(&view));
+}
+
+#[test]
 fn construction_validates_shape() {
     let error = Tensor::from_vec(vec![1.0, 2.0], [3]).unwrap_err();
     assert_eq!(

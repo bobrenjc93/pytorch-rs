@@ -120,6 +120,14 @@ pub enum TensorError {
         offset: i64,
     },
     IndexCalculationOverflow,
+    DimensionOutOfRange {
+        dimension: i64,
+        minimum: i64,
+        maximum: i64,
+    },
+    NegativeStrides {
+        strides: Vec<i64>,
+    },
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -147,6 +155,9 @@ pub enum TensorError {
 }
 
 impl Display for TensorError {
+    // Keep the exhaustive compatibility diagnostics together with the error
+    // variants they describe.
+    #[allow(clippy::too_many_lines)]
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ShapeDataMismatch { shape, elements } => write!(
@@ -203,6 +214,18 @@ impl Display for TensorError {
             Self::IndexCalculationOverflow => {
                 write!(formatter, "tensor index calculation overflowed usize")
             }
+            Self::DimensionOutOfRange {
+                dimension,
+                minimum,
+                maximum,
+            } => write!(
+                formatter,
+                "Dimension out of range (expected to be in range of [{minimum}, {maximum}], but got {dimension})"
+            ),
+            Self::NegativeStrides { strides } => write!(
+                formatter,
+                "as_strided: Negative strides are not supported at the moment, got strides: {strides:?}"
+            ),
             Self::ReshapeMultipleInferredDimensions => {
                 write!(formatter, "only one dimension can be inferred")
             }
@@ -675,6 +698,90 @@ impl Tensor {
             return Err(TensorError::InvalidStorageOffset { offset });
         }
         Ok(offset)
+    }
+
+    /// Inserts a size-one dimension and returns a shared-storage view.
+    ///
+    /// Negative dimensions are normalized over the output rank, so both `-1`
+    /// and the current rank append a trailing dimension. The inserted stride
+    /// follows `PyTorch`'s view geometry exactly: it is one when appending and
+    /// otherwise the selected input size multiplied by its stride.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `dimension` is outside `[-rank - 1, rank]`, when
+    /// `PyTorch`'s signed stride calculation produces an unsupported negative
+    /// stride, or when view metadata allocation fails.
+    pub fn unsqueeze(&self, dimension: i64) -> Result<Self, TensorError> {
+        let rank =
+            i64::try_from(self.shape.len()).map_err(|_| TensorError::StrideCalculationOverflow)?;
+        let output_rank = rank
+            .checked_add(1)
+            .ok_or(TensorError::StrideCalculationOverflow)?;
+        let minimum = -output_rank;
+        if dimension < minimum || dimension > rank {
+            return Err(TensorError::DimensionOutOfRange {
+                dimension,
+                minimum,
+                maximum: rank,
+            });
+        }
+        let normalized = if dimension < 0 {
+            dimension
+                .checked_add(output_rank)
+                .ok_or(TensorError::StrideCalculationOverflow)?
+        } else {
+            dimension
+        };
+        let axis =
+            usize::try_from(normalized).map_err(|_| TensorError::StrideCalculationOverflow)?;
+
+        let inserted_stride = if axis == self.shape.len() {
+            1_i64
+        } else {
+            let size = i64::try_from(self.shape[axis])
+                .map_err(|_| TensorError::StrideCalculationOverflow)?;
+            let stride = i64::try_from(self.strides[axis])
+                .map_err(|_| TensorError::StrideCalculationOverflow)?;
+            size.wrapping_mul(stride)
+        };
+        if inserted_stride < 0 {
+            return Err(TensorError::NegativeStrides {
+                strides: try_insert_signed_stride(
+                    &self.strides,
+                    axis,
+                    inserted_stride,
+                    self.elements,
+                )?,
+            });
+        }
+
+        let output_rank = self
+            .shape
+            .len()
+            .checked_add(1)
+            .ok_or(TensorError::AllocationFailed {
+                elements: self.elements,
+            })?;
+        let mut shape = try_result_vector(output_rank, self.elements)?;
+        shape.extend_from_slice(&self.shape[..axis]);
+        shape.push(1);
+        shape.extend_from_slice(&self.shape[axis..]);
+
+        let mut strides = try_result_vector(output_rank, self.elements)?;
+        strides.extend_from_slice(&self.strides[..axis]);
+        strides.push(
+            usize::try_from(inserted_stride).map_err(|_| TensorError::StrideCalculationOverflow)?,
+        );
+        strides.extend_from_slice(&self.strides[axis..]);
+
+        Ok(Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset: self.offset,
+            elements: self.elements,
+        })
     }
 
     /// Returns a contiguous metadata-only view with a new shape.
@@ -1285,6 +1392,27 @@ fn try_clone_reshape_shape(shape: &[i64], elements: usize) -> Result<Vec<i64>, T
     let mut cloned = try_result_vector(shape.len(), elements)?;
     cloned.extend_from_slice(shape);
     Ok(cloned)
+}
+
+fn try_insert_signed_stride(
+    strides: &[usize],
+    axis: usize,
+    inserted: i64,
+    elements: usize,
+) -> Result<Vec<i64>, TensorError> {
+    let output_rank = strides
+        .len()
+        .checked_add(1)
+        .ok_or(TensorError::AllocationFailed { elements })?;
+    let mut output = try_result_vector(output_rank, elements)?;
+    for stride in &strides[..axis] {
+        output.push(i64::try_from(*stride).map_err(|_| TensorError::StrideCalculationOverflow)?);
+    }
+    output.push(inserted);
+    for stride in &strides[axis..] {
+        output.push(i64::try_from(*stride).map_err(|_| TensorError::StrideCalculationOverflow)?);
+    }
+    Ok(output)
 }
 
 fn element_count(shape: &[usize]) -> Result<usize, TensorError> {

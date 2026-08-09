@@ -517,6 +517,151 @@ class PythonApiBaselineTests(unittest.TestCase):
             torch.clone(input=chained_view), [[8.0, 9.0]], (1, 2)
         )
 
+    def test_unsqueeze_method_and_function_cover_ranks_zero_through_six(self):
+        for rank in range(7):
+            shape = (2,) * rank
+            values = np.arange(2**rank, dtype=np.float32).reshape(shape).tolist()
+            source = torch.tensor(values)
+
+            for axis in range(rank + 1):
+                negative = axis - rank - 1
+                outputs = (
+                    source.unsqueeze(axis),
+                    source.unsqueeze(negative),
+                    torch.unsqueeze(source, axis),
+                    torch.unsqueeze(input=source, dim=negative),
+                )
+                expected_shape = shape[:axis] + (1,) + shape[axis:]
+                expected_stride = (
+                    1
+                    if axis == rank
+                    else source.shape[axis] * source.stride(axis)
+                )
+                expected_strides = (
+                    source.stride()[:axis]
+                    + (expected_stride,)
+                    + source.stride()[axis:]
+                )
+                for output in outputs:
+                    with self.subTest(rank=rank, axis=axis, operation=output):
+                        self.assertEqual(output.shape, expected_shape)
+                        self.assertEqual(output.stride(), expected_strides)
+                        self.assertEqual(output.storage_offset(), source.storage_offset())
+                        self.assertEqual(
+                            output.tolist(), np.expand_dims(values, axis).tolist()
+                        )
+                        self.assertIs(output.dtype, source.dtype)
+                        self.assertEqual(output.device, source.device)
+
+    def test_unsqueeze_empty_extreme_and_indexed_view_metadata(self):
+        empty = torch.zeros((2, 0, 3))
+        expected = (
+            ((1, 2, 0, 3), (6, 3, 3, 1)),
+            ((2, 1, 0, 3), (3, 0, 3, 1)),
+            ((2, 0, 1, 3), (3, 3, 3, 1)),
+            ((2, 0, 3, 1), (3, 3, 1, 1)),
+        )
+        for axis, (shape, strides) in enumerate(expected):
+            view = empty.unsqueeze(axis)
+            self.assertEqual(view.shape, shape)
+            self.assertEqual(view.stride(), strides)
+            self.assertEqual(
+                view.tolist(),
+                np.expand_dims(np.zeros(empty.shape, dtype=np.float32), axis).tolist(),
+            )
+
+        source = torch.tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist())
+        indexed = source[1]
+        view = indexed.unsqueeze(1)
+        self.assertEqual(view.shape, (3, 1, 4))
+        self.assertEqual(view.stride(), (4, 4, 1))
+        self.assertEqual(view.storage_offset(), 12)
+        self.assertEqual(view[1, 0].tolist(), [16.0, 17.0, 18.0, 19.0])
+
+        maximum = sys.maxsize
+        extreme = torch.zeros((0,)).reshape((0, maximum, 3))
+        self.assertEqual(extreme.unsqueeze(0).stride(), (0, maximum - 2, 3, 1))
+        self.assertEqual(
+            extreme.unsqueeze(1).stride(),
+            (maximum - 2, maximum - 2, 3, 1),
+        )
+        with self.assertRaisesRegex(RuntimeError, "Negative strides are not supported"):
+            torch.zeros((maximum, 0, 2)).unsqueeze(0)
+
+    def test_unsqueeze_views_support_existing_consumers_and_copy_boundaries(self):
+        source = torch.tensor([[-1.0, 2.0], [3.0, -4.0]])[1]
+        view = source.unsqueeze(0)
+        self.assertEqual(view.shape, (1, 2))
+        self.assertEqual(view.stride(), (2, 1))
+        self.assertEqual(view.storage_offset(), 2)
+        self.assertEqual(view.reshape(2).tolist(), [3.0, -4.0])
+        self.assertEqual(view[0].tolist(), [3.0, -4.0])
+        self.assertEqual((view + 1).tolist(), [[4.0, -3.0]])
+        self.assertEqual(view.relu().tolist(), [[3.0, 0.0]])
+
+        copied = view.clone()
+        self.assertEqual(copied.tolist(), [[3.0, -4.0]])
+        self.assertEqual(copied.stride(), view.stride())
+        self.assertEqual(copied.storage_offset(), 0)
+        array = np.asarray(view)
+        self.assertEqual(array.shape, (1, 2))
+        np.testing.assert_array_equal(array, np.array([[3.0, -4.0]], dtype=np.float32))
+        array[0, 0] = 99.0
+        self.assertEqual(view.tolist(), [[3.0, -4.0]])
+
+    def test_unsqueeze_integer_protocol_and_argument_errors_match_pytorch(self):
+        source = torch.tensor([1.0])
+
+        class IntSubclass(int):
+            pass
+
+        class IndexOnly:
+            def __index__(self):
+                return 0
+
+        for dimension in (IntSubclass(0), np.int8(0), np.int64(-1)):
+            for operation in (source.unsqueeze, lambda dim: torch.unsqueeze(source, dim)):
+                with self.subTest(dimension=dimension, operation=operation):
+                    self.assertEqual(operation(dimension).shape, (1, 1))
+
+        invalid_dimensions = (
+            (True, TypeError, "argument 'dim'.*must be int, not bool"),
+            (0.0, TypeError, "argument 'dim'.*must be int, not float"),
+            (IndexOnly(), TypeError, "must be int, not IndexOnly"),
+            (1 << 100, ValueError, "Overflow when unpacking long long"),
+            (-(1 << 100), ValueError, "Overflow when unpacking long long"),
+        )
+        for dimension, exception, message in invalid_dimensions:
+            for operation in (source.unsqueeze, lambda dim: torch.unsqueeze(source, dim)):
+                with self.subTest(dimension=dimension, operation=operation):
+                    with self.assertRaisesRegex(exception, message):
+                        operation(dimension)
+
+        calls = (
+            (lambda: source.unsqueeze(), 'missing 1 required positional arguments: "dim"'),
+            (lambda: source.unsqueeze(0, dim=0), "multiple values for argument 'dim'"),
+            (lambda: source.unsqueeze(0, 1), "takes 1 positional argument but 2 were given"),
+            (lambda: torch.unsqueeze(), 'missing 2 required positional argument: "input", "dim"'),
+            (lambda: torch.unsqueeze(source), 'missing 1 required positional arguments: "dim"'),
+            (lambda: torch.unsqueeze(source, 0, dim=0), "multiple values for argument 'dim'"),
+            (lambda: torch.unsqueeze(source, 0, 1), "takes 2 positional arguments but 3 were given"),
+        )
+        for call, message in calls:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, message):
+                    call()
+
+        self.assertEqual(source.unsqueeze(dim=0).shape, (1, 1))
+        self.assertEqual(source.unsqueeze(axis=0).shape, (1, 1))
+        self.assertEqual(torch.unsqueeze(input=source, dim=0).shape, (1, 1))
+        self.assertEqual(torch.unsqueeze(input=source, axis=0).shape, (1, 1))
+        for dimension in (-3, 2):
+            with self.assertRaisesRegex(
+                IndexError,
+                rf"Dimension out of range .*\[-2, 1\].*got {dimension}",
+            ):
+                source.unsqueeze(dimension)
+
     def test_clone_preserves_nan_infinity_and_signed_zero_bits(self):
         expected_bits = np.array(
             [0x7FC12345, 0x7F800000, 0xFF800000, 0x00000000, 0x80000000],
