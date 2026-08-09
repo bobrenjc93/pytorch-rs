@@ -529,6 +529,38 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 47
       }
+    },
+    {
+      "key": "base:7a02ef62f74ed18efd625001d674821ee0580747",
+      "commit": "7a02ef62f74ed18efd625001d674821ee0580747",
+      "recordedAt": "2026-08-09T20:51:42.880Z",
+      "label": "base 7a02ef6",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 12,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 54
+      }
+    },
+    {
+      "key": "pr:28",
+      "recordedAt": "2026-08-09T20:51:42.880Z",
+      "label": "PR #28",
+      "kind": "leaf",
+      "prNumber": 28,
+      "title": "Add PyTorch-compatible tensor dimension and element-count introspection",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.6,
+        "eval_39340456": 13,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
