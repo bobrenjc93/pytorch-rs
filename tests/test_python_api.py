@@ -156,6 +156,14 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(torch.ones(size=(2,), device="cpu").tolist(), [1.0, 1.0])
 
     def test_zeros_and_ones_accept_size_and_legacy_shape_keywords(self):
+        class Bomb:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                raise RuntimeError("must not be evaluated")
+
         for name, create, expected in (
             ("zeros", torch.zeros, [[0.0, 0.0], [0.0, 0.0]]),
             ("ones", torch.ones, [[1.0, 1.0], [1.0, 1.0]]),
@@ -188,6 +196,13 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.subTest(function=name, oversized=type(oversized).__name__):
                     with self.assertRaisesRegex(TypeError, "Overflow when unpacking long long"):
                         create((oversized, 0))
+
+            for oversized in (1 << 63, 1 << 100):
+                bomb = Bomb()
+                with self.subTest(function=name, oversized=oversized):
+                    with self.assertRaisesRegex(TypeError, "Overflow when unpacking long long"):
+                        create((oversized, bomb))
+                    self.assertEqual(bomb.calls, 0)
 
     def test_eye_creates_square_rectangular_and_empty_tensors(self):
         cases = (
@@ -551,6 +566,21 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(keyword=keyword):
                 with self.assertRaises(TypeError):
                     torch.Size(**{keyword: (2, 3)})
+
+    def test_size_type_is_immutable_final_and_safe_for_native_metadata(self):
+        tensor = torch.zeros((2, 3))
+        expected = tensor.shape
+
+        with self.assertRaisesRegex(TypeError, "immutable type 'torch.Size'"):
+            torch.Size.__new__ = staticmethod(lambda cls, dimensions=(): (99,))
+        with self.assertRaisesRegex(TypeError, "immutable type 'torch.Size'"):
+            torch.Size.extra_attribute = 1
+        with self.assertRaisesRegex(TypeError, "not an acceptable base type"):
+            class SizeSubclass(torch.Size):
+                pass
+
+        self.assertIs(type(tensor.shape), torch.Size)
+        self.assertEqual(tensor.shape, expected)
 
     def test_size_preserves_int_subclasses_and_normalizes_index_failures(self):
         class IntSubclass(int):

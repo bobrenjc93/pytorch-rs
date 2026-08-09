@@ -30,7 +30,15 @@ def _is_numpy_integer(dimension):
     return isinstance(dimension, numpy.integer)
 
 
-class Size(tuple):
+class _SizeMeta(type):
+    def __setattr__(cls, name, value):
+        raise TypeError(f"cannot set '{name}' attribute of immutable type 'torch.Size'")
+
+    def __delattr__(cls, name):
+        raise TypeError(f"cannot delete '{name}' attribute of immutable type 'torch.Size'")
+
+
+class Size(tuple, metaclass=_SizeMeta):
     __slots__ = ()
     __module__ = "torch_rs"
 
@@ -52,6 +60,9 @@ class Size(tuple):
                 ) from None
             converted.append(dimension)
         return tuple.__new__(cls, converted)
+
+    def __init_subclass__(cls, **kwargs):
+        raise TypeError("type 'torch.Size' is not an acceptable base type")
 
     def __repr__(self):
         dimensions = (str(_unpack_size_dimension(dimension)) for dimension in self)
@@ -644,7 +655,10 @@ fn size_type(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
 
 fn size_object(py: Python<'_>, dimensions: &[usize]) -> PyResult<Py<PyAny>> {
     let dimensions = PyTuple::new(py, dimensions.iter().copied())?;
-    Ok(size_type(py)?.bind(py).call1((dimensions,))?.unbind())
+    let tuple_new = py.get_type::<PyTuple>().getattr("__new__")?;
+    Ok(tuple_new
+        .call1((size_type(py)?.bind(py), dimensions))?
+        .unbind())
 }
 
 fn parse_creation_size(
@@ -665,12 +679,19 @@ fn parse_creation_size(
             )));
         }
     };
-    let dimensions = value.extract::<Vec<usize>>()?;
-    if dimensions
-        .iter()
-        .any(|&dimension| i64::try_from(dimension).is_err())
-    {
-        return Err(PyTypeError::new_err("Overflow when unpacking long long"));
+    let sequence = value.cast::<PySequence>()?;
+    let length = sequence.len()?;
+    let mut dimensions = try_size_vector(length)?;
+    let operator_index = PyModule::import(value.py(), "operator")?.getattr("index")?;
+    for index in 0..length {
+        let dimension = sequence.get_item(index)?;
+        let indexed = operator_index.call1((dimension,))?;
+        let dimension = indexed
+            .extract::<i64>()
+            .map_err(|_| PyTypeError::new_err("Overflow when unpacking long long"))?;
+        let dimension = usize::try_from(dimension)
+            .map_err(|_| PyOverflowError::new_err("can't convert negative int to unsigned"))?;
+        try_push_size(&mut dimensions, dimension)?;
     }
     Ok(dimensions)
 }
