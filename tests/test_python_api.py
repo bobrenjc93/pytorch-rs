@@ -403,6 +403,27 @@ class PythonApiBaselineTests(unittest.TestCase):
                     )
                     self.assertEqual(tensor.shape, (2, 2, 4))
 
+            stateful_forms = (
+                ("direct first", lambda probe: create(probe), 3),
+                ("variadic first", lambda probe: create(probe, 3), 3),
+                ("tuple first", lambda probe: create((probe, 3)), 2),
+                ("list first", lambda probe: create([probe, 3]), 2),
+                ("size tuple first", lambda probe: create(size=(probe, 3)), 2),
+                ("size list first", lambda probe: create(size=[probe, 3]), 2),
+            )
+            for case, call, expected_calls in stateful_forms:
+                events = []
+
+                class StatefulProbe:
+                    def __index__(self):
+                        events.append("index")
+                        return 1 if len(events) == 1 else -1
+
+                with self.subTest(function=name, stateful_case=case):
+                    with self.assertRaises(RuntimeError):
+                        call(StatefulProbe())
+                    self.assertEqual(events, ["index"] * expected_calls)
+
     def test_eye_creates_square_rectangular_and_empty_tensors(self):
         cases = (
             (lambda: torch.eye(3), (3, 3), (3, 1), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),

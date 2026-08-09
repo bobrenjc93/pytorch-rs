@@ -208,17 +208,11 @@ enum ParsedSizeDimension {
     Invalid(String),
 }
 
-enum PreparedSizeDimension<'py> {
-    Parsed(ParsedSizeDimension),
-    Deferred(Bound<'py, PyAny>),
-}
-
 enum PreparedFactorySize<'py> {
-    Fixed(Vec<PreparedSizeDimension<'py>>),
+    Fixed(Vec<Bound<'py, PyAny>>),
     LiveList {
         dimensions: Bound<'py, PyList>,
         length: usize,
-        first: Option<ParsedSizeDimension>,
     },
 }
 
@@ -1006,18 +1000,19 @@ fn prepare_positional_factory_size<'py>(
     args: &Bound<'py, PyTuple>,
 ) -> PyResult<PreparedFactorySize<'py>> {
     if args.len() > 1 {
-        let first = parse_size_dimension(&args.get_item(0)?, true)?;
+        let first_dimension = args.get_item(0)?;
+        let first = parse_size_dimension(&first_dimension, true)?;
         if matches!(first, ParsedSizeDimension::Invalid(_)) {
             return Err(PyTypeError::new_err(format!(
                 "{function}() takes 1 positional argument but {} were given",
                 args.len()
             )));
         }
+        probe_variadic_first_dimension(function, &first_dimension)?;
 
         let mut dimensions = try_size_vector(args.len())?;
-        try_push_size(&mut dimensions, PreparedSizeDimension::Parsed(first))?;
-        for dimension in args.iter().skip(1) {
-            try_push_size(&mut dimensions, PreparedSizeDimension::Deferred(dimension))?;
+        for dimension in args.iter() {
+            try_push_size(&mut dimensions, dimension)?;
         }
         return Ok(PreparedFactorySize::Fixed(dimensions));
     }
@@ -1038,12 +1033,18 @@ fn prepare_positional_factory_size<'py>(
             &FirstSizeErrorStyle::PositionalCollection,
         );
     }
-    prepare_factory_size_dimensions(
-        function,
-        1,
-        std::iter::once(value),
-        &FirstSizeErrorStyle::PositionalValue,
-    )
+    let first = parse_size_dimension(&value, true)?;
+    if let ParsedSizeDimension::Invalid(type_name) = &first {
+        return Err(first_factory_size_error(
+            function,
+            type_name,
+            &FirstSizeErrorStyle::PositionalValue,
+        ));
+    }
+    probe_variadic_first_dimension(function, &value)?;
+    let mut dimensions = try_size_vector(1)?;
+    try_push_size(&mut dimensions, value)?;
+    Ok(PreparedFactorySize::Fixed(dimensions))
 }
 
 fn prepare_keyword_factory_size<'py>(
@@ -1077,9 +1078,9 @@ fn prepare_factory_size_dimensions<'py>(
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
     first_error_style: &FirstSizeErrorStyle,
 ) -> PyResult<PreparedFactorySize<'py>> {
-    let mut parsed = try_size_vector(length)?;
+    let mut prepared = try_size_vector(length)?;
     for (index, dimension) in dimensions.enumerate() {
-        let value = if index == 0 {
+        if index == 0 {
             let value = parse_size_dimension(&dimension, true)?;
             if let ParsedSizeDimension::Invalid(type_name) = &value {
                 return Err(first_factory_size_error(
@@ -1088,13 +1089,10 @@ fn prepare_factory_size_dimensions<'py>(
                     first_error_style,
                 ));
             }
-            PreparedSizeDimension::Parsed(value)
-        } else {
-            PreparedSizeDimension::Deferred(dimension)
-        };
-        try_push_size(&mut parsed, value)?;
+        }
+        try_push_size(&mut prepared, dimension)?;
     }
-    Ok(PreparedFactorySize::Fixed(parsed))
+    Ok(PreparedFactorySize::Fixed(prepared))
 }
 
 fn prepare_factory_list_dimensions<'py>(
@@ -1103,9 +1101,7 @@ fn prepare_factory_list_dimensions<'py>(
     first_error_style: &FirstSizeErrorStyle,
 ) -> PyResult<PreparedFactorySize<'py>> {
     let length = dimensions.len();
-    let first = if length == 0 {
-        None
-    } else {
+    if length > 0 {
         let value = parse_size_dimension(&dimensions.get_item(0)?, true)?;
         if let ParsedSizeDimension::Invalid(type_name) = &value {
             return Err(first_factory_size_error(
@@ -1114,13 +1110,23 @@ fn prepare_factory_list_dimensions<'py>(
                 first_error_style,
             ));
         }
-        Some(value)
-    };
+    }
     Ok(PreparedFactorySize::LiveList {
         dimensions: dimensions.clone(),
         length,
-        first,
     })
+}
+
+fn probe_variadic_first_dimension(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<()> {
+    let probe = parse_size_dimension(dimension, true)?;
+    if let ParsedSizeDimension::Invalid(type_name) = &probe {
+        return Err(first_factory_size_error(
+            function,
+            type_name,
+            &FirstSizeErrorStyle::PositionalCollection,
+        ));
+    }
+    Ok(())
 }
 
 fn parse_size_dimension(
@@ -1176,12 +1182,7 @@ impl PreparedFactorySize<'_> {
             Self::Fixed(dimensions) => {
                 let mut size = try_size_vector(dimensions.len())?;
                 for (index, dimension) in dimensions.into_iter().enumerate() {
-                    let parsed = match dimension {
-                        PreparedSizeDimension::Parsed(value) => value,
-                        PreparedSizeDimension::Deferred(value) => {
-                            parse_size_dimension(&value, false)?
-                        }
-                    };
+                    let parsed = parse_size_dimension(&dimension, false)?;
                     try_push_size(
                         &mut size,
                         unpack_factory_size_dimension(function, index, parsed)?,
@@ -1189,19 +1190,9 @@ impl PreparedFactorySize<'_> {
                 }
                 Ok(size)
             }
-            Self::LiveList {
-                dimensions,
-                length,
-                first,
-            } => {
+            Self::LiveList { dimensions, length } => {
                 let mut size = try_size_vector(length)?;
-                if let Some(first) = first {
-                    try_push_size(
-                        &mut size,
-                        unpack_factory_size_dimension(function, 0, first)?,
-                    )?;
-                }
-                for index in 1..length {
+                for index in 0..length {
                     let dimension = dimensions.get_item(index)?;
                     let parsed = parse_size_dimension(&dimension, false)?;
                     try_push_size(

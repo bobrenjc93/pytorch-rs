@@ -225,6 +225,39 @@ class FactorySizeReferenceTests(unittest.TestCase):
                     self.assertEqual(actual, expected)
                     self.assertEqual(actual[0], (2, 2, 4))
 
+    def test_stateful_first_dimension_is_reconverted_like_pytorch_2_13(self):
+        def outcome(factory, call):
+            events = []
+
+            class Probe:
+                def __index__(self):
+                    events.append("index")
+                    return 1 if len(events) == 1 else -1
+
+            try:
+                call(factory, Probe())
+            except Exception as error:
+                return type(error).__name__, str(error), events
+            self.fail("stateful negative dimension unexpectedly succeeded")
+
+        forms = (
+            ("direct", lambda factory, probe: factory(probe)),
+            ("variadic", lambda factory, probe: factory(probe, 3)),
+            ("tuple", lambda factory, probe: factory((probe, 3))),
+            ("list", lambda factory, probe: factory([probe, 3])),
+            ("size tuple", lambda factory, probe: factory(size=(probe, 3))),
+            ("size list", lambda factory, probe: factory(size=[probe, 3])),
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for form, call in forms:
+                with self.subTest(factory=factory_name, form=form):
+                    self.assertEqual(
+                        outcome(actual_factory, call),
+                        outcome(expected_factory, call),
+                    )
+
     def test_empty_metadata_negative_and_overflow_shapes_match(self):
         maximum = sys.maxsize
         metadata_shapes = (
