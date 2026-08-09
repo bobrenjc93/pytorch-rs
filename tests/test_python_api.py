@@ -90,6 +90,114 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(special[1].view(np.uint32).item(), np.float32(-0.0).view(np.uint32).item())
         self.assertTrue(np.isnan(special[2:]).all())
 
+    def test_exp_matches_pytorch_float32_values_and_special_cases(self):
+        source = torch.tensor(
+            [
+                -80.0,
+                -20.0,
+                -2.0,
+                -1.0,
+                -0.5,
+                0.0,
+                0.5,
+                1.0,
+                2.0,
+                10.0,
+                20.0,
+                80.0,
+            ]
+        ).reshape(2, 2, 3)
+        pytorch_reference = np.array(
+            [
+                1.8048513e-35,
+                2.0611537e-9,
+                0.13533528,
+                0.36787945,
+                0.60653067,
+                1.0,
+                1.6487212,
+                2.7182817,
+                7.389056,
+                22026.465,
+                4.851652e8,
+                5.5406225e34,
+            ],
+            dtype=np.float32,
+        ).reshape(2, 2, 3)
+
+        actual = source.exp()
+        self.assertEqual(actual.shape, source.shape)
+        self.assertEqual(actual.stride(), (6, 3, 1))
+        self.assertIs(actual.dtype, source.dtype)
+        self.assertEqual(actual.device, source.device)
+        np.testing.assert_allclose(
+            np.asarray(actual),
+            pytorch_reference,
+            rtol=2.0e-6,
+            atol=np.nextafter(np.float32(0), np.float32(1)),
+        )
+
+        smallest_subnormal = np.nextafter(np.float32(0), np.float32(1)).item()
+        special = np.asarray(
+            torch.tensor(
+                [
+                    0.0,
+                    -0.0,
+                    smallest_subnormal,
+                    -smallest_subnormal,
+                    -100.0,
+                    -104.0,
+                    88.0,
+                    89.0,
+                    float("nan"),
+                    float("inf"),
+                    -float("inf"),
+                ]
+            ).exp()
+        )
+        self.assertTrue(np.all(special[:4].view(np.uint32) == np.float32(1).view(np.uint32)))
+        self.assertTrue(0 < special[4] < np.finfo(np.float32).tiny)
+        self.assertEqual(special[5].view(np.uint32).item(), np.float32(0).view(np.uint32).item())
+        self.assertTrue(np.isfinite(special[6]))
+        self.assertTrue(np.isposinf(special[7]))
+        self.assertTrue(np.isnan(special[8]))
+        self.assertTrue(np.isposinf(special[9]))
+        self.assertEqual(special[10].view(np.uint32).item(), np.float32(0).view(np.uint32).item())
+
+    def test_exp_materializes_views_and_checks_extreme_empty_metadata(self):
+        source = torch.tensor([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
+        indexed = source[1]
+        self.assertEqual(indexed.storage_offset(), 3)
+        indexed_output = indexed.exp()
+        self.assertEqual(indexed_output.shape, (3,))
+        self.assertEqual(indexed_output.stride(), (1,))
+        self.assertEqual(indexed_output.storage_offset(), 0)
+        np.testing.assert_allclose(
+            np.asarray(indexed_output),
+            np.array([20.085537, 54.59815, 148.41316], dtype=np.float32),
+            rtol=2.0e-6,
+        )
+
+        reshaped_output = source.reshape(1, 2, 3).exp()
+        self.assertEqual(reshaped_output.shape, (1, 2, 3))
+        self.assertEqual(reshaped_output.stride(), (6, 3, 1))
+
+        empty = torch.zeros((2, 0, 3)).exp()
+        self.assertEqual(empty.shape, (2, 0, 3))
+        self.assertEqual(empty.stride(), (3, 3, 1))
+        self.assertEqual(empty.tolist(), [[], []])
+
+        offset_view = torch.zeros((sys.maxsize, 0))[sys.maxsize - 1]
+        self.assertGreater(offset_view.storage_offset(), 0)
+        offset_output = offset_view.exp()
+        self.assertEqual(offset_output.shape, (0,))
+        self.assertEqual(offset_output.stride(), (1,))
+        self.assertEqual(offset_output.storage_offset(), 0)
+
+        extreme = torch.zeros((0,)).reshape((0, sys.maxsize, 3))
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            extreme.exp()
+
     def test_float32_descriptor_identity_type_and_repr(self):
         self.assertIs(torch.float, torch.float32)
         self.assertIsInstance(torch.float32, torch.dtype)

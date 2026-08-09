@@ -886,6 +886,15 @@ impl Tensor {
         self.unary_map(f32::sin)
     }
 
+    /// Computes the base-e exponential of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn exp(&self) -> Result<Self, TensorError> {
+        self.unary_map(f32::exp)
+    }
+
     #[must_use]
     pub fn sum(&self) -> Self {
         Self::from_owned_parts(
@@ -1085,11 +1094,7 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 {
-            contiguous_strides(&shape, elements)?
-        } else {
-            try_clone_result_shape(&self.strides, elements)?
-        };
+        let strides = contiguous_strides(&shape, elements)?;
         data.extend(self.as_slice().iter().copied().map(operation));
         Ok(Self::from_owned_parts(
             data,
@@ -1467,7 +1472,9 @@ fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TensorError, try_result_vector};
+    use std::sync::Arc;
+
+    use super::{DType, Device, Storage, Tensor, TensorError, try_result_vector};
 
     #[test]
     fn binary_result_reservation_failures_return_tensor_errors() {
@@ -1477,6 +1484,30 @@ mod tests {
         assert_eq!(try_result_vector::<f32>(usize::MAX, elements), expected);
         assert_eq!(
             try_result_vector::<usize>(usize::MAX, elements),
+            Err(TensorError::AllocationFailed { elements })
+        );
+    }
+
+    #[test]
+    fn exponential_propagates_result_allocation_overflow() {
+        let elements = usize::MAX;
+        // Failure injection deliberately bypasses the validated constructors:
+        // no real tensor can own this many f32 values, so the kernel must fail
+        // its output reservation before attempting to read the empty fixture.
+        let tensor = Tensor {
+            storage: Arc::new(Storage {
+                data: Vec::new(),
+                dtype: DType::Float32,
+                device: Device::Cpu,
+            }),
+            shape: vec![elements],
+            strides: vec![1],
+            offset: 0,
+            elements,
+        };
+
+        assert_eq!(
+            tensor.exp(),
             Err(TensorError::AllocationFailed { elements })
         );
     }
