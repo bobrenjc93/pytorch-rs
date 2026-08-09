@@ -1,12 +1,15 @@
-use pytorch_rs::{DType, Device, Tensor, TensorError};
+use pytorch_rs::{DType, Device, MemoryFormat, Tensor, TensorError};
 use std::mem::size_of;
 
 #[test]
 fn native_metadata_describes_all_supported_storage_shapes() {
     assert_eq!(DType::default(), DType::Float32);
     assert_eq!(Device::default(), Device::Cpu);
+    assert_eq!(MemoryFormat::default(), MemoryFormat::Preserve);
     assert_eq!(DType::Float32.to_string(), "float32");
     assert_eq!(Device::Cpu.to_string(), "cpu");
+    assert_eq!(MemoryFormat::Preserve.to_string(), "preserve_format");
+    assert_eq!(MemoryFormat::Contiguous.to_string(), "contiguous_format");
 
     for tensor in [
         Tensor::from_vec(vec![2.5], []).unwrap(),
@@ -729,6 +732,129 @@ fn reshape_is_a_contiguous_shared_storage_view() {
         [2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
     );
     assert_eq!(view.into_vec(), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+}
+
+#[test]
+fn clone_deep_copies_a_views_logical_range_and_preserves_float_bits() {
+    let values = [
+        0.0_f32,
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        f32::from_bits(0x7fc1_2345),
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        -0.0,
+        10.0,
+        11.0,
+    ];
+    let source = Tensor::from_vec(values.to_vec(), [2, 2, 3]).unwrap();
+    let view = source.index_integer(1).unwrap().reshape([3, 2]).unwrap();
+
+    let copied = view.try_clone().unwrap();
+    assert_eq!(copied.shape(), [3, 2]);
+    assert_eq!(copied.stride(), [2, 1]);
+    assert_eq!(copied.storage_offset(), 0);
+    assert_eq!(copied.dtype(), view.dtype());
+    assert_eq!(copied.device(), view.device());
+    assert!(!copied.shares_storage_with(&source));
+    assert!(!copied.shares_storage_with(&view));
+    assert_eq!(
+        copied
+            .as_slice()
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        values[6..]
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>()
+    );
+
+    let cloned_via_trait = view.clone();
+    assert!(!cloned_via_trait.shares_storage_with(&view));
+    assert_eq!(cloned_via_trait.shape(), copied.shape());
+    assert_eq!(cloned_via_trait.stride(), copied.stride());
+    assert_eq!(
+        cloned_via_trait
+            .as_slice()
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        copied
+            .as_slice()
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn clone_handles_scalars_and_extreme_empty_view_offsets() {
+    let scalar = Tensor::from_vec(vec![-0.0], []).unwrap();
+    let scalar_copy = scalar.try_clone().unwrap();
+    assert!(scalar_copy.shape().is_empty());
+    assert!(scalar_copy.stride().is_empty());
+    assert_eq!(scalar_copy.storage_offset(), 0);
+    assert_eq!(scalar_copy.item().unwrap().to_bits(), (-0.0_f32).to_bits());
+    assert!(!scalar_copy.shares_storage_with(&scalar));
+
+    let maximum = usize::try_from(i64::MAX).unwrap();
+    let empty = Tensor::zeros([maximum, 0]).unwrap();
+    let view = empty
+        .index_integer(i64::MAX - 1)
+        .unwrap()
+        .reshape([2, 0, 3])
+        .unwrap();
+    assert_eq!(view.storage_offset(), maximum - 1);
+
+    let copied = view.try_clone().unwrap();
+    assert_eq!(copied.shape(), [2, 0, 3]);
+    assert_eq!(copied.stride(), [3, 3, 1]);
+    assert_eq!(copied.storage_offset(), 0);
+    assert_eq!(copied.numel(), 0);
+    assert!(copied.as_slice().is_empty());
+    assert!(!copied.shares_storage_with(&empty));
+    assert!(!copied.shares_storage_with(&view));
+
+    let unusual = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
+    assert_eq!(unusual.stride(), [1, 0]);
+    assert_eq!(
+        unusual
+            .try_clone_with_memory_format(MemoryFormat::Preserve)
+            .unwrap()
+            .stride(),
+        [1, 0]
+    );
+    assert_eq!(
+        unusual
+            .try_clone_with_memory_format(MemoryFormat::Contiguous)
+            .unwrap()
+            .stride(),
+        [1, 1]
+    );
+
+    let extreme_shape = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3])
+        .unwrap();
+    let extreme_copy = extreme_shape.try_clone().unwrap();
+    assert_eq!(extreme_copy.shape(), extreme_shape.shape());
+    assert_eq!(extreme_copy.stride(), extreme_shape.stride());
+    assert_eq!(extreme_copy.storage_offset(), 0);
+    assert!(!extreme_copy.shares_storage_with(&extreme_shape));
+    assert_eq!(
+        extreme_shape.try_clone_with_memory_format(MemoryFormat::Contiguous),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+    assert_eq!(
+        extreme_shape.try_clone_with_memory_format(MemoryFormat::ChannelsLast),
+        Err(TensorError::UnsupportedMemoryFormat {
+            memory_format: MemoryFormat::ChannelsLast,
+        })
+    );
 }
 
 #[test]

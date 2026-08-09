@@ -35,6 +35,31 @@ impl Display for Device {
     }
 }
 
+/// Storage layouts accepted by tensor-copy operations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum MemoryFormat {
+    /// Retain the source tensor's supported layout metadata.
+    #[default]
+    Preserve,
+    /// Produce canonical contiguous row-major strides.
+    Contiguous,
+    /// Four-dimensional channels-last layout, currently unsupported.
+    ChannelsLast,
+    /// Five-dimensional channels-last layout, currently unsupported.
+    ChannelsLast3d,
+}
+
+impl Display for MemoryFormat {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Preserve => formatter.write_str("preserve_format"),
+            Self::Contiguous => formatter.write_str("contiguous_format"),
+            Self::ChannelsLast => formatter.write_str("channels_last"),
+            Self::ChannelsLast3d => formatter.write_str("channels_last_3d"),
+        }
+    }
+}
+
 struct Storage {
     data: Vec<f32>,
     dtype: DType,
@@ -46,13 +71,19 @@ struct Storage {
 /// This deliberately narrow representation is the campaign's baseline, not a
 /// claim of `PyTorch` feature parity. Later iterations may generalize storage as
 /// long as these observable semantics remain compatible.
-#[derive(Clone)]
 pub struct Tensor {
     storage: Arc<Storage>,
     shape: Vec<usize>,
     strides: Vec<usize>,
     offset: usize,
     elements: usize,
+}
+
+impl Clone for Tensor {
+    fn clone(&self) -> Self {
+        self.try_clone()
+            .expect("cloning validated tensor storage should succeed")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,6 +140,9 @@ pub enum TensorError {
     },
     AllocationFailed {
         elements: usize,
+    },
+    UnsupportedMemoryFormat {
+        memory_format: MemoryFormat,
     },
 }
 
@@ -204,6 +238,10 @@ impl Display for TensorError {
                     "failed to allocate storage for {elements} elements"
                 )
             }
+            Self::UnsupportedMemoryFormat { memory_format } => write!(
+                formatter,
+                "clone with memory format torch.{memory_format} is not supported"
+            ),
         }
     }
 }
@@ -440,6 +478,54 @@ impl Tensor {
     #[must_use]
     pub fn numel(&self) -> usize {
         self.elements
+    }
+
+    /// Creates an independent copy of this tensor's logical values.
+    ///
+    /// The returned tensor preserves this supported contiguous view's strides
+    /// and has a storage offset of zero. Only the logical range of a view is
+    /// copied; unused values in the view's backing allocation are not retained.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn try_clone(&self) -> Result<Self, TensorError> {
+        self.try_clone_with_memory_format(MemoryFormat::Preserve)
+    }
+
+    /// Creates an independent copy using the requested storage layout.
+    ///
+    /// [`MemoryFormat::Preserve`] retains this supported contiguous view's
+    /// strides. [`MemoryFormat::Contiguous`] recalculates canonical row-major
+    /// strides. Channel-last formats are not implemented by the current tensor
+    /// representation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails,
+    /// contiguous stride calculation overflows, or the requested format is not
+    /// supported.
+    pub fn try_clone_with_memory_format(
+        &self,
+        memory_format: MemoryFormat,
+    ) -> Result<Self, TensorError> {
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = match memory_format {
+            MemoryFormat::Preserve => try_clone_result_shape(&self.strides, elements)?,
+            MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
+            MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
+                return Err(TensorError::UnsupportedMemoryFormat { memory_format });
+            }
+        };
+        let data = copied_storage(self.as_slice(), elements)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     #[must_use]
@@ -1360,6 +1446,14 @@ fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorEr
     data.try_reserve_exact(elements)
         .map_err(|_| TensorError::AllocationFailed { elements })?;
     data.resize(elements, fill_value);
+    Ok(data)
+}
+
+fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorError> {
+    validate_storage_capacity(elements)?;
+
+    let mut data = try_result_vector(elements, elements)?;
+    data.extend_from_slice(values);
     Ok(data)
 }
 
