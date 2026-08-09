@@ -656,29 +656,34 @@ fn parse_basic_indices(
     tensor: &CoreTensor,
     index: &Bound<'_, PyAny>,
 ) -> PyResult<Vec<TensorIndex>> {
-    let objects = if let Ok(tuple) = index.cast::<PyTuple>() {
+    let (objects, is_tuple) = if let Ok(tuple) = index.cast::<PyTuple>() {
         let mut objects = try_size_vector(tuple.len())?;
         for item in tuple.iter() {
             try_push_size(&mut objects, item)?;
         }
-        objects
+        (objects, true)
     } else {
         let mut objects = try_size_vector(1)?;
         try_push_size(&mut objects, index.clone())?;
-        objects
+        (objects, false)
     };
 
     let ellipses = objects
         .iter()
         .filter(|item| item.is_instance_of::<PyEllipsis>())
         .count();
-    if ellipses > 1 {
-        return Err(PyIndexError::new_err(
-            "an index can only have a single ellipsis ('...')",
-        ));
-    }
     if let Some(item) = objects.iter().find(|item| item.is_none()) {
         return Err(unsupported_basic_index(item, "None/newaxis"));
+    }
+
+    if !is_tuple
+        && tensor.shape().is_empty()
+        && let Ok(slice) = objects[0].cast::<PySlice>()
+    {
+        parse_slice_index(slice, 0)?;
+        return Err(PyIndexError::new_err(
+            "slice() cannot be applied to a 0-dim tensor.",
+        ));
     }
 
     let consuming = objects.len().saturating_sub(ellipses);
@@ -686,67 +691,79 @@ fn parse_basic_indices(
         return Err(too_many_indices(tensor.shape().len()));
     }
 
-    let ellipsis_dimensions = if ellipses == 1 {
+    let ellipsis_dimensions = if ellipses > 0 {
         tensor.shape().len() - consuming
     } else {
         0
     };
-    let parsed_capacity = objects
-        .len()
-        .checked_sub(ellipses)
-        .and_then(|length| length.checked_add(ellipsis_dimensions))
-        .ok_or_else(|| PyOverflowError::new_err("tensor index rank overflowed usize"))?;
-    let mut parsed = try_size_vector(parsed_capacity)?;
+    let mut parsed = try_size_vector(tensor.shape().len())?;
     let mut offset = tensor.storage_offset();
     let mut dimension = 0;
-    for object in &objects {
+    for (real_dimension, object) in objects.iter().enumerate() {
         if object.is_instance_of::<PyEllipsis>() {
             for _ in 0..ellipsis_dimensions {
-                let slice = CoreSlice::full();
-                offset = tensor
-                    .checked_slice_layout(offset, dimension, slice)
-                    .map_err(|error| tensor_error(&error))?
-                    .offset;
-                try_push_size(&mut parsed, TensorIndex::Slice(slice))?;
-                dimension += 1;
+                if dimension < tensor.shape().len() {
+                    let slice = CoreSlice::full();
+                    offset = tensor
+                        .checked_slice_layout(offset, dimension, slice)
+                        .map_err(|error| tensor_error(&error))?
+                        .offset;
+                    try_push_size(&mut parsed, TensorIndex::Slice(slice))?;
+                }
+                dimension = dimension.checked_add(1).ok_or_else(|| {
+                    PyOverflowError::new_err("tensor index rank overflowed usize")
+                })?;
             }
             continue;
         }
         if let Ok(slice) = object.cast::<PySlice>() {
-            let size = isize::try_from(tensor.shape()[dimension])
-                .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds isize"))?;
-            let normalized = slice.indices(size)?;
-            if normalized.step < 0 {
-                return Err(PyValueError::new_err("step must be greater than zero"));
-            }
-            let normalized_start = i64::try_from(normalized.start)
-                .map_err(|_| PyOverflowError::new_err("slice start exceeds i64"))?;
-            let normalized_end = i64::try_from(normalized.stop)
-                .map_err(|_| PyOverflowError::new_err("slice stop exceeds i64"))?;
-            let normalized_step = i64::try_from(normalized.step)
-                .map_err(|_| PyOverflowError::new_err("slice step exceeds i64"))?;
-            let slice = CoreSlice::new(
-                Some(normalized_start),
-                Some(normalized_end),
-                Some(normalized_step),
-            );
+            let size = tensor
+                .shape()
+                .get(dimension)
+                .copied()
+                .ok_or_else(|| too_many_indices(tensor.shape().len()))?;
+            let slice = parse_slice_index(slice, size)?;
             offset = tensor
                 .checked_slice_layout(offset, dimension, slice)
                 .map_err(|error| tensor_error(&error))?
                 .offset;
             try_push_size(&mut parsed, TensorIndex::Slice(slice))?;
-            dimension += 1;
+            dimension = dimension
+                .checked_add(1)
+                .ok_or_else(|| PyOverflowError::new_err("tensor index rank overflowed usize"))?;
             continue;
         }
 
         let integer = parse_integer_index(object)?;
         offset = tensor
-            .checked_index_offset(offset, dimension, integer)
+            .checked_index_offset_with_error_dimension(offset, dimension, integer, real_dimension)
             .map_err(|error| tensor_error(&error))?;
         try_push_size(&mut parsed, TensorIndex::Integer(integer))?;
-        dimension += 1;
+        dimension = dimension
+            .checked_add(1)
+            .ok_or_else(|| PyOverflowError::new_err("tensor index rank overflowed usize"))?;
     }
     Ok(parsed)
+}
+
+fn parse_slice_index(slice: &Bound<'_, PySlice>, size: usize) -> PyResult<CoreSlice> {
+    let size = isize::try_from(size)
+        .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds isize"))?;
+    let normalized = slice.indices(size)?;
+    if normalized.step < 0 {
+        return Err(PyValueError::new_err("step must be greater than zero"));
+    }
+    let slice_start = i64::try_from(normalized.start)
+        .map_err(|_| PyOverflowError::new_err("slice start exceeds i64"))?;
+    let slice_end = i64::try_from(normalized.stop)
+        .map_err(|_| PyOverflowError::new_err("slice stop exceeds i64"))?;
+    let slice_stride = i64::try_from(normalized.step)
+        .map_err(|_| PyOverflowError::new_err("slice step exceeds i64"))?;
+    Ok(CoreSlice::new(
+        Some(slice_start),
+        Some(slice_end),
+        Some(slice_stride),
+    ))
 }
 
 fn is_fast_integer_index(index: &Bound<'_, PyAny>) -> PyResult<bool> {

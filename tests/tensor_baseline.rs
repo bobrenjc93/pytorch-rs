@@ -1077,6 +1077,23 @@ fn singleton_slice_strides_survive_reshape_and_pointwise_outputs() {
     ] {
         assert_eq!(output.stride(), [3, 1, 3]);
     }
+
+    let contiguous_view = Tensor::from_vec(vec![0.0, 1.0, 2.0], [3, 1])
+        .unwrap()
+        .slice([
+            SliceIndex(Slice::full()),
+            SliceIndex(Slice::new(None, None, Some(2))),
+        ])
+        .unwrap();
+    assert_eq!(contiguous_view.stride(), [1, 2]);
+    assert_eq!(contiguous_view.add_scalar(1.0).unwrap().stride(), [1, 3]);
+    for output in [
+        contiguous_view.relu().unwrap(),
+        contiguous_view.sin().unwrap(),
+        contiguous_view.add(&contiguous_view).unwrap(),
+    ] {
+        assert_eq!(output.stride(), [1, 1]);
+    }
 }
 
 #[test]

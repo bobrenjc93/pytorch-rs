@@ -794,6 +794,16 @@ impl Tensor {
         dimension: usize,
         index: i64,
     ) -> Result<usize, TensorError> {
+        self.checked_index_offset_with_error_dimension(offset, dimension, index, dimension)
+    }
+
+    pub(crate) fn checked_index_offset_with_error_dimension(
+        &self,
+        offset: usize,
+        dimension: usize,
+        index: i64,
+        error_dimension: usize,
+    ) -> Result<usize, TensorError> {
         let size = self
             .shape
             .get(dimension)
@@ -805,7 +815,7 @@ impl Tensor {
         if index < -signed_size || index >= signed_size {
             return Err(TensorError::IndexOutOfBounds {
                 index,
-                dimension,
+                dimension: error_dimension,
                 size,
             });
         }
@@ -1226,7 +1236,7 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 {
+        let strides = if self.is_contiguous() && other.is_contiguous() {
             contiguous_strides(&shape, elements)?
         } else {
             elementwise_output_strides(&shape, &[self, other], elements)?
@@ -1281,7 +1291,7 @@ impl Tensor {
         let elements = self.elements;
         let mut data = try_result_vector(elements, elements)?;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 {
+        let strides = if self.is_contiguous() {
             contiguous_strides(&shape, elements)?
         } else {
             elementwise_output_strides(&shape, &[self], elements)?

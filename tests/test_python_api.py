@@ -706,6 +706,16 @@ class PythonApiBaselineTests(unittest.TestCase):
             self.assertEqual(output.stride(), (3, 1, 3))
         np.testing.assert_array_equal(np.asarray(outputs[0]), np.asarray(view) + 1)
 
+        contiguous_view = torch.tensor([[0.0], [1.0], [2.0]])[:, ::2]
+        self.assertEqual(contiguous_view.stride(), (1, 2))
+        self.assertEqual((contiguous_view + 1).stride(), (1, 3))
+        for output in (
+            contiguous_view.relu(),
+            contiguous_view.sin(),
+            contiguous_view + contiguous_view,
+        ):
+            self.assertEqual(output.stride(), (1, 1))
+
     def test_extreme_slice_stride_and_length_boundaries_match_pytorch(self):
         maximum = sys.maxsize
         once = torch.tensor([0.0])[::maximum]
@@ -744,8 +754,27 @@ class PythonApiBaselineTests(unittest.TestCase):
                     tensor[index]
         with self.assertRaisesRegex(IndexError, "too many indices"):
             tensor[:, :, :]
-        with self.assertRaisesRegex(IndexError, "single ellipsis"):
-            tensor[..., ...]
+        for repeated in (tensor[..., ...], tensor[..., ..., ...]):
+            self.assertEqual(repeated.shape, tensor.shape)
+            self.assertEqual(repeated.stride(), tensor.stride())
+            self.assertEqual(repeated.storage_offset(), tensor.storage_offset())
+
+        three_dimensional = torch.zeros((2, 3, 4))
+        self.assertEqual(three_dimensional[..., 1, ...].shape, (2, 3))
+        with self.assertRaisesRegex(
+            IndexError, "index 99 is out of bounds for dimension 1 with size 4"
+        ):
+            three_dimensional[..., 99]
+
+        scalar = torch.tensor(1.0)
+        with self.assertRaisesRegex(
+            IndexError, r"slice\(\) cannot be applied to a 0-dim tensor"
+        ):
+            scalar[:]
+        with self.assertRaisesRegex(ValueError, "slice step cannot be zero"):
+            scalar[::0]
+        with self.assertRaisesRegex(ValueError, "step must be greater than zero"):
+            scalar[::-1]
         for index in (None, (slice(None), None), [0], np.array([0]), True):
             with self.subTest(index=repr(index)):
                 with self.assertRaises(IndexError):
