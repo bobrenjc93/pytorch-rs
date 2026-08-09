@@ -1,0 +1,194 @@
+import gc
+import statistics
+import time
+import unittest
+
+import numpy as np
+import torch_rs as torch
+
+try:
+    import torch as reference_torch
+except ImportError:
+    reference_torch = None
+
+
+class AutogradApiTests(unittest.TestCase):
+    def test_requires_grad_leaf_grad_accumulation_and_nonleaf_grad(self):
+        x = torch.tensor([-2.0, 0.5, 3.0], requires_grad=True)
+        self.assertTrue(x.requires_grad)
+        self.assertIsNone(x.grad)
+
+        square = x * x
+        loss = square.sum()
+        self.assertTrue(square.requires_grad)
+        self.assertTrue(loss.requires_grad)
+        self.assertIsNone(square.grad)
+        loss.backward()
+        np.testing.assert_array_equal(np.asarray(x.grad), [-4.0, 1.0, 6.0])
+
+        (x * x).sum().backward()
+        np.testing.assert_array_equal(np.asarray(x.grad), [-8.0, 2.0, 12.0])
+
+    def test_detach_and_no_grad_context_decorator_are_boundaries(self):
+        x = torch.tensor([2.0, 3.0], requires_grad=True)
+        detached = x.detach()
+        self.assertFalse(detached.requires_grad)
+        self.assertEqual(detached.tolist(), x.tolist())
+        self.assertFalse((detached * detached).sum().requires_grad)
+
+        with torch.no_grad():
+            self.assertFalse((x * x).requires_grad)
+            with torch.no_grad():
+                self.assertFalse(x.sum().requires_grad)
+            self.assertFalse((x * 4.0).requires_grad)
+        self.assertTrue((x * x).requires_grad)
+
+        @torch.no_grad()
+        def square(value):
+            return value * value
+
+        self.assertFalse(square(x).requires_grad)
+        self.assertTrue((x * x).requires_grad)
+
+        with self.assertRaisesRegex(ValueError, "restore recording"):
+            with torch.no_grad():
+                raise ValueError("restore recording")
+        self.assertTrue((x * x).requires_grad)
+
+    def test_backward_errors_repeated_policy_and_graph_lifetime(self):
+        with self.assertRaisesRegex(RuntimeError, "does not require grad"):
+            torch.tensor(1.0).backward()
+        with self.assertRaisesRegex(RuntimeError, "implicitly created only for scalar"):
+            torch.tensor([1.0, 2.0], requires_grad=True).backward()
+
+        x = torch.tensor([2.0, 3.0], requires_grad=True)
+        intermediate = x * x
+        output = intermediate.sum()
+        del intermediate
+        gc.collect()
+        output.backward()
+        np.testing.assert_array_equal(np.asarray(x.grad), [4.0, 6.0])
+        with self.assertRaisesRegex(RuntimeError, "backward through the graph a second time"):
+            output.backward()
+
+        scalar_leaf = torch.tensor([7.0], requires_grad=True)
+        scalar_leaf.backward()
+        scalar_leaf.backward()
+        self.assertEqual(scalar_leaf.grad.tolist(), [2.0])
+
+
+@unittest.skipIf(reference_torch is None, "install the reference dependency group")
+class AutogradReferenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if reference_torch.__version__.split("+")[0] != "2.13.0":
+            raise AssertionError("autograd differentials require pinned PyTorch 2.13.0")
+
+    def assert_gradient_pair(self, native, expected):
+        self.assertEqual(native.shape, tuple(expected.shape))
+        self.assertEqual(native.grad.shape, tuple(expected.grad.shape))
+        np.testing.assert_allclose(
+            np.asarray(native.grad),
+            expected.grad.detach().cpu().numpy(),
+            rtol=1.0e-6,
+            atol=1.0e-6,
+        )
+
+    def test_seeded_square_sum_and_broadcast_gradients_match_pytorch_2_13(self):
+        rng = np.random.default_rng(0xA670_213)
+        shape_pairs = [
+            ((17,), (17,)),
+            ((2, 1, 3), (1, 5, 1)),
+            ((3, 1), (1, 7)),
+            ((), (4, 3)),
+            ((0,), (1,)),
+        ]
+        for left_shape, right_shape in shape_pairs:
+            left_values = rng.normal(size=left_shape or ()).astype(np.float32)
+            right_values = rng.normal(size=right_shape or ()).astype(np.float32)
+            native_left_data = left_values.item() if left_shape == () else left_values.tolist()
+            native_right_data = right_values.item() if right_shape == () else right_values.tolist()
+            native_left = torch.tensor(native_left_data, requires_grad=True)
+            native_right = torch.tensor(native_right_data, requires_grad=True)
+            expected_left = reference_torch.tensor(left_values, requires_grad=True)
+            expected_right = reference_torch.tensor(right_values, requires_grad=True)
+
+            native_output = (native_left * native_right).sum()
+            expected_output = (expected_left * expected_right).sum()
+            native_output.backward()
+            expected_output.backward()
+
+            with self.subTest(left=left_shape, right=right_shape):
+                np.testing.assert_allclose(
+                    native_output.item(), expected_output.item(), rtol=1.0e-5, atol=1.0e-6
+                )
+                self.assert_gradient_pair(native_left, expected_left)
+                self.assert_gradient_pair(native_right, expected_right)
+
+        square_values = rng.normal(size=(11, 7)).astype(np.float32)
+        native_square = torch.tensor(square_values.tolist(), requires_grad=True)
+        expected_square = reference_torch.tensor(square_values, requires_grad=True)
+        (native_square * native_square).sum().backward()
+        (expected_square * expected_square).sum().backward()
+        self.assert_gradient_pair(native_square, expected_square)
+
+    def test_boundaries_scalar_empty_and_errors_match_pytorch_2_13(self):
+        accumulated_gradients = []
+        for module in (torch, reference_torch):
+            scalar = module.tensor(3.0, requires_grad=True)
+            (scalar * 5.0).backward()
+            self.assertEqual(scalar.grad.item(), 5.0)
+
+            empty = module.tensor(np.empty((0,), dtype=np.float32), requires_grad=True)
+            empty.sum().backward()
+            self.assertEqual(tuple(empty.grad.shape), (0,))
+            self.assertEqual(empty.grad.numel(), 0)
+
+            boundary = module.tensor([2.0], requires_grad=True)
+            self.assertFalse((boundary.detach() * boundary.detach()).requires_grad)
+            with module.no_grad():
+                self.assertFalse((boundary * boundary).requires_grad)
+            self.assertTrue((boundary * boundary).requires_grad)
+
+            intermediate = boundary * boundary
+            output = intermediate.sum()
+            del intermediate
+            gc.collect()
+            output.backward()
+            with self.assertRaises(RuntimeError):
+                output.backward()
+            (boundary * boundary).sum().backward()
+            accumulated_gradients.append(np.asarray(boundary.grad).copy())
+            with self.assertRaises(RuntimeError):
+                module.tensor([1.0, 2.0], requires_grad=True).backward()
+        np.testing.assert_array_equal(accumulated_gradients[0], accumulated_gradients[1])
+
+    def test_square_sum_backward_performance_smoke_is_equivalent_work(self):
+        values = np.linspace(-2.0, 2.0, 16_384, dtype=np.float32)
+
+        def measure(module):
+            inputs = [module.tensor(values, requires_grad=True) for _ in range(10)]
+            samples = []
+            checksum = 0.0
+            for index, value in enumerate(inputs):
+                started = time.perf_counter()
+                (value * value).sum().backward()
+                elapsed = time.perf_counter() - started
+                checksum += float((value.grad * value.grad).sum().item())
+                if index >= 3:
+                    samples.append(elapsed)
+            return statistics.median(samples), checksum
+
+        gc.collect()
+        native_seconds, native_checksum = measure(torch)
+        gc.collect()
+        reference_seconds, reference_checksum = measure(reference_torch)
+
+        self.assertGreater(native_seconds, 0.0)
+        self.assertGreater(reference_seconds, 0.0)
+        np.testing.assert_allclose(native_checksum, reference_checksum, rtol=1.0e-5)
+        self.assertLess(native_seconds / reference_seconds, 250.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

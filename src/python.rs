@@ -15,7 +15,10 @@ use pyo3::types::{
     PySequence, PyString, PyTuple,
 };
 
-use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError};
+use crate::{
+    DType, Device, MemoryFormat, NoGradGuard, Tensor as CoreTensor, TensorError,
+    no_grad as core_no_grad,
+};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -154,6 +157,67 @@ struct PyTensor {
     inner: CoreTensor,
 }
 
+/// Thread-local autograd recording guard exposed as `torch.no_grad`.
+#[pyclass(name = "no_grad", module = "torch_rs", unsendable, skip_from_py_object)]
+struct PyNoGrad {
+    guards: Vec<NoGradGuard>,
+}
+
+impl Drop for PyNoGrad {
+    fn drop(&mut self) {
+        while let Some(guard) = self.guards.pop() {
+            drop(guard);
+        }
+    }
+}
+
+#[pymethods]
+impl PyNoGrad {
+    #[new]
+    fn new() -> Self {
+        Self { guards: Vec::new() }
+    }
+
+    fn __enter__(mut slf: PyRefMut<'_, Self>) -> Py<Self> {
+        slf.guards.push(core_no_grad());
+        slf.into()
+    }
+
+    fn __exit__(
+        &mut self,
+        _exception_type: &Bound<'_, PyAny>,
+        _exception_value: &Bound<'_, PyAny>,
+        _traceback: &Bound<'_, PyAny>,
+    ) -> bool {
+        self.guards.pop();
+        false
+    }
+
+    #[allow(clippy::unused_self)] // Python's decorator protocol requires an instance method.
+    fn __call__(&self, function: Py<PyAny>) -> PyNoGradCallable {
+        PyNoGradCallable { function }
+    }
+}
+
+#[pyclass(module = "torch_rs", unsendable, skip_from_py_object)]
+struct PyNoGradCallable {
+    function: Py<PyAny>,
+}
+
+#[pymethods]
+impl PyNoGradCallable {
+    #[pyo3(signature = (*args, **kwargs))]
+    fn __call__(
+        &self,
+        py: Python<'_>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let _guard = core_no_grad();
+        Ok(self.function.bind(py).call(args, kwargs)?.unbind())
+    }
+}
+
 enum ParsedFillValue {
     Float(f64),
     SignedInteger(i64),
@@ -229,6 +293,19 @@ impl PyTensor {
         PyDevice {
             inner: self.inner.device(),
         }
+    }
+
+    #[getter]
+    fn requires_grad(&self) -> bool {
+        self.inner.requires_grad()
+    }
+
+    #[getter]
+    fn grad(&self) -> PyResult<Option<Self>> {
+        self.inner
+            .grad()
+            .map(|gradient| gradient.map(|inner| Self { inner }))
+            .map_err(|error| tensor_error(&error))
     }
 
     /// NumPy-style transpose view with every dimension reversed.
@@ -484,6 +561,17 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
+    fn detach(&self) -> PyResult<Self> {
+        self.inner
+            .detach()
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
+    fn backward(&self) -> PyResult<()> {
+        self.inner.backward().map_err(|error| tensor_error(&error))
+    }
+
     fn relu(&self) -> PyResult<Self> {
         self.inner
             .relu()
@@ -679,11 +767,12 @@ impl BinaryOperation {
     }
 }
 
-#[pyfunction(signature = (data, *, dtype=None, device=None))]
+#[pyfunction(signature = (data, *, dtype=None, device=None, requires_grad=false))]
 fn tensor(
     data: &Bound<'_, PyAny>,
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
+    requires_grad: bool,
 ) -> PyResult<PyTensor> {
     let dtype_was_explicit = dtype.is_some();
     let (dtype, device) = parse_metadata("tensor", dtype, device)?;
@@ -707,7 +796,9 @@ fn tensor(
         return Err(unsupported_tensor_data_error(data, dtype_was_explicit)?);
     };
     CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(|inner| PyTensor {
+            inner: inner.with_requires_grad(requires_grad),
+        })
         .map_err(|error| tensor_error(&error))
 }
 
@@ -2697,7 +2788,10 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::SqueezeDimensionsRankLimit
         | TensorError::FlattenStartAfterEnd
         | TensorError::FlattenNonConcreteInteger
-        | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
+        | TensorError::ElementCountOverflow
+        | TensorError::BackwardRequiresScalar { .. }
+        | TensorError::DoesNotRequireGrad
+        | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
@@ -2720,6 +2814,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDType>()?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
+    module.add_class::<PyNoGrad>()?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;

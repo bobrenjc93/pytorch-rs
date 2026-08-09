@@ -1,0 +1,113 @@
+use pytorch_rs::{Tensor, TensorError, no_grad};
+
+fn values(tensor: &Tensor) -> Vec<f32> {
+    tensor.try_to_vec().unwrap()
+}
+
+#[test]
+fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
+    let x = Tensor::from_vec(vec![-2.0, 0.5, 3.0], [3])
+        .unwrap()
+        .with_requires_grad(true);
+
+    x.mul(&x).unwrap().sum().backward().unwrap();
+    assert_eq!(values(&x.grad().unwrap().unwrap()), [-4.0, 1.0, 6.0]);
+
+    x.mul(&x).unwrap().sum().backward().unwrap();
+    assert_eq!(values(&x.grad().unwrap().unwrap()), [-8.0, 2.0, 12.0]);
+}
+
+#[test]
+fn multiply_backward_unbroadcasts_both_operands() {
+    let left = Tensor::from_vec(vec![2.0, 3.0], [2, 1])
+        .unwrap()
+        .with_requires_grad(true);
+    let right = Tensor::from_vec(vec![5.0, 7.0, 11.0], [1, 3])
+        .unwrap()
+        .with_requires_grad(true);
+
+    left.mul(&right).unwrap().sum().backward().unwrap();
+
+    assert_eq!(values(&left.grad().unwrap().unwrap()), [23.0, 23.0]);
+    assert_eq!(values(&right.grad().unwrap().unwrap()), [5.0, 5.0, 5.0]);
+}
+
+#[test]
+fn scalar_and_empty_reductions_produce_correct_leaf_gradients() {
+    let scalar = Tensor::from_vec(vec![4.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    scalar.mul_scalar(3.0).unwrap().backward().unwrap();
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        3.0_f32.to_bits()
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let output = empty.sum();
+    assert!(output.item().unwrap().abs() < f32::EPSILON);
+    output.backward().unwrap();
+    let gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(gradient.shape(), [2, 0, 3]);
+    assert!(values(&gradient).is_empty());
+}
+
+#[test]
+fn detach_and_nested_no_grad_are_graph_boundaries() {
+    let x = Tensor::from_vec(vec![2.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let detached = x.detach().unwrap();
+    assert!(!detached.requires_grad());
+    assert!(detached.shares_storage_with(&x));
+    assert_eq!(
+        detached.mul(&detached).unwrap().backward(),
+        Err(TensorError::DoesNotRequireGrad)
+    );
+
+    {
+        let _outer = no_grad();
+        assert!(!x.mul(&x).unwrap().requires_grad());
+        {
+            let _inner = no_grad();
+            assert!(!x.sum().requires_grad());
+        }
+        assert!(!x.mul_scalar(2.0).unwrap().requires_grad());
+    }
+    assert!(x.mul(&x).unwrap().requires_grad());
+}
+
+#[test]
+fn backward_errors_are_stable_and_saved_graphs_live_until_consumed() {
+    let plain = Tensor::from_vec(vec![1.0], []).unwrap();
+    assert_eq!(plain.backward(), Err(TensorError::DoesNotRequireGrad));
+
+    let vector = Tensor::from_vec(vec![1.0, 2.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(
+        vector.backward(),
+        Err(TensorError::BackwardRequiresScalar { elements: 2 })
+    );
+
+    let leaf = Tensor::from_vec(vec![2.0, 3.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let output = {
+        let intermediate = leaf.mul(&leaf).unwrap();
+        intermediate.sum()
+    };
+    output.backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [4.0, 6.0]);
+    assert_eq!(output.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
+fn one_element_nonscalar_leaf_can_seed_implicit_backward_repeatedly() {
+    let leaf = Tensor::from_vec(vec![9.0], [1])
+        .unwrap()
+        .with_requires_grad(true);
+    leaf.backward().unwrap();
+    leaf.backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [2.0]);
+}

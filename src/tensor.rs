@@ -1,8 +1,12 @@
+use std::cell::Cell;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::iter::FusedIterator;
+use std::marker::PhantomData;
 use std::mem::size_of;
-use std::sync::Arc;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 /// Native scalar types implemented by tensor storage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -67,6 +71,83 @@ struct Storage {
     device: Device,
 }
 
+thread_local! {
+    static GRAD_ENABLED: Cell<bool> = const { Cell::new(true) };
+}
+
+/// A thread-local guard which disables eager graph recording until dropped.
+///
+/// Guards nest correctly and restore the state which was active when they
+/// were created. They are intentionally confined to their creating thread.
+pub struct NoGradGuard {
+    previous: bool,
+    _not_send: PhantomData<Rc<()>>,
+}
+
+impl Drop for NoGradGuard {
+    fn drop(&mut self) {
+        GRAD_ENABLED.set(self.previous);
+    }
+}
+
+/// Disables eager graph recording on the current thread for the guard's
+/// lifetime.
+#[must_use]
+pub fn no_grad() -> NoGradGuard {
+    let previous = GRAD_ENABLED.replace(false);
+    NoGradGuard {
+        previous,
+        _not_send: PhantomData,
+    }
+}
+
+fn grad_enabled() -> bool {
+    GRAD_ENABLED.get()
+}
+
+struct AutogradMeta {
+    kind: AutogradKind,
+}
+
+enum AutogradKind {
+    Leaf {
+        shape: Vec<usize>,
+        dtype: DType,
+        device: Device,
+        grad: Mutex<Option<Vec<f32>>>,
+    },
+    NonLeaf {
+        grad_fn: Mutex<Option<GradFn>>,
+    },
+}
+
+#[derive(Clone)]
+struct SavedTensor {
+    storage: Arc<Storage>,
+    shape: Vec<usize>,
+    strides: Vec<usize>,
+    offset: usize,
+    elements: usize,
+    autograd: Option<Arc<AutogradMeta>>,
+}
+
+#[derive(Clone)]
+enum GradFn {
+    Multiply {
+        left: SavedTensor,
+        right: SavedTensor,
+        output_shape: Vec<usize>,
+        output_elements: usize,
+    },
+    MultiplyScalar {
+        input: SavedTensor,
+        scalar: f32,
+    },
+    Sum {
+        input: SavedTensor,
+    },
+}
+
 /// A tensor with immutable shared storage and native shape/stride metadata.
 ///
 /// Metadata-only views may have a nonzero storage offset and non-contiguous
@@ -77,6 +158,7 @@ pub struct Tensor {
     strides: Vec<usize>,
     offset: usize,
     elements: usize,
+    autograd: Option<Arc<AutogradMeta>>,
 }
 
 /// Iterates over a tensor's values in logical row-major index order.
@@ -217,6 +299,11 @@ pub enum TensorError {
         expected_rank: usize,
         actual_rank: usize,
     },
+    BackwardRequiresScalar {
+        elements: usize,
+    },
+    DoesNotRequireGrad,
+    BackwardGraphFreed,
 }
 
 impl Display for TensorError {
@@ -312,6 +399,9 @@ impl Display for TensorError {
             | Self::ContiguousMemoryFormatRankMismatch { .. }) => {
                 format_memory_format_error(formatter, error)
             }
+            error @ (Self::BackwardRequiresScalar { .. }
+            | Self::DoesNotRequireGrad
+            | Self::BackwardGraphFreed) => format_autograd_error(formatter, error),
         }
     }
 }
@@ -421,6 +511,22 @@ fn format_memory_format_error(
             "required rank {expected_rank} tensor to use {memory_format} format"
         ),
         _ => unreachable!("only memory-format errors are formatted here"),
+    }
+}
+
+fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::BackwardRequiresScalar { elements } => write!(
+            formatter,
+            "grad can be implicitly created only for scalar outputs (output has {elements} elements)"
+        ),
+        TensorError::DoesNotRequireGrad => formatter.write_str(
+            "element 0 of tensors does not require grad and does not have a grad_fn",
+        ),
+        TensorError::BackwardGraphFreed => formatter.write_str(
+            "Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). Saved intermediate values of the graph are freed when you call .backward(). Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.",
+        ),
+        _ => unreachable!("only autograd errors are formatted here"),
     }
 }
 
@@ -613,6 +719,7 @@ impl Tensor {
             strides,
             offset: 0,
             elements,
+            autograd: None,
         }
     }
 
@@ -654,6 +761,104 @@ impl Tensor {
     #[must_use]
     pub fn numel(&self) -> usize {
         self.elements
+    }
+
+    /// Returns whether reverse-mode gradients are recorded for this tensor.
+    #[must_use]
+    pub fn requires_grad(&self) -> bool {
+        self.autograd.is_some()
+    }
+
+    /// Marks an owned tensor as a gradient-accumulating leaf, or detaches it
+    /// when `requires_grad` is false.
+    ///
+    /// Calling this with `true` on a tensor which already participates in a
+    /// graph preserves that graph. Freshly marked tensors accumulate gradients
+    /// according to their current logical shape.
+    #[must_use]
+    pub fn with_requires_grad(mut self, requires_grad: bool) -> Self {
+        if !requires_grad {
+            self.autograd = None;
+        } else if self.autograd.is_none() {
+            self.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::Leaf {
+                    shape: self.shape.clone(),
+                    dtype: self.dtype(),
+                    device: self.device(),
+                    grad: Mutex::new(None),
+                },
+            }));
+        }
+        self
+    }
+
+    /// Returns a detached copy of an accumulated leaf gradient.
+    ///
+    /// Non-leaf tensors and leaves which have not been used by a successful
+    /// backward pass return [`None`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if gradient metadata or storage allocation fails.
+    pub fn grad(&self) -> Result<Option<Self>, TensorError> {
+        let Some(meta) = &self.autograd else {
+            return Ok(None);
+        };
+        let AutogradKind::Leaf {
+            shape,
+            dtype,
+            device,
+            grad,
+        } = &meta.kind
+        else {
+            return Ok(None);
+        };
+        let grad = grad
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(values) = grad.as_ref() else {
+            return Ok(None);
+        };
+        let shape = try_clone_result_shape(shape, values.len())?;
+        let strides = contiguous_strides(&shape, values.len())?;
+        let values = copied_storage(values, values.len())?;
+        Ok(Some(Self::from_owned_parts(
+            values, shape, strides, *dtype, *device,
+        )))
+    }
+
+    /// Creates a metadata-only alias which shares storage but has no graph
+    /// history and never requires gradients.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if result metadata allocation fails.
+    pub fn detach(&self) -> Result<Self, TensorError> {
+        self.metadata_alias()
+    }
+
+    /// Runs eager reverse-mode differentiation from a one-element output.
+    ///
+    /// Successful calls accumulate into every reachable leaf. Saved graph
+    /// state is then released, so a second traversal through the same graph is
+    /// rejected. Calling backward repeatedly on a one-element leaf remains
+    /// valid and accumulates another unit gradient.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for multi-element outputs, tensors which do not require
+    /// gradients, or graphs already consumed by a prior backward pass.
+    pub fn backward(&self) -> Result<(), TensorError> {
+        if self.elements != 1 {
+            return Err(TensorError::BackwardRequiresScalar {
+                elements: self.elements,
+            });
+        }
+        let meta = self
+            .autograd
+            .as_ref()
+            .ok_or(TensorError::DoesNotRequireGrad)?;
+        run_backward(meta)
     }
 
     /// Returns whether logical row-major iteration visits adjacent storage.
@@ -782,6 +987,7 @@ impl Tensor {
             strides,
             offset: self.offset,
             elements: self.elements,
+            autograd: None,
         })
     }
 
@@ -918,6 +1124,7 @@ impl Tensor {
             strides,
             offset: self.offset,
             elements: self.elements,
+            autograd: None,
         })
     }
 
@@ -1119,6 +1326,7 @@ impl Tensor {
                 strides: try_clone_result_shape(&self.strides, self.elements)?,
                 offset: self.offset,
                 elements: self.elements,
+                autograd: None,
             });
         }
 
@@ -1148,6 +1356,7 @@ impl Tensor {
             strides: try_clone_result_shape(&self.strides, self.elements)?,
             offset: self.offset,
             elements: self.elements,
+            autograd: None,
         })
     }
 
@@ -1318,6 +1527,7 @@ impl Tensor {
             strides,
             offset,
             elements,
+            autograd: None,
         })
     }
 
@@ -1459,6 +1669,7 @@ impl Tensor {
                 strides,
                 offset: self.offset,
                 elements: self.elements,
+                autograd: None,
             });
         }
 
@@ -1471,6 +1682,7 @@ impl Tensor {
                 strides,
                 offset: self.offset,
                 elements: self.elements,
+                autograd: None,
             });
         }
 
@@ -1482,6 +1694,7 @@ impl Tensor {
             strides,
             offset: 0,
             elements: self.elements,
+            autograd: None,
         })
     }
 
@@ -1512,7 +1725,22 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, |left, right| left * right)
+        let mut output = self.zip_map(other, |left, right| left * right)?;
+        if (self.requires_grad() || other.requires_grad()) && grad_enabled() {
+            let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
+            let grad_fn = GradFn::Multiply {
+                left: SavedTensor::try_from_tensor(self)?,
+                right: SavedTensor::try_from_tensor(other)?,
+                output_shape,
+                output_elements: output.elements,
+            };
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(grad_fn)),
+                },
+            }));
+        }
+        Ok(output)
     }
 
     /// Divides tensors element by element using IEEE 754 true division and
@@ -1550,7 +1778,18 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn mul_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| value * scalar)
+        let mut output = self.map_scalar(scalar, |value, scalar| value * scalar)?;
+        if self.requires_grad() && grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::MultiplyScalar {
+                        input: SavedTensor::try_from_tensor(self)?,
+                        scalar,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
     }
 
     /// Divides every element by a scalar using IEEE 754 true division.
@@ -1631,13 +1870,23 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        Self::from_owned_parts(
+        let mut output = Self::from_owned_parts(
             vec![self.logical_values().sum()],
             Vec::new(),
             Vec::new(),
             self.dtype(),
             self.device(),
-        )
+        );
+        if self.requires_grad() && grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Sum {
+                        input: SavedTensor::from_tensor(self),
+                    })),
+                },
+            }));
+        }
+        output
     }
 
     /// Extracts the value of a one-element tensor.
@@ -1907,6 +2156,245 @@ impl Tensor {
     fn is_channels_last_contiguous(&self) -> bool {
         layout_is_channels_last_contiguous(&self.shape, &self.strides)
     }
+}
+
+impl SavedTensor {
+    fn from_tensor(tensor: &Tensor) -> Self {
+        Self {
+            storage: Arc::clone(&tensor.storage),
+            shape: tensor.shape.clone(),
+            strides: tensor.strides.clone(),
+            offset: tensor.offset,
+            elements: tensor.elements,
+            autograd: tensor.autograd.as_ref().map(Arc::clone),
+        }
+    }
+
+    fn try_from_tensor(tensor: &Tensor) -> Result<Self, TensorError> {
+        Ok(Self {
+            storage: Arc::clone(&tensor.storage),
+            shape: try_clone_result_shape(&tensor.shape, tensor.elements)?,
+            strides: try_clone_result_shape(&tensor.strides, tensor.elements)?,
+            offset: tensor.offset,
+            elements: tensor.elements,
+            autograd: tensor.autograd.as_ref().map(Arc::clone),
+        })
+    }
+
+    fn broadcast_position(&self, output_shape: &[usize], coordinates: &[usize]) -> (usize, usize) {
+        let leading = output_shape.len() - self.shape.len();
+        let mut logical_index = 0_usize;
+        let mut storage_offset = self.offset;
+        for (axis, (&dimension, &stride)) in self.shape.iter().zip(self.strides.iter()).enumerate()
+        {
+            let coordinate = if dimension == 1 {
+                0
+            } else {
+                coordinates[leading + axis]
+            };
+            logical_index = logical_index
+                .checked_mul(dimension)
+                .and_then(|index| index.checked_add(coordinate))
+                .expect("validated broadcast logical index must fit in usize");
+            storage_offset = storage_offset
+                .checked_add(
+                    coordinate
+                        .checked_mul(stride)
+                        .expect("validated broadcast stride must fit in usize"),
+                )
+                .expect("validated broadcast storage offset must fit in usize");
+        }
+        (logical_index, storage_offset)
+    }
+}
+
+fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
+    let mut seen = HashSet::new();
+    let mut topology = Vec::new();
+    collect_topology(root, &mut seen, &mut topology)?;
+
+    let mut gradients = HashMap::new();
+    gradients.insert(autograd_id(root), vec![1.0]);
+    let mut leaf_gradients = Vec::new();
+
+    for (meta, grad_fn) in topology.iter().rev() {
+        let Some(upstream) = gradients.remove(&autograd_id(meta)) else {
+            continue;
+        };
+        match grad_fn {
+            None => leaf_gradients.push((Arc::clone(meta), upstream)),
+            Some(grad_fn) => apply_grad_fn(grad_fn, &upstream, &mut gradients)?,
+        }
+    }
+
+    // Release the saved graph only after all fallible gradient calculations
+    // have succeeded. Leaf accumulation then cannot leave a partially
+    // calculated graph in an observable state.
+    for (meta, grad_fn) in &topology {
+        if grad_fn.is_some()
+            && let AutogradKind::NonLeaf { grad_fn } = &meta.kind
+        {
+            let released = grad_fn
+                .lock()
+                .expect("gradient function mutex must not be poisoned")
+                .take();
+            if released.is_none() {
+                return Err(TensorError::BackwardGraphFreed);
+            }
+        }
+    }
+    for (meta, gradient) in leaf_gradients {
+        accumulate_leaf_gradient(&meta, gradient);
+    }
+    Ok(())
+}
+
+fn collect_topology(
+    meta: &Arc<AutogradMeta>,
+    seen: &mut HashSet<usize>,
+    topology: &mut Vec<(Arc<AutogradMeta>, Option<GradFn>)>,
+) -> Result<(), TensorError> {
+    if !seen.insert(autograd_id(meta)) {
+        return Ok(());
+    }
+    let grad_fn = match &meta.kind {
+        AutogradKind::Leaf { .. } => None,
+        AutogradKind::NonLeaf { grad_fn } => Some(
+            grad_fn
+                .lock()
+                .expect("gradient function mutex must not be poisoned")
+                .clone()
+                .ok_or(TensorError::BackwardGraphFreed)?,
+        ),
+    };
+
+    if let Some(grad_fn) = &grad_fn {
+        match grad_fn {
+            GradFn::Multiply { left, right, .. } => {
+                collect_saved_parent(left, seen, topology)?;
+                collect_saved_parent(right, seen, topology)?;
+            }
+            GradFn::MultiplyScalar { input, .. } | GradFn::Sum { input } => {
+                collect_saved_parent(input, seen, topology)?;
+            }
+        }
+    }
+    topology.push((Arc::clone(meta), grad_fn));
+    Ok(())
+}
+
+fn collect_saved_parent(
+    tensor: &SavedTensor,
+    seen: &mut HashSet<usize>,
+    topology: &mut Vec<(Arc<AutogradMeta>, Option<GradFn>)>,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &tensor.autograd {
+        collect_topology(meta, seen, topology)?;
+    }
+    Ok(())
+}
+
+fn apply_grad_fn(
+    grad_fn: &GradFn,
+    upstream: &[f32],
+    gradients: &mut HashMap<usize, Vec<f32>>,
+) -> Result<(), TensorError> {
+    match grad_fn {
+        GradFn::Sum { input } => {
+            if let Some(meta) = &input.autograd {
+                let gradient = filled_storage(input.elements, upstream[0])?;
+                add_gradient(gradients, meta, gradient);
+            }
+        }
+        GradFn::MultiplyScalar { input, scalar } => {
+            if let Some(meta) = &input.autograd {
+                let mut gradient = try_result_vector(input.elements, input.elements)?;
+                gradient.extend(upstream.iter().map(|value| value * scalar));
+                add_gradient(gradients, meta, gradient);
+            }
+        }
+        GradFn::Multiply {
+            left,
+            right,
+            output_shape,
+            output_elements,
+        } => {
+            debug_assert_eq!(*output_elements, upstream.len());
+            let mut left_gradient = if left.autograd.is_some() {
+                Some(filled_storage(left.elements, 0.0)?)
+            } else {
+                None
+            };
+            let mut right_gradient = if right.autograd.is_some() {
+                Some(filled_storage(right.elements, 0.0)?)
+            } else {
+                None
+            };
+            let mut coordinates = try_result_vector(output_shape.len(), *output_elements)?;
+            coordinates.resize(output_shape.len(), 0_usize);
+
+            for (output_index, &output_gradient) in upstream.iter().enumerate() {
+                let mut remaining = output_index;
+                for axis in (0..output_shape.len()).rev() {
+                    coordinates[axis] = remaining % output_shape[axis];
+                    remaining /= output_shape[axis];
+                }
+                let (left_index, left_offset) = left.broadcast_position(output_shape, &coordinates);
+                let (right_index, right_offset) =
+                    right.broadcast_position(output_shape, &coordinates);
+                if let Some(gradient) = &mut left_gradient {
+                    gradient[left_index] += output_gradient * right.storage.data[right_offset];
+                }
+                if let Some(gradient) = &mut right_gradient {
+                    gradient[right_index] += output_gradient * left.storage.data[left_offset];
+                }
+            }
+            if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
+                add_gradient(gradients, meta, gradient);
+            }
+            if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
+                add_gradient(gradients, meta, gradient);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn add_gradient(
+    gradients: &mut HashMap<usize, Vec<f32>>,
+    meta: &Arc<AutogradMeta>,
+    contribution: Vec<f32>,
+) {
+    gradients
+        .entry(autograd_id(meta))
+        .and_modify(|gradient| {
+            debug_assert_eq!(gradient.len(), contribution.len());
+            for (value, contribution) in gradient.iter_mut().zip(&contribution) {
+                *value += contribution;
+            }
+        })
+        .or_insert(contribution);
+}
+
+fn accumulate_leaf_gradient(meta: &AutogradMeta, contribution: Vec<f32>) {
+    let AutogradKind::Leaf { grad, .. } = &meta.kind else {
+        unreachable!("only leaf nodes are queued for gradient accumulation");
+    };
+    let mut grad = grad
+        .lock()
+        .expect("leaf gradient mutex must not be poisoned");
+    if let Some(existing) = grad.as_mut() {
+        debug_assert_eq!(existing.len(), contribution.len());
+        for (value, contribution) in existing.iter_mut().zip(contribution) {
+            *value += contribution;
+        }
+    } else {
+        *grad = Some(contribution);
+    }
+}
+
+fn autograd_id(meta: &Arc<AutogradMeta>) -> usize {
+    Arc::as_ptr(meta) as usize
 }
 
 #[derive(Clone, Copy)]
@@ -2615,6 +3103,7 @@ mod tests {
             strides: vec![1],
             offset: 0,
             elements,
+            autograd: None,
         };
 
         assert_eq!(
