@@ -34,6 +34,41 @@ class TransposeTests(unittest.TestCase):
         duplicate = source.transpose(1, -2)
         self.assert_tensor(duplicate, np.arange(24).reshape(2, 3, 4), source.shape, source.stride())
 
+    def test_is_contiguous_accepts_keyword_only_memory_format(self):
+        contiguous = torch.zeros((2, 3, 4, 5))
+        channels_last = torch.zeros((1, 1, 2, 2)).transpose(1, 3)
+        channels_last_3d = (
+            torch.zeros((2, 4, 5, 6, 3))
+            .transpose(1, 4)
+            .transpose(2, 4)
+            .transpose(3, 4)
+        )
+        cases = (
+            (contiguous, torch.preserve_format, True),
+            (contiguous, torch.contiguous_format, True),
+            (contiguous, torch.channels_last, False),
+            (channels_last, torch.contiguous_format, False),
+            (channels_last, torch.channels_last, True),
+            (channels_last_3d, torch.channels_last, False),
+            (channels_last_3d, torch.channels_last_3d, True),
+        )
+        for tensor, memory_format, expected in cases:
+            with self.subTest(shape=tensor.shape, memory_format=memory_format):
+                self.assertEqual(
+                    tensor.is_contiguous(memory_format=memory_format), expected
+                )
+
+        self.assertTrue(contiguous.is_contiguous())
+        with self.assertRaisesRegex(TypeError, "takes 0 positional arguments"):
+            contiguous.is_contiguous(torch.contiguous_format)
+        for invalid in (None, object(), "contiguous_format"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    "argument 'memory_format' must be torch.memory_format",
+                ):
+                    contiguous.is_contiguous(memory_format=invalid)
+
     def test_scalar_dimensions_and_dimension_errors_match_pytorch(self):
         scalar = torch.tensor(2.5)
         for dim0, dim1 in ((0, 0), (-1, -1), (0, -1), (-1, 0)):
@@ -78,6 +113,48 @@ class TransposeTests(unittest.TestCase):
             with self.subTest(dimension=dimension):
                 with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
                     tensor.transpose(dimension, 0)
+
+    def test_transpose_type_errors_preserve_argument_call_context(self):
+        tensor = torch.zeros((2, 3))
+        cases = (
+            (
+                lambda: tensor.transpose(1.5, 0),
+                "transpose(): argument 'dim0' (position 1) must be int, not float",
+            ),
+            (
+                lambda: tensor.transpose(0, 1.5),
+                "transpose(): argument 'dim1' (position 2) must be int, not float",
+            ),
+            (
+                lambda: tensor.transpose(dim0=1.5, dim1=0),
+                "transpose(): argument 'dim0' must be int, not float",
+            ),
+            (
+                lambda: tensor.transpose(0, dim1=1.5),
+                "transpose(): argument 'dim1' must be int, not float",
+            ),
+            (
+                lambda: torch.transpose(tensor, 1.5, 0),
+                "transpose(): argument 'dim0' (position 2) must be int, not float",
+            ),
+            (
+                lambda: torch.transpose(tensor, 0, 1.5),
+                "transpose(): argument 'dim1' (position 3) must be int, not float",
+            ),
+            (
+                lambda: torch.transpose(input=tensor, dim0=1.5, dim1=0),
+                "transpose(): argument 'dim0' must be int, not float",
+            ),
+            (
+                lambda: torch.transpose(tensor, 0, dim1=1.5),
+                "transpose(): argument 'dim1' must be int, not float",
+            ),
+        )
+        for call, expected in cases:
+            with self.subTest(expected=expected):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), expected)
 
     def test_python_binding_reports_missing_duplicate_and_extra_arguments(self):
         tensor = torch.zeros((2, 3))

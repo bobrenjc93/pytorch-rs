@@ -26,6 +26,17 @@ class TransposeReferenceTests(unittest.TestCase):
                 equal_nan=True,
             )
 
+    def assert_error_matches(self, actual_call, expected_call):
+        with self.assertRaises(Exception) as actual_raised:
+            actual_call()
+        with self.assertRaises(Exception) as expected_raised:
+            expected_call()
+        self.assertEqual(
+            type(actual_raised.exception).__name__,
+            type(expected_raised.exception).__name__,
+        )
+        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
     def test_seeded_transposes_views_and_consumers_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         rng = np.random.default_rng(0x7A6A_213)
@@ -122,6 +133,81 @@ class TransposeReferenceTests(unittest.TestCase):
                 case=case,
                 operation="matmul",
             )
+
+    def test_python_layout_queries_and_transpose_diagnostics_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual_channels_3d = (
+            torch.zeros((2, 4, 5, 6, 3))
+            .transpose(1, 4)
+            .transpose(2, 4)
+            .transpose(3, 4)
+        )
+        expected_channels_3d = (
+            reference_torch.zeros((2, 4, 5, 6, 3))
+            .transpose(1, 4)
+            .transpose(2, 4)
+            .transpose(3, 4)
+        )
+        tensor_cases = (
+            (torch.zeros((2, 3, 4, 5)), reference_torch.zeros((2, 3, 4, 5))),
+            (
+                torch.zeros((1, 1, 2, 2)).transpose(1, 3),
+                reference_torch.zeros((1, 1, 2, 2)).transpose(1, 3),
+            ),
+            (actual_channels_3d, expected_channels_3d),
+            (
+                torch.zeros((2, 4, 5, 0)).transpose(1, 3).transpose(2, 3),
+                reference_torch.zeros((2, 4, 5, 0)).transpose(1, 3).transpose(2, 3),
+            ),
+        )
+        formats = (
+            (torch.preserve_format, reference_torch.preserve_format),
+            (torch.contiguous_format, reference_torch.contiguous_format),
+            (torch.channels_last, reference_torch.channels_last),
+            (torch.channels_last_3d, reference_torch.channels_last_3d),
+        )
+        for case, (actual, expected) in enumerate(tensor_cases):
+            with self.subTest(case=case, memory_format="default"):
+                self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+            for actual_format, expected_format in formats:
+                with self.subTest(case=case, memory_format=actual_format):
+                    self.assertEqual(
+                        actual.is_contiguous(memory_format=actual_format),
+                        expected.is_contiguous(memory_format=expected_format),
+                    )
+
+        actual = torch.zeros((2, 3))
+        expected = reference_torch.zeros((2, 3))
+        error_cases = (
+            (
+                lambda: actual.is_contiguous(torch.contiguous_format),
+                lambda: expected.is_contiguous(reference_torch.contiguous_format),
+            ),
+            (
+                lambda: actual.is_contiguous(memory_format=None),
+                lambda: expected.is_contiguous(memory_format=None),
+            ),
+            (
+                lambda: actual.is_contiguous(unexpected=None),
+                lambda: expected.is_contiguous(unexpected=None),
+            ),
+            (lambda: actual.transpose(1.5, 0), lambda: expected.transpose(1.5, 0)),
+            (
+                lambda: actual.transpose(dim0=1.5, dim1=0),
+                lambda: expected.transpose(dim0=1.5, dim1=0),
+            ),
+            (
+                lambda: torch.transpose(actual, 0, 1.5),
+                lambda: reference_torch.transpose(expected, 0, 1.5),
+            ),
+            (
+                lambda: torch.transpose(input=actual, dim0=0, dim1=1.5),
+                lambda: reference_torch.transpose(input=expected, dim0=0, dim1=1.5),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(error_cases):
+            with self.subTest(error_case=case):
+                self.assert_error_matches(actual_call, expected_call)
 
     def test_singleton_pointwise_and_reflected_division_layouts_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")

@@ -845,6 +845,43 @@ fn transpose_defines_contiguous_and_non_overlapping_dense_invariants() {
 }
 
 #[test]
+fn memory_format_contiguity_queries_match_layout_metadata() {
+    let contiguous = Tensor::zeros([2, 3, 4, 5]).unwrap();
+    assert!(contiguous.is_contiguous_with_memory_format(MemoryFormat::Preserve));
+    assert!(contiguous.is_contiguous_with_memory_format(MemoryFormat::Contiguous));
+    assert!(!contiguous.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+    assert!(!contiguous.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast3d));
+
+    let channels_last = Tensor::zeros([1, 1, 2, 2])
+        .unwrap()
+        .transpose(1, 3)
+        .unwrap();
+    assert!(!channels_last.is_contiguous());
+    assert!(channels_last.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+
+    let channels_last_3d = Tensor::zeros([2, 4, 5, 6, 3])
+        .unwrap()
+        .transpose(1, 4)
+        .unwrap()
+        .transpose(2, 4)
+        .unwrap()
+        .transpose(3, 4)
+        .unwrap();
+    assert_eq!(channels_last_3d.stride(), [360, 1, 90, 18, 3]);
+    assert!(channels_last_3d.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast3d));
+    assert!(!channels_last_3d.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+
+    let empty_channels_last = Tensor::zeros([2, 4, 5, 0])
+        .unwrap()
+        .transpose(1, 3)
+        .unwrap()
+        .transpose(2, 3)
+        .unwrap();
+    assert_eq!(empty_channels_last.stride(), [20, 1, 5, 1]);
+    assert!(!empty_channels_last.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+}
+
+#[test]
 fn pointwise_outputs_canonicalize_singleton_channels_last_strides() {
     let source = Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0], [1, 1, 2, 2]).unwrap();
     let view = source.transpose(1, 3).unwrap();

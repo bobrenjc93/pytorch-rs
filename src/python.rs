@@ -140,6 +140,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for EyeDimensionArgument {
     }
 }
 
+struct ParsedCallArgument<'py> {
+    value: Bound<'py, PyAny>,
+    position: Option<usize>,
+}
+
 #[derive(Clone, Copy)]
 enum BinaryOperation {
     Add,
@@ -190,13 +195,43 @@ impl PyTensor {
         self.inner.storage_offset()
     }
 
-    fn is_contiguous(&self) -> bool {
-        self.inner.is_contiguous()
+    #[pyo3(signature = (*args, **kwargs), text_signature = "(*, memory_format=torch.contiguous_format)")]
+    fn is_contiguous(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<bool> {
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "is_contiguous() takes 0 positional arguments but {} {} given",
+                args.len(),
+                if args.len() == 1 { "was" } else { "were" }
+            )));
+        }
+        let mut memory_format = MemoryFormat::Contiguous;
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key = key.extract::<String>()?;
+                if key != "memory_format" {
+                    return Err(PyTypeError::new_err(format!(
+                        "is_contiguous() got an unexpected keyword argument '{key}'"
+                    )));
+                }
+                memory_format = parse_is_contiguous_memory_format(&value)?;
+            }
+        }
+        Ok(self.inner.is_contiguous_with_memory_format(memory_format))
     }
 
-    fn transpose(&self, dim0: &Bound<'_, PyAny>, dim1: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let dim0 = parse_transpose_dimension("dim0", 1, dim0)?;
-        let dim1 = parse_transpose_dimension("dim1", 2, dim1)?;
+    #[pyo3(signature = (*args, **kwargs))]
+    fn transpose(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let [dim0, dim1] = bind_transpose_arguments(args, kwargs, ["dim0", "dim1"])?;
+        let dim0 = parse_transpose_dimension("dim0", dim0.position, &dim0.value)?;
+        let dim1 = parse_transpose_dimension("dim1", dim1.position, &dim1.value)?;
         self.inner
             .transpose(dim0, dim1)
             .map(|inner| Self { inner })
@@ -497,15 +532,17 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction]
-fn transpose(
-    input: &PyTensor,
-    dim0: &Bound<'_, PyAny>,
-    dim1: &Bound<'_, PyAny>,
-) -> PyResult<PyTensor> {
-    let dim0 = parse_transpose_dimension("dim0", 1, dim0)?;
-    let dim1 = parse_transpose_dimension("dim1", 2, dim1)?;
-    input
+#[pyfunction(signature = (*args, **kwargs))]
+fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let [input, dim0, dim1] = bind_transpose_arguments(args, kwargs, ["input", "dim0", "dim1"])?;
+    let input_type = input.value.get_type().name()?.to_str()?.to_owned();
+    let input_tensor = input.value.cast::<PyTensor>().map_err(|_| {
+        transpose_argument_type_error("input", input.position, "Tensor", &input_type)
+    })?;
+    let input_tensor = input_tensor.try_borrow()?;
+    let dim0 = parse_transpose_dimension("dim0", dim0.position, &dim0.value)?;
+    let dim1 = parse_transpose_dimension("dim1", dim1.position, &dim1.value)?;
+    input_tensor
         .inner
         .transpose(dim0, dim1)
         .map(|inner| PyTensor { inner })
@@ -630,6 +667,17 @@ fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResu
     let type_name = memory_format.get_type().name()?;
     Err(PyTypeError::new_err(format!(
         "clone(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
+}
+
+fn parse_is_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryFormat> {
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner);
+    }
+
+    let type_name = memory_format.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "is_contiguous(): argument 'memory_format' must be torch.memory_format, not {type_name}"
     )))
 }
 
@@ -790,7 +838,7 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
 
 fn parse_transpose_dimension(
     argument: &str,
-    position: usize,
+    position: Option<usize>,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<i64> {
     if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
@@ -808,10 +856,89 @@ fn parse_transpose_dimension(
         }
     }
 
-    let type_name = dimension.get_type().name()?;
-    Err(PyTypeError::new_err(format!(
-        "transpose(): argument '{argument}' (position {position}) must be int, not {type_name}"
-    )))
+    let type_name = dimension.get_type().name()?.to_str()?.to_owned();
+    Err(transpose_argument_type_error(
+        argument, position, "int", &type_name,
+    ))
+}
+
+fn bind_transpose_arguments<'py, const N: usize>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    names: [&str; N],
+) -> PyResult<[ParsedCallArgument<'py>; N]> {
+    if positional.len() > N {
+        return Err(PyTypeError::new_err(format!(
+            "transpose() takes {N} positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; N] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            let Some(index) = names.iter().position(|name| *name == key) else {
+                return Err(PyTypeError::new_err(format!(
+                    "transpose() got an unexpected keyword argument '{key}'"
+                )));
+            };
+            if arguments[index].is_some() {
+                return Err(PyTypeError::new_err(format!(
+                    "transpose() got multiple values for argument '{}'",
+                    names[index]
+                )));
+            }
+            arguments[index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    let missing = names
+        .iter()
+        .enumerate()
+        .filter_map(|(index, name)| arguments[index].is_none().then_some(*name))
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        let quoted_names = missing
+            .iter()
+            .map(|name| format!("\"{name}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let argument = if missing.len() == 1 {
+            "arguments"
+        } else {
+            "argument"
+        };
+        return Err(PyTypeError::new_err(format!(
+            "transpose() missing {} required positional {argument}: {quoted_names}",
+            missing.len()
+        )));
+    }
+
+    Ok(arguments
+        .map(|argument| argument.expect("all required transpose arguments were checked above")))
+}
+
+fn transpose_argument_type_error(
+    argument: &str,
+    position: Option<usize>,
+    expected: &str,
+    actual: &str,
+) -> PyErr {
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    PyTypeError::new_err(format!(
+        "transpose(): argument '{argument}'{position} must be {expected}, not {actual}"
+    ))
 }
 
 fn parse_integer_indices<'py>(

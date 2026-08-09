@@ -44,9 +44,9 @@ pub enum MemoryFormat {
     Preserve,
     /// Produce canonical contiguous row-major strides.
     Contiguous,
-    /// Four-dimensional channels-last layout, currently unsupported.
+    /// Four-dimensional channels-last layout.
     ChannelsLast,
-    /// Five-dimensional channels-last layout, currently unsupported.
+    /// Five-dimensional channels-last layout.
     ChannelsLast3d,
 }
 
@@ -550,6 +550,25 @@ impl Tensor {
     #[must_use]
     pub fn is_contiguous(&self) -> bool {
         layout_is_contiguous(&self.shape, &self.strides, self.elements)
+    }
+
+    /// Returns whether this tensor is contiguous in the requested memory
+    /// format.
+    ///
+    /// [`MemoryFormat::Preserve`] has the same query semantics as
+    /// [`MemoryFormat::Contiguous`], matching `PyTorch`. Channel-last formats
+    /// require rank four and five, respectively.
+    #[must_use]
+    pub fn is_contiguous_with_memory_format(&self, memory_format: MemoryFormat) -> bool {
+        match memory_format {
+            MemoryFormat::Preserve | MemoryFormat::Contiguous => self.is_contiguous(),
+            MemoryFormat::ChannelsLast => {
+                layout_is_channels_last_contiguous(&self.shape, &self.strides)
+            }
+            MemoryFormat::ChannelsLast3d => {
+                layout_is_channels_last_3d_contiguous(&self.shape, &self.strides)
+            }
+        }
     }
 
     /// Returns whether every logical value occupies a distinct element in one
@@ -1442,7 +1461,7 @@ impl Tensor {
     }
 
     fn is_channels_last_contiguous(&self) -> bool {
-        layout_is_channels_last_contiguous(&self.shape, &self.strides, self.elements)
+        layout_is_channels_last_contiguous(&self.shape, &self.strides)
     }
 }
 
@@ -1577,13 +1596,21 @@ fn layout_is_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> 
     true
 }
 
-fn layout_is_channels_last_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> bool {
-    if shape.len() != 4 || elements == 0 {
+fn layout_is_channels_last_contiguous(shape: &[usize], strides: &[usize]) -> bool {
+    layout_is_contiguous_in_order(shape, strides, &[1, 3, 2, 0])
+}
+
+fn layout_is_channels_last_3d_contiguous(shape: &[usize], strides: &[usize]) -> bool {
+    layout_is_contiguous_in_order(shape, strides, &[1, 4, 3, 2, 0])
+}
+
+fn layout_is_contiguous_in_order(shape: &[usize], strides: &[usize], order: &[usize]) -> bool {
+    if shape.len() != order.len() || strides.len() != order.len() {
         return false;
     }
 
     let mut expected_stride = 1_usize;
-    for axis in [1, 3, 2, 0] {
+    for &axis in order {
         let dimension = shape[axis];
         if dimension == 1 {
             continue;
