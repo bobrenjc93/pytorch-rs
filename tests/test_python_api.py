@@ -487,6 +487,83 @@ class PythonApiBaselineTests(unittest.TestCase):
         finally:
             operator.index = original_index
 
+    def test_factory_size_conversion_ignores_python_visible_type_metadata(self):
+        class NonStringModule:
+            __module__ = 123
+
+            def __init__(self):
+                self.events = []
+
+            def __index__(self):
+                self.events.append("index")
+                return 2
+
+        class HostileMeta(type):
+            def __getattribute__(cls, name):
+                if name in {"__module__", "__flags__", "__name__"}:
+                    raise RuntimeError(f"blocked {name}")
+                return super().__getattribute__(name)
+
+        class HostileIndex(metaclass=HostileMeta):
+            def __init__(self):
+                self.events = []
+
+            def __index__(self):
+                self.events.append("index")
+                return 2
+
+        class HostileList(list, metaclass=HostileMeta):
+            pass
+
+        class HostileTuple(tuple, metaclass=HostileMeta):
+            pass
+
+        class HostileInvalid(metaclass=HostileMeta):
+            pass
+
+        for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
+            for case, probe in (
+                ("non-string module", NonStringModule()),
+                ("hostile metaclass", HostileIndex()),
+            ):
+                with self.subTest(function=name, index_case=case):
+                    self.assertEqual(create(probe).shape, (2,))
+                    self.assertEqual(probe.events, ["index"] * 3)
+
+            for case, dimensions in (
+                ("keyword list subclass", HostileList([2, 3])),
+                ("keyword tuple subclass", HostileTuple((2, 3))),
+            ):
+                with self.subTest(function=name, container_case=case):
+                    self.assertEqual(create(size=dimensions).shape, (2, 3))
+
+            with self.subTest(function=name, invalid_type_name=True):
+                with self.assertRaisesRegex(TypeError, "not HostileInvalid"):
+                    create(HostileInvalid())
+
+    def test_ones_preserves_the_minimum_signed_size_sentinel(self):
+        minimum = -(1 << 63)
+        calls = (
+            ("scalar", lambda: torch.ones(minimum)),
+            ("tuple", lambda: torch.ones((minimum,))),
+            ("list", lambda: torch.ones([minimum])),
+            ("size tuple", lambda: torch.ones(size=(minimum,))),
+            ("size list", lambda: torch.ones(size=[minimum])),
+            ("mixed variadic", lambda: torch.ones(-1, minimum)),
+        )
+        for case, call in calls:
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "SymIntArrayRef expected to contain only concrete integers",
+                ):
+                    call()
+
+        with self.assertRaisesRegex(
+            RuntimeError, "zeros: Dimension size must be non-negative"
+        ):
+            torch.zeros(minimum)
+
     def test_factory_metadata_and_binding_error_precedence(self):
         for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
             for case, kwargs, message in (

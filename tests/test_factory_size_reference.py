@@ -329,6 +329,107 @@ class FactorySizeReferenceTests(unittest.TestCase):
         finally:
             operator.index = original_index
 
+    def test_type_metadata_is_not_executed_before_size_conversion(self):
+        class NonStringModule:
+            __module__ = 123
+
+            def __init__(self):
+                self.events = []
+
+            def __index__(self):
+                self.events.append("index")
+                return 2
+
+        class HostileMeta(type):
+            def __getattribute__(cls, name):
+                if name in {"__module__", "__flags__", "__name__"}:
+                    raise RuntimeError(f"blocked {name}")
+                return super().__getattribute__(name)
+
+        class HostileIndex(metaclass=HostileMeta):
+            def __init__(self):
+                self.events = []
+
+            def __index__(self):
+                self.events.append("index")
+                return 2
+
+        class HostileList(list, metaclass=HostileMeta):
+            pass
+
+        class HostileTuple(tuple, metaclass=HostileMeta):
+            pass
+
+        class HostileInvalid(metaclass=HostileMeta):
+            pass
+
+        def index_outcome(factory, probe):
+            try:
+                tensor = factory(probe)
+                return "ok", tensor.shape, probe.events
+            except Exception as error:
+                return type(error).__name__, str(error), probe.events
+
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for case, probe_type in (
+                ("non-string module", NonStringModule),
+                ("hostile metaclass", HostileIndex),
+            ):
+                with self.subTest(factory=factory_name, index_case=case):
+                    self.assertEqual(
+                        index_outcome(actual_factory, probe_type()),
+                        index_outcome(expected_factory, probe_type()),
+                    )
+
+            for case, container_type, dimensions in (
+                ("keyword list subclass", HostileList, [2, 3]),
+                ("keyword tuple subclass", HostileTuple, (2, 3)),
+            ):
+                with self.subTest(factory=factory_name, container_case=case):
+                    self.assert_tensor_matches(
+                        actual_factory(size=container_type(dimensions)),
+                        expected_factory(size=container_type(dimensions)),
+                    )
+
+            with self.subTest(factory=factory_name, invalid_type_name=True):
+                self.assert_error_matches(
+                    lambda: actual_factory(HostileInvalid()),
+                    lambda: expected_factory(HostileInvalid()),
+                )
+
+    def test_minimum_signed_size_sentinel_matches_pytorch_2_13(self):
+        minimum = -(1 << 63)
+        calls = (
+            ("scalar", lambda factory: factory(minimum)),
+            ("tuple", lambda factory: factory((minimum,))),
+            ("list", lambda factory: factory([minimum])),
+            ("size tuple", lambda factory: factory(size=(minimum,))),
+            ("size list", lambda factory: factory(size=[minimum])),
+            ("mixed variadic", lambda factory: factory(-1, minimum)),
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for case, call in calls:
+                with self.subTest(factory=factory_name, form=case):
+                    with self.assertRaises(RuntimeError) as actual_raised:
+                        call(actual_factory)
+                    with self.assertRaises(RuntimeError) as expected_raised:
+                        call(expected_factory)
+                    if factory_name == "ones":
+                        message = (
+                            "SymIntArrayRef expected to contain only concrete integers"
+                        )
+                        self.assertIn(message, str(actual_raised.exception))
+                        self.assertIn(message, str(expected_raised.exception))
+                    else:
+                        self.assertEqual(
+                            str(actual_raised.exception),
+                            str(expected_raised.exception),
+                        )
+
     def test_combined_metadata_and_keyword_errors_match_pytorch_2_13(self):
         cases = (
             {"dtype": "bad", "bogus": True},

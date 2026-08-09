@@ -10,7 +10,7 @@ use pyo3::exceptions::{
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyString, PyTuple,
+    PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyString, PyTuple, PyType,
 };
 
 use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError};
@@ -203,10 +203,11 @@ enum ConstantFactory {
     Ones,
 }
 
+#[derive(Clone, Copy)]
 enum ParsedSizeDimension {
     Value(i64),
     Overflow,
-    Invalid(String),
+    Invalid,
 }
 
 enum PreparedFactorySize<'py> {
@@ -217,10 +218,10 @@ enum PreparedFactorySize<'py> {
     },
 }
 
-enum FirstSizeErrorStyle {
+enum FirstSizeErrorStyle<'py> {
     PositionalValue,
     PositionalCollection,
-    KeywordCollection(String),
+    KeywordCollection(Bound<'py, PyAny>),
 }
 
 #[pymethods]
@@ -999,10 +1000,11 @@ fn create_constant_tensor(
 
     let signed_size = parsed_size.finish(function)?;
     let shape = validate_factory_size(factory, signed_size)?;
+    let tensor_shape = try_clone_shape(&shape)?;
 
     let result = match factory {
-        ConstantFactory::Zeros => CoreTensor::zeros_with_metadata(shape.clone(), dtype, device),
-        ConstantFactory::Ones => CoreTensor::ones_with_metadata(shape.clone(), dtype, device),
+        ConstantFactory::Zeros => CoreTensor::zeros_with_metadata(tensor_shape, dtype, device),
+        ConstantFactory::Ones => CoreTensor::ones_with_metadata(tensor_shape, dtype, device),
     };
     result
         .map(|inner| PyTensor { inner })
@@ -1015,8 +1017,8 @@ fn prepare_positional_factory_size<'py>(
 ) -> PyResult<PreparedFactorySize<'py>> {
     if args.len() > 1 {
         let first_dimension = args.get_item(0)?;
-        let first = parse_size_dimension(&first_dimension, true)?;
-        if matches!(first, ParsedSizeDimension::Invalid(_)) {
+        let first = parse_size_dimension(&first_dimension, true);
+        if matches!(first, ParsedSizeDimension::Invalid) {
             return Err(PyTypeError::new_err(format!(
                 "{function}() takes 1 positional argument but {} were given",
                 args.len()
@@ -1047,13 +1049,13 @@ fn prepare_positional_factory_size<'py>(
             &FirstSizeErrorStyle::PositionalCollection,
         );
     }
-    let first = parse_size_dimension(&value, true)?;
-    if let ParsedSizeDimension::Invalid(type_name) = &first {
+    let first = parse_size_dimension(&value, true);
+    if matches!(first, ParsedSizeDimension::Invalid) {
         return Err(first_factory_size_error(
             function,
-            type_name,
+            &value,
             &FirstSizeErrorStyle::PositionalValue,
-        ));
+        )?);
     }
     probe_variadic_first_dimension(function, &value)?;
     let mut dimensions = try_size_vector(1)?;
@@ -1065,22 +1067,20 @@ fn prepare_keyword_factory_size<'py>(
     function: &str,
     value: &Bound<'py, PyAny>,
 ) -> PyResult<PreparedFactorySize<'py>> {
-    let container_type = transpose_type_name(value)?;
     if let Ok(dimensions) = value.cast::<PyList>() {
-        return prepare_factory_list_dimensions(
-            function,
-            dimensions,
-            &FirstSizeErrorStyle::KeywordCollection(container_type),
-        );
+        let error_style = FirstSizeErrorStyle::KeywordCollection(value.clone());
+        return prepare_factory_list_dimensions(function, dimensions, &error_style);
     }
     if let Ok(dimensions) = value.cast::<PyTuple>() {
+        let error_style = FirstSizeErrorStyle::KeywordCollection(value.clone());
         return prepare_factory_size_dimensions(
             function,
             dimensions.len(),
             dimensions.iter(),
-            &FirstSizeErrorStyle::KeywordCollection(container_type),
+            &error_style,
         );
     }
+    let container_type = factory_size_type_name(value)?;
     Err(PyTypeError::new_err(format!(
         "{function}(): argument 'size' must be tuple of ints, not {container_type}"
     )))
@@ -1090,18 +1090,18 @@ fn prepare_factory_size_dimensions<'py>(
     function: &str,
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
-    first_error_style: &FirstSizeErrorStyle,
+    first_error_style: &FirstSizeErrorStyle<'_>,
 ) -> PyResult<PreparedFactorySize<'py>> {
     let mut prepared = try_size_vector(length)?;
     for (index, dimension) in dimensions.enumerate() {
         if index == 0 {
-            let value = parse_size_dimension(&dimension, true)?;
-            if let ParsedSizeDimension::Invalid(type_name) = &value {
+            let value = parse_size_dimension(&dimension, true);
+            if matches!(value, ParsedSizeDimension::Invalid) {
                 return Err(first_factory_size_error(
                     function,
-                    type_name,
+                    &dimension,
                     first_error_style,
-                ));
+                )?);
             }
         }
         try_push_size(&mut prepared, dimension)?;
@@ -1112,16 +1112,17 @@ fn prepare_factory_size_dimensions<'py>(
 fn prepare_factory_list_dimensions<'py>(
     function: &str,
     dimensions: &Bound<'py, PyList>,
-    first_error_style: &FirstSizeErrorStyle,
+    first_error_style: &FirstSizeErrorStyle<'_>,
 ) -> PyResult<PreparedFactorySize<'py>> {
     if !dimensions.is_empty() {
-        let value = parse_size_dimension(&dimensions.get_item(0)?, true)?;
-        if let ParsedSizeDimension::Invalid(type_name) = &value {
+        let dimension = dimensions.get_item(0)?;
+        let value = parse_size_dimension(&dimension, true);
+        if matches!(value, ParsedSizeDimension::Invalid) {
             return Err(first_factory_size_error(
                 function,
-                type_name,
+                &dimension,
                 first_error_style,
-            ));
+            )?);
         }
     }
     // The overload probe may resize a list. PyTorch fixes the final rank only
@@ -1134,33 +1135,29 @@ fn prepare_factory_list_dimensions<'py>(
 }
 
 fn probe_variadic_first_dimension(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<()> {
-    let probe = parse_size_dimension(dimension, true)?;
-    if let ParsedSizeDimension::Invalid(type_name) = &probe {
+    let probe = parse_size_dimension(dimension, true);
+    if matches!(probe, ParsedSizeDimension::Invalid) {
         return Err(first_factory_size_error(
             function,
-            type_name,
+            dimension,
             &FirstSizeErrorStyle::PositionalCollection,
-        ));
+        )?);
     }
     Ok(())
 }
 
-fn parse_size_dimension(
-    dimension: &Bound<'_, PyAny>,
-    reject_bool: bool,
-) -> PyResult<ParsedSizeDimension> {
-    let type_name = transpose_type_name(dimension)?;
+fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> ParsedSizeDimension {
     if reject_bool && dimension.is_instance_of::<PyBool>() {
-        return Ok(ParsedSizeDimension::Invalid(type_name));
+        return ParsedSizeDimension::Invalid;
     }
 
     if dimension.is_instance_of::<PyInt>() {
         return match dimension.extract::<i64>() {
-            Ok(value) => Ok(ParsedSizeDimension::Value(value)),
+            Ok(value) => ParsedSizeDimension::Value(value),
             Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
-                Ok(ParsedSizeDimension::Overflow)
+                ParsedSizeDimension::Overflow
             }
-            Err(_) => Ok(ParsedSizeDimension::Invalid(type_name)),
+            Err(_) => ParsedSizeDimension::Invalid,
         };
     }
 
@@ -1169,14 +1166,63 @@ fn parse_size_dimension(
     // valid arbitrary-precision result outside the signed size range.
     match dimension.extract::<BigInt>() {
         Ok(indexed) => match i64::try_from(indexed) {
-            Ok(value) => Ok(ParsedSizeDimension::Value(value)),
-            Err(_) => Ok(ParsedSizeDimension::Overflow),
+            Ok(value) => ParsedSizeDimension::Value(value),
+            Err(_) => ParsedSizeDimension::Overflow,
         },
-        Err(_) => Ok(ParsedSizeDimension::Invalid(type_name)),
+        Err(_) => ParsedSizeDimension::Invalid,
     }
 }
 
-fn first_factory_size_error(function: &str, type_name: &str, style: &FirstSizeErrorStyle) -> PyErr {
+fn factory_size_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    const PY_TPFLAGS_HEAPTYPE: u64 = 1 << 9;
+
+    if value.is_instance_of::<PyDType>() {
+        return Ok("torch.dtype".to_owned());
+    }
+    if value.is_instance_of::<PyDevice>() {
+        return Ok("torch.device".to_owned());
+    }
+    if value.is_instance_of::<PyMemoryFormat>() {
+        return Ok("torch.memory_format".to_owned());
+    }
+
+    // Call the built-in type implementation directly. This reads CPython's
+    // intrinsic type metadata without dispatching to a user-defined metaclass.
+    let value_type = value.get_type();
+    let type_getattribute = value
+        .py()
+        .get_type::<PyType>()
+        .getattr("__getattribute__")?;
+    let name = type_getattribute
+        .call1((&value_type, "__name__"))?
+        .extract::<String>()?;
+    let flags = type_getattribute
+        .call1((&value_type, "__flags__"))?
+        .extract::<u64>()?;
+    if flags & PY_TPFLAGS_HEAPTYPE != 0 {
+        return Ok(name);
+    }
+    let module = type_getattribute
+        .call1((&value_type, "__module__"))?
+        .extract::<String>()?;
+    if module == "builtins" {
+        Ok(name)
+    } else {
+        Ok(format!("{module}.{name}"))
+    }
+}
+
+fn first_factory_size_error(
+    function: &str,
+    dimension: &Bound<'_, PyAny>,
+    style: &FirstSizeErrorStyle<'_>,
+) -> PyResult<PyErr> {
+    let type_name = match style {
+        FirstSizeErrorStyle::KeywordCollection(container) => factory_size_type_name(container)?,
+        FirstSizeErrorStyle::PositionalValue | FirstSizeErrorStyle::PositionalCollection => {
+            factory_size_type_name(dimension)?
+        }
+    };
     let message = match style {
         FirstSizeErrorStyle::PositionalValue => format!(
             "{function}(): argument 'size' (position 1) must be tuple of ints, not {type_name}"
@@ -1184,11 +1230,11 @@ fn first_factory_size_error(function: &str, type_name: &str, style: &FirstSizeEr
         FirstSizeErrorStyle::PositionalCollection => format!(
             "{function}(): argument 'size' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
         ),
-        FirstSizeErrorStyle::KeywordCollection(container_type) => {
-            format!("{function}(): argument 'size' must be tuple of ints, not {container_type}")
+        FirstSizeErrorStyle::KeywordCollection(_) => {
+            format!("{function}(): argument 'size' must be tuple of ints, not {type_name}")
         }
     };
-    PyTypeError::new_err(message)
+    Ok(PyTypeError::new_err(message))
 }
 
 impl PreparedFactorySize<'_> {
@@ -1197,10 +1243,10 @@ impl PreparedFactorySize<'_> {
             Self::Fixed(dimensions) => {
                 let mut size = try_size_vector(dimensions.len())?;
                 for (index, dimension) in dimensions.into_iter().enumerate() {
-                    let parsed = parse_size_dimension(&dimension, false)?;
+                    let parsed = parse_size_dimension(&dimension, false);
                     try_push_size(
                         &mut size,
-                        unpack_factory_size_dimension(function, index, parsed)?,
+                        unpack_factory_size_dimension(function, index, &dimension, parsed)?,
                     )?;
                 }
                 Ok(size)
@@ -1209,10 +1255,10 @@ impl PreparedFactorySize<'_> {
                 let mut size = try_size_vector(length)?;
                 for index in 0..length {
                     let dimension = dimensions.get_item(index)?;
-                    let parsed = parse_size_dimension(&dimension, false)?;
+                    let parsed = parse_size_dimension(&dimension, false);
                     try_push_size(
                         &mut size,
-                        unpack_factory_size_dimension(function, index, parsed)?,
+                        unpack_factory_size_dimension(function, index, &dimension, parsed)?,
                     )?;
                 }
                 Ok(size)
@@ -1224,6 +1270,7 @@ impl PreparedFactorySize<'_> {
 fn unpack_factory_size_dimension(
     function: &str,
     index: usize,
+    source: &Bound<'_, PyAny>,
     dimension: ParsedSizeDimension,
 ) -> PyResult<i64> {
     match dimension {
@@ -1233,11 +1280,14 @@ fn unpack_factory_size_dimension(
             index + 1,
             "Overflow when unpacking long long",
         )),
-        ParsedSizeDimension::Invalid(type_name) => Err(factory_size_unpack_error(
-            function,
-            index + 1,
-            &format!("type must be tuple of ints,but got {type_name}"),
-        )),
+        ParsedSizeDimension::Invalid => {
+            let type_name = factory_size_type_name(source)?;
+            Err(factory_size_unpack_error(
+                function,
+                index + 1,
+                &format!("type must be tuple of ints,but got {type_name}"),
+            ))
+        }
     }
 }
 
@@ -1248,6 +1298,11 @@ fn factory_size_unpack_error(function: &str, position: usize, reason: &str) -> P
 }
 
 fn validate_factory_size(factory: ConstantFactory, size: Vec<i64>) -> PyResult<Vec<usize>> {
+    if matches!(factory, ConstantFactory::Ones) && size.contains(&i64::MIN) {
+        return Err(PyRuntimeError::new_err(
+            "SymIntArrayRef expected to contain only concrete integers",
+        ));
+    }
     if let Some(dimension) = size.iter().find(|dimension| **dimension < 0) {
         return match factory {
             ConstantFactory::Zeros => Err(PyRuntimeError::new_err(
@@ -2454,6 +2509,14 @@ fn validate_size(size: Vec<i64>) -> PyResult<Vec<usize>> {
         )?;
     }
     Ok(shape)
+}
+
+fn try_clone_shape(shape: &[usize]) -> PyResult<Vec<usize>> {
+    let mut cloned = try_size_vector(shape.len())?;
+    for &dimension in shape {
+        try_push_size(&mut cloned, dimension)?;
+    }
+    Ok(cloned)
 }
 
 fn try_size_vector<T>(length: usize) -> PyResult<Vec<T>> {
