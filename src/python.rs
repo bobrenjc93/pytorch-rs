@@ -34,7 +34,7 @@ class Size(tuple):
     __slots__ = ()
     __module__ = "torch_rs"
 
-    def __new__(cls, dimensions=()):
+    def __new__(cls, dimensions=(), /):
         converted = []
         for index, dimension in enumerate(dimensions):
             if (
@@ -670,7 +670,7 @@ fn parse_creation_size(
         .iter()
         .any(|&dimension| i64::try_from(dimension).is_err())
     {
-        return Err(PyValueError::new_err("Overflow when unpacking long long"));
+        return Err(PyTypeError::new_err("Overflow when unpacking long long"));
     }
     Ok(dimensions)
 }

@@ -186,7 +186,7 @@ class PythonApiBaselineTests(unittest.TestCase):
 
             for oversized in (1 << 63, np.uint64(1 << 63)):
                 with self.subTest(function=name, oversized=type(oversized).__name__):
-                    with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                    with self.assertRaisesRegex(TypeError, "Overflow when unpacking long long"):
                         create((oversized, 0))
 
     def test_eye_creates_square_rectangular_and_empty_tensors(self):
@@ -546,6 +546,11 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertIs(type(result), torch.Size)
                 self.assertEqual(result, expected)
                 self.assertEqual(result.numel(), math.prod(expected))
+
+        for keyword in ("dimensions", "iterable"):
+            with self.subTest(keyword=keyword):
+                with self.assertRaises(TypeError):
+                    torch.Size(**{keyword: (2, 3)})
 
     def test_size_preserves_int_subclasses_and_normalizes_index_failures(self):
         class IntSubclass(int):
