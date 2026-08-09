@@ -238,6 +238,19 @@ impl PyTensor {
             .map_err(|error| transpose_error(&error))
     }
 
+    #[pyo3(signature = (*args, **kwargs))]
+    fn permute(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let dimensions = parse_permute_arguments(args, kwargs)?;
+        self.inner
+            .permute(dimensions)
+            .map(|inner| Self { inner })
+            .map_err(|error| permute_error(&error))
+    }
+
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
         let inner = if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() > self.inner.shape().len() {
@@ -966,6 +979,154 @@ fn transpose_argument_type_error(
     ))
 }
 
+fn parse_permute_arguments(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Vec<i64>> {
+    let mut keyword_dimensions = None;
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            if key == "dims" {
+                keyword_dimensions = Some(value);
+            } else {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "permute() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+
+    if positional.is_empty() {
+        let Some(dimensions) = keyword_dimensions else {
+            return Err(PyTypeError::new_err(
+                "permute() missing 1 required positional arguments: \"dims\"",
+            ));
+        };
+        if let Some(error) = keyword_error {
+            return Err(error);
+        }
+        return parse_permute_sequence(&dimensions, None);
+    }
+
+    if keyword_dimensions.is_some() {
+        return Err(PyTypeError::new_err(
+            "permute() got multiple values for argument 'dims'",
+        ));
+    }
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+
+    let first = positional.get_item(0)?;
+    if positional.len() == 1 {
+        if first.cast::<PyTuple>().is_ok() || first.cast::<PyList>().is_ok() {
+            return parse_permute_sequence(&first, Some(1));
+        }
+        if !is_permute_variadic_leading_dimension(&first)? {
+            return Err(permute_argument_type_error(&first, Some(1))?);
+        }
+        return parse_permute_dimensions(1, std::iter::once(first), None);
+    }
+
+    if !is_permute_variadic_leading_dimension(&first)? {
+        return Err(PyTypeError::new_err(format!(
+            "permute() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+    parse_permute_dimensions(positional.len(), positional.iter(), None)
+}
+
+fn parse_permute_sequence(
+    dimensions: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<Vec<i64>> {
+    if let Ok(dimensions) = dimensions.cast::<PyTuple>() {
+        parse_permute_dimensions(
+            dimensions.len(),
+            dimensions.iter(),
+            Some(("tuple", position.is_some())),
+        )
+    } else if let Ok(dimensions) = dimensions.cast::<PyList>() {
+        parse_permute_dimensions(
+            dimensions.len(),
+            dimensions.iter(),
+            Some(("list", position.is_some())),
+        )
+    } else {
+        Err(permute_argument_type_error(dimensions, position)?)
+    }
+}
+
+fn parse_permute_dimensions<'py>(
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+    sequence_argument: Option<(&'static str, bool)>,
+) -> PyResult<Vec<i64>> {
+    let mut parsed = try_size_vector(length)?;
+    for (index, dimension) in dimensions.enumerate() {
+        match parse_permute_dimension(&dimension) {
+            Ok(dimension) => parsed.push(dimension),
+            Err(error) => {
+                let type_name = transpose_type_name(&dimension)?;
+                if let Some((sequence_type, positional)) = sequence_argument
+                    && index == 0
+                {
+                    if positional {
+                        return Err(PyTypeError::new_err(format!(
+                            "permute(): argument 'dims' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
+                        )));
+                    }
+                    return Err(PyTypeError::new_err(format!(
+                        "permute(): argument 'dims' must be tuple of ints, not {sequence_type}"
+                    )));
+                }
+                let reason = if error.is_instance_of::<PyOverflowError>(dimension.py()) {
+                    "Overflow when unpacking long long".to_owned()
+                } else {
+                    format!("type must be tuple of ints,but got {type_name}")
+                };
+                return Err(PyTypeError::new_err(format!(
+                    "permute(): argument 'dims' failed to unpack the object at pos {} with error \"{reason}\"",
+                    index + 1
+                )));
+            }
+        }
+    }
+    Ok(parsed)
+}
+
+fn is_permute_variadic_leading_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if dimension.is_instance_of::<PyBool>() {
+        return Ok(false);
+    }
+    dimension.get_type().hasattr("__index__")
+}
+
+fn parse_permute_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+    let indexed = PyModule::import(dimension.py(), "operator")?
+        .getattr("index")?
+        .call1((dimension,))?;
+    indexed
+        .extract::<i64>()
+        .map_err(|_| PyOverflowError::new_err("Overflow when unpacking long long"))
+}
+
+fn permute_argument_type_error(
+    value: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<PyErr> {
+    let actual = transpose_type_name(value)?;
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    Ok(PyTypeError::new_err(format!(
+        "permute(): argument 'dims'{position} must be tuple of ints, not {actual}"
+    )))
+}
+
 fn parse_integer_indices<'py>(
     tensor: &CoreTensor,
     length: usize,
@@ -1503,6 +1664,8 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ItemRequiresOneElement { .. }
         | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow
+        | TensorError::PermuteRankMismatch { .. }
+        | TensorError::PermuteDuplicateDimensions
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }
         | TensorError::ReshapeAmbiguousZeroElements { .. }
@@ -1520,6 +1683,14 @@ fn tensor_error(error: &TensorError) -> PyErr {
 }
 
 fn transpose_error(error: &TensorError) -> PyErr {
+    if matches!(error, TensorError::ElementCountOverflow) {
+        PyRuntimeError::new_err("numel: integer multiplication overflow")
+    } else {
+        tensor_error(error)
+    }
+}
+
+fn permute_error(error: &TensorError) -> PyErr {
     if matches!(error, TensorError::ElementCountOverflow) {
         PyRuntimeError::new_err("numel: integer multiplication overflow")
     } else {

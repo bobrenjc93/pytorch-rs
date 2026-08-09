@@ -825,6 +825,193 @@ fn transpose_dimension_normalization_matches_pytorch_for_scalars_and_ranks() {
 }
 
 #[test]
+fn permute_is_a_metadata_only_shared_storage_view() {
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let view = source.permute([2, 0, 1]).unwrap();
+
+    assert_eq!(view.shape(), [4, 2, 3]);
+    assert_eq!(view.stride(), [1, 12, 4]);
+    assert_eq!(view.storage_offset(), source.storage_offset());
+    assert_eq!(view.dtype(), source.dtype());
+    assert_eq!(view.device(), source.device());
+    assert!(!view.is_contiguous());
+    assert!(view.is_non_overlapping_and_dense());
+    assert!(view.shares_storage_with(&source));
+    assert_eq!(
+        view.logical_values().collect::<Vec<_>>(),
+        [
+            0.0, 4.0, 8.0, 12.0, 16.0, 20.0, 1.0, 5.0, 9.0, 13.0, 17.0, 21.0, 2.0, 6.0, 10.0, 14.0,
+            18.0, 22.0, 3.0, 7.0, 11.0, 15.0, 19.0, 23.0,
+        ]
+    );
+
+    let restored = view.permute([1, 2, 0]).unwrap();
+    assert_eq!(restored.shape(), source.shape());
+    assert_eq!(restored.stride(), source.stride());
+    assert_eq!(
+        restored.logical_values().collect::<Vec<_>>(),
+        source.as_slice()
+    );
+    assert!(restored.shares_storage_with(&source));
+
+    let transposed = source.transpose(0, 2).unwrap();
+    let permuted = source.permute([2, 1, 0]).unwrap();
+    assert_eq!(permuted.shape(), transposed.shape());
+    assert_eq!(permuted.stride(), transposed.stride());
+    assert_eq!(
+        permuted.logical_values().collect::<Vec<_>>(),
+        transposed.logical_values().collect::<Vec<_>>()
+    );
+
+    let offset = source.index_integer(1).unwrap().permute([-1, -2]).unwrap();
+    assert_eq!(offset.shape(), [4, 3]);
+    assert_eq!(offset.stride(), [1, 4]);
+    assert_eq!(offset.storage_offset(), 12);
+    assert!(offset.shares_storage_with(&source));
+}
+
+#[test]
+fn permute_handles_scalars_high_ranks_and_empty_dimensions() {
+    let scalar = Tensor::from_vec(vec![3.5], []).unwrap();
+    let scalar_view = scalar.permute([]).unwrap();
+    assert!(scalar_view.shape().is_empty());
+    assert!(scalar_view.stride().is_empty());
+    assert_eq!(scalar_view.item().unwrap().to_bits(), 3.5_f32.to_bits());
+    assert!(scalar_view.shares_storage_with(&scalar));
+
+    let high_rank = Tensor::from_vec(vec![1.0, 2.0], [1, 1, 1, 1, 1, 1, 1, 2]).unwrap();
+    let reversed = high_rank.permute([-1, -2, -3, -4, -5, -6, -7, -8]).unwrap();
+    assert_eq!(reversed.shape(), [2, 1, 1, 1, 1, 1, 1, 1]);
+    assert_eq!(reversed.stride(), [1, 2, 2, 2, 2, 2, 2, 2]);
+    assert!(reversed.is_contiguous());
+    assert_eq!(reversed.logical_values().collect::<Vec<_>>(), [1.0, 2.0]);
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap();
+    let empty_view = empty.permute([-1, -2, -3]).unwrap();
+    assert_eq!(empty_view.shape(), [3, 0, 2]);
+    assert_eq!(empty_view.stride(), [1, 3, 3]);
+    assert_eq!(empty_view.numel(), 0);
+    assert!(empty_view.is_contiguous());
+    assert!(empty_view.shares_storage_with(&empty));
+
+    let maximum = isize::MAX.unsigned_abs();
+    let extreme = Tensor::zeros([maximum, 0, 2, 2]).unwrap();
+    assert_eq!(
+        extreme.permute([0, 2, 3, 1]),
+        Err(TensorError::ElementCountOverflow)
+    );
+    let zero_first = extreme.permute([1, 2, 3, 0]).unwrap();
+    assert_eq!(zero_first.shape(), [0, 2, 2, maximum]);
+    assert_eq!(zero_first.stride(), [4, 2, 1, 4]);
+}
+
+#[test]
+fn permute_reports_rank_duplicate_and_range_errors_in_validation_order() {
+    let tensor = Tensor::zeros([2, 3, 4]).unwrap();
+    assert_eq!(
+        tensor.permute([0, 1]),
+        Err(TensorError::PermuteRankMismatch {
+            rank: 3,
+            dimensions: 2,
+        })
+    );
+    assert_eq!(
+        tensor.permute([0, 1]).unwrap_err().to_string(),
+        "permute(sparse_coo): number of dimensions in the tensor input does not match the length of the desired ordering of dimensions i.e. input.dim() = 3 is not equal to len(dims) = 2"
+    );
+    assert_eq!(
+        tensor.permute([0, -3, 2]),
+        Err(TensorError::PermuteDuplicateDimensions)
+    );
+    assert_eq!(
+        tensor.permute([0, 0, 3]),
+        Err(TensorError::PermuteDuplicateDimensions)
+    );
+    assert_eq!(
+        tensor.permute([3, 0, 0]),
+        Err(TensorError::DimensionOutOfRange {
+            dimension: 3,
+            rank: 3,
+        })
+    );
+    assert_eq!(
+        tensor.permute([-4, 1, 2]).unwrap_err().to_string(),
+        "Dimension out of range (expected to be in range of [-3, 2], but got -4)"
+    );
+
+    let scalar = Tensor::from_vec(vec![1.0], []).unwrap();
+    assert_eq!(
+        scalar.permute([0]),
+        Err(TensorError::PermuteRankMismatch {
+            rank: 0,
+            dimensions: 1,
+        })
+    );
+}
+
+#[test]
+fn stride_aware_consumers_handle_permuted_and_composed_views() {
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let view = source.transpose(0, 2).unwrap().permute([2, 0, 1]).unwrap();
+    assert_eq!(view.shape(), [2, 4, 3]);
+    assert_eq!(view.stride(), [12, 1, 4]);
+
+    let indexed = view.index_integer(1).unwrap();
+    assert_eq!(indexed.shape(), [4, 3]);
+    assert_eq!(indexed.stride(), [1, 4]);
+    assert_eq!(indexed.storage_offset(), 12);
+    assert_eq!(
+        indexed.index([3, 2]).unwrap().item().unwrap().to_bits(),
+        23.0_f32.to_bits()
+    );
+
+    let copied = view.try_clone().unwrap();
+    assert_eq!(copied.shape(), view.shape());
+    assert_eq!(copied.stride(), view.stride());
+    assert_eq!(copied.storage_offset(), 0);
+    assert!(!copied.shares_storage_with(&view));
+    assert_eq!(
+        copied.logical_values().collect::<Vec<_>>(),
+        view.logical_values().collect::<Vec<_>>()
+    );
+
+    let same_shape = view.reshape([2, 4, 3]).unwrap();
+    assert_eq!(same_shape.stride(), view.stride());
+    assert!(same_shape.shares_storage_with(&view));
+    let flattened = view.reshape([24]).unwrap();
+    assert_eq!(flattened.stride(), [1]);
+    assert!(!flattened.shares_storage_with(&view));
+
+    for output in [
+        view.add_scalar(2.0).unwrap(),
+        view.add(&view).unwrap(),
+        view.relu().unwrap(),
+        view.sin().unwrap(),
+        view.exp().unwrap(),
+    ] {
+        assert_eq!(output.shape(), view.shape());
+        assert_eq!(output.stride(), view.stride());
+        assert_eq!(output.storage_offset(), 0);
+    }
+    assert_eq!(view.sum().item().unwrap().to_bits(), 276.0_f32.to_bits());
+
+    let left = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [2, 3])
+        .unwrap()
+        .permute([1, 0])
+        .unwrap();
+    let right = Tensor::from_vec((0_u8..8).map(f32::from).collect(), [4, 2])
+        .unwrap()
+        .permute([1, 0])
+        .unwrap();
+    assert_eq!(
+        left.matmul(&right).unwrap().as_slice(),
+        [
+            3.0, 9.0, 15.0, 21.0, 4.0, 14.0, 24.0, 34.0, 5.0, 19.0, 33.0, 47.0
+        ]
+    );
+}
+
+#[test]
 fn transpose_defines_contiguous_and_non_overlapping_dense_invariants() {
     let contiguous = Tensor::zeros([2, 3, 4]).unwrap();
     let dense_transpose = contiguous.transpose(0, 2).unwrap();

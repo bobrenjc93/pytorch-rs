@@ -167,6 +167,11 @@ pub enum TensorError {
         dimension: i64,
         rank: usize,
     },
+    PermuteRankMismatch {
+        rank: usize,
+        dimensions: usize,
+    },
+    PermuteDuplicateDimensions,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -200,21 +205,7 @@ impl Display for TensorError {
                 formatter,
                 "shape {shape:?} does not describe {elements} elements"
             ),
-            Self::ShapeMismatch { left, right } => {
-                if let Some((left_dimension, right_dimension, axis)) =
-                    first_broadcast_mismatch(left, right)
-                {
-                    write!(
-                        formatter,
-                        "The size of tensor a ({left_dimension}) must match the size of tensor b ({right_dimension}) at non-singleton dimension {axis}"
-                    )
-                } else {
-                    write!(
-                        formatter,
-                        "tensor shapes are not broadcastable: {left:?} and {right:?}"
-                    )
-                }
-            }
+            Self::ShapeMismatch { left, right } => format_shape_mismatch(formatter, left, right),
             Self::MatmulRequiresMatrices { left, right } => write!(
                 formatter,
                 "matmul currently requires two rank-2 tensors, got {left:?} and {right:?}"
@@ -252,6 +243,12 @@ impl Display for TensorError {
             }
             Self::DimensionOutOfRange { dimension, rank } => {
                 format_dimension_out_of_range(formatter, *dimension, *rank)
+            }
+            Self::PermuteRankMismatch { rank, dimensions } => {
+                format_permute_rank_mismatch(formatter, *rank, *dimensions)
+            }
+            Self::PermuteDuplicateDimensions => {
+                formatter.write_str("permute(): duplicate dims are not allowed.")
             }
             Self::ReshapeMultipleInferredDimensions => {
                 write!(formatter, "only one dimension can be inferred")
@@ -298,6 +295,24 @@ impl Display for TensorError {
 
 impl Error for TensorError {}
 
+fn format_shape_mismatch(
+    formatter: &mut Formatter<'_>,
+    left: &[usize],
+    right: &[usize],
+) -> std::fmt::Result {
+    if let Some((left_dimension, right_dimension, axis)) = first_broadcast_mismatch(left, right) {
+        write!(
+            formatter,
+            "The size of tensor a ({left_dimension}) must match the size of tensor b ({right_dimension}) at non-singleton dimension {axis}"
+        )
+    } else {
+        write!(
+            formatter,
+            "tensor shapes are not broadcastable: {left:?} and {right:?}"
+        )
+    }
+}
+
 fn format_dimension_out_of_range(
     formatter: &mut Formatter<'_>,
     dimension: i64,
@@ -308,6 +323,17 @@ fn format_dimension_out_of_range(
         formatter,
         "Dimension out of range (expected to be in range of [-{rank}, {}], but got {dimension})",
         rank - 1
+    )
+}
+
+fn format_permute_rank_mismatch(
+    formatter: &mut Formatter<'_>,
+    rank: usize,
+    dimensions: usize,
+) -> std::fmt::Result {
+    write!(
+        formatter,
+        "permute(sparse_coo): number of dimensions in the tensor input does not match the length of the desired ordering of dimensions i.e. input.dim() = {rank} is not equal to len(dims) = {dimensions}"
     )
 }
 
@@ -645,6 +671,52 @@ impl Tensor {
         if !shape.is_empty() {
             strides.swap(axis0, axis1);
         }
+        Ok(Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset: self.offset,
+            elements,
+        })
+    }
+
+    /// Reorders all dimensions without copying storage.
+    ///
+    /// Every input dimension must occur exactly once. Negative dimensions wrap
+    /// from the end, and an empty ordering is the identity permutation for a
+    /// scalar. The returned tensor shares storage, dtype, device, and storage
+    /// offset with `self` while reordering only shape and stride metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the ordering length differs from the tensor rank,
+    /// a dimension is out of range or repeated, the reordered shape's element
+    /// count overflows, or view metadata allocation fails.
+    pub fn permute(&self, dimensions: impl AsRef<[i64]>) -> Result<Self, TensorError> {
+        let dimensions = dimensions.as_ref();
+        let rank = self.shape.len();
+        if dimensions.len() != rank {
+            return Err(TensorError::PermuteRankMismatch {
+                rank,
+                dimensions: dimensions.len(),
+            });
+        }
+
+        let mut seen = try_result_vector(rank, self.elements)?;
+        seen.resize(rank, false);
+        let mut shape = try_result_vector(rank, self.elements)?;
+        let mut strides = try_result_vector(rank, self.elements)?;
+        for dimension in dimensions.iter().copied() {
+            let axis = normalize_permute_dimension(dimension, rank)?;
+            if seen[axis] {
+                return Err(TensorError::PermuteDuplicateDimensions);
+            }
+            seen[axis] = true;
+            shape.push(self.shape[axis]);
+            strides.push(self.strides[axis]);
+        }
+
+        let elements = element_count(&shape)?;
         Ok(Self {
             storage: Arc::clone(&self.storage),
             shape,
@@ -1639,6 +1711,20 @@ fn normalize_transpose_dimension(dimension: i64, rank: usize) -> Result<usize, T
     }
     if rank == 0 {
         return Ok(0);
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + signed_rank
+    } else {
+        dimension
+    })
+    .map_err(|_| TensorError::DimensionOutOfRange { dimension, rank })
+}
+
+fn normalize_permute_dimension(dimension: i64, rank: usize) -> Result<usize, TensorError> {
+    let signed_rank =
+        i64::try_from(rank).map_err(|_| TensorError::DimensionOutOfRange { dimension, rank })?;
+    if dimension < -signed_rank || dimension >= signed_rank {
+        return Err(TensorError::DimensionOutOfRange { dimension, rank });
     }
     usize::try_from(if dimension < 0 {
         dimension + signed_rank
