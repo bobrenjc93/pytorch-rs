@@ -229,6 +229,47 @@ impl PyTensor {
         Ok(self.inner.is_contiguous_with_memory_format(memory_format))
     }
 
+    #[pyo3(signature = (*args, **kwargs), text_signature = "(*, memory_format=torch.contiguous_format)")]
+    fn contiguous(
+        slf: PyRef<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<Self>> {
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "contiguous() takes 0 positional arguments but {} {} given",
+                args.len(),
+                if args.len() == 1 { "was" } else { "were" }
+            )));
+        }
+
+        let mut memory_format = MemoryFormat::Contiguous;
+        if let Some(kwargs) = kwargs {
+            // PyTorch converts the recognized argument before reporting any
+            // extra keywords, independent of keyword insertion order.
+            if let Some(value) = kwargs.get_item("memory_format")? {
+                memory_format = parse_contiguous_memory_format(&value)?;
+            }
+            for (key, _) in kwargs {
+                let key = key.extract::<String>()?;
+                if key != "memory_format" {
+                    return Err(PyTypeError::new_err(format!(
+                        "contiguous() got an unexpected keyword argument '{key}'"
+                    )));
+                }
+            }
+        }
+
+        if slf.inner.is_contiguous_with_memory_format(memory_format) {
+            return Ok(slf.into());
+        }
+        let inner = slf
+            .inner
+            .try_contiguous(memory_format)
+            .map_err(|error| tensor_error(&error))?;
+        Py::new(slf.py(), Self { inner })
+    }
+
     #[pyo3(signature = (*args, **kwargs))]
     fn transpose(
         &self,
@@ -722,6 +763,17 @@ fn parse_is_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResu
     let type_name = memory_format.get_type().name()?;
     Err(PyTypeError::new_err(format!(
         "is_contiguous(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
+}
+
+fn parse_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryFormat> {
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner);
+    }
+
+    let type_name = memory_format.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "contiguous(): argument 'memory_format' must be torch.memory_format, not {type_name}"
     )))
 }
 
@@ -2049,6 +2101,8 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::UnsupportedMemoryFormat { .. }
+        | TensorError::ContiguousPreserveFormatUnsupported
+        | TensorError::ContiguousMemoryFormatRankMismatch { .. }
         | TensorError::DuplicateDimension { .. }
         | TensorError::SqueezeDimensionsRankLimit
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),

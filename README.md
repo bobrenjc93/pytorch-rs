@@ -20,9 +20,16 @@ assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 batched = torch.zeros((1, 2, 1, 3))
 matrix = torch.squeeze(batched, dim=(0, 2))
 assert matrix.shape == (2, 3)
+
+# Materialize a view in native row-major or channel-last storage.
+view = torch.transpose(torch.zeros((2, 3, 4, 5)), 0, 3)
+packed = view.contiguous()
+nhwc_storage = packed.contiguous(memory_format=torch.channels_last)
+assert packed.is_contiguous()
+assert nhwc_storage.is_contiguous(memory_format=torch.channels_last)
 ```
 
-The CPU core provides `float32` tensors, checked construction, constant-filled creation, layout queries, stride-aware indexing, metadata-only transpose and squeeze views, compatible reshape views, independent deep cloning, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. `Tensor.squeeze()`, `Tensor.squeeze(dim)`, and `torch.squeeze(input, dim)` retain shared storage, strides, and offsets just like PyTorch. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
+The CPU core provides `float32` tensors, checked construction, constant-filled creation, layout queries, stride-aware indexing, metadata-only transpose and squeeze views, compatible reshape views, native `Tensor.contiguous()` materialization for row-major, channels-last, and channels-last-3d storage, independent deep cloning, broadcast tensor and real-scalar addition, subtraction, multiplication, and true division, ReLU, sum, and rank-2 matrix multiplication. Already-matching contiguous calls preserve Python object identity and shared storage; materializing calls copy logical values into independent storage with offset zero. `Tensor.squeeze()`, `Tensor.squeeze(dim)`, and `torch.squeeze(input, dim)` retain shared storage, strides, and offsets just like PyTorch. This intentionally small surface gives the campaign an honest starting point. The compatibility contract is the observable Python API; the Rust library is its implementation engine.
 
 ## Non-negotiable evaluation rules
 

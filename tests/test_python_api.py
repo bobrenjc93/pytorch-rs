@@ -1,5 +1,6 @@
 import math
 import operator
+import re
 import sys
 import unittest
 from decimal import Decimal
@@ -737,6 +738,125 @@ class PythonApiBaselineTests(unittest.TestCase):
         for call in invalid_calls:
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
+                    call()
+
+    def test_contiguous_identity_materialization_and_memory_formats(self):
+        source = torch.tensor(
+            [
+                [[[0.0, 1.0], [2.0, 3.0]], [[4.0, 5.0], [6.0, 7.0]], [[8.0, 9.0], [10.0, 11.0]]],
+                [[[12.0, 13.0], [14.0, 15.0]], [[16.0, 17.0], [18.0, 19.0]], [[20.0, 21.0], [22.0, 23.0]]],
+            ]
+        )
+        self.assertIs(source.contiguous(), source)
+        self.assertIs(
+            source.contiguous(memory_format=torch.contiguous_format), source
+        )
+        self.assertIs(source.contiguous(memory_format=torch.preserve_format), source)
+
+        view = source.transpose(0, 3)
+        packed = view.contiguous()
+        self.assertIsNot(packed, view)
+        self.assertEqual(packed.shape, view.shape)
+        self.assertEqual(packed.stride(), (12, 4, 2, 1))
+        self.assertEqual(packed.storage_offset(), 0)
+        self.assertEqual(packed.tolist(), view.tolist())
+        self.assertIs(packed.contiguous(), packed)
+
+        channels_last = source.contiguous(memory_format=torch.channels_last)
+        self.assertIsNot(channels_last, source)
+        self.assertEqual(channels_last.stride(), (12, 1, 6, 3))
+        self.assertTrue(
+            channels_last.is_contiguous(memory_format=torch.channels_last)
+        )
+        self.assertFalse(channels_last.is_contiguous())
+        self.assertEqual(channels_last.tolist(), source.tolist())
+        self.assertIs(
+            channels_last.contiguous(memory_format=torch.channels_last), channels_last
+        )
+        row_major = channels_last.contiguous()
+        self.assertEqual(row_major.stride(), source.stride())
+        self.assertEqual(row_major.tolist(), source.tolist())
+
+        volume = torch.tensor(np.arange(48, dtype=np.float32).reshape(2, 3, 2, 2, 2).tolist())
+        channels_last_3d = volume.contiguous(memory_format=torch.channels_last_3d)
+        self.assertEqual(channels_last_3d.stride(), (24, 1, 12, 6, 3))
+        self.assertTrue(
+            channels_last_3d.is_contiguous(memory_format=torch.channels_last_3d)
+        )
+        self.assertEqual(channels_last_3d.tolist(), volume.tolist())
+        self.assertIs(
+            channels_last_3d.contiguous(memory_format=torch.channels_last_3d),
+            channels_last_3d,
+        )
+
+    def test_contiguous_edge_layouts_consumers_and_float_bits(self):
+        expected_bits = np.array(
+            [0x00000000, 0x80000000, 0x7FC12345, 0x7F800000, 0xFF800000, 0x40A00000],
+            dtype=np.uint32,
+        )
+        source = torch.tensor(expected_bits.view(np.float32).reshape(2, 3).tolist())
+        packed = source.transpose(0, 1).contiguous()
+        transposed_bits = expected_bits.reshape(2, 3).T.reshape(-1)
+        np.testing.assert_array_equal(
+            np.asarray(packed).reshape(-1).view(np.uint32), transposed_bits
+        )
+        self.assertEqual(packed.clone().stride(), packed.stride())
+        np.testing.assert_array_equal(
+            np.asarray(packed.reshape(2, 3)).reshape(-1).view(np.uint32),
+            np.asarray(packed).reshape(-1).view(np.uint32),
+        )
+        self.assertEqual((packed + 1).shape, packed.shape)
+        self.assertTrue(np.isnan(packed.sum().item()))
+        np.testing.assert_array_equal(
+            np.asarray(packed.tolist(), dtype=np.float32).view(np.uint32),
+            np.asarray(packed).view(np.uint32),
+        )
+        self.assertIn("shape=[3, 2]", repr(packed))
+
+        singleton = torch.zeros((2, 1, 4, 5))
+        self.assertIs(
+            singleton.contiguous(memory_format=torch.channels_last), singleton
+        )
+        self.assertEqual(singleton.stride(), (20, 20, 5, 1))
+
+        empty_cases = (
+            ((2, 0, 4, 5), (0, 1, 0, 0)),
+            ((2, 3, 0, 5), (0, 1, 15, 3)),
+            ((2, 3, 4, 0), (0, 1, 0, 3)),
+            ((0, 3, 4, 5), (60, 1, 15, 3)),
+        )
+        for shape, stride in empty_cases:
+            with self.subTest(shape=shape):
+                result = torch.zeros(shape).contiguous(
+                    memory_format=torch.channels_last
+                )
+                self.assertEqual(result.stride(), stride)
+                self.assertEqual(result.storage_offset(), 0)
+                self.assertEqual(result.tolist(), torch.zeros(shape).tolist())
+
+        scalar = torch.tensor(-0.0)
+        self.assertIs(scalar.contiguous(), scalar)
+        self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0x80000000)
+
+    def test_contiguous_rejects_invalid_calls_with_pytorch_diagnostics(self):
+        tensor = torch.zeros((2, 3))
+        invalid_calls = (
+            (lambda: tensor.contiguous(torch.contiguous_format), TypeError, "contiguous() takes 0 positional arguments but 1 was given"),
+            (lambda: tensor.contiguous(None), TypeError, "contiguous() takes 0 positional arguments but 1 was given"),
+            (lambda: tensor.contiguous(memory_format=None), TypeError, "contiguous(): argument 'memory_format' must be torch.memory_format, not NoneType"),
+            (lambda: tensor.contiguous(memory_format=1), TypeError, "contiguous(): argument 'memory_format' must be torch.memory_format, not int"),
+            (lambda: tensor.contiguous(unexpected=None), TypeError, "contiguous() got an unexpected keyword argument 'unexpected'"),
+            (lambda: tensor.contiguous(memory_format=torch.channels_last), RuntimeError, "required rank 4 tensor to use channels_last format"),
+            (lambda: tensor.contiguous(memory_format=torch.channels_last_3d), RuntimeError, "required rank 5 tensor to use channels_last_3d format"),
+            (
+                lambda: tensor.transpose(0, 1).contiguous(memory_format=torch.preserve_format),
+                RuntimeError,
+                "preserve memory format is unsupported by the contiguous operator",
+            ),
+        )
+        for call, error_type, message in invalid_calls:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(error_type, re.escape(message)):
                     call()
 
     def test_integer_indexing_accepts_index_protocol_values(self):

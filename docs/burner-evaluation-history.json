@@ -401,6 +401,38 @@
         "eval_b4945d15": 95,
         "eval_c8a1bfb9": 47
       }
+    },
+    {
+      "key": "base:01dd283fa6d1bb8697130629d72c93644ba94c48",
+      "commit": "01dd283fa6d1bb8697130629d72c93644ba94c48",
+      "recordedAt": "2026-08-09T15:22:10.982Z",
+      "label": "base 01dd283",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.3,
+        "eval_39340456": 14,
+        "eval_b4945d15": 95,
+        "eval_c8a1bfb9": 46
+      }
+    },
+    {
+      "key": "pr:23",
+      "recordedAt": "2026-08-09T15:22:10.982Z",
+      "label": "PR #23",
+      "kind": "leaf",
+      "prNumber": 23,
+      "title": "Add native PyTorch-compatible Tensor.contiguous materialization",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.4,
+        "eval_39340456": 15,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 48
+      }
     }
   ]
 }

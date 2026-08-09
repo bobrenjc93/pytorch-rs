@@ -195,6 +195,12 @@ pub enum TensorError {
     UnsupportedMemoryFormat {
         memory_format: MemoryFormat,
     },
+    ContiguousPreserveFormatUnsupported,
+    ContiguousMemoryFormatRankMismatch {
+        memory_format: MemoryFormat,
+        expected_rank: usize,
+        actual_rank: usize,
+    },
 }
 
 impl Display for TensorError {
@@ -293,10 +299,11 @@ impl Display for TensorError {
                     "failed to allocate storage for {elements} elements"
                 )
             }
-            Self::UnsupportedMemoryFormat { memory_format } => write!(
-                formatter,
-                "clone with memory format torch.{memory_format} is not supported"
-            ),
+            error @ (Self::UnsupportedMemoryFormat { .. }
+            | Self::ContiguousPreserveFormatUnsupported
+            | Self::ContiguousMemoryFormatRankMismatch { .. }) => {
+                format_memory_format_error(formatter, error)
+            }
         }
     }
 }
@@ -328,6 +335,30 @@ fn format_squeeze_error(formatter: &mut Formatter<'_>, error: &TensorError) -> s
             formatter.write_str("only tensors with up to 64 dims are supported")
         }
         _ => unreachable!("only squeeze-specific errors are formatted here"),
+    }
+}
+
+fn format_memory_format_error(
+    formatter: &mut Formatter<'_>,
+    error: &TensorError,
+) -> std::fmt::Result {
+    match error {
+        TensorError::UnsupportedMemoryFormat { memory_format } => write!(
+            formatter,
+            "clone with memory format torch.{memory_format} is not supported"
+        ),
+        TensorError::ContiguousPreserveFormatUnsupported => {
+            formatter.write_str("preserve memory format is unsupported by the contiguous operator")
+        }
+        TensorError::ContiguousMemoryFormatRankMismatch {
+            memory_format,
+            expected_rank,
+            ..
+        } => write!(
+            formatter,
+            "required rank {expected_rank} tensor to use {memory_format} format"
+        ),
+        _ => unreachable!("only memory-format errors are formatted here"),
     }
 }
 
@@ -768,9 +799,9 @@ impl Tensor {
     ///
     /// [`MemoryFormat::Preserve`] retains dense strides and packs non-dense
     /// views in the same dimension order. [`MemoryFormat::Contiguous`]
-    /// recalculates canonical row-major
-    /// strides. Channel-last formats are not implemented by the current tensor
-    /// representation.
+    /// recalculates canonical row-major strides. Preserve clones retain an
+    /// existing dense channel-last layout, but explicitly selecting a
+    /// channel-last clone format is not yet supported.
     ///
     /// # Errors
     ///
@@ -797,6 +828,69 @@ impl Tensor {
                 return Err(TensorError::UnsupportedMemoryFormat { memory_format });
             }
         };
+        let data = self.materialize_with_strides(&strides, |value| value)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
+    }
+
+    /// Returns a tensor contiguous in the requested storage layout.
+    ///
+    /// An already-matching tensor returns a shared-storage metadata alias, so
+    /// callers which own an object wrapper can preserve object identity.
+    /// Otherwise this copies logical values into independent storage, resets
+    /// the storage offset to zero, and assigns canonical strides for the
+    /// requested format. This is the core packing primitive intended for
+    /// reuse by future reshape and flatten implementations.
+    ///
+    /// [`MemoryFormat::Preserve`] is accepted only by the row-contiguous
+    /// identity path, matching `PyTorch`'s contiguous operator. Channel-last
+    /// layouts require rank four or five, respectively.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an invalid format/rank combination, a nontrivial
+    /// preserve-format request, checked stride overflow, or allocation
+    /// failure.
+    pub fn try_contiguous(&self, memory_format: MemoryFormat) -> Result<Self, TensorError> {
+        let expected_rank = match memory_format {
+            MemoryFormat::ChannelsLast => Some(4),
+            MemoryFormat::ChannelsLast3d => Some(5),
+            MemoryFormat::Preserve | MemoryFormat::Contiguous => None,
+        };
+        if let Some(expected_rank) = expected_rank
+            && self.shape.len() != expected_rank
+        {
+            return Err(TensorError::ContiguousMemoryFormatRankMismatch {
+                memory_format,
+                expected_rank,
+                actual_rank: self.shape.len(),
+            });
+        }
+
+        if self.is_contiguous_with_memory_format(memory_format) {
+            return Ok(Self {
+                storage: Arc::clone(&self.storage),
+                shape: try_clone_result_shape(&self.shape, self.elements)?,
+                strides: try_clone_result_shape(&self.strides, self.elements)?,
+                offset: self.offset,
+                elements: self.elements,
+            });
+        }
+
+        let strides = match memory_format {
+            MemoryFormat::Preserve => {
+                return Err(TensorError::ContiguousPreserveFormatUnsupported);
+            }
+            MemoryFormat::Contiguous => contiguous_strides(&self.shape, self.elements)?,
+            MemoryFormat::ChannelsLast => channels_last_strides(&self.shape, self.elements)?,
+            MemoryFormat::ChannelsLast3d => channels_last_3d_strides(&self.shape, self.elements)?,
+        };
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
         let data = self.materialize_with_strides(&strides, |value| value)?;
         Ok(Self::from_owned_parts(
             data,
@@ -1709,6 +1803,7 @@ fn layout_is_contiguous_in_order(shape: &[usize], strides: &[usize], order: &[us
         return false;
     }
 
+    let is_empty = shape.contains(&0);
     let mut expected_stride = 1_usize;
     for &axis in order {
         let dimension = shape[axis];
@@ -1718,10 +1813,15 @@ fn layout_is_contiguous_in_order(shape: &[usize], strides: &[usize], order: &[us
         if strides[axis] != expected_stride {
             return false;
         }
-        let Some(next_stride) = expected_stride.checked_mul(dimension) else {
-            return false;
+        expected_stride = match expected_stride.checked_mul(dimension) {
+            Some(next_stride) => next_stride,
+            // PyTorch treats strides on empty tensors as arbitrary signed-64
+            // metadata. Its channel-order contiguity check lets an overflowing
+            // product wrap, allowing a later zero-sized axis to match zero.
+            // Materialization remains separately checked before allocating.
+            None if is_empty => expected_stride.wrapping_mul(dimension),
+            None => return false,
         };
-        expected_stride = next_stride;
     }
     true
 }
@@ -2024,13 +2124,35 @@ fn channels_last_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>,
     if shape.len() != 4 {
         return Err(TensorError::StrideCalculationOverflow);
     }
+    strides_in_physical_order(shape, elements, &[1, 3, 2, 0])
+}
+
+fn channels_last_3d_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, TensorError> {
+    if shape.len() != 5 {
+        return Err(TensorError::StrideCalculationOverflow);
+    }
+    strides_in_physical_order(shape, elements, &[1, 4, 3, 2, 0])
+}
+
+fn strides_in_physical_order(
+    shape: &[usize],
+    elements: usize,
+    order: &[usize],
+) -> Result<Vec<usize>, TensorError> {
+    // Tensor allocation validates the shape's canonical right-to-left stride
+    // products even when a zero dimension makes the allocation empty. Keep
+    // that checked boundary before calculating the requested physical order.
+    let _ = contiguous_strides(shape, elements)?;
     let mut strides = try_result_vector(shape.len(), elements)?;
     strides.resize(shape.len(), 0);
     let mut stride = 1_usize;
-    for (position, axis) in [1, 3, 2, 0].into_iter().enumerate() {
+    for (position, &axis) in order.iter().enumerate() {
         strides[axis] = stride;
-        if position < 3 {
-            stride = checked_stride_product(stride, shape[axis])?;
+        if position + 1 < order.len() {
+            // Unlike canonical row-major strides, PyTorch's channel-last
+            // restriding lets a zero-sized physical dimension zero every
+            // subsequent stride.
+            stride = checked_physical_stride_product(stride, shape[axis])?;
         }
     }
     Ok(strides)
@@ -2157,6 +2279,13 @@ fn signed_wrapping_stride_product(stride: usize, dimension: usize) -> Result<usi
 fn checked_stride_product(stride: usize, dimension: usize) -> Result<usize, TensorError> {
     stride
         .checked_mul(dimension.max(1))
+        .filter(|product| *product <= isize::MAX.unsigned_abs())
+        .ok_or(TensorError::StrideCalculationOverflow)
+}
+
+fn checked_physical_stride_product(stride: usize, dimension: usize) -> Result<usize, TensorError> {
+    stride
+        .checked_mul(dimension)
         .filter(|product| *product <= isize::MAX.unsigned_abs())
         .ok_or(TensorError::StrideCalculationOverflow)
 }
