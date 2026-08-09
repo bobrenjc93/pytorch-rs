@@ -22,6 +22,16 @@ def _unpack_size_dimension(dimension):
     return dimension
 
 
+def _is_numpy_integer(dimension):
+    if not type(dimension).__module__.startswith("numpy"):
+        return False
+    try:
+        import numpy
+    except ImportError:
+        return False
+    return isinstance(dimension, numpy.integer)
+
+
 class Size(tuple):
     __slots__ = ()
     __module__ = "torch_rs"
@@ -29,7 +39,9 @@ class Size(tuple):
     def __new__(cls, dimensions=()):
         converted = []
         for index, dimension in enumerate(dimensions):
-            if isinstance(dimension, int) and not isinstance(dimension, bool):
+            if (
+                isinstance(dimension, int) and not isinstance(dimension, bool)
+            ) or _is_numpy_integer(dimension):
                 converted.append(dimension)
                 continue
             try:

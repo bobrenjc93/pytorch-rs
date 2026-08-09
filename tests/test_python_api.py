@@ -566,6 +566,13 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(size.numel(), 2)
         self.assertIs(size[:][0], dimension)
 
+        for numpy_dimension in (np.int64(3), np.uint64(4)):
+            with self.subTest(numpy_type=type(numpy_dimension).__name__):
+                numpy_size = torch.Size((numpy_dimension,))
+                self.assertIs(numpy_size[0], numpy_dimension)
+                self.assertIs(numpy_size[:][0], numpy_dimension)
+                self.assertEqual(numpy_size.numel(), int(numpy_dimension))
+
         indexed = IndexValue(3)
         converted = torch.Size((True, indexed))
         self.assertEqual(converted, (1, 3))
