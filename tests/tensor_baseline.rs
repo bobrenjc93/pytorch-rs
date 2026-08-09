@@ -1010,6 +1010,160 @@ fn transpose_preserves_exact_empty_and_extreme_strides() {
 }
 
 #[test]
+fn squeeze_is_a_metadata_only_shared_storage_view() {
+    let source = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [1, 2, 1, 3, 1]).unwrap();
+
+    let squeezed = source.squeeze().unwrap();
+    assert_eq!(squeezed.shape(), [2, 3]);
+    assert_eq!(squeezed.stride(), [3, 1]);
+    assert_eq!(squeezed.storage_offset(), source.storage_offset());
+    assert_eq!(squeezed.dtype(), source.dtype());
+    assert_eq!(squeezed.device(), source.device());
+    assert_eq!(
+        squeezed.logical_values().collect::<Vec<_>>(),
+        source.as_slice()
+    );
+    assert!(squeezed.shares_storage_with(&source));
+    assert!(squeezed.is_contiguous());
+
+    let leading = source.squeeze_dim(0).unwrap();
+    assert_eq!(leading.shape(), [2, 1, 3, 1]);
+    assert_eq!(leading.stride(), [3, 3, 1, 1]);
+    assert!(leading.shares_storage_with(&source));
+
+    let selected = source.squeeze_dims([0, -1, 2]).unwrap();
+    assert_eq!(selected.shape(), [2, 3]);
+    assert_eq!(selected.stride(), [3, 1]);
+    assert!(selected.shares_storage_with(&source));
+
+    let unchanged = source.squeeze_dim(1).unwrap();
+    assert_eq!(unchanged.shape(), source.shape());
+    assert_eq!(unchanged.stride(), source.stride());
+    assert!(unchanged.shares_storage_with(&source));
+
+    let empty_selection = source.squeeze_dims([]).unwrap();
+    assert_eq!(empty_selection.shape(), source.shape());
+    assert_eq!(empty_selection.stride(), source.stride());
+    assert!(empty_selection.shares_storage_with(&source));
+}
+
+#[test]
+fn squeeze_preserves_non_contiguous_layouts_offsets_lifetimes_and_consumers() {
+    let view = {
+        let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 1, 3, 4]).unwrap();
+        source
+            .transpose(0, 3)
+            .unwrap()
+            .index_integer(1)
+            .unwrap()
+            .squeeze()
+            .unwrap()
+    };
+
+    assert_eq!(view.shape(), [3, 2]);
+    assert_eq!(view.stride(), [4, 12]);
+    assert_eq!(view.storage_offset(), 1);
+    assert!(!view.is_contiguous());
+    assert_eq!(
+        view.logical_values().collect::<Vec<_>>(),
+        [1.0, 13.0, 5.0, 17.0, 9.0, 21.0]
+    );
+
+    let transposed = view.transpose(0, 1).unwrap();
+    assert_eq!(transposed.shape(), [2, 3]);
+    assert_eq!(transposed.stride(), [12, 4]);
+    assert_eq!(
+        transposed.logical_values().collect::<Vec<_>>(),
+        [1.0, 5.0, 9.0, 13.0, 17.0, 21.0]
+    );
+
+    let clone = view.try_clone().unwrap();
+    assert_eq!(clone.shape(), view.shape());
+    assert_eq!(clone.storage_offset(), 0);
+    assert!(!clone.shares_storage_with(&view));
+    assert_eq!(
+        view.add_scalar(1.0)
+            .unwrap()
+            .logical_values()
+            .collect::<Vec<_>>(),
+        [2.0, 14.0, 6.0, 18.0, 10.0, 22.0]
+    );
+    assert_eq!(view.sum().item().unwrap().to_bits(), 66.0_f32.to_bits());
+    assert_eq!(
+        view.reshape([6]).unwrap().as_slice(),
+        [1.0, 13.0, 5.0, 17.0, 9.0, 21.0]
+    );
+}
+
+#[test]
+fn squeeze_handles_scalars_empty_tensors_dimensions_and_high_ranks() {
+    let scalar = Tensor::from_vec(vec![3.5], []).unwrap();
+    for squeezed in [
+        scalar.squeeze().unwrap(),
+        scalar.squeeze_dim(0).unwrap(),
+        scalar.squeeze_dim(-1).unwrap(),
+        scalar.squeeze_dims([0]).unwrap(),
+        scalar.squeeze_dims([]).unwrap(),
+    ] {
+        assert!(squeezed.shape().is_empty());
+        assert!(squeezed.stride().is_empty());
+        assert_eq!(squeezed.item().unwrap().to_bits(), 3.5_f32.to_bits());
+        assert!(squeezed.shares_storage_with(&scalar));
+    }
+
+    let empty = Tensor::zeros([1, 0, 1, 2]).unwrap();
+    let squeezed = empty.squeeze().unwrap();
+    assert_eq!(squeezed.shape(), [0, 2]);
+    assert_eq!(squeezed.stride(), [2, 1]);
+    assert_eq!(squeezed.numel(), 0);
+    assert!(squeezed.shares_storage_with(&empty));
+    assert!(squeezed.logical_values().next().is_none());
+
+    let high_rank = Tensor::zeros(vec![1; 65]).unwrap();
+    assert!(high_rank.squeeze().unwrap().shape().is_empty());
+    assert_eq!(high_rank.squeeze_dim(0).unwrap().shape().len(), 64);
+    assert_eq!(
+        high_rank.squeeze_dims([]),
+        Err(TensorError::SqueezeDimensionsRankLimit)
+    );
+}
+
+#[test]
+fn squeeze_reports_pytorch_compatible_dimension_errors() {
+    let tensor = Tensor::zeros([1, 2, 1]).unwrap();
+    assert_eq!(
+        tensor.squeeze_dims([0, -3]),
+        Err(TensorError::DuplicateDimension { dimension: 0 })
+    );
+    assert_eq!(
+        tensor.squeeze_dim(3),
+        Err(TensorError::DimensionOutOfRange {
+            dimension: 3,
+            rank: 3,
+        })
+    );
+    assert_eq!(
+        tensor.squeeze_dims([0, 3]),
+        Err(TensorError::DimensionOutOfRange {
+            dimension: 3,
+            rank: 3,
+        })
+    );
+    assert_eq!(
+        tensor.squeeze_dims([0, -3]).unwrap_err().to_string(),
+        "dim 0 appears multiple times in the list of dims"
+    );
+
+    let scalar = Tensor::from_vec(vec![1.0], []).unwrap();
+    for dimension in [-2, 1] {
+        assert_eq!(
+            scalar.squeeze_dim(dimension),
+            Err(TensorError::DimensionOutOfRange { dimension, rank: 0 })
+        );
+    }
+}
+
+#[test]
 fn contiguous_strides_cover_scalars_zero_dimensions_and_singletons() {
     assert!(Tensor::from_vec(vec![1.0], []).unwrap().stride().is_empty());
     assert_eq!(Tensor::zeros([2, 3, 4]).unwrap().stride(), [12, 4, 1]);

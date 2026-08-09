@@ -167,6 +167,10 @@ pub enum TensorError {
         dimension: i64,
         rank: usize,
     },
+    DuplicateDimension {
+        dimension: usize,
+    },
+    SqueezeDimensionsRankLimit,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -253,6 +257,9 @@ impl Display for TensorError {
             Self::DimensionOutOfRange { dimension, rank } => {
                 format_dimension_out_of_range(formatter, *dimension, *rank)
             }
+            error @ (Self::DuplicateDimension { .. } | Self::SqueezeDimensionsRankLimit) => {
+                format_squeeze_error(formatter, error)
+            }
             Self::ReshapeMultipleInferredDimensions => {
                 write!(formatter, "only one dimension can be inferred")
             }
@@ -273,11 +280,9 @@ impl Display for TensorError {
                 "shape '{shape:?}' is invalid for input of size {elements}"
             ),
             Self::ElementCountOverflow => {
-                write!(formatter, "tensor element count overflowed usize")
+                formatter.write_str("tensor element count overflowed usize")
             }
-            Self::StrideCalculationOverflow => {
-                write!(formatter, "Stride calculation overflowed")
-            }
+            Self::StrideCalculationOverflow => formatter.write_str("Stride calculation overflowed"),
             Self::StorageCapacityOverflow { elements } => write!(
                 formatter,
                 "storage for a tensor with {elements} elements exceeds the platform capacity"
@@ -309,6 +314,21 @@ fn format_dimension_out_of_range(
         "Dimension out of range (expected to be in range of [-{rank}, {}], but got {dimension})",
         rank - 1
     )
+}
+
+fn format_squeeze_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::DuplicateDimension { dimension } => {
+            write!(
+                formatter,
+                "dim {dimension} appears multiple times in the list of dims"
+            )
+        }
+        TensorError::SqueezeDimensionsRankLimit => {
+            formatter.write_str("only tensors with up to 64 dims are supported")
+        }
+        _ => unreachable!("only squeeze-specific errors are formatted here"),
+    }
 }
 
 // Preserve the original value-oriented debug representation; storage identity
@@ -651,6 +671,82 @@ impl Tensor {
             strides,
             offset: self.offset,
             elements,
+        })
+    }
+
+    /// Removes every singleton dimension without copying storage.
+    ///
+    /// Shape and stride entries for dimensions of size one are dropped while
+    /// the storage offset, dtype, device, and underlying allocation are
+    /// retained. Scalars therefore produce another scalar alias.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when view metadata allocation fails.
+    pub fn squeeze(&self) -> Result<Self, TensorError> {
+        self.squeeze_selected(|_, dimension| dimension == 1)
+    }
+
+    /// Removes one singleton dimension without copying storage.
+    ///
+    /// A valid dimension whose size is not one returns an alias with unchanged
+    /// metadata. Negative dimensions wrap from the end, and scalars accept
+    /// dimensions `0` and `-1`, matching `PyTorch`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an out-of-range dimension or when view metadata
+    /// allocation fails.
+    pub fn squeeze_dim(&self, dimension: i64) -> Result<Self, TensorError> {
+        let axis = normalize_transpose_dimension(dimension, self.shape.len())?;
+        self.squeeze_selected(|candidate, size| candidate == axis && size == 1)
+    }
+
+    /// Removes the selected singleton dimensions without copying storage.
+    ///
+    /// Dimensions are normalized against the original rank before any are
+    /// removed. An empty list is a metadata-preserving alias. This models
+    /// `PyTorch`'s tuple/list overload, including its public 64-dimension
+    /// implementation limit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for ranks above 64, duplicate or out-of-range
+    /// dimensions, or when view metadata allocation fails.
+    pub fn squeeze_dims(&self, dimensions: impl AsRef<[i64]>) -> Result<Self, TensorError> {
+        if self.shape.len() > 64 {
+            return Err(TensorError::SqueezeDimensionsRankLimit);
+        }
+
+        let mut selected = 0_u64;
+        for dimension in dimensions.as_ref() {
+            let axis = normalize_transpose_dimension(*dimension, self.shape.len())?;
+            let mask = 1_u64 << axis;
+            if selected & mask != 0 {
+                return Err(TensorError::DuplicateDimension { dimension: axis });
+            }
+            selected |= mask;
+        }
+
+        self.squeeze_selected(|axis, size| selected & (1_u64 << axis) != 0 && size == 1)
+    }
+
+    fn squeeze_selected(&self, remove: impl Fn(usize, usize) -> bool) -> Result<Self, TensorError> {
+        let mut shape = try_result_vector(self.shape.len(), self.elements)?;
+        let mut strides = try_result_vector(self.strides.len(), self.elements)?;
+        for (axis, (&dimension, &stride)) in self.shape.iter().zip(self.strides.iter()).enumerate()
+        {
+            if !remove(axis, dimension) {
+                shape.push(dimension);
+                strides.push(stride);
+            }
+        }
+        Ok(Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset: self.offset,
+            elements: self.elements,
         })
     }
 
