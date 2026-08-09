@@ -758,6 +758,11 @@ class PythonApiBaselineTests(unittest.TestCase):
             self.assertEqual(repeated.shape, tensor.shape)
             self.assertEqual(repeated.stride(), tensor.stride())
             self.assertEqual(repeated.storage_offset(), tensor.storage_offset())
+        repeated_with_trailing_slice = tensor[..., ..., :]
+        self.assertEqual(repeated_with_trailing_slice.shape, tensor.shape)
+        self.assertEqual(repeated_with_trailing_slice.stride(), tensor.stride())
+        self.assertEqual(repeated_with_trailing_slice.storage_offset(), 0)
+        self.assertEqual(tensor[..., ..., 1].tolist(), [0.0, 0.0])
 
         three_dimensional = torch.zeros((2, 3, 4))
         self.assertEqual(three_dimensional[..., 1, ...].shape, (2, 3))
@@ -779,6 +784,12 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(index=repr(index)):
                 with self.assertRaises(IndexError):
                     tensor[index]
+        with self.assertRaisesRegex(
+            IndexError, "index 2 is out of bounds for dimension 0 with size 2"
+        ):
+            tensor[2, None]
+        with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+            tensor[1 << 100, None]
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             torch.zeros((0, sys.maxsize))[::2]
 
@@ -1243,6 +1254,15 @@ class PythonApiBaselineTests(unittest.TestCase):
             expected,
             (1,),
         )
+
+        singleton_view = torch.tensor([[1.0], [2.0], [4.0]])[:, ::2]
+        reflected = 8 / singleton_view
+        self.assertEqual(reflected.stride(), (1, 1))
+        self.assertEqual(reflected.tolist(), [[8.0], [4.0], [2.0]])
+
+        empty_view = torch.zeros((0, 1))[:, ::2]
+        self.assertEqual(empty_view.stride(), (1, 2))
+        self.assertEqual((8 / empty_view).stride(), (1, 1))
 
     def test_scalar_arithmetic_rejects_non_real_and_out_of_range_values(self):
         tensor = torch.ones((2,))

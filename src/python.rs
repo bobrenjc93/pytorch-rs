@@ -672,9 +672,6 @@ fn parse_basic_indices(
         .iter()
         .filter(|item| item.is_instance_of::<PyEllipsis>())
         .count();
-    if let Some(item) = objects.iter().find(|item| item.is_none()) {
-        return Err(unsupported_basic_index(item, "None/newaxis"));
-    }
 
     if !is_tuple
         && tensor.shape().is_empty()
@@ -686,7 +683,10 @@ fn parse_basic_indices(
         ));
     }
 
-    let consuming = objects.len().saturating_sub(ellipses);
+    let consuming = objects
+        .iter()
+        .filter(|item| !item.is_instance_of::<PyEllipsis>() && !item.is_none())
+        .count();
     if consuming > tensor.shape().len() {
         return Err(too_many_indices(tensor.shape().len()));
     }
@@ -699,9 +699,16 @@ fn parse_basic_indices(
     let mut parsed = try_size_vector(tensor.shape().len())?;
     let mut offset = tensor.storage_offset();
     let mut dimension = 0;
+    let mut expanded_ellipsis = false;
     for (real_dimension, object) in objects.iter().enumerate() {
         if object.is_instance_of::<PyEllipsis>() {
-            for _ in 0..ellipsis_dimensions {
+            let expansion = if expanded_ellipsis {
+                0
+            } else {
+                expanded_ellipsis = true;
+                ellipsis_dimensions
+            };
+            for _ in 0..expansion {
                 if dimension < tensor.shape().len() {
                     let slice = CoreSlice::full();
                     offset = tensor
@@ -715,6 +722,9 @@ fn parse_basic_indices(
                 })?;
             }
             continue;
+        }
+        if object.is_none() {
+            return Err(unsupported_basic_index(object, "None/newaxis"));
         }
         if let Ok(slice) = object.cast::<PySlice>() {
             let size = tensor

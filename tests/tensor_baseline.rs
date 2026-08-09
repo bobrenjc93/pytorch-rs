@@ -408,6 +408,27 @@ fn reflected_scalar_division_uses_float32_reciprocal_multiplication() {
     let subnormal = Tensor::from_vec(vec![1.0e-39_f32], [1]).unwrap();
     assert!(subnormal.scalar_div(1.0e-38).unwrap().as_slice()[0].is_infinite());
     assert!(subnormal.scalar_div(0.0).unwrap().as_slice()[0].is_nan());
+
+    let singleton_view = Tensor::from_vec(vec![1.0, 2.0, 4.0], [3, 1])
+        .unwrap()
+        .slice([
+            TensorIndex::Slice(Slice::full()),
+            TensorIndex::Slice(Slice::new(None, None, Some(2))),
+        ])
+        .unwrap();
+    let reflected = singleton_view.scalar_div(8.0).unwrap();
+    assert_eq!(reflected.stride(), [1, 1]);
+    assert_eq!(reflected.as_slice(), [8.0, 4.0, 2.0]);
+
+    let empty_view = Tensor::zeros([0, 1])
+        .unwrap()
+        .slice([
+            TensorIndex::Slice(Slice::full()),
+            TensorIndex::Slice(Slice::new(None, None, Some(2))),
+        ])
+        .unwrap();
+    assert_eq!(empty_view.stride(), [1, 2]);
+    assert_eq!(empty_view.scalar_div(8.0).unwrap().stride(), [1, 1]);
 }
 
 #[test]

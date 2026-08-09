@@ -1065,7 +1065,7 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| scalar * value.recip())
+        self.unary_map(|value| scalar * value.recip())
     }
 
     /// Applies rectified linear activation element by element.
