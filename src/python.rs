@@ -223,6 +223,14 @@ impl PyTensor {
         self.inner.item().map_err(|error| tensor_error(&error))
     }
 
+    #[pyo3(signature = ())]
+    fn clone(&self) -> PyResult<Self> {
+        self.inner
+            .try_clone()
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn relu(&self) -> PyResult<Self> {
         self.inner
             .relu()
@@ -413,6 +421,15 @@ fn tensor(
     let mut flattened = Vec::new();
     let shape = flatten_rectangular(data, &mut flattened)?;
     CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| tensor_error(&error))
+}
+
+#[pyfunction(signature = (input))]
+fn clone(input: &PyTensor) -> PyResult<PyTensor> {
+    input
+        .inner
+        .try_clone()
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
@@ -1214,6 +1231,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDType>()?;
     module.add_class::<PyDevice>()?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
+    module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;

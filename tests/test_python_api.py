@@ -484,6 +484,89 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(row.tolist()[0][0], 12.0)
         self.assertEqual((row + 1).tolist()[0][0], 13.0)
 
+    def test_clone_matches_values_metadata_and_canonical_layouts(self):
+        source = torch.tensor(
+            [
+                [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]],
+                [[6.0, 7.0, 8.0], [9.0, 10.0, 11.0]],
+            ],
+            dtype=torch.float32,
+            device="cpu",
+        )
+        chained_view = source[1].reshape(3, 2)[1].reshape(1, 2)
+        cases = (
+            (source, source.tolist(), (2, 2, 3), (6, 3, 1)),
+            (source[1], source.tolist()[1], (2, 3), (3, 1)),
+            (chained_view, [[8.0, 9.0]], (1, 2), (2, 1)),
+            (torch.tensor(-0.0), -0.0, (), ()),
+            (torch.zeros((2, 0, 3)), [[], []], (2, 0, 3), (3, 3, 1)),
+            (torch.zeros((0, 1)) + 1, [], (0, 1), (1, 0)),
+        )
+
+        for original, expected, shape, stride in cases:
+            for operation in (lambda value: value.clone(), torch.clone):
+                with self.subTest(shape=shape, operation=operation):
+                    copied = operation(original)
+                    self.assert_tensor_values(copied, expected, shape)
+                    self.assertEqual(copied.stride(), stride)
+                    self.assertEqual(copied.storage_offset(), 0)
+                    self.assertIs(copied.dtype, original.dtype)
+                    self.assertEqual(copied.device, original.device)
+
+        self.assert_tensor_values(
+            torch.clone(input=chained_view), [[8.0, 9.0]], (1, 2)
+        )
+
+    def test_clone_preserves_nan_infinity_and_signed_zero_bits(self):
+        expected_bits = np.array(
+            [0x7FC12345, 0x7F800000, 0xFF800000, 0x00000000, 0x80000000],
+            dtype=np.uint32,
+        )
+        source = torch.tensor(expected_bits.view(np.float32).tolist())
+
+        for copied in (source.clone(), torch.clone(source)):
+            with self.subTest(operation=copied):
+                actual_bits = np.asarray(copied).view(np.uint32)
+                np.testing.assert_array_equal(actual_bits, expected_bits)
+
+    def test_clone_resets_extreme_empty_view_offsets(self):
+        maximum = sys.maxsize
+        base = torch.zeros((maximum, 0))
+        view = base[maximum - 1].reshape((2, 0, 3))
+        self.assertEqual(view.storage_offset(), maximum - 1)
+
+        for copied in (view.clone(), torch.clone(view)):
+            with self.subTest(operation=copied):
+                self.assertEqual(copied.shape, (2, 0, 3))
+                self.assertEqual(copied.stride(), (3, 3, 1))
+                self.assertEqual(copied.storage_offset(), 0)
+                self.assertEqual(copied.tolist(), [[], []])
+
+        extreme_shape = torch.zeros((0,)).reshape((0, maximum, 3))
+        for copied in (extreme_shape.clone(), torch.clone(extreme_shape)):
+            with self.subTest(extreme_shape=copied):
+                self.assertEqual(copied.shape, extreme_shape.shape)
+                self.assertEqual(copied.stride(), extreme_shape.stride())
+                self.assertEqual(copied.storage_offset(), 0)
+
+    def test_clone_rejects_memory_format_and_extra_arguments_as_type_errors(self):
+        tensor = torch.tensor([1.0])
+        invalid_calls = (
+            lambda: tensor.clone(None),
+            lambda: tensor.clone(memory_format=None),
+            lambda: tensor.clone(object(), object()),
+            lambda: tensor.clone(unexpected=None),
+            lambda: torch.clone(),
+            lambda: torch.clone([1.0]),
+            lambda: torch.clone(tensor, None),
+            lambda: torch.clone(tensor, memory_format=None),
+            lambda: torch.clone(tensor, unexpected=None),
+        )
+        for call in invalid_calls:
+            with self.subTest(call=call):
+                with self.assertRaises(TypeError):
+                    call()
+
     def test_integer_indexing_accepts_index_protocol_values(self):
         class IntSubclass(int):
             pass

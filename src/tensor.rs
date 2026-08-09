@@ -46,13 +46,19 @@ struct Storage {
 /// This deliberately narrow representation is the campaign's baseline, not a
 /// claim of `PyTorch` feature parity. Later iterations may generalize storage as
 /// long as these observable semantics remain compatible.
-#[derive(Clone)]
 pub struct Tensor {
     storage: Arc<Storage>,
     shape: Vec<usize>,
     strides: Vec<usize>,
     offset: usize,
     elements: usize,
+}
+
+impl Clone for Tensor {
+    fn clone(&self) -> Self {
+        self.try_clone()
+            .expect("cloning validated tensor storage should succeed")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -440,6 +446,29 @@ impl Tensor {
     #[must_use]
     pub fn numel(&self) -> usize {
         self.elements
+    }
+
+    /// Creates an independent copy of this tensor's logical values.
+    ///
+    /// The returned tensor preserves this supported contiguous view's strides
+    /// and has a storage offset of zero. Only the logical range of a view is
+    /// copied; unused values in the view's backing allocation are not retained.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn try_clone(&self) -> Result<Self, TensorError> {
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = try_clone_result_shape(&self.strides, elements)?;
+        let data = copied_storage(self.as_slice(), elements)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     #[must_use]
@@ -1360,6 +1389,14 @@ fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorEr
     data.try_reserve_exact(elements)
         .map_err(|_| TensorError::AllocationFailed { elements })?;
     data.resize(elements, fill_value);
+    Ok(data)
+}
+
+fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorError> {
+    validate_storage_capacity(elements)?;
+
+    let mut data = try_result_vector(elements, elements)?;
+    data.extend_from_slice(values);
     Ok(data)
 }
 
