@@ -171,6 +171,21 @@ class PermuteTests(unittest.TestCase):
                 TypeError,
                 "permute() got an unexpected keyword argument 'nope'",
             ),
+            (
+                lambda: tensor.permute(dims=0, nope=1),
+                TypeError,
+                "permute(): argument 'dims' must be tuple of ints, not int",
+            ),
+            (
+                lambda: tensor.permute([True, 0, 2], dims=0),
+                TypeError,
+                "permute(): argument 'dims' (position 1) must be tuple of ints, but found element of type bool at pos 0",
+            ),
+            (
+                lambda: tensor.permute(np.array([0, 1, 2])),
+                TypeError,
+                "permute(): argument 'dims' (position 1) must be tuple of ints, not numpy.ndarray",
+            ),
         )
         for call, error_type, message in cases:
             with self.subTest(message=message):
@@ -203,6 +218,10 @@ class PermuteTests(unittest.TestCase):
         self.assertEqual(index_calls, 0)
         self.assertEqual(tensor.permute(0, probe, 2).shape, tensor.shape)
         self.assertEqual(index_calls, 1)
+
+        vector = torch.zeros((2,))
+        self.assertEqual(vector.permute(np.array(0)).shape, vector.shape)
+        self.assertEqual(vector.permute(np.array(0)).stride(), vector.stride())
 
     def test_integer_protocol_and_argument_type_behavior(self):
         class IntSubclass(int):

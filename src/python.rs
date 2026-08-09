@@ -1006,6 +1006,7 @@ fn parse_permute_arguments(
                 "permute() missing 1 required positional arguments: \"dims\"",
             ));
         };
+        validate_permute_sequence_argument(&dimensions, None)?;
         if let Some(error) = keyword_error {
             return Err(error);
         }
@@ -1015,7 +1016,9 @@ fn parse_permute_arguments(
     let first = positional.get_item(0)?;
     let sequence_form = positional.len() == 1
         && (first.cast::<PyTuple>().is_ok() || first.cast::<PyList>().is_ok());
-    if !sequence_form && !is_permute_variadic_leading_dimension(&first)? {
+    if sequence_form {
+        validate_permute_sequence_argument(&first, Some(1))?;
+    } else if !is_permute_variadic_leading_dimension(&first)? {
         if positional.len() == 1 {
             return Err(permute_argument_type_error(&first, Some(1))?);
         }
@@ -1039,6 +1042,34 @@ fn parse_permute_arguments(
     } else {
         parse_permute_dimensions(positional.len(), positional.iter(), None)
     }
+}
+
+fn validate_permute_sequence_argument(
+    dimensions: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<()> {
+    let (sequence_type, first) = if let Ok(dimensions) = dimensions.cast::<PyTuple>() {
+        if dimensions.is_empty() {
+            return Ok(());
+        }
+        ("tuple", dimensions.get_item(0)?)
+    } else if let Ok(dimensions) = dimensions.cast::<PyList>() {
+        if dimensions.is_empty() {
+            return Ok(());
+        }
+        ("list", dimensions.get_item(0)?)
+    } else {
+        return Err(permute_argument_type_error(dimensions, position)?);
+    };
+
+    if !is_permute_sequence_leading_dimension(&first)? {
+        return Err(permute_leading_sequence_type_error(
+            &first,
+            sequence_type,
+            position.is_some(),
+        )?);
+    }
+    Ok(())
 }
 
 fn parse_permute_sequence(
@@ -1073,16 +1104,11 @@ fn parse_permute_dimensions<'py>(
             && index == 0
             && dimension.is_instance_of::<PyBool>()
         {
-            let type_name = transpose_type_name(&dimension)?;
-            return if positional {
-                Err(PyTypeError::new_err(format!(
-                    "permute(): argument 'dims' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
-                )))
-            } else {
-                Err(PyTypeError::new_err(format!(
-                    "permute(): argument 'dims' must be tuple of ints, not {sequence_type}"
-                )))
-            };
+            return Err(permute_leading_sequence_type_error(
+                &dimension,
+                sequence_type,
+                positional,
+            )?);
         }
         match parse_permute_dimension(&dimension) {
             Ok(dimension) => parsed.push(dimension),
@@ -1092,14 +1118,11 @@ fn parse_permute_dimensions<'py>(
                     && index == 0
                     && !error.is_instance_of::<PyOverflowError>(dimension.py())
                 {
-                    if positional {
-                        return Err(PyTypeError::new_err(format!(
-                            "permute(): argument 'dims' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
-                        )));
-                    }
-                    return Err(PyTypeError::new_err(format!(
-                        "permute(): argument 'dims' must be tuple of ints, not {sequence_type}"
-                    )));
+                    return Err(permute_leading_sequence_type_error(
+                        &dimension,
+                        sequence_type,
+                        positional,
+                    )?);
                 }
                 let reason = if error.is_instance_of::<PyOverflowError>(dimension.py()) {
                     "Overflow when unpacking long long".to_owned()
@@ -1117,10 +1140,31 @@ fn parse_permute_dimensions<'py>(
 }
 
 fn is_permute_variadic_leading_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
+    // PyTorch's overload parser probes a standalone leading object twice while
+    // distinguishing its single-argument and variadic candidates. These
+    // probes are observable through user-defined `__index__` methods.
+    permute_dimension_matches_integer_protocol(dimension, 2)
+}
+
+fn is_permute_sequence_leading_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
+    // A leading element already contained in tuple/list `dims` is probed once.
+    permute_dimension_matches_integer_protocol(dimension, 1)
+}
+
+fn permute_dimension_matches_integer_protocol(
+    dimension: &Bound<'_, PyAny>,
+    attempts: usize,
+) -> PyResult<bool> {
     if dimension.is_instance_of::<PyBool>() {
         return Ok(false);
     }
-    dimension.get_type().hasattr("__index__")
+    let index = PyModule::import(dimension.py(), "operator")?.getattr("index")?;
+    for _ in 0..attempts {
+        if index.call1((dimension,)).is_err() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn parse_permute_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
@@ -1141,6 +1185,23 @@ fn permute_argument_type_error(
     Ok(PyTypeError::new_err(format!(
         "permute(): argument 'dims'{position} must be tuple of ints, not {actual}"
     )))
+}
+
+fn permute_leading_sequence_type_error(
+    dimension: &Bound<'_, PyAny>,
+    sequence_type: &str,
+    positional: bool,
+) -> PyResult<PyErr> {
+    let type_name = transpose_type_name(dimension)?;
+    if positional {
+        Ok(PyTypeError::new_err(format!(
+            "permute(): argument 'dims' (position 1) must be tuple of ints, but found element of type {type_name} at pos 0"
+        )))
+    } else {
+        Ok(PyTypeError::new_err(format!(
+            "permute(): argument 'dims' must be tuple of ints, not {sequence_type}"
+        )))
+    }
 }
 
 fn parse_integer_indices<'py>(

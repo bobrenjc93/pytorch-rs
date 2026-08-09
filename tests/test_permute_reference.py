@@ -261,6 +261,18 @@ class PermuteReferenceTests(unittest.TestCase):
                 lambda: actual.permute((0, 1.0, 2), nope=1),
                 lambda: expected.permute((0, 1.0, 2), nope=1),
             ),
+            (
+                lambda: actual.permute(dims=0, nope=1),
+                lambda: expected.permute(dims=0, nope=1),
+            ),
+            (
+                lambda: actual.permute([True, 0, 2], dims=0),
+                lambda: expected.permute([True, 0, 2], dims=0),
+            ),
+            (
+                lambda: actual.permute(np.array([0, 1, 2])),
+                lambda: expected.permute(np.array([0, 1, 2])),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(error_cases):
             with self.subTest(error_case=case):
@@ -319,6 +331,12 @@ class PermuteReferenceTests(unittest.TestCase):
         )
         self.assertEqual(actual_index_calls, expected_index_calls)
         self.assertEqual(actual_index_calls, 0)
+        self.assert_error_matches(
+            lambda: actual.permute(actual_probe, 0, 2, dims=(0, 1, 2)),
+            lambda: expected.permute(expected_probe, 0, 2, dims=(0, 1, 2)),
+        )
+        self.assertEqual(actual_index_calls, expected_index_calls)
+        self.assertEqual(actual_index_calls, 2)
 
     def test_integer_protocol_dimension_forms_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
@@ -344,6 +362,15 @@ class PermuteReferenceTests(unittest.TestCase):
                 case=case,
                 operation="integer_protocol",
             )
+
+        actual_vector = torch.zeros((2,))
+        expected_vector = reference_torch.zeros((2,))
+        self.assert_matches(
+            actual_vector.permute(np.array(0)),
+            expected_vector.permute(np.array(0)),
+            case="zero_dimensional_numpy_array",
+            operation="integer_protocol",
+        )
 
 
 if __name__ == "__main__":
