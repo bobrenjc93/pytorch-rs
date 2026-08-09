@@ -1,0 +1,117 @@
+import array
+import ctypes
+import gc
+import struct
+import unittest
+
+import numpy as np
+import torch_rs as torch
+
+
+class TensorBufferTests(unittest.TestCase):
+    def assert_tensor(self, source, expected):
+        tensor = torch.tensor(source, dtype=torch.float32, device=torch.device("cpu"))
+        self.assertEqual(tensor.shape, (len(expected),))
+        self.assertEqual(tensor.stride(), (1,))
+        self.assertIs(tensor.dtype, torch.float32)
+        self.assertEqual(tensor.device, torch.device("cpu"))
+        np.testing.assert_array_equal(
+            np.asarray(tensor),
+            np.asarray(expected, dtype=np.float32),
+        )
+        return tensor
+
+    def test_numeric_array_and_memoryview_formats_copy_as_float32(self):
+        cases = (
+            ("b", [-128, 0, 127]),
+            ("B", [0, 128, 255]),
+            ("h", [-32768, 0, 32767]),
+            ("H", [0, 32768, 65535]),
+            ("i", [-1234567, 0, 1234567]),
+            ("I", [0, 1234567, 4_000_000_000]),
+            ("l", [-1234567, 0, 1234567]),
+            ("L", [0, 1234567, 4_000_000_000]),
+            ("q", [-(2**40), 0, 2**40]),
+            ("Q", [0, 2**40, 2**63]),
+            ("f", [-2.5, -0.0, 3.25]),
+            ("d", [-2.5, -0.0, 3.25]),
+        )
+        for format_code, values in cases:
+            exporter = array.array(format_code, values)
+            with self.subTest(format=format_code, input="array"):
+                self.assert_tensor(exporter, values)
+            with self.subTest(format=format_code, input="memoryview"):
+                self.assert_tensor(memoryview(exporter), values)
+
+        for format_code, raw, expected in (
+            ("?", b"\x00\x01\xff", [0.0, 1.0, 1.0]),
+            ("n", bytes(2 * ctypes.sizeof(ctypes.c_ssize_t)), [0.0, 0.0]),
+            ("N", bytes(2 * ctypes.sizeof(ctypes.c_size_t)), [0.0, 0.0]),
+            ("e", struct.pack("@ee", 1.0, -2.0), [1.0, -2.0]),
+        ):
+            with self.subTest(format=format_code, input="cast memoryview"):
+                self.assert_tensor(memoryview(raw).cast(format_code), expected)
+
+    def test_bytes_bytearray_strides_and_reversed_views(self):
+        self.assert_tensor(bytes((0, 1, 127, 128, 255)), [0, 1, 127, 128, 255])
+        self.assert_tensor(bytearray((0, 1, 127, 128, 255)), [0, 1, 127, 128, 255])
+
+        exporter = array.array("i", [-8, -4, 0, 4, 8, 12])
+        self.assert_tensor(memoryview(exporter)[1::2], [-4, 4, 12])
+        self.assert_tensor(memoryview(exporter)[::-2], [12, 4, -4])
+
+    def test_empty_buffers_and_explicit_metadata(self):
+        for source in (
+            b"",
+            bytearray(),
+            array.array("q"),
+            memoryview(array.array("d")),
+            memoryview(np.asarray([], dtype="U1")),
+        ):
+            with self.subTest(format=memoryview(source).format):
+                self.assert_tensor(source, [])
+
+    def test_tensor_owns_copy_after_exporter_mutation_and_collection(self):
+        exporter = bytearray((1, 2, 3, 4))
+        view = memoryview(exporter)[::-1]
+        tensor = self.assert_tensor(view, [4, 3, 2, 1])
+
+        view.release()
+        exporter[:] = b"\x09\x09\x09\x09"
+        del view
+        del exporter
+        gc.collect()
+
+        self.assertEqual(tensor.tolist(), [4.0, 3.0, 2.0, 1.0])
+
+    def test_multidimensional_zero_dimensional_and_unsupported_buffers_fail(self):
+        multidimensional = memoryview(bytearray(range(6))).cast("B", (2, 3))
+        with self.assertRaisesRegex(
+            ValueError,
+            "could not determine the shape of object type 'memoryview'",
+        ):
+            torch.tensor(multidimensional)
+
+        scalar = memoryview(array.array("i", [3])).cast("B").cast("i", ())
+        with self.assertRaisesRegex(TypeError, "0-dim memory has no length"):
+            torch.tensor(scalar)
+
+        nonnative = memoryview((ctypes.c_int * 2)(1, 2))
+        with self.assertRaisesRegex(
+            ValueError,
+            "could not determine the shape of object type 'memoryview'",
+        ):
+            torch.tensor(nonnative)
+
+        characters = memoryview(b"ab").cast("c")
+        with self.assertRaisesRegex(TypeError, "invalid data type 'bytes'"):
+            torch.tensor(characters)
+
+        released = memoryview(bytearray((1, 2)))
+        released.release()
+        with self.assertRaisesRegex(ValueError, "released memoryview"):
+            torch.tensor(released)
+
+
+if __name__ == "__main__":
+    unittest.main()
