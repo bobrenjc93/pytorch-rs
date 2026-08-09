@@ -1426,6 +1426,245 @@ fn clone_handles_scalars_and_extreme_empty_view_offsets() {
 }
 
 #[test]
+fn contiguous_reuses_matching_storage_and_materializes_arbitrary_views() {
+    let source = Tensor::from_vec(
+        vec![
+            0.0,
+            -0.0,
+            f32::from_bits(0x7fc1_2345),
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            5.0,
+            6.0,
+            7.0,
+            8.0,
+            9.0,
+            10.0,
+            11.0,
+        ],
+        [2, 2, 3],
+    )
+    .unwrap();
+    let offset_contiguous = source.index_integer(1).unwrap();
+    for memory_format in [MemoryFormat::Contiguous, MemoryFormat::Preserve] {
+        let unchanged = offset_contiguous.try_contiguous(memory_format).unwrap();
+        assert!(unchanged.shares_storage_with(&offset_contiguous));
+        assert_eq!(unchanged.stride(), offset_contiguous.stride());
+        assert_eq!(
+            unchanged.storage_offset(),
+            offset_contiguous.storage_offset()
+        );
+    }
+
+    let view = source.transpose(0, 2).unwrap().squeeze().unwrap();
+    let expected_bits = view.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+    let packed = view.try_contiguous(MemoryFormat::Contiguous).unwrap();
+    assert_eq!(packed.shape(), view.shape());
+    assert_eq!(packed.stride(), [4, 2, 1]);
+    assert_eq!(packed.storage_offset(), 0);
+    assert!(packed.is_contiguous());
+    assert!(!packed.shares_storage_with(&view));
+    assert_eq!(
+        packed
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        expected_bits
+    );
+
+    let repeated = packed.try_contiguous(MemoryFormat::Contiguous).unwrap();
+    assert!(repeated.shares_storage_with(&packed));
+    assert_eq!(repeated.storage_offset(), 0);
+    assert_eq!(
+        repeated
+            .reshape([4, 3])
+            .unwrap()
+            .as_slice()
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        packed
+            .as_slice()
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>()
+    );
+
+    let surviving_copy = {
+        let temporary = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+        let offset_view = temporary
+            .transpose(0, 2)
+            .unwrap()
+            .index_integer(1)
+            .unwrap()
+            .squeeze()
+            .unwrap();
+        assert_eq!(offset_view.storage_offset(), 1);
+        let output = offset_view
+            .try_contiguous(MemoryFormat::Contiguous)
+            .unwrap();
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.shares_storage_with(&offset_view));
+        output
+    };
+    assert_eq!(surviving_copy.as_slice(), [1.0, 13.0, 5.0, 17.0, 9.0, 21.0]);
+}
+
+#[test]
+fn contiguous_materializes_channels_last_and_channels_last_3d_storage() {
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 2, 2]).unwrap();
+    let channels_last = source.try_contiguous(MemoryFormat::ChannelsLast).unwrap();
+    assert_eq!(channels_last.shape(), source.shape());
+    assert_eq!(channels_last.stride(), [12, 1, 6, 3]);
+    assert_eq!(channels_last.storage_offset(), 0);
+    assert!(channels_last.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+    assert!(!channels_last.is_contiguous());
+    assert!(!channels_last.shares_storage_with(&source));
+    assert_eq!(channels_last.try_to_vec().unwrap(), source.as_slice());
+
+    let repeated = channels_last
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+    assert!(repeated.shares_storage_with(&channels_last));
+    let cloned = channels_last.try_clone().unwrap();
+    assert_eq!(cloned.stride(), channels_last.stride());
+    assert!(!cloned.shares_storage_with(&channels_last));
+    assert_eq!(cloned.try_to_vec().unwrap(), source.as_slice());
+    let row_major = channels_last
+        .try_contiguous(MemoryFormat::Contiguous)
+        .unwrap();
+    assert_eq!(row_major.stride(), source.stride());
+    assert_eq!(row_major.as_slice(), source.as_slice());
+    assert!(!row_major.shares_storage_with(&channels_last));
+    assert_eq!(
+        channels_last.add_scalar(1.0).unwrap().stride(),
+        [12, 1, 6, 3]
+    );
+    assert_eq!(
+        channels_last.sum().item().unwrap().to_bits(),
+        276.0_f32.to_bits()
+    );
+
+    let volume = Tensor::from_vec((0_u8..48).map(f32::from).collect(), [2, 3, 2, 2, 2]).unwrap();
+    let channels_last_3d = volume.try_contiguous(MemoryFormat::ChannelsLast3d).unwrap();
+    assert_eq!(channels_last_3d.stride(), [24, 1, 12, 6, 3]);
+    assert!(channels_last_3d.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast3d));
+    assert_eq!(channels_last_3d.try_to_vec().unwrap(), volume.as_slice());
+    assert!(!channels_last_3d.shares_storage_with(&volume));
+}
+
+#[test]
+fn contiguous_handles_singleton_zero_scalar_and_high_rank_layouts() {
+    let singleton = Tensor::zeros([2, 1, 4, 5]).unwrap();
+    let singleton_result = singleton
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+    assert!(singleton_result.shares_storage_with(&singleton));
+    assert_eq!(singleton_result.stride(), [20, 20, 5, 1]);
+
+    for (shape, expected_strides) in [
+        (vec![2, 0, 4, 5], vec![0, 1, 0, 0]),
+        (vec![2, 3, 0, 5], vec![0, 1, 15, 3]),
+        (vec![2, 3, 4, 0], vec![0, 1, 0, 3]),
+        (vec![0, 3, 4, 5], vec![60, 1, 15, 3]),
+    ] {
+        let source = Tensor::zeros(shape).unwrap();
+        let output = source.try_contiguous(MemoryFormat::ChannelsLast).unwrap();
+        assert_eq!(output.stride(), expected_strides);
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.shares_storage_with(&source));
+        assert!(output.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+    }
+
+    let empty_volume = Tensor::zeros([2, 3, 4, 0, 6]).unwrap();
+    let empty_volume = empty_volume
+        .try_contiguous(MemoryFormat::ChannelsLast3d)
+        .unwrap();
+    assert_eq!(empty_volume.stride(), [0, 1, 0, 18, 3]);
+
+    let scalar = Tensor::from_vec(vec![-0.0], []).unwrap();
+    let scalar_result = scalar.try_contiguous(MemoryFormat::Contiguous).unwrap();
+    assert!(scalar_result.shares_storage_with(&scalar));
+    assert_eq!(
+        scalar_result.item().unwrap().to_bits(),
+        (-0.0_f32).to_bits()
+    );
+
+    let mut high_rank_shape = vec![1; 128];
+    high_rank_shape[3] = 2;
+    high_rank_shape[117] = 2;
+    let high_rank = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], high_rank_shape)
+        .unwrap()
+        .transpose(3, 117)
+        .unwrap();
+    let packed = high_rank.try_contiguous(MemoryFormat::Contiguous).unwrap();
+    assert_eq!(packed.shape().len(), 128);
+    assert!(packed.is_contiguous());
+    assert_eq!(
+        packed.try_to_vec().unwrap(),
+        high_rank.try_to_vec().unwrap()
+    );
+}
+
+#[test]
+fn contiguous_validates_preserve_rank_and_stride_overflow_like_pytorch() {
+    let non_contiguous = Tensor::zeros([2, 3]).unwrap().transpose(0, 1).unwrap();
+    assert_eq!(
+        non_contiguous.try_contiguous(MemoryFormat::Preserve),
+        Err(TensorError::ContiguousPreserveFormatUnsupported)
+    );
+    assert_eq!(
+        non_contiguous
+            .try_contiguous(MemoryFormat::Preserve)
+            .unwrap_err()
+            .to_string(),
+        "preserve memory format is unsupported by the contiguous operator"
+    );
+
+    for rank in 0..=6 {
+        let tensor = Tensor::zeros(vec![2; rank]).unwrap();
+        if rank != 4 {
+            assert_eq!(
+                tensor.try_contiguous(MemoryFormat::ChannelsLast),
+                Err(TensorError::ContiguousMemoryFormatRankMismatch {
+                    memory_format: MemoryFormat::ChannelsLast,
+                    expected_rank: 4,
+                    actual_rank: rank,
+                })
+            );
+        }
+        if rank != 5 {
+            assert_eq!(
+                tensor.try_contiguous(MemoryFormat::ChannelsLast3d),
+                Err(TensorError::ContiguousMemoryFormatRankMismatch {
+                    memory_format: MemoryFormat::ChannelsLast3d,
+                    expected_rank: 5,
+                    actual_rank: rank,
+                })
+            );
+        }
+    }
+    assert_eq!(
+        Tensor::zeros([2, 3, 4])
+            .unwrap()
+            .try_contiguous(MemoryFormat::ChannelsLast)
+            .unwrap_err()
+            .to_string(),
+        "required rank 4 tensor to use channels_last format"
+    );
+
+    let maximum = i64::MAX;
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([2, 0, maximum, maximum])
+        .unwrap();
+    assert_eq!(
+        extreme.try_contiguous(MemoryFormat::ChannelsLast),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+}
+
+#[test]
 fn integer_indexing_returns_shared_storage_views_with_pytorch_layouts() {
     let tensor = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
 
