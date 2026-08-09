@@ -190,6 +190,19 @@ impl PyTensor {
         self.inner.storage_offset()
     }
 
+    fn is_contiguous(&self) -> bool {
+        self.inner.is_contiguous()
+    }
+
+    fn transpose(&self, dim0: &Bound<'_, PyAny>, dim1: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let dim0 = parse_transpose_dimension("dim0", 1, dim0)?;
+        let dim1 = parse_transpose_dimension("dim1", 2, dim1)?;
+        self.inner
+            .transpose(dim0, dim1)
+            .map(|inner| Self { inner })
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
         let inner = if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() > self.inner.shape().len() {
@@ -245,7 +258,11 @@ impl PyTensor {
     }
 
     fn tolist(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        nested_list(py, self.inner.as_slice(), self.inner.shape())
+        let values = self
+            .inner
+            .try_to_vec()
+            .map_err(|error| tensor_error(&error))?;
+        nested_list(py, &values, self.inner.shape())
     }
 
     fn item(&self) -> PyResult<f32> {
@@ -335,12 +352,16 @@ impl PyTensor {
             .ok_or_else(|| PyTypeError::new_err("len() of a 0-d tensor"))
     }
 
-    fn __repr__(&self) -> String {
-        format!(
+    fn __repr__(&self) -> PyResult<String> {
+        let values = self
+            .inner
+            .try_to_vec()
+            .map_err(|error| tensor_error(&error))?;
+        Ok(format!(
             "tensor({:?}, shape={:?})",
-            self.inner.as_slice(),
+            values,
             self.inner.shape()
-        )
+        ))
     }
 }
 
@@ -351,7 +372,11 @@ impl PyTensor {
         dtype: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
         let numpy = PyModule::import(py, "numpy")?;
-        let values = PyList::new(py, self.inner.as_slice().iter().copied())?;
+        let values = self
+            .inner
+            .try_to_vec()
+            .map_err(|error| tensor_error(&error))?;
+        let values = PyList::new(py, values)?;
         let arguments = PyDict::new(py);
         if let Some(dtype) = dtype {
             arguments.set_item("dtype", dtype)?;
@@ -468,6 +493,21 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
     input
         .inner
         .try_clone_with_memory_format(memory_format)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| tensor_error(&error))
+}
+
+#[pyfunction]
+fn transpose(
+    input: &PyTensor,
+    dim0: &Bound<'_, PyAny>,
+    dim1: &Bound<'_, PyAny>,
+) -> PyResult<PyTensor> {
+    let dim0 = parse_transpose_dimension("dim0", 1, dim0)?;
+    let dim1 = parse_transpose_dimension("dim1", 2, dim1)?;
+    input
+        .inner
+        .transpose(dim0, dim1)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
@@ -745,6 +785,32 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     let type_name = dimension.get_type().name()?;
     Err(PyTypeError::new_err(format!(
         "stride(): argument 'dim' must be int, not {type_name}"
+    )))
+}
+
+fn parse_transpose_dimension(
+    argument: &str,
+    position: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<i64> {
+    if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
+        return dimension
+            .extract::<i64>()
+            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+    }
+
+    if let Ok(numpy) = PyModule::import(dimension.py(), "numpy") {
+        let numpy_integer = numpy.getattr("integer")?;
+        if dimension.is_instance(&numpy_integer)? {
+            return dimension
+                .extract::<i64>()
+                .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+        }
+    }
+
+    let type_name = dimension.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "transpose(): argument '{argument}' (position {position}) must be int, not {type_name}"
     )))
 }
 
@@ -1296,7 +1362,8 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }
-        | TensorError::IndexOutOfBounds { .. } => PyIndexError::new_err(error.to_string()),
+        | TensorError::IndexOutOfBounds { .. }
+        | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
     }
 }
 
@@ -1309,6 +1376,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyMemoryFormat>()?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
+    module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
