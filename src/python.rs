@@ -208,8 +208,13 @@ enum ParsedSizeDimension {
     Invalid(String),
 }
 
-struct ParsedFactorySize {
-    dimensions: Vec<ParsedSizeDimension>,
+enum PreparedSizeDimension<'py> {
+    Parsed(ParsedSizeDimension),
+    Deferred(Bound<'py, PyAny>),
+}
+
+struct PreparedFactorySize<'py> {
+    dimensions: Vec<PreparedSizeDimension<'py>>,
 }
 
 enum FirstSizeErrorStyle {
@@ -991,10 +996,10 @@ fn create_constant_tensor(
         .map_err(|error| constant_factory_shape_error(&error, &shape))
 }
 
-fn prepare_positional_factory_size(
+fn prepare_positional_factory_size<'py>(
     function: &str,
-    args: &Bound<'_, PyTuple>,
-) -> PyResult<ParsedFactorySize> {
+    args: &Bound<'py, PyTuple>,
+) -> PyResult<PreparedFactorySize<'py>> {
     if args.len() > 1 {
         let first = parse_size_dimension(&args.get_item(0)?, true)?;
         if matches!(first, ParsedSizeDimension::Invalid(_)) {
@@ -1005,11 +1010,11 @@ fn prepare_positional_factory_size(
         }
 
         let mut dimensions = try_size_vector(args.len())?;
-        try_push_size(&mut dimensions, first)?;
+        try_push_size(&mut dimensions, PreparedSizeDimension::Parsed(first))?;
         for dimension in args.iter().skip(1) {
-            try_push_size(&mut dimensions, parse_size_dimension(&dimension, false)?)?;
+            try_push_size(&mut dimensions, PreparedSizeDimension::Deferred(dimension))?;
         }
-        return Ok(ParsedFactorySize { dimensions });
+        return Ok(PreparedFactorySize { dimensions });
     }
 
     let value = args.get_item(0)?;
@@ -1037,10 +1042,10 @@ fn prepare_positional_factory_size(
     )
 }
 
-fn prepare_keyword_factory_size(
+fn prepare_keyword_factory_size<'py>(
     function: &str,
-    value: &Bound<'_, PyAny>,
-) -> PyResult<ParsedFactorySize> {
+    value: &Bound<'py, PyAny>,
+) -> PyResult<PreparedFactorySize<'py>> {
     let container_type = transpose_type_name(value)?;
     if let Ok(dimensions) = value.cast::<PyList>() {
         return prepare_factory_size_dimensions(
@@ -1068,22 +1073,25 @@ fn prepare_factory_size_dimensions<'py>(
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
     first_error_style: &FirstSizeErrorStyle,
-) -> PyResult<ParsedFactorySize> {
+) -> PyResult<PreparedFactorySize<'py>> {
     let mut parsed = try_size_vector(length)?;
     for (index, dimension) in dimensions.enumerate() {
-        let value = parse_size_dimension(&dimension, index == 0)?;
-        if index == 0
-            && let ParsedSizeDimension::Invalid(type_name) = &value
-        {
-            return Err(first_factory_size_error(
-                function,
-                type_name,
-                first_error_style,
-            ));
-        }
+        let value = if index == 0 {
+            let value = parse_size_dimension(&dimension, true)?;
+            if let ParsedSizeDimension::Invalid(type_name) = &value {
+                return Err(first_factory_size_error(
+                    function,
+                    type_name,
+                    first_error_style,
+                ));
+            }
+            PreparedSizeDimension::Parsed(value)
+        } else {
+            PreparedSizeDimension::Deferred(dimension)
+        };
         try_push_size(&mut parsed, value)?;
     }
-    Ok(ParsedFactorySize { dimensions: parsed })
+    Ok(PreparedFactorySize { dimensions: parsed })
 }
 
 fn parse_size_dimension(
@@ -1118,11 +1126,15 @@ fn first_factory_size_error(function: &str, type_name: &str, style: &FirstSizeEr
     PyTypeError::new_err(message)
 }
 
-impl ParsedFactorySize {
+impl PreparedFactorySize<'_> {
     fn finish(self, function: &str) -> PyResult<Vec<i64>> {
         let mut size = try_size_vector(self.dimensions.len())?;
         for (index, dimension) in self.dimensions.into_iter().enumerate() {
-            let value = match dimension {
+            let parsed = match dimension {
+                PreparedSizeDimension::Parsed(value) => value,
+                PreparedSizeDimension::Deferred(value) => parse_size_dimension(&value, false)?,
+            };
+            let value = match parsed {
                 ParsedSizeDimension::Value(value) => value,
                 ParsedSizeDimension::Overflow => {
                     return Err(factory_size_unpack_error(

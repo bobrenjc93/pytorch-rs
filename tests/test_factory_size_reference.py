@@ -157,6 +157,42 @@ class FactorySizeReferenceTests(unittest.TestCase):
                         exact=exact,
                     )
 
+    def test_later_index_conversion_order_matches_pytorch_2_13(self):
+        def error_outcome(factory, call):
+            events = []
+
+            class Probe:
+                def __index__(self):
+                    events.append("index")
+                    return 3
+
+            try:
+                call(factory, Probe())
+            except Exception as error:
+                return events, type(error).__name__, str(error)
+            self.fail("invalid factory call unexpectedly succeeded")
+
+        invalid_calls = (
+            ("variadic dtype", lambda factory, probe: factory(2, probe, dtype="bad")),
+            ("tuple dtype", lambda factory, probe: factory((2, probe), dtype="bad")),
+            (
+                "size keyword dtype",
+                lambda factory, probe: factory(size=(2, probe), dtype="bad"),
+            ),
+            ("variadic device", lambda factory, probe: factory(2, probe, device=object())),
+            ("duplicate size", lambda factory, probe: factory(2, probe, size=(2, 3))),
+            ("unknown keyword", lambda factory, probe: factory(2, probe, unknown=True)),
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for case, call in invalid_calls:
+                with self.subTest(factory=factory_name, case=case):
+                    actual = error_outcome(actual_factory, call)
+                    expected = error_outcome(expected_factory, call)
+                    self.assertEqual(actual, expected)
+                    self.assertEqual(actual[0], [])
+
     def test_empty_metadata_negative_and_overflow_shapes_match(self):
         maximum = sys.maxsize
         metadata_shapes = (

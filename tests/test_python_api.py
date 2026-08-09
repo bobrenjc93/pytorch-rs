@@ -288,6 +288,87 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     create()
 
+    def test_zeros_and_ones_accept_variadic_and_integer_subclass_sizes(self):
+        class IntSubclass(int):
+            pass
+
+        class SizeLike(tuple):
+            pass
+
+        cases = (
+            ("single integer", lambda create: create(4), (4,)),
+            ("variadic", lambda create: create(2, 3), (2, 3)),
+            ("zero dimension", lambda create: create(2, 0, 3), (2, 0, 3)),
+            ("scalar tuple", lambda create: create(()), ()),
+            ("scalar list", lambda create: create([]), ()),
+            ("size keyword", lambda create: create(size=[2, 3]), (2, 3)),
+            (
+                "integer subclasses",
+                lambda create: create(IntSubclass(2), IntSubclass(3)),
+                (2, 3),
+            ),
+            ("tuple subclass", lambda create: create(SizeLike((2, 3))), (2, 3)),
+            ("high rank", lambda create: create(*([1] * 32)), (1,) * 32),
+        )
+        for name, create, fill_value in (
+            ("zeros", torch.zeros, 0.0),
+            ("ones", torch.ones, 1.0),
+        ):
+            for case, call, shape in cases:
+                with self.subTest(function=name, case=case):
+                    tensor = call(create)
+                    self.assertEqual(tensor.shape, shape)
+                    self.assertTrue(np.all(np.asarray(tensor) == fill_value))
+
+            for case, call, error in (
+                ("missing", lambda: create(), TypeError),
+                ("size keyword integer", lambda: create(size=2), TypeError),
+                ("first bool", lambda: create(True), TypeError),
+                ("tuple first bool", lambda: create((True, 2)), TypeError),
+                ("negative", lambda: create(2, -1), RuntimeError),
+                ("duplicate size", lambda: create(2, size=(2,)), TypeError),
+                ("unknown keyword", lambda: create(2, unknown=True), TypeError),
+            ):
+                with self.subTest(function=name, invalid_case=case):
+                    with self.assertRaises(error):
+                        call()
+
+    def test_factory_binding_defers_later_index_conversion(self):
+        def new_probe(events):
+            class Probe:
+                def __index__(self):
+                    events.append("index")
+                    return 3
+
+            return Probe()
+
+        for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
+            invalid_calls = (
+                ("variadic dtype", lambda probe: create(2, probe, dtype="bad")),
+                ("tuple dtype", lambda probe: create((2, probe), dtype="bad")),
+                ("size keyword dtype", lambda probe: create(size=(2, probe), dtype="bad")),
+                ("variadic device", lambda probe: create(2, probe, device=object())),
+                ("duplicate size", lambda probe: create(2, probe, size=(2, 3))),
+                ("unknown keyword", lambda probe: create(2, probe, unknown=True)),
+            )
+            for case, call in invalid_calls:
+                events = []
+                with self.subTest(function=name, invalid_case=case):
+                    with self.assertRaises(TypeError):
+                        call(new_probe(events))
+                    self.assertEqual(events, [])
+
+            for case, call in (
+                ("variadic", lambda probe: create(2, probe)),
+                ("tuple", lambda probe: create((2, probe))),
+                ("size keyword", lambda probe: create(size=(2, probe))),
+            ):
+                events = []
+                with self.subTest(function=name, successful_case=case):
+                    tensor = call(new_probe(events))
+                    self.assertEqual(tensor.shape, (2, 3))
+                    self.assertEqual(events, ["index"])
+
     def test_eye_creates_square_rectangular_and_empty_tensors(self):
         cases = (
             (lambda: torch.eye(3), (3, 3), (3, 1), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
