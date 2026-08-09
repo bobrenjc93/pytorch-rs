@@ -161,6 +161,59 @@ class AutogradApiTests(unittest.TestCase):
         self.assertEqual(context_failures, [])
         self.assertEqual(context_results, [False, True])
 
+    def test_no_grad_decorator_guards_every_generator_resume(self):
+        value = torch.tensor([2.0], requires_grad=True)
+        events = []
+
+        @torch.no_grad()
+        def generate():
+            events.append(("next", (value * value).requires_grad))
+            request = yield value * value
+            events.append(("send", request, (value * value).requires_grad))
+            try:
+                yield value * value
+            except ValueError as error:
+                events.append(("throw", str(error), (value * value).requires_grad))
+                yield value * value
+            finally:
+                events.append(("close", (value * value).requires_grad))
+
+        generator = generate()
+        self.assertIs(iter(generator), generator)
+        self.assertFalse(next(generator).requires_grad)
+        self.assertTrue((value * value).requires_grad)
+        self.assertFalse(generator.send("request").requires_grad)
+        self.assertTrue((value * value).requires_grad)
+        self.assertFalse(generator.throw(ValueError("injected")).requires_grad)
+        self.assertTrue((value * value).requires_grad)
+        self.assertIsNone(generator.close())
+        self.assertEqual(
+            events,
+            [
+                ("next", False),
+                ("send", "request", False),
+                ("throw", "injected", False),
+                ("close", False),
+            ],
+        )
+        self.assertTrue((value * value).requires_grad)
+
+        abandoned_events = []
+
+        @torch.no_grad()
+        def abandoned():
+            try:
+                yield value * value
+            finally:
+                abandoned_events.append((value * value).requires_grad)
+
+        generator = abandoned()
+        self.assertFalse(next(generator).requires_grad)
+        del generator
+        gc.collect()
+        self.assertEqual(abandoned_events, [False])
+        self.assertTrue((value * value).requires_grad)
+
     def test_unconsumed_deep_graph_drop_and_detach_are_stack_safe(self):
         leaf = torch.tensor(3.0, requires_grad=True)
         output = leaf
@@ -302,6 +355,54 @@ class AutogradReferenceTests(unittest.TestCase):
         np.testing.assert_array_equal(reshape_gradients[0], reshape_gradients[1])
         self.assertEqual(signed_zero_bits, [0x8000_0000, 0x8000_0000])
         self.assertEqual(broadcast_zero_bits, [0, 0])
+
+    def test_no_grad_generator_protocol_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            value = module.tensor([2.0], requires_grad=True)
+            events = []
+
+            @module.no_grad()
+            def generate():
+                events.append(("next", (value * value).requires_grad))
+                request = yield value * value
+                events.append(("send", request, (value * value).requires_grad))
+                try:
+                    yield value * value
+                except ValueError as error:
+                    events.append(("throw", str(error), (value * value).requires_grad))
+                    yield value * value
+                finally:
+                    events.append(("close", (value * value).requires_grad))
+
+            generator = generate()
+            requires_grad = [next(generator).requires_grad]
+            requires_grad.append(generator.send("request").requires_grad)
+            requires_grad.append(generator.throw(ValueError("injected")).requires_grad)
+            generator.close()
+            abandoned_events = []
+
+            @module.no_grad()
+            def abandoned():
+                try:
+                    yield value * value
+                finally:
+                    abandoned_events.append((value * value).requires_grad)
+
+            abandoned_generator = abandoned()
+            requires_grad.append(next(abandoned_generator).requires_grad)
+            del abandoned_generator
+            gc.collect()
+            outcomes.append(
+                (
+                    requires_grad,
+                    events,
+                    abandoned_events,
+                    (value * value).requires_grad,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
 
     def test_square_sum_backward_performance_smoke_is_equivalent_work(self):
         values = np.linspace(-2.0, 2.0, 16_384, dtype=np.float32)

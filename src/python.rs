@@ -193,14 +193,22 @@ impl PyNoGrad {
     }
 
     #[allow(clippy::unused_self)] // Python's decorator protocol requires an instance method.
-    fn __call__(&self, function: Py<PyAny>) -> PyNoGradCallable {
-        PyNoGradCallable { function }
+    fn __call__(&self, py: Python<'_>, function: Py<PyAny>) -> PyResult<PyNoGradCallable> {
+        let is_generator = py
+            .import("inspect")?
+            .call_method1("isgeneratorfunction", (&function,))?
+            .extract()?;
+        Ok(PyNoGradCallable {
+            function,
+            is_generator,
+        })
     }
 }
 
 #[pyclass(module = "torch_rs", skip_from_py_object)]
 struct PyNoGradCallable {
     function: Py<PyAny>,
+    is_generator: bool,
 }
 
 #[pymethods]
@@ -219,7 +227,10 @@ impl PyNoGradCallable {
         } else {
             self.function.clone_ref(py)
         };
-        Ok(Self { function })
+        Ok(Self {
+            function,
+            is_generator: self.is_generator,
+        })
     }
 
     #[pyo3(signature = (*args, **kwargs))]
@@ -230,7 +241,63 @@ impl PyNoGradCallable {
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
         let _guard = core_no_grad();
-        Ok(self.function.bind(py).call(args, kwargs)?.unbind())
+        let result = self.function.bind(py).call(args, kwargs)?.unbind();
+        if self.is_generator {
+            return Ok(Py::new(py, PyNoGradGenerator { generator: result })?.into_any());
+        }
+        Ok(result)
+    }
+}
+
+/// Generator proxy that restores no-grad mode around every suspended-body resume.
+#[pyclass(module = "torch_rs", skip_from_py_object)]
+struct PyNoGradGenerator {
+    generator: Py<PyAny>,
+}
+
+impl Drop for PyNoGradGenerator {
+    fn drop(&mut self) {
+        Python::try_attach(|py| {
+            let _guard = core_no_grad();
+            let _ = self.generator.bind(py).call_method0("close");
+        });
+    }
+}
+
+#[pymethods]
+impl PyNoGradGenerator {
+    fn __iter__(slf: PyRef<'_, Self>) -> Py<Self> {
+        slf.into()
+    }
+
+    fn __next__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let _guard = core_no_grad();
+        Ok(self.generator.bind(py).call_method0("__next__")?.unbind())
+    }
+
+    fn send(&self, py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        let _guard = core_no_grad();
+        Ok(self
+            .generator
+            .bind(py)
+            .call_method1("send", (value,))?
+            .unbind())
+    }
+
+    #[pyo3(signature = (*args))]
+    fn throw(&self, py: Python<'_>, args: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> {
+        let _guard = core_no_grad();
+        Ok(self
+            .generator
+            .bind(py)
+            .getattr("throw")?
+            .call(args, None)?
+            .unbind())
+    }
+
+    fn close(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let _guard = core_no_grad();
+        Ok(self.generator.bind(py).call_method0("close")?.unbind())
     }
 }
 
