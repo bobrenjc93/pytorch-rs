@@ -1,3 +1,4 @@
+import sys
 import unittest
 
 import numpy as np
@@ -121,6 +122,45 @@ class TransposeReferenceTests(unittest.TestCase):
                 case=case,
                 operation="matmul",
             )
+
+    def test_singleton_pointwise_and_reflected_division_layouts_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        values = np.arange(4, dtype=np.float32).reshape(1, 1, 2, 2)
+        actual = torch.tensor(values.tolist()).transpose(1, 3)
+        expected = reference_torch.tensor(values).transpose(1, 3)
+
+        for operation, actual_output, expected_output in (
+            ("relu", actual.relu(), expected.relu()),
+            ("sin", actual.sin(), expected.sin()),
+            ("binary", actual + actual, expected + expected),
+            ("reflected_division", 1.0 / actual, 1.0 / expected),
+        ):
+            self.assert_matches(
+                actual_output,
+                expected_output,
+                case="singleton_channels_last",
+                operation=operation,
+            )
+            self.assertEqual(
+                actual_output.reshape(actual_output.shape).stride(),
+                expected_output.reshape(expected_output.shape).stride(),
+            )
+
+        actual_vector = torch.tensor([[1.0, 2.0]]).transpose(0, 1)
+        expected_vector = reference_torch.tensor([[1.0, 2.0]]).transpose(0, 1)
+        self.assert_matches(
+            1.0 / actual_vector,
+            1.0 / expected_vector,
+            case="reflected_vector",
+            operation="reflected_division",
+        )
+
+        actual_extreme = torch.zeros((2, 0, sys.maxsize)).transpose(0, 1)
+        expected_extreme = reference_torch.zeros((2, 0, sys.maxsize)).transpose(0, 1)
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            1.0 / actual_extreme
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            1.0 / expected_extreme
 
 
 if __name__ == "__main__":

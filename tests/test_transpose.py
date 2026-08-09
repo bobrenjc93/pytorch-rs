@@ -159,6 +159,32 @@ class TransposeTests(unittest.TestCase):
             (4, 1),
         )
 
+    def test_pointwise_outputs_canonicalize_singleton_channels_last_strides(self):
+        source = torch.tensor(
+            np.arange(4, dtype=np.float32).reshape(1, 1, 2, 2).tolist()
+        )
+        view = source.transpose(1, 3)
+        self.assertEqual(view.shape, (1, 2, 2, 1))
+        self.assertEqual(view.stride(), (4, 1, 2, 4))
+
+        for output in (view.relu(), view.sin(), view + view):
+            with self.subTest(output=output):
+                self.assertEqual(output.stride(), (4, 1, 2, 2))
+                self.assertEqual(output.reshape(output.shape).stride(), (2, 1, 2, 2))
+
+    def test_reflected_division_uses_unary_layout_and_checks_stride_overflow(self):
+        view = torch.tensor([[1.0, 2.0]]).transpose(0, 1)
+        self.assertEqual(view.shape, (2, 1))
+        self.assertEqual(view.stride(), (1, 2))
+        self.assertEqual((view / 1.0).stride(), (1, 2))
+
+        reflected = 1.0 / view
+        self.assert_tensor(reflected, [[1.0], [0.5]], (2, 1), (1, 1))
+
+        extreme = torch.zeros((2, 0, sys.maxsize)).transpose(0, 1)
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            1.0 / extreme
+
     def test_empty_and_extreme_shapes_preserve_swapped_strides(self):
         cases = (
             (torch.zeros((2, 0, 3)), (0, 2), (3, 0, 2), (1, 3, 3)),

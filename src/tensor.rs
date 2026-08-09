@@ -1111,7 +1111,17 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn scalar_div(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| scalar * value.recip())
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = self.unary_output_strides(&shape, elements)?;
+        let data = self.materialize_with_strides(&strides, |value| scalar * value.recip())?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     /// Applies rectified linear activation element by element.
@@ -1312,8 +1322,17 @@ impl Tensor {
     ) -> Result<Self, TensorError> {
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 || self.is_contiguous() {
+        // TensorIterator prioritizes canonical contiguous formats before an
+        // arbitrary dense layout, which normalizes strides on singleton axes.
+        let strides = if self.is_contiguous() && other.is_contiguous() {
             contiguous_strides(&shape, elements)?
+        } else if self.is_channels_last_contiguous() && other.is_channels_last_contiguous() {
+            channels_last_strides(&shape, elements)?
+        } else if self.is_non_overlapping_and_dense()
+            && other.is_non_overlapping_and_dense()
+            && self.strides == other.strides
+        {
+            try_clone_result_shape(&self.strides, elements)?
         } else {
             elementwise_output_strides(&shape, &[self, other], elements)?
         };
@@ -1371,11 +1390,7 @@ impl Tensor {
     fn unary_map(&self, operation: impl Fn(f32) -> f32) -> Result<Self, TensorError> {
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = if elements == 0 || self.is_contiguous() {
-            contiguous_strides(&shape, elements)?
-        } else {
-            elementwise_output_strides(&shape, &[self], elements)?
-        };
+        let strides = self.unary_output_strides(&shape, elements)?;
         let data = self.materialize_with_strides(&strides, operation)?;
         Ok(Self::from_owned_parts(
             data,
@@ -1384,6 +1399,27 @@ impl Tensor {
             self.dtype(),
             self.device(),
         ))
+    }
+
+    fn unary_output_strides(
+        &self,
+        shape: &[usize],
+        elements: usize,
+    ) -> Result<Vec<usize>, TensorError> {
+        // Match TensorIterator's fast-setup precedence for a single operand.
+        if self.is_contiguous() {
+            contiguous_strides(shape, elements)
+        } else if self.is_channels_last_contiguous() {
+            channels_last_strides(shape, elements)
+        } else if self.is_non_overlapping_and_dense() {
+            try_clone_result_shape(&self.strides, elements)
+        } else {
+            elementwise_output_strides(shape, &[self], elements)
+        }
+    }
+
+    fn is_channels_last_contiguous(&self) -> bool {
+        layout_is_channels_last_contiguous(&self.shape, &self.strides, self.elements)
     }
 }
 
@@ -1496,6 +1532,28 @@ fn layout_is_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> 
 
     let mut expected_stride = 1_usize;
     for axis in (0..shape.len()).rev() {
+        let dimension = shape[axis];
+        if dimension == 1 {
+            continue;
+        }
+        if strides[axis] != expected_stride {
+            return false;
+        }
+        let Some(next_stride) = expected_stride.checked_mul(dimension) else {
+            return false;
+        };
+        expected_stride = next_stride;
+    }
+    true
+}
+
+fn layout_is_channels_last_contiguous(shape: &[usize], strides: &[usize], elements: usize) -> bool {
+    if shape.len() != 4 || elements == 0 {
+        return false;
+    }
+
+    let mut expected_stride = 1_usize;
+    for axis in [1, 3, 2, 0] {
         let dimension = shape[axis];
         if dimension == 1 {
             continue;
@@ -1763,6 +1821,22 @@ fn contiguous_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, Te
     for axis in (0..shape.len()).rev() {
         strides[axis] = stride;
         if axis > 0 {
+            stride = checked_stride_product(stride, shape[axis])?;
+        }
+    }
+    Ok(strides)
+}
+
+fn channels_last_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, TensorError> {
+    if shape.len() != 4 {
+        return Err(TensorError::StrideCalculationOverflow);
+    }
+    let mut strides = try_result_vector(shape.len(), elements)?;
+    strides.resize(shape.len(), 0);
+    let mut stride = 1_usize;
+    for (position, axis) in [1, 3, 2, 0].into_iter().enumerate() {
+        strides[axis] = stride;
+        if position < 3 {
             stride = checked_stride_product(stride, shape[axis])?;
         }
     }

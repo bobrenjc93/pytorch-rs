@@ -538,6 +538,30 @@ fn reflected_scalar_division_uses_float32_reciprocal_multiplication() {
 }
 
 #[test]
+fn reflected_division_uses_unary_layout_planning_and_checks_stride_overflow() {
+    let source = Tensor::from_vec(vec![1.0, 2.0], [1, 2]).unwrap();
+    let transposed = source.transpose(0, 1).unwrap();
+    assert_eq!(transposed.shape(), [2, 1]);
+    assert_eq!(transposed.stride(), [1, 2]);
+
+    let ordinary = transposed.div_scalar(1.0).unwrap();
+    assert_eq!(ordinary.stride(), [1, 2]);
+    let reflected = transposed.scalar_div(1.0).unwrap();
+    assert_eq!(reflected.stride(), [1, 1]);
+    assert_eq!(reflected.logical_values().collect::<Vec<_>>(), [1.0, 0.5]);
+
+    let maximum = isize::MAX.unsigned_abs();
+    let extreme = Tensor::zeros([2, 0, maximum])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    assert_eq!(
+        extreme.scalar_div(1.0),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+}
+
+#[test]
 fn subtraction_and_division_support_scalar_empty_and_multidimensional_tensors() {
     let scalar_left = Tensor::from_vec(vec![7.0], []).unwrap();
     let scalar_right = Tensor::from_vec(vec![2.0], []).unwrap();
@@ -801,6 +825,25 @@ fn transpose_defines_contiguous_and_non_overlapping_dense_invariants() {
     assert!(singleton.is_non_overlapping_and_dense());
     assert!(empty.is_contiguous());
     assert!(empty.is_non_overlapping_and_dense());
+}
+
+#[test]
+fn pointwise_outputs_canonicalize_singleton_channels_last_strides() {
+    let source = Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0], [1, 1, 2, 2]).unwrap();
+    let view = source.transpose(1, 3).unwrap();
+    assert_eq!(view.shape(), [1, 2, 2, 1]);
+    assert_eq!(view.stride(), [4, 1, 2, 4]);
+
+    for output in [
+        view.relu().unwrap(),
+        view.sin().unwrap(),
+        view.add(&view).unwrap(),
+    ] {
+        assert_eq!(output.shape(), view.shape());
+        assert_eq!(output.stride(), [4, 1, 2, 2]);
+        assert_eq!(output.reshape([1, 2, 2, 1]).unwrap().stride(), [2, 1, 2, 2]);
+        assert!(!output.shares_storage_with(&view));
+    }
 }
 
 #[test]
