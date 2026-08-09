@@ -211,6 +211,12 @@ impl PyTensor {
         PyTuple::new(py, self.inner.shape().iter().copied())
     }
 
+    /// Alias for [`Tensor.dim()`](https://pytorch.org/docs/stable/generated/torch.Tensor.dim.html).
+    #[getter]
+    fn ndim(&self) -> usize {
+        self.inner.shape().len()
+    }
+
     #[getter]
     fn dtype(&self, py: Python<'_>) -> PyResult<Py<PyDType>> {
         match self.inner.dtype() {
@@ -433,6 +439,26 @@ impl PyTensor {
         self.numpy_array_copy(py, dtype)
     }
 
+    /// Returns the number of dimensions of the tensor.
+    #[pyo3(text_signature = "($self, /)")]
+    fn dim(&self) -> usize {
+        self.inner.shape().len()
+    }
+
+    /// Alias for [`Tensor.dim()`](https://pytorch.org/docs/stable/generated/torch.Tensor.dim.html).
+    #[pyo3(text_signature = "($self, /)")]
+    fn ndimension(&self) -> usize {
+        self.inner.shape().len()
+    }
+
+    /// Alias for [`Tensor.numel()`](https://pytorch.org/docs/stable/generated/torch.Tensor.numel.html).
+    #[pyo3(text_signature = "($self, /)")]
+    fn nelement(&self) -> usize {
+        self.inner.numel()
+    }
+
+    /// Returns the total number of elements in the tensor.
+    #[pyo3(text_signature = "($self, /)")]
     fn numel(&self) -> usize {
         self.inner.numel()
     }
@@ -762,6 +788,64 @@ fn flatten(
     }
     drop(tensor);
     Py::new(args.py(), PyTensor { inner })
+}
+
+/// Returns the total number of elements in the input tensor.
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<usize> {
+    if args.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "numel() takes 1 positional argument but {} were given",
+            args.len()
+        )));
+    }
+
+    let keyword_input = match kwargs {
+        Some(values) => values.get_item("input")?,
+        None => None,
+    };
+    if args.is_empty() && keyword_input.is_none() {
+        return Err(PyTypeError::new_err(
+            "numel() missing 1 required positional arguments: \"input\"",
+        ));
+    }
+
+    let (input, position) = if args.is_empty() {
+        (
+            keyword_input
+                .as_ref()
+                .expect("the required keyword input was checked above"),
+            None,
+        )
+    } else {
+        (&args.get_item(0)?, Some(1))
+    };
+    let Ok(tensor) = input.cast::<PyTensor>() else {
+        let position =
+            position.map_or_else(String::new, |position| format!(" (position {position})"));
+        let input_type = transpose_type_name(input)?;
+        return Err(PyTypeError::new_err(format!(
+            "numel(): argument 'input'{position} must be Tensor, not {input_type}"
+        )));
+    };
+
+    if !args.is_empty() && keyword_input.is_some() {
+        return Err(PyTypeError::new_err(
+            "numel() got multiple values for argument 'input'",
+        ));
+    }
+    if let Some(kwargs) = kwargs {
+        for key in kwargs.keys() {
+            let key = key.extract::<String>()?;
+            if key != "input" {
+                return Err(PyTypeError::new_err(format!(
+                    "numel() got an unexpected keyword argument '{key}'"
+                )));
+            }
+        }
+    }
+
+    Ok(tensor.try_borrow()?.inner.numel())
 }
 
 #[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
@@ -2641,6 +2725,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
+    module.add_function(wrap_pyfunction!(numel, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
