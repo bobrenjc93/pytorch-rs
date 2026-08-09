@@ -24,6 +24,11 @@ class TensorBufferTests(unittest.TestCase):
         return tensor
 
     def test_numeric_array_and_memoryview_formats_copy_as_float32(self):
+        boolean_values = (
+            [0.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+            if sys.version_info >= (3, 14)
+            else [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]
+        )
         cases = (
             ("b", [-128, 0, 127]),
             ("B", [0, 128, 255]),
@@ -46,24 +51,27 @@ class TensorBufferTests(unittest.TestCase):
                 self.assert_tensor(memoryview(exporter), values)
 
         for format_code, raw, expected in (
-            ("?", b"\x00\x01\x02\x03\xfe\xff", [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]),
+            ("?", b"\x00\x01\x02\x03\xfe\xff", boolean_values),
             ("n", bytes(2 * ctypes.sizeof(ctypes.c_ssize_t)), [0.0, 0.0]),
             ("N", bytes(2 * ctypes.sizeof(ctypes.c_size_t)), [0.0, 0.0]),
         ):
             with self.subTest(format=format_code, input="cast memoryview"):
                 self.assert_tensor(memoryview(raw).cast(format_code), expected)
-        self.assert_tensor(
-            memoryview(np.asarray([1.0, -2.0], dtype=np.float16)),
-            [1.0, -2.0],
-        )
+        float16 = memoryview(np.asarray([1.0, -2.0], dtype=np.float16))
+        if sys.version_info < (3, 12):
+            with self.assertRaisesRegex(ValueError, "could not determine the shape"):
+                torch.tensor(float16, dtype=torch.float32)
+        else:
+            self.assert_tensor(float16, [1.0, -2.0])
 
     def test_native_prefixed_formats(self):
         pointer_high_bit = 1 << (8 * struct.calcsize("@P") - 1)
         pointer_bytes = struct.pack("@PP", 123, pointer_high_bit)
+        boolean_values = [1.0, 1.0] if sys.version_info >= (3, 14) else [0.0, 1.0]
         for format_code, raw, expected in (
             ("@i", struct.pack("@ii", -7, 9), [-7.0, 9.0]),
             ("@f", struct.pack("@ff", -2.5, 3.25), [-2.5, 3.25]),
-            ("@?", b"\x02\x03", [0.0, 1.0]),
+            ("@?", b"\x02\x03", boolean_values),
             ("P", pointer_bytes, [123.0, pointer_high_bit]),
             ("@P", pointer_bytes, [123.0, pointer_high_bit]),
         ):
@@ -126,8 +134,12 @@ class TensorBufferTests(unittest.TestCase):
             torch.tensor(multidimensional)
 
         scalar = memoryview(array.array("i", [3])).cast("B").cast("i", ())
-        with self.assertRaisesRegex(TypeError, "0-dim memory has no length"):
-            torch.tensor(scalar)
+        if sys.version_info < (3, 12):
+            with self.assertRaisesRegex(ValueError, "could not determine the shape"):
+                torch.tensor(scalar)
+        else:
+            with self.assertRaisesRegex(TypeError, "0-dim memory has no length"):
+                torch.tensor(scalar)
 
         nonnative = memoryview((ctypes.c_int * 2)(1, 2))
         with self.assertRaisesRegex(
@@ -178,6 +190,19 @@ class TensorBufferTests(unittest.TestCase):
                     f"must be real number, not {type_name}",
                 ):
                     torch.tensor(exporter, dtype=torch.float32)
+
+    def test_sequence_length_exceptions_propagate(self):
+        for error_type in (RuntimeError, MemoryError, KeyboardInterrupt):
+            class RaisingSequence:
+                def __len__(self):
+                    raise error_type("length failed")
+
+                def __getitem__(self, index):
+                    raise AssertionError("getitem must not be called")
+
+            with self.subTest(error=error_type.__name__):
+                with self.assertRaisesRegex(error_type, "length failed"):
+                    torch.tensor(RaisingSequence(), dtype=torch.float32)
 
 
 if __name__ == "__main__":

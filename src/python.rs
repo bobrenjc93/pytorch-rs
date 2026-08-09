@@ -2365,6 +2365,9 @@ fn flatten_buffer(
 
     let dimensions = view.getattr("ndim")?.extract::<usize>()?;
     if dimensions == 0 {
+        if value.py().version_info() < (3, 12) {
+            return Err(buffer_shape_error(value)?);
+        }
         return Err(PyTypeError::new_err("0-dim memory has no length"));
     }
     let elements = view.len()?;
@@ -2390,6 +2393,19 @@ fn flatten_buffer(
     let item_size = view.getattr("itemsize")?.extract::<usize>()?;
     if !buffer_format_has_item_size(format, item_size) {
         return Err(buffer_shape_error(value)?);
+    }
+    if format == b'e' && value.py().version_info() < (3, 12) {
+        return Err(buffer_shape_error(value)?);
+    }
+    if matches!(format, b'?' | b'e') {
+        let mut output = Vec::new();
+        output.try_reserve_exact(elements).map_err(|_| {
+            PyMemoryError::new_err("unable to allocate native tensor storage for buffer")
+        })?;
+        for index in 0..elements {
+            output.push(view.get_item(index)?.extract::<f32>()?);
+        }
+        return Ok(Some((output, vec![elements])));
     }
 
     let contiguous = view.call_method0("tobytes")?;
@@ -2516,9 +2532,7 @@ fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyRes
             "tensor data must contain real numbers in a rectangular sequence",
         ));
     }
-    let length = value.len().map_err(|_| {
-        PyTypeError::new_err("tensor data must contain real numbers in a rectangular sequence")
-    })?;
+    let length = value.len()?;
     if length == 0 {
         return Ok(vec![0]);
     }

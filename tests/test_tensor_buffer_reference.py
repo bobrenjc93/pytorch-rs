@@ -33,9 +33,9 @@ class TensorBufferReferenceTests(unittest.TestCase):
     def assert_error_matches(self, source, *, explicit_dtype=True):
         actual_kwargs = {"dtype": torch.float32} if explicit_dtype else {}
         expected_kwargs = {"dtype": reference_torch.float32} if explicit_dtype else {}
-        with self.assertRaises(Exception) as actual_raised:
+        with self.assertRaises(BaseException) as actual_raised:
             torch.tensor(source, **actual_kwargs)
-        with self.assertRaises(Exception) as expected_raised:
+        with self.assertRaises(BaseException) as expected_raised:
             reference_torch.tensor(source, **expected_kwargs)
         self.assertEqual(
             type(actual_raised.exception).__name__,
@@ -82,10 +82,6 @@ class TensorBufferReferenceTests(unittest.TestCase):
                     memoryview(bytes(2 * ctypes.sizeof(ctypes.c_size_t))).cast("N"),
                 ),
                 (
-                    "float16",
-                    memoryview(np.asarray([1.0, -2.0], dtype=np.float16)),
-                ),
-                (
                     "native-prefixed int32",
                     memoryview(struct.pack("@ii", -7, 9)).cast("@i"),
                 ),
@@ -98,6 +94,13 @@ class TensorBufferReferenceTests(unittest.TestCase):
                 ("native-prefixed pointer", memoryview(pointer_bytes).cast("@P")),
             )
         )
+        if sys.version_info >= (3, 12):
+            cases.append(
+                (
+                    "float16",
+                    memoryview(np.asarray([1.0, -2.0], dtype=np.float16)),
+                )
+            )
         for case, source in cases:
             self.assert_matches(source, case=case)
 
@@ -130,6 +133,9 @@ class TensorBufferReferenceTests(unittest.TestCase):
             dtype=np.uint16,
         )
         source = memoryview(half_bits.view(np.float16))
+        if sys.version_info < (3, 12):
+            self.assert_error_matches(source, explicit_dtype=True)
+            return
         actual = np.asarray(torch.tensor(source, dtype=torch.float32))
         expected = reference_torch.tensor(source, dtype=reference_torch.float32).numpy()
         np.testing.assert_array_equal(actual.view(np.uint32), expected.view(np.uint32))
@@ -196,6 +202,22 @@ class TensorBufferReferenceTests(unittest.TestCase):
                         exporter,
                         explicit_dtype=explicit_dtype,
                     )
+
+    def test_sequence_length_exceptions_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        for error_type in (RuntimeError, MemoryError, KeyboardInterrupt):
+            class RaisingSequence:
+                def __len__(self):
+                    raise error_type("length failed")
+
+                def __getitem__(self, index):
+                    raise AssertionError("getitem must not be called")
+
+            with self.subTest(error=error_type.__name__):
+                self.assert_error_matches(
+                    RaisingSequence(),
+                    explicit_dtype=True,
+                )
 
 
 if __name__ == "__main__":
