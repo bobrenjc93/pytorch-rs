@@ -146,6 +146,22 @@ enum GradFn {
     Sum {
         input: SavedTensor,
     },
+    Transform {
+        input: SavedTensor,
+        mapping: TransformMapping,
+    },
+}
+
+#[derive(Clone)]
+enum TransformMapping {
+    Identity,
+    Permute {
+        dimensions: Vec<usize>,
+        output_shape: Vec<usize>,
+    },
+    Index {
+        input_start: usize,
+    },
 }
 
 /// A tensor with immutable shared storage and native shape/stride metadata.
@@ -834,7 +850,7 @@ impl Tensor {
     ///
     /// Returns an error if result metadata allocation fails.
     pub fn detach(&self) -> Result<Self, TensorError> {
-        self.metadata_alias()
+        self.metadata_alias_detached()
     }
 
     /// Runs eager reverse-mode differentiation from a one-element output.
@@ -859,6 +875,37 @@ impl Tensor {
             .as_ref()
             .ok_or(TensorError::DoesNotRequireGrad)?;
         run_backward(meta)
+    }
+
+    fn records_grad(&self) -> bool {
+        self.requires_grad() && grad_enabled()
+    }
+
+    fn record_transform(
+        &self,
+        output: &mut Self,
+        mapping: TransformMapping,
+    ) -> Result<(), TensorError> {
+        if self.records_grad() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Transform {
+                        input: SavedTensor::try_from_tensor(self)?,
+                        mapping,
+                    })),
+                },
+            }));
+        }
+        Ok(())
+    }
+
+    fn finish_transform(
+        &self,
+        mut output: Self,
+        mapping: TransformMapping,
+    ) -> Result<Self, TensorError> {
+        self.record_transform(&mut output, mapping)?;
+        Ok(output)
     }
 
     /// Returns whether logical row-major iteration visits adjacent storage.
@@ -981,14 +1028,27 @@ impl Tensor {
             strides.push(self.strides[dimension]);
         }
 
-        Ok(Self {
+        let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
             strides,
             offset: self.offset,
             elements: self.elements,
             autograd: None,
-        })
+        };
+        if self.records_grad() {
+            let mut saved_dimensions = try_result_vector(dimensions.len(), self.elements)?;
+            saved_dimensions.extend_from_slice(dimensions);
+            let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
+            self.record_transform(
+                &mut output,
+                TransformMapping::Permute {
+                    dimensions: saved_dimensions,
+                    output_shape,
+                },
+            )?;
+        }
+        Ok(output)
     }
 
     /// Reverses all dimensions without copying storage.
@@ -1118,14 +1178,16 @@ impl Tensor {
                 strides.push(stride);
             }
         }
-        Ok(Self {
+        let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
             strides,
             offset: self.offset,
             elements: self.elements,
             autograd: None,
-        })
+        };
+        self.record_transform(&mut output, TransformMapping::Identity)?;
+        Ok(output)
     }
 
     /// Collapses an inclusive range of dimensions using view-or-copy semantics.
@@ -1276,13 +1338,9 @@ impl Tensor {
             }
         };
         let data = self.materialize_with_strides(&strides, |value| value)?;
-        Ok(Self::from_owned_parts(
-            data,
-            shape,
-            strides,
-            self.dtype(),
-            self.device(),
-        ))
+        let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
+        self.record_transform(&mut output, TransformMapping::Identity)?;
+        Ok(output)
     }
 
     /// Returns a tensor contiguous in the requested storage layout.
@@ -1320,14 +1378,16 @@ impl Tensor {
         }
 
         if self.is_contiguous_with_memory_format(memory_format) {
-            return Ok(Self {
+            let mut output = Self {
                 storage: Arc::clone(&self.storage),
                 shape: try_clone_result_shape(&self.shape, self.elements)?,
                 strides: try_clone_result_shape(&self.strides, self.elements)?,
                 offset: self.offset,
                 elements: self.elements,
                 autograd: None,
-            });
+            };
+            self.record_transform(&mut output, TransformMapping::Identity)?;
+            return Ok(output);
         }
 
         let strides = match memory_format {
@@ -1340,16 +1400,18 @@ impl Tensor {
         };
         let shape = try_clone_result_shape(&self.shape, self.elements)?;
         let data = self.materialize_with_strides(&strides, |value| value)?;
-        Ok(Self::from_owned_parts(
-            data,
-            shape,
-            strides,
-            self.dtype(),
-            self.device(),
-        ))
+        let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
+        self.record_transform(&mut output, TransformMapping::Identity)?;
+        Ok(output)
     }
 
     fn metadata_alias(&self) -> Result<Self, TensorError> {
+        let mut output = self.metadata_alias_detached()?;
+        self.record_transform(&mut output, TransformMapping::Identity)?;
+        Ok(output)
+    }
+
+    fn metadata_alias_detached(&self) -> Result<Self, TensorError> {
         Ok(Self {
             storage: Arc::clone(&self.storage),
             shape: try_clone_result_shape(&self.shape, self.elements)?,
@@ -1521,14 +1583,40 @@ impl Tensor {
         let strides = try_clone_result_shape(&self.strides[indices.len()..], self.elements)?;
         let elements = element_count(&shape)?;
         validate_view_bounds(&shape, &strides, offset, elements, self.storage.data.len())?;
-        Ok(Self {
+        let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
             strides,
             offset,
             elements,
             autograd: None,
-        })
+        };
+        if self.records_grad() {
+            let mut logical_prefix = 0_usize;
+            for (dimension, index) in indices.iter().copied().enumerate() {
+                let size = self.shape[dimension];
+                let signed_size =
+                    i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
+                let normalized = if index < 0 {
+                    signed_size
+                        .checked_add(index)
+                        .ok_or(TensorError::IndexCalculationOverflow)?
+                } else {
+                    index
+                };
+                let normalized = usize::try_from(normalized)
+                    .map_err(|_| TensorError::IndexCalculationOverflow)?;
+                logical_prefix = logical_prefix
+                    .checked_mul(size)
+                    .and_then(|prefix| prefix.checked_add(normalized))
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+            }
+            let input_start = logical_prefix
+                .checked_mul(elements)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            self.record_transform(&mut output, TransformMapping::Index { input_start })?;
+        }
+        Ok(output)
     }
 
     pub(crate) fn checked_index_offset(
@@ -1657,45 +1745,58 @@ impl Tensor {
             });
         }
 
+        self.reshape_resolved(resolved)
+    }
+
+    fn reshape_resolved(&self, resolved: Vec<usize>) -> Result<Self, TensorError> {
         if self.elements == 0 {
             let strides = if resolved == self.shape {
                 try_clone_result_shape(&self.strides, self.elements)?
             } else {
                 reshape_strides(&resolved, self.elements)?
             };
-            return Ok(Self {
-                storage: Arc::clone(&self.storage),
-                shape: resolved,
-                strides,
-                offset: self.offset,
-                elements: self.elements,
-                autograd: None,
-            });
+            return self.finish_transform(
+                Self {
+                    storage: Arc::clone(&self.storage),
+                    shape: resolved,
+                    strides,
+                    offset: self.offset,
+                    elements: self.elements,
+                    autograd: None,
+                },
+                TransformMapping::Identity,
+            );
         }
 
         if let Some(strides) =
             compute_reshape_view_strides(&self.shape, &self.strides, &resolved, self.elements)?
         {
-            return Ok(Self {
-                storage: Arc::clone(&self.storage),
-                shape: resolved,
-                strides,
-                offset: self.offset,
-                elements: self.elements,
-                autograd: None,
-            });
+            return self.finish_transform(
+                Self {
+                    storage: Arc::clone(&self.storage),
+                    shape: resolved,
+                    strides,
+                    offset: self.offset,
+                    elements: self.elements,
+                    autograd: None,
+                },
+                TransformMapping::Identity,
+            );
         }
 
         let strides = contiguous_strides(&resolved, self.elements)?;
         let packed = self.try_contiguous(MemoryFormat::Contiguous)?;
-        Ok(Self {
-            storage: packed.storage,
-            shape: resolved,
-            strides,
-            offset: 0,
-            elements: self.elements,
-            autograd: None,
-        })
+        self.finish_transform(
+            Self {
+                storage: packed.storage,
+                shape: resolved,
+                strides,
+                offset: 0,
+                elements: self.elements,
+                autograd: None,
+            },
+            TransformMapping::Identity,
+        )
     }
 
     /// Adds tensors element by element with trailing-dimension broadcasting.
@@ -2208,10 +2309,10 @@ impl SavedTensor {
     }
 }
 
+type Topology = Vec<(Arc<AutogradMeta>, Option<GradFn>)>;
+
 fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
-    let mut seen = HashSet::new();
-    let mut topology = Vec::new();
-    collect_topology(root, &mut seen, &mut topology)?;
+    let topology = collect_topology(root)?;
 
     let mut gradients = HashMap::new();
     gradients.insert(autograd_id(root), vec![1.0]);
@@ -2249,49 +2350,56 @@ fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
     Ok(())
 }
 
-fn collect_topology(
-    meta: &Arc<AutogradMeta>,
-    seen: &mut HashSet<usize>,
-    topology: &mut Vec<(Arc<AutogradMeta>, Option<GradFn>)>,
-) -> Result<(), TensorError> {
-    if !seen.insert(autograd_id(meta)) {
-        return Ok(());
-    }
-    let grad_fn = match &meta.kind {
-        AutogradKind::Leaf { .. } => None,
-        AutogradKind::NonLeaf { grad_fn } => Some(
-            grad_fn
-                .lock()
-                .expect("gradient function mutex must not be poisoned")
-                .clone()
-                .ok_or(TensorError::BackwardGraphFreed)?,
-        ),
-    };
+enum TopologyFrame {
+    Enter(Arc<AutogradMeta>),
+    Exit(Arc<AutogradMeta>, Option<GradFn>),
+}
 
-    if let Some(grad_fn) = &grad_fn {
-        match grad_fn {
-            GradFn::Multiply { left, right, .. } => {
-                collect_saved_parent(left, seen, topology)?;
-                collect_saved_parent(right, seen, topology)?;
-            }
-            GradFn::MultiplyScalar { input, .. } | GradFn::Sum { input } => {
-                collect_saved_parent(input, seen, topology)?;
+fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
+    let mut seen = HashSet::new();
+    let mut topology = Vec::new();
+    let mut stack = vec![TopologyFrame::Enter(Arc::clone(root))];
+    while let Some(frame) = stack.pop() {
+        match frame {
+            TopologyFrame::Exit(meta, grad_fn) => topology.push((meta, grad_fn)),
+            TopologyFrame::Enter(meta) => {
+                if !seen.insert(autograd_id(&meta)) {
+                    continue;
+                }
+                let grad_fn = match &meta.kind {
+                    AutogradKind::Leaf { .. } => None,
+                    AutogradKind::NonLeaf { grad_fn } => Some(
+                        grad_fn
+                            .lock()
+                            .expect("gradient function mutex must not be poisoned")
+                            .clone()
+                            .ok_or(TensorError::BackwardGraphFreed)?,
+                    ),
+                };
+                stack.push(TopologyFrame::Exit(Arc::clone(&meta), grad_fn.clone()));
+                if let Some(grad_fn) = &grad_fn {
+                    match grad_fn {
+                        GradFn::Multiply { left, right, .. } => {
+                            push_saved_parent(&mut stack, right);
+                            push_saved_parent(&mut stack, left);
+                        }
+                        GradFn::MultiplyScalar { input, .. }
+                        | GradFn::Sum { input }
+                        | GradFn::Transform { input, .. } => {
+                            push_saved_parent(&mut stack, input);
+                        }
+                    }
+                }
             }
         }
     }
-    topology.push((Arc::clone(meta), grad_fn));
-    Ok(())
+    Ok(topology)
 }
 
-fn collect_saved_parent(
-    tensor: &SavedTensor,
-    seen: &mut HashSet<usize>,
-    topology: &mut Vec<(Arc<AutogradMeta>, Option<GradFn>)>,
-) -> Result<(), TensorError> {
+fn push_saved_parent(stack: &mut Vec<TopologyFrame>, tensor: &SavedTensor) {
     if let Some(meta) = &tensor.autograd {
-        collect_topology(meta, seen, topology)?;
+        stack.push(TopologyFrame::Enter(Arc::clone(meta)));
     }
-    Ok(())
 }
 
 fn apply_grad_fn(
@@ -2321,12 +2429,18 @@ fn apply_grad_fn(
         } => {
             debug_assert_eq!(*output_elements, upstream.len());
             let mut left_gradient = if left.autograd.is_some() {
-                Some(filled_storage(left.elements, 0.0)?)
+                Some(GradientAccumulator::new(
+                    left.elements,
+                    left.elements == *output_elements,
+                )?)
             } else {
                 None
             };
             let mut right_gradient = if right.autograd.is_some() {
-                Some(filled_storage(right.elements, 0.0)?)
+                Some(GradientAccumulator::new(
+                    right.elements,
+                    right.elements == *output_elements,
+                )?)
             } else {
                 None
             };
@@ -2343,21 +2457,112 @@ fn apply_grad_fn(
                 let (right_index, right_offset) =
                     right.broadcast_position(output_shape, &coordinates);
                 if let Some(gradient) = &mut left_gradient {
-                    gradient[left_index] += output_gradient * right.storage.data[right_offset];
+                    gradient.add(
+                        left_index,
+                        output_gradient * right.storage.data[right_offset],
+                    );
                 }
                 if let Some(gradient) = &mut right_gradient {
-                    gradient[right_index] += output_gradient * left.storage.data[left_offset];
+                    gradient.add(
+                        right_index,
+                        output_gradient * left.storage.data[left_offset],
+                    );
                 }
             }
             if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
-                add_gradient(gradients, meta, gradient);
+                add_gradient(gradients, meta, gradient.values);
             }
             if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
+                add_gradient(gradients, meta, gradient.values);
+            }
+        }
+        GradFn::Transform { input, mapping } => {
+            if let Some(meta) = &input.autograd {
+                let gradient = transform_backward(input, mapping, upstream)?;
                 add_gradient(gradients, meta, gradient);
             }
         }
     }
     Ok(())
+}
+
+struct GradientAccumulator {
+    values: Vec<f32>,
+    initialized: Vec<bool>,
+}
+
+impl GradientAccumulator {
+    fn new(elements: usize, preserve_first: bool) -> Result<Self, TensorError> {
+        let values = filled_storage(elements, 0.0)?;
+        let mut initialized = try_result_vector(elements, elements)?;
+        initialized.resize(elements, !preserve_first);
+        Ok(Self {
+            values,
+            initialized,
+        })
+    }
+
+    fn add(&mut self, index: usize, contribution: f32) {
+        if self.initialized[index] {
+            self.values[index] += contribution;
+        } else {
+            self.values[index] = contribution;
+            self.initialized[index] = true;
+        }
+    }
+}
+
+fn transform_backward(
+    input: &SavedTensor,
+    mapping: &TransformMapping,
+    upstream: &[f32],
+) -> Result<Vec<f32>, TensorError> {
+    match mapping {
+        TransformMapping::Identity => copied_storage(upstream, input.elements),
+        TransformMapping::Index { input_start } => {
+            let mut gradient = filled_storage(input.elements, 0.0)?;
+            let end = input_start
+                .checked_add(upstream.len())
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            gradient
+                .get_mut(*input_start..end)
+                .ok_or(TensorError::IndexCalculationOverflow)?
+                .copy_from_slice(upstream);
+            Ok(gradient)
+        }
+        TransformMapping::Permute {
+            dimensions,
+            output_shape,
+        } => {
+            let mut gradient = filled_storage(input.elements, 0.0)?;
+            if upstream.is_empty() {
+                return Ok(gradient);
+            }
+            let input_strides = contiguous_strides(&input.shape, input.elements)?;
+            let mut coordinates = try_result_vector(output_shape.len(), input.elements)?;
+            coordinates.resize(output_shape.len(), 0_usize);
+            for (output_index, &value) in upstream.iter().enumerate() {
+                let mut remaining = output_index;
+                for axis in (0..output_shape.len()).rev() {
+                    coordinates[axis] = remaining % output_shape[axis];
+                    remaining /= output_shape[axis];
+                }
+                let input_index = dimensions.iter().enumerate().try_fold(
+                    0_usize,
+                    |input_index, (output_axis, &input_axis)| {
+                        let contribution = coordinates[output_axis]
+                            .checked_mul(input_strides[input_axis])
+                            .ok_or(TensorError::IndexCalculationOverflow)?;
+                        input_index
+                            .checked_add(contribution)
+                            .ok_or(TensorError::IndexCalculationOverflow)
+                    },
+                )?;
+                gradient[input_index] = value;
+            }
+            Ok(gradient)
+        }
+    }
 }
 
 fn add_gradient(

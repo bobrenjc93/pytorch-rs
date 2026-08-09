@@ -1,5 +1,6 @@
 import gc
 import statistics
+import threading
 import time
 import unittest
 
@@ -75,6 +76,70 @@ class AutogradApiTests(unittest.TestCase):
         scalar_leaf.backward()
         scalar_leaf.backward()
         self.assertEqual(scalar_leaf.grad.tolist(), [2.0])
+
+    def test_deep_graph_transformations_and_negative_zero(self):
+        deep_leaf = torch.tensor(3.0, requires_grad=True)
+        deep_output = deep_leaf
+        for _ in range(20_000):
+            deep_output = deep_output * 1.0
+        deep_output.backward()
+        self.assertEqual(deep_leaf.grad.item(), 1.0)
+
+        leaf = torch.tensor([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]], requires_grad=True)
+        transformed = leaf.transpose(1, 2)
+        self.assertTrue(transformed.requires_grad)
+        transformed = transformed.contiguous().squeeze(0)[1].reshape(2, 1).clone()
+        self.assertTrue(transformed.requires_grad)
+        (transformed * transformed).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad),
+            np.array([[[0.0, 4.0, 0.0], [0.0, 10.0, 0.0]]], dtype=np.float32),
+        )
+
+        matrix = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        self.assertTrue(matrix.T.requires_grad)
+        (matrix.T * matrix.T).sum().backward()
+        np.testing.assert_array_equal(np.asarray(matrix.grad), [[2.0, 4.0], [6.0, 8.0]])
+
+        signed = torch.tensor([2.0], requires_grad=True)
+        (signed * torch.tensor([-0.0])).sum().backward()
+        self.assertEqual(np.asarray(signed.grad).view(np.uint32)[0], 0x8000_0000)
+
+        broadcast_signed = torch.tensor(2.0, requires_grad=True)
+        (broadcast_signed * torch.tensor([-0.0, -0.0])).sum().backward()
+        self.assertEqual(np.asarray(broadcast_signed.grad).view(np.uint32).item(), 0)
+
+    def test_no_grad_decorator_binds_methods_and_is_cross_thread_callable(self):
+        class Model:
+            @torch.no_grad()
+            def forward(self, value, scale=1.0):
+                return value * scale
+
+        value = torch.tensor([2.0], requires_grad=True)
+        model = Model()
+        self.assertFalse(model.forward(value, scale=3.0).requires_grad)
+        self.assertFalse(Model.forward(model, value).requires_grad)
+
+        results = []
+        failures = []
+
+        @torch.no_grad()
+        def worker(input_value):
+            return input_value * input_value
+
+        def run_worker():
+            try:
+                results.append(worker(value).requires_grad)
+                results.append((value * value).requires_grad)
+            except BaseException as error:  # PanicException inherits BaseException.
+                failures.append(error)
+
+        thread = threading.Thread(target=run_worker)
+        thread.start()
+        thread.join()
+        self.assertEqual(failures, [])
+        self.assertEqual(results, [False, True])
+        self.assertTrue((value * value).requires_grad)
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -162,6 +227,42 @@ class AutogradReferenceTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 module.tensor([1.0, 2.0], requires_grad=True).backward()
         np.testing.assert_array_equal(accumulated_gradients[0], accumulated_gradients[1])
+
+    def test_transform_and_signed_zero_gradients_match_pytorch_2_13(self):
+        gradients = []
+        reshape_gradients = []
+        signed_zero_bits = []
+        broadcast_zero_bits = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]], requires_grad=True
+            )
+            transformed = leaf.transpose(1, 2).contiguous().squeeze(0)[1].reshape(2, 1).clone()
+            (transformed * transformed).sum().backward()
+            gradients.append(np.asarray(leaf.grad).copy())
+
+            reshape_leaf = module.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+            )
+            reshaped_copy = reshape_leaf.transpose(0, 1).reshape(6)
+            weights = module.tensor([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])
+            (reshaped_copy * weights).sum().backward()
+            reshape_gradients.append(np.asarray(reshape_leaf.grad).copy())
+
+            signed = module.tensor([2.0], requires_grad=True)
+            (signed * module.tensor([-0.0])).sum().backward()
+            signed_zero_bits.append(np.asarray(signed.grad).view(np.uint32)[0])
+
+            broadcast_signed = module.tensor(2.0, requires_grad=True)
+            (broadcast_signed * module.tensor([-0.0, -0.0])).sum().backward()
+            broadcast_zero_bits.append(
+                np.asarray(broadcast_signed.grad).view(np.uint32).item()
+            )
+
+        np.testing.assert_array_equal(gradients[0], gradients[1])
+        np.testing.assert_array_equal(reshape_gradients[0], reshape_gradients[1])
+        self.assertEqual(signed_zero_bits, [0x8000_0000, 0x8000_0000])
+        self.assertEqual(broadcast_zero_bits, [0, 0])
 
     def test_square_sum_backward_performance_smoke_is_equivalent_work(self):
         values = np.linspace(-2.0, 2.0, 16_384, dtype=np.float32)

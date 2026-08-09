@@ -199,13 +199,30 @@ impl PyNoGrad {
     }
 }
 
-#[pyclass(module = "torch_rs", unsendable, skip_from_py_object)]
+#[pyclass(module = "torch_rs", skip_from_py_object)]
 struct PyNoGradCallable {
     function: Py<PyAny>,
 }
 
 #[pymethods]
 impl PyNoGradCallable {
+    fn __get__(
+        &self,
+        py: Python<'_>,
+        instance: &Bound<'_, PyAny>,
+        owner: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let function = if self.function.bind(py).hasattr("__get__")? {
+            self.function
+                .bind(py)
+                .call_method1("__get__", (instance, owner))?
+                .unbind()
+        } else {
+            self.function.clone_ref(py)
+        };
+        Ok(Self { function })
+    }
+
     #[pyo3(signature = (*args, **kwargs))]
     fn __call__(
         &self,
