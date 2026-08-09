@@ -797,7 +797,7 @@ fn parse_unsqueeze_method_arguments(
     let axis = kwargs.and_then(|values| values.get_item("axis").ok().flatten());
 
     if let Some(positional) = positional {
-        let dimension = parse_unsqueeze_dimension(&positional, 1)?;
+        validate_unsqueeze_dimension_type(&positional, 1)?;
         if keyword_dim.is_some() {
             return Err(unsqueeze_duplicate_argument("dim"));
         }
@@ -805,23 +805,23 @@ fn parse_unsqueeze_method_arguments(
             return Err(unsqueeze_unexpected_keyword("axis"));
         }
         reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
-        return Ok(dimension);
+        return unpack_unsqueeze_dimension(&positional);
     }
 
     if let Some(keyword_dim) = keyword_dim {
-        let dimension = parse_unsqueeze_dimension(&keyword_dim, 0)?;
+        validate_unsqueeze_dimension_type(&keyword_dim, 0)?;
         if axis.is_some() {
             return Err(unsqueeze_unexpected_keyword("axis"));
         }
         reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
-        return Ok(dimension);
+        return unpack_unsqueeze_dimension(&keyword_dim);
     }
 
     if let Some(axis) = axis {
-        let dimension = parse_unsqueeze_dimension(&axis, 0)?;
+        validate_unsqueeze_dimension_type(&axis, 0)?;
         reject_axis_with_unknown_keywords(kwargs, &["dim"])?;
         reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
-        return Ok(dimension);
+        return unpack_unsqueeze_dimension(&axis);
     }
 
     Err(unsqueeze_missing_arguments(&["dim"]))
@@ -852,23 +852,26 @@ fn parse_unsqueeze_function_arguments<'py>(
     if let Some(input) = &input {
         validate_unsqueeze_input(input, usize::from(positional_input.is_some()))?;
     }
-    let positional_dimension = positional_dimension
-        .map(|dimension| parse_unsqueeze_dimension(&dimension, 2))
-        .transpose()?;
+    if let Some(dimension) = &positional_dimension {
+        validate_unsqueeze_dimension_type(dimension, 2)?;
+    }
 
     let Some(input) = input else {
         return Err(unsqueeze_missing_arguments(&["input", "dim"]));
     };
 
-    let dimension = if let Some(dimension) = positional_dimension {
-        dimension
+    let (dimension, dimension_position) = if let Some(dimension) = &positional_dimension {
+        (dimension, 2)
     } else if let Some(dimension) = &keyword_dimension {
-        parse_unsqueeze_dimension(dimension, 0)?
+        (dimension, 0)
     } else if let Some(axis) = &axis {
-        parse_unsqueeze_dimension(axis, 0)?
+        (axis, 0)
     } else {
         return Err(unsqueeze_missing_arguments(&["dim"]));
     };
+    if positional_dimension.is_none() {
+        validate_unsqueeze_dimension_type(dimension, dimension_position)?;
+    }
 
     validate_unsqueeze_function_keywords(
         kwargs,
@@ -898,6 +901,7 @@ fn parse_unsqueeze_function_arguments<'py>(
             axis_present: axis.is_some(),
         },
     )?;
+    let dimension = unpack_unsqueeze_dimension(dimension)?;
     Ok((input, dimension))
 }
 
@@ -946,19 +950,18 @@ fn validate_unsqueeze_function_keywords(
     Ok(())
 }
 
-fn parse_unsqueeze_dimension(dimension: &Bound<'_, PyAny>, position: usize) -> PyResult<i64> {
+fn validate_unsqueeze_dimension_type(
+    dimension: &Bound<'_, PyAny>,
+    position: usize,
+) -> PyResult<()> {
     if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
-        return dimension
-            .extract::<i64>()
-            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+        return Ok(());
     }
 
     if let Ok(numpy) = PyModule::import(dimension.py(), "numpy") {
         let numpy_integer = numpy.getattr("integer")?;
         if dimension.is_instance(&numpy_integer)? {
-            return dimension
-                .extract::<i64>()
-                .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+            return Ok(());
         }
     }
 
@@ -971,6 +974,12 @@ fn parse_unsqueeze_dimension(dimension: &Bound<'_, PyAny>, position: usize) -> P
     Err(PyTypeError::new_err(format!(
         "unsqueeze(): argument 'dim'{position} must be int, not {type_name}"
     )))
+}
+
+fn unpack_unsqueeze_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+    dimension
+        .extract::<i64>()
+        .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))
 }
 
 fn unsqueeze_input_type_error(input: &Bound<'_, PyAny>, position: usize) -> PyErr {

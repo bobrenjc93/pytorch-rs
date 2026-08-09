@@ -153,6 +153,34 @@ class UnsqueezePytorch213DifferentialTests(unittest.TestCase):
 
         call_pairs = (
             (
+                lambda: actual.unsqueeze(1 << 100, dim=0),
+                lambda: expected.unsqueeze(1 << 100, dim=0),
+            ),
+            (
+                lambda: actual.unsqueeze(1 << 100, axis=0),
+                lambda: expected.unsqueeze(1 << 100, axis=0),
+            ),
+            (
+                lambda: actual.unsqueeze(dim=1 << 100, unexpected=0),
+                lambda: expected.unsqueeze(dim=1 << 100, unexpected=0),
+            ),
+            (
+                lambda: torch_rs.unsqueeze(actual, 1 << 100, dim=0),
+                lambda: pytorch.unsqueeze(expected, 1 << 100, dim=0),
+            ),
+            (
+                lambda: torch_rs.unsqueeze(actual, 1 << 100, axis=0),
+                lambda: pytorch.unsqueeze(expected, 1 << 100, axis=0),
+            ),
+            (
+                lambda: torch_rs.unsqueeze(
+                    actual, np.uint64(2**64 - 1), input=actual
+                ),
+                lambda: pytorch.unsqueeze(
+                    expected, np.uint64(2**64 - 1), input=expected
+                ),
+            ),
+            (
                 lambda: torch_rs.unsqueeze(actual, input=actual),
                 lambda: pytorch.unsqueeze(expected, input=expected),
             ),

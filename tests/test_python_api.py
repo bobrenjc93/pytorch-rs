@@ -688,6 +688,30 @@ class PythonApiBaselineTests(unittest.TestCase):
                 lambda: torch.unsqueeze(input=[], dim=True),
                 "argument 'input' must be Tensor, not list",
             ),
+            (
+                lambda: source.unsqueeze(1 << 100, dim=0),
+                "multiple values for argument 'dim'",
+            ),
+            (
+                lambda: source.unsqueeze(1 << 100, axis=0),
+                "unexpected keyword argument 'axis'",
+            ),
+            (
+                lambda: source.unsqueeze(dim=1 << 100, unexpected=0),
+                "unexpected keyword argument 'unexpected'",
+            ),
+            (
+                lambda: torch.unsqueeze(source, 1 << 100, dim=0),
+                "multiple values for argument 'dim'",
+            ),
+            (
+                lambda: torch.unsqueeze(source, 1 << 100, axis=0),
+                "unexpected keyword argument 'axis'",
+            ),
+            (
+                lambda: torch.unsqueeze(source, np.uint64(2**64 - 1), input=source),
+                "multiple values for argument 'input'",
+            ),
         )
         for call, message in precedence_cases:
             with self.subTest(message=message):
