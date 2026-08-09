@@ -167,6 +167,20 @@ pub enum TensorError {
         dimension: i64,
         rank: usize,
     },
+    PermutationRankMismatch {
+        dimensions: usize,
+        rank: usize,
+    },
+    PermutationDimensionOutOfRange {
+        dimension: usize,
+        rank: usize,
+    },
+    DuplicatePermutationDimension {
+        dimension: usize,
+    },
+    MatrixTransposeRequiresMatrix {
+        rank: usize,
+    },
     DuplicateDimension {
         dimension: usize,
     },
@@ -212,21 +226,7 @@ impl Display for TensorError {
                 formatter,
                 "shape {shape:?} does not describe {elements} elements"
             ),
-            Self::ShapeMismatch { left, right } => {
-                if let Some((left_dimension, right_dimension, axis)) =
-                    first_broadcast_mismatch(left, right)
-                {
-                    write!(
-                        formatter,
-                        "The size of tensor a ({left_dimension}) must match the size of tensor b ({right_dimension}) at non-singleton dimension {axis}"
-                    )
-                } else {
-                    write!(
-                        formatter,
-                        "tensor shapes are not broadcastable: {left:?} and {right:?}"
-                    )
-                }
-            }
+            Self::ShapeMismatch { left, right } => format_shape_mismatch(formatter, left, right),
             Self::MatmulRequiresMatrices { left, right } => write!(
                 formatter,
                 "matmul currently requires two rank-2 tensors, got {left:?} and {right:?}"
@@ -264,6 +264,12 @@ impl Display for TensorError {
             }
             Self::DimensionOutOfRange { dimension, rank } => {
                 format_dimension_out_of_range(formatter, *dimension, *rank)
+            }
+            error @ (Self::PermutationRankMismatch { .. }
+            | Self::PermutationDimensionOutOfRange { .. }
+            | Self::DuplicatePermutationDimension { .. }
+            | Self::MatrixTransposeRequiresMatrix { .. }) => {
+                format_permutation_error(formatter, error)
             }
             error @ (Self::DuplicateDimension { .. } | Self::SqueezeDimensionsRankLimit) => {
                 format_squeeze_error(formatter, error)
@@ -312,6 +318,24 @@ impl Display for TensorError {
 
 impl Error for TensorError {}
 
+fn format_shape_mismatch(
+    formatter: &mut Formatter<'_>,
+    left: &[usize],
+    right: &[usize],
+) -> std::fmt::Result {
+    if let Some((left_dimension, right_dimension, axis)) = first_broadcast_mismatch(left, right) {
+        write!(
+            formatter,
+            "The size of tensor a ({left_dimension}) must match the size of tensor b ({right_dimension}) at non-singleton dimension {axis}"
+        )
+    } else {
+        write!(
+            formatter,
+            "tensor shapes are not broadcastable: {left:?} and {right:?}"
+        )
+    }
+}
+
 fn format_dimension_out_of_range(
     formatter: &mut Formatter<'_>,
     dimension: i64,
@@ -323,6 +347,30 @@ fn format_dimension_out_of_range(
         "Dimension out of range (expected to be in range of [-{rank}, {}], but got {dimension})",
         rank - 1
     )
+}
+
+fn format_permutation_error(
+    formatter: &mut Formatter<'_>,
+    error: &TensorError,
+) -> std::fmt::Result {
+    match error {
+        TensorError::PermutationRankMismatch { dimensions, rank } => write!(
+            formatter,
+            "number of dimensions in the tensor input does not match the length of the desired ordering of dimensions i.e. input.dim() = {rank} is not equal to len(dims) = {dimensions}"
+        ),
+        TensorError::PermutationDimensionOutOfRange { dimension, rank } => write!(
+            formatter,
+            "permutation dimension {dimension} is out of range for tensor rank {rank}"
+        ),
+        TensorError::DuplicatePermutationDimension { .. } => {
+            formatter.write_str("permute(): duplicate dims are not allowed.")
+        }
+        TensorError::MatrixTransposeRequiresMatrix { rank } => write!(
+            formatter,
+            "tensor.mT is only supported on matrices or batches of matrices. Got {rank}-D tensor."
+        ),
+        _ => unreachable!("only dimension-permutation errors are formatted here"),
+    }
 }
 
 fn format_squeeze_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
@@ -688,6 +736,70 @@ impl Tensor {
         LogicalValues { inner }
     }
 
+    /// Reorders every dimension without copying storage.
+    ///
+    /// Each source axis must occur exactly once. The output shape and stride at
+    /// a position are taken from the corresponding source axis, while storage,
+    /// offset, dtype, device, and element count are retained. In particular,
+    /// this operation does not recalculate strides or materialize values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the permutation has the wrong length, contains an
+    /// invalid or duplicate axis, or when view metadata allocation fails.
+    pub fn permute_axes(&self, dimensions: impl AsRef<[usize]>) -> Result<Self, TensorError> {
+        let dimensions = dimensions.as_ref();
+        let rank = self.shape.len();
+        if dimensions.len() != rank {
+            return Err(TensorError::PermutationRankMismatch {
+                dimensions: dimensions.len(),
+                rank,
+            });
+        }
+
+        let mut seen = try_result_vector(rank, self.elements)?;
+        seen.resize(rank, false);
+        let mut shape = try_result_vector(rank, self.elements)?;
+        for &dimension in dimensions {
+            if dimension >= rank {
+                return Err(TensorError::PermutationDimensionOutOfRange { dimension, rank });
+            }
+            if seen[dimension] {
+                return Err(TensorError::DuplicatePermutationDimension { dimension });
+            }
+            seen[dimension] = true;
+            shape.push(self.shape[dimension]);
+        }
+
+        let mut strides = try_result_vector(rank, self.elements)?;
+        for &dimension in dimensions {
+            strides.push(self.strides[dimension]);
+        }
+
+        Ok(Self {
+            storage: Arc::clone(&self.storage),
+            shape,
+            strides,
+            offset: self.offset,
+            elements: self.elements,
+        })
+    }
+
+    /// Reverses all dimensions without copying storage.
+    ///
+    /// This is the binding-independent primitive implementing NumPy-style
+    /// `Tensor.T`. Scalars and vectors therefore retain their metadata, while
+    /// higher-rank tensors reverse their complete shape and stride tables.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when view metadata allocation fails.
+    pub fn reverse_dimensions(&self) -> Result<Self, TensorError> {
+        let mut dimensions = try_result_vector(self.shape.len(), self.elements)?;
+        dimensions.extend((0..self.shape.len()).rev());
+        self.permute_axes(dimensions)
+    }
+
     /// Swaps two dimensions without copying storage.
     ///
     /// Negative dimensions wrap from the end. Scalars accept dimensions `0`
@@ -701,22 +813,36 @@ impl Tensor {
     pub fn transpose(&self, dim0: i64, dim1: i64) -> Result<Self, TensorError> {
         let axis0 = normalize_transpose_dimension(dim0, self.shape.len())?;
         let axis1 = normalize_transpose_dimension(dim1, self.shape.len())?;
-        let mut shape = try_clone_result_shape(&self.shape, self.elements)?;
-        if !shape.is_empty() {
-            shape.swap(axis0, axis1);
+        let mut dimensions = try_result_vector(self.shape.len(), self.elements)?;
+        dimensions.extend(0..self.shape.len());
+        if !dimensions.is_empty() {
+            dimensions.swap(axis0, axis1);
         }
-        let elements = element_count(&shape)?;
-        let mut strides = try_clone_result_shape(&self.strides, elements)?;
-        if !shape.is_empty() {
-            strides.swap(axis0, axis1);
+
+        // PyTorch's transpose path checks the reordered symbolic sizes before
+        // constructing its view. Keep that observable overflow behavior while
+        // sharing the actual arbitrary-rank metadata permutation engine.
+        element_count_in_axis_order(&self.shape, &dimensions)?;
+        self.permute_axes(dimensions)
+    }
+
+    /// Swaps the final two dimensions without copying storage.
+    ///
+    /// Scalars are identity aliases, matching the temporary compatibility
+    /// behavior of `PyTorch`'s `mT` property. Vectors are rejected; tensors of
+    /// rank two or greater use the same checked transpose path as
+    /// `transpose(-2, -1)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for vectors, reordered element-count overflow, or view
+    /// metadata allocation failure.
+    pub fn matrix_transpose(&self) -> Result<Self, TensorError> {
+        match self.shape.len() {
+            0 => self.metadata_alias(),
+            1 => Err(TensorError::MatrixTransposeRequiresMatrix { rank: 1 }),
+            _ => self.transpose(-2, -1),
         }
-        Ok(Self {
-            storage: Arc::clone(&self.storage),
-            shape,
-            strides,
-            offset: self.offset,
-            elements,
-        })
     }
 
     /// Removes every singleton dimension without copying storage.
@@ -2225,6 +2351,17 @@ fn element_count(shape: &[usize]) -> Result<usize, TensorError> {
     shape.iter().try_fold(1_usize, |count, dimension| {
         count
             .checked_mul(*dimension)
+            .ok_or(TensorError::ElementCountOverflow)
+    })
+}
+
+fn element_count_in_axis_order(
+    shape: &[usize],
+    dimensions: &[usize],
+) -> Result<usize, TensorError> {
+    dimensions.iter().try_fold(1_usize, |count, &dimension| {
+        count
+            .checked_mul(shape[dimension])
             .ok_or(TensorError::ElementCountOverflow)
     })
 }
