@@ -295,6 +295,10 @@ class PythonApiBaselineTests(unittest.TestCase):
         class SizeLike(tuple):
             pass
 
+        class RaisesOverflow:
+            def __index__(self):
+                raise OverflowError("deliberate overflow")
+
         cases = (
             ("single integer", lambda create: create(4), (4,)),
             ("variadic", lambda create: create(2, 3), (2, 3)),
@@ -333,6 +337,21 @@ class PythonApiBaselineTests(unittest.TestCase):
                     with self.assertRaises(error):
                         call()
 
+            with self.subTest(function=name, invalid_case="first index overflow"):
+                with self.assertRaisesRegex(TypeError, "not RaisesOverflow"):
+                    create(RaisesOverflow())
+            with self.subTest(function=name, invalid_case="later index overflow"):
+                with self.assertRaisesRegex(TypeError, "got RaisesOverflow"):
+                    create(2, RaisesOverflow())
+
+            overflow_shape = [1, 2, sys.maxsize]
+            overflow_message = (
+                f"Storage size calculation overflowed with sizes={overflow_shape}"
+            )
+            with self.subTest(function=name, invalid_case="leading singleton overflow"):
+                with self.assertRaisesRegex(RuntimeError, re.escape(overflow_message)):
+                    create(*overflow_shape)
+
     def test_factory_binding_defers_later_index_conversion(self):
         def new_probe(events):
             class Probe:
@@ -368,6 +387,21 @@ class PythonApiBaselineTests(unittest.TestCase):
                     tensor = call(new_probe(events))
                     self.assertEqual(tensor.shape, (2, 3))
                     self.assertEqual(events, ["index"])
+
+            for case, keyword in (("list", False), ("size keyword list", True)):
+                dimensions = []
+
+                class MutatingProbe:
+                    def __index__(self):
+                        dimensions[2] = 4
+                        return 2
+
+                dimensions.extend((2, MutatingProbe(), 3))
+                with self.subTest(function=name, mutation_case=case):
+                    tensor = (
+                        create(size=dimensions) if keyword else create(dimensions)
+                    )
+                    self.assertEqual(tensor.shape, (2, 2, 4))
 
     def test_eye_creates_square_rectangular_and_empty_tensors(self):
         cases = (

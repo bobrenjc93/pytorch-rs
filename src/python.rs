@@ -213,8 +213,13 @@ enum PreparedSizeDimension<'py> {
     Deferred(Bound<'py, PyAny>),
 }
 
-struct PreparedFactorySize<'py> {
-    dimensions: Vec<PreparedSizeDimension<'py>>,
+enum PreparedFactorySize<'py> {
+    Fixed(Vec<PreparedSizeDimension<'py>>),
+    LiveList {
+        dimensions: Bound<'py, PyList>,
+        length: usize,
+        first: Option<ParsedSizeDimension>,
+    },
 }
 
 enum FirstSizeErrorStyle {
@@ -1014,15 +1019,14 @@ fn prepare_positional_factory_size<'py>(
         for dimension in args.iter().skip(1) {
             try_push_size(&mut dimensions, PreparedSizeDimension::Deferred(dimension))?;
         }
-        return Ok(PreparedFactorySize { dimensions });
+        return Ok(PreparedFactorySize::Fixed(dimensions));
     }
 
     let value = args.get_item(0)?;
     if let Ok(dimensions) = value.cast::<PyList>() {
-        return prepare_factory_size_dimensions(
+        return prepare_factory_list_dimensions(
             function,
-            dimensions.len(),
-            dimensions.iter(),
+            dimensions,
             &FirstSizeErrorStyle::PositionalCollection,
         );
     }
@@ -1048,10 +1052,9 @@ fn prepare_keyword_factory_size<'py>(
 ) -> PyResult<PreparedFactorySize<'py>> {
     let container_type = transpose_type_name(value)?;
     if let Ok(dimensions) = value.cast::<PyList>() {
-        return prepare_factory_size_dimensions(
+        return prepare_factory_list_dimensions(
             function,
-            dimensions.len(),
-            dimensions.iter(),
+            dimensions,
             &FirstSizeErrorStyle::KeywordCollection(container_type),
         );
     }
@@ -1091,7 +1094,33 @@ fn prepare_factory_size_dimensions<'py>(
         };
         try_push_size(&mut parsed, value)?;
     }
-    Ok(PreparedFactorySize { dimensions: parsed })
+    Ok(PreparedFactorySize::Fixed(parsed))
+}
+
+fn prepare_factory_list_dimensions<'py>(
+    function: &str,
+    dimensions: &Bound<'py, PyList>,
+    first_error_style: &FirstSizeErrorStyle,
+) -> PyResult<PreparedFactorySize<'py>> {
+    let length = dimensions.len();
+    let first = if length == 0 {
+        None
+    } else {
+        let value = parse_size_dimension(&dimensions.get_item(0)?, true)?;
+        if let ParsedSizeDimension::Invalid(type_name) = &value {
+            return Err(first_factory_size_error(
+                function,
+                type_name,
+                first_error_style,
+            ));
+        }
+        Some(value)
+    };
+    Ok(PreparedFactorySize::LiveList {
+        dimensions: dimensions.clone(),
+        length,
+        first,
+    })
 }
 
 fn parse_size_dimension(
@@ -1102,7 +1131,22 @@ fn parse_size_dimension(
     if reject_bool && dimension.is_instance_of::<PyBool>() {
         return Ok(ParsedSizeDimension::Invalid(type_name));
     }
-    match dimension.extract::<i64>() {
+
+    let extracted = if dimension.is_instance_of::<PyInt>() {
+        dimension.extract::<i64>()
+    } else {
+        // Calling the index protocol separately distinguishes a user
+        // exception (which makes the object an invalid dimension) from a
+        // valid integer result outside the signed 64-bit size range.
+        let Ok(indexed) = PyModule::import(dimension.py(), "operator")
+            .and_then(|operator| operator.getattr("index"))
+            .and_then(|index| index.call1((dimension,)))
+        else {
+            return Ok(ParsedSizeDimension::Invalid(type_name));
+        };
+        indexed.extract::<i64>()
+    };
+    match extracted {
         Ok(value) => Ok(ParsedSizeDimension::Value(value)),
         Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
             Ok(ParsedSizeDimension::Overflow)
@@ -1128,32 +1172,66 @@ fn first_factory_size_error(function: &str, type_name: &str, style: &FirstSizeEr
 
 impl PreparedFactorySize<'_> {
     fn finish(self, function: &str) -> PyResult<Vec<i64>> {
-        let mut size = try_size_vector(self.dimensions.len())?;
-        for (index, dimension) in self.dimensions.into_iter().enumerate() {
-            let parsed = match dimension {
-                PreparedSizeDimension::Parsed(value) => value,
-                PreparedSizeDimension::Deferred(value) => parse_size_dimension(&value, false)?,
-            };
-            let value = match parsed {
-                ParsedSizeDimension::Value(value) => value,
-                ParsedSizeDimension::Overflow => {
-                    return Err(factory_size_unpack_error(
-                        function,
-                        index + 1,
-                        "Overflow when unpacking long long",
-                    ));
+        match self {
+            Self::Fixed(dimensions) => {
+                let mut size = try_size_vector(dimensions.len())?;
+                for (index, dimension) in dimensions.into_iter().enumerate() {
+                    let parsed = match dimension {
+                        PreparedSizeDimension::Parsed(value) => value,
+                        PreparedSizeDimension::Deferred(value) => {
+                            parse_size_dimension(&value, false)?
+                        }
+                    };
+                    try_push_size(
+                        &mut size,
+                        unpack_factory_size_dimension(function, index, parsed)?,
+                    )?;
                 }
-                ParsedSizeDimension::Invalid(type_name) => {
-                    return Err(factory_size_unpack_error(
-                        function,
-                        index + 1,
-                        &format!("type must be tuple of ints,but got {type_name}"),
-                    ));
+                Ok(size)
+            }
+            Self::LiveList {
+                dimensions,
+                length,
+                first,
+            } => {
+                let mut size = try_size_vector(length)?;
+                if let Some(first) = first {
+                    try_push_size(
+                        &mut size,
+                        unpack_factory_size_dimension(function, 0, first)?,
+                    )?;
                 }
-            };
-            try_push_size(&mut size, value)?;
+                for index in 1..length {
+                    let dimension = dimensions.get_item(index)?;
+                    let parsed = parse_size_dimension(&dimension, false)?;
+                    try_push_size(
+                        &mut size,
+                        unpack_factory_size_dimension(function, index, parsed)?,
+                    )?;
+                }
+                Ok(size)
+            }
         }
-        Ok(size)
+    }
+}
+
+fn unpack_factory_size_dimension(
+    function: &str,
+    index: usize,
+    dimension: ParsedSizeDimension,
+) -> PyResult<i64> {
+    match dimension {
+        ParsedSizeDimension::Value(value) => Ok(value),
+        ParsedSizeDimension::Overflow => Err(factory_size_unpack_error(
+            function,
+            index + 1,
+            "Overflow when unpacking long long",
+        )),
+        ParsedSizeDimension::Invalid(type_name) => Err(factory_size_unpack_error(
+            function,
+            index + 1,
+            &format!("type must be tuple of ints,but got {type_name}"),
+        )),
     }
 }
 
@@ -1190,10 +1268,12 @@ fn validate_factory_size(factory: ConstantFactory, size: Vec<i64>) -> PyResult<V
 }
 
 fn constant_factory_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
-    if matches!(
+    let storage_overflow = matches!(
         error,
         TensorError::ElementCountOverflow | TensorError::StorageCapacityOverflow { .. }
-    ) {
+    ) || matches!(error, TensorError::StrideCalculationOverflow)
+        && !shape.contains(&0);
+    if storage_overflow {
         PyRuntimeError::new_err(format!(
             "Storage size calculation overflowed with sizes={shape:?}"
         ))

@@ -100,6 +100,10 @@ class FactorySizeReferenceTests(unittest.TestCase):
             def __index__(self):
                 raise RuntimeError("cannot index")
 
+        class RaisesOverflow:
+            def __index__(self):
+                raise OverflowError("deliberate overflow")
+
         accepted_sizes = (
             (IntSubclass(2), IntSubclass(3)),
             (Indexable(2), Indexable(3)),
@@ -139,6 +143,11 @@ class FactorySizeReferenceTests(unittest.TestCase):
                 (lambda factory: factory(object()), True),
                 (lambda factory: factory((2, object())), True),
                 (lambda factory: factory(2, BadIndex()), True),
+                (lambda factory: factory(RaisesOverflow()), True),
+                (lambda factory: factory((RaisesOverflow(), 2)), True),
+                (lambda factory: factory(2, RaisesOverflow()), True),
+                (lambda factory: factory([2, RaisesOverflow()]), True),
+                (lambda factory: factory(size=(2, RaisesOverflow())), True),
                 (lambda factory: factory((2,), 3), True),
                 (lambda factory: factory(size=2), True),
                 (lambda factory: factory((2,), size=(2,)), True),
@@ -193,6 +202,29 @@ class FactorySizeReferenceTests(unittest.TestCase):
                     self.assertEqual(actual, expected)
                     self.assertEqual(actual[0], [])
 
+    def test_mutating_list_dimensions_match_pytorch_2_13(self):
+        def create(factory, keyword):
+            dimensions = []
+
+            class Probe:
+                def __index__(self):
+                    dimensions[2] = 4
+                    return 2
+
+            dimensions.extend((2, Probe(), 3))
+            tensor = factory(size=dimensions) if keyword else factory(dimensions)
+            return tensor.shape, dimensions[2]
+
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for keyword in (False, True):
+                with self.subTest(factory=factory_name, keyword=keyword):
+                    actual = create(actual_factory, keyword)
+                    expected = create(expected_factory, keyword)
+                    self.assertEqual(actual, expected)
+                    self.assertEqual(actual[0], (2, 2, 4))
+
     def test_empty_metadata_negative_and_overflow_shapes_match(self):
         maximum = sys.maxsize
         metadata_shapes = (
@@ -205,6 +237,8 @@ class FactorySizeReferenceTests(unittest.TestCase):
             (0, maximum, maximum),
             (maximum // 2 + 1,),
             (1 << 32, 1 << 32),
+            (1, 2, maximum),
+            (1, 1, 2, maximum),
         )
         for factory_name in ("zeros", "ones"):
             actual_factory = getattr(torch, factory_name)
@@ -219,8 +253,8 @@ class FactorySizeReferenceTests(unittest.TestCase):
             for shape in error_shapes:
                 with self.subTest(factory=factory_name, overflow_shape=shape):
                     self.assert_error_matches(
-                        lambda shape=shape: actual_factory(shape),
-                        lambda shape=shape: expected_factory(shape),
+                        lambda shape=shape: actual_factory(*shape),
+                        lambda shape=shape: expected_factory(*shape),
                     )
             for shape in ((-1,), (2, -3, 4), (0, -1)):
                 with self.subTest(factory=factory_name, negative_shape=shape):
