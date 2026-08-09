@@ -65,7 +65,10 @@ class TensorBufferReferenceTests(unittest.TestCase):
         cases.extend(
             (
                 ("bytearray", bytearray((0, 1, 127, 128, 255))),
-                ("bool", memoryview(b"\x00\x01\xff").cast("?")),
+                (
+                    "bool including noncanonical bytes",
+                    memoryview(b"\x00\x01\x02\x03\xfe\xff").cast("?"),
+                ),
                 (
                     "ssize_t",
                     memoryview(bytes(2 * ctypes.sizeof(ctypes.c_ssize_t))).cast("n"),
@@ -75,9 +78,29 @@ class TensorBufferReferenceTests(unittest.TestCase):
                     memoryview(bytes(2 * ctypes.sizeof(ctypes.c_size_t))).cast("N"),
                 ),
                 ("float16", memoryview(struct.pack("@ee", 1.0, -2.0)).cast("e")),
+                (
+                    "native-prefixed int32",
+                    memoryview(struct.pack("@ii", -7, 9)).cast("@i"),
+                ),
+                (
+                    "native-prefixed float32",
+                    memoryview(struct.pack("@ff", -2.5, 3.25)).cast("@f"),
+                ),
+                ("native-prefixed bool", memoryview(b"\x02\x03").cast("@?")),
             )
         )
         for case, source in cases:
+            self.assert_matches(source, case=case)
+
+    def test_numpy_and_ctypes_sequence_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        for case, source in (
+            (
+                "rank-2 numpy array",
+                np.asarray([[1, 2, 3], [4, 5, 6]], dtype=np.int32),
+            ),
+            ("direct ctypes array", (ctypes.c_int * 3)(-7, 0, 9)),
+        ):
             self.assert_matches(source, case=case)
 
     def test_float16_edge_value_bits_match_pytorch_2_13(self):
@@ -119,11 +142,22 @@ class TensorBufferReferenceTests(unittest.TestCase):
             (memoryview(bytearray(range(6))).cast("B", (2, 3)), True),
             (memoryview(array.array("i", [3])).cast("B").cast("i", ()), True),
             (memoryview((ctypes.c_int * 2)(1, 2)), True),
-            (memoryview(b"ab").cast("c"), False),
         )
         for source, explicit_dtype in cases:
             with self.subTest(format=source.format, shape=source.shape):
                 self.assert_error_matches(source, explicit_dtype=explicit_dtype)
+
+    def test_bytes_and_character_views_match_dtype_sensitive_pytorch_dispatch(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        for source in (b"", b"ab"):
+            with self.subTest(source=source, explicit_dtype=False):
+                self.assert_error_matches(source, explicit_dtype=False)
+            with self.subTest(source=source, explicit_dtype=True):
+                self.assert_error_matches(source, explicit_dtype=True)
+
+        characters = memoryview(b"ab").cast("c")
+        self.assert_error_matches(characters, explicit_dtype=False)
+        self.assert_matches(characters, case="character memoryview with float32 dtype")
 
 
 if __name__ == "__main__":

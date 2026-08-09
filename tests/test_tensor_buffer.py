@@ -44,7 +44,7 @@ class TensorBufferTests(unittest.TestCase):
                 self.assert_tensor(memoryview(exporter), values)
 
         for format_code, raw, expected in (
-            ("?", b"\x00\x01\xff", [0.0, 1.0, 1.0]),
+            ("?", b"\x00\x01\x02\x03\xfe\xff", [0.0, 1.0, 0.0, 1.0, 0.0, 1.0]),
             ("n", bytes(2 * ctypes.sizeof(ctypes.c_ssize_t)), [0.0, 0.0]),
             ("N", bytes(2 * ctypes.sizeof(ctypes.c_size_t)), [0.0, 0.0]),
             ("e", struct.pack("@ee", 1.0, -2.0), [1.0, -2.0]),
@@ -52,17 +52,40 @@ class TensorBufferTests(unittest.TestCase):
             with self.subTest(format=format_code, input="cast memoryview"):
                 self.assert_tensor(memoryview(raw).cast(format_code), expected)
 
-    def test_bytes_bytearray_strides_and_reversed_views(self):
-        self.assert_tensor(bytes((0, 1, 127, 128, 255)), [0, 1, 127, 128, 255])
+    def test_native_prefixed_formats(self):
+        for format_code, raw, expected in (
+            ("@i", struct.pack("@ii", -7, 9), [-7.0, 9.0]),
+            ("@f", struct.pack("@ff", -2.5, 3.25), [-2.5, 3.25]),
+            ("@?", b"\x02\x03", [0.0, 1.0]),
+        ):
+            with self.subTest(format=format_code):
+                self.assert_tensor(memoryview(raw).cast(format_code), expected)
+
+    def test_bytes_reject_but_bytearray_strides_and_reversed_views_work(self):
+        for source in (b"", bytes((0, 1, 127, 128, 255))):
+            for kwargs in ({}, {"dtype": torch.float32}):
+                with self.subTest(source=source, kwargs=kwargs):
+                    with self.assertRaisesRegex(TypeError, "invalid data type 'bytes'"):
+                        torch.tensor(source, **kwargs)
+
         self.assert_tensor(bytearray((0, 1, 127, 128, 255)), [0, 1, 127, 128, 255])
 
         exporter = array.array("i", [-8, -4, 0, 4, 8, 12])
         self.assert_tensor(memoryview(exporter)[1::2], [-4, 4, 12])
         self.assert_tensor(memoryview(exporter)[::-2], [12, 4, -4])
 
+    def test_numpy_and_ctypes_sequences_keep_sequence_dispatch(self):
+        matrix = np.asarray([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
+        tensor = torch.tensor(matrix, dtype=torch.float32)
+        self.assertEqual(tensor.shape, (2, 3))
+        self.assertEqual(tensor.tolist(), [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+
+        integers = (ctypes.c_int * 3)(-7, 0, 9)
+        self.assert_tensor(integers, [-7.0, 0.0, 9.0])
+
     def test_empty_buffers_and_explicit_metadata(self):
         for source in (
-            b"",
+            memoryview(b""),
             bytearray(),
             array.array("q"),
             memoryview(array.array("d")),
@@ -106,6 +129,9 @@ class TensorBufferTests(unittest.TestCase):
         characters = memoryview(b"ab").cast("c")
         with self.assertRaisesRegex(TypeError, "invalid data type 'bytes'"):
             torch.tensor(characters)
+        converted_characters = torch.tensor(characters, dtype=torch.float32)
+        self.assertEqual(converted_characters.shape, (2, 1))
+        self.assertEqual(converted_characters.tolist(), [[97.0], [98.0]])
 
         released = memoryview(bytearray((1, 2)))
         released.release()
