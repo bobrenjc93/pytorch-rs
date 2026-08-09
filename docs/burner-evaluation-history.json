@@ -433,6 +433,38 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 48
       }
+    },
+    {
+      "key": "base:f8c8b40b2dbc5f6f74c244812afb26966b4b97bc",
+      "commit": "f8c8b40b2dbc5f6f74c244812afb26966b4b97bc",
+      "recordedAt": "2026-08-09T16:04:19.369Z",
+      "label": "base f8c8b40",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.2,
+        "eval_39340456": 13,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 46
+      }
+    },
+    {
+      "key": "pr:24",
+      "recordedAt": "2026-08-09T16:04:19.369Z",
+      "label": "PR #24",
+      "kind": "leaf",
+      "prNumber": 24,
+      "title": "Add PyTorch-compatible Tensor.flatten with view-or-copy semantics",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.4,
+        "eval_39340456": 14,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 48
+      }
     }
   ]
 }

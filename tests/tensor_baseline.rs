@@ -954,6 +954,160 @@ fn stride_aware_consumers_handle_transposed_and_indexed_views() {
 }
 
 #[test]
+fn flatten_collapses_compatible_ranges_as_shared_storage_views() {
+    let source = Tensor::from_vec((0_u8..120).map(f32::from).collect(), [2, 3, 4, 5]).unwrap();
+    let view = source.transpose(0, 1).unwrap().index_integer(1).unwrap();
+    assert_eq!(view.shape(), [2, 4, 5]);
+    assert_eq!(view.stride(), [60, 5, 1]);
+    assert_eq!(view.storage_offset(), 20);
+
+    let flattened = view.flatten(1, -1).unwrap();
+    assert_eq!(flattened.shape(), [2, 20]);
+    assert_eq!(flattened.stride(), [60, 1]);
+    assert_eq!(flattened.storage_offset(), 20);
+    assert!(flattened.shares_storage_with(&source));
+    assert_eq!(
+        flattened.logical_values().collect::<Vec<_>>(),
+        view.logical_values().collect::<Vec<_>>()
+    );
+
+    let unchanged = view.flatten(-1, -1).unwrap();
+    assert_eq!(unchanged.shape(), view.shape());
+    assert_eq!(unchanged.stride(), view.stride());
+    assert!(unchanged.shares_storage_with(&view));
+}
+
+#[test]
+fn flatten_incompatible_ranges_are_eager_independent_contiguous_copies() {
+    let bits = [
+        0x0000_0000_u32,
+        0x8000_0000,
+        0x7fc1_2345,
+        0x7f80_0000,
+        0xff80_0000,
+        0x40a0_0000,
+    ];
+    let source = Tensor::from_vec(bits.map(f32::from_bits).to_vec(), [2, 3]).unwrap();
+    let flattened = source.transpose(0, 1).unwrap().flatten(0, 1).unwrap();
+
+    assert_eq!(flattened.shape(), [6]);
+    assert_eq!(flattened.stride(), [1]);
+    assert_eq!(flattened.storage_offset(), 0);
+    assert!(!flattened.shares_storage_with(&source));
+    assert_eq!(
+        flattened
+            .as_slice()
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        [bits[0], bits[3], bits[1], bits[4], bits[2], bits[5]]
+    );
+    assert!(flattened.sum().shape().is_empty());
+    assert_eq!(flattened.add_scalar(1.0).unwrap().stride(), [1]);
+}
+
+#[test]
+fn flatten_handles_scalars_lifetimes_empty_shapes_and_wrapping_metadata() {
+    let scalar = Tensor::from_vec(vec![3.5], []).unwrap();
+    let scalar_view = scalar.flatten(0, -1).unwrap();
+    assert_eq!(scalar_view.shape(), [1]);
+    assert_eq!(scalar_view.stride(), [1]);
+    assert!(scalar_view.shares_storage_with(&scalar));
+
+    let surviving_view = {
+        let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+        source.index_integer(1).unwrap().flatten(0, 1).unwrap()
+    };
+    assert_eq!(surviving_view.storage_offset(), 12);
+    assert_eq!(
+        surviving_view.as_slice(),
+        (12_u8..24).map(f32::from).collect::<Vec<_>>()
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().flatten(0, -1).unwrap();
+    assert_eq!(empty.shape(), [0]);
+    assert_eq!(empty.stride(), [1]);
+    assert!(empty.logical_values().next().is_none());
+
+    let maximum = i64::MAX;
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, maximum, maximum])
+        .unwrap();
+    let wrapped = extreme.flatten(1, 2).unwrap();
+    assert_eq!(wrapped.shape(), [0, 1]);
+    assert_eq!(wrapped.stride(), [1, 1]);
+    assert!(wrapped.shares_storage_with(&extreme));
+
+    let wrapping_negative_one = Tensor::zeros([3, 0, 6_148_914_691_236_517_205])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    assert!(matches!(
+        wrapping_negative_one.flatten(1, 2),
+        Err(TensorError::ReshapeAmbiguousZeroElements { .. })
+    ));
+
+    let symbolic_boundary = Tensor::zeros([0])
+        .unwrap()
+        .reshape([1_i64 << 31, 1_i64 << 32, 0])
+        .unwrap()
+        .transpose(0, 2)
+        .unwrap();
+    assert_eq!(
+        symbolic_boundary.flatten(1, 2),
+        Err(TensorError::FlattenNonConcreteInteger)
+    );
+    assert_eq!(
+        TensorError::FlattenNonConcreteInteger.to_string(),
+        "SymIntArrayRef expected to contain only concrete integers"
+    );
+
+    let wrapping_negative_two = Tensor::zeros([isize::MAX.unsigned_abs(), 0, 2])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    assert!(matches!(
+        wrapping_negative_two.flatten(1, 2),
+        Err(TensorError::ReshapeInvalidDimension { dimension: -2, .. })
+    ));
+}
+
+#[test]
+fn flatten_normalizes_dimensions_and_reports_pytorch_errors() {
+    let tensor = Tensor::zeros([2, 3, 4]).unwrap();
+    assert_eq!(tensor.flatten(-3, -1).unwrap().shape(), [24]);
+    assert_eq!(tensor.flatten(2, 1), Err(TensorError::FlattenStartAfterEnd));
+    assert_eq!(
+        tensor.flatten(-4, -1),
+        Err(TensorError::DimensionOutOfRange {
+            dimension: -4,
+            rank: 3,
+        })
+    );
+    assert_eq!(
+        tensor.flatten(2, 1).unwrap_err().to_string(),
+        "flatten() has invalid args: start_dim cannot come after end_dim"
+    );
+
+    let scalar = Tensor::from_vec(vec![1.0], []).unwrap();
+    assert_eq!(
+        scalar.flatten(1, 0),
+        Err(TensorError::DimensionOutOfRange {
+            dimension: 1,
+            rank: 0,
+        })
+    );
+    assert_eq!(
+        tensor.collapse_dimensions(3, 3),
+        Err(TensorError::DimensionOutOfRange {
+            dimension: 3,
+            rank: 3,
+        })
+    );
+}
+
+#[test]
 fn rank_two_matmul_reads_transposed_strides() {
     let left = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [2, 3])
         .unwrap()
