@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::ffi::CStr;
 use std::mem::size_of;
 use std::os::raw::c_long;
@@ -16,8 +17,8 @@ use pyo3::types::{
 };
 
 use crate::{
-    DType, Device, MemoryFormat, NoGradGuard, Tensor as CoreTensor, TensorError,
-    no_grad as core_no_grad,
+    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, no_grad as core_no_grad,
+    set_grad_enabled,
 };
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
@@ -28,6 +29,10 @@ static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+
+thread_local! {
+    static NO_GRAD_CONTEXT_STATE: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+}
 
 #[cfg(target_os = "macos")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4317.)";
@@ -158,38 +163,32 @@ struct PyTensor {
 }
 
 /// Thread-local autograd recording guard exposed as `torch.no_grad`.
-#[pyclass(name = "no_grad", module = "torch_rs", unsendable, skip_from_py_object)]
-struct PyNoGrad {
-    guards: Vec<NoGradGuard>,
-}
-
-impl Drop for PyNoGrad {
-    fn drop(&mut self) {
-        while let Some(guard) = self.guards.pop() {
-            drop(guard);
-        }
-    }
-}
+#[pyclass(name = "no_grad", module = "torch_rs", skip_from_py_object)]
+struct PyNoGrad;
 
 #[pymethods]
 impl PyNoGrad {
     #[new]
     fn new() -> Self {
-        Self { guards: Vec::new() }
+        Self
     }
 
-    fn __enter__(mut slf: PyRefMut<'_, Self>) -> Py<Self> {
-        slf.guards.push(core_no_grad());
+    fn __enter__(slf: PyRef<'_, Self>) -> Py<Self> {
+        let previous = set_grad_enabled(false);
+        NO_GRAD_CONTEXT_STATE.with_borrow_mut(|states| states.push(previous));
         slf.into()
     }
 
+    #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
     fn __exit__(
-        &mut self,
+        &self,
         _exception_type: &Bound<'_, PyAny>,
         _exception_value: &Bound<'_, PyAny>,
         _traceback: &Bound<'_, PyAny>,
     ) -> bool {
-        self.guards.pop();
+        if let Some(previous) = NO_GRAD_CONTEXT_STATE.with_borrow_mut(Vec::pop) {
+            set_grad_enabled(previous);
+        }
         false
     }
 

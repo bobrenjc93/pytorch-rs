@@ -8,6 +8,8 @@
 mod python;
 mod tensor;
 
+pub(crate) use tensor::set_grad_enabled;
+
 pub use tensor::{
     DType, Device, LogicalValues, MemoryFormat, NoGradGuard, Tensor, TensorError, no_grad,
 };

@@ -105,6 +105,10 @@ fn grad_enabled() -> bool {
     GRAD_ENABLED.get()
 }
 
+pub(crate) fn set_grad_enabled(enabled: bool) -> bool {
+    GRAD_ENABLED.replace(enabled)
+}
+
 struct AutogradMeta {
     kind: AutogradKind,
 }
@@ -123,7 +127,7 @@ enum AutogradKind {
 
 #[derive(Clone)]
 struct SavedTensor {
-    storage: Arc<Storage>,
+    storage: Option<Arc<Storage>>,
     shape: Vec<usize>,
     strides: Vec<usize>,
     offset: usize,
@@ -162,6 +166,59 @@ enum TransformMapping {
     Index {
         input_start: usize,
     },
+}
+
+impl SavedTensor {
+    fn take_parent(&mut self, pending: &mut Vec<Arc<AutogradMeta>>) {
+        if let Some(parent) = self.autograd.take() {
+            pending.push(parent);
+        }
+    }
+}
+
+impl GradFn {
+    fn take_parents(&mut self, pending: &mut Vec<Arc<AutogradMeta>>) {
+        match self {
+            Self::Multiply { left, right, .. } => {
+                left.take_parent(pending);
+                right.take_parent(pending);
+            }
+            Self::MultiplyScalar { input, .. }
+            | Self::Sum { input }
+            | Self::Transform { input, .. } => input.take_parent(pending),
+        }
+    }
+}
+
+impl AutogradMeta {
+    fn take_grad_fn(&mut self) -> Option<GradFn> {
+        let AutogradKind::NonLeaf { grad_fn } = &mut self.kind else {
+            return None;
+        };
+        grad_fn
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    }
+}
+
+impl Drop for AutogradMeta {
+    fn drop(&mut self) {
+        let Some(mut grad_fn) = self.take_grad_fn() else {
+            return;
+        };
+        let mut pending = Vec::new();
+        grad_fn.take_parents(&mut pending);
+        drop(grad_fn);
+
+        while let Some(parent) = pending.pop() {
+            if let Ok(mut parent) = Arc::try_unwrap(parent)
+                && let Some(mut grad_fn) = parent.take_grad_fn()
+            {
+                grad_fn.take_parents(&mut pending);
+            }
+        }
+    }
 }
 
 /// A tensor with immutable shared storage and native shape/stride metadata.
@@ -865,15 +922,15 @@ impl Tensor {
     /// Returns an error for multi-element outputs, tensors which do not require
     /// gradients, or graphs already consumed by a prior backward pass.
     pub fn backward(&self) -> Result<(), TensorError> {
+        let meta = self
+            .autograd
+            .as_ref()
+            .ok_or(TensorError::DoesNotRequireGrad)?;
         if self.elements != 1 {
             return Err(TensorError::BackwardRequiresScalar {
                 elements: self.elements,
             });
         }
-        let meta = self
-            .autograd
-            .as_ref()
-            .ok_or(TensorError::DoesNotRequireGrad)?;
         run_backward(meta)
     }
 
@@ -890,7 +947,7 @@ impl Tensor {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Transform {
-                        input: SavedTensor::try_from_tensor(self)?,
+                        input: SavedTensor::try_from_tensor(self, false)?,
                         mapping,
                     })),
                 },
@@ -1830,8 +1887,8 @@ impl Tensor {
         if (self.requires_grad() || other.requires_grad()) && grad_enabled() {
             let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
             let grad_fn = GradFn::Multiply {
-                left: SavedTensor::try_from_tensor(self)?,
-                right: SavedTensor::try_from_tensor(other)?,
+                left: SavedTensor::try_from_tensor(self, other.requires_grad())?,
+                right: SavedTensor::try_from_tensor(other, self.requires_grad())?,
                 output_shape,
                 output_elements: output.elements,
             };
@@ -1884,7 +1941,7 @@ impl Tensor {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::MultiplyScalar {
-                        input: SavedTensor::try_from_tensor(self)?,
+                        input: SavedTensor::try_from_tensor(self, false)?,
                         scalar,
                     })),
                 },
@@ -1982,7 +2039,7 @@ impl Tensor {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Sum {
-                        input: SavedTensor::from_tensor(self),
+                        input: SavedTensor::from_tensor(self, false),
                     })),
                 },
             }));
@@ -2260,9 +2317,9 @@ impl Tensor {
 }
 
 impl SavedTensor {
-    fn from_tensor(tensor: &Tensor) -> Self {
+    fn from_tensor(tensor: &Tensor, save_values: bool) -> Self {
         Self {
-            storage: Arc::clone(&tensor.storage),
+            storage: save_values.then(|| Arc::clone(&tensor.storage)),
             shape: tensor.shape.clone(),
             strides: tensor.strides.clone(),
             offset: tensor.offset,
@@ -2271,9 +2328,9 @@ impl SavedTensor {
         }
     }
 
-    fn try_from_tensor(tensor: &Tensor) -> Result<Self, TensorError> {
+    fn try_from_tensor(tensor: &Tensor, save_values: bool) -> Result<Self, TensorError> {
         Ok(Self {
-            storage: Arc::clone(&tensor.storage),
+            storage: save_values.then(|| Arc::clone(&tensor.storage)),
             shape: try_clone_result_shape(&tensor.shape, tensor.elements)?,
             strides: try_clone_result_shape(&tensor.strides, tensor.elements)?,
             offset: tensor.offset,
@@ -2459,13 +2516,23 @@ fn apply_grad_fn(
                 if let Some(gradient) = &mut left_gradient {
                     gradient.add(
                         left_index,
-                        output_gradient * right.storage.data[right_offset],
+                        output_gradient
+                            * right
+                                .storage
+                                .as_ref()
+                                .expect("left derivative must save right operand values")
+                                .data[right_offset],
                     );
                 }
                 if let Some(gradient) = &mut right_gradient {
                     gradient.add(
                         right_index,
-                        output_gradient * left.storage.data[left_offset],
+                        output_gradient
+                            * left
+                                .storage
+                                .as_ref()
+                                .expect("right derivative must save left operand values")
+                                .data[left_offset],
                     );
                 }
             }
@@ -3315,5 +3382,20 @@ mod tests {
             tensor.exp(),
             Err(TensorError::AllocationFailed { elements })
         );
+    }
+
+    #[test]
+    fn metadata_only_autograd_edges_release_intermediate_storage() {
+        let leaf = Tensor::ones([16_384]).unwrap().with_requires_grad(true);
+        let mut output = leaf.mul_scalar(1.0).unwrap();
+        for _ in 0..128 {
+            let previous_storage = Arc::downgrade(&output.storage);
+            output = output.mul_scalar(1.0).unwrap();
+            assert!(
+                previous_storage.upgrade().is_none(),
+                "scalar autograd edges must not retain operand values"
+            );
+        }
+        assert!(output.requires_grad());
     }
 }

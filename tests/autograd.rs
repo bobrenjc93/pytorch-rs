@@ -81,6 +81,11 @@ fn detach_and_nested_no_grad_are_graph_boundaries() {
 fn backward_errors_are_stable_and_saved_graphs_live_until_consumed() {
     let plain = Tensor::from_vec(vec![1.0], []).unwrap();
     assert_eq!(plain.backward(), Err(TensorError::DoesNotRequireGrad));
+    let plain_vector = Tensor::from_vec(vec![1.0, 2.0], [2]).unwrap();
+    assert_eq!(
+        plain_vector.backward(),
+        Err(TensorError::DoesNotRequireGrad)
+    );
 
     let vector = Tensor::from_vec(vec![1.0, 2.0], [2])
         .unwrap()
@@ -127,6 +132,28 @@ fn deep_graph_backward_uses_an_iterative_topology_walk() {
         leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
         1.0_f32.to_bits()
     );
+}
+
+#[test]
+fn unconsumed_deep_graph_drop_and_detach_are_stack_safe() {
+    let leaf = Tensor::from_vec(vec![3.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+
+    let mut output = leaf.mul_scalar(1.0).unwrap();
+    for _ in 0..100_000 {
+        output = output.mul_scalar(1.0).unwrap();
+    }
+    let detached = output.detach().unwrap();
+    drop(output);
+    assert!(!detached.requires_grad());
+    assert_eq!(detached.item().unwrap().to_bits(), 3.0_f32.to_bits());
+
+    let mut unconsumed = leaf.mul_scalar(1.0).unwrap();
+    for _ in 0..100_000 {
+        unconsumed = unconsumed.mul_scalar(1.0).unwrap();
+    }
+    drop(unconsumed);
 }
 
 #[test]

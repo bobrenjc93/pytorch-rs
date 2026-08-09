@@ -59,6 +59,8 @@ class AutogradApiTests(unittest.TestCase):
     def test_backward_errors_repeated_policy_and_graph_lifetime(self):
         with self.assertRaisesRegex(RuntimeError, "does not require grad"):
             torch.tensor(1.0).backward()
+        with self.assertRaisesRegex(RuntimeError, "does not require grad"):
+            torch.tensor([1.0, 2.0]).backward()
         with self.assertRaisesRegex(RuntimeError, "implicitly created only for scalar"):
             torch.tensor([1.0, 2.0], requires_grad=True).backward()
 
@@ -140,6 +142,41 @@ class AutogradApiTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual(results, [False, True])
         self.assertTrue((value * value).requires_grad)
+
+        context = torch.no_grad()
+        context_results = []
+        context_failures = []
+
+        def run_context():
+            try:
+                with context:
+                    context_results.append((value * value).requires_grad)
+                context_results.append((value * value).requires_grad)
+            except BaseException as error:
+                context_failures.append(error)
+
+        context_thread = threading.Thread(target=run_context)
+        context_thread.start()
+        context_thread.join()
+        self.assertEqual(context_failures, [])
+        self.assertEqual(context_results, [False, True])
+
+    def test_unconsumed_deep_graph_drop_and_detach_are_stack_safe(self):
+        leaf = torch.tensor(3.0, requires_grad=True)
+        output = leaf
+        for _ in range(100_000):
+            output = output * 1.0
+        del output
+        gc.collect()
+
+        output = leaf
+        for _ in range(100_000):
+            output = output * 1.0
+        detached = output.detach()
+        del output
+        gc.collect()
+        self.assertFalse(detached.requires_grad)
+        self.assertEqual(detached.item(), 3.0)
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -226,6 +263,8 @@ class AutogradReferenceTests(unittest.TestCase):
             accumulated_gradients.append(np.asarray(boundary.grad).copy())
             with self.assertRaises(RuntimeError):
                 module.tensor([1.0, 2.0], requires_grad=True).backward()
+            with self.assertRaisesRegex(RuntimeError, "does not require grad"):
+                module.tensor([1.0, 2.0]).backward()
         np.testing.assert_array_equal(accumulated_gradients[0], accumulated_gradients[1])
 
     def test_transform_and_signed_zero_gradients_match_pytorch_2_13(self):
