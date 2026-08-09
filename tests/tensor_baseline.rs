@@ -761,6 +761,139 @@ fn matrix_multiplication_rejects_incompatible_shapes() {
 }
 
 #[test]
+fn batched_matrix_multiplication_handles_ordinary_batches() {
+    let left = Tensor::from_vec((1_u8..=12).map(f32::from).collect(), [2, 2, 3]).unwrap();
+    let right = Tensor::from_vec((1_u8..=12).map(f32::from).collect(), [2, 3, 2]).unwrap();
+    let output = left.matmul(&right).unwrap();
+
+    assert_eq!(output.shape(), [2, 2, 2]);
+    assert_eq!(output.stride(), [4, 2, 1]);
+    assert_eq!(
+        output.as_slice(),
+        [22.0, 28.0, 49.0, 64.0, 220.0, 244.0, 301.0, 334.0]
+    );
+}
+
+#[test]
+fn batched_matrix_multiplication_broadcasts_all_leading_dimensions() {
+    let left = Tensor::from_vec((1_u8..=12).map(f32::from).collect(), [2, 1, 2, 3]).unwrap();
+    let right = Tensor::from_vec((1_u8..=24).map(f32::from).collect(), [1, 4, 3, 2]).unwrap();
+    let output = left.matmul(&right).unwrap();
+
+    assert_eq!(output.shape(), [2, 4, 2, 2]);
+    assert_eq!(output.stride(), [16, 4, 2, 1]);
+    assert_eq!(
+        output.as_slice(),
+        [
+            22.0, 28.0, 49.0, 64.0, 58.0, 64.0, 139.0, 154.0, 94.0, 100.0, 229.0, 244.0, 130.0,
+            136.0, 319.0, 334.0, 76.0, 100.0, 103.0, 136.0, 220.0, 244.0, 301.0, 334.0, 364.0,
+            388.0, 499.0, 532.0, 508.0, 532.0, 697.0, 730.0,
+        ]
+    );
+}
+
+#[test]
+fn batched_matrix_multiplication_reads_offset_and_transposed_views() {
+    let left = Tensor::from_vec((0_u16..48).map(f32::from).collect(), [2, 2, 3, 4])
+        .unwrap()
+        .index([1])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    let right = Tensor::from_vec((0_u16..120).map(f32::from).collect(), [2, 5, 4, 3])
+        .unwrap()
+        .index([1])
+        .unwrap()
+        .transpose(0, 2)
+        .unwrap();
+    assert_eq!(left.stride(), [4, 12, 1]);
+    assert_eq!(left.storage_offset(), 24);
+    assert_eq!(right.stride(), [1, 3, 12]);
+    assert_eq!(right.storage_offset(), 60);
+
+    let output = left.matmul(&right).unwrap();
+    assert_eq!(output.shape(), [3, 2, 5]);
+    assert_eq!(output.stride(), [10, 5, 1]);
+    assert_eq!(
+        output.as_slice(),
+        [
+            6594.0, 7818.0, 9042.0, 10266.0, 11490.0, 9690.0, 11490.0, 13290.0, 15090.0, 16890.0,
+            7744.0, 9160.0, 10576.0, 11992.0, 13408.0, 10888.0, 12880.0, 14872.0, 16864.0, 18856.0,
+            8926.0, 10534.0, 12142.0, 13750.0, 15358.0, 12118.0, 14302.0, 16486.0, 18670.0,
+            20854.0,
+        ]
+    );
+}
+
+#[test]
+fn batched_matrix_multiplication_handles_empty_batch_and_matrix_dimensions() {
+    for (left_shape, right_shape, output_shape, output_stride) in [
+        ([0, 2, 3], [1, 3, 4], [0, 2, 4], [8, 4, 1]),
+        ([2, 0, 3], [1, 3, 4], [2, 0, 4], [4, 4, 1]),
+        ([2, 3, 4], [1, 4, 0], [2, 3, 0], [3, 1, 1]),
+    ] {
+        let output = Tensor::zeros(left_shape)
+            .unwrap()
+            .matmul(&Tensor::zeros(right_shape).unwrap())
+            .unwrap();
+        assert_eq!(output.shape(), output_shape);
+        assert_eq!(output.stride(), output_stride);
+        assert_eq!(output.numel(), 0);
+    }
+
+    let zero_inner = Tensor::zeros([2, 3, 0])
+        .unwrap()
+        .matmul(&Tensor::zeros([1, 0, 4]).unwrap())
+        .unwrap();
+    assert_eq!(zero_inner.shape(), [2, 3, 4]);
+    assert_eq!(zero_inner.stride(), [12, 4, 1]);
+    assert_eq!(zero_inner.as_slice(), [0.0; 24]);
+}
+
+#[test]
+fn batched_matrix_multiplication_reports_rank_inner_batch_and_shape_overflow_errors() {
+    assert!(matches!(
+        Tensor::zeros([3])
+            .unwrap()
+            .matmul(&Tensor::zeros([3, 2]).unwrap()),
+        Err(TensorError::MatmulRequiresMatrices { .. })
+    ));
+    assert!(matches!(
+        Tensor::zeros([2, 3, 4])
+            .unwrap()
+            .matmul(&Tensor::zeros([2, 5, 6]).unwrap()),
+        Err(TensorError::MatmulInnerDimensionMismatch { .. })
+    ));
+
+    let batch_error = Tensor::zeros([2, 3, 4])
+        .unwrap()
+        .matmul(&Tensor::zeros([3, 4, 5]).unwrap())
+        .unwrap_err();
+    assert_eq!(
+        batch_error,
+        TensorError::MatmulBatchDimensionMismatch {
+            left: vec![2, 3, 4],
+            right: vec![3, 4, 5],
+            left_dimension: 2,
+            right_dimension: 3,
+            dimension: 0,
+        }
+    );
+    assert_eq!(
+        batch_error.to_string(),
+        "The size of tensor a (2) must match the size of tensor b (3) at non-singleton dimension 0"
+    );
+
+    let maximum = isize::MAX.unsigned_abs();
+    assert_eq!(
+        Tensor::zeros([0, maximum, 0])
+            .unwrap()
+            .matmul(&Tensor::zeros([0, 2]).unwrap()),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+}
+
+#[test]
 fn transpose_is_a_metadata_only_shared_storage_view() {
     let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
     let transposed = source.transpose(0, -1).unwrap();

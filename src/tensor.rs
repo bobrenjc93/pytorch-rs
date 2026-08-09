@@ -147,6 +147,21 @@ pub enum TensorError {
         left: Vec<usize>,
         right: Vec<usize>,
     },
+    MatmulBatchDimensionMismatch {
+        left: Vec<usize>,
+        right: Vec<usize>,
+        left_dimension: usize,
+        right_dimension: usize,
+        dimension: usize,
+    },
+    MatmulDTypeMismatch {
+        left: DType,
+        right: DType,
+    },
+    MatmulDeviceMismatch {
+        left: Device,
+        right: Device,
+    },
     ItemRequiresOneElement {
         elements: usize,
     },
@@ -227,14 +242,11 @@ impl Display for TensorError {
                 "shape {shape:?} does not describe {elements} elements"
             ),
             Self::ShapeMismatch { left, right } => format_shape_mismatch(formatter, left, right),
-            Self::MatmulRequiresMatrices { left, right } => write!(
-                formatter,
-                "matmul currently requires two rank-2 tensors, got {left:?} and {right:?}"
-            ),
-            Self::MatmulInnerDimensionMismatch { left, right } => write!(
-                formatter,
-                "matmul inner dimensions differ for {left:?} and {right:?}"
-            ),
+            error @ (Self::MatmulRequiresMatrices { .. }
+            | Self::MatmulInnerDimensionMismatch { .. }
+            | Self::MatmulBatchDimensionMismatch { .. }
+            | Self::MatmulDTypeMismatch { .. }
+            | Self::MatmulDeviceMismatch { .. }) => format_matmul_error(formatter, error),
             Self::ItemRequiresOneElement { elements } => {
                 write!(formatter, "item requires one element, got {elements}")
             }
@@ -334,6 +346,113 @@ fn format_shape_mismatch(
             "tensor shapes are not broadcastable: {left:?} and {right:?}"
         )
     }
+}
+
+fn format_matmul_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::MatmulRequiresMatrices { left, right } => {
+            format_matmul_rank_error(formatter, left, right)
+        }
+        TensorError::MatmulInnerDimensionMismatch { left, right } => {
+            format_matmul_inner_dimension_error(formatter, left, right)
+        }
+        TensorError::MatmulBatchDimensionMismatch {
+            left_dimension,
+            right_dimension,
+            dimension,
+            ..
+        } => write!(
+            formatter,
+            "The size of tensor a ({left_dimension}) must match the size of tensor b ({right_dimension}) at non-singleton dimension {dimension}"
+        ),
+        TensorError::MatmulDTypeMismatch { left, right } => write!(
+            formatter,
+            "matmul expected both tensors to have the same dtype, but got {left} and {right}"
+        ),
+        TensorError::MatmulDeviceMismatch { left, right } => write!(
+            formatter,
+            "matmul expected both tensors to be on the same device, but got {left} and {right}"
+        ),
+        _ => unreachable!("only matmul errors are formatted here"),
+    }
+}
+
+fn format_matmul_rank_error(
+    formatter: &mut Formatter<'_>,
+    left: &[usize],
+    right: &[usize],
+) -> std::fmt::Result {
+    if left.is_empty() || right.is_empty() {
+        write!(
+            formatter,
+            "both arguments to matmul need to be at least 1D, but they are {}D and {}D",
+            left.len(),
+            right.len()
+        )
+    } else {
+        write!(
+            formatter,
+            "matmul rank-1 behavior is not supported, got shapes {left:?} and {right:?}"
+        )
+    }
+}
+
+fn format_matmul_inner_dimension_error(
+    formatter: &mut Formatter<'_>,
+    left: &[usize],
+    right: &[usize],
+) -> std::fmt::Result {
+    let Some((&inner, left_prefix)) = left.split_last() else {
+        return write!(
+            formatter,
+            "matmul inner dimensions differ for {left:?} and {right:?}"
+        );
+    };
+    let Some((&columns, right_prefix)) = right.split_last() else {
+        return write!(
+            formatter,
+            "matmul inner dimensions differ for {left:?} and {right:?}"
+        );
+    };
+    let Some((&other_inner, right_batch_shape)) = right_prefix.split_last() else {
+        return write!(
+            formatter,
+            "matmul inner dimensions differ for {left:?} and {right:?}"
+        );
+    };
+
+    if right.len() == 2 {
+        let rows = left_prefix
+            .iter()
+            .try_fold(1_usize, |rows, dimension| rows.checked_mul(*dimension));
+        if let Some(rows) = rows {
+            return write!(
+                formatter,
+                "mat1 and mat2 shapes cannot be multiplied ({rows}x{inner} and {other_inner}x{columns})"
+            );
+        }
+    } else if left.len() >= 2 {
+        let left_batch_shape = &left[..left.len() - 2];
+        let batch_rank = left_batch_shape.len().max(right_batch_shape.len());
+        let batches = (0..batch_rank).try_fold(1_usize, |batches, axis| {
+            broadcast_dimension(
+                aligned_dimension(left_batch_shape, batch_rank, axis),
+                aligned_dimension(right_batch_shape, batch_rank, axis),
+            )
+            .and_then(|dimension| batches.checked_mul(dimension))
+        });
+        if let Some(batches) = batches {
+            return write!(
+                formatter,
+                "Expected size for first two dimensions of batch2 tensor to be: [{batches}, {inner}] but got: [{batches}, {other_inner}]."
+            );
+        }
+    }
+
+    write!(
+        formatter,
+        "matmul inner dimensions differ for {left:?} and {right:?}"
+    )
 }
 
 fn format_dimension_out_of_range(
@@ -1654,61 +1773,143 @@ impl Tensor {
         Ok(self.value_at_linear_index(0))
     }
 
-    /// Multiplies two rank-2 matrices.
+    /// Multiplies matrices, broadcasting any leading batch dimensions.
     ///
     /// # Errors
     ///
-    /// Returns an error unless both tensors are matrices with compatible inner
-    /// dimensions.
+    /// Returns an error unless both tensors have rank two or greater, matching
+    /// dtype and device metadata, compatible inner matrix dimensions, and
+    /// broadcastable leading dimensions. Rank-one matmul is intentionally not
+    /// implemented.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
-        if self.shape.len() != 2 || other.shape.len() != 2 {
+        if self.shape.len() < 2 || other.shape.len() < 2 {
             return Err(TensorError::MatmulRequiresMatrices {
                 left: self.shape.clone(),
                 right: other.shape.clone(),
             });
         }
-        let (rows, inner) = (self.shape[0], self.shape[1]);
-        let (other_inner, columns) = (other.shape[0], other.shape[1]);
-        if inner != other_inner {
-            return Err(TensorError::MatmulInnerDimensionMismatch {
-                left: self.shape.clone(),
-                right: other.shape.clone(),
+        if self.dtype() != other.dtype() {
+            return Err(TensorError::MatmulDTypeMismatch {
+                left: self.dtype(),
+                right: other.dtype(),
+            });
+        }
+        if self.device() != other.device() {
+            return Err(TensorError::MatmulDeviceMismatch {
+                left: self.device(),
+                right: other.device(),
             });
         }
 
-        let mut output_shape = try_result_vector(2, 0)?;
-        output_shape.push(rows);
-        output_shape.push(columns);
-        let (output_elements, output_strides) = validated_layout(&output_shape)?;
-        let mut output = filled_storage(output_elements, 0.0)?;
-        if let (Some(left_data), Some(right_data)) =
-            (self.contiguous_slice(), other.contiguous_slice())
-        {
-            for row in 0..rows {
-                for depth in 0..inner {
-                    let left = left_data[row * inner + depth];
-                    for column in 0..columns {
-                        output[row * columns + column] +=
-                            left * right_data[depth * columns + column];
+        if self.shape.len() == 2 && other.shape.len() == 2 {
+            let (rows, inner) = (self.shape[0], self.shape[1]);
+            let (other_inner, columns) = (other.shape[0], other.shape[1]);
+            if inner != other_inner {
+                return Err(TensorError::MatmulInnerDimensionMismatch {
+                    left: self.shape.clone(),
+                    right: other.shape.clone(),
+                });
+            }
+
+            let mut output_shape = try_result_vector(2, 0)?;
+            output_shape.push(rows);
+            output_shape.push(columns);
+            let (output_elements, output_strides) = validated_layout(&output_shape)?;
+            let mut output = filled_storage(output_elements, 0.0)?;
+            if let (Some(left_data), Some(right_data)) =
+                (self.contiguous_slice(), other.contiguous_slice())
+            {
+                for row in 0..rows {
+                    for depth in 0..inner {
+                        let left = left_data[row * inner + depth];
+                        for column in 0..columns {
+                            output[row * columns + column] +=
+                                left * right_data[depth * columns + column];
+                        }
+                    }
+                }
+            } else {
+                for row in 0..rows {
+                    for depth in 0..inner {
+                        let left_offset = checked_matrix_offset(self, row, depth)?;
+                        let left = self.storage.data[left_offset];
+                        for column in 0..columns {
+                            let right_offset = checked_matrix_offset(other, depth, column)?;
+                            output[row * columns + column] +=
+                                left * other.storage.data[right_offset];
+                        }
                     }
                 }
             }
-        } else {
-            for row in 0..rows {
-                for depth in 0..inner {
-                    let left_offset = checked_matrix_offset(self, row, depth)?;
-                    let left = self.storage.data[left_offset];
-                    for column in 0..columns {
-                        let right_offset = checked_matrix_offset(other, depth, column)?;
-                        output[row * columns + column] += left * other.storage.data[right_offset];
+            return Ok(Self::from_owned_parts(
+                output,
+                output_shape,
+                output_strides,
+                self.dtype(),
+                self.device(),
+            ));
+        }
+
+        self.matmul_batched(other)
+    }
+
+    fn matmul_batched(&self, other: &Self) -> Result<Self, TensorError> {
+        let plan = MatmulBatchPlan::new(self, other)?;
+        let mut output = filled_storage(plan.elements, 0.0)?;
+        if plan.elements != 0 {
+            let batch_shape = &plan.shape[..plan.batch_rank];
+            let matrix_elements = plan
+                .rows
+                .checked_mul(plan.columns)
+                .ok_or(TensorError::ElementCountOverflow)?;
+            for batch in 0..plan.batches {
+                let left_batch_offset = logical_offset_for_linear_index(
+                    batch_shape,
+                    &plan.left_batch_strides,
+                    self.offset,
+                    batch,
+                )?;
+                let right_batch_offset = logical_offset_for_linear_index(
+                    batch_shape,
+                    &plan.right_batch_strides,
+                    other.offset,
+                    batch,
+                )?;
+                let output_batch_offset = batch
+                    .checked_mul(matrix_elements)
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                for row in 0..plan.rows {
+                    let output_row_offset = row
+                        .checked_mul(plan.columns)
+                        .and_then(|offset| output_batch_offset.checked_add(offset))
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
+                    for depth in 0..plan.inner {
+                        let left_offset =
+                            checked_batched_matrix_offset(self, left_batch_offset, row, depth)?;
+                        let left = self.storage.data[left_offset];
+                        for column in 0..plan.columns {
+                            let right_offset = checked_batched_matrix_offset(
+                                other,
+                                right_batch_offset,
+                                depth,
+                                column,
+                            )?;
+                            let output_index = output_row_offset
+                                .checked_add(column)
+                                .ok_or(TensorError::IndexCalculationOverflow)?;
+                            let output_value = output
+                                .get_mut(output_index)
+                                .ok_or(TensorError::IndexCalculationOverflow)?;
+                            *output_value += left * other.storage.data[right_offset];
+                        }
                     }
                 }
             }
         }
         Ok(Self::from_owned_parts(
             output,
-            output_shape,
-            output_strides,
+            plan.shape,
+            plan.strides,
             self.dtype(),
             self.device(),
         ))
@@ -1922,6 +2123,105 @@ struct BroadcastPlan {
     strides: Vec<usize>,
     dimensions: Vec<BroadcastDimension>,
     elements: usize,
+}
+
+struct MatmulBatchPlan {
+    shape: Vec<usize>,
+    strides: Vec<usize>,
+    left_batch_strides: Vec<usize>,
+    right_batch_strides: Vec<usize>,
+    batch_rank: usize,
+    batches: usize,
+    rows: usize,
+    inner: usize,
+    columns: usize,
+    elements: usize,
+}
+
+impl MatmulBatchPlan {
+    fn new(left: &Tensor, right: &Tensor) -> Result<Self, TensorError> {
+        let left_batch_shape = &left.shape[..left.shape.len() - 2];
+        let right_batch_shape = &right.shape[..right.shape.len() - 2];
+        let batch_rank = left_batch_shape.len().max(right_batch_shape.len());
+
+        for trailing_axis in 0..batch_rank {
+            let axis = batch_rank - trailing_axis - 1;
+            let left_dimension = aligned_dimension(left_batch_shape, batch_rank, axis);
+            let right_dimension = aligned_dimension(right_batch_shape, batch_rank, axis);
+            if broadcast_dimension(left_dimension, right_dimension).is_none() {
+                return Err(TensorError::MatmulBatchDimensionMismatch {
+                    left: try_clone_result_shape(&left.shape, left.elements)?,
+                    right: try_clone_result_shape(&right.shape, right.elements)?,
+                    left_dimension,
+                    right_dimension,
+                    dimension: axis,
+                });
+            }
+        }
+
+        let rows = left.shape[left.shape.len() - 2];
+        let inner = left.shape[left.shape.len() - 1];
+        let other_inner = right.shape[right.shape.len() - 2];
+        let columns = right.shape[right.shape.len() - 1];
+        if inner != other_inner {
+            return Err(TensorError::MatmulInnerDimensionMismatch {
+                left: try_clone_result_shape(&left.shape, left.elements)?,
+                right: try_clone_result_shape(&right.shape, right.elements)?,
+            });
+        }
+
+        let output_rank = batch_rank
+            .checked_add(2)
+            .ok_or(TensorError::ElementCountOverflow)?;
+        let mut shape = try_result_vector(output_rank, 0)?;
+        for axis in 0..batch_rank {
+            shape.push(
+                broadcast_dimension(
+                    aligned_dimension(left_batch_shape, batch_rank, axis),
+                    aligned_dimension(right_batch_shape, batch_rank, axis),
+                )
+                .expect("matmul batch broadcast compatibility was checked above"),
+            );
+        }
+        shape.push(rows);
+        shape.push(columns);
+        let (elements, strides) = validated_layout(&shape)?;
+
+        let mut left_batch_strides = try_result_vector(batch_rank, elements)?;
+        let mut right_batch_strides = try_result_vector(batch_rank, elements)?;
+        for (axis, &output_dimension) in shape.iter().take(batch_rank).enumerate() {
+            left_batch_strides.push(aligned_matmul_batch_stride(
+                left,
+                batch_rank,
+                axis,
+                output_dimension,
+            ));
+            right_batch_strides.push(aligned_matmul_batch_stride(
+                right,
+                batch_rank,
+                axis,
+                output_dimension,
+            ));
+        }
+        let batches = if elements == 0 {
+            0
+        } else {
+            element_count(&shape[..batch_rank])?
+        };
+
+        Ok(Self {
+            shape,
+            strides,
+            left_batch_strides,
+            right_batch_strides,
+            batch_rank,
+            batches,
+            rows,
+            inner,
+            columns,
+            elements,
+        })
+    }
 }
 
 impl BroadcastPlan {
@@ -2170,6 +2470,27 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
+fn checked_batched_matrix_offset(
+    tensor: &Tensor,
+    batch_offset: usize,
+    row: usize,
+    column: usize,
+) -> Result<usize, TensorError> {
+    let row_axis = tensor.shape.len() - 2;
+    let column_axis = tensor.shape.len() - 1;
+    let row_offset = row
+        .checked_mul(tensor.strides[row_axis])
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    let column_offset = column
+        .checked_mul(tensor.strides[column_axis])
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    batch_offset
+        .checked_add(row_offset)
+        .and_then(|offset| offset.checked_add(column_offset))
+        .filter(|offset| *offset < tensor.storage.data.len())
+        .ok_or(TensorError::IndexCalculationOverflow)
+}
+
 fn compute_reshape_view_strides(
     old_shape: &[usize],
     old_strides: &[usize],
@@ -2269,6 +2590,25 @@ fn aligned_broadcast_stride(
         0
     } else {
         tensor.strides[input_axis]
+    }
+}
+
+fn aligned_matmul_batch_stride(
+    tensor: &Tensor,
+    output_batch_rank: usize,
+    output_axis: usize,
+    output_dimension: usize,
+) -> usize {
+    let tensor_batch_rank = tensor.shape.len() - 2;
+    let leading_dimensions = output_batch_rank - tensor_batch_rank;
+    if output_axis < leading_dimensions {
+        return 0;
+    }
+    let tensor_axis = output_axis - leading_dimensions;
+    if tensor.shape[tensor_axis] == 1 && output_dimension != 1 {
+        0
+    } else {
+        tensor.strides[tensor_axis]
     }
 }
 

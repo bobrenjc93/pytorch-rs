@@ -2676,6 +2676,9 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ShapeMismatch { .. }
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
+        | TensorError::MatmulBatchDimensionMismatch { .. }
+        | TensorError::MatmulDTypeMismatch { .. }
+        | TensorError::MatmulDeviceMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
         | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow
