@@ -8,4 +8,4 @@
 mod python;
 mod tensor;
 
-pub use tensor::{DType, Device, MemoryFormat, Tensor, TensorError};
+pub use tensor::{DType, Device, Layout, MemoryFormat, Tensor, TensorError};

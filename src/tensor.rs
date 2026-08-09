@@ -35,6 +35,22 @@ impl Display for Device {
     }
 }
 
+/// Native tensor layouts implemented by tensor storage.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Layout {
+    /// Dense strided storage.
+    #[default]
+    Strided,
+}
+
+impl Display for Layout {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Strided => formatter.write_str("strided"),
+        }
+    }
+}
+
 /// Storage layouts accepted by tensor-copy operations.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum MemoryFormat {
@@ -144,6 +160,9 @@ pub enum TensorError {
     UnsupportedMemoryFormat {
         memory_format: MemoryFormat,
     },
+    UnsupportedLikeMemoryFormat {
+        memory_format: MemoryFormat,
+    },
 }
 
 impl Display for TensorError {
@@ -241,6 +260,10 @@ impl Display for TensorError {
             Self::UnsupportedMemoryFormat { memory_format } => write!(
                 formatter,
                 "clone with memory format torch.{memory_format} is not supported"
+            ),
+            Self::UnsupportedLikeMemoryFormat { memory_format } => write!(
+                formatter,
+                "like factories with memory format torch.{memory_format} are not supported"
             ),
         }
     }
@@ -475,9 +498,65 @@ impl Tensor {
         self.storage.device
     }
 
+    /// Returns the dense storage layout implemented by this tensor.
+    #[must_use]
+    pub fn layout(&self) -> Layout {
+        Layout::Strided
+    }
+
     #[must_use]
     pub fn numel(&self) -> usize {
         self.elements
+    }
+
+    /// Creates a zero-filled tensor with this tensor's logical shape and metadata.
+    ///
+    /// [`MemoryFormat::Preserve`] retains this tensor's supported strided
+    /// layout, while [`MemoryFormat::Contiguous`] produces canonical row-major
+    /// strides. The result owns an independent allocation with storage offset
+    /// zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when shape arithmetic, result metadata, or storage
+    /// allocation fails, or when the requested memory format is unsupported.
+    pub fn zeros_like(&self, memory_format: MemoryFormat) -> Result<Self, TensorError> {
+        self.full_like(0.0, memory_format)
+    }
+
+    /// Creates a one-filled tensor with this tensor's logical shape and metadata.
+    ///
+    /// [`MemoryFormat::Preserve`] retains this tensor's supported strided
+    /// layout, while [`MemoryFormat::Contiguous`] produces canonical row-major
+    /// strides. The result owns an independent allocation with storage offset
+    /// zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when shape arithmetic, result metadata, or storage
+    /// allocation fails, or when the requested memory format is unsupported.
+    pub fn ones_like(&self, memory_format: MemoryFormat) -> Result<Self, TensorError> {
+        self.full_like(1.0, memory_format)
+    }
+
+    fn full_like(&self, fill_value: f32, memory_format: MemoryFormat) -> Result<Self, TensorError> {
+        let shape = try_clone_result_shape(&self.shape, self.elements)?;
+        let elements = element_count(&shape)?;
+        let strides = match memory_format {
+            MemoryFormat::Preserve => try_clone_result_shape(&self.strides, elements)?,
+            MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
+            MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
+                return Err(TensorError::UnsupportedLikeMemoryFormat { memory_format });
+            }
+        };
+        let data = filled_storage(elements, fill_value)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     /// Creates an independent copy of this tensor's logical values.

@@ -631,6 +631,133 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     call()
 
+    def test_like_factories_match_values_metadata_views_scalars_and_empty_tensors(self):
+        source = torch.tensor(
+            [
+                [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]],
+                [[6.0, 7.0, 8.0], [9.0, 10.0, 11.0]],
+            ]
+        )
+        view = source[1].reshape(3, 2)[1].reshape(1, 2)
+        cases = (
+            (source, (2, 2, 3), (6, 3, 1)),
+            (view, (1, 2), (2, 1)),
+            (torch.tensor(17.0), (), ()),
+            (torch.zeros((2, 0, 3)), (2, 0, 3), (3, 3, 1)),
+            (torch.zeros((0, 1)) + 1.0, (0, 1), (1, 0)),
+        )
+
+        for input_tensor, shape, stride in cases:
+            for factory, fill_value in ((torch.zeros_like, 0.0), (torch.ones_like, 1.0)):
+                with self.subTest(factory=factory.__name__, shape=shape):
+                    result = factory(input_tensor)
+                    self.assertEqual(result.shape, shape)
+                    self.assertEqual(result.stride(), stride)
+                    self.assertEqual(result.storage_offset(), 0)
+                    self.assertEqual(result.numel(), input_tensor.numel())
+                    self.assertIs(result.dtype, torch.float32)
+                    self.assertEqual(result.device, torch.device("cpu"))
+                    self.assertIs(result.layout, torch.strided)
+                    self.assertFalse(result.requires_grad)
+                    values = np.asarray(result).reshape(-1)
+                    self.assertTrue(np.all(values == np.float32(fill_value)))
+
+    def test_like_factories_support_complete_keyword_only_subset(self):
+        source = torch.tensor([[2.0, 3.0]])
+        options = {
+            "dtype": torch.float32,
+            "layout": torch.strided,
+            "device": torch.device("cpu"),
+            "requires_grad": False,
+            "memory_format": torch.contiguous_format,
+        }
+        self.assertEqual(torch.zeros_like(input=source, **options).tolist(), [[0.0, 0.0]])
+        self.assertEqual(torch.ones_like(input=source, **options).tolist(), [[1.0, 1.0]])
+
+        for factory in (torch.zeros_like, torch.ones_like):
+            with self.subTest(factory=factory.__name__, explicit_none=True):
+                result = factory(
+                    source,
+                    dtype=None,
+                    layout=None,
+                    device=None,
+                    memory_format=None,
+                )
+                self.assertEqual(result.shape, source.shape)
+
+        unusual = torch.zeros((0, 1)) + 1.0
+        for factory in (torch.zeros_like, torch.ones_like):
+            self.assertEqual(
+                factory(unusual, memory_format=torch.preserve_format).stride(),
+                (1, 0),
+            )
+            self.assertEqual(
+                factory(unusual, memory_format=torch.contiguous_format).stride(),
+                (1, 1),
+            )
+
+        extreme = torch.zeros((0,)).reshape((0, sys.maxsize, 3))
+        for factory in (torch.zeros_like, torch.ones_like):
+            self.assertEqual(
+                factory(extreme, memory_format=torch.preserve_format).stride(),
+                extreme.stride(),
+            )
+            with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+                factory(extreme, memory_format=torch.contiguous_format)
+
+    def test_like_factory_descriptors_signatures_and_docstrings(self):
+        self.assertIsInstance(torch.strided, torch.layout)
+        self.assertEqual(repr(torch.strided), "torch.strided")
+        self.assertEqual(str(torch.strided), "torch.strided")
+        self.assertEqual(torch.tensor(1.0).layout, torch.strided)
+        with self.assertRaises(TypeError):
+            torch.layout()
+
+        signature = "(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format)"
+        for factory in (torch.zeros_like, torch.ones_like):
+            with self.subTest(factory=factory.__name__):
+                self.assertEqual(factory.__text_signature__, signature)
+                self.assertIn(f"{factory.__name__}(input, *", factory.__doc__)
+                self.assertIn("same logical shape", factory.__doc__)
+
+    def test_like_factories_reject_unsupported_options_and_invalid_calls(self):
+        source = torch.tensor([1.0])
+        invalid_type_options = (
+            {"dtype": object()},
+            {"layout": object()},
+            {"device": object()},
+            {"requires_grad": 1},
+            {"memory_format": object()},
+        )
+        unsupported_options = (
+            ({"device": "cuda"}, RuntimeError),
+            ({"requires_grad": True}, RuntimeError),
+            ({"memory_format": torch.channels_last}, RuntimeError),
+            ({"memory_format": torch.channels_last_3d}, RuntimeError),
+        )
+        invalid_calls = (
+            lambda factory: factory(),
+            lambda factory: factory([1.0]),
+            lambda factory: factory(source, torch.float32),
+            lambda factory: factory(source, out=None),
+            lambda factory: factory(source, input=source),
+            lambda factory: factory(source, unexpected=None),
+        )
+
+        for factory in (torch.zeros_like, torch.ones_like):
+            for options in invalid_type_options:
+                with self.subTest(factory=factory.__name__, options=options):
+                    with self.assertRaises(TypeError):
+                        factory(source, **options)
+            for options, error_type in unsupported_options:
+                with self.subTest(factory=factory.__name__, options=options):
+                    with self.assertRaises(error_type):
+                        factory(source, **options)
+            for call in invalid_calls:
+                with self.subTest(factory=factory.__name__, call=call):
+                    with self.assertRaises(TypeError):
+                        call(factory)
+
     def test_integer_indexing_accepts_index_protocol_values(self):
         class IntSubclass(int):
             pass

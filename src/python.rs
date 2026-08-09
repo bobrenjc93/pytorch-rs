@@ -8,9 +8,10 @@ use pyo3::types::{
     PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyString, PyTuple,
 };
 
-use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError};
+use crate::{DType, Device, Layout, MemoryFormat, Tensor as CoreTensor, TensorError};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
+static STRIDED: PyOnceLock<Py<PyLayout>> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -32,6 +33,31 @@ impl PyDType {
     }
 
     fn __str__(&self) -> &'static str {
+        self.__repr__()
+    }
+}
+
+/// Python layout descriptor backed by a native [`Layout`].
+#[pyclass(
+    name = "layout",
+    module = "torch_rs",
+    frozen,
+    eq,
+    hash,
+    skip_from_py_object
+)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct PyLayout {
+    inner: Layout,
+}
+
+#[pymethods]
+impl PyLayout {
+    fn __repr__(&self) -> String {
+        format!("torch.{}", self.inner)
+    }
+
+    fn __str__(&self) -> String {
         self.__repr__()
     }
 }
@@ -172,6 +198,19 @@ impl PyTensor {
         PyDevice {
             inner: self.inner.device(),
         }
+    }
+
+    #[getter]
+    fn layout(&self, py: Python<'_>) -> PyResult<Py<PyLayout>> {
+        match self.inner.layout() {
+            Layout::Strided => Ok(strided_object(py)?.clone_ref(py)),
+        }
+    }
+
+    #[getter]
+    #[allow(clippy::unused_self)]
+    fn requires_grad(&self) -> bool {
+        false
     }
 
     #[pyo3(signature = (dim=None))]
@@ -465,6 +504,74 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
         .map_err(|error| tensor_error(&error))
 }
 
+/// zeros_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format) -> Tensor
+///
+/// Returns a tensor filled with zero with the same logical shape as `input`.
+///
+/// The native subset supports only float32 dtype, strided layout, CPU device,
+/// `requires_grad=False`, and preserve or contiguous memory format.
+#[allow(clippy::doc_markdown)]
+#[pyfunction(
+    signature = (input, *, dtype=None, layout=None, device=None, requires_grad=false, memory_format=None),
+    text_signature = "(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format)"
+)]
+fn zeros_like(
+    input: &PyTensor,
+    dtype: Option<&Bound<'_, PyAny>>,
+    layout: Option<&Bound<'_, PyAny>>,
+    device: Option<&Bound<'_, PyAny>>,
+    requires_grad: bool,
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyTensor> {
+    let memory_format = parse_like_options(
+        "zeros_like",
+        dtype,
+        layout,
+        device,
+        requires_grad,
+        memory_format,
+    )?;
+    input
+        .inner
+        .zeros_like(memory_format)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| tensor_error(&error))
+}
+
+/// ones_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format) -> Tensor
+///
+/// Returns a tensor filled with one with the same logical shape as `input`.
+///
+/// The native subset supports only float32 dtype, strided layout, CPU device,
+/// `requires_grad=False`, and preserve or contiguous memory format.
+#[allow(clippy::doc_markdown)]
+#[pyfunction(
+    signature = (input, *, dtype=None, layout=None, device=None, requires_grad=false, memory_format=None),
+    text_signature = "(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format)"
+)]
+fn ones_like(
+    input: &PyTensor,
+    dtype: Option<&Bound<'_, PyAny>>,
+    layout: Option<&Bound<'_, PyAny>>,
+    device: Option<&Bound<'_, PyAny>>,
+    requires_grad: bool,
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyTensor> {
+    let memory_format = parse_like_options(
+        "ones_like",
+        dtype,
+        layout,
+        device,
+        requires_grad,
+        memory_format,
+    )?;
+    input
+        .inner
+        .ones_like(memory_format)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| tensor_error(&error))
+}
+
 #[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
 fn zeros(
     size: Option<&Bound<'_, PyAny>>,
@@ -549,6 +656,17 @@ fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
     })
 }
 
+fn strided_object(py: Python<'_>) -> PyResult<&'static Py<PyLayout>> {
+    STRIDED.get_or_try_init(py, || {
+        Py::new(
+            py,
+            PyLayout {
+                inner: Layout::Strided,
+            },
+        )
+    })
+}
+
 fn memory_format_object(
     py: Python<'_>,
     memory_format: MemoryFormat,
@@ -584,6 +702,63 @@ fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResu
     Err(PyTypeError::new_err(format!(
         "clone(): argument 'memory_format' must be torch.memory_format, not {type_name}"
     )))
+}
+
+fn parse_like_options(
+    function: &str,
+    dtype: Option<&Bound<'_, PyAny>>,
+    layout: Option<&Bound<'_, PyAny>>,
+    device: Option<&Bound<'_, PyAny>>,
+    requires_grad: bool,
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<MemoryFormat> {
+    parse_dtype(function, dtype)?;
+    parse_layout(function, layout)?;
+    parse_device(function, device)?;
+    if requires_grad {
+        return Err(PyRuntimeError::new_err(format!(
+            "{function}(): requires_grad=True is not supported; autograd is not implemented"
+        )));
+    }
+    parse_like_memory_format(function, memory_format)
+}
+
+fn parse_layout(function: &str, layout: Option<&Bound<'_, PyAny>>) -> PyResult<Layout> {
+    let Some(layout) = layout else {
+        return Ok(Layout::Strided);
+    };
+    if let Ok(layout) = layout.cast::<PyLayout>() {
+        return Ok(layout.try_borrow()?.inner);
+    }
+
+    let type_name = layout.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "{function}(): argument 'layout' must be torch.layout, not {type_name}"
+    )))
+}
+
+fn parse_like_memory_format(
+    function: &str,
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Preserve);
+    };
+    let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() else {
+        let type_name = memory_format.get_type().name()?;
+        return Err(PyTypeError::new_err(format!(
+            "{function}(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+        )));
+    };
+    let memory_format = memory_format.try_borrow()?.inner;
+    match memory_format {
+        MemoryFormat::Preserve | MemoryFormat::Contiguous => Ok(memory_format),
+        MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
+            Err(PyRuntimeError::new_err(format!(
+                "{function}(): memory format torch.{memory_format} is not supported; only torch.preserve_format and torch.contiguous_format are implemented"
+            )))
+        }
+    }
 }
 
 fn parse_creation_size(
@@ -1286,6 +1461,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::UnsupportedMemoryFormat { .. }
+        | TensorError::UnsupportedLikeMemoryFormat { .. }
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }
@@ -1298,10 +1474,13 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     module.add_class::<PyTensor>()?;
     module.add_class::<PyDType>()?;
+    module.add_class::<PyLayout>()?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
+    module.add_function(wrap_pyfunction!(zeros_like, module)?)?;
+    module.add_function(wrap_pyfunction!(ones_like, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
@@ -1309,6 +1488,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let float32 = float32_object(py)?;
     module.add("float32", float32.clone_ref(py))?;
     module.add("float", float32.clone_ref(py))?;
+    module.add("strided", strided_object(py)?.clone_ref(py))?;
     for (name, memory_format) in [
         ("preserve_format", MemoryFormat::Preserve),
         ("contiguous_format", MemoryFormat::Contiguous),

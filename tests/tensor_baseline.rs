@@ -1,4 +1,4 @@
-use pytorch_rs::{DType, Device, MemoryFormat, Tensor, TensorError};
+use pytorch_rs::{DType, Device, Layout, MemoryFormat, Tensor, TensorError};
 use std::mem::size_of;
 
 #[test]
@@ -853,6 +853,119 @@ fn clone_handles_scalars_and_extreme_empty_view_offsets() {
         extreme_shape.try_clone_with_memory_format(MemoryFormat::ChannelsLast),
         Err(TensorError::UnsupportedMemoryFormat {
             memory_format: MemoryFormat::ChannelsLast,
+        })
+    );
+}
+
+#[test]
+fn like_factories_allocate_independent_storage_and_fill_general_shapes() {
+    let source = Tensor::from_vec((0_u16..1001).map(f32::from).collect(), [7, 11, 13]).unwrap();
+
+    let zeros = source.zeros_like(MemoryFormat::Preserve).unwrap();
+    let ones = source.ones_like(MemoryFormat::Contiguous).unwrap();
+    for (result, fill_value) in [(&zeros, 0.0_f32), (&ones, 1.0_f32)] {
+        assert_eq!(result.shape(), source.shape());
+        assert_eq!(result.stride(), [143, 13, 1]);
+        assert_eq!(result.storage_offset(), 0);
+        assert_eq!(result.numel(), 1001);
+        assert_eq!(result.dtype(), DType::Float32);
+        assert_eq!(result.device(), Device::Cpu);
+        assert_eq!(result.layout(), Layout::Strided);
+        assert!(!result.shares_storage_with(&source));
+        assert!(
+            result
+                .as_slice()
+                .iter()
+                .all(|value| value.to_bits() == fill_value.to_bits())
+        );
+    }
+}
+
+#[test]
+fn like_factories_preserve_logical_view_shape_and_supported_memory_formats() {
+    let source = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [2, 2, 3]).unwrap();
+    let view = source
+        .index_integer(1)
+        .unwrap()
+        .reshape([3, 2])
+        .unwrap()
+        .index_integer(1)
+        .unwrap()
+        .reshape([1, 2])
+        .unwrap();
+    assert_eq!(view.storage_offset(), 8);
+
+    for result in [
+        view.zeros_like(MemoryFormat::Preserve).unwrap(),
+        view.ones_like(MemoryFormat::Contiguous).unwrap(),
+    ] {
+        assert_eq!(result.shape(), [1, 2]);
+        assert_eq!(result.stride(), [2, 1]);
+        assert_eq!(result.storage_offset(), 0);
+        assert!(!result.shares_storage_with(&source));
+        assert!(!result.shares_storage_with(&view));
+    }
+
+    let unusual_empty = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
+    assert_eq!(unusual_empty.stride(), [1, 0]);
+    let preserved = unusual_empty.zeros_like(MemoryFormat::Preserve).unwrap();
+    let contiguous = unusual_empty.ones_like(MemoryFormat::Contiguous).unwrap();
+    assert_eq!(preserved.shape(), [0, 1]);
+    assert_eq!(preserved.stride(), [1, 0]);
+    assert_eq!(contiguous.shape(), [0, 1]);
+    assert_eq!(contiguous.stride(), [1, 1]);
+    assert!(preserved.as_slice().is_empty());
+    assert!(contiguous.as_slice().is_empty());
+}
+
+#[test]
+fn like_factories_handle_scalars_empty_views_and_checked_layout_errors() {
+    let scalar = Tensor::from_vec(vec![42.0], []).unwrap();
+    let scalar_zero = scalar.zeros_like(MemoryFormat::Preserve).unwrap();
+    let scalar_one = scalar.ones_like(MemoryFormat::Contiguous).unwrap();
+    assert!(scalar_zero.shape().is_empty());
+    assert!(scalar_zero.stride().is_empty());
+    assert_eq!(scalar_zero.item().unwrap().to_bits(), 0.0_f32.to_bits());
+    assert!(scalar_one.shape().is_empty());
+    assert!(scalar_one.stride().is_empty());
+    assert_eq!(scalar_one.item().unwrap().to_bits(), 1.0_f32.to_bits());
+
+    let maximum = usize::try_from(i64::MAX).unwrap();
+    let empty = Tensor::zeros([maximum, 0]).unwrap();
+    let empty_view = empty
+        .index_integer(i64::MAX - 1)
+        .unwrap()
+        .reshape([2, 0, 3])
+        .unwrap();
+    let like = empty_view.ones_like(MemoryFormat::Preserve).unwrap();
+    assert_eq!(like.shape(), [2, 0, 3]);
+    assert_eq!(like.stride(), [3, 3, 1]);
+    assert_eq!(like.storage_offset(), 0);
+    assert_eq!(like.numel(), 0);
+    assert!(like.as_slice().is_empty());
+
+    let extreme_shape = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3])
+        .unwrap();
+    assert_eq!(
+        extreme_shape.zeros_like(MemoryFormat::Contiguous),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+    assert_eq!(
+        extreme_shape.ones_like(MemoryFormat::Contiguous),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+    assert_eq!(
+        scalar.zeros_like(MemoryFormat::ChannelsLast),
+        Err(TensorError::UnsupportedLikeMemoryFormat {
+            memory_format: MemoryFormat::ChannelsLast,
+        })
+    );
+    assert_eq!(
+        scalar.ones_like(MemoryFormat::ChannelsLast3d),
+        Err(TensorError::UnsupportedLikeMemoryFormat {
+            memory_format: MemoryFormat::ChannelsLast3d,
         })
     );
 }
