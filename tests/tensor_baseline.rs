@@ -1662,6 +1662,22 @@ fn contiguous_validates_preserve_rank_and_stride_overflow_like_pytorch() {
         extreme.try_contiguous(MemoryFormat::ChannelsLast),
         Err(TensorError::StrideCalculationOverflow)
     );
+
+    let wrapping_identity = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, 1, 1_i64 << 62, 1_i64 << 32])
+        .unwrap();
+    assert_eq!(wrapping_identity.stride(), [0, 0, 1_usize << 32, 1]);
+    assert!(wrapping_identity.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+    let unchanged = wrapping_identity
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+    assert!(unchanged.shares_storage_with(&wrapping_identity));
+    assert_eq!(unchanged.stride(), wrapping_identity.stride());
+    assert_eq!(
+        unchanged.storage_offset(),
+        wrapping_identity.storage_offset()
+    );
 }
 
 #[test]

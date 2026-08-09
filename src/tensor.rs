@@ -1803,6 +1803,7 @@ fn layout_is_contiguous_in_order(shape: &[usize], strides: &[usize], order: &[us
         return false;
     }
 
+    let is_empty = shape.contains(&0);
     let mut expected_stride = 1_usize;
     for &axis in order {
         let dimension = shape[axis];
@@ -1812,10 +1813,15 @@ fn layout_is_contiguous_in_order(shape: &[usize], strides: &[usize], order: &[us
         if strides[axis] != expected_stride {
             return false;
         }
-        let Some(next_stride) = expected_stride.checked_mul(dimension) else {
-            return false;
+        expected_stride = match expected_stride.checked_mul(dimension) {
+            Some(next_stride) => next_stride,
+            // PyTorch treats strides on empty tensors as arbitrary signed-64
+            // metadata. Its channel-order contiguity check lets an overflowing
+            // product wrap, allowing a later zero-sized axis to match zero.
+            // Materialization remains separately checked before allocating.
+            None if is_empty => expected_stride.wrapping_mul(dimension),
+            None => return false,
         };
-        expected_stride = next_stride;
     }
     true
 }

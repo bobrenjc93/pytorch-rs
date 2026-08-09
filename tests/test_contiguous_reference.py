@@ -183,6 +183,24 @@ class ContiguousReferenceTests(unittest.TestCase):
             lambda: expected_extreme.contiguous(memory_format=reference_torch.channels_last),
         )
 
+        wrapping_shape = (0, 1, 1 << 62, 1 << 32)
+        actual_wrapping = torch.zeros((0,)).reshape(wrapping_shape)
+        expected_wrapping = reference_torch.zeros((0,)).reshape(wrapping_shape)
+        self.assertEqual(actual_wrapping.stride(), expected_wrapping.stride())
+        self.assertEqual(
+            actual_wrapping.is_contiguous(memory_format=torch.channels_last),
+            expected_wrapping.is_contiguous(
+                memory_format=reference_torch.channels_last
+            ),
+        )
+        self.assertTrue(
+            actual_wrapping.is_contiguous(memory_format=torch.channels_last)
+        )
+        self.assertIs(
+            actual_wrapping.contiguous(memory_format=torch.channels_last),
+            actual_wrapping,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
