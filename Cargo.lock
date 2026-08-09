@@ -97,6 +97,14 @@ name = "pytorch-rs"
 version = "0.1.0"
 dependencies = [
  "pyo3",
+ "pytorch-rs-size",
+]
+
+[[package]]
+name = "pytorch-rs-size"
+version = "0.1.0"
+dependencies = [
+ "pyo3",
 ]
 
 [[package]]

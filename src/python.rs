@@ -7,95 +7,11 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyString, PyTuple,
 };
+use pytorch_rs_size::{size_from_dimensions, size_type};
 
 use crate::{DType, Device, Tensor as CoreTensor, TensorError};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
-static SIZE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-
-const SIZE_CLASS: &std::ffi::CStr = pyo3::ffi::c_str!(
-    r#"
-def _unpack_size_dimension(dimension):
-    dimension = operator.index(dimension)
-    if dimension < -(1 << 63) or dimension >= 1 << 63:
-        raise ValueError("Overflow when unpacking long long")
-    return dimension
-
-
-def _is_numpy_integer(dimension):
-    try:
-        import numpy
-    except ImportError:
-        return False
-    return isinstance(dimension, numpy.integer)
-
-
-class _SizeMeta(type):
-    def __setattr__(cls, name, value):
-        raise TypeError(f"cannot set '{name}' attribute of immutable type 'torch.Size'")
-
-    def __delattr__(cls, name):
-        raise TypeError(f"cannot delete '{name}' attribute of immutable type 'torch.Size'")
-
-
-class Size(tuple, metaclass=_SizeMeta):
-    __slots__ = ()
-    __module__ = "torch_rs"
-
-    def __new__(cls, dimensions=(), /):
-        converted = []
-        for index, dimension in enumerate(dimensions):
-            if (
-                isinstance(dimension, int) and not isinstance(dimension, bool)
-            ) or _is_numpy_integer(dimension):
-                converted.append(dimension)
-                continue
-            try:
-                dimension = operator.index(dimension)
-            except BaseException:
-                name = type(dimension).__name__
-                raise TypeError(
-                    f"torch.Size() takes an iterable of 'int' "
-                    f"(item {index} is '{name}')"
-                ) from None
-            converted.append(dimension)
-        return tuple.__new__(cls, converted)
-
-    def __init_subclass__(cls, **kwargs):
-        raise TypeError("type 'torch.Size' is not an acceptable base type")
-
-    def __repr__(self):
-        dimensions = (str(_unpack_size_dimension(dimension)) for dimension in self)
-        return f"torch.Size([{', '.join(dimensions)}])"
-
-    def __getitem__(self, index):
-        result = tuple.__getitem__(self, index)
-        return type(self)(result) if isinstance(index, slice) else result
-
-    def __add__(self, other):
-        if not isinstance(other, tuple):
-            return NotImplemented
-        return type(self)(tuple.__add__(self, other))
-
-    def __radd__(self, other):
-        if not isinstance(other, tuple):
-            return NotImplemented
-        return type(self)(tuple.__add__(other, self))
-
-    def __mul__(self, count):
-        return type(self)(tuple.__mul__(self, count))
-
-    def __rmul__(self, count):
-        return self.__mul__(count)
-
-    def numel(self):
-        result = 1
-        for dimension in self:
-            dimension = _unpack_size_dimension(dimension)
-            result = ((result * dimension + (1 << 63)) % (1 << 64)) - (1 << 63)
-        return result
-"#
-);
 
 /// Python scalar-type descriptor backed by a native [`DType`].
 #[pyclass(name = "dtype", module = "torch_rs", frozen, skip_from_py_object)]
@@ -641,24 +557,8 @@ fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
     })
 }
 
-fn size_type(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
-    SIZE.get_or_try_init(py, || {
-        let globals = PyDict::new(py);
-        globals.set_item("operator", PyModule::import(py, "operator")?)?;
-        py.run(SIZE_CLASS, Some(&globals), None)?;
-        globals
-            .get_item("Size")?
-            .ok_or_else(|| PyRuntimeError::new_err("failed to initialize torch.Size"))
-            .map(Bound::unbind)
-    })
-}
-
 fn size_object(py: Python<'_>, dimensions: &[usize]) -> PyResult<Py<PyAny>> {
-    let dimensions = PyTuple::new(py, dimensions.iter().copied())?;
-    let tuple_new = py.get_type::<PyTuple>().getattr("__new__")?;
-    Ok(tuple_new
-        .call1((size_type(py)?.bind(py), dimensions))?
-        .unbind())
+    size_from_dimensions(py, dimensions)
 }
 
 fn parse_creation_size(

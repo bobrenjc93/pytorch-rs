@@ -578,9 +578,52 @@ class PythonApiBaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "not an acceptable base type"):
             class SizeSubclass(torch.Size):
                 pass
+        with self.assertRaisesRegex(TypeError, "immutable type 'torch.Size'"):
+            type.__setattr__(torch.Size, "numel", lambda _: 999)
+        with self.assertRaises(TypeError):
+            tuple.__new__(torch.Size, (object(),))
+
+        self.assertFalse(hasattr(torch.Size.__repr__, "__globals__"))
+        self.assertFalse(hasattr(torch.Size.numel, "__globals__"))
 
         self.assertIs(type(tensor.shape), torch.Size)
         self.assertEqual(tensor.shape, expected)
+        self.assertEqual(repr(tensor.shape), "torch.Size([2, 3])")
+        self.assertEqual(tensor.shape.numel(), 6)
+
+    def test_size_snapshots_iterables_before_dimension_conversion(self):
+        source = []
+
+        class AppendingIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                source.append(self)
+                return 2
+
+        dimension = AppendingIndex()
+        source.append(dimension)
+        self.assertEqual(torch.Size(source), (2,))
+        self.assertEqual(dimension.calls, 1)
+        self.assertEqual(len(source), 2)
+
+        events = []
+
+        class ObservableIndex:
+            def __index__(self):
+                events.append("index")
+                return 3
+
+        def late_error():
+            yield ObservableIndex()
+            events.append("iterator")
+            raise RuntimeError("late iterator failure")
+
+        with self.assertRaisesRegex(RuntimeError, "late iterator failure"):
+            torch.Size(late_error())
+        self.assertEqual(events, ["iterator"])
 
     def test_size_preserves_int_subclasses_and_normalizes_index_failures(self):
         class IntSubclass(int):
