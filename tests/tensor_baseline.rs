@@ -1,12 +1,15 @@
-use pytorch_rs::{DType, Device, Tensor, TensorError};
+use pytorch_rs::{DType, Device, MemoryFormat, Tensor, TensorError};
 use std::mem::size_of;
 
 #[test]
 fn native_metadata_describes_all_supported_storage_shapes() {
     assert_eq!(DType::default(), DType::Float32);
     assert_eq!(Device::default(), Device::Cpu);
+    assert_eq!(MemoryFormat::default(), MemoryFormat::Preserve);
     assert_eq!(DType::Float32.to_string(), "float32");
     assert_eq!(Device::Cpu.to_string(), "cpu");
+    assert_eq!(MemoryFormat::Preserve.to_string(), "preserve_format");
+    assert_eq!(MemoryFormat::Contiguous.to_string(), "contiguous_format");
 
     for tensor in [
         Tensor::from_vec(vec![2.5], []).unwrap(),
@@ -818,7 +821,20 @@ fn clone_handles_scalars_and_extreme_empty_view_offsets() {
 
     let unusual = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
     assert_eq!(unusual.stride(), [1, 0]);
-    assert_eq!(unusual.try_clone().unwrap().stride(), [1, 0]);
+    assert_eq!(
+        unusual
+            .try_clone_with_memory_format(MemoryFormat::Preserve)
+            .unwrap()
+            .stride(),
+        [1, 0]
+    );
+    assert_eq!(
+        unusual
+            .try_clone_with_memory_format(MemoryFormat::Contiguous)
+            .unwrap()
+            .stride(),
+        [1, 1]
+    );
 
     let extreme_shape = Tensor::zeros([0])
         .unwrap()
@@ -829,6 +845,16 @@ fn clone_handles_scalars_and_extreme_empty_view_offsets() {
     assert_eq!(extreme_copy.stride(), extreme_shape.stride());
     assert_eq!(extreme_copy.storage_offset(), 0);
     assert!(!extreme_copy.shares_storage_with(&extreme_shape));
+    assert_eq!(
+        extreme_shape.try_clone_with_memory_format(MemoryFormat::Contiguous),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+    assert_eq!(
+        extreme_shape.try_clone_with_memory_format(MemoryFormat::ChannelsLast),
+        Err(TensorError::UnsupportedMemoryFormat {
+            memory_format: MemoryFormat::ChannelsLast,
+        })
+    );
 }
 
 #[test]

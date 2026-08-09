@@ -549,17 +549,81 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertEqual(copied.stride(), extreme_shape.stride())
                 self.assertEqual(copied.storage_offset(), 0)
 
-    def test_clone_rejects_memory_format_and_extra_arguments_as_type_errors(self):
+    def test_memory_format_descriptors_match_pytorch_surface(self):
+        formats = (
+            (torch.preserve_format, "torch.preserve_format"),
+            (torch.contiguous_format, "torch.contiguous_format"),
+            (torch.channels_last, "torch.channels_last"),
+            (torch.channels_last_3d, "torch.channels_last_3d"),
+        )
+        for memory_format, expected in formats:
+            with self.subTest(memory_format=expected):
+                self.assertIsInstance(memory_format, torch.memory_format)
+                self.assertEqual(repr(memory_format), expected)
+                self.assertEqual(str(memory_format), expected)
+
+    def test_clone_supports_keyword_only_memory_formats(self):
+        source = torch.zeros((0, 1)) + 1
+        formats = (
+            (None, (1, 0)),
+            (torch.preserve_format, (1, 0)),
+            (torch.contiguous_format, (1, 1)),
+        )
+        for memory_format, expected_stride in formats:
+            operations = (
+                lambda: source.clone(memory_format=memory_format),
+                lambda: torch.clone(source, memory_format=memory_format),
+            )
+            for operation in operations:
+                with self.subTest(memory_format=memory_format, operation=operation):
+                    copied = operation()
+                    self.assertEqual(copied.shape, source.shape)
+                    self.assertEqual(copied.stride(), expected_stride)
+                    self.assertEqual(copied.storage_offset(), 0)
+                    self.assertEqual(copied.tolist(), source.tolist())
+
+        copied = torch.clone(
+            input=torch.tensor([[1.0, 2.0]]),
+            memory_format=torch.contiguous_format,
+        )
+        self.assert_tensor_values(copied, [[1.0, 2.0]], (1, 2))
+        self.assertEqual(copied.stride(), (2, 1))
+
+        extreme = torch.zeros((0,)).reshape((0, sys.maxsize, 3))
+        self.assertEqual(
+            extreme.clone(memory_format=torch.preserve_format).stride(),
+            extreme.stride(),
+        )
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            extreme.clone(memory_format=torch.contiguous_format)
+
+    def test_clone_rejects_unsupported_formats_and_extra_arguments(self):
         tensor = torch.tensor([1.0])
+        for memory_format in (torch.channels_last, torch.channels_last_3d):
+            for operation in (
+                lambda: tensor.clone(memory_format=memory_format),
+                lambda: torch.clone(tensor, memory_format=memory_format),
+            ):
+                with self.subTest(memory_format=memory_format, operation=operation):
+                    with self.assertRaises(RuntimeError):
+                        operation()
+
+        for memory_format in (object(), 1, "contiguous_format"):
+            for operation in (
+                lambda: tensor.clone(memory_format=memory_format),
+                lambda: torch.clone(tensor, memory_format=memory_format),
+            ):
+                with self.subTest(memory_format=memory_format, operation=operation):
+                    with self.assertRaisesRegex(TypeError, "must be torch.memory_format"):
+                        operation()
+
         invalid_calls = (
             lambda: tensor.clone(None),
-            lambda: tensor.clone(memory_format=None),
             lambda: tensor.clone(object(), object()),
             lambda: tensor.clone(unexpected=None),
             lambda: torch.clone(),
             lambda: torch.clone([1.0]),
             lambda: torch.clone(tensor, None),
-            lambda: torch.clone(tensor, memory_format=None),
             lambda: torch.clone(tensor, unexpected=None),
         )
         for call in invalid_calls:

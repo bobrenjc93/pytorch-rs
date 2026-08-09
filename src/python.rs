@@ -8,9 +8,13 @@ use pyo3::types::{
     PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyString, PyTuple,
 };
 
-use crate::{DType, Device, Tensor as CoreTensor, TensorError};
+use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
+static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
+static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
+static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
+static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 
 /// Python scalar-type descriptor backed by a native [`DType`].
 #[pyclass(name = "dtype", module = "torch_rs", frozen, skip_from_py_object)]
@@ -28,6 +32,31 @@ impl PyDType {
     }
 
     fn __str__(&self) -> &'static str {
+        self.__repr__()
+    }
+}
+
+/// Python memory-format descriptor backed by a native [`MemoryFormat`].
+#[pyclass(
+    name = "memory_format",
+    module = "torch_rs",
+    frozen,
+    eq,
+    hash,
+    skip_from_py_object
+)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct PyMemoryFormat {
+    inner: MemoryFormat,
+}
+
+#[pymethods]
+impl PyMemoryFormat {
+    fn __repr__(&self) -> String {
+        format!("torch.{}", self.inner)
+    }
+
+    fn __str__(&self) -> String {
         self.__repr__()
     }
 }
@@ -223,10 +252,11 @@ impl PyTensor {
         self.inner.item().map_err(|error| tensor_error(&error))
     }
 
-    #[pyo3(signature = ())]
-    fn clone(&self) -> PyResult<Self> {
+    #[pyo3(signature = (*, memory_format=None))]
+    fn clone(&self, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        let memory_format = parse_clone_memory_format(memory_format)?;
         self.inner
-            .try_clone()
+            .try_clone_with_memory_format(memory_format)
             .map(|inner| Self { inner })
             .map_err(|error| tensor_error(&error))
     }
@@ -425,11 +455,12 @@ fn tensor(
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction(signature = (input))]
-fn clone(input: &PyTensor) -> PyResult<PyTensor> {
+#[pyfunction(signature = (input, *, memory_format=None))]
+fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<PyTensor> {
+    let memory_format = parse_clone_memory_format(memory_format)?;
     input
         .inner
-        .try_clone()
+        .try_clone_with_memory_format(memory_format)
         .map(|inner| PyTensor { inner })
         .map_err(|error| tensor_error(&error))
 }
@@ -516,6 +547,43 @@ fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
             },
         )
     })
+}
+
+fn memory_format_object(
+    py: Python<'_>,
+    memory_format: MemoryFormat,
+) -> PyResult<&'static Py<PyMemoryFormat>> {
+    let object = match memory_format {
+        MemoryFormat::Preserve => &PRESERVE_FORMAT,
+        MemoryFormat::Contiguous => &CONTIGUOUS_FORMAT,
+        MemoryFormat::ChannelsLast => &CHANNELS_LAST,
+        MemoryFormat::ChannelsLast3d => &CHANNELS_LAST_3D,
+    };
+    object.get_or_try_init(py, || {
+        Py::new(
+            py,
+            PyMemoryFormat {
+                inner: memory_format,
+            },
+        )
+    })
+}
+
+fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<MemoryFormat> {
+    let Some(memory_format) = memory_format else {
+        return Ok(MemoryFormat::Preserve);
+    };
+    if memory_format.is_none() {
+        return Ok(MemoryFormat::Preserve);
+    }
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner);
+    }
+
+    let type_name = memory_format.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "clone(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
 }
 
 fn parse_creation_size(
@@ -1217,6 +1285,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::StrideCalculationOverflow
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
+        | TensorError::UnsupportedMemoryFormat { .. }
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }
@@ -1230,6 +1299,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyTensor>()?;
     module.add_class::<PyDType>()?;
     module.add_class::<PyDevice>()?;
+    module.add_class::<PyMemoryFormat>()?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
@@ -1239,6 +1309,14 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let float32 = float32_object(py)?;
     module.add("float32", float32.clone_ref(py))?;
     module.add("float", float32.clone_ref(py))?;
+    for (name, memory_format) in [
+        ("preserve_format", MemoryFormat::Preserve),
+        ("contiguous_format", MemoryFormat::Contiguous),
+        ("channels_last", MemoryFormat::ChannelsLast),
+        ("channels_last_3d", MemoryFormat::ChannelsLast3d),
+    ] {
+        module.add(name, memory_format_object(py, memory_format)?.clone_ref(py))?;
+    }
     module.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
