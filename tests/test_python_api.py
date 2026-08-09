@@ -179,6 +179,16 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     create()
 
+            maximum = sys.maxsize
+            boundary = create((maximum, 0))
+            self.assertEqual(boundary.shape, (maximum, 0))
+            self.assertEqual(repr(boundary.shape), f"torch.Size([{maximum}, 0])")
+
+            for oversized in (1 << 63, np.uint64(1 << 63)):
+                with self.subTest(function=name, oversized=type(oversized).__name__):
+                    with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                        create((oversized, 0))
+
     def test_eye_creates_square_rectangular_and_empty_tensors(self):
         cases = (
             (lambda: torch.eye(3), (3, 3), (3, 1), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
@@ -573,6 +583,28 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertIs(numpy_size[:][0], numpy_dimension)
                 self.assertEqual(numpy_size.numel(), int(numpy_dimension))
 
+        class NumpyIntSubclass(np.int64):
+            pass
+
+        numpy_subclass = NumpyIntSubclass(5)
+        subclass_size = torch.Size((numpy_subclass,))
+        self.assertIs(subclass_size[0], numpy_subclass)
+        self.assertIs(subclass_size[:][0], numpy_subclass)
+
+        class ModulelessIndex:
+            __module__ = None
+
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return 6
+
+        moduleless = ModulelessIndex()
+        self.assertEqual(torch.Size((moduleless,)), (6,))
+        self.assertEqual(moduleless.calls, 1)
+
         indexed = IndexValue(3)
         converted = torch.Size((True, indexed))
         self.assertEqual(converted, (1, 3))
@@ -607,17 +639,6 @@ class PythonApiBaselineTests(unittest.TestCase):
                     repr(size)
                 with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
                     size.numel()
-
-        large = 1 << 63
-        tensor = torch.zeros((large, 0))
-        self.assertEqual(tensor.size(0), large)
-        for metadata in (tensor.shape, tensor.size()):
-            self.assertIs(type(metadata), torch.Size)
-            self.assertEqual(metadata, (large, 0))
-            with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
-                repr(metadata)
-            with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
-                metadata.numel()
 
     def test_is_contiguous_reports_supported_layouts_and_rejects_formats(self):
         ordinary = torch.zeros((2, 3, 4))

@@ -23,8 +23,6 @@ def _unpack_size_dimension(dimension):
 
 
 def _is_numpy_integer(dimension):
-    if not type(dimension).__module__.startswith("numpy"):
-        return False
     try:
         import numpy
     except ImportError:
@@ -667,7 +665,14 @@ fn parse_creation_size(
             )));
         }
     };
-    value.extract::<Vec<usize>>()
+    let dimensions = value.extract::<Vec<usize>>()?;
+    if dimensions
+        .iter()
+        .any(|&dimension| i64::try_from(dimension).is_err())
+    {
+        return Err(PyValueError::new_err("Overflow when unpacking long long"));
+    }
+    Ok(dimensions)
 }
 
 fn parse_metadata(
