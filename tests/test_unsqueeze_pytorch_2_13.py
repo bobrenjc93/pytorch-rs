@@ -1,4 +1,3 @@
-import platform
 import random
 import sys
 import unittest
@@ -7,25 +6,21 @@ import numpy as np
 import torch_rs
 
 
-PYTORCH_UNAVAILABLE = sys.platform == "darwin" and platform.machine() == "x86_64"
-if PYTORCH_UNAVAILABLE:
-    pytorch = None
-else:
+try:
     import torch as pytorch
+except Exception:
+    pytorch = None
+
+PYTORCH_REFERENCE_AVAILABLE = (
+    pytorch is not None and pytorch.__version__.split("+")[0] == "2.13.0"
+)
 
 
-@unittest.skipIf(
-    PYTORCH_UNAVAILABLE,
-    "PyTorch 2.13.0 does not publish macOS x86_64 distributions",
+@unittest.skipUnless(
+    PYTORCH_REFERENCE_AVAILABLE,
+    "requires an importable PyTorch 2.13.0 reference distribution",
 )
 class UnsqueezePytorch213DifferentialTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        if pytorch.__version__.split("+")[0] != "2.13.0":
-            raise AssertionError(
-                "unsqueeze differential expectations are pinned to PyTorch 2.13.0"
-            )
-
     def assert_same_metadata(self, actual, expected):
         self.assertEqual(actual.shape, tuple(expected.shape))
         self.assertEqual(actual.stride(), expected.stride())

@@ -47,6 +47,12 @@ uv pip install --python .venv/bin/python 'maturin>=1.14,<2'
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
 
+The PyTorch 2.13 differential suite is optional because the pinned reference
+distribution is not published for every supported development platform. Where
+a compatible wheel is available, install it with
+`uv sync --locked --no-install-project --group pytorch-reference`; otherwise,
+those reference tests skip automatically.
+
 The checked-in tests are only the public floor. Burner also uses independent generated workloads and side-by-side `torch_rs`/`torch` differential runs.
 
 ## License
