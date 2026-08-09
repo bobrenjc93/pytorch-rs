@@ -538,6 +538,47 @@ fn reflected_scalar_division_uses_float32_reciprocal_multiplication() {
 }
 
 #[test]
+fn reflected_division_uses_unary_layout_planning_and_checks_stride_overflow() {
+    let source = Tensor::from_vec(vec![1.0, 2.0], [1, 2]).unwrap();
+    let transposed = source.transpose(0, 1).unwrap();
+    assert_eq!(transposed.shape(), [2, 1]);
+    assert_eq!(transposed.stride(), [1, 2]);
+
+    let ordinary = transposed.div_scalar(1.0).unwrap();
+    assert_eq!(ordinary.stride(), [1, 2]);
+    let reflected = transposed.scalar_div(1.0).unwrap();
+    assert_eq!(reflected.stride(), [1, 1]);
+    assert_eq!(reflected.logical_values().collect::<Vec<_>>(), [1.0, 0.5]);
+
+    let empty_cases = [
+        (
+            Tensor::zeros([1, 0]).unwrap().transpose(0, 1).unwrap(),
+            vec![1, 0],
+        ),
+        (Tensor::zeros([1, 0, 1]).unwrap(), vec![0, 1, 0]),
+        (
+            Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap(),
+            vec![2, 2, 1],
+        ),
+    ];
+    for (empty, expected_strides) in empty_cases {
+        let output = empty.scalar_div(1.0).unwrap();
+        assert_eq!(output.shape(), empty.shape());
+        assert_eq!(output.stride(), expected_strides);
+        assert_eq!(output.numel(), 0);
+    }
+
+    let maximum = isize::MAX.unsigned_abs();
+    let large = Tensor::zeros([2, 0, maximum]).unwrap();
+    assert_eq!(large.scalar_div(1.0).unwrap().stride(), [0, 1, 0]);
+    let extreme = large.transpose(0, 1).unwrap();
+    assert_eq!(
+        extreme.scalar_div(1.0),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+}
+
+#[test]
 fn subtraction_and_division_support_scalar_empty_and_multidimensional_tensors() {
     let scalar_left = Tensor::from_vec(vec![7.0], []).unwrap();
     let scalar_right = Tensor::from_vec(vec![2.0], []).unwrap();
@@ -717,6 +758,255 @@ fn matrix_multiplication_rejects_incompatible_shapes() {
         left.matmul(&right),
         Err(TensorError::MatmulInnerDimensionMismatch { .. })
     ));
+}
+
+#[test]
+fn transpose_is_a_metadata_only_shared_storage_view() {
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let transposed = source.transpose(0, -1).unwrap();
+
+    assert_eq!(transposed.shape(), [4, 3, 2]);
+    assert_eq!(transposed.stride(), [1, 4, 12]);
+    assert_eq!(transposed.storage_offset(), 0);
+    assert_eq!(transposed.dtype(), source.dtype());
+    assert_eq!(transposed.device(), source.device());
+    assert!(transposed.shares_storage_with(&source));
+    assert_eq!(
+        transposed.logical_values().collect::<Vec<_>>(),
+        [
+            0.0, 12.0, 4.0, 16.0, 8.0, 20.0, 1.0, 13.0, 5.0, 17.0, 9.0, 21.0, 2.0, 14.0, 6.0, 18.0,
+            10.0, 22.0, 3.0, 15.0, 7.0, 19.0, 11.0, 23.0,
+        ]
+    );
+
+    let restored = transposed.transpose(-1, 0).unwrap();
+    assert_eq!(restored.shape(), source.shape());
+    assert_eq!(restored.stride(), source.stride());
+    assert_eq!(
+        restored.logical_values().collect::<Vec<_>>(),
+        source.as_slice()
+    );
+    assert!(restored.shares_storage_with(&source));
+
+    let duplicate = source.transpose(1, -2).unwrap();
+    assert_eq!(duplicate.shape(), source.shape());
+    assert_eq!(duplicate.stride(), source.stride());
+    assert!(duplicate.shares_storage_with(&source));
+}
+
+#[test]
+fn transpose_dimension_normalization_matches_pytorch_for_scalars_and_ranks() {
+    let scalar = Tensor::from_vec(vec![3.5], []).unwrap();
+    for dimensions in [(0, 0), (-1, -1), (0, -1), (-1, 0)] {
+        let view = scalar.transpose(dimensions.0, dimensions.1).unwrap();
+        assert!(view.shape().is_empty());
+        assert!(view.stride().is_empty());
+        assert_eq!(view.item().unwrap().to_bits(), 3.5_f32.to_bits());
+        assert!(view.shares_storage_with(&scalar));
+    }
+    for dimension in [-2, 1] {
+        assert_eq!(
+            scalar.transpose(dimension, 0),
+            Err(TensorError::DimensionOutOfRange { dimension, rank: 0 })
+        );
+    }
+
+    let tensor = Tensor::zeros([2, 3, 4]).unwrap();
+    for dimension in [-4, 3] {
+        assert_eq!(
+            tensor.transpose(dimension, 0),
+            Err(TensorError::DimensionOutOfRange { dimension, rank: 3 })
+        );
+    }
+    assert_eq!(
+        tensor.transpose(3, 0).unwrap_err().to_string(),
+        "Dimension out of range (expected to be in range of [-3, 2], but got 3)"
+    );
+}
+
+#[test]
+fn transpose_defines_contiguous_and_non_overlapping_dense_invariants() {
+    let contiguous = Tensor::zeros([2, 3, 4]).unwrap();
+    let dense_transpose = contiguous.transpose(0, 2).unwrap();
+    let non_dense = dense_transpose.index_integer(1).unwrap();
+    let singleton = Tensor::zeros([2, 1, 3]).unwrap().transpose(0, 1).unwrap();
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+
+    assert!(contiguous.is_contiguous());
+    assert!(contiguous.is_non_overlapping_and_dense());
+    assert!(!dense_transpose.is_contiguous());
+    assert!(dense_transpose.is_non_overlapping_and_dense());
+    assert!(!non_dense.is_contiguous());
+    assert!(!non_dense.is_non_overlapping_and_dense());
+    assert!(singleton.is_contiguous());
+    assert!(singleton.is_non_overlapping_and_dense());
+    assert!(empty.is_contiguous());
+    assert!(empty.is_non_overlapping_and_dense());
+}
+
+#[test]
+fn memory_format_contiguity_queries_match_layout_metadata() {
+    let contiguous = Tensor::zeros([2, 3, 4, 5]).unwrap();
+    assert!(contiguous.is_contiguous_with_memory_format(MemoryFormat::Preserve));
+    assert!(contiguous.is_contiguous_with_memory_format(MemoryFormat::Contiguous));
+    assert!(!contiguous.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+    assert!(!contiguous.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast3d));
+
+    let channels_last = Tensor::zeros([1, 1, 2, 2])
+        .unwrap()
+        .transpose(1, 3)
+        .unwrap();
+    assert!(!channels_last.is_contiguous());
+    assert!(channels_last.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+
+    let channels_last_3d = Tensor::zeros([2, 4, 5, 6, 3])
+        .unwrap()
+        .transpose(1, 4)
+        .unwrap()
+        .transpose(2, 4)
+        .unwrap()
+        .transpose(3, 4)
+        .unwrap();
+    assert_eq!(channels_last_3d.stride(), [360, 1, 90, 18, 3]);
+    assert!(channels_last_3d.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast3d));
+    assert!(!channels_last_3d.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+
+    let empty_channels_last = Tensor::zeros([2, 4, 5, 0])
+        .unwrap()
+        .transpose(1, 3)
+        .unwrap()
+        .transpose(2, 3)
+        .unwrap();
+    assert_eq!(empty_channels_last.stride(), [20, 1, 5, 1]);
+    assert!(!empty_channels_last.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+}
+
+#[test]
+fn pointwise_outputs_canonicalize_singleton_channels_last_strides() {
+    let source = Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0], [1, 1, 2, 2]).unwrap();
+    let view = source.transpose(1, 3).unwrap();
+    assert_eq!(view.shape(), [1, 2, 2, 1]);
+    assert_eq!(view.stride(), [4, 1, 2, 4]);
+
+    for output in [
+        view.relu().unwrap(),
+        view.sin().unwrap(),
+        view.add(&view).unwrap(),
+    ] {
+        assert_eq!(output.shape(), view.shape());
+        assert_eq!(output.stride(), [4, 1, 2, 2]);
+        assert_eq!(output.reshape([1, 2, 2, 1]).unwrap().stride(), [2, 1, 2, 2]);
+        assert!(!output.shares_storage_with(&view));
+    }
+}
+
+#[test]
+fn stride_aware_consumers_handle_transposed_and_indexed_views() {
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let view = source.transpose(0, 2).unwrap();
+    let indexed = view.index_integer(1).unwrap();
+    assert_eq!(indexed.shape(), [3, 2]);
+    assert_eq!(indexed.stride(), [4, 12]);
+    assert_eq!(indexed.storage_offset(), 1);
+    assert_eq!(
+        indexed.index([2, 1]).unwrap().item().unwrap().to_bits(),
+        21.0_f32.to_bits()
+    );
+
+    let clone = indexed.try_clone().unwrap();
+    assert_eq!(clone.stride(), [1, 3]);
+    assert_eq!(
+        clone.logical_values().collect::<Vec<_>>(),
+        [1.0, 13.0, 5.0, 17.0, 9.0, 21.0]
+    );
+    assert!(!clone.shares_storage_with(&source));
+
+    let same_shape = view.reshape([4, 3, 2]).unwrap();
+    assert_eq!(same_shape.stride(), view.stride());
+    assert!(same_shape.shares_storage_with(&view));
+    let flattened = view.reshape([24]).unwrap();
+    assert_eq!(flattened.stride(), [1]);
+    assert!(!flattened.shares_storage_with(&view));
+    assert_eq!(
+        flattened.as_slice(),
+        view.logical_values().collect::<Vec<_>>()
+    );
+
+    for output in [
+        view.relu().unwrap(),
+        view.sin().unwrap(),
+        view.exp().unwrap(),
+    ] {
+        assert_eq!(output.shape(), view.shape());
+        assert_eq!(output.stride(), view.stride());
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.shares_storage_with(&view));
+    }
+    assert_eq!(view.sum().item().unwrap().to_bits(), 276.0_f32.to_bits());
+
+    let broadcast_row = Tensor::from_vec(vec![10.0, 20.0], [2]).unwrap();
+    let broadcast = view.add(&broadcast_row).unwrap();
+    assert_eq!(broadcast.stride(), view.stride());
+    assert_eq!(
+        broadcast.logical_values().take(6).collect::<Vec<_>>(),
+        [10.0, 32.0, 14.0, 36.0, 18.0, 40.0]
+    );
+}
+
+#[test]
+fn rank_two_matmul_reads_transposed_strides() {
+    let left = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [2, 3])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    let right = Tensor::from_vec((0_u8..8).map(f32::from).collect(), [4, 2])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    let output = left.matmul(&right).unwrap();
+
+    assert_eq!(output.shape(), [3, 4]);
+    assert_eq!(output.stride(), [4, 1]);
+    assert_eq!(
+        output.as_slice(),
+        [
+            3.0, 9.0, 15.0, 21.0, 4.0, 14.0, 24.0, 34.0, 5.0, 19.0, 33.0, 47.0
+        ]
+    );
+}
+
+#[test]
+fn transpose_preserves_exact_empty_and_extreme_strides() {
+    let maximum = isize::MAX.unsigned_abs();
+    let empty = Tensor::zeros([2, 0, maximum]).unwrap();
+    assert_eq!(empty.stride(), [maximum, maximum, 1]);
+
+    let transposed = empty.transpose(0, 2).unwrap();
+    assert_eq!(transposed.shape(), [maximum, 0, 2]);
+    assert_eq!(transposed.stride(), [1, maximum, maximum]);
+    assert!(transposed.shares_storage_with(&empty));
+    assert!(transposed.logical_values().next().is_none());
+
+    let offset = Tensor::zeros([maximum, 0])
+        .unwrap()
+        .index_integer(i64::MAX - 1)
+        .unwrap()
+        .transpose(0, 0)
+        .unwrap();
+    assert_eq!(offset.storage_offset(), maximum - 1);
+    assert!(offset.logical_values().next().is_none());
+    assert_eq!(offset.try_clone().unwrap().storage_offset(), 0);
+
+    let overflow_order = Tensor::zeros([maximum, 0, 2, 2]).unwrap();
+    assert_eq!(
+        overflow_order.transpose(1, 3),
+        Err(TensorError::ElementCountOverflow)
+    );
+    assert_eq!(
+        overflow_order.transpose(-3, -1),
+        Err(TensorError::ElementCountOverflow)
+    );
+    assert_eq!(overflow_order.transpose(1, 1).unwrap().numel(), 0);
 }
 
 #[test]

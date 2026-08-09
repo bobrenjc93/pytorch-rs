@@ -140,6 +140,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for EyeDimensionArgument {
     }
 }
 
+struct ParsedCallArgument<'py> {
+    value: Bound<'py, PyAny>,
+    position: Option<usize>,
+}
+
 #[derive(Clone, Copy)]
 enum BinaryOperation {
     Add,
@@ -188,6 +193,49 @@ impl PyTensor {
 
     fn storage_offset(&self) -> usize {
         self.inner.storage_offset()
+    }
+
+    #[pyo3(signature = (*args, **kwargs), text_signature = "(*, memory_format=torch.contiguous_format)")]
+    fn is_contiguous(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<bool> {
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "is_contiguous() takes 0 positional arguments but {} {} given",
+                args.len(),
+                if args.len() == 1 { "was" } else { "were" }
+            )));
+        }
+        let mut memory_format = MemoryFormat::Contiguous;
+        if let Some(kwargs) = kwargs {
+            for (key, value) in kwargs {
+                let key = key.extract::<String>()?;
+                if key != "memory_format" {
+                    return Err(PyTypeError::new_err(format!(
+                        "is_contiguous() got an unexpected keyword argument '{key}'"
+                    )));
+                }
+                memory_format = parse_is_contiguous_memory_format(&value)?;
+            }
+        }
+        Ok(self.inner.is_contiguous_with_memory_format(memory_format))
+    }
+
+    #[pyo3(signature = (*args, **kwargs))]
+    fn transpose(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let [dim0, dim1] = bind_transpose_arguments(args, kwargs, ["dim0", "dim1"])?;
+        let dim0 = parse_transpose_dimension("dim0", dim0.position, &dim0.value)?;
+        let dim1 = parse_transpose_dimension("dim1", dim1.position, &dim1.value)?;
+        self.inner
+            .transpose(dim0, dim1)
+            .map(|inner| Self { inner })
+            .map_err(|error| transpose_error(&error))
     }
 
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -245,7 +293,11 @@ impl PyTensor {
     }
 
     fn tolist(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        nested_list(py, self.inner.as_slice(), self.inner.shape())
+        let values = self
+            .inner
+            .try_to_vec()
+            .map_err(|error| tensor_error(&error))?;
+        nested_list(py, &values, self.inner.shape())
     }
 
     fn item(&self) -> PyResult<f32> {
@@ -335,12 +387,16 @@ impl PyTensor {
             .ok_or_else(|| PyTypeError::new_err("len() of a 0-d tensor"))
     }
 
-    fn __repr__(&self) -> String {
-        format!(
+    fn __repr__(&self) -> PyResult<String> {
+        let values = self
+            .inner
+            .try_to_vec()
+            .map_err(|error| tensor_error(&error))?;
+        Ok(format!(
             "tensor({:?}, shape={:?})",
-            self.inner.as_slice(),
+            values,
             self.inner.shape()
-        )
+        ))
     }
 }
 
@@ -351,7 +407,11 @@ impl PyTensor {
         dtype: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Py<PyAny>> {
         let numpy = PyModule::import(py, "numpy")?;
-        let values = PyList::new(py, self.inner.as_slice().iter().copied())?;
+        let values = self
+            .inner
+            .try_to_vec()
+            .map_err(|error| tensor_error(&error))?;
+        let values = PyList::new(py, values)?;
         let arguments = PyDict::new(py);
         if let Some(dtype) = dtype {
             arguments.set_item("dtype", dtype)?;
@@ -472,6 +532,23 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction(signature = (*args, **kwargs))]
+fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let [input, dim0, dim1] = bind_transpose_arguments(args, kwargs, ["input", "dim0", "dim1"])?;
+    let input_type = transpose_type_name(&input.value)?;
+    let input_tensor = input.value.cast::<PyTensor>().map_err(|_| {
+        transpose_argument_type_error("input", input.position, "Tensor", &input_type)
+    })?;
+    let input_tensor = input_tensor.try_borrow()?;
+    let dim0 = parse_transpose_dimension("dim0", dim0.position, &dim0.value)?;
+    let dim1 = parse_transpose_dimension("dim1", dim1.position, &dim1.value)?;
+    input_tensor
+        .inner
+        .transpose(dim0, dim1)
+        .map(|inner| PyTensor { inner })
+        .map_err(|error| transpose_error(&error))
+}
+
 #[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
 fn zeros(
     size: Option<&Bound<'_, PyAny>>,
@@ -590,6 +667,17 @@ fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResu
     let type_name = memory_format.get_type().name()?;
     Err(PyTypeError::new_err(format!(
         "clone(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
+}
+
+fn parse_is_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryFormat> {
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner);
+    }
+
+    let type_name = memory_format.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "is_contiguous(): argument 'memory_format' must be torch.memory_format, not {type_name}"
     )))
 }
 
@@ -746,6 +834,136 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     Err(PyTypeError::new_err(format!(
         "stride(): argument 'dim' must be int, not {type_name}"
     )))
+}
+
+fn parse_transpose_dimension(
+    argument: &str,
+    position: Option<usize>,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<i64> {
+    if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
+        return dimension
+            .extract::<i64>()
+            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+    }
+
+    if let Ok(numpy) = PyModule::import(dimension.py(), "numpy") {
+        let numpy_integer = numpy.getattr("integer")?;
+        if dimension.is_instance(&numpy_integer)? {
+            return dimension
+                .extract::<i64>()
+                .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+        }
+    }
+
+    let type_name = transpose_type_name(dimension)?;
+    Err(transpose_argument_type_error(
+        argument, position, "int", &type_name,
+    ))
+}
+
+fn bind_transpose_arguments<'py, const N: usize>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    names: [&str; N],
+) -> PyResult<[ParsedCallArgument<'py>; N]> {
+    if positional.len() > N {
+        return Err(PyTypeError::new_err(format!(
+            "transpose() takes {N} positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; N] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            let Some(index) = names.iter().position(|name| *name == key) else {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "transpose() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+                continue;
+            };
+            if arguments[index].is_some() {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "transpose() got multiple values for argument '{}'",
+                        names[index]
+                    ))
+                });
+                continue;
+            }
+            arguments[index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    if let Some(first_missing) = arguments.iter().position(Option::is_none) {
+        let missing = &names[first_missing..];
+        let quoted_names = missing
+            .iter()
+            .map(|name| format!("\"{name}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let argument = if missing.len() == 1 {
+            "arguments"
+        } else {
+            "argument"
+        };
+        return Err(PyTypeError::new_err(format!(
+            "transpose() missing {} required positional {argument}: {quoted_names}",
+            missing.len()
+        )));
+    }
+
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+
+    Ok(arguments
+        .map(|argument| argument.expect("all required transpose arguments were checked above")))
+}
+
+fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    // PyTorch reports CPython's `tp_name`: heap types use their unqualified
+    // class name, while static extension types retain their module prefix.
+    const PY_TPFLAGS_HEAPTYPE: u64 = 1 << 9;
+
+    let value_type = value.get_type();
+    let name = value_type.name()?.to_str()?.to_owned();
+    let module = value_type.getattr("__module__")?.extract::<String>()?;
+    let flags = value_type.getattr("__flags__")?.extract::<u64>()?;
+    if module == "torch_rs" && matches!(name.as_str(), "dtype" | "device" | "memory_format") {
+        Ok(format!("torch.{name}"))
+    } else if flags & PY_TPFLAGS_HEAPTYPE == 0 && module != "builtins" {
+        Ok(format!("{module}.{name}"))
+    } else {
+        Ok(name)
+    }
+}
+
+fn transpose_argument_type_error(
+    argument: &str,
+    position: Option<usize>,
+    expected: &str,
+    actual: &str,
+) -> PyErr {
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    PyTypeError::new_err(format!(
+        "transpose(): argument '{argument}'{position} must be {expected}, not {actual}"
+    ))
 }
 
 fn parse_integer_indices<'py>(
@@ -1296,7 +1514,16 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }
-        | TensorError::IndexOutOfBounds { .. } => PyIndexError::new_err(error.to_string()),
+        | TensorError::IndexOutOfBounds { .. }
+        | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
+    }
+}
+
+fn transpose_error(error: &TensorError) -> PyErr {
+    if matches!(error, TensorError::ElementCountOverflow) {
+        PyRuntimeError::new_err("numel: integer multiplication overflow")
+    } else {
+        tensor_error(error)
     }
 }
 
@@ -1309,6 +1536,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyMemoryFormat>()?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
+    module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;

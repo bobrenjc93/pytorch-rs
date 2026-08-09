@@ -337,6 +337,38 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 47
       }
+    },
+    {
+      "key": "base:fa9f3dc2eb8fe8128926487b094802bb632809a6",
+      "commit": "fa9f3dc2eb8fe8128926487b094802bb632809a6",
+      "recordedAt": "2026-08-09T09:44:52.469Z",
+      "label": "base fa9f3dc",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 34.9,
+        "eval_63a24994": 78.2,
+        "eval_39340456": 11,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 49
+      }
+    },
+    {
+      "key": "pr:20",
+      "recordedAt": "2026-08-09T09:44:52.469Z",
+      "label": "PR #20",
+      "kind": "leaf",
+      "prNumber": 20,
+      "title": "Add metadata-only transpose with stride-aware tensor consumers",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.3,
+        "eval_39340456": 13,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 56
+      }
     }
   ]
 }
