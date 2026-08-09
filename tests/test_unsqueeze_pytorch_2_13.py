@@ -1,12 +1,23 @@
+import platform
 import random
 import sys
 import unittest
 
 import numpy as np
-import torch as pytorch
 import torch_rs
 
 
+PYTORCH_UNAVAILABLE = sys.platform == "darwin" and platform.machine() == "x86_64"
+if PYTORCH_UNAVAILABLE:
+    pytorch = None
+else:
+    import torch as pytorch
+
+
+@unittest.skipIf(
+    PYTORCH_UNAVAILABLE,
+    "PyTorch 2.13.0 does not publish macOS x86_64 distributions",
+)
 class UnsqueezePytorch213DifferentialTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -76,6 +87,17 @@ class UnsqueezePytorch213DifferentialTests(unittest.TestCase):
                         actual.unsqueeze(dimension), expected.unsqueeze(dimension)
                     )
 
+        actual = torch_rs.zeros((0,)).reshape((1 << 62, 0, 2))
+        expected = pytorch.zeros((0,)).reshape((1 << 62, 0, 2))
+        with self.assertRaisesRegex(
+            RuntimeError, "SymIntArrayRef expected to contain only concrete integers"
+        ):
+            actual.unsqueeze(0)
+        with self.assertRaisesRegex(
+            RuntimeError, "SymIntArrayRef expected to contain only concrete integers"
+        ):
+            expected.unsqueeze(0)
+
     def test_seeded_error_categories_and_messages(self):
         actual = torch_rs.tensor([1.0])
         expected = pytorch.tensor([1.0])
@@ -118,8 +140,36 @@ class UnsqueezePytorch213DifferentialTests(unittest.TestCase):
 
         call_pairs = (
             (
+                lambda: actual.unsqueeze(True, dim=0),
+                lambda: expected.unsqueeze(True, dim=0),
+            ),
+            (
+                lambda: actual.unsqueeze(dim=True, unexpected=0),
+                lambda: expected.unsqueeze(dim=True, unexpected=0),
+            ),
+            (
+                lambda: actual.unsqueeze(True, 0),
+                lambda: expected.unsqueeze(True, 0),
+            ),
+            (
+                lambda: torch_rs.unsqueeze([]),
+                lambda: pytorch.unsqueeze([]),
+            ),
+            (
                 lambda: torch_rs.unsqueeze([], True),
                 lambda: pytorch.unsqueeze([], True),
+            ),
+            (
+                lambda: torch_rs.unsqueeze(actual, True, dim=0),
+                lambda: pytorch.unsqueeze(expected, True, dim=0),
+            ),
+            (
+                lambda: torch_rs.unsqueeze([], 0, dim=0),
+                lambda: pytorch.unsqueeze([], 0, dim=0),
+            ),
+            (
+                lambda: torch_rs.unsqueeze([], True, 0),
+                lambda: pytorch.unsqueeze([], True, 0),
             ),
             (
                 lambda: torch_rs.unsqueeze(input=[], dim=1 << 100),
@@ -132,6 +182,18 @@ class UnsqueezePytorch213DifferentialTests(unittest.TestCase):
             (
                 lambda: torch_rs.unsqueeze(input=actual, axis=0, unexpected=True),
                 lambda: pytorch.unsqueeze(input=expected, axis=0, unexpected=True),
+            ),
+            (
+                lambda: torch_rs.unsqueeze(np.array([1.0]), 0),
+                lambda: pytorch.unsqueeze(np.array([1.0]), 0),
+            ),
+            (
+                lambda: actual.unsqueeze(np.array(0)),
+                lambda: expected.unsqueeze(np.array(0)),
+            ),
+            (
+                lambda: torch_rs.unsqueeze(actual, np.float32(0)),
+                lambda: pytorch.unsqueeze(expected, np.float32(0)),
             ),
         )
         for actual_call, expected_call in call_pairs:

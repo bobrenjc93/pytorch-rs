@@ -480,12 +480,11 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
 
 #[pyfunction(signature = (*args, **kwargs))]
 fn unsqueeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
-    let (input, dimension, dimension_position) = parse_unsqueeze_function_arguments(args, kwargs)?;
+    let (input, dimension) = parse_unsqueeze_function_arguments(args, kwargs)?;
     let input = input
         .cast::<PyTensor>()
         .map_err(|_| unsqueeze_input_type_error(&input, usize::from(!args.is_empty())))?;
     let input = input.try_borrow()?;
-    let dimension = parse_unsqueeze_dimension(&dimension, dimension_position)?;
     input
         .inner
         .unsqueeze(dimension)
@@ -779,31 +778,43 @@ fn parse_unsqueeze_method_arguments(
 
     let positional = args.get_item(0).ok();
     let keyword_dim = kwargs.and_then(|values| values.get_item("dim").ok().flatten());
-    if positional.is_some() && keyword_dim.is_some() {
-        return Err(unsqueeze_duplicate_argument("dim"));
-    }
+    let axis = kwargs.and_then(|values| values.get_item("axis").ok().flatten());
 
-    let mut dimension = positional.or(keyword_dim);
-    let mut positional_index = usize::from(!args.is_empty());
-    if let Some(axis) = kwargs.and_then(|values| values.get_item("axis").ok().flatten()) {
-        reject_axis_with_unknown_keywords(kwargs, &["dim"])?;
-        if dimension.is_some() {
+    if let Some(positional) = positional {
+        let dimension = parse_unsqueeze_dimension(&positional, 1)?;
+        if keyword_dim.is_some() {
+            return Err(unsqueeze_duplicate_argument("dim"));
+        }
+        if axis.is_some() {
             return Err(unsqueeze_unexpected_keyword("axis"));
         }
-        dimension = Some(axis);
-        positional_index = 0;
+        reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
+        return Ok(dimension);
     }
-    let Some(dimension) = dimension else {
-        return Err(unsqueeze_missing_arguments(&["dim"]));
-    };
-    reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
-    parse_unsqueeze_dimension(&dimension, positional_index)
+
+    if let Some(keyword_dim) = keyword_dim {
+        let dimension = parse_unsqueeze_dimension(&keyword_dim, 0)?;
+        if axis.is_some() {
+            return Err(unsqueeze_unexpected_keyword("axis"));
+        }
+        reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
+        return Ok(dimension);
+    }
+
+    if let Some(axis) = axis {
+        let dimension = parse_unsqueeze_dimension(&axis, 0)?;
+        reject_axis_with_unknown_keywords(kwargs, &["dim"])?;
+        reject_unknown_unsqueeze_keywords(kwargs, &["dim", "axis"])?;
+        return Ok(dimension);
+    }
+
+    Err(unsqueeze_missing_arguments(&["dim"]))
 }
 
 fn parse_unsqueeze_function_arguments<'py>(
     args: &Bound<'py, PyTuple>,
     kwargs: Option<&Bound<'py, PyDict>>,
-) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>, usize)> {
+) -> PyResult<(Bound<'py, PyAny>, i64)> {
     if args.len() > 2 {
         return Err(unsqueeze_positional_count_error(2, args.len()));
     }
@@ -812,6 +823,15 @@ fn parse_unsqueeze_function_arguments<'py>(
     let positional_dimension = args.get_item(1).ok();
     let keyword_input = kwargs.and_then(|values| values.get_item("input").ok().flatten());
     let keyword_dimension = kwargs.and_then(|values| values.get_item("dim").ok().flatten());
+    let axis = kwargs.and_then(|values| values.get_item("axis").ok().flatten());
+
+    if let Some(input) = &positional_input {
+        validate_unsqueeze_input(input, 1)?;
+    }
+    let positional_dimension = positional_dimension
+        .map(|dimension| parse_unsqueeze_dimension(&dimension, 2))
+        .transpose()?;
+
     if positional_input.is_some() && keyword_input.is_some() {
         return Err(unsqueeze_duplicate_argument("input"));
     }
@@ -820,25 +840,37 @@ fn parse_unsqueeze_function_arguments<'py>(
     }
 
     let input = positional_input.or(keyword_input);
-    let mut dimension = positional_dimension.or(keyword_dimension);
-    let mut dimension_position = usize::from(args.len() > 1) * 2;
-    if let Some(axis) = kwargs.and_then(|values| values.get_item("axis").ok().flatten()) {
-        reject_axis_with_unknown_keywords(kwargs, &["input", "dim"])?;
-        if dimension.is_some() {
-            return Err(unsqueeze_unexpected_keyword("axis"));
-        }
-        dimension = Some(axis);
-        dimension_position = 0;
-    }
-
     let Some(input) = input else {
         return Err(unsqueeze_missing_arguments(&["input", "dim"]));
     };
-    let Some(dimension) = dimension else {
+    if args.is_empty() {
+        validate_unsqueeze_input(&input, 0)?;
+    }
+
+    if let Some(dimension) = positional_dimension {
+        if axis.is_some() {
+            return Err(unsqueeze_unexpected_keyword("axis"));
+        }
+        reject_unknown_unsqueeze_keywords(kwargs, &["input", "dim", "axis"])?;
+        return Ok((input, dimension));
+    }
+
+    if let Some(keyword_dimension) = keyword_dimension {
+        let dimension = parse_unsqueeze_dimension(&keyword_dimension, 0)?;
+        if axis.is_some() {
+            return Err(unsqueeze_unexpected_keyword("axis"));
+        }
+        reject_unknown_unsqueeze_keywords(kwargs, &["input", "dim", "axis"])?;
+        return Ok((input, dimension));
+    }
+
+    let Some(axis) = axis else {
         return Err(unsqueeze_missing_arguments(&["dim"]));
     };
+    let dimension = parse_unsqueeze_dimension(&axis, 0)?;
+    reject_axis_with_unknown_keywords(kwargs, &["input", "dim"])?;
     reject_unknown_unsqueeze_keywords(kwargs, &["input", "dim", "axis"])?;
-    Ok((input, dimension, dimension_position))
+    Ok((input, dimension))
 }
 
 fn parse_unsqueeze_dimension(dimension: &Bound<'_, PyAny>, position: usize) -> PyResult<i64> {
@@ -857,7 +889,7 @@ fn parse_unsqueeze_dimension(dimension: &Bound<'_, PyAny>, position: usize) -> P
         }
     }
 
-    let type_name = dimension.get_type().name()?;
+    let type_name = unsqueeze_type_name(dimension)?;
     let position = if position == 0 {
         String::new()
     } else {
@@ -869,10 +901,7 @@ fn parse_unsqueeze_dimension(dimension: &Bound<'_, PyAny>, position: usize) -> P
 }
 
 fn unsqueeze_input_type_error(input: &Bound<'_, PyAny>, position: usize) -> PyErr {
-    let type_name = input
-        .get_type()
-        .name()
-        .map_or_else(|_| "unknown".into(), |name| name.to_string());
+    let type_name = unsqueeze_type_name(input).unwrap_or_else(|_| "unknown".to_owned());
     let position = if position == 0 {
         String::new()
     } else {
@@ -881,6 +910,27 @@ fn unsqueeze_input_type_error(input: &Bound<'_, PyAny>, position: usize) -> PyEr
     PyTypeError::new_err(format!(
         "unsqueeze(): argument 'input'{position} must be Tensor, not {type_name}"
     ))
+}
+
+fn validate_unsqueeze_input(input: &Bound<'_, PyAny>, position: usize) -> PyResult<()> {
+    input
+        .cast::<PyTensor>()
+        .map(|_| ())
+        .map_err(|_| unsqueeze_input_type_error(input, position))
+}
+
+fn unsqueeze_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    let value_type = value.get_type();
+    let name = value_type.name()?.to_string();
+    let module = value_type
+        .getattr("__module__")
+        .and_then(|module| module.extract::<String>())
+        .unwrap_or_default();
+    if module == "numpy" || module.starts_with("numpy.") {
+        Ok(format!("numpy.{name}"))
+    } else {
+        Ok(name)
+    }
 }
 
 fn unsqueeze_positional_count_error(expected: usize, actual: usize) -> PyErr {
@@ -1503,6 +1553,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow
         | TensorError::NegativeStrides { .. }
+        | TensorError::NonConcreteSymInt
         | TensorError::ReshapeMultipleInferredDimensions
         | TensorError::ReshapeInvalidDimension { .. }
         | TensorError::ReshapeAmbiguousZeroElements { .. }

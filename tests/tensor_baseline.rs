@@ -141,6 +141,29 @@ fn unsqueeze_matches_signed_stride_wrapping_for_extreme_empty_shapes() {
         negative.unwrap_err().to_string(),
         "as_strided: Negative strides are not supported at the moment, got strides: [-2, 2, 2, 1]"
     );
+
+    let symbolic = Tensor::zeros([0])
+        .unwrap()
+        .reshape([1_i64 << 62, 0, 2])
+        .unwrap()
+        .unsqueeze(0);
+    assert_eq!(symbolic, Err(TensorError::NonConcreteSymInt));
+    assert_eq!(
+        symbolic.unwrap_err().to_string(),
+        "SymIntArrayRef expected to contain only concrete integers"
+    );
+
+    let concrete_boundary = Tensor::zeros([0])
+        .unwrap()
+        .reshape([3_i64 << 61, 0, 2])
+        .unwrap()
+        .unsqueeze(0);
+    assert_eq!(
+        concrete_boundary,
+        Err(TensorError::NegativeStrides {
+            strides: vec![-(1_i64 << 62), 2, 2, 1]
+        })
+    );
 }
 
 #[test]

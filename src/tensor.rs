@@ -3,6 +3,8 @@ use std::fmt::{Display, Formatter};
 use std::mem::size_of;
 use std::sync::Arc;
 
+const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
+
 /// Native scalar types implemented by tensor storage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum DType {
@@ -128,6 +130,7 @@ pub enum TensorError {
     NegativeStrides {
         strides: Vec<i64>,
     },
+    NonConcreteSymInt,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -226,6 +229,9 @@ impl Display for TensorError {
                 formatter,
                 "as_strided: Negative strides are not supported at the moment, got strides: {strides:?}"
             ),
+            Self::NonConcreteSymInt => {
+                formatter.write_str("SymIntArrayRef expected to contain only concrete integers")
+            }
             Self::ReshapeMultipleInferredDimensions => {
                 write!(formatter, "only one dimension can be inferred")
             }
@@ -710,8 +716,9 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when `dimension` is outside `[-rank - 1, rank]`, when
-    /// `PyTorch`'s signed stride calculation produces an unsupported negative
-    /// stride, or when view metadata allocation fails.
+    /// `PyTorch`'s signed stride calculation enters its reserved symbolic range
+    /// or produces an unsupported negative stride, or when view metadata
+    /// allocation fails.
     pub fn unsqueeze(&self, dimension: i64) -> Result<Self, TensorError> {
         let rank =
             i64::try_from(self.shape.len()).map_err(|_| TensorError::StrideCalculationOverflow)?;
@@ -745,6 +752,9 @@ impl Tensor {
                 .map_err(|_| TensorError::StrideCalculationOverflow)?;
             size.wrapping_mul(stride)
         };
+        if inserted_stride < MIN_CONCRETE_SYMINT {
+            return Err(TensorError::NonConcreteSymInt);
+        }
         if inserted_stride < 0 {
             return Err(TensorError::NegativeStrides {
                 strides: try_insert_signed_stride(

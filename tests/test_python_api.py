@@ -587,6 +587,10 @@ class PythonApiBaselineTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(RuntimeError, "Negative strides are not supported"):
             torch.zeros((maximum, 0, 2)).unsqueeze(0)
+        with self.assertRaisesRegex(
+            RuntimeError, "SymIntArrayRef expected to contain only concrete integers"
+        ):
+            torch.zeros((0,)).reshape((1 << 62, 0, 2)).unsqueeze(0)
 
     def test_unsqueeze_views_support_existing_consumers_and_copy_boundaries(self):
         source = torch.tensor([[-1.0, 2.0], [3.0, -4.0]])[1]
@@ -647,6 +651,64 @@ class PythonApiBaselineTests(unittest.TestCase):
             (lambda: torch.unsqueeze(source, 0, 1), "takes 2 positional arguments but 3 were given"),
         )
         for call, message in calls:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, message):
+                    call()
+
+        precedence_cases = (
+            (
+                lambda: source.unsqueeze(True, dim=0),
+                "argument 'dim' \\(position 1\\) must be int, not bool",
+            ),
+            (
+                lambda: source.unsqueeze(dim=True, unexpected=0),
+                "argument 'dim' must be int, not bool",
+            ),
+            (
+                lambda: source.unsqueeze(True, 0),
+                "takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.unsqueeze([]),
+                "argument 'input' \\(position 1\\) must be Tensor, not list",
+            ),
+            (
+                lambda: torch.unsqueeze(source, True, dim=0),
+                "argument 'dim' \\(position 2\\) must be int, not bool",
+            ),
+            (
+                lambda: torch.unsqueeze([], 0, dim=0),
+                "argument 'input' \\(position 1\\) must be Tensor, not list",
+            ),
+            (
+                lambda: torch.unsqueeze([], True, 0),
+                "takes 2 positional arguments but 3 were given",
+            ),
+            (
+                lambda: torch.unsqueeze(input=[], dim=True),
+                "argument 'input' must be Tensor, not list",
+            ),
+        )
+        for call, message in precedence_cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, message):
+                    call()
+
+        qualified_type_cases = (
+            (
+                lambda: torch.unsqueeze(np.array([1.0]), 0),
+                "argument 'input'.*not numpy.ndarray",
+            ),
+            (
+                lambda: source.unsqueeze(np.array(0)),
+                "argument 'dim'.*not numpy.ndarray",
+            ),
+            (
+                lambda: torch.unsqueeze(source, np.float32(0)),
+                "argument 'dim'.*not numpy.float32",
+            ),
+        )
+        for call, message in qualified_type_cases:
             with self.subTest(message=message):
                 with self.assertRaisesRegex(TypeError, message):
                     call()
