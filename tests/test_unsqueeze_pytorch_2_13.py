@@ -102,6 +102,19 @@ class UnsqueezePytorch213DifferentialTests(unittest.TestCase):
         actual = torch_rs.tensor([1.0])
         expected = pytorch.tensor([1.0])
 
+        for input_alias in ("a", "x"):
+            for dimension_alias in ("dim", "axis"):
+                with self.subTest(
+                    input_alias=input_alias, dimension_alias=dimension_alias
+                ):
+                    actual_result = torch_rs.unsqueeze(
+                        **{input_alias: actual, dimension_alias: 0}
+                    )
+                    expected_result = pytorch.unsqueeze(
+                        **{input_alias: expected, dimension_alias: 0}
+                    )
+                    self.assert_same_result(actual_result, expected_result)
+
         class IntSubclass(int):
             pass
 
@@ -139,6 +152,22 @@ class UnsqueezePytorch213DifferentialTests(unittest.TestCase):
                         )
 
         call_pairs = (
+            (
+                lambda: torch_rs.unsqueeze(actual, input=actual),
+                lambda: pytorch.unsqueeze(expected, input=expected),
+            ),
+            (
+                lambda: torch_rs.unsqueeze(actual, input=actual, dim=True),
+                lambda: pytorch.unsqueeze(expected, input=expected, dim=True),
+            ),
+            (
+                lambda: torch_rs.unsqueeze(actual, input=actual, axis=True),
+                lambda: pytorch.unsqueeze(expected, input=expected, axis=True),
+            ),
+            (
+                lambda: torch_rs.unsqueeze(actual, input=actual, dim=0),
+                lambda: pytorch.unsqueeze(expected, input=expected, dim=0),
+            ),
             (
                 lambda: actual.unsqueeze(True, dim=0),
                 lambda: expected.unsqueeze(True, dim=0),

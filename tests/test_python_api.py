@@ -717,6 +717,40 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(source.unsqueeze(axis=0).shape, (1, 1))
         self.assertEqual(torch.unsqueeze(input=source, dim=0).shape, (1, 1))
         self.assertEqual(torch.unsqueeze(input=source, axis=0).shape, (1, 1))
+        for input_alias in ("a", "x"):
+            for dimension_alias in ("dim", "axis"):
+                with self.subTest(
+                    input_alias=input_alias, dimension_alias=dimension_alias
+                ):
+                    output = torch.unsqueeze(
+                        **{input_alias: source, dimension_alias: 0}
+                    )
+                    self.assertEqual(output.shape, (1, 1))
+                    self.assertEqual(output.tolist(), [[1.0]])
+
+        duplicate_precedence = (
+            (
+                lambda: torch.unsqueeze(source, input=source),
+                'missing 1 required positional arguments: "dim"',
+            ),
+            (
+                lambda: torch.unsqueeze(source, input=source, dim=True),
+                "argument 'dim' must be int, not bool",
+            ),
+            (
+                lambda: torch.unsqueeze(source, input=source, axis=True),
+                "argument 'dim' must be int, not bool",
+            ),
+            (
+                lambda: torch.unsqueeze(source, input=source, dim=0),
+                "multiple values for argument 'input'",
+            ),
+        )
+        for call, message in duplicate_precedence:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, message):
+                    call()
+
         for dimension in (-3, 2):
             with self.assertRaisesRegex(
                 IndexError,

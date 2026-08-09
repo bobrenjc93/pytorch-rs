@@ -132,6 +132,22 @@ enum EyeDimensionArgument {
     Provided(Py<PyAny>),
 }
 
+#[derive(Clone, Copy)]
+enum UnsqueezeArgumentOrigin {
+    Positional,
+    Keyword,
+    Alias,
+}
+
+#[derive(Clone, Copy)]
+struct UnsqueezeFunctionKeywordState {
+    input_origin: UnsqueezeArgumentOrigin,
+    dimension_origin: UnsqueezeArgumentOrigin,
+    input_aliases: usize,
+    selected_input_alias: Option<&'static str>,
+    axis_present: bool,
+}
+
 impl<'a, 'py> FromPyObject<'a, 'py> for EyeDimensionArgument {
     type Error = PyErr;
 
@@ -822,55 +838,112 @@ fn parse_unsqueeze_function_arguments<'py>(
     let positional_input = args.get_item(0).ok();
     let positional_dimension = args.get_item(1).ok();
     let keyword_input = kwargs.and_then(|values| values.get_item("input").ok().flatten());
+    let keyword_a = kwargs.and_then(|values| values.get_item("a").ok().flatten());
+    let keyword_x = kwargs.and_then(|values| values.get_item("x").ok().flatten());
     let keyword_dimension = kwargs.and_then(|values| values.get_item("dim").ok().flatten());
     let axis = kwargs.and_then(|values| values.get_item("axis").ok().flatten());
 
-    if let Some(input) = &positional_input {
-        validate_unsqueeze_input(input, 1)?;
+    let input = positional_input
+        .as_ref()
+        .or(keyword_input.as_ref())
+        .or(keyword_x.as_ref())
+        .or(keyword_a.as_ref())
+        .cloned();
+    if let Some(input) = &input {
+        validate_unsqueeze_input(input, usize::from(positional_input.is_some()))?;
     }
     let positional_dimension = positional_dimension
         .map(|dimension| parse_unsqueeze_dimension(&dimension, 2))
         .transpose()?;
 
-    if positional_input.is_some() && keyword_input.is_some() {
-        return Err(unsqueeze_duplicate_argument("input"));
-    }
-    if positional_dimension.is_some() && keyword_dimension.is_some() {
-        return Err(unsqueeze_duplicate_argument("dim"));
-    }
-
-    let input = positional_input.or(keyword_input);
     let Some(input) = input else {
         return Err(unsqueeze_missing_arguments(&["input", "dim"]));
     };
-    if args.is_empty() {
-        validate_unsqueeze_input(&input, 0)?;
-    }
 
-    if let Some(dimension) = positional_dimension {
-        if axis.is_some() {
-            return Err(unsqueeze_unexpected_keyword("axis"));
-        }
-        reject_unknown_unsqueeze_keywords(kwargs, &["input", "dim", "axis"])?;
-        return Ok((input, dimension));
-    }
-
-    if let Some(keyword_dimension) = keyword_dimension {
-        let dimension = parse_unsqueeze_dimension(&keyword_dimension, 0)?;
-        if axis.is_some() {
-            return Err(unsqueeze_unexpected_keyword("axis"));
-        }
-        reject_unknown_unsqueeze_keywords(kwargs, &["input", "dim", "axis"])?;
-        return Ok((input, dimension));
-    }
-
-    let Some(axis) = axis else {
+    let dimension = if let Some(dimension) = positional_dimension {
+        dimension
+    } else if let Some(dimension) = &keyword_dimension {
+        parse_unsqueeze_dimension(dimension, 0)?
+    } else if let Some(axis) = &axis {
+        parse_unsqueeze_dimension(axis, 0)?
+    } else {
         return Err(unsqueeze_missing_arguments(&["dim"]));
     };
-    let dimension = parse_unsqueeze_dimension(&axis, 0)?;
-    reject_axis_with_unknown_keywords(kwargs, &["input", "dim"])?;
-    reject_unknown_unsqueeze_keywords(kwargs, &["input", "dim", "axis"])?;
+
+    validate_unsqueeze_function_keywords(
+        kwargs,
+        UnsqueezeFunctionKeywordState {
+            input_origin: if positional_input.is_some() {
+                UnsqueezeArgumentOrigin::Positional
+            } else if keyword_input.is_some() {
+                UnsqueezeArgumentOrigin::Keyword
+            } else {
+                UnsqueezeArgumentOrigin::Alias
+            },
+            dimension_origin: if positional_dimension.is_some() {
+                UnsqueezeArgumentOrigin::Positional
+            } else if keyword_dimension.is_some() {
+                UnsqueezeArgumentOrigin::Keyword
+            } else {
+                UnsqueezeArgumentOrigin::Alias
+            },
+            input_aliases: usize::from(keyword_a.is_some()) + usize::from(keyword_x.is_some()),
+            selected_input_alias: if keyword_x.is_some() {
+                Some("x")
+            } else if keyword_a.is_some() {
+                Some("a")
+            } else {
+                None
+            },
+            axis_present: axis.is_some(),
+        },
+    )?;
     Ok((input, dimension))
+}
+
+fn validate_unsqueeze_function_keywords(
+    kwargs: Option<&Bound<'_, PyDict>>,
+    state: UnsqueezeFunctionKeywordState,
+) -> PyResult<()> {
+    let Some(kwargs) = kwargs else {
+        return Ok(());
+    };
+
+    let accepted_input_alias = if matches!(state.input_origin, UnsqueezeArgumentOrigin::Alias)
+        && state.input_aliases == 1
+    {
+        state.selected_input_alias
+    } else {
+        None
+    };
+    let accepted_axis = matches!(state.dimension_origin, UnsqueezeArgumentOrigin::Alias);
+    let has_unknown = kwargs.iter().any(|(keyword, _)| {
+        keyword.extract::<&str>().map_or(true, |keyword| {
+            !["input", "a", "x", "dim", "axis"].contains(&keyword)
+        })
+    });
+    let aliases_valid = !has_unknown
+        && (state.input_aliases == 0 || accepted_input_alias.is_some())
+        && (!state.axis_present || accepted_axis);
+
+    for (keyword, _) in kwargs.iter() {
+        let Ok(keyword) = keyword.extract::<&str>() else {
+            continue;
+        };
+        match keyword {
+            "input" if matches!(state.input_origin, UnsqueezeArgumentOrigin::Positional) => {
+                return Err(unsqueeze_duplicate_argument("input"));
+            }
+            "dim" if matches!(state.dimension_origin, UnsqueezeArgumentOrigin::Positional) => {
+                return Err(unsqueeze_duplicate_argument("dim"));
+            }
+            "input" | "dim" => {}
+            "a" | "x" if aliases_valid && accepted_input_alias == Some(keyword) => {}
+            "axis" if aliases_valid && accepted_axis => {}
+            _ => return Err(unsqueeze_unexpected_keyword(keyword)),
+        }
+    }
+    Ok(())
 }
 
 fn parse_unsqueeze_dimension(dimension: &Bound<'_, PyAny>, position: usize) -> PyResult<i64> {
