@@ -537,7 +537,7 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertEqual(result, expected)
                 self.assertEqual(result.numel(), math.prod(expected))
 
-    def test_size_enforces_int64_dimensions_and_wrapping_numel(self):
+    def test_size_defers_int64_unpacking_and_wraps_numel(self):
         minimum = -(1 << 63)
         maximum = (1 << 63) - 1
         self.assertEqual(torch.Size((minimum, maximum)), (minimum, maximum))
@@ -548,8 +548,24 @@ class PythonApiBaselineTests(unittest.TestCase):
 
         for dimension in (minimum - 1, maximum + 1, 1 << 100, -(1 << 100)):
             with self.subTest(dimension=dimension):
+                size = torch.Size((dimension,))
+                self.assertEqual(size, (dimension,))
+                self.assertIs(type(size[:]), torch.Size)
                 with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
-                    torch.Size((dimension,))
+                    repr(size)
+                with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                    size.numel()
+
+        large = 1 << 63
+        tensor = torch.zeros((large, 0))
+        self.assertEqual(tensor.size(0), large)
+        for metadata in (tensor.shape, tensor.size()):
+            self.assertIs(type(metadata), torch.Size)
+            self.assertEqual(metadata, (large, 0))
+            with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                repr(metadata)
+            with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
+                metadata.numel()
 
     def test_is_contiguous_reports_supported_layouts_and_rejects_formats(self):
         ordinary = torch.zeros((2, 3, 4))

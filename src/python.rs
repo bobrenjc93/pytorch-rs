@@ -15,6 +15,12 @@ static SIZE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 const SIZE_CLASS: &std::ffi::CStr = pyo3::ffi::c_str!(
     r#"
+def _unpack_size_dimension(dimension):
+    if dimension < -(1 << 63) or dimension >= 1 << 63:
+        raise ValueError("Overflow when unpacking long long")
+    return dimension
+
+
 class Size(tuple):
     __slots__ = ()
     __module__ = "torch_rs"
@@ -30,13 +36,12 @@ class Size(tuple):
                     f"torch.Size() takes an iterable of 'int' "
                     f"(item {index} is '{name}')"
                 ) from None
-            if dimension < -(1 << 63) or dimension >= 1 << 63:
-                raise ValueError("Overflow when unpacking long long")
             converted.append(dimension)
         return tuple.__new__(cls, converted)
 
     def __repr__(self):
-        return f"torch.Size([{', '.join(map(str, self))}])"
+        dimensions = (str(_unpack_size_dimension(dimension)) for dimension in self)
+        return f"torch.Size([{', '.join(dimensions)}])"
 
     def __getitem__(self, index):
         result = tuple.__getitem__(self, index)
@@ -61,6 +66,7 @@ class Size(tuple):
     def numel(self):
         result = 1
         for dimension in self:
+            dimension = _unpack_size_dimension(dimension)
             result = ((result * dimension + (1 << 63)) % (1 << 64)) - (1 << 63)
         return result
 "#
