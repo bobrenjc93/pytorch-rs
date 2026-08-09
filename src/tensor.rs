@@ -1919,7 +1919,8 @@ impl Tensor {
                             let output_value = output
                                 .get_mut(output_index)
                                 .ok_or(TensorError::IndexCalculationOverflow)?;
-                            *output_value += left * other.storage.data[right_offset];
+                            *output_value =
+                                left.mul_add(other.storage.data[right_offset], *output_value);
                         }
                     }
                 }

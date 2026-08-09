@@ -111,6 +111,19 @@ class MatmulReferenceTests(unittest.TestCase):
             case="broadcast transposed matrix views",
         )
 
+    def test_cancellation_uses_pytorch_fused_float32_accumulation(self):
+        left_values = np.array([[[0.00026976, 0.00026976]]], dtype=np.float32)
+        right_values = np.array(
+            [[[1.02885805e12], [-1.02893362e12]]], dtype=np.float32
+        )
+        actual = self.actual_tensor(left_values) @ self.actual_tensor(right_values)
+        expected = self.reference_tensor(left_values) @ self.reference_tensor(right_values)
+
+        self.assert_matches(actual, expected, case="finite cancellation")
+        actual_bits = np.asarray(actual).reshape(-1).view(np.uint32).item()
+        expected_bits = expected.numpy().reshape(-1).view(np.uint32).item()
+        self.assertEqual(actual_bits, expected_bits)
+
     def test_empty_batch_row_inner_and_column_dimensions_match_pytorch_2_13(self):
         shapes = (
             ((0, 2, 3), (1, 3, 4)),

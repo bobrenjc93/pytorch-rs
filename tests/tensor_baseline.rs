@@ -793,6 +793,21 @@ fn batched_matrix_multiplication_broadcasts_all_leading_dimensions() {
 }
 
 #[test]
+fn batched_matrix_multiplication_uses_fused_float32_accumulation() {
+    let left_value = f32::from_bits(0x398d_6e93);
+    let left = Tensor::from_vec(vec![left_value, left_value], [1, 1, 2]).unwrap();
+    let right = Tensor::from_vec(
+        vec![f32::from_bits(0x536f_8cb8), f32::from_bits(0xd36f_9139)],
+        [1, 2, 1],
+    )
+    .unwrap();
+    let output = left.matmul(&right).unwrap();
+
+    assert_eq!(output.shape(), [1, 1, 1]);
+    assert_eq!(output.as_slice()[0].to_bits(), 0xc69f_56f8);
+}
+
+#[test]
 fn batched_matrix_multiplication_reads_offset_and_transposed_views() {
     let left = Tensor::from_vec((0_u16..48).map(f32::from).collect(), [2, 2, 3, 4])
         .unwrap()
