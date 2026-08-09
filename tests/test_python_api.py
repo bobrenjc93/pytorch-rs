@@ -283,6 +283,10 @@ class PythonApiBaselineTests(unittest.TestCase):
             for case, call in (
                 ("None shape with positional size", lambda: create((2,), shape=None)),
                 (
+                    "None positional size with shape alias",
+                    lambda: create(None, shape=(2,)),
+                ),
+                (
                     "None size with shape alias",
                     lambda: create(size=None, shape=(2,)),
                 ),
@@ -300,6 +304,8 @@ class PythonApiBaselineTests(unittest.TestCase):
                     create()
                 with self.assertRaises(TypeError):
                     create(size=None)
+                with self.assertRaises(TypeError):
+                    create(None)
 
     def test_zeros_and_ones_accept_variadic_and_integer_subclass_sizes(self):
         class IntSubclass(int):
@@ -486,6 +492,61 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertEqual(create(Indexable()).shape, (3,))
         finally:
             operator.index = original_index
+
+    def test_factory_size_index_results_use_bounded_integer_conversion(self):
+        huge_integer = 1 << 8_000_000
+
+        class HugeIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return huge_integer
+
+        class HostileLookup:
+            def __getattribute__(self, name):
+                if name == "__index__":
+                    raise RuntimeError("instance lookup must not run")
+                return super().__getattribute__(name)
+
+            def __index__(self):
+                return 3
+
+        class InstanceOnly:
+            pass
+
+        class ShadowedIndex:
+            def __index__(self):
+                return 3
+
+        for name, create in (("zeros", torch.zeros), ("ones", torch.ones)):
+            for case, call, expected_calls in (
+                ("first", lambda probe: create(probe), 3),
+                ("later", lambda probe: create(2, probe), 1),
+                ("tuple", lambda probe: create((probe, 2)), 2),
+            ):
+                probe = HugeIndex()
+                with self.subTest(function=name, huge_index_case=case):
+                    with self.assertRaisesRegex(
+                        TypeError, "Overflow when unpacking long long"
+                    ):
+                        call(probe)
+                    self.assertEqual(probe.calls, expected_calls)
+
+            with self.subTest(function=name, special_lookup=True):
+                self.assertEqual(create(HostileLookup()).shape, (3,))
+
+            instance_only = InstanceOnly()
+            instance_only.__index__ = lambda: 4
+            with self.subTest(function=name, instance_only=True):
+                with self.assertRaises(TypeError):
+                    create(instance_only)
+
+            shadowed = ShadowedIndex()
+            shadowed.__index__ = lambda: 4
+            with self.subTest(function=name, shadowed_index=True):
+                self.assertEqual(create(shadowed).shape, (3,))
 
     def test_factory_size_conversion_ignores_python_visible_type_metadata(self):
         class NonStringModule:

@@ -1,7 +1,6 @@
 use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use num_bigint::BigInt;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
     PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
@@ -943,8 +942,12 @@ fn create_constant_tensor(
         .as_ref()
         .filter(|value| !value.is_none())
         .cloned();
+    let sole_positional_none = args.len() == 1 && args.get_item(0)?.is_none();
 
-    if args.is_empty() && size_keyword.is_none() && shape_keyword.is_none() {
+    if (args.is_empty() || sole_positional_none)
+        && size_keyword.is_none()
+        && shape_keyword.is_none()
+    {
         return Err(PyTypeError::new_err(format!(
             "{function}() missing 1 required positional arguments: \"size\""
         )));
@@ -953,7 +956,7 @@ fn create_constant_tensor(
     // PyTorch chooses the overload from the first size element before it
     // binds metadata or reports duplicate keywords. Preparing the input here
     // preserves that order while deferring later element conversion errors.
-    let parsed_size = if args.is_empty() {
+    let parsed_size = if args.is_empty() || sole_positional_none {
         let value = size_keyword
             .as_ref()
             .or(shape_keyword.as_ref())
@@ -983,7 +986,7 @@ fn create_constant_tensor(
                     )));
                 }
                 "shape" if value.is_none() => {}
-                "shape" if !args.is_empty() || size_keyword.is_some() => {
+                "shape" if !args.is_empty() && !sole_positional_none || size_keyword.is_some() => {
                     return Err(PyTypeError::new_err(format!(
                         "{function}() got an unexpected keyword argument 'shape'"
                     )));
@@ -1146,6 +1149,37 @@ fn probe_variadic_first_dimension(function: &str, dimension: &Bound<'_, PyAny>) 
     Ok(())
 }
 
+fn call_factory_index_protocol<'py>(dimension: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    let type_getattribute = dimension
+        .py()
+        .get_type::<PyType>()
+        .getattr("__getattribute__")?;
+    let dimension_type = dimension.get_type();
+    let mro = type_getattribute
+        .call1((&dimension_type, "__mro__"))?
+        .cast_into::<PyTuple>()?;
+    let mut index_descriptor = None;
+    for base in mro.iter() {
+        let namespace = type_getattribute.call1((&base, "__dict__"))?;
+        if let Ok(descriptor) = namespace.get_item("__index__") {
+            index_descriptor = Some(descriptor);
+            break;
+        }
+    }
+    let descriptor = index_descriptor
+        .ok_or_else(|| PyTypeError::new_err("object does not implement the index protocol"))?;
+
+    // Bind the raw class descriptor to the object. Looking through the MRO
+    // deliberately ignores instance attributes, as Python does for special
+    // numeric methods.
+    let descriptor_type = descriptor.get_type();
+    let index = match type_getattribute.call1((&descriptor_type, "__get__")) {
+        Ok(descriptor_get) => descriptor_get.call1((&descriptor, dimension, &dimension_type))?,
+        Err(_) => descriptor,
+    };
+    index.call0()
+}
+
 fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> ParsedSizeDimension {
     if reject_bool && dimension.is_instance_of::<PyBool>() {
         return ParsedSizeDimension::Invalid;
@@ -1161,14 +1195,20 @@ fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> Pars
         };
     }
 
-    // PyO3's BigInt conversion calls PyNumber_Index directly. It is immune to
-    // monkeypatching operator.index and separates protocol exceptions from a
-    // valid arbitrary-precision result outside the signed size range.
-    match dimension.extract::<BigInt>() {
-        Ok(indexed) => match i64::try_from(indexed) {
-            Ok(value) => ParsedSizeDimension::Value(value),
-            Err(_) => ParsedSizeDimension::Overflow,
-        },
+    // Keep the index result as a Python int so bounded i64 extraction can
+    // reject huge values without copying arbitrary-precision digits into
+    // native storage.
+    let Ok(indexed) = call_factory_index_protocol(dimension) else {
+        return ParsedSizeDimension::Invalid;
+    };
+    let Ok(indexed) = indexed.cast::<PyInt>() else {
+        return ParsedSizeDimension::Invalid;
+    };
+    match indexed.extract::<i64>() {
+        Ok(value) => ParsedSizeDimension::Value(value),
+        Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
+            ParsedSizeDimension::Overflow
+        }
         Err(_) => ParsedSizeDimension::Invalid,
     }
 }

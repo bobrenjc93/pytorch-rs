@@ -329,6 +329,85 @@ class FactorySizeReferenceTests(unittest.TestCase):
         finally:
             operator.index = original_index
 
+    def test_large_index_results_use_bounded_conversion(self):
+        huge_integer = 1 << 8_000_000
+
+        class HugeIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return huge_integer
+
+        class HostileLookup:
+            def __getattribute__(self, name):
+                if name == "__index__":
+                    raise RuntimeError("instance lookup must not run")
+                return super().__getattribute__(name)
+
+            def __index__(self):
+                return 3
+
+        class InstanceOnly:
+            pass
+
+        class ShadowedIndex:
+            def __index__(self):
+                return 3
+
+        def outcome(factory, call, probe):
+            try:
+                tensor = call(factory, probe)
+                return "ok", tensor.shape, getattr(probe, "calls", None)
+            except Exception as error:
+                return (
+                    type(error).__name__,
+                    str(error).splitlines()[0].rstrip('"'),
+                    getattr(probe, "calls", None),
+                )
+
+        forms = (
+            ("first", lambda factory, probe: factory(probe)),
+            ("later", lambda factory, probe: factory(2, probe)),
+            ("tuple", lambda factory, probe: factory((probe, 2))),
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for form, call in forms:
+                with self.subTest(factory=factory_name, form=form):
+                    self.assertEqual(
+                        outcome(actual_factory, call, HugeIndex()),
+                        outcome(expected_factory, call, HugeIndex()),
+                    )
+
+            with self.subTest(factory=factory_name, special_lookup=True):
+                self.assert_tensor_matches(
+                    actual_factory(HostileLookup()),
+                    expected_factory(HostileLookup()),
+                )
+
+            for case, value in (
+                ("instance only", InstanceOnly()),
+                ("shadowed class index", ShadowedIndex()),
+            ):
+                value.__index__ = lambda: 4
+                with self.subTest(factory=factory_name, lookup_case=case):
+                    actual = outcome(
+                        actual_factory,
+                        lambda factory, probe: factory(probe),
+                        value,
+                    )
+                    reference_value = type(value)()
+                    reference_value.__index__ = lambda: 4
+                    expected = outcome(
+                        expected_factory,
+                        lambda factory, probe: factory(probe),
+                        reference_value,
+                    )
+                    self.assertEqual(actual, expected)
+
     def test_type_metadata_is_not_executed_before_size_conversion(self):
         class NonStringModule:
             __module__ = 123
