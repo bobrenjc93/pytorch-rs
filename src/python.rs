@@ -16,6 +16,7 @@ static SIZE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 const SIZE_CLASS: &std::ffi::CStr = pyo3::ffi::c_str!(
     r#"
 def _unpack_size_dimension(dimension):
+    dimension = operator.index(dimension)
     if dimension < -(1 << 63) or dimension >= 1 << 63:
         raise ValueError("Overflow when unpacking long long")
     return dimension
@@ -28,9 +29,12 @@ class Size(tuple):
     def __new__(cls, dimensions=()):
         converted = []
         for index, dimension in enumerate(dimensions):
+            if isinstance(dimension, int) and not isinstance(dimension, bool):
+                converted.append(dimension)
+                continue
             try:
                 dimension = operator.index(dimension)
-            except TypeError:
+            except BaseException:
                 name = type(dimension).__name__
                 raise TypeError(
                     f"torch.Size() takes an iterable of 'int' "

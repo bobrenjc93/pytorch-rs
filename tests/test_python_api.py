@@ -537,6 +537,51 @@ class PythonApiBaselineTests(unittest.TestCase):
                 self.assertEqual(result, expected)
                 self.assertEqual(result.numel(), math.prod(expected))
 
+    def test_size_preserves_int_subclasses_and_normalizes_index_failures(self):
+        class IntSubclass(int):
+            def __str__(self):
+                return "not the dimension"
+
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        class FailingIndex:
+            def __init__(self, error):
+                self.error = error
+
+            def __index__(self):
+                raise self.error
+
+        dimension = IntSubclass(2)
+        size = torch.Size((dimension,))
+        self.assertIs(size[0], dimension)
+        self.assertIs(type(size[0]), IntSubclass)
+        self.assertEqual(repr(size), "torch.Size([2])")
+        self.assertEqual(size.numel(), 2)
+        self.assertIs(size[:][0], dimension)
+
+        indexed = IndexValue(3)
+        converted = torch.Size((True, indexed))
+        self.assertEqual(converted, (1, 3))
+        self.assertIs(type(converted[0]), int)
+        self.assertIs(type(converted[1]), int)
+        self.assertEqual(indexed.calls, 1)
+
+        for error in (TypeError("bad type"), ValueError("bad value"), RuntimeError("failed")):
+            with self.subTest(error=type(error).__name__):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"torch\.Size\(\) takes an iterable of 'int' "
+                    r"\(item 0 is 'FailingIndex'\)",
+                ):
+                    torch.Size((FailingIndex(error),))
+
     def test_size_defers_int64_unpacking_and_wraps_numel(self):
         minimum = -(1 << 63)
         maximum = (1 << 63) - 1
