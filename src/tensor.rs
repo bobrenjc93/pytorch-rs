@@ -227,14 +227,12 @@ impl Display for TensorError {
                 "shape {shape:?} does not describe {elements} elements"
             ),
             Self::ShapeMismatch { left, right } => format_shape_mismatch(formatter, left, right),
-            Self::MatmulRequiresMatrices { left, right } => write!(
-                formatter,
-                "matmul currently requires two rank-2 tensors, got {left:?} and {right:?}"
-            ),
-            Self::MatmulInnerDimensionMismatch { left, right } => write!(
-                formatter,
-                "matmul inner dimensions differ for {left:?} and {right:?}"
-            ),
+            Self::MatmulRequiresMatrices { left, right } => {
+                format_matmul_rank_error(formatter, left, right)
+            }
+            Self::MatmulInnerDimensionMismatch { left, right } => {
+                format_matmul_dimension_mismatch(formatter, left, right)
+            }
             Self::ItemRequiresOneElement { elements } => {
                 write!(formatter, "item requires one element, got {elements}")
             }
@@ -333,6 +331,55 @@ fn format_shape_mismatch(
             formatter,
             "tensor shapes are not broadcastable: {left:?} and {right:?}"
         )
+    }
+}
+
+fn format_matmul_rank_error(
+    formatter: &mut Formatter<'_>,
+    left: &[usize],
+    right: &[usize],
+) -> std::fmt::Result {
+    if left.is_empty() || right.is_empty() {
+        write!(
+            formatter,
+            "both arguments to matmul need to be at least 1D, but they are {}D and {}D",
+            left.len(),
+            right.len()
+        )
+    } else {
+        write!(
+            formatter,
+            "matmul currently supports only rank-1 and rank-2 tensors, got {left:?} and {right:?}"
+        )
+    }
+}
+
+fn format_matmul_dimension_mismatch(
+    formatter: &mut Formatter<'_>,
+    left: &[usize],
+    right: &[usize],
+) -> std::fmt::Result {
+    match (left, right) {
+        ([left_elements], [right_elements]) => write!(
+            formatter,
+            "inconsistent tensor size, expected tensor [{left_elements}] and src [{right_elements}] to have the same number of elements, but got {left_elements} and {right_elements} elements respectively"
+        ),
+        ([rows, inner], [vector_elements]) => write!(
+            formatter,
+            "size mismatch, got input ({rows}), mat ({rows}x{inner}), vec ({vector_elements})"
+        ),
+        ([inner], [right_inner, columns]) => write!(
+            formatter,
+            "mat1 and mat2 shapes cannot be multiplied (1x{inner} and {right_inner}x{columns})"
+        ),
+        ([rows, inner], [right_inner, columns]) => write!(
+            formatter,
+            "mat1 and mat2 shapes cannot be multiplied ({rows}x{inner} and {right_inner}x{columns})"
+        ),
+        _ => write!(
+            formatter,
+            "matmul inner dimensions differ for {left:?} and {right:?}"
+        ),
     }
 }
 
@@ -1654,54 +1701,74 @@ impl Tensor {
         Ok(self.value_at_linear_index(0))
     }
 
-    /// Multiplies two rank-2 matrices.
+    /// Multiplies vectors and matrices with ranks one and two.
     ///
     /// # Errors
     ///
-    /// Returns an error unless both tensors are matrices with compatible inner
-    /// dimensions.
+    /// Returns an error unless both tensors have rank one or two and compatible
+    /// inner dimensions. Two vectors produce a scalar, while a matrix-vector or
+    /// vector-matrix product produces a vector.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
-        if self.shape.len() != 2 || other.shape.len() != 2 {
+        let left_rank = self.shape.len();
+        let right_rank = other.shape.len();
+        if !(1..=2).contains(&left_rank) || !(1..=2).contains(&right_rank) {
             return Err(TensorError::MatmulRequiresMatrices {
-                left: self.shape.clone(),
-                right: other.shape.clone(),
-            });
-        }
-        let (rows, inner) = (self.shape[0], self.shape[1]);
-        let (other_inner, columns) = (other.shape[0], other.shape[1]);
-        if inner != other_inner {
-            return Err(TensorError::MatmulInnerDimensionMismatch {
-                left: self.shape.clone(),
-                right: other.shape.clone(),
+                left: try_clone_result_shape(&self.shape, 0)?,
+                right: try_clone_result_shape(&other.shape, 0)?,
             });
         }
 
-        let mut output_shape = try_result_vector(2, 0)?;
-        output_shape.push(rows);
-        output_shape.push(columns);
+        let rows = if left_rank == 2 { self.shape[0] } else { 1 };
+        let inner = self.shape[left_rank - 1];
+        let other_inner = other.shape[0];
+        let columns = if right_rank == 2 { other.shape[1] } else { 1 };
+        if inner != other_inner {
+            return Err(TensorError::MatmulInnerDimensionMismatch {
+                left: try_clone_result_shape(&self.shape, 0)?,
+                right: try_clone_result_shape(&other.shape, 0)?,
+            });
+        }
+
+        let output_rank = usize::from(left_rank == 2) + usize::from(right_rank == 2);
+        let mut output_shape = try_result_vector(output_rank, 0)?;
+        if left_rank == 2 {
+            output_shape.push(rows);
+        }
+        if right_rank == 2 {
+            output_shape.push(columns);
+        }
         let (output_elements, output_strides) = validated_layout(&output_shape)?;
         let mut output = filled_storage(output_elements, 0.0)?;
-        if let (Some(left_data), Some(right_data)) =
-            (self.contiguous_slice(), other.contiguous_slice())
-        {
+
+        let left_row_stride = if left_rank == 2 { self.strides[0] } else { 0 };
+        let left_inner_stride = self.strides[left_rank - 1];
+        let right_inner_stride = other.strides[0];
+        let right_column_stride = if right_rank == 2 { other.strides[1] } else { 0 };
+
+        if inner > 0 {
             for row in 0..rows {
-                for depth in 0..inner {
-                    let left = left_data[row * inner + depth];
-                    for column in 0..columns {
-                        output[row * columns + column] +=
-                            left * right_data[depth * columns + column];
+                let left_row_offset = checked_matmul_offset(self, row, left_row_stride)?;
+                for column in 0..columns {
+                    let right_column_offset =
+                        checked_matmul_offset(other, column, right_column_stride)?;
+                    let mut accumulator = 0.0_f32;
+                    for depth in 0..inner {
+                        let left_offset = checked_matmul_offset_from(
+                            self,
+                            left_row_offset,
+                            depth,
+                            left_inner_stride,
+                        )?;
+                        let right_offset = checked_matmul_offset_from(
+                            other,
+                            right_column_offset,
+                            depth,
+                            right_inner_stride,
+                        )?;
+                        accumulator +=
+                            self.storage.data[left_offset] * other.storage.data[right_offset];
                     }
-                }
-            }
-        } else {
-            for row in 0..rows {
-                for depth in 0..inner {
-                    let left_offset = checked_matrix_offset(self, row, depth)?;
-                    let left = self.storage.data[left_offset];
-                    for column in 0..columns {
-                        let right_offset = checked_matrix_offset(other, depth, column)?;
-                        output[row * columns + column] += left * other.storage.data[right_offset];
-                    }
+                    output[row * columns + column] = accumulator;
                 }
             }
         }
@@ -2155,17 +2222,24 @@ fn validate_view_bounds(
     Ok(())
 }
 
-fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<usize, TensorError> {
-    let row_offset = row
-        .checked_mul(tensor.strides[0])
+fn checked_matmul_offset(
+    tensor: &Tensor,
+    coordinate: usize,
+    stride: usize,
+) -> Result<usize, TensorError> {
+    checked_matmul_offset_from(tensor, tensor.offset, coordinate, stride)
+}
+
+fn checked_matmul_offset_from(
+    tensor: &Tensor,
+    base: usize,
+    coordinate: usize,
+    stride: usize,
+) -> Result<usize, TensorError> {
+    let relative_offset = coordinate
+        .checked_mul(stride)
         .ok_or(TensorError::IndexCalculationOverflow)?;
-    let column_offset = column
-        .checked_mul(tensor.strides[1])
-        .ok_or(TensorError::IndexCalculationOverflow)?;
-    tensor
-        .offset
-        .checked_add(row_offset)
-        .and_then(|offset| offset.checked_add(column_offset))
+    base.checked_add(relative_offset)
         .filter(|offset| *offset < tensor.storage.data.len())
         .ok_or(TensorError::IndexCalculationOverflow)
 }
