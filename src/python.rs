@@ -482,8 +482,8 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
 }
 
 #[pyfunction(signature = (input, *, out=None))]
-fn abs(input: &PyTensor, out: Option<&Bound<'_, PyAny>>) -> PyResult<PyTensor> {
-    if out.is_some_and(|out| !out.is_none()) {
+fn abs(input: &PyTensor, out: Option<&PyTensor>) -> PyResult<PyTensor> {
+    if out.is_some() {
         return Err(PyNotImplementedError::new_err(
             "abs(): out tensors are not supported because mutable tensor storage is not implemented",
         ));

@@ -73,6 +73,16 @@ class AbsPyTorch213DifferentialTests(unittest.TestCase):
         )
         self.assert_matches_pytorch(input_bits.view(np.float32), (2, 5))
 
+    def test_invalid_out_types_match_pytorch_error_class(self):
+        actual_input = torch_rs.tensor([-1.0])
+        expected_input = pytorch.tensor([-1.0], dtype=pytorch.float32)
+        for out in (object(), 0, [], np.array([0.0], dtype=np.float32)):
+            with self.subTest(out=out):
+                with self.assertRaises(TypeError):
+                    torch_rs.abs(actual_input, out=out)
+                with self.assertRaises(TypeError):
+                    pytorch.abs(expected_input, out=out)
+
 
 if __name__ == "__main__":
     unittest.main()

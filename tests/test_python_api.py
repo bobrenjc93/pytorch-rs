@@ -163,9 +163,14 @@ class PythonApiBaselineTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     call()
 
-        for out in (tensor, torch.zeros((1,)), object(), 0):
+        for out in (tensor, torch.zeros((1,))):
             with self.subTest(out=out):
                 with self.assertRaisesRegex(NotImplementedError, "out tensors are not supported"):
+                    torch.abs(tensor, out=out)
+
+        for out in (object(), 0, [], np.array([0.0], dtype=np.float32)):
+            with self.subTest(invalid_out=out):
+                with self.assertRaises(TypeError):
                     torch.abs(tensor, out=out)
 
     def test_float32_descriptor_identity_type_and_repr(self):
