@@ -546,6 +546,14 @@ fn numel(input: &PyTensor) -> usize {
     input.inner.numel()
 }
 
+#[pyfunction]
+fn _rebuild_size(dimensions: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    size_type(dimensions.py())?
+        .bind(dimensions.py())
+        .call1((dimensions,))
+        .map(Bound::unbind)
+}
+
 fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
     FLOAT32.get_or_try_init(py, || {
         Py::new(
@@ -1293,6 +1301,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
     module.add_function(wrap_pyfunction!(numel, module)?)?;
+    module.add_function(wrap_pyfunction!(_rebuild_size, module)?)?;
     module.add("Size", size_type(py)?.clone_ref(py))?;
     let float32 = float32_object(py)?;
     module.add("float32", float32.clone_ref(py))?;

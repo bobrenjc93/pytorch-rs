@@ -1,5 +1,6 @@
 import math
 import operator
+import pickle
 import sys
 import unittest
 from decimal import Decimal
@@ -624,6 +625,19 @@ class PythonApiBaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "late iterator failure"):
             torch.Size(late_error())
         self.assertEqual(events, ["iterator"])
+
+    def test_tensor_shape_pickle_round_trip(self):
+        shapes = (
+            torch.tensor(1.0).shape,
+            torch.zeros((2, 0, 3)).shape,
+            torch.zeros((2, 3)).shape,
+        )
+        for shape in shapes:
+            with self.subTest(shape=shape):
+                restored = pickle.loads(pickle.dumps(shape))
+                self.assertIs(type(restored), torch.Size)
+                self.assertEqual(restored, shape)
+                self.assertEqual(restored.numel(), shape.numel())
 
     def test_size_preserves_int_subclasses_and_normalizes_index_failures(self):
         class IntSubclass(int):

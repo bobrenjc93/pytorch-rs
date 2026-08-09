@@ -13,6 +13,7 @@ static SIZE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 const TYPE_NAME: &CStr = pyo3::ffi::c_str!("torch.Size");
 const NUMEL_NAME: &CStr = pyo3::ffi::c_str!("numel");
+const REDUCE_NAME: &CStr = pyo3::ffi::c_str!("__reduce__");
 
 /// Returns the process-local immutable `Size` type.
 ///
@@ -42,6 +43,14 @@ fn create_size_type(py: Python<'_>) -> PyResult<Py<PyAny>> {
             ml_name: NUMEL_NAME.as_ptr(),
             ml_meth: ffi::PyMethodDefPointer {
                 PyCFunction: size_numel,
+            },
+            ml_flags: ffi::METH_NOARGS,
+            ml_doc: ptr::null(),
+        },
+        ffi::PyMethodDef {
+            ml_name: REDUCE_NAME.as_ptr(),
+            ml_meth: ffi::PyMethodDefPointer {
+                PyCFunction: size_reduce,
             },
             ml_flags: ffi::METH_NOARGS,
             ml_doc: ptr::null(),
@@ -251,6 +260,23 @@ unsafe extern "C" fn size_numel(
                 elements = elements.wrapping_mul(unpack_dimension(&dimension)?);
             }
             Ok(elements.into_pyobject(py)?.into_any().unbind())
+        })
+    })
+}
+
+unsafe extern "C" fn size_reduce(
+    object: *mut ffi::PyObject,
+    _noargs: *mut ffi::PyObject,
+) -> *mut ffi::PyObject {
+    callback(|| {
+        Python::attach(|py| {
+            // SAFETY: CPython calls this method with a valid Size instance.
+            let object =
+                unsafe { Bound::<PyAny>::from_borrowed_ptr(py, object) }.cast_into::<PyTuple>()?;
+            let dimensions = PyTuple::new(py, object.iter())?;
+            let arguments = PyTuple::new(py, [dimensions])?;
+            let rebuild = PyModule::import(py, "torch_rs")?.getattr("_rebuild_size")?;
+            PyTuple::new(py, [rebuild, arguments.into_any()]).map(|value| value.into_any().unbind())
         })
     })
 }
