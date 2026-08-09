@@ -9,7 +9,8 @@ use pyo3::exceptions::{
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyModule, PySequence, PyString, PyTuple, PyType,
+    PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyMappingProxy, PyModule, PySequence, PyString,
+    PyTuple, PyType,
 };
 
 use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError};
@@ -202,16 +203,17 @@ enum ConstantFactory {
     Ones,
 }
 
-#[derive(Clone, Copy)]
 enum ParsedSizeDimension {
     Value(i64),
     Overflow,
     BooleanTensor,
     DeferredInvalid,
+    TensorError(PyErr),
     Invalid,
 }
 
 enum PreparedFactorySize<'py> {
+    Legacy(Vec<usize>),
     Fixed(Vec<Bound<'py, PyAny>>),
     LiveList {
         dimensions: Bound<'py, PyList>,
@@ -1008,8 +1010,7 @@ fn create_constant_tensor(
         }
     }
 
-    let signed_size = parsed_size.finish(function)?;
-    let shape = validate_factory_size(factory, signed_size)?;
+    let shape = parsed_size.finish(function, factory)?;
     let tensor_shape = try_clone_shape(&shape)?;
 
     let result = match factory {
@@ -1100,13 +1101,10 @@ fn prepare_legacy_shape_factory_size<'py>(
     function: &str,
     value: &Bound<'py, PyAny>,
 ) -> PyResult<PreparedFactorySize<'py>> {
-    if value.cast::<PyList>().is_ok() || value.cast::<PyTuple>().is_ok() {
-        return prepare_keyword_factory_size(function, value);
-    }
     // PyO3's historical Vec extraction follows CPython's sequence protocol,
     // which is broader than collections.abc.Sequence (notably for ndarray
-    // and ordinary classes implementing __getitem__). Preserve that contract
-    // without the extractor's infallible native Vec allocation.
+    // and ordinary classes implementing __getitem__). Mapping types are not
+    // sequences under that protocol.
     let type_getattribute = value
         .py()
         .get_type::<PyType>()
@@ -1114,7 +1112,11 @@ fn prepare_legacy_shape_factory_size<'py>(
     let has_sequence_getitem = type_getattribute
         .call1((&value.get_type(), "__getitem__"))
         .is_ok();
-    if value.cast::<PyDict>().is_ok() || !has_sequence_getitem {
+    if value.is_instance_of::<PyString>()
+        || value.cast::<PyDict>().is_ok()
+        || value.cast::<PyMappingProxy>().is_ok()
+        || !has_sequence_getitem
+    {
         return Err(PyTypeError::new_err(format!(
             "{function}(): compatibility alias 'shape' must be a sequence"
         )));
@@ -1122,22 +1124,11 @@ fn prepare_legacy_shape_factory_size<'py>(
     // Vec extraction used len() only to reserve capacity. A missing or
     // failing length did not prevent its iterator from supplying dimensions.
     let length = value.len().unwrap_or(0);
-    let mut prepared = try_size_vector(length)?;
-    for (index, dimension) in value.try_iter()?.enumerate() {
-        let dimension = dimension?;
-        if index == 0 {
-            let parsed = parse_size_dimension(&dimension, true);
-            if matches!(parsed, ParsedSizeDimension::Invalid) {
-                return Err(first_factory_size_error(
-                    function,
-                    &dimension,
-                    &FirstSizeErrorStyle::KeywordCollection(value.clone()),
-                )?);
-            }
-        }
-        try_push_size(&mut prepared, dimension)?;
+    let mut shape = try_size_vector(length)?;
+    for dimension in value.try_iter()? {
+        try_push_size(&mut shape, dimension?.extract::<usize>()?)?;
     }
-    Ok(PreparedFactorySize::Fixed(prepared))
+    Ok(PreparedFactorySize::Legacy(shape))
 }
 
 fn prepare_factory_size_dimensions<'py>(
@@ -1204,7 +1195,10 @@ fn probe_variadic_first_dimension(function: &str, dimension: &Bound<'_, PyAny>) 
     Ok(())
 }
 
-fn parse_torch_tensor_dimension(dimension: &Bound<'_, PyAny>) -> Option<ParsedSizeDimension> {
+fn parse_torch_tensor_dimension(
+    dimension: &Bound<'_, PyAny>,
+    defer_errors: bool,
+) -> Option<ParsedSizeDimension> {
     const PY_TPFLAGS_IMMUTABLETYPE: u64 = 1 << 8;
 
     let type_getattribute = dimension
@@ -1267,6 +1261,25 @@ fn parse_torch_tensor_dimension(dimension: &Bound<'_, PyAny>) -> Option<ParsedSi
     }
     let (index_descriptor, dtype_descriptor) = descriptors?;
 
+    // Tensor dimensions use TensorBase's canonical scalar conversion rather
+    // than a subclass override. A TypeError means the tensor is not an index
+    // candidate; other native failures remain public after argument binding.
+    let indexed = match index_descriptor.call1((dimension,)) {
+        Ok(indexed) => indexed,
+        Err(error) if error.is_instance_of::<PyTypeError>(dimension.py()) => {
+            return Some(ParsedSizeDimension::Invalid);
+        }
+        Err(_) if defer_errors => return Some(ParsedSizeDimension::DeferredInvalid),
+        Err(error) => return Some(ParsedSizeDimension::TensorError(error)),
+    };
+    let value = match indexed.extract::<i64>() {
+        Ok(value) => value,
+        Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
+            return Some(ParsedSizeDimension::Overflow);
+        }
+        Err(_) => return Some(ParsedSizeDimension::Invalid),
+    };
+
     let descriptor_type = dtype_descriptor.get_type();
     let dtype = match type_getattribute.call1((&descriptor_type, "__get__")) {
         Ok(descriptor_get) => descriptor_get.call1((&dtype_descriptor, dimension, &dimension_type)),
@@ -1279,17 +1292,7 @@ fn parse_torch_tensor_dimension(dimension: &Bound<'_, PyAny>) -> Option<ParsedSi
     if is_boolean {
         return Some(ParsedSizeDimension::BooleanTensor);
     }
-
-    Some(match index_descriptor.call1((dimension,)) {
-        Ok(indexed) => match indexed.extract::<i64>() {
-            Ok(value) => ParsedSizeDimension::Value(value),
-            Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
-                ParsedSizeDimension::Overflow
-            }
-            Err(_) => ParsedSizeDimension::Invalid,
-        },
-        Err(_) => ParsedSizeDimension::Invalid,
-    })
+    Some(ParsedSizeDimension::Value(value))
 }
 
 fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> ParsedSizeDimension {
@@ -1307,7 +1310,7 @@ fn parse_size_dimension(dimension: &Bound<'_, PyAny>, reject_bool: bool) -> Pars
         };
     }
 
-    if let Some(parsed) = parse_torch_tensor_dimension(dimension) {
+    if let Some(parsed) = parse_torch_tensor_dimension(dimension, reject_bool) {
         return parsed;
     }
 
@@ -1432,8 +1435,9 @@ fn first_factory_size_error(
 }
 
 impl PreparedFactorySize<'_> {
-    fn finish(self, function: &str) -> PyResult<Vec<i64>> {
-        match self {
+    fn finish(self, function: &str, factory: ConstantFactory) -> PyResult<Vec<usize>> {
+        let signed_size = match self {
+            Self::Legacy(shape) => return Ok(shape),
             Self::Fixed(dimensions) => {
                 let mut size = try_size_vector(dimensions.len())?;
                 for (index, dimension) in dimensions.into_iter().enumerate() {
@@ -1443,7 +1447,7 @@ impl PreparedFactorySize<'_> {
                         unpack_factory_size_dimension(function, index, &dimension, parsed)?,
                     )?;
                 }
-                Ok(size)
+                size
             }
             Self::LiveList {
                 dimensions,
@@ -1462,9 +1466,10 @@ impl PreparedFactorySize<'_> {
                         unpack_factory_size_dimension(function, index, &dimension, parsed)?,
                     )?;
                 }
-                Ok(size)
+                size
             }
-        }
+        };
+        validate_factory_size(factory, signed_size)
     }
 }
 
@@ -1484,6 +1489,7 @@ fn unpack_factory_size_dimension(
         ParsedSizeDimension::BooleanTensor => Err(PyRuntimeError::new_err(
             "Expected scalar.isIntegral( false) to be true, but got false.  (Could this error message be improved?  If so, please report an enhancement request to PyTorch.)",
         )),
+        ParsedSizeDimension::TensorError(error) => Err(error),
         ParsedSizeDimension::DeferredInvalid | ParsedSizeDimension::Invalid => {
             let type_name = factory_size_type_name(source)?;
             Err(factory_size_unpack_error(

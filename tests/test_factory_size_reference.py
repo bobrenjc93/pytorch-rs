@@ -490,6 +490,63 @@ class FactorySizeReferenceTests(unittest.TestCase):
                                 lambda: form(expected_factory, tensor_value()),
                             )
 
+    def test_non_scalar_boolean_and_failing_tensor_dimensions_match(self):
+        forms = (
+            ("direct", lambda factory, value: factory(value)),
+            ("later", lambda factory, value: factory(2, value)),
+            ("tuple", lambda factory, value: factory((value, 2))),
+            ("list", lambda factory, value: factory([value, 2])),
+            ("size tuple", lambda factory, value: factory(size=(value, 2))),
+            ("size list", lambda factory, value: factory(size=[value, 2])),
+        )
+        values = (
+            (
+                "non-scalar boolean",
+                lambda: reference_torch.tensor([True, False]),
+            ),
+            (
+                "meta integer",
+                lambda: reference_torch.tensor(1, device="meta"),
+            ),
+        )
+        for factory_name in ("zeros", "ones"):
+            actual_factory = getattr(torch, factory_name)
+            expected_factory = getattr(reference_torch, factory_name)
+            for value_name, value_factory in values:
+                for form_name, form in forms:
+                    with self.subTest(
+                        factory=factory_name,
+                        value=value_name,
+                        form=form_name,
+                    ):
+                        self.assert_error_matches(
+                            lambda: form(actual_factory, value_factory()),
+                            lambda: form(expected_factory, value_factory()),
+                        )
+
+            for case, value_factory, call in (
+                (
+                    "meta dtype",
+                    lambda: reference_torch.tensor(1, device="meta"),
+                    lambda factory, value: factory(value, dtype="bad"),
+                ),
+                (
+                    "meta unknown",
+                    lambda: reference_torch.tensor(1, device="meta"),
+                    lambda factory, value: factory(value, bogus=True),
+                ),
+                (
+                    "non-scalar bool dtype",
+                    lambda: reference_torch.tensor([True, False]),
+                    lambda factory, value: factory(value, dtype="bad"),
+                ),
+            ):
+                with self.subTest(factory=factory_name, precedence=case):
+                    self.assert_error_matches(
+                        lambda: call(actual_factory, value_factory()),
+                        lambda: call(expected_factory, value_factory()),
+                    )
+
     def test_tensor_subclass_index_overrides_match_pytorch_2_13(self):
         forms = (
             ("direct", lambda factory, value: factory(value)),

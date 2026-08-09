@@ -5,6 +5,7 @@ import re
 import sys
 import unittest
 from decimal import Decimal
+from types import MappingProxyType
 
 import numpy as np
 import torch_rs as torch
@@ -266,6 +267,13 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(torch.ones(size=(2,), device="cpu").tolist(), [1.0, 1.0])
 
     def test_zeros_and_ones_accept_size_and_legacy_shape_keywords(self):
+        class LegacyIndexError(Exception):
+            pass
+
+        class RaisingIndex:
+            def __index__(self):
+                raise LegacyIndexError("legacy index failure")
+
         class CustomSequence:
             def __init__(self, values):
                 self.values = values
@@ -314,6 +322,23 @@ class PythonApiBaselineTests(unittest.TestCase):
                     self.assertEqual(create(shape=sequence).shape, (2, 2))
                     with self.assertRaises(TypeError):
                         create(size=sequence)
+
+            with self.subTest(function=name, legacy_bool=True):
+                self.assertEqual(create(shape=(True, 2)).shape, (1, 2))
+            with self.subTest(function=name, legacy_unsigned_range=True):
+                self.assertEqual(
+                    create(shape=(sys.maxsize + 1, 0)).shape,
+                    (sys.maxsize + 1, 0),
+                )
+            with self.subTest(function=name, legacy_index_exception=True):
+                with self.assertRaisesRegex(
+                    LegacyIndexError,
+                    "legacy index failure",
+                ):
+                    create(shape=(RaisingIndex(),))
+            with self.subTest(function=name, mapping_is_not_sequence=True):
+                with self.assertRaises(TypeError):
+                    create(shape=MappingProxyType({0: 2, 1: 2}))
 
             for case, call in (
                 ("None shape with positional size", lambda: create((2,), shape=None)),
