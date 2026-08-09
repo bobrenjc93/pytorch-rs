@@ -874,7 +874,13 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn relu(&self) -> Result<Self, TensorError> {
-        self.unary_map(|value| value.max(0.0))
+        self.unary_map(|value| {
+            if value.is_nan() {
+                value
+            } else {
+                value.max(0.0)
+            }
+        })
     }
 
     /// Computes the sine of every element in radians.

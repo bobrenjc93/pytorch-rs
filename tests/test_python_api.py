@@ -30,6 +30,82 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(result.shape, (2, 2))
         self.assertEqual(result.tolist(), [[0.0, 3.0], [4.0, 0.0]])
 
+    def test_relu_propagates_interleaved_nans_at_varied_lengths(self):
+        for elements in (5, 13, 37, 67):
+            values = np.empty(elements, dtype=np.float32)
+            for index in range(elements):
+                values[index] = (
+                    np.nan
+                    if index % 6 == 0 or index + 1 == elements
+                    else (-np.inf, -3.5, 0.0, 2.25, np.inf)[(index - 1) % 6]
+                )
+
+            source = torch.tensor(values.tolist())
+            actual = np.asarray(source.relu(), dtype=np.float32)
+            with self.subTest(elements=elements):
+                np.testing.assert_array_equal(np.isnan(actual), np.isnan(values))
+                positive = values > 0
+                np.testing.assert_array_equal(actual[positive], values[positive])
+                self.assertTrue(np.all(actual[~np.isnan(values) & ~positive] == 0.0))
+
+    def test_relu_handles_scalars_empties_multidimensional_tensors_and_views(self):
+        scalar = torch.tensor(float("nan"))
+        scalar_output = scalar.relu()
+        self.assertEqual(scalar_output.shape, ())
+        self.assertEqual(scalar_output.stride(), ())
+        self.assertTrue(math.isnan(scalar_output.item()))
+        self.assertEqual(scalar_output.storage_offset(), 0)
+
+        empty = torch.zeros((2, 0, 3))
+        empty_output = empty.relu()
+        self.assertEqual(empty_output.shape, (2, 0, 3))
+        self.assertEqual(empty_output.stride(), (3, 3, 1))
+        self.assertEqual(empty_output.tolist(), [[], []])
+        self.assertIs(empty_output.dtype, torch.float32)
+        self.assertEqual(empty_output.device, torch.device("cpu"))
+        self.assertEqual(empty_output.storage_offset(), 0)
+
+        source = torch.tensor(
+            [
+                -1.0,
+                float("nan"),
+                2.0,
+                float("inf"),
+                -float("inf"),
+                float("nan"),
+                3.0,
+                -4.0,
+                float("nan"),
+                5.0,
+                0.0,
+                -6.0,
+            ]
+        ).reshape(2, 2, 3)
+
+        reshaped = source.reshape(3, 2, 2).relu()
+        self.assertEqual(reshaped.shape, (3, 2, 2))
+        self.assertEqual(reshaped.stride(), (4, 2, 1))
+        self.assertEqual(reshaped.storage_offset(), 0)
+        self.assertIs(reshaped.dtype, source.dtype)
+        self.assertEqual(reshaped.device, source.device)
+        self.assert_tensor_values(
+            reshaped,
+            [0.0, np.nan, 2.0, np.inf, 0.0, np.nan, 3.0, 0.0, np.nan, 5.0, 0.0, 0.0],
+            (3, 2, 2),
+        )
+
+        indexed = source[1]
+        self.assertEqual(indexed.storage_offset(), 6)
+        indexed_output = indexed.relu()
+        self.assertEqual(indexed_output.shape, (2, 3))
+        self.assertEqual(indexed_output.stride(), (3, 1))
+        self.assertEqual(indexed_output.storage_offset(), 0)
+        self.assert_tensor_values(
+            indexed_output,
+            [3.0, 0.0, np.nan, 5.0, 0.0, 0.0],
+            (2, 3),
+        )
+
     def test_sin_matches_pytorch_float32_reference_and_metadata(self):
         source = torch.tensor(
             [

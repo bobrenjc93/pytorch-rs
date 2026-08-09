@@ -201,6 +201,110 @@ fn elementwise_operations_preserve_shape() {
 }
 
 #[test]
+fn relu_propagates_interleaved_nans_at_varied_lengths() {
+    for elements in [5, 13, 37, 67] {
+        let values: Vec<f32> = (0..elements)
+            .map(|index| {
+                if index % 6 == 0 || index + 1 == elements {
+                    f32::NAN
+                } else {
+                    match index % 6 {
+                        1 => -f32::INFINITY,
+                        2 => -3.5,
+                        3 => 0.0,
+                        4 => 2.25,
+                        _ => f32::INFINITY,
+                    }
+                }
+            })
+            .collect();
+        let input = Tensor::from_vec(values.clone(), [elements]).unwrap();
+        let output = input.relu().unwrap();
+
+        assert_eq!(output.shape(), input.shape());
+        assert_eq!(output.stride(), input.stride());
+        assert_eq!(output.dtype(), input.dtype());
+        assert_eq!(output.device(), input.device());
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.shares_storage_with(&input));
+
+        for (source, actual) in values.iter().zip(output.as_slice()) {
+            if source.is_nan() {
+                assert!(actual.is_nan());
+            } else if *source > 0.0 {
+                assert_eq!(actual.to_bits(), source.to_bits());
+            } else {
+                assert_eq!(actual.to_bits() & 0x7fff_ffff, 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn relu_handles_scalars_empties_multidimensional_tensors_and_views() {
+    let scalar = Tensor::from_vec(vec![f32::NAN], []).unwrap();
+    let scalar_output = scalar.relu().unwrap();
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert!(scalar_output.item().unwrap().is_nan());
+    assert!(!scalar_output.shares_storage_with(&scalar));
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap();
+    let empty_output = empty.relu().unwrap();
+    assert_eq!(empty_output.shape(), [2, 0, 3]);
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    assert_eq!(empty_output.dtype(), DType::Float32);
+    assert_eq!(empty_output.device(), Device::Cpu);
+    assert_eq!(empty_output.storage_offset(), 0);
+    assert!(empty_output.as_slice().is_empty());
+    assert!(!empty_output.shares_storage_with(&empty));
+
+    let source = Tensor::from_vec(
+        vec![
+            -1.0,
+            f32::NAN,
+            2.0,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            3.0,
+            -4.0,
+            f32::NAN,
+            5.0,
+            0.0,
+            -6.0,
+        ],
+        [2, 2, 3],
+    )
+    .unwrap();
+
+    let reshaped = source.reshape([3, 2, 2]).unwrap();
+    let reshaped_output = reshaped.relu().unwrap();
+    assert_eq!(reshaped_output.shape(), [3, 2, 2]);
+    assert_eq!(reshaped_output.stride(), [4, 2, 1]);
+    assert_eq!(reshaped_output.storage_offset(), 0);
+    assert_eq!(reshaped_output.dtype(), reshaped.dtype());
+    assert_eq!(reshaped_output.device(), reshaped.device());
+    assert!(!reshaped_output.shares_storage_with(&reshaped));
+    assert!(reshaped_output.as_slice()[1].is_nan());
+    assert_eq!(
+        &reshaped_output.as_slice()[2..5],
+        &[2.0, f32::INFINITY, 0.0]
+    );
+
+    let indexed = source.index_integer(1).unwrap();
+    assert_eq!(indexed.storage_offset(), 6);
+    let indexed_output = indexed.relu().unwrap();
+    assert_eq!(indexed_output.shape(), [2, 3]);
+    assert_eq!(indexed_output.stride(), [3, 1]);
+    assert_eq!(indexed_output.storage_offset(), 0);
+    assert!(!indexed_output.shares_storage_with(&source));
+    assert_eq!(indexed_output.as_slice()[..2], [3.0, 0.0]);
+    assert!(indexed_output.as_slice()[2].is_nan());
+    assert_eq!(indexed_output.as_slice()[3..], [5.0, 0.0, 0.0]);
+}
+
+#[test]
 fn sine_matches_pytorch_float32_values_and_special_cases() {
     const ATOL: f32 = 1.0e-6;
     const RTOL: f32 = 1.0e-6;
