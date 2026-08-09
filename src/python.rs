@@ -665,16 +665,20 @@ fn tensor(
         (vec![scalar], Vec::new())
     } else if data.cast::<PyBytes>().is_ok() {
         return Err(PyTypeError::new_err("new(): invalid data type 'bytes'"));
-    } else if data.cast::<PyMemoryView>().is_err() && is_sequence_input(data)? {
+    } else if data.cast::<PyMemoryView>().is_ok() {
+        if let Some(buffer) = flatten_buffer(data, dtype_was_explicit)? {
+            buffer
+        } else {
+            let mut flattened = Vec::new();
+            let shape = flatten_rectangular(data, &mut flattened)?;
+            (flattened, shape)
+        }
+    } else if is_sequence_input(data)? {
         let mut flattened = Vec::new();
         let shape = flatten_rectangular(data, &mut flattened)?;
         (flattened, shape)
-    } else if let Some(buffer) = flatten_buffer(data, dtype_was_explicit)? {
-        buffer
     } else {
-        let mut flattened = Vec::new();
-        let shape = flatten_rectangular(data, &mut flattened)?;
-        (flattened, shape)
+        return Err(unsupported_tensor_data_error(data, dtype_was_explicit)?);
     };
     CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
         .map(|inner| PyTensor { inner })
@@ -2357,31 +2361,18 @@ fn flatten_buffer(
     value: &Bound<'_, PyAny>,
     dtype_was_explicit: bool,
 ) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
-    let view = match PyMemoryView::from(value) {
-        Ok(view) => view,
-        Err(error) if error.is_instance_of::<PyTypeError>(value.py()) => {
-            // Python classes can implement the buffer protocol through
-            // `__buffer__`. If such an exporter is malformed, retain the
-            // protocol error instead of treating it as an ordinary sequence.
-            if value.hasattr("__buffer__")? {
-                return Err(error);
-            }
-            return Ok(None);
-        }
-        Err(error) => return Err(error),
-    };
+    let view = PyMemoryView::from(value)?;
 
     let dimensions = view.getattr("ndim")?.extract::<usize>()?;
     if dimensions == 0 {
         return Err(PyTypeError::new_err("0-dim memory has no length"));
     }
-    if dimensions != 1 {
-        return Err(buffer_shape_error(value)?);
-    }
-
     let elements = view.len()?;
     if elements == 0 {
         return Ok(Some((Vec::new(), vec![0])));
+    }
+    if dimensions != 1 {
+        return Err(buffer_shape_error(value)?);
     }
 
     let format_description = view.getattr("format")?.extract::<String>()?;
@@ -2431,6 +2422,22 @@ fn buffer_shape_error(value: &Bound<'_, PyAny>) -> PyResult<PyErr> {
     Ok(PyValueError::new_err(format!(
         "could not determine the shape of object type '{type_name}'"
     )))
+}
+
+fn unsupported_tensor_data_error(
+    value: &Bound<'_, PyAny>,
+    dtype_was_explicit: bool,
+) -> PyResult<PyErr> {
+    let type_name = transpose_type_name(value)?;
+    if dtype_was_explicit {
+        Ok(PyTypeError::new_err(format!(
+            "must be real number, not {type_name}"
+        )))
+    } else {
+        Ok(PyRuntimeError::new_err(format!(
+            "Could not infer dtype of {type_name}"
+        )))
+    }
 }
 
 fn buffer_format_has_item_size(format: u8, item_size: usize) -> bool {

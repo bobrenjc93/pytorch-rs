@@ -1,7 +1,9 @@
 import array
 import ctypes
 import gc
+import pickle
 import struct
+import sys
 import unittest
 
 import numpy as np
@@ -90,6 +92,7 @@ class TensorBufferTests(unittest.TestCase):
             array.array("q"),
             memoryview(array.array("d")),
             memoryview(np.asarray([], dtype="U1")),
+            memoryview(np.empty((0, 3), dtype=np.uint8)),
         ):
             with self.subTest(format=memoryview(source).format):
                 self.assert_tensor(source, [])
@@ -137,6 +140,37 @@ class TensorBufferTests(unittest.TestCase):
         released.release()
         with self.assertRaisesRegex(ValueError, "released memoryview"):
             torch.tensor(released)
+
+    def test_buffer_only_exporters_are_not_tensor_sequences(self):
+        class BufferOnly:
+            def __init__(self):
+                self.data = bytearray((1, 2, 3))
+
+            def __buffer__(self, flags):
+                return memoryview(self.data)
+
+        exporters = [pickle.PickleBuffer(bytearray((1, 2, 3)))]
+        if sys.version_info >= (3, 12):
+            exporters.append(BufferOnly())
+
+        for exporter in exporters:
+            type_name = (
+                "pickle.PickleBuffer"
+                if isinstance(exporter, pickle.PickleBuffer)
+                else "BufferOnly"
+            )
+            with self.subTest(type=type_name, explicit_dtype=False):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    f"Could not infer dtype of {type_name}",
+                ):
+                    torch.tensor(exporter)
+            with self.subTest(type=type_name, explicit_dtype=True):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    f"must be real number, not {type_name}",
+                ):
+                    torch.tensor(exporter, dtype=torch.float32)
 
 
 if __name__ == "__main__":

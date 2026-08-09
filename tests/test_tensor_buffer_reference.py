@@ -1,6 +1,8 @@
 import array
 import ctypes
+import pickle
 import struct
+import sys
 import unittest
 
 import numpy as np
@@ -133,6 +135,10 @@ class TensorBufferReferenceTests(unittest.TestCase):
             ("negative stride", memoryview(exporter)[::-2]),
             ("empty numeric", memoryview(array.array("d"))),
             ("empty unsupported format", memoryview(np.asarray([], dtype="U1"))),
+            (
+                "empty multidimensional with zero first dimension",
+                memoryview(np.empty((0, 3), dtype=np.uint8)),
+            ),
         ):
             self.assert_matches(source, case=case)
 
@@ -158,6 +164,31 @@ class TensorBufferReferenceTests(unittest.TestCase):
         characters = memoryview(b"ab").cast("c")
         self.assert_error_matches(characters, explicit_dtype=False)
         self.assert_matches(characters, case="character memoryview with float32 dtype")
+
+    def test_buffer_only_exporters_are_rejected_like_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+
+        class BufferOnly:
+            def __init__(self):
+                self.data = bytearray((1, 2, 3))
+
+            def __buffer__(self, flags):
+                return memoryview(self.data)
+
+        exporters = [pickle.PickleBuffer(bytearray((1, 2, 3)))]
+        if sys.version_info >= (3, 12):
+            exporters.append(BufferOnly())
+
+        for exporter in exporters:
+            for explicit_dtype in (False, True):
+                with self.subTest(
+                    type=type(exporter).__name__,
+                    explicit_dtype=explicit_dtype,
+                ):
+                    self.assert_error_matches(
+                        exporter,
+                        explicit_dtype=explicit_dtype,
+                    )
 
 
 if __name__ == "__main__":
