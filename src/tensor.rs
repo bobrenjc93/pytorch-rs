@@ -146,6 +146,7 @@ pub enum TensorError {
     MatmulInnerDimensionMismatch {
         left: Vec<usize>,
         right: Vec<usize>,
+        left_strides: Vec<usize>,
     },
     MatmulBatchDimensionMismatch {
         left: Vec<usize>,
@@ -353,9 +354,11 @@ fn format_matmul_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
         TensorError::MatmulRequiresMatrices { left, right } => {
             format_matmul_rank_error(formatter, left, right)
         }
-        TensorError::MatmulInnerDimensionMismatch { left, right } => {
-            format_matmul_inner_dimension_error(formatter, left, right)
-        }
+        TensorError::MatmulInnerDimensionMismatch {
+            left,
+            right,
+            left_strides,
+        } => format_matmul_inner_dimension_error(formatter, left, right, left_strides),
         TensorError::MatmulBatchDimensionMismatch {
             left_dimension,
             right_dimension,
@@ -401,6 +404,7 @@ fn format_matmul_inner_dimension_error(
     formatter: &mut Formatter<'_>,
     left: &[usize],
     right: &[usize],
+    left_strides: &[usize],
 ) -> std::fmt::Result {
     let Some((&inner, left_prefix)) = left.split_last() else {
         return write!(
@@ -421,7 +425,7 @@ fn format_matmul_inner_dimension_error(
         );
     };
 
-    if right.len() == 2 {
+    if right.len() == 2 && matmul_left_is_foldable(left, left_strides) {
         let rows = left_prefix
             .iter()
             .try_fold(1_usize, |rows, dimension| rows.checked_mul(*dimension));
@@ -453,6 +457,20 @@ fn format_matmul_inner_dimension_error(
         formatter,
         "matmul inner dimensions differ for {left:?} and {right:?}"
     )
+}
+
+fn matmul_left_is_foldable(shape: &[usize], strides: &[usize]) -> bool {
+    if shape.len() == 2 || shape.contains(&0) {
+        return true;
+    }
+    if shape.len() != strides.len() || shape.len() < 2 {
+        return false;
+    }
+    (0..shape.len() - 2).all(|axis| {
+        strides[axis + 1]
+            .checked_mul(shape[axis + 1])
+            .is_some_and(|expected_stride| strides[axis] == expected_stride)
+    })
 }
 
 fn format_dimension_out_of_range(
@@ -1808,6 +1826,7 @@ impl Tensor {
                 return Err(TensorError::MatmulInnerDimensionMismatch {
                     left: self.shape.clone(),
                     right: other.shape.clone(),
+                    left_strides: self.strides.clone(),
                 });
             }
 
@@ -2167,6 +2186,7 @@ impl MatmulBatchPlan {
             return Err(TensorError::MatmulInnerDimensionMismatch {
                 left: try_clone_result_shape(&left.shape, left.elements)?,
                 right: try_clone_result_shape(&right.shape, right.elements)?,
+                left_strides: try_clone_result_shape(&left.strides, left.elements)?,
             });
         }
 

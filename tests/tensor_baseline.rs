@@ -884,6 +884,17 @@ fn batched_matrix_multiplication_reports_rank_inner_batch_and_shape_overflow_err
         "The size of tensor a (2) must match the size of tensor b (3) at non-singleton dimension 0"
     );
 
+    let transposed_error = Tensor::zeros([4, 2, 3])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap()
+        .matmul(&Tensor::zeros([2, 3]).unwrap())
+        .unwrap_err();
+    assert_eq!(
+        transposed_error.to_string(),
+        "Expected size for first two dimensions of batch2 tensor to be: [2, 3] but got: [2, 2]."
+    );
+
     let maximum = isize::MAX.unsigned_abs();
     assert_eq!(
         Tensor::zeros([0, maximum, 0])

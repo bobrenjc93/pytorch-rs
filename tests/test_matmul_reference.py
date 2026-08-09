@@ -153,6 +153,15 @@ class MatmulReferenceTests(unittest.TestCase):
             case="scalar",
         )
 
+    def test_invalid_transposed_batch_diagnostic_matches_pytorch_2_13(self):
+        actual_left = torch.zeros((4, 2, 3)).transpose(0, 1)
+        expected_left = reference_torch.zeros((4, 2, 3)).transpose(0, 1)
+        self.assert_error_matches(
+            lambda: actual_left @ torch.zeros((2, 3)),
+            lambda: expected_left @ reference_torch.zeros((2, 3)),
+            case="non-foldable transposed batch",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
