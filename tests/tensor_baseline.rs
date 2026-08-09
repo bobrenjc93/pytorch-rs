@@ -7,6 +7,9 @@ fn native_metadata_describes_all_supported_storage_shapes() {
     assert_eq!(Device::default(), Device::Cpu);
     assert_eq!(MemoryFormat::default(), MemoryFormat::Preserve);
     assert_eq!(DType::Float32.to_string(), "float32");
+    assert!(DType::Float32.is_floating_point());
+    assert!(!DType::Float32.is_complex());
+    assert_eq!(DType::Float32.element_size(), size_of::<f32>());
     assert_eq!(Device::Cpu.to_string(), "cpu");
     assert_eq!(MemoryFormat::Preserve.to_string(), "preserve_format");
     assert_eq!(MemoryFormat::Contiguous.to_string(), "contiguous_format");
@@ -20,6 +23,9 @@ fn native_metadata_describes_all_supported_storage_shapes() {
     ] {
         assert_eq!(tensor.dtype(), DType::Float32);
         assert_eq!(tensor.device(), Device::Cpu);
+        assert!(tensor.is_floating_point());
+        assert!(!tensor.is_complex());
+        assert_eq!(tensor.element_size(), size_of::<f32>());
     }
 }
 

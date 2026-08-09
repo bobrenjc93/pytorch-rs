@@ -12,6 +12,32 @@ pub enum DType {
     Float32,
 }
 
+impl DType {
+    /// Reports whether values of this scalar type are floating point.
+    #[must_use]
+    pub const fn is_floating_point(self) -> bool {
+        match self {
+            Self::Float32 => true,
+        }
+    }
+
+    /// Reports whether values of this scalar type are complex.
+    #[must_use]
+    pub const fn is_complex(self) -> bool {
+        match self {
+            Self::Float32 => false,
+        }
+    }
+
+    /// Returns the number of bytes occupied by one value of this scalar type.
+    #[must_use]
+    pub const fn element_size(self) -> usize {
+        match self {
+            Self::Float32 => size_of::<f32>(),
+        }
+    }
+}
+
 impl Display for DType {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -643,6 +669,24 @@ impl Tensor {
     #[must_use]
     pub fn dtype(&self) -> DType {
         self.storage.dtype
+    }
+
+    /// Reports whether the tensor's native scalar type is floating point.
+    #[must_use]
+    pub fn is_floating_point(&self) -> bool {
+        self.dtype().is_floating_point()
+    }
+
+    /// Reports whether the tensor's native scalar type is complex.
+    #[must_use]
+    pub fn is_complex(&self) -> bool {
+        self.dtype().is_complex()
+    }
+
+    /// Returns the byte width of one element in the tensor's native storage.
+    #[must_use]
+    pub fn element_size(&self) -> usize {
+        self.dtype().element_size()
     }
 
     /// Returns the device owning this tensor's storage.

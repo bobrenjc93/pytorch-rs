@@ -463,6 +463,24 @@ impl PyTensor {
         self.inner.numel()
     }
 
+    /// Reports whether the tensor's native scalar type is floating point.
+    #[pyo3(text_signature = "($self, /)")]
+    fn is_floating_point(&self) -> bool {
+        self.inner.is_floating_point()
+    }
+
+    /// Reports whether the tensor's native scalar type is complex.
+    #[pyo3(text_signature = "($self, /)")]
+    fn is_complex(&self) -> bool {
+        self.inner.is_complex()
+    }
+
+    /// Returns the byte width of one native tensor element.
+    #[pyo3(text_signature = "($self, /)")]
+    fn element_size(&self) -> usize {
+        self.inner.element_size()
+    }
+
     fn tolist(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let values = self
             .inner
@@ -846,6 +864,112 @@ fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     }
 
     Ok(tensor.try_borrow()?.inner.numel())
+}
+
+/// Returns whether `obj` is a native tensor.
+#[pyfunction(signature = (*args, **kwargs), text_signature = "(obj, /)")]
+fn is_tensor(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    if let Some(kwargs) = kwargs {
+        if kwargs.contains("obj")? {
+            return Err(PyTypeError::new_err(
+                "is_tensor() got some positional-only arguments passed as keyword arguments: 'obj'",
+            ));
+        }
+        if let Ok(key) = kwargs.keys().get_item(0) {
+            let key = key.extract::<String>()?;
+            return Err(PyTypeError::new_err(format!(
+                "is_tensor() got an unexpected keyword argument '{key}'"
+            )));
+        }
+    }
+    if args.is_empty() {
+        return Err(PyTypeError::new_err(
+            "is_tensor() missing 1 required positional argument: 'obj'",
+        ));
+    }
+    if args.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "is_tensor() takes 1 positional argument but {} were given",
+            args.len()
+        )));
+    }
+    Ok(args.get_item(0)?.cast::<PyTensor>().is_ok())
+}
+
+/// Returns whether the input tensor's native scalar type is floating point.
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn is_floating_point(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    tensor_dtype_predicate("is_floating_point", args, kwargs, DType::is_floating_point)
+}
+
+/// Returns whether the input tensor's native scalar type is complex.
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn is_complex(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    tensor_dtype_predicate("is_complex", args, kwargs, DType::is_complex)
+}
+
+fn tensor_dtype_predicate(
+    function: &str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+    predicate: fn(DType) -> bool,
+) -> PyResult<bool> {
+    if args.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() takes 1 positional argument but {} were given",
+            args.len()
+        )));
+    }
+
+    let keyword_input = match kwargs {
+        Some(values) => values.get_item("input")?,
+        None => None,
+    };
+    if args.is_empty() && keyword_input.is_none() {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() missing 1 required positional arguments: \"input\""
+        )));
+    }
+
+    let (input, position) = if args.is_empty() {
+        (
+            keyword_input
+                .as_ref()
+                .expect("the required keyword input was checked above"),
+            None,
+        )
+    } else {
+        (&args.get_item(0)?, Some(1))
+    };
+    let Ok(tensor) = input.cast::<PyTensor>() else {
+        let position =
+            position.map_or_else(String::new, |position| format!(" (position {position})"));
+        let input_type = transpose_type_name(input)?;
+        return Err(PyTypeError::new_err(format!(
+            "{function}(): argument 'input'{position} must be Tensor, not {input_type}"
+        )));
+    };
+
+    if !args.is_empty() && keyword_input.is_some() {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() got multiple values for argument 'input'"
+        )));
+    }
+    if let Some(kwargs) = kwargs {
+        for key in kwargs.keys() {
+            let key = key.extract::<String>()?;
+            if key != "input" {
+                return Err(PyTypeError::new_err(format!(
+                    "{function}() got an unexpected keyword argument '{key}'"
+                )));
+            }
+        }
+    }
+
+    Ok(predicate(tensor.try_borrow()?.inner.dtype()))
 }
 
 #[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
@@ -2726,6 +2850,9 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     module.add_function(wrap_pyfunction!(numel, module)?)?;
+    module.add_function(wrap_pyfunction!(is_tensor, module)?)?;
+    module.add_function(wrap_pyfunction!(is_floating_point, module)?)?;
+    module.add_function(wrap_pyfunction!(is_complex, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
