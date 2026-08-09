@@ -171,6 +171,7 @@ pub enum TensorError {
         dimension: usize,
     },
     SqueezeDimensionsRankLimit,
+    FlattenStartAfterEnd,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -266,9 +267,8 @@ impl Display for TensorError {
             error @ (Self::DuplicateDimension { .. } | Self::SqueezeDimensionsRankLimit) => {
                 format_squeeze_error(formatter, error)
             }
-            Self::ReshapeMultipleInferredDimensions => {
-                write!(formatter, "only one dimension can be inferred")
-            }
+            Self::FlattenStartAfterEnd => format_flatten_error(formatter),
+            Self::ReshapeMultipleInferredDimensions => format_reshape_inference_error(formatter),
             Self::ReshapeInvalidDimension {
                 dimension,
                 index,
@@ -336,6 +336,14 @@ fn format_squeeze_error(formatter: &mut Formatter<'_>, error: &TensorError) -> s
         }
         _ => unreachable!("only squeeze-specific errors are formatted here"),
     }
+}
+
+fn format_flatten_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
+    formatter.write_str("flatten() has invalid args: start_dim cannot come after end_dim")
+}
+
+fn format_reshape_inference_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
+    formatter.write_str("only one dimension can be inferred")
 }
 
 fn format_memory_format_error(
@@ -781,6 +789,100 @@ impl Tensor {
         })
     }
 
+    /// Collapses an inclusive range of dimensions using view-or-copy semantics.
+    ///
+    /// `start_dim` and `end_dim` are normalized, non-negative dimension
+    /// indexes. When the range can be represented by the existing strides,
+    /// the result shares storage and preserves its offset. Otherwise logical
+    /// values are eagerly packed into independent contiguous storage. Scalars
+    /// use the single logical dimension `0` and become one-element vectors.
+    ///
+    /// This is the reusable, binding-independent primitive behind
+    /// [`Self::flatten`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an out-of-range or reversed range, arithmetic
+    /// overflow, or metadata/storage allocation failure.
+    pub fn collapse_dimensions(
+        &self,
+        start_dim: usize,
+        end_dim: usize,
+    ) -> Result<Self, TensorError> {
+        let effective_rank = self.shape.len().max(1);
+        if start_dim >= effective_rank {
+            return Err(TensorError::DimensionOutOfRange {
+                dimension: dimension_for_error(start_dim),
+                rank: self.shape.len(),
+            });
+        }
+        if end_dim >= effective_rank {
+            return Err(TensorError::DimensionOutOfRange {
+                dimension: dimension_for_error(end_dim),
+                rank: self.shape.len(),
+            });
+        }
+        if start_dim > end_dim {
+            return Err(TensorError::FlattenStartAfterEnd);
+        }
+
+        if !self.shape.is_empty() && start_dim == end_dim {
+            return self.metadata_alias();
+        }
+        if self.shape.is_empty() {
+            return self.reshape([1]);
+        }
+
+        let output_rank = self.shape.len() - (end_dim - start_dim);
+        let mut shape = try_result_vector(output_rank, self.elements)?;
+        for &dimension in &self.shape[..start_dim] {
+            shape.push(
+                i64::try_from(dimension).map_err(|_| TensorError::StrideCalculationOverflow)?,
+            );
+        }
+
+        let collapsed =
+            self.shape[start_dim..=end_dim]
+                .iter()
+                .try_fold(1_i64, |elements, &dimension| {
+                    let dimension = i64::try_from(dimension)
+                        .map_err(|_| TensorError::StrideCalculationOverflow)?;
+                    Ok::<_, TensorError>(elements.wrapping_mul(dimension))
+                })?;
+        shape.push(collapsed);
+        for &dimension in &self.shape[end_dim.saturating_add(1)..] {
+            shape.push(
+                i64::try_from(dimension).map_err(|_| TensorError::StrideCalculationOverflow)?,
+            );
+        }
+
+        if collapsed < -1 {
+            return Err(TensorError::ReshapeInvalidDimension {
+                dimension: collapsed,
+                index: start_dim,
+                shape,
+            });
+        }
+        self.reshape(shape)
+    }
+
+    /// Flattens an inclusive range of dimensions.
+    ///
+    /// Negative dimensions wrap from the end. Compatible strides produce a
+    /// metadata-only shared-storage view; incompatible layouts are eagerly
+    /// copied into independent contiguous storage. Scalars flatten to shape
+    /// `[1]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an out-of-range or reversed range, arithmetic
+    /// overflow, or metadata/storage allocation failure.
+    pub fn flatten(&self, start_dim: i64, end_dim: i64) -> Result<Self, TensorError> {
+        let start_dim = normalize_transpose_dimension(start_dim, self.shape.len())?;
+        let end_dim = normalize_transpose_dimension(end_dim, self.shape.len())?;
+        self.collapse_dimensions(start_dim, end_dim)
+    }
+
     /// Creates an independent copy of this tensor's logical values.
     ///
     /// The returned tensor preserves dense layouts and has a storage offset of
@@ -844,8 +946,8 @@ impl Tensor {
     /// callers which own an object wrapper can preserve object identity.
     /// Otherwise this copies logical values into independent storage, resets
     /// the storage offset to zero, and assigns canonical strides for the
-    /// requested format. This is the core packing primitive intended for
-    /// reuse by future reshape and flatten implementations.
+    /// requested format. This is the checked packing primitive reused by
+    /// reshape and flatten when existing strides cannot represent a result.
     ///
     /// [`MemoryFormat::Preserve`] is accepted only by the row-contiguous
     /// identity path, matching `PyTorch`'s contiguous operator. Channel-last
@@ -899,6 +1001,16 @@ impl Tensor {
             self.dtype(),
             self.device(),
         ))
+    }
+
+    fn metadata_alias(&self) -> Result<Self, TensorError> {
+        Ok(Self {
+            storage: Arc::clone(&self.storage),
+            shape: try_clone_result_shape(&self.shape, self.elements)?,
+            strides: try_clone_result_shape(&self.strides, self.elements)?,
+            offset: self.offset,
+            elements: self.elements,
+        })
     }
 
     #[must_use]
@@ -1225,14 +1337,14 @@ impl Tensor {
         }
 
         let strides = contiguous_strides(&resolved, self.elements)?;
-        let data = self.try_to_vec()?;
-        Ok(Self::from_owned_parts(
-            data,
-            resolved,
+        let packed = self.try_contiguous(MemoryFormat::Contiguous)?;
+        Ok(Self {
+            storage: packed.storage,
+            shape: resolved,
             strides,
-            self.dtype(),
-            self.device(),
-        ))
+            offset: 0,
+            elements: self.elements,
+        })
     }
 
     /// Adds tensors element by element with trailing-dimension broadcasting.
@@ -1842,6 +1954,10 @@ fn normalize_transpose_dimension(dimension: i64, rank: usize) -> Result<usize, T
         dimension
     })
     .map_err(|_| TensorError::DimensionOutOfRange { dimension, rank })
+}
+
+fn dimension_for_error(dimension: usize) -> i64 {
+    i64::try_from(dimension).unwrap_or(i64::MAX)
 }
 
 fn logical_offset_for_linear_index(

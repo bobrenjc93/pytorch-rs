@@ -297,6 +297,23 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
+    #[pyo3(signature = (*args, **kwargs), text_signature = "(start_dim=0, end_dim=-1)")]
+    fn flatten(
+        slf: PyRef<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<Self>> {
+        let (start_dim, end_dim) = bind_method_flatten_arguments(args, kwargs)?;
+        let inner = slf
+            .inner
+            .flatten(start_dim, end_dim)
+            .map_err(|error| tensor_error(&error))?;
+        if same_tensor_metadata(&slf.inner, &inner) {
+            return Ok(slf.into());
+        }
+        Py::new(slf.py(), Self { inner })
+    }
+
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
         let inner = if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() > self.inner.shape().len() {
@@ -634,6 +651,32 @@ fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyR
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction(signature = (*args, **kwargs), text_signature = "(input, start_dim=0, end_dim=-1)")]
+fn flatten(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyTensor>> {
+    let (input, start_dim, end_dim) = bind_top_level_flatten_arguments(args, kwargs)?;
+    let tensor = input
+        .cast::<PyTensor>()
+        .expect("the flatten input type was checked while binding");
+    let input_object = tensor.clone().unbind();
+    let inner = {
+        let tensor = tensor.try_borrow()?;
+        tensor
+            .inner
+            .flatten(start_dim, end_dim)
+            .map_err(|error| tensor_error(&error))?
+    };
+    let tensor = input_object.bind(args.py()).try_borrow()?;
+    if same_tensor_metadata(&tensor.inner, &inner) {
+        drop(tensor);
+        return Ok(input_object);
+    }
+    drop(tensor);
+    Py::new(args.py(), PyTensor { inner })
+}
+
 #[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
 fn zeros(
     size: Option<&Bound<'_, PyAny>>,
@@ -956,6 +999,183 @@ fn parse_transpose_dimension(
     Err(transpose_argument_type_error(
         argument, position, "int", &type_name,
     ))
+}
+
+fn parse_flatten_dimension(
+    argument: &str,
+    position: Option<usize>,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<i64> {
+    if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
+        return dimension
+            .extract::<i64>()
+            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+    }
+
+    if let Ok(numpy) = PyModule::import(dimension.py(), "numpy") {
+        let numpy_integer = numpy.getattr("integer")?;
+        if dimension.is_instance(&numpy_integer)? {
+            return dimension
+                .extract::<i64>()
+                .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+        }
+    }
+
+    let actual = transpose_type_name(dimension)?;
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    Err(PyTypeError::new_err(format!(
+        "flatten(): argument '{argument}'{position} must be int, not {actual}"
+    )))
+}
+
+fn bind_method_flatten_arguments(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<(i64, i64)> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "flatten() takes from 0 to 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_start = match keywords {
+        Some(values) => values.get_item("start_dim")?,
+        None => None,
+    };
+    let keyword_end = match keywords {
+        Some(values) => values.get_item("end_dim")?,
+        None => None,
+    };
+    let unexpected = first_unexpected_flatten_keyword(keywords, false)?;
+
+    let start_dim =
+        bind_flatten_dimension(positional, 0, keyword_start.as_ref(), "start_dim", 1, 0)?;
+    let end_dim = bind_flatten_dimension(positional, 1, keyword_end.as_ref(), "end_dim", 2, -1)?;
+    if let Some(unexpected) = unexpected {
+        return Err(unexpected_flatten_keyword(&unexpected));
+    }
+    Ok((start_dim, end_dim))
+}
+
+fn bind_top_level_flatten_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(Bound<'py, PyAny>, i64, i64)> {
+    if positional.len() > 3 {
+        return Err(PyTypeError::new_err(format!(
+            "flatten() takes from 1 to 3 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_input = match keywords {
+        Some(values) => values.get_item("input")?,
+        None => None,
+    };
+    let keyword_start = match keywords {
+        Some(values) => values.get_item("start_dim")?,
+        None => None,
+    };
+    let keyword_end = match keywords {
+        Some(values) => values.get_item("end_dim")?,
+        None => None,
+    };
+    if positional.is_empty() && keyword_input.is_none() {
+        return Err(PyTypeError::new_err(
+            "flatten() missing 1 required positional arguments: \"input\"",
+        ));
+    }
+    let unexpected = first_unexpected_flatten_keyword(keywords, true)?;
+
+    let input = if positional.is_empty() {
+        keyword_input.expect("the required keyword input was checked above")
+    } else {
+        let input = positional.get_item(0)?;
+        validate_flatten_input(&input, Some(1))?;
+        if keyword_input.is_some() {
+            return Err(multiple_flatten_argument("input"));
+        }
+        input
+    };
+    if positional.is_empty() {
+        validate_flatten_input(&input, None)?;
+    }
+
+    let start_dim =
+        bind_flatten_dimension(positional, 1, keyword_start.as_ref(), "start_dim", 2, 0)?;
+    let end_dim = bind_flatten_dimension(positional, 2, keyword_end.as_ref(), "end_dim", 3, -1)?;
+    if let Some(unexpected) = unexpected {
+        return Err(unexpected_flatten_keyword(&unexpected));
+    }
+    Ok((input, start_dim, end_dim))
+}
+
+fn bind_flatten_dimension(
+    positional: &Bound<'_, PyTuple>,
+    index: usize,
+    keyword: Option<&Bound<'_, PyAny>>,
+    name: &str,
+    position: usize,
+    default: i64,
+) -> PyResult<i64> {
+    if positional.len() > index {
+        let value = positional.get_item(index)?;
+        let parsed = parse_flatten_dimension(name, Some(position), &value)?;
+        if keyword.is_some() {
+            return Err(multiple_flatten_argument(name));
+        }
+        return Ok(parsed);
+    }
+    keyword.map_or(Ok(default), |value| {
+        parse_flatten_dimension(name, None, value)
+    })
+}
+
+fn validate_flatten_input(input: &Bound<'_, PyAny>, position: Option<usize>) -> PyResult<()> {
+    if input.cast::<PyTensor>().is_ok() {
+        return Ok(());
+    }
+    let actual = transpose_type_name(input)?;
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    Err(PyTypeError::new_err(format!(
+        "flatten(): argument 'input'{position} must be Tensor, not {actual}"
+    )))
+}
+
+fn first_unexpected_flatten_keyword(
+    keywords: Option<&Bound<'_, PyDict>>,
+    allow_input: bool,
+) -> PyResult<Option<String>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    for (key, _) in keywords {
+        let key = key.extract::<String>()?;
+        if !(matches!(key.as_str(), "start_dim" | "end_dim") || allow_input && key == "input") {
+            return Ok(Some(key));
+        }
+    }
+    Ok(None)
+}
+
+fn multiple_flatten_argument(argument: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "flatten() got multiple values for argument '{argument}'"
+    ))
+}
+
+fn unexpected_flatten_keyword(keyword: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "flatten() got an unexpected keyword argument '{keyword}'"
+    ))
+}
+
+fn same_tensor_metadata(left: &CoreTensor, right: &CoreTensor) -> bool {
+    left.shape() == right.shape()
+        && left.stride() == right.stride()
+        && left.storage_offset() == right.storage_offset()
+        && left.shares_storage_with(right)
 }
 
 fn apply_squeeze(
@@ -2105,6 +2325,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ContiguousMemoryFormatRankMismatch { .. }
         | TensorError::DuplicateDimension { .. }
         | TensorError::SqueezeDimensionsRankLimit
+        | TensorError::FlattenStartAfterEnd
         | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }
@@ -2132,6 +2353,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
+    module.add_function(wrap_pyfunction!(flatten, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
