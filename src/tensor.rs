@@ -231,6 +231,7 @@ pub struct Tensor {
     strides: Vec<usize>,
     offset: usize,
     elements: usize,
+    view_requires_grad: bool,
     autograd: Option<Arc<AutogradMeta>>,
 }
 
@@ -792,6 +793,7 @@ impl Tensor {
             strides,
             offset: 0,
             elements,
+            view_requires_grad: false,
             autograd: None,
         }
     }
@@ -836,10 +838,13 @@ impl Tensor {
         self.elements
     }
 
-    /// Returns whether reverse-mode gradients are recorded for this tensor.
+    /// Returns whether operations on this tensor may require reverse-mode gradients.
+    ///
+    /// Views made while recording is disabled preserve this property without
+    /// retaining a backward edge to their source tensor.
     #[must_use]
     pub fn requires_grad(&self) -> bool {
-        self.autograd.is_some()
+        self.autograd.is_some() || self.view_requires_grad
     }
 
     /// Marks an owned tensor as a gradient-accumulating leaf, or detaches it
@@ -852,6 +857,7 @@ impl Tensor {
     pub fn with_requires_grad(mut self, requires_grad: bool) -> Self {
         if !requires_grad {
             self.autograd = None;
+            self.view_requires_grad = false;
         } else if self.autograd.is_none() {
             self.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::Leaf {
@@ -861,6 +867,7 @@ impl Tensor {
                     grad: Mutex::new(None),
                 },
             }));
+            self.view_requires_grad = false;
         }
         self
     }
@@ -956,7 +963,25 @@ impl Tensor {
         Ok(())
     }
 
-    fn finish_transform(
+    fn record_view_transform(
+        &self,
+        output: &mut Self,
+        mapping: TransformMapping,
+    ) -> Result<(), TensorError> {
+        output.view_requires_grad = self.requires_grad();
+        self.record_transform(output, mapping)
+    }
+
+    fn finish_view_transform(
+        &self,
+        mut output: Self,
+        mapping: TransformMapping,
+    ) -> Result<Self, TensorError> {
+        self.record_view_transform(&mut output, mapping)?;
+        Ok(output)
+    }
+
+    fn finish_copy_transform(
         &self,
         mut output: Self,
         mapping: TransformMapping,
@@ -1091,6 +1116,7 @@ impl Tensor {
             strides,
             offset: self.offset,
             elements: self.elements,
+            view_requires_grad: self.requires_grad(),
             autograd: None,
         };
         if self.records_grad() {
@@ -1241,9 +1267,10 @@ impl Tensor {
             strides,
             offset: self.offset,
             elements: self.elements,
+            view_requires_grad: false,
             autograd: None,
         };
-        self.record_transform(&mut output, TransformMapping::Identity)?;
+        self.record_view_transform(&mut output, TransformMapping::Identity)?;
         Ok(output)
     }
 
@@ -1441,9 +1468,10 @@ impl Tensor {
                 strides: try_clone_result_shape(&self.strides, self.elements)?,
                 offset: self.offset,
                 elements: self.elements,
+                view_requires_grad: false,
                 autograd: None,
             };
-            self.record_transform(&mut output, TransformMapping::Identity)?;
+            self.record_view_transform(&mut output, TransformMapping::Identity)?;
             return Ok(output);
         }
 
@@ -1464,7 +1492,7 @@ impl Tensor {
 
     fn metadata_alias(&self) -> Result<Self, TensorError> {
         let mut output = self.metadata_alias_detached()?;
-        self.record_transform(&mut output, TransformMapping::Identity)?;
+        self.record_view_transform(&mut output, TransformMapping::Identity)?;
         Ok(output)
     }
 
@@ -1475,6 +1503,7 @@ impl Tensor {
             strides: try_clone_result_shape(&self.strides, self.elements)?,
             offset: self.offset,
             elements: self.elements,
+            view_requires_grad: false,
             autograd: None,
         })
     }
@@ -1646,6 +1675,7 @@ impl Tensor {
             strides,
             offset,
             elements,
+            view_requires_grad: self.requires_grad(),
             autograd: None,
         };
         if self.records_grad() {
@@ -1812,13 +1842,14 @@ impl Tensor {
             } else {
                 reshape_strides(&resolved, self.elements)?
             };
-            return self.finish_transform(
+            return self.finish_view_transform(
                 Self {
                     storage: Arc::clone(&self.storage),
                     shape: resolved,
                     strides,
                     offset: self.offset,
                     elements: self.elements,
+                    view_requires_grad: false,
                     autograd: None,
                 },
                 TransformMapping::Identity,
@@ -1828,13 +1859,14 @@ impl Tensor {
         if let Some(strides) =
             compute_reshape_view_strides(&self.shape, &self.strides, &resolved, self.elements)?
         {
-            return self.finish_transform(
+            return self.finish_view_transform(
                 Self {
                     storage: Arc::clone(&self.storage),
                     shape: resolved,
                     strides,
                     offset: self.offset,
                     elements: self.elements,
+                    view_requires_grad: false,
                     autograd: None,
                 },
                 TransformMapping::Identity,
@@ -1843,13 +1875,14 @@ impl Tensor {
 
         let strides = contiguous_strides(&resolved, self.elements)?;
         let packed = self.try_contiguous(MemoryFormat::Contiguous)?;
-        self.finish_transform(
+        self.finish_copy_transform(
             Self {
                 storage: packed.storage,
                 shape: resolved,
                 strides,
                 offset: 0,
                 elements: self.elements,
+                view_requires_grad: false,
                 autograd: None,
             },
             TransformMapping::Identity,
@@ -3375,6 +3408,7 @@ mod tests {
             strides: vec![1],
             offset: 0,
             elements,
+            view_requires_grad: false,
             autograd: None,
         };
 

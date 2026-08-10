@@ -195,13 +195,35 @@ fn transformations_record_inverse_gradient_mappings() {
         values(&reshape_leaf.grad().unwrap().unwrap()),
         [10.0, 30.0, 50.0, 20.0, 40.0, 60.0]
     );
+}
 
-    let guarded = Tensor::from_vec(vec![1.0, 2.0], [1, 2])
+#[test]
+fn no_grad_views_preserve_requires_grad_without_recording_history() {
+    let source = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
         .unwrap()
         .with_requires_grad(true);
+
     let _guard = no_grad();
-    assert!(!guarded.transpose(0, 1).unwrap().requires_grad());
-    assert!(!guarded.try_clone().unwrap().requires_grad());
+    let transposed = source.transpose(0, 1).unwrap();
+    assert!(transposed.requires_grad());
+    assert!(source.reshape([4]).unwrap().requires_grad());
+    assert!(source.squeeze().unwrap().requires_grad());
+    assert!(source.index([0]).unwrap().requires_grad());
+    assert_eq!(transposed.backward(), Err(TensorError::DoesNotRequireGrad));
+
+    assert!(!source.try_clone().unwrap().requires_grad());
+    assert!(
+        source
+            .try_contiguous(MemoryFormat::Contiguous)
+            .unwrap()
+            .requires_grad()
+    );
+    assert!(
+        !transposed
+            .try_contiguous(MemoryFormat::Contiguous)
+            .unwrap()
+            .requires_grad()
+    );
 }
 
 #[test]

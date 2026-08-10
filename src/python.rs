@@ -16,10 +16,7 @@ use pyo3::types::{
     PySequence, PyString, PyTuple,
 };
 
-use crate::{
-    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, no_grad as core_no_grad,
-    set_grad_enabled,
-};
+use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, set_grad_enabled};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -29,6 +26,62 @@ static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+
+const NO_GRAD_WRAPPER_SOURCE: &CStr = cr#"
+import functools
+import inspect
+import sys
+
+
+def _decorate_no_grad(context_factory, function):
+    if inspect.isgeneratorfunction(function):
+        @functools.wraps(function)
+        def generator_context(*args, **kwargs):
+            generator = function(*args, **kwargs)
+            try:
+                with context_factory():
+                    response = generator.send(None)
+
+                while True:
+                    try:
+                        request = yield response
+                    except GeneratorExit:
+                        with context_factory():
+                            generator.close()
+                        raise
+                    except BaseException:
+                        with context_factory():
+                            response = generator.throw(*sys.exc_info())
+                    else:
+                        with context_factory():
+                            response = generator.send(request)
+            except StopIteration as error:
+                return error.value
+
+        return generator_context
+
+    @functools.wraps(function)
+    def decorate_context(*args, **kwargs):
+        with context_factory():
+            return function(*args, **kwargs)
+
+    return decorate_context
+
+
+def _make_no_grad(context_base):
+    class no_grad(context_base):
+        def __new__(cls, original_function=None):
+            if original_function is not None:
+                return cls()(original_function)
+            return super().__new__(cls)
+
+        def __call__(self, function):
+            return _decorate_no_grad(type(self), function)
+
+    no_grad.__module__ = "torch_rs"
+    no_grad.__qualname__ = "no_grad"
+    return no_grad
+"#;
 
 thread_local! {
     static NO_GRAD_CONTEXT_STATE: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
@@ -162,8 +215,13 @@ struct PyTensor {
     inner: CoreTensor,
 }
 
-/// Thread-local autograd recording guard exposed as `torch.no_grad`.
-#[pyclass(name = "no_grad", module = "torch_rs", skip_from_py_object)]
+/// Thread-local autograd recording guard underlying the Python `torch.no_grad` class.
+#[pyclass(
+    name = "_NoGradContext",
+    module = "torch_rs",
+    subclass,
+    skip_from_py_object
+)]
 struct PyNoGrad;
 
 #[pymethods]
@@ -173,10 +231,10 @@ impl PyNoGrad {
         Self
     }
 
-    fn __enter__(slf: PyRef<'_, Self>) -> Py<Self> {
+    #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
+    fn __enter__(&self) {
         let previous = set_grad_enabled(false);
         NO_GRAD_CONTEXT_STATE.with_borrow_mut(|states| states.push(previous));
-        slf.into()
     }
 
     #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
@@ -185,119 +243,10 @@ impl PyNoGrad {
         _exception_type: &Bound<'_, PyAny>,
         _exception_value: &Bound<'_, PyAny>,
         _traceback: &Bound<'_, PyAny>,
-    ) -> bool {
+    ) {
         if let Some(previous) = NO_GRAD_CONTEXT_STATE.with_borrow_mut(Vec::pop) {
             set_grad_enabled(previous);
         }
-        false
-    }
-
-    #[allow(clippy::unused_self)] // Python's decorator protocol requires an instance method.
-    fn __call__(&self, py: Python<'_>, function: Py<PyAny>) -> PyResult<PyNoGradCallable> {
-        let is_generator = py
-            .import("inspect")?
-            .call_method1("isgeneratorfunction", (&function,))?
-            .extract()?;
-        Ok(PyNoGradCallable {
-            function,
-            is_generator,
-        })
-    }
-}
-
-#[pyclass(module = "torch_rs", skip_from_py_object)]
-struct PyNoGradCallable {
-    function: Py<PyAny>,
-    is_generator: bool,
-}
-
-#[pymethods]
-impl PyNoGradCallable {
-    fn __get__(
-        &self,
-        py: Python<'_>,
-        instance: &Bound<'_, PyAny>,
-        owner: &Bound<'_, PyAny>,
-    ) -> PyResult<Self> {
-        let function = if self.function.bind(py).hasattr("__get__")? {
-            self.function
-                .bind(py)
-                .call_method1("__get__", (instance, owner))?
-                .unbind()
-        } else {
-            self.function.clone_ref(py)
-        };
-        Ok(Self {
-            function,
-            is_generator: self.is_generator,
-        })
-    }
-
-    #[pyo3(signature = (*args, **kwargs))]
-    fn __call__(
-        &self,
-        py: Python<'_>,
-        args: &Bound<'_, PyTuple>,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<Py<PyAny>> {
-        let _guard = core_no_grad();
-        let result = self.function.bind(py).call(args, kwargs)?.unbind();
-        if self.is_generator {
-            return Ok(Py::new(py, PyNoGradGenerator { generator: result })?.into_any());
-        }
-        Ok(result)
-    }
-}
-
-/// Generator proxy that restores no-grad mode around every suspended-body resume.
-#[pyclass(module = "torch_rs", skip_from_py_object)]
-struct PyNoGradGenerator {
-    generator: Py<PyAny>,
-}
-
-impl Drop for PyNoGradGenerator {
-    fn drop(&mut self) {
-        Python::try_attach(|py| {
-            let _guard = core_no_grad();
-            let _ = self.generator.bind(py).call_method0("close");
-        });
-    }
-}
-
-#[pymethods]
-impl PyNoGradGenerator {
-    fn __iter__(slf: PyRef<'_, Self>) -> Py<Self> {
-        slf.into()
-    }
-
-    fn __next__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let _guard = core_no_grad();
-        Ok(self.generator.bind(py).call_method0("__next__")?.unbind())
-    }
-
-    fn send(&self, py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        let _guard = core_no_grad();
-        Ok(self
-            .generator
-            .bind(py)
-            .call_method1("send", (value,))?
-            .unbind())
-    }
-
-    #[pyo3(signature = (*args))]
-    fn throw(&self, py: Python<'_>, args: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> {
-        let _guard = core_no_grad();
-        Ok(self
-            .generator
-            .bind(py)
-            .getattr("throw")?
-            .call(args, None)?
-            .unbind())
-    }
-
-    fn close(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let _guard = core_no_grad();
-        Ok(self.generator.bind(py).call_method0("close")?.unbind())
     }
 }
 
@@ -2898,6 +2847,20 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     module.add_class::<PyNoGrad>()?;
+    let no_grad_helpers = PyModule::from_code(
+        py,
+        NO_GRAD_WRAPPER_SOURCE,
+        c"torch_rs/_no_grad.py",
+        c"torch_rs._no_grad",
+    )?;
+    let no_grad_class = no_grad_helpers
+        .getattr("_make_no_grad")?
+        .call1((module.getattr("_NoGradContext")?,))?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_NoGradContext",))?;
+    module.delattr("_NoGradContext")?;
+    module.add("no_grad", no_grad_class)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;

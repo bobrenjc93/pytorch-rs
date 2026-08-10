@@ -1,8 +1,10 @@
 import gc
+import inspect
 import statistics
 import threading
 import time
 import unittest
+import weakref
 
 import numpy as np
 import torch_rs as torch
@@ -161,6 +163,40 @@ class AutogradApiTests(unittest.TestCase):
         self.assertEqual(context_failures, [])
         self.assertEqual(context_results, [False, True])
 
+    def test_no_grad_public_contract_and_callable_cycles(self):
+        value = torch.tensor([2.0], requires_grad=True)
+        with torch.no_grad() as entered:
+            self.assertIsNone(entered)
+            self.assertFalse((value * value).requires_grad)
+
+        @torch.no_grad
+        def direct(input_value: object, scale: float = 1.0) -> object:
+            """A metadata-bearing no-grad callable."""
+            return input_value * scale
+
+        self.assertFalse(direct(value, scale=3.0).requires_grad)
+        self.assertEqual(direct.__name__, "direct")
+        self.assertEqual(direct.__doc__, "A metadata-bearing no-grad callable.")
+        self.assertEqual(
+            direct.__annotations__,
+            {"input_value": object, "scale": float, "return": object},
+        )
+        self.assertEqual(inspect.signature(direct), inspect.signature(direct.__wrapped__))
+        self.assertTrue(gc.is_tracked(direct))
+
+        def make_callable_cycle():
+            wrapped = None
+
+            def function():
+                return wrapped
+
+            wrapped = torch.no_grad()(function)
+            return weakref.ref(wrapped)
+
+        callable_reference = make_callable_cycle()
+        gc.collect()
+        self.assertIsNone(callable_reference())
+
     def test_no_grad_decorator_guards_every_generator_resume(self):
         value = torch.tensor([2.0], requires_grad=True)
         events = []
@@ -178,7 +214,10 @@ class AutogradApiTests(unittest.TestCase):
             finally:
                 events.append(("close", (value * value).requires_grad))
 
+        self.assertTrue(inspect.isgeneratorfunction(generate))
         generator = generate()
+        self.assertTrue(inspect.isgenerator(generator))
+        self.assertTrue(gc.is_tracked(generator))
         self.assertIs(iter(generator), generator)
         self.assertFalse(next(generator).requires_grad)
         self.assertTrue((value * value).requires_grad)
@@ -212,6 +251,26 @@ class AutogradApiTests(unittest.TestCase):
         del generator
         gc.collect()
         self.assertEqual(abandoned_events, [False])
+        self.assertTrue((value * value).requires_grad)
+
+        cyclic_events = []
+
+        @torch.no_grad()
+        def cyclic():
+            proxy = yield None
+            try:
+                yield proxy
+            finally:
+                cyclic_events.append((value * value).requires_grad)
+
+        generator = cyclic()
+        next(generator)
+        generator.send(generator)
+        generator_reference = weakref.ref(generator)
+        del generator
+        gc.collect()
+        self.assertIsNone(generator_reference())
+        self.assertEqual(cyclic_events, [False])
         self.assertTrue((value * value).requires_grad)
 
     def test_unconsumed_deep_graph_drop_and_detach_are_stack_safe(self):
@@ -399,6 +458,49 @@ class AutogradReferenceTests(unittest.TestCase):
                     events,
                     abandoned_events,
                     (value * value).requires_grad,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_no_grad_views_and_public_contract_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            source = module.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+            with module.no_grad() as entered:
+                views = [
+                    source.transpose(0, 1),
+                    source.T,
+                    source.reshape(4),
+                    source.squeeze(),
+                    source[0],
+                ]
+                materialized = [source.clone(), source.T.contiguous()]
+
+            (views[0] * views[0]).sum().backward()
+
+            @module.no_grad
+            def decorated(value: object, scale: float = 1.0) -> object:
+                """decorated docs"""
+                return value * scale
+
+            @module.no_grad()
+            def generator():
+                yield source * source
+
+            outcomes.append(
+                (
+                    entered,
+                    [view.requires_grad for view in views],
+                    [tensor.requires_grad for tensor in materialized],
+                    source.grad is None,
+                    decorated.__name__,
+                    decorated.__doc__,
+                    decorated.__annotations__,
+                    str(inspect.signature(decorated)),
+                    decorated.__wrapped__.__name__,
+                    inspect.isgeneratorfunction(generator),
+                    next(generator()).requires_grad,
                 )
             )
 
