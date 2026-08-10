@@ -284,6 +284,17 @@ impl<'a, 'py> FromPyObject<'a, 'py> for EyeDimensionArgument {
     }
 }
 
+#[derive(Clone, Copy)]
+struct StrictBool(bool);
+
+impl<'a, 'py> FromPyObject<'a, 'py> for StrictBool {
+    type Error = PyErr;
+
+    fn extract(object: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        parse_requires_grad(&object.to_owned()).map(Self)
+    }
+}
+
 struct ParsedCallArgument<'py> {
     value: Bound<'py, PyAny>,
     position: Option<usize>,
@@ -807,13 +818,17 @@ impl BinaryOperation {
     }
 }
 
-#[pyfunction(signature = (data, *, dtype=None, device=None, requires_grad=false))]
+#[pyfunction(
+    signature = (data, *, dtype=None, device=None, requires_grad=StrictBool(false)),
+    text_signature = "(data, *, dtype=None, device=None, requires_grad=False)"
+)]
 fn tensor(
     data: &Bound<'_, PyAny>,
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
-    requires_grad: bool,
+    requires_grad: StrictBool,
 ) -> PyResult<PyTensor> {
+    let requires_grad = requires_grad.0;
     let dtype_was_explicit = dtype.is_some();
     let (dtype, device) = parse_metadata("tensor", dtype, device)?;
     let (flattened, shape) = if let Ok(scalar) = data.extract::<f32>() {
@@ -840,6 +855,16 @@ fn tensor(
             inner: inner.with_requires_grad(requires_grad),
         })
         .map_err(|error| tensor_error(&error))
+}
+
+fn parse_requires_grad(requires_grad: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if requires_grad.is_exact_instance_of::<PyBool>() {
+        return requires_grad.is_truthy();
+    }
+    let type_name = transpose_type_name(requires_grad)?;
+    Err(PyTypeError::new_err(format!(
+        "tensor(): argument 'requires_grad' must be bool, not {type_name}"
+    )))
 }
 
 #[pyfunction(signature = (input, *, memory_format=None))]

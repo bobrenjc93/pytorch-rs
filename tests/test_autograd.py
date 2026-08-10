@@ -32,6 +32,19 @@ class AutogradApiTests(unittest.TestCase):
         (x * x).sum().backward()
         np.testing.assert_array_equal(np.asarray(x.grad), [-8.0, 2.0, 12.0])
 
+    def test_requires_grad_requires_a_builtin_bool(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        for invalid in (np.bool_(True), np.bool_(False), 1, 0, None, "true", Truthy()):
+            with self.subTest(value=invalid):
+                with self.assertRaisesRegex(TypeError, "requires_grad.*must be bool"):
+                    torch.tensor([1.0], requires_grad=invalid)
+
+        self.assertTrue(torch.tensor([1.0], requires_grad=True).requires_grad)
+        self.assertFalse(torch.tensor([1.0], requires_grad=False).requires_grad)
+
     def test_detach_and_no_grad_context_decorator_are_boundaries(self):
         x = torch.tensor([2.0, 3.0], requires_grad=True)
         detached = x.detach()
@@ -321,6 +334,26 @@ class AutogradReferenceTests(unittest.TestCase):
             rtol=1.0e-6,
             atol=1.0e-6,
         )
+
+    def test_requires_grad_argument_types_match_pytorch_2_13(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        values = [np.bool_(True), np.bool_(False), 1, 0, None, "true", Truthy()]
+        outcomes = []
+        for module in (torch, reference_torch):
+            errors = []
+            for value in values:
+                try:
+                    module.tensor([1.0], requires_grad=value)
+                except TypeError as error:
+                    errors.append(str(error))
+                else:
+                    self.fail(f"{module.__name__} accepted requires_grad={value!r}")
+            outcomes.append(errors)
+
+        self.assertEqual(outcomes[0], outcomes[1])
 
     def test_seeded_square_sum_and_broadcast_gradients_match_pytorch_2_13(self):
         rng = np.random.default_rng(0xA670_213)
