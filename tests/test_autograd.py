@@ -27,10 +27,13 @@ class AutogradApiTests(unittest.TestCase):
         self.assertTrue(loss.requires_grad)
         self.assertIsNone(square.grad)
         loss.backward()
-        np.testing.assert_array_equal(np.asarray(x.grad), [-4.0, 1.0, 6.0])
+        retained_grad = x.grad
+        self.assertIs(retained_grad, x.grad)
+        np.testing.assert_array_equal(np.asarray(retained_grad), [-4.0, 1.0, 6.0])
 
         (x * x).sum().backward()
-        np.testing.assert_array_equal(np.asarray(x.grad), [-8.0, 2.0, 12.0])
+        self.assertIs(retained_grad, x.grad)
+        np.testing.assert_array_equal(np.asarray(retained_grad), [-8.0, 2.0, 12.0])
 
     def test_requires_grad_requires_a_builtin_bool(self):
         class Truthy:
@@ -354,6 +357,30 @@ class AutogradReferenceTests(unittest.TestCase):
             outcomes.append(errors)
 
         self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_leaf_grad_identity_and_live_accumulation_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor([2.0, 3.0], requires_grad=True)
+            loss = leaf.sum()
+            loss.backward()
+            retained = leaf.grad
+            first_identity = retained is leaf.grad
+            first_values = np.asarray(retained).copy()
+
+            loss.backward()
+            outcomes.append(
+                (
+                    first_identity,
+                    retained is leaf.grad,
+                    first_values,
+                    np.asarray(retained).copy(),
+                )
+            )
+
+        self.assertEqual(outcomes[0][:2], outcomes[1][:2])
+        np.testing.assert_array_equal(outcomes[0][2], outcomes[1][2])
+        np.testing.assert_array_equal(outcomes[0][3], outcomes[1][3])
 
     def test_seeded_square_sum_and_broadcast_gradients_match_pytorch_2_13(self):
         rng = np.random.default_rng(0xA670_213)

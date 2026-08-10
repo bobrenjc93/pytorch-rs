@@ -212,9 +212,18 @@ impl PyDevice {
 
 /// Python-facing tensor backed by the native Rust tensor core.
 #[pyclass(name = "Tensor", module = "torch_rs", skip_from_py_object)]
-#[derive(Clone)]
 struct PyTensor {
     inner: CoreTensor,
+    grad_cache: PyOnceLock<Py<PyTensor>>,
+}
+
+impl PyTensor {
+    fn new(inner: CoreTensor) -> Self {
+        Self {
+            inner,
+            grad_cache: PyOnceLock::new(),
+        }
+    }
 }
 
 /// Thread-local autograd recording guard underlying the Python `torch.no_grad` class.
@@ -352,11 +361,17 @@ impl PyTensor {
     }
 
     #[getter]
-    fn grad(&self) -> PyResult<Option<Self>> {
-        self.inner
-            .grad()
-            .map(|gradient| gradient.map(|inner| Self { inner }))
-            .map_err(|error| tensor_error(&error))
+    fn grad(&self, py: Python<'_>) -> PyResult<Option<Py<Self>>> {
+        if let Some(gradient) = self.grad_cache.get(py) {
+            return Ok(Some(gradient.clone_ref(py)));
+        }
+        let Some(inner) = self.inner.grad().map_err(|error| tensor_error(&error))? else {
+            return Ok(None);
+        };
+        let gradient = self
+            .grad_cache
+            .get_or_try_init(py, || Py::new(py, Self::new(inner)))?;
+        Ok(Some(gradient.clone_ref(py)))
     }
 
     /// NumPy-style transpose view with every dimension reversed.
@@ -369,7 +384,7 @@ impl PyTensor {
         }
         self.inner
             .reverse_dimensions()
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| transpose_error(&error))
     }
 
@@ -385,7 +400,7 @@ impl PyTensor {
             .inner
             .matrix_transpose()
             .map_err(|error| transpose_error(&error))?;
-        Py::new(slf.py(), Self { inner })
+        Py::new(slf.py(), Self::new(inner))
     }
 
     #[pyo3(signature = (dim=None))]
@@ -470,7 +485,7 @@ impl PyTensor {
             .inner
             .try_contiguous(memory_format)
             .map_err(|error| tensor_error(&error))?;
-        Py::new(slf.py(), Self { inner })
+        Py::new(slf.py(), Self::new(inner))
     }
 
     #[pyo3(signature = (*args, **kwargs))]
@@ -484,7 +499,7 @@ impl PyTensor {
         let dim1 = parse_transpose_dimension("dim1", dim1.position, &dim1.value)?;
         self.inner
             .transpose(dim0, dim1)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| transpose_error(&error))
     }
 
@@ -496,7 +511,7 @@ impl PyTensor {
     ) -> PyResult<Self> {
         let dimensions = bind_method_squeeze_arguments(args, kwargs)?;
         apply_squeeze(&self.inner, dimensions)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
@@ -514,7 +529,7 @@ impl PyTensor {
         if same_tensor_metadata(&slf.inner, &inner) {
             return Ok(slf.into());
         }
-        Py::new(slf.py(), Self { inner })
+        Py::new(slf.py(), Self::new(inner))
     }
 
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -534,9 +549,7 @@ impl PyTensor {
             let index = parse_integer_index(index)?;
             self.inner.index([index])
         };
-        inner
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+        inner.map(Self::new).map_err(|error| tensor_error(&error))
     }
 
     #[pyo3(signature = (*shape_dimensions, shape=None))]
@@ -548,7 +561,7 @@ impl PyTensor {
         let shape = parse_reshape_shape(shape_dimensions, shape)?;
         self.inner
             .reshape(shape)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
@@ -608,14 +621,14 @@ impl PyTensor {
         let memory_format = parse_clone_memory_format(memory_format)?;
         self.inner
             .try_clone_with_memory_format(memory_format)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
     fn detach(&self) -> PyResult<Self> {
         self.inner
             .detach()
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
@@ -626,28 +639,26 @@ impl PyTensor {
     fn relu(&self) -> PyResult<Self> {
         self.inner
             .relu()
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
     fn sin(&self) -> PyResult<Self> {
         self.inner
             .sin()
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
     fn exp(&self) -> PyResult<Self> {
         self.inner
             .exp()
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
     fn sum(&self) -> Self {
-        Self {
-            inner: self.inner.sum(),
-        }
+        Self::new(self.inner.sum())
     }
 
     fn __add__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -685,7 +696,7 @@ impl PyTensor {
     fn __matmul__(&self, other: &Self) -> PyResult<Self> {
         self.inner
             .matmul(&other.inner)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
@@ -780,10 +791,7 @@ impl PyTensor {
             operation.apply_scalar(&self.inner, scalar.into_f32(), reverse)
         };
 
-        Self {
-            inner: result.map_err(|error| tensor_error(&error))?,
-        }
-        .into_py_any(py)
+        Self::new(result.map_err(|error| tensor_error(&error))?).into_py_any(py)
     }
 }
 
@@ -851,9 +859,7 @@ fn tensor(
         return Err(unsupported_tensor_data_error(data, dtype_was_explicit)?);
     };
     CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
-        .map(|inner| PyTensor {
-            inner: inner.with_requires_grad(requires_grad),
-        })
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
 }
 
@@ -873,7 +879,7 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
     input
         .inner
         .try_clone_with_memory_format(memory_format)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 
@@ -890,7 +896,7 @@ fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
     input_tensor
         .inner
         .transpose(dim0, dim1)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| transpose_error(&error))
 }
 
@@ -916,7 +922,7 @@ fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyR
     };
     let input = input.try_borrow()?;
     apply_squeeze(&input.inner, dimension)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 
@@ -943,7 +949,7 @@ fn flatten(
         return Ok(input_object);
     }
     drop(tensor);
-    Py::new(args.py(), PyTensor { inner })
+    Py::new(args.py(), PyTensor::new(inner))
 }
 
 /// Returns the total number of elements in the input tensor.
@@ -1014,7 +1020,7 @@ fn zeros(
     let size = parse_creation_size("zeros", size, shape)?;
     let (dtype, device) = parse_metadata("zeros", dtype, device)?;
     CoreTensor::zeros_with_metadata(size, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 
@@ -1028,7 +1034,7 @@ fn ones(
     let size = parse_creation_size("ones", size, shape)?;
     let (dtype, device) = parse_metadata("ones", dtype, device)?;
     CoreTensor::ones_with_metadata(size, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 
@@ -1054,7 +1060,7 @@ fn eye(
     let shape = [n, m];
 
     CoreTensor::eye_with_metadata(n, m, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| creation_shape_error(&error, &shape))
 }
 
@@ -1073,7 +1079,7 @@ fn full(
         .map_err(|error| creation_shape_error(&error, &shape))?;
     let fill_value = fill_value.into_f32()?;
     CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 

@@ -66,10 +66,74 @@ impl Display for MemoryFormat {
 }
 
 struct Storage {
-    data: Vec<f32>,
+    data: StorageData,
     dtype: DType,
     device: Device,
 }
+
+enum StorageData {
+    Owned(Vec<f32>),
+    SharedGradient(Mutex<Vec<f32>>),
+}
+
+impl Storage {
+    fn len(&self) -> usize {
+        match &self.data {
+            StorageData::Owned(values) => values.len(),
+            StorageData::SharedGradient(values) => values
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .len(),
+        }
+    }
+
+    fn owned_values(&self) -> Option<&[f32]> {
+        match &self.data {
+            StorageData::Owned(values) => Some(values),
+            StorageData::SharedGradient(_) => None,
+        }
+    }
+
+    fn value(&self, index: usize) -> Option<f32> {
+        match &self.data {
+            StorageData::Owned(values) => values.get(index).copied(),
+            StorageData::SharedGradient(values) => values
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(index)
+                .copied(),
+        }
+    }
+
+    fn copy_range(&self, start: usize, end: usize) -> Vec<f32> {
+        match &self.data {
+            StorageData::Owned(values) => values[start..end].to_vec(),
+            StorageData::SharedGradient(values) => values
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)[start..end]
+                .to_vec(),
+        }
+    }
+
+    fn into_range(self, start: usize, end: usize) -> Vec<f32> {
+        match self.data {
+            StorageData::Owned(values) if start == 0 && end == values.len() => values,
+            StorageData::Owned(values) => values[start..end].to_vec(),
+            StorageData::SharedGradient(values) => {
+                let values = values
+                    .into_inner()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if start == 0 && end == values.len() {
+                    values
+                } else {
+                    values[start..end].to_vec()
+                }
+            }
+        }
+    }
+}
+
+static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
 thread_local! {
     static NO_GRAD_DEPTH: Cell<usize> = const { Cell::new(0) };
@@ -131,7 +195,7 @@ enum AutogradKind {
         shape: Vec<usize>,
         dtype: DType,
         device: Device,
-        grad: Mutex<Option<Vec<f32>>>,
+        grad: Mutex<Option<Arc<Storage>>>,
     },
     NonLeaf {
         grad_fn: Mutex<Option<GradFn>>,
@@ -830,7 +894,7 @@ impl Tensor {
         let elements = data.len();
         Self {
             storage: Arc::new(Storage {
-                data,
+                data: StorageData::Owned(data),
                 dtype,
                 device,
             }),
@@ -917,7 +981,7 @@ impl Tensor {
         self
     }
 
-    /// Returns a detached copy of an accumulated leaf gradient.
+    /// Returns a detached tensor backed by the persistent leaf gradient storage.
     ///
     /// Non-leaf tensors and leaves which have not been used by a successful
     /// backward pass return [`None`].
@@ -929,27 +993,27 @@ impl Tensor {
         let Some(meta) = &self.autograd else {
             return Ok(None);
         };
-        let AutogradKind::Leaf {
-            shape,
-            dtype,
-            device,
-            grad,
-        } = &meta.kind
-        else {
+        let AutogradKind::Leaf { shape, grad, .. } = &meta.kind else {
             return Ok(None);
         };
         let grad = grad
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(values) = grad.as_ref() else {
+        let Some(storage) = grad.as_ref() else {
             return Ok(None);
         };
-        let shape = try_clone_result_shape(shape, values.len())?;
-        let strides = contiguous_strides(&shape, values.len())?;
-        let values = copied_storage(values, values.len())?;
-        Ok(Some(Self::from_owned_parts(
-            values, shape, strides, *dtype, *device,
-        )))
+        let elements = storage.len();
+        let shape = try_clone_result_shape(shape, elements)?;
+        let strides = contiguous_strides(&shape, elements)?;
+        Ok(Some(Self {
+            storage: Arc::clone(storage),
+            shape,
+            strides,
+            offset: 0,
+            elements,
+            view_requires_grad: false,
+            autograd: None,
+        }))
     }
 
     /// Creates a metadata-only alias which shares storage but has no graph
@@ -1583,15 +1647,10 @@ impl Tensor {
         if elements == 0 {
             return Vec::new();
         }
+        let end = offset + elements;
         match Arc::try_unwrap(storage) {
-            Ok(storage) => {
-                if offset == 0 && elements == storage.data.len() {
-                    storage.data
-                } else {
-                    storage.data[offset..offset + elements].to_vec()
-                }
-            }
-            Err(storage) => storage.data[offset..offset + elements].to_vec(),
+            Ok(storage) => storage.into_range(offset, end),
+            Err(storage) => storage.copy_range(offset, end),
         }
     }
 
@@ -1611,13 +1670,14 @@ impl Tensor {
 
     fn contiguous_slice(&self) -> Option<&[f32]> {
         if self.elements == 0 {
-            return Some(&self.storage.data[0..0]);
+            return Some(&[]);
         }
         if !self.is_contiguous() {
             return None;
         }
+        let values = self.storage.owned_values()?;
         let end = self.offset.checked_add(self.elements)?;
-        self.storage.data.get(self.offset..end)
+        values.get(self.offset..end)
     }
 
     fn value_at_linear_index(&self, index: usize) -> f32 {
@@ -1631,10 +1691,8 @@ impl Tensor {
         let offset =
             logical_offset_for_linear_index(&self.shape, &self.strides, self.offset, index)
                 .expect("validated tensor logical offset must fit in usize");
-        *self
-            .storage
-            .data
-            .get(offset)
+        self.storage
+            .value(offset)
             .expect("validated tensor logical offset must address storage")
     }
 
@@ -1716,7 +1774,7 @@ impl Tensor {
         let shape = try_clone_result_shape(&self.shape[indices.len()..], self.elements)?;
         let strides = try_clone_result_shape(&self.strides[indices.len()..], self.elements)?;
         let elements = element_count(&shape)?;
-        validate_view_bounds(&shape, &strides, offset, elements, self.storage.data.len())?;
+        validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
         let mut output = Self {
             storage: Arc::clone(&self.storage),
             shape,
@@ -2186,10 +2244,17 @@ impl Tensor {
             for row in 0..rows {
                 for depth in 0..inner {
                     let left_offset = checked_matrix_offset(self, row, depth)?;
-                    let left = self.storage.data[left_offset];
+                    let left = self
+                        .storage
+                        .value(left_offset)
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
                     for column in 0..columns {
                         let right_offset = checked_matrix_offset(other, depth, column)?;
-                        output[row * columns + column] += left * other.storage.data[right_offset];
+                        let right = other
+                            .storage
+                            .value(right_offset)
+                            .ok_or(TensorError::IndexCalculationOverflow)?;
+                        output[row * columns + column] += left * right;
                     }
                 }
             }
@@ -2235,8 +2300,13 @@ impl Tensor {
         }
         for output_index in 0..plan.elements {
             let value = operation(
-                self.storage.data[left_offset],
-                other.storage.data[right_offset],
+                self.storage
+                    .value(left_offset)
+                    .expect("validated broadcast offset must address left storage"),
+                other
+                    .storage
+                    .value(right_offset)
+                    .expect("validated broadcast offset must address right storage"),
             );
             if contiguous_output {
                 data.push(value);
@@ -2451,6 +2521,13 @@ impl SavedTensor {
 type Topology = Vec<(Arc<AutogradMeta>, Option<GradFn>)>;
 
 fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
+    // Saved values form a transaction: a traversal must either consume all of
+    // them and commit its leaf gradients, or consume none. Serializing the
+    // complete operation prevents concurrent roots which share intermediates
+    // from each consuming a different subset of the same graph.
+    let _backward_traversal = BACKWARD_TRAVERSAL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let topology = collect_topology(root)?;
 
     let mut gradients = HashMap::new();
@@ -2606,7 +2683,8 @@ fn apply_grad_fn(
                                 .storage
                                 .as_ref()
                                 .expect("left derivative must save right operand values")
-                                .data[right_offset],
+                                .value(right_offset)
+                                .expect("saved right operand offset must address storage"),
                     );
                 }
                 if let Some(gradient) = &mut right_gradient {
@@ -2617,7 +2695,8 @@ fn apply_grad_fn(
                                 .storage
                                 .as_ref()
                                 .expect("right derivative must save left operand values")
-                                .data[left_offset],
+                                .value(left_offset)
+                                .expect("saved left operand offset must address storage"),
                     );
                 }
             }
@@ -2734,19 +2813,35 @@ fn add_gradient(
 }
 
 fn accumulate_leaf_gradient(meta: &AutogradMeta, contribution: Vec<f32>) {
-    let AutogradKind::Leaf { grad, .. } = &meta.kind else {
+    let AutogradKind::Leaf {
+        dtype,
+        device,
+        grad,
+        ..
+    } = &meta.kind
+    else {
         unreachable!("only leaf nodes are queued for gradient accumulation");
     };
     let mut grad = grad
         .lock()
         .expect("leaf gradient mutex must not be poisoned");
-    if let Some(existing) = grad.as_mut() {
+    if let Some(storage) = grad.as_ref() {
+        let StorageData::SharedGradient(existing) = &storage.data else {
+            unreachable!("leaf gradients always use shared gradient storage");
+        };
+        let mut existing = existing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         debug_assert_eq!(existing.len(), contribution.len());
         for (value, contribution) in existing.iter_mut().zip(contribution) {
             *value += contribution;
         }
     } else {
-        *grad = Some(contribution);
+        *grad = Some(Arc::new(Storage {
+            data: StorageData::SharedGradient(Mutex::new(contribution)),
+            dtype: *dtype,
+            device: *device,
+        }));
     }
 }
 
@@ -3011,7 +3106,7 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .offset
         .checked_add(row_offset)
         .and_then(|offset| offset.checked_add(column_offset))
-        .filter(|offset| *offset < tensor.storage.data.len())
+        .filter(|offset| *offset < tensor.storage.len())
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
@@ -3430,7 +3525,7 @@ fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
 mod tests {
     use std::sync::Arc;
 
-    use super::{DType, Device, Storage, Tensor, TensorError, try_result_vector};
+    use super::{DType, Device, Storage, StorageData, Tensor, TensorError, try_result_vector};
 
     #[test]
     fn binary_result_reservation_failures_return_tensor_errors() {
@@ -3452,7 +3547,7 @@ mod tests {
         // its output reservation before attempting to read the empty fixture.
         let tensor = Tensor {
             storage: Arc::new(Storage {
-                data: Vec::new(),
+                data: StorageData::Owned(Vec::new()),
                 dtype: DType::Float32,
                 device: Device::Cpu,
             }),

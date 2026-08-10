@@ -1,4 +1,8 @@
 use pytorch_rs::{MemoryFormat, Tensor, TensorError, no_grad};
+use std::{
+    sync::{Arc, Barrier},
+    thread,
+};
 
 fn values(tensor: &Tensor) -> Vec<f32> {
     tensor.try_to_vec().unwrap()
@@ -15,6 +19,72 @@ fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
 
     x.mul(&x).unwrap().sum().backward().unwrap();
     assert_eq!(values(&x.grad().unwrap().unwrap()), [-8.0, 2.0, 12.0]);
+}
+
+#[test]
+fn retained_leaf_gradient_tensors_share_live_accumulation_storage() {
+    let leaf = Tensor::from_vec(vec![2.0, 3.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let loss = leaf.sum();
+
+    loss.backward().unwrap();
+    let retained = leaf.grad().unwrap().unwrap();
+    let current = leaf.grad().unwrap().unwrap();
+    assert!(retained.shares_storage_with(&current));
+    assert_eq!(values(&retained), [1.0, 1.0]);
+
+    loss.backward().unwrap();
+    assert_eq!(values(&retained), [2.0, 2.0]);
+    assert!(retained.shares_storage_with(&leaf.grad().unwrap().unwrap()));
+}
+
+#[test]
+fn concurrent_backward_on_shared_graph_commits_one_complete_traversal() {
+    let leaf = Tensor::from_vec(vec![3.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let mut forward = leaf.mul_scalar(1.0).unwrap();
+    let mut reverse = leaf.mul_scalar(1.0).unwrap();
+    for _ in 0..2_000 {
+        forward = forward.mul_scalar(1.0).unwrap();
+        reverse = reverse.mul_scalar(1.0).unwrap();
+    }
+    let forward_root = forward.mul(&reverse).unwrap().sum();
+    let reverse_root = reverse.mul(&forward).unwrap().sum();
+    let barrier = Arc::new(Barrier::new(3));
+
+    let (forward_result, reverse_result) = thread::scope(|scope| {
+        let forward_barrier = Arc::clone(&barrier);
+        let forward_thread = scope.spawn(move || {
+            forward_barrier.wait();
+            forward_root.backward()
+        });
+        let reverse_barrier = Arc::clone(&barrier);
+        let reverse_thread = scope.spawn(move || {
+            reverse_barrier.wait();
+            reverse_root.backward()
+        });
+        barrier.wait();
+        (
+            forward_thread.join().unwrap(),
+            reverse_thread.join().unwrap(),
+        )
+    });
+
+    let results = [forward_result, reverse_result];
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| **result == Err(TensorError::BackwardGraphFreed))
+            .count(),
+        1
+    );
+    assert_eq!(
+        leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        6.0_f32.to_bits()
+    );
 }
 
 #[test]
