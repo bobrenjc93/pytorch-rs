@@ -22,7 +22,7 @@ fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
 }
 
 #[test]
-fn retained_leaf_gradient_tensors_share_live_accumulation_storage() {
+fn leaf_gradient_snapshots_preserve_the_contiguous_slice_contract() {
     let leaf = Tensor::from_vec(vec![2.0, 3.0], [2])
         .unwrap()
         .with_requires_grad(true);
@@ -31,12 +31,13 @@ fn retained_leaf_gradient_tensors_share_live_accumulation_storage() {
     loss.backward().unwrap();
     let retained = leaf.grad().unwrap().unwrap();
     let current = leaf.grad().unwrap().unwrap();
-    assert!(retained.shares_storage_with(&current));
-    assert_eq!(values(&retained), [1.0, 1.0]);
+    assert!(!retained.shares_storage_with(&current));
+    assert_eq!(retained.as_slice(), [1.0, 1.0]);
+    assert_eq!(current.as_slice(), [1.0, 1.0]);
 
     loss.backward().unwrap();
-    assert_eq!(values(&retained), [2.0, 2.0]);
-    assert!(retained.shares_storage_with(&leaf.grad().unwrap().unwrap()));
+    assert_eq!(retained.as_slice(), [1.0, 1.0]);
+    assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [2.0, 2.0]);
 }
 
 #[test]

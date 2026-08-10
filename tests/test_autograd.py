@@ -35,6 +35,18 @@ class AutogradApiTests(unittest.TestCase):
         self.assertIs(retained_grad, x.grad)
         np.testing.assert_array_equal(np.asarray(retained_grad), [-8.0, 2.0, 12.0])
 
+    def test_saved_live_gradient_values_are_frozen_at_forward(self):
+        source = torch.tensor([4.0, 5.0], requires_grad=True)
+        source.sum().backward()
+        live_grad = source.grad
+        weights = torch.tensor([2.0, 3.0], requires_grad=True)
+        saved_loss = (weights * live_grad).sum()
+
+        source.sum().backward()
+        np.testing.assert_array_equal(np.asarray(live_grad), [2.0, 2.0])
+        saved_loss.backward()
+        np.testing.assert_array_equal(np.asarray(weights.grad), [1.0, 1.0])
+
     def test_requires_grad_requires_a_builtin_bool(self):
         class Truthy:
             def __bool__(self):

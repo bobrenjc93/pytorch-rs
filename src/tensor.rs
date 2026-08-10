@@ -131,6 +131,21 @@ impl Storage {
             }
         }
     }
+
+    fn try_clone_for_saved(storage: &Arc<Self>) -> Result<Arc<Self>, TensorError> {
+        let StorageData::SharedGradient(values) = &storage.data else {
+            return Ok(Arc::clone(storage));
+        };
+        let values = values
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let data = copied_storage(&values, values.len())?;
+        Ok(Arc::new(Self {
+            data: StorageData::Owned(data),
+            dtype: storage.dtype,
+            device: storage.device,
+        }))
+    }
 }
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
@@ -981,7 +996,7 @@ impl Tensor {
         self
     }
 
-    /// Returns a detached tensor backed by the persistent leaf gradient storage.
+    /// Returns a detached, contiguous snapshot of an accumulated leaf gradient.
     ///
     /// Non-leaf tensors and leaves which have not been used by a successful
     /// backward pass return [`None`].
@@ -990,6 +1005,40 @@ impl Tensor {
     ///
     /// Returns an error if gradient metadata or storage allocation fails.
     pub fn grad(&self) -> Result<Option<Self>, TensorError> {
+        let Some(meta) = &self.autograd else {
+            return Ok(None);
+        };
+        let AutogradKind::Leaf { shape, grad, .. } = &meta.kind else {
+            return Ok(None);
+        };
+        let grad = grad
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(storage) = grad.as_ref() else {
+            return Ok(None);
+        };
+        let elements = storage.len();
+        let shape = try_clone_result_shape(shape, elements)?;
+        let strides = contiguous_strides(&shape, elements)?;
+        let values = match &storage.data {
+            StorageData::Owned(values) => copied_storage(values, elements)?,
+            StorageData::SharedGradient(values) => {
+                let values = values
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                copied_storage(&values, elements)?
+            }
+        };
+        Ok(Some(Self::from_owned_parts(
+            values,
+            shape,
+            strides,
+            storage.dtype,
+            storage.device,
+        )))
+    }
+
+    pub(crate) fn live_grad(&self) -> Result<Option<Self>, TensorError> {
         let Some(meta) = &self.autograd else {
             return Ok(None);
         };
@@ -2179,7 +2228,7 @@ impl Tensor {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Sum {
-                        input: SavedTensor::from_tensor(self, false),
+                        input: SavedTensor::from_tensor_metadata(self),
                     })),
                 },
             }));
@@ -2469,9 +2518,9 @@ impl Tensor {
 }
 
 impl SavedTensor {
-    fn from_tensor(tensor: &Tensor, save_values: bool) -> Self {
+    fn from_tensor_metadata(tensor: &Tensor) -> Self {
         Self {
-            storage: save_values.then(|| Arc::clone(&tensor.storage)),
+            storage: None,
             shape: tensor.shape.clone(),
             strides: tensor.strides.clone(),
             offset: tensor.offset,
@@ -2482,7 +2531,11 @@ impl SavedTensor {
 
     fn try_from_tensor(tensor: &Tensor, save_values: bool) -> Result<Self, TensorError> {
         Ok(Self {
-            storage: save_values.then(|| Arc::clone(&tensor.storage)),
+            storage: if save_values {
+                Some(Storage::try_clone_for_saved(&tensor.storage)?)
+            } else {
+                None
+            },
             shape: try_clone_result_shape(&tensor.shape, tensor.elements)?,
             strides: try_clone_result_shape(&tensor.strides, tensor.elements)?,
             offset: tensor.offset,
@@ -3526,6 +3579,24 @@ mod tests {
     use std::sync::Arc;
 
     use super::{DType, Device, Storage, StorageData, Tensor, TensorError, try_result_vector};
+
+    #[test]
+    fn multiply_snapshots_live_gradient_operands_for_backward() {
+        let source = Tensor::from_vec(vec![4.0, 5.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        source.sum().backward().unwrap();
+        let live_gradient = source.live_grad().unwrap().unwrap();
+        let weights = Tensor::from_vec(vec![2.0, 3.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let saved_loss = weights.mul(&live_gradient).unwrap().sum();
+
+        source.sum().backward().unwrap();
+        assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0, 2.0]);
+        saved_loss.backward().unwrap();
+        assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [1.0, 1.0]);
+    }
 
     #[test]
     fn binary_result_reservation_failures_return_tensor_errors() {

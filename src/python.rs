@@ -365,7 +365,11 @@ impl PyTensor {
         if let Some(gradient) = self.grad_cache.get(py) {
             return Ok(Some(gradient.clone_ref(py)));
         }
-        let Some(inner) = self.inner.grad().map_err(|error| tensor_error(&error))? else {
+        let Some(inner) = self
+            .inner
+            .live_grad()
+            .map_err(|error| tensor_error(&error))?
+        else {
             return Ok(None);
         };
         let gradient = self
