@@ -118,6 +118,48 @@ fn one_element_nonscalar_leaf_can_seed_implicit_backward_repeatedly() {
 }
 
 #[test]
+fn metadata_only_graphs_support_repeated_backward() {
+    let summed_leaf = Tensor::from_vec(vec![1.0, 2.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let sum = summed_leaf.sum();
+    sum.backward().unwrap();
+    sum.backward().unwrap();
+    assert_eq!(values(&summed_leaf.grad().unwrap().unwrap()), [2.0, 2.0]);
+
+    let transformed_leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let transformed_sum = transformed_leaf
+        .transpose(0, 1)
+        .unwrap()
+        .try_clone()
+        .unwrap()
+        .sum();
+    transformed_sum.backward().unwrap();
+    transformed_sum.backward().unwrap();
+    assert_eq!(
+        values(&transformed_leaf.grad().unwrap().unwrap()),
+        [2.0, 2.0, 2.0, 2.0]
+    );
+}
+
+#[test]
+fn no_grad_guards_remain_disabled_until_every_guard_is_dropped() {
+    let leaf = Tensor::from_vec(vec![2.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let outer = no_grad();
+    let inner = no_grad();
+
+    drop(outer);
+    assert!(!leaf.mul_scalar(2.0).unwrap().requires_grad());
+
+    drop(inner);
+    assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
+}
+
+#[test]
 fn deep_graph_backward_uses_an_iterative_topology_walk() {
     let leaf = Tensor::from_vec(vec![3.0], [])
         .unwrap()
@@ -209,7 +251,10 @@ fn no_grad_views_preserve_requires_grad_without_recording_history() {
     assert!(source.reshape([4]).unwrap().requires_grad());
     assert!(source.squeeze().unwrap().requires_grad());
     assert!(source.index([0]).unwrap().requires_grad());
-    assert_eq!(transposed.backward(), Err(TensorError::DoesNotRequireGrad));
+    assert_eq!(
+        transposed.backward(),
+        Err(TensorError::BackwardRequiresScalar { elements: 4 })
+    );
 
     assert!(!source.try_clone().unwrap().requires_grad());
     assert!(

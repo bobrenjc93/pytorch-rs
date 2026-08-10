@@ -8,7 +8,7 @@
 mod python;
 mod tensor;
 
-pub(crate) use tensor::set_grad_enabled;
+pub(crate) use tensor::{enter_no_grad, exit_no_grad};
 
 pub use tensor::{
     DType, Device, LogicalValues, MemoryFormat, NoGradGuard, Tensor, TensorError, no_grad,

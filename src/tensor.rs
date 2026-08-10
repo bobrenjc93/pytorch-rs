@@ -72,21 +72,21 @@ struct Storage {
 }
 
 thread_local! {
-    static GRAD_ENABLED: Cell<bool> = const { Cell::new(true) };
+    static NO_GRAD_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
 /// A thread-local guard which disables eager graph recording until dropped.
 ///
-/// Guards nest correctly and restore the state which was active when they
-/// were created. They are intentionally confined to their creating thread.
+/// Every live guard contributes one level of suppression, so guards may be
+/// dropped in any order without enabling recording prematurely. They are
+/// intentionally confined to their creating thread.
 pub struct NoGradGuard {
-    previous: bool,
     _not_send: PhantomData<Rc<()>>,
 }
 
 impl Drop for NoGradGuard {
     fn drop(&mut self) {
-        GRAD_ENABLED.set(self.previous);
+        exit_no_grad();
     }
 }
 
@@ -94,19 +94,32 @@ impl Drop for NoGradGuard {
 /// lifetime.
 #[must_use]
 pub fn no_grad() -> NoGradGuard {
-    let previous = GRAD_ENABLED.replace(false);
+    enter_no_grad();
     NoGradGuard {
-        previous,
         _not_send: PhantomData,
     }
 }
 
 fn grad_enabled() -> bool {
-    GRAD_ENABLED.get()
+    NO_GRAD_DEPTH.get() == 0
 }
 
-pub(crate) fn set_grad_enabled(enabled: bool) -> bool {
-    GRAD_ENABLED.replace(enabled)
+pub(crate) fn enter_no_grad() {
+    NO_GRAD_DEPTH.set(
+        NO_GRAD_DEPTH
+            .get()
+            .checked_add(1)
+            .expect("no-grad nesting depth overflowed usize"),
+    );
+}
+
+pub(crate) fn exit_no_grad() {
+    NO_GRAD_DEPTH.set(
+        NO_GRAD_DEPTH
+            .get()
+            .checked_sub(1)
+            .expect("no-grad guard exited without a matching entry"),
+    );
 }
 
 struct AutogradMeta {
@@ -145,7 +158,7 @@ enum GradFn {
     },
     MultiplyScalar {
         input: SavedTensor,
-        scalar: f32,
+        scalar: Option<f32>,
     },
     Sum {
         input: SavedTensor,
@@ -187,6 +200,38 @@ impl GradFn {
             | Self::Sum { input }
             | Self::Transform { input, .. } => input.take_parent(pending),
         }
+    }
+
+    fn validate_saved_values(&self) -> Result<(), TensorError> {
+        match self {
+            Self::Multiply { left, right, .. } => {
+                if (left.autograd.is_some() && right.storage.is_none())
+                    || (right.autograd.is_some() && left.storage.is_none())
+                {
+                    return Err(TensorError::BackwardGraphFreed);
+                }
+            }
+            Self::MultiplyScalar { input, scalar } => {
+                if input.autograd.is_some() && scalar.is_none() {
+                    return Err(TensorError::BackwardGraphFreed);
+                }
+            }
+            Self::Sum { .. } | Self::Transform { .. } => {}
+        }
+        Ok(())
+    }
+
+    fn consume_saved_values(&mut self) -> Result<(), TensorError> {
+        self.validate_saved_values()?;
+        match self {
+            Self::Multiply { left, right, .. } => {
+                left.storage = None;
+                right.storage = None;
+            }
+            Self::MultiplyScalar { scalar, .. } => *scalar = None,
+            Self::Sum { .. } | Self::Transform { .. } => {}
+        }
+        Ok(())
     }
 }
 
@@ -919,25 +964,28 @@ impl Tensor {
 
     /// Runs eager reverse-mode differentiation from a one-element output.
     ///
-    /// Successful calls accumulate into every reachable leaf. Saved graph
-    /// state is then released, so a second traversal through the same graph is
-    /// rejected. Calling backward repeatedly on a one-element leaf remains
-    /// valid and accumulates another unit gradient.
+    /// Successful calls accumulate into every reachable leaf. Value-dependent
+    /// saved tensors are then released, while metadata-only graph edges remain
+    /// reusable. Calling backward repeatedly on a one-element leaf also
+    /// remains valid and accumulates another unit gradient.
     ///
     /// # Errors
     ///
     /// Returns an error for multi-element outputs, tensors which do not require
     /// gradients, or graphs already consumed by a prior backward pass.
     pub fn backward(&self) -> Result<(), TensorError> {
-        let meta = self
-            .autograd
-            .as_ref()
-            .ok_or(TensorError::DoesNotRequireGrad)?;
+        if !self.requires_grad() {
+            return Err(TensorError::DoesNotRequireGrad);
+        }
         if self.elements != 1 {
             return Err(TensorError::BackwardRequiresScalar {
                 elements: self.elements,
             });
         }
+        let meta = self
+            .autograd
+            .as_ref()
+            .ok_or(TensorError::DoesNotRequireGrad)?;
         run_backward(meta)
     }
 
@@ -1918,10 +1966,12 @@ impl Tensor {
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
         let mut output = self.zip_map(other, |left, right| left * right)?;
         if (self.requires_grad() || other.requires_grad()) && grad_enabled() {
+            let left_has_edge = self.autograd.is_some();
+            let right_has_edge = other.autograd.is_some();
             let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
             let grad_fn = GradFn::Multiply {
-                left: SavedTensor::try_from_tensor(self, other.requires_grad())?,
-                right: SavedTensor::try_from_tensor(other, self.requires_grad())?,
+                left: SavedTensor::try_from_tensor(self, right_has_edge)?,
+                right: SavedTensor::try_from_tensor(other, left_has_edge)?,
                 output_shape,
                 output_elements: output.elements,
             };
@@ -1971,12 +2021,11 @@ impl Tensor {
     pub fn mul_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
         let mut output = self.map_scalar(scalar, |value, scalar| value * scalar)?;
         if self.requires_grad() && grad_enabled() {
+            let input = SavedTensor::try_from_tensor(self, false)?;
+            let scalar = input.autograd.is_some().then_some(scalar);
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::MultiplyScalar {
-                        input: SavedTensor::try_from_tensor(self, false)?,
-                        scalar,
-                    })),
+                    grad_fn: Mutex::new(Some(GradFn::MultiplyScalar { input, scalar })),
                 },
             }));
         }
@@ -2418,20 +2467,20 @@ fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
         }
     }
 
-    // Release the saved graph only after all fallible gradient calculations
-    // have succeeded. Leaf accumulation then cannot leave a partially
-    // calculated graph in an observable state.
+    // Release only value-dependent saved state after all fallible gradient
+    // calculations have succeeded. Metadata-only edges remain available for
+    // repeated backward traversals.
     for (meta, grad_fn) in &topology {
         if grad_fn.is_some()
             && let AutogradKind::NonLeaf { grad_fn } = &meta.kind
         {
-            let released = grad_fn
+            let mut grad_fn = grad_fn
                 .lock()
-                .expect("gradient function mutex must not be poisoned")
-                .take();
-            if released.is_none() {
-                return Err(TensorError::BackwardGraphFreed);
-            }
+                .expect("gradient function mutex must not be poisoned");
+            grad_fn
+                .as_mut()
+                .ok_or(TensorError::BackwardGraphFreed)?
+                .consume_saved_values()?;
         }
     }
     for (meta, gradient) in leaf_gradients {
@@ -2458,13 +2507,15 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                 }
                 let grad_fn = match &meta.kind {
                     AutogradKind::Leaf { .. } => None,
-                    AutogradKind::NonLeaf { grad_fn } => Some(
-                        grad_fn
+                    AutogradKind::NonLeaf { grad_fn } => {
+                        let grad_fn = grad_fn
                             .lock()
                             .expect("gradient function mutex must not be poisoned")
                             .clone()
-                            .ok_or(TensorError::BackwardGraphFreed)?,
-                    ),
+                            .ok_or(TensorError::BackwardGraphFreed)?;
+                        grad_fn.validate_saved_values()?;
+                        Some(grad_fn)
+                    }
                 };
                 stack.push(TopologyFrame::Exit(Arc::clone(&meta), grad_fn.clone()));
                 if let Some(grad_fn) = &grad_fn {
@@ -2506,6 +2557,7 @@ fn apply_grad_fn(
         }
         GradFn::MultiplyScalar { input, scalar } => {
             if let Some(meta) = &input.autograd {
+                let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
                 gradient.extend(upstream.iter().map(|value| value * scalar));
                 add_gradient(gradients, meta, gradient);
@@ -3431,5 +3483,27 @@ mod tests {
             );
         }
         assert!(output.requires_grad());
+    }
+
+    #[test]
+    fn no_grad_view_multiply_does_not_retain_operand_storage_without_edges() {
+        let source = Tensor::ones([16_384]).unwrap().with_requires_grad(true);
+        let source_storage = Arc::downgrade(&source.storage);
+        let view = {
+            let _guard = super::no_grad();
+            source.reshape([128, 128]).unwrap()
+        };
+        let output = view.mul(&view).unwrap();
+
+        drop(view);
+        drop(source);
+        assert!(
+            source_storage.upgrade().is_none(),
+            "no-edge operands must not be retained for an unreachable derivative"
+        );
+
+        let loss = output.sum();
+        loss.backward().unwrap();
+        loss.backward().unwrap();
     }
 }

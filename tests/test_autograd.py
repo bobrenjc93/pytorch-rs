@@ -81,6 +81,20 @@ class AutogradApiTests(unittest.TestCase):
         scalar_leaf.backward()
         self.assertEqual(scalar_leaf.grad.tolist(), [2.0])
 
+        summed_leaf = torch.tensor([1.0, 2.0], requires_grad=True)
+        summed = summed_leaf.sum()
+        summed.backward()
+        summed.backward()
+        self.assertEqual(summed_leaf.grad.tolist(), [2.0, 2.0])
+
+        transformed_leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        transformed = transformed_leaf.T.clone().sum()
+        transformed.backward()
+        transformed.backward()
+        np.testing.assert_array_equal(
+            np.asarray(transformed_leaf.grad), [[2.0, 2.0], [2.0, 2.0]]
+        )
+
     def test_deep_graph_transformations_and_negative_zero(self):
         deep_leaf = torch.tensor(3.0, requires_grad=True)
         deep_output = deep_leaf
@@ -477,6 +491,9 @@ class AutogradReferenceTests(unittest.TestCase):
                 ]
                 materialized = [source.clone(), source.T.contiguous()]
 
+            with self.assertRaisesRegex(RuntimeError, "implicitly created only for scalar"):
+                views[2].backward()
+
             (views[0] * views[0]).sum().backward()
 
             @module.no_grad
@@ -505,6 +522,40 @@ class AutogradReferenceTests(unittest.TestCase):
             )
 
         self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_reusable_metadata_only_graphs_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            summed_leaf = module.tensor([1.0, 2.0], requires_grad=True)
+            summed = summed_leaf.sum()
+            summed.backward()
+            summed.backward()
+
+            transformed_leaf = module.tensor(
+                [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+            )
+            transformed = transformed_leaf.T.clone().sum()
+            transformed.backward()
+            transformed.backward()
+
+            multiplied_leaf = module.tensor([1.0, 2.0], requires_grad=True)
+            multiplied = (multiplied_leaf * multiplied_leaf).sum()
+            multiplied.backward()
+            with self.assertRaisesRegex(
+                RuntimeError, "backward through the graph a second time"
+            ):
+                multiplied.backward()
+
+            outcomes.append(
+                (
+                    np.asarray(summed_leaf.grad).copy(),
+                    np.asarray(transformed_leaf.grad).copy(),
+                    np.asarray(multiplied_leaf.grad).copy(),
+                )
+            )
+
+        for native, expected in zip(outcomes[0], outcomes[1]):
+            np.testing.assert_array_equal(native, expected)
 
     def test_square_sum_backward_performance_smoke_is_equivalent_work(self):
         values = np.linspace(-2.0, 2.0, 16_384, dtype=np.float32)

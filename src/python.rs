@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::ffi::CStr;
 use std::mem::size_of;
 use std::os::raw::c_long;
@@ -16,7 +16,9 @@ use pyo3::types::{
     PySequence, PyString, PyTuple,
 };
 
-use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, set_grad_enabled};
+use crate::{
+    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, enter_no_grad, exit_no_grad,
+};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -84,7 +86,7 @@ def _make_no_grad(context_base):
 "#;
 
 thread_local! {
-    static NO_GRAD_CONTEXT_STATE: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+    static NO_GRAD_CONTEXT_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
 #[cfg(target_os = "macos")]
@@ -233,8 +235,13 @@ impl PyNoGrad {
 
     #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
     fn __enter__(&self) {
-        let previous = set_grad_enabled(false);
-        NO_GRAD_CONTEXT_STATE.with_borrow_mut(|states| states.push(previous));
+        enter_no_grad();
+        NO_GRAD_CONTEXT_DEPTH.set(
+            NO_GRAD_CONTEXT_DEPTH
+                .get()
+                .checked_add(1)
+                .expect("Python no-grad nesting depth overflowed usize"),
+        );
     }
 
     #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
@@ -244,8 +251,9 @@ impl PyNoGrad {
         _exception_value: &Bound<'_, PyAny>,
         _traceback: &Bound<'_, PyAny>,
     ) {
-        if let Some(previous) = NO_GRAD_CONTEXT_STATE.with_borrow_mut(Vec::pop) {
-            set_grad_enabled(previous);
+        if let Some(depth) = NO_GRAD_CONTEXT_DEPTH.get().checked_sub(1) {
+            NO_GRAD_CONTEXT_DEPTH.set(depth);
+            exit_no_grad();
         }
     }
 }
