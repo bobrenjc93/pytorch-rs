@@ -8,4 +8,8 @@
 mod python;
 mod tensor;
 
-pub use tensor::{DType, Device, LogicalValues, MemoryFormat, Tensor, TensorError};
+pub(crate) use tensor::{enter_no_grad, exit_no_grad};
+
+pub use tensor::{
+    DType, Device, LogicalValues, MemoryFormat, NoGradGuard, Tensor, TensorError, no_grad,
+};

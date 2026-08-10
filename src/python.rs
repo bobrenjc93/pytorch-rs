@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::ffi::CStr;
 use std::mem::size_of;
 use std::os::raw::c_long;
@@ -15,7 +16,9 @@ use pyo3::types::{
     PySequence, PyString, PyTuple,
 };
 
-use crate::{DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError};
+use crate::{
+    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, enter_no_grad, exit_no_grad,
+};
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -25,6 +28,66 @@ static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+
+const NO_GRAD_WRAPPER_SOURCE: &CStr = cr#"
+import functools
+import inspect
+import sys
+
+
+def _decorate_no_grad(context_factory, function):
+    if inspect.isgeneratorfunction(function):
+        @functools.wraps(function)
+        def generator_context(*args, **kwargs):
+            generator = function(*args, **kwargs)
+            try:
+                with context_factory():
+                    response = generator.send(None)
+
+                while True:
+                    try:
+                        request = yield response
+                    except GeneratorExit:
+                        with context_factory():
+                            generator.close()
+                        raise
+                    except BaseException:
+                        with context_factory():
+                            response = generator.throw(*sys.exc_info())
+                    else:
+                        with context_factory():
+                            response = generator.send(request)
+            except StopIteration as error:
+                return error.value
+
+        return generator_context
+
+    @functools.wraps(function)
+    def decorate_context(*args, **kwargs):
+        with context_factory():
+            return function(*args, **kwargs)
+
+    return decorate_context
+
+
+def _make_no_grad(context_base):
+    class no_grad(context_base):
+        def __new__(cls, original_function=None):
+            if original_function is not None:
+                return cls()(original_function)
+            return super().__new__(cls)
+
+        def __call__(self, function):
+            return _decorate_no_grad(type(self), function)
+
+    no_grad.__module__ = "torch_rs"
+    no_grad.__qualname__ = "no_grad"
+    return no_grad
+"#;
+
+thread_local! {
+    static NO_GRAD_CONTEXT_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
 
 #[cfg(target_os = "macos")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4317.)";
@@ -149,9 +212,59 @@ impl PyDevice {
 
 /// Python-facing tensor backed by the native Rust tensor core.
 #[pyclass(name = "Tensor", module = "torch_rs", skip_from_py_object)]
-#[derive(Clone)]
 struct PyTensor {
     inner: CoreTensor,
+    grad_cache: PyOnceLock<Py<PyTensor>>,
+}
+
+impl PyTensor {
+    fn new(inner: CoreTensor) -> Self {
+        Self {
+            inner,
+            grad_cache: PyOnceLock::new(),
+        }
+    }
+}
+
+/// Thread-local autograd recording guard underlying the Python `torch.no_grad` class.
+#[pyclass(
+    name = "_NoGradContext",
+    module = "torch_rs",
+    subclass,
+    skip_from_py_object
+)]
+struct PyNoGrad;
+
+#[pymethods]
+impl PyNoGrad {
+    #[new]
+    fn new() -> Self {
+        Self
+    }
+
+    #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
+    fn __enter__(&self) {
+        enter_no_grad();
+        NO_GRAD_CONTEXT_DEPTH.set(
+            NO_GRAD_CONTEXT_DEPTH
+                .get()
+                .checked_add(1)
+                .expect("Python no-grad nesting depth overflowed usize"),
+        );
+    }
+
+    #[allow(clippy::unused_self)] // Python's context-manager protocol requires an instance method.
+    fn __exit__(
+        &self,
+        _exception_type: &Bound<'_, PyAny>,
+        _exception_value: &Bound<'_, PyAny>,
+        _traceback: &Bound<'_, PyAny>,
+    ) {
+        if let Some(depth) = NO_GRAD_CONTEXT_DEPTH.get().checked_sub(1) {
+            NO_GRAD_CONTEXT_DEPTH.set(depth);
+            exit_no_grad();
+        }
+    }
 }
 
 enum ParsedFillValue {
@@ -177,6 +290,17 @@ impl<'a, 'py> FromPyObject<'a, 'py> for EyeDimensionArgument {
 
     fn extract(object: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         Ok(Self::Provided(object.into()))
+    }
+}
+
+#[derive(Clone, Copy)]
+struct StrictBool(bool);
+
+impl<'a, 'py> FromPyObject<'a, 'py> for StrictBool {
+    type Error = PyErr;
+
+    fn extract(object: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        parse_requires_grad(&object.to_owned()).map(Self)
     }
 }
 
@@ -231,6 +355,29 @@ impl PyTensor {
         }
     }
 
+    #[getter]
+    fn requires_grad(&self) -> bool {
+        self.inner.requires_grad()
+    }
+
+    #[getter]
+    fn grad(&self, py: Python<'_>) -> PyResult<Option<Py<Self>>> {
+        if let Some(gradient) = self.grad_cache.get(py) {
+            return Ok(Some(gradient.clone_ref(py)));
+        }
+        let Some(inner) = self
+            .inner
+            .live_grad()
+            .map_err(|error| tensor_error(&error))?
+        else {
+            return Ok(None);
+        };
+        let gradient = self
+            .grad_cache
+            .get_or_try_init(py, || Py::new(py, Self::new(inner)))?;
+        Ok(Some(gradient.clone_ref(py)))
+    }
+
     /// NumPy-style transpose view with every dimension reversed.
     #[getter(T)]
     fn numpy_transpose(&self, py: Python<'_>) -> PyResult<Self> {
@@ -241,7 +388,7 @@ impl PyTensor {
         }
         self.inner
             .reverse_dimensions()
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| transpose_error(&error))
     }
 
@@ -257,7 +404,7 @@ impl PyTensor {
             .inner
             .matrix_transpose()
             .map_err(|error| transpose_error(&error))?;
-        Py::new(slf.py(), Self { inner })
+        Py::new(slf.py(), Self::new(inner))
     }
 
     #[pyo3(signature = (dim=None))]
@@ -342,7 +489,7 @@ impl PyTensor {
             .inner
             .try_contiguous(memory_format)
             .map_err(|error| tensor_error(&error))?;
-        Py::new(slf.py(), Self { inner })
+        Py::new(slf.py(), Self::new(inner))
     }
 
     #[pyo3(signature = (*args, **kwargs))]
@@ -356,7 +503,7 @@ impl PyTensor {
         let dim1 = parse_transpose_dimension("dim1", dim1.position, &dim1.value)?;
         self.inner
             .transpose(dim0, dim1)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| transpose_error(&error))
     }
 
@@ -368,7 +515,7 @@ impl PyTensor {
     ) -> PyResult<Self> {
         let dimensions = bind_method_squeeze_arguments(args, kwargs)?;
         apply_squeeze(&self.inner, dimensions)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
@@ -386,7 +533,7 @@ impl PyTensor {
         if same_tensor_metadata(&slf.inner, &inner) {
             return Ok(slf.into());
         }
-        Py::new(slf.py(), Self { inner })
+        Py::new(slf.py(), Self::new(inner))
     }
 
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
@@ -406,9 +553,7 @@ impl PyTensor {
             let index = parse_integer_index(index)?;
             self.inner.index([index])
         };
-        inner
-            .map(|inner| Self { inner })
-            .map_err(|error| tensor_error(&error))
+        inner.map(Self::new).map_err(|error| tensor_error(&error))
     }
 
     #[pyo3(signature = (*shape_dimensions, shape=None))]
@@ -420,7 +565,7 @@ impl PyTensor {
         let shape = parse_reshape_shape(shape_dimensions, shape)?;
         self.inner
             .reshape(shape)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
@@ -480,35 +625,44 @@ impl PyTensor {
         let memory_format = parse_clone_memory_format(memory_format)?;
         self.inner
             .try_clone_with_memory_format(memory_format)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
+    }
+
+    fn detach(&self) -> PyResult<Self> {
+        self.inner
+            .detach()
+            .map(Self::new)
+            .map_err(|error| tensor_error(&error))
+    }
+
+    fn backward(&self) -> PyResult<()> {
+        self.inner.backward().map_err(|error| tensor_error(&error))
     }
 
     fn relu(&self) -> PyResult<Self> {
         self.inner
             .relu()
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
     fn sin(&self) -> PyResult<Self> {
         self.inner
             .sin()
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
     fn exp(&self) -> PyResult<Self> {
         self.inner
             .exp()
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
     fn sum(&self) -> Self {
-        Self {
-            inner: self.inner.sum(),
-        }
+        Self::new(self.inner.sum())
     }
 
     fn __add__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -546,7 +700,7 @@ impl PyTensor {
     fn __matmul__(&self, other: &Self) -> PyResult<Self> {
         self.inner
             .matmul(&other.inner)
-            .map(|inner| Self { inner })
+            .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
 
@@ -641,10 +795,7 @@ impl PyTensor {
             operation.apply_scalar(&self.inner, scalar.into_f32(), reverse)
         };
 
-        Self {
-            inner: result.map_err(|error| tensor_error(&error))?,
-        }
-        .into_py_any(py)
+        Self::new(result.map_err(|error| tensor_error(&error))?).into_py_any(py)
     }
 }
 
@@ -679,12 +830,17 @@ impl BinaryOperation {
     }
 }
 
-#[pyfunction(signature = (data, *, dtype=None, device=None))]
+#[pyfunction(
+    signature = (data, *, dtype=None, device=None, requires_grad=StrictBool(false)),
+    text_signature = "(data, *, dtype=None, device=None, requires_grad=False)"
+)]
 fn tensor(
     data: &Bound<'_, PyAny>,
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
+    requires_grad: StrictBool,
 ) -> PyResult<PyTensor> {
+    let requires_grad = requires_grad.0;
     let dtype_was_explicit = dtype.is_some();
     let (dtype, device) = parse_metadata("tensor", dtype, device)?;
     let (flattened, shape) = if let Ok(scalar) = data.extract::<f32>() {
@@ -707,8 +863,18 @@ fn tensor(
         return Err(unsupported_tensor_data_error(data, dtype_was_explicit)?);
     };
     CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
+}
+
+fn parse_requires_grad(requires_grad: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if requires_grad.is_exact_instance_of::<PyBool>() {
+        return requires_grad.is_truthy();
+    }
+    let type_name = transpose_type_name(requires_grad)?;
+    Err(PyTypeError::new_err(format!(
+        "tensor(): argument 'requires_grad' must be bool, not {type_name}"
+    )))
 }
 
 #[pyfunction(signature = (input, *, memory_format=None))]
@@ -717,7 +883,7 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
     input
         .inner
         .try_clone_with_memory_format(memory_format)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 
@@ -734,7 +900,7 @@ fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
     input_tensor
         .inner
         .transpose(dim0, dim1)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| transpose_error(&error))
 }
 
@@ -760,7 +926,7 @@ fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyR
     };
     let input = input.try_borrow()?;
     apply_squeeze(&input.inner, dimension)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 
@@ -787,7 +953,7 @@ fn flatten(
         return Ok(input_object);
     }
     drop(tensor);
-    Py::new(args.py(), PyTensor { inner })
+    Py::new(args.py(), PyTensor::new(inner))
 }
 
 /// Returns the total number of elements in the input tensor.
@@ -858,7 +1024,7 @@ fn zeros(
     let size = parse_creation_size("zeros", size, shape)?;
     let (dtype, device) = parse_metadata("zeros", dtype, device)?;
     CoreTensor::zeros_with_metadata(size, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 
@@ -872,7 +1038,7 @@ fn ones(
     let size = parse_creation_size("ones", size, shape)?;
     let (dtype, device) = parse_metadata("ones", dtype, device)?;
     CoreTensor::ones_with_metadata(size, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 
@@ -898,7 +1064,7 @@ fn eye(
     let shape = [n, m];
 
     CoreTensor::eye_with_metadata(n, m, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| creation_shape_error(&error, &shape))
 }
 
@@ -917,7 +1083,7 @@ fn full(
         .map_err(|error| creation_shape_error(&error, &shape))?;
     let fill_value = fill_value.into_f32()?;
     CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
-        .map(|inner| PyTensor { inner })
+        .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
 
@@ -2697,7 +2863,10 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::SqueezeDimensionsRankLimit
         | TensorError::FlattenStartAfterEnd
         | TensorError::FlattenNonConcreteInteger
-        | TensorError::ElementCountOverflow => PyRuntimeError::new_err(error.to_string()),
+        | TensorError::ElementCountOverflow
+        | TensorError::BackwardRequiresScalar { .. }
+        | TensorError::DoesNotRequireGrad
+        | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
@@ -2720,6 +2889,21 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDType>()?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
+    module.add_class::<PyNoGrad>()?;
+    let no_grad_helpers = PyModule::from_code(
+        py,
+        NO_GRAD_WRAPPER_SOURCE,
+        c"torch_rs/_no_grad.py",
+        c"torch_rs._no_grad",
+    )?;
+    let no_grad_class = no_grad_helpers
+        .getattr("_make_no_grad")?
+        .call1((module.getattr("_NoGradContext")?,))?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_NoGradContext",))?;
+    module.delattr("_NoGradContext")?;
+    module.add("no_grad", no_grad_class)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;

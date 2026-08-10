@@ -561,6 +561,38 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "base:be4ea7d5d341d0617c31b7417f98ec020ca2170a",
+      "commit": "be4ea7d5d341d0617c31b7417f98ec020ca2170a",
+      "recordedAt": "2026-08-10T01:04:22.754Z",
+      "label": "base be4ea7d",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 36.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 13,
+        "eval_b4945d15": 95,
+        "eval_c8a1bfb9": 47
+      }
+    },
+    {
+      "key": "pr:32",
+      "recordedAt": "2026-08-10T01:04:22.754Z",
+      "label": "PR #32",
+      "kind": "leaf",
+      "prNumber": 32,
+      "title": "Build foundational eager autograd for multiply, sum, broadcast, detach, and no_grad",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 51.8,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 16,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 52
+      }
     }
   ]
 }
