@@ -609,6 +609,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 53
       }
+    },
+    {
+      "key": "pr:35",
+      "recordedAt": "2026-08-11T22:43:13.800Z",
+      "label": "PR #35",
+      "kind": "leaf",
+      "prNumber": 35,
+      "title": "Accept explicit gradients for one-element backward roots",
+      "scores": {
+        "eval_7af648fb": 94,
+        "eval_8417a4a8": 53,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 18,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 53
+      }
     }
   ]
 }
