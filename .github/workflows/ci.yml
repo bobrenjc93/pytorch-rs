@@ -21,7 +21,8 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all-targets
       - run: uv venv --clear
-      - run: uv sync --locked --no-install-project
+      - run: uv sync --locked --no-install-project --group reference
+      - run: .venv/bin/python -c "import torch; assert torch.__version__.split('+', 1)[0] == '2.13.0', torch.__version__"
       - run: uv pip install --python .venv/bin/python 'maturin>=1.14,<2'
       - run: .venv/bin/maturin develop --release --uv
       - run: .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
