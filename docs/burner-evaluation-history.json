@@ -593,6 +593,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 52
       }
+    },
+    {
+      "key": "pr:34",
+      "recordedAt": "2026-08-11T21:58:30.891Z",
+      "label": "PR #34",
+      "kind": "leaf",
+      "prNumber": 34,
+      "title": "Preserve autograd through real-scalar addition",
+      "scores": {
+        "eval_7af648fb": 93,
+        "eval_8417a4a8": 52.4,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 17,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 53
+      }
     }
   ]
 }
