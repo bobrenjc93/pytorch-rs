@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "evaluations": [
+    {
+      "name": "Correctness parity",
+      "prompt": "Score this repository's correctness parity with stable public PyTorch behavior from 0 to 100. Inspect executable Rust, Python, and differential tests and their implementation evidence. Evaluate outputs, shapes, strides, dtypes, devices, errors, aliasing and view semantics, numerical edge cases, autograd behavior, empty tensors, and interactions among supported features. Treat unsupported features as coverage gaps rather than silently excluding them, and do not award correctness credit for documentation or untested claims. A regression in any previously supported behavior must lower the score.",
+      "weight": 5,
+      "enabled": true,
+      "id": "eval_7af648fb",
+      "createdAt": "2026-08-07T16:22:36.605Z",
+      "definitionVersion": "evaldef_repo_7af648fb_v1"
+    },
+    {
+      "name": "PyTorch feature coverage",
+      "prompt": "Score weighted PyTorch feature coverage from 0 to 100 using the fixed area weights and rules in FEATURES.md. Count only stable public Python concepts backed by executable side-by-side semantic tests; Rust-only capabilities, stubs, documentation-only claims, and missing edge-case behavior do not count. Include tensor storage and views, dtypes/devices/dispatch, creation and math, linear algebra, autograd, neural-network APIs, optimizers and data utilities, serialization, compilation and distributed execution, and ecosystem ergonomics. Missing capabilities remain zero in their denominator.",
+      "weight": 4,
+      "enabled": true,
+      "id": "eval_8417a4a8",
+      "createdAt": "2026-08-07T16:22:36.605Z",
+      "definitionVersion": "evaldef_repo_8417a4a8_v1"
+    },
+    {
+      "name": "Performance parity",
+      "prompt": "Score performance parity with PyTorch from 0 to 100 under BENCHMARKING.md. Require equivalent Python calls and work, correctness-gated workload cells, symmetric warmup and sampling, fixed category weights, geometric aggregation, representative shapes/layouts/thread counts, and protection against dead-code elimination or deferred work. Incorrect or unsupported cells receive zero rather than disappearing from the denominator. Credit concrete reproducible benchmark evidence, not isolated favorable microkernels or unverified performance claims; parity across the durable workload matrix is the 100-point target.",
+      "weight": 4,
+      "enabled": true,
+      "id": "eval_63a24994",
+      "createdAt": "2026-08-07T16:22:36.605Z",
+      "definitionVersion": "evaldef_repo_63a24994_v1"
+    },
+    {
+      "name": "Python API compatibility",
+      "prompt": "Score drop-in compatibility of the torch_rs Python API with stable public PyTorch from 0 to 100. Inspect the exported namespace, function and method signatures, argument forms and defaults, return types, Tensor properties, dtype/device metadata, exception behavior, scalar and sequence handling, views and aliasing, autograd-facing behavior, modules, and ordinary import/package ergonomics. Award credit only for implemented behavior supported by executable compatibility tests, and keep the deliberately unsupported PyTorch surface in the denominator.",
+      "weight": 2,
+      "enabled": true,
+      "id": "eval_39340456",
+      "createdAt": "2026-08-07T16:22:36.605Z",
+      "definitionVersion": "evaldef_repo_39340456_v1"
+    },
+    {
+      "name": "Benchmark integrity",
+      "prompt": "Score the integrity and decision quality of the repository's correctness and performance evidence from 0 to 100. Apply README.md and BENCHMARKING.md: evaluators must be independent from implementation branches, equivalent work must be compared, incorrect and unsupported cells must score zero, seeds and held-out shapes must resist specialization, outputs must be materialized, provenance and environment must be reported, and quick screens must remain strict subsets of final gates. Credit enforced tests and workflows over prose, and penalize editable, asymmetric, gameable, noisy, or irreproducible measurements.",
+      "weight": 3,
+      "enabled": true,
+      "id": "eval_b4945d15",
+      "createdAt": "2026-08-07T16:22:36.605Z",
+      "definitionVersion": "evaldef_repo_b4945d15_v1"
+    },
+    {
+      "name": "Sustainable architecture",
+      "prompt": "Score how sustainably the native Rust engine can grow toward broad PyTorch semantics from 0 to 100. Inspect storage/layout/view abstractions, dtype and device dispatch boundaries, operation reuse, autograd graph design, Python bindings, safety, error consistency, modularity, tests, and dependency discipline. Reward clear extensible mechanisms that preserve existing fast paths and semantics. Penalize monolithic dispatch, duplicated per-operation logic, benchmark-specific branches, forwarding production operations to Python or PyTorch, fragile special cases, and architecture that makes the next feature disproportionately risky.",
+      "weight": 1,
+      "enabled": true,
+      "id": "eval_c8a1bfb9",
+      "createdAt": "2026-08-07T16:22:36.605Z",
+      "definitionVersion": "evaldef_repo_c8a1bfb9_v1"
+    }
+  ]
+}

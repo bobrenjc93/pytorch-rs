@@ -1,0 +1,4 @@
+# Burner runtime data stays local; evaluation definitions are repository configuration.
+*
+!.gitignore
+!evaluations.json
