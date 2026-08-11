@@ -105,18 +105,16 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                 expected_descriptor = inspect.getattr_static(reference_torch.Tensor, name)
                 self.assertIs(type(actual_descriptor), types.MethodDescriptorType)
                 self.assertIs(type(expected_descriptor), types.MethodDescriptorType)
-                self.assertEqual(
-                    actual_descriptor.__text_signature__,
-                    expected_descriptor.__text_signature__,
-                )
-                self.assertEqual(
-                    str(inspect.signature(actual_descriptor)),
-                    str(inspect.signature(expected_descriptor)),
-                )
-                self.assertEqual(
-                    str(inspect.signature(getattr(actual, name))),
-                    str(inspect.signature(getattr(expected, name))),
-                )
+                self.assertIsNone(actual_descriptor.__text_signature__)
+                self.assertIsNone(expected_descriptor.__text_signature__)
+                for target in (
+                    actual_descriptor,
+                    expected_descriptor,
+                    getattr(actual, name),
+                    getattr(expected, name),
+                ):
+                    with self.assertRaises(ValueError):
+                        inspect.signature(target)
                 self.assertEqual(actual_descriptor(actual), expected_descriptor(expected))
 
                 self.assert_error_matches(
