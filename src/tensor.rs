@@ -2108,7 +2108,8 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| value + scalar)
+        let output = self.map_scalar(scalar, |value, scalar| value + scalar)?;
+        self.finish_copy_transform(output, TransformMapping::Identity)
     }
 
     /// Subtracts a scalar from every element.

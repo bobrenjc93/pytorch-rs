@@ -35,6 +35,27 @@ class AutogradApiTests(unittest.TestCase):
         self.assertIs(retained_grad, x.grad)
         np.testing.assert_array_equal(np.asarray(retained_grad), [-8.0, 2.0, 12.0])
 
+    def test_real_scalar_addition_retains_gradient_history(self):
+        values = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        forward = values + 2.0
+        reflected = 3.0 + forward
+        self.assertTrue(forward.requires_grad)
+        self.assertTrue(reflected.requires_grad)
+
+        reflected.sum().backward()
+        np.testing.assert_array_equal(np.asarray(values.grad), np.ones((2, 2)))
+
+        repeated_values = torch.tensor([2.0, 3.0], requires_grad=True)
+        repeated_loss = (repeated_values + 1.0).sum()
+        repeated_loss.backward()
+        repeated_loss.backward()
+        np.testing.assert_array_equal(np.asarray(repeated_values.grad), [2.0, 2.0])
+
+        detached = values.detach() + 1.0
+        self.assertFalse(detached.requires_grad)
+        with torch.no_grad():
+            self.assertFalse((1.0 + values).requires_grad)
+
     def test_saved_live_gradient_values_are_frozen_at_forward(self):
         source = torch.tensor([4.0, 5.0], requires_grad=True)
         source.sum().backward()
@@ -393,6 +414,52 @@ class AutogradReferenceTests(unittest.TestCase):
         self.assertEqual(outcomes[0][:2], outcomes[1][:2])
         np.testing.assert_array_equal(outcomes[0][2], outcomes[1][2])
         np.testing.assert_array_equal(outcomes[0][3], outcomes[1][3])
+
+    def test_real_scalar_addition_gradients_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+            )
+            view = leaf.transpose(0, 1)
+            weights = module.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+            composed = 3.0 + (view + 2.0)
+            loss = (composed * weights).sum()
+            loss.backward()
+
+            repeated_leaf = module.tensor([2.0, 3.0], requires_grad=True)
+            repeated_loss = (repeated_leaf + 1.0).sum()
+            repeated_loss.backward()
+            repeated_loss.backward()
+
+            empty_leaf = module.tensor(
+                np.empty((0,), dtype=np.float32), requires_grad=True
+            )
+            empty = empty_leaf.reshape(2, 0, 3)
+            empty_result = 7.0 + empty
+            empty_result.sum().backward()
+
+            detached = leaf.detach() + 1.0
+            with module.no_grad():
+                suppressed = 1.0 + leaf
+
+            outcomes.append(
+                (
+                    np.asarray(leaf.grad).copy(),
+                    np.asarray(repeated_leaf.grad).copy(),
+                    composed.requires_grad,
+                    tuple(empty_result.shape),
+                    empty_result.requires_grad,
+                    tuple(empty_leaf.grad.shape),
+                    empty_leaf.grad.numel(),
+                    detached.requires_grad,
+                    suppressed.requires_grad,
+                )
+            )
+
+        np.testing.assert_array_equal(outcomes[0][0], outcomes[1][0])
+        np.testing.assert_array_equal(outcomes[0][1], outcomes[1][1])
+        self.assertEqual(outcomes[0][2:], outcomes[1][2:])
 
     def test_seeded_square_sum_and_broadcast_gradients_match_pytorch_2_13(self):
         rng = np.random.default_rng(0xA670_213)
