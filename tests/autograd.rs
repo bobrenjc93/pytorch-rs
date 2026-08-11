@@ -124,6 +124,36 @@ fn scalar_and_empty_reductions_produce_correct_leaf_gradients() {
 }
 
 #[test]
+fn scalar_addition_records_reusable_identity_gradients() {
+    let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let view = leaf.transpose(0, 1).unwrap();
+    let weights = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+    let output = view.add_scalar(5.0).unwrap().mul(&weights).unwrap().sum();
+
+    assert!(output.requires_grad());
+    output.backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [1.0, 3.0, 2.0, 4.0]);
+
+    let repeated_leaf = Tensor::from_vec(vec![2.0, 3.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let repeated = repeated_leaf.add_scalar(1.0).unwrap().sum();
+    repeated.backward().unwrap();
+    repeated.backward().unwrap();
+    assert_eq!(values(&repeated_leaf.grad().unwrap().unwrap()), [2.0, 2.0]);
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_output = empty.add_scalar(7.0).unwrap();
+    assert!(empty_output.requires_grad());
+    empty_output.sum().backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert!(values(&empty_gradient).is_empty());
+}
+
+#[test]
 fn detach_and_nested_no_grad_are_graph_boundaries() {
     let x = Tensor::from_vec(vec![2.0], [])
         .unwrap()
@@ -144,8 +174,11 @@ fn detach_and_nested_no_grad_are_graph_boundaries() {
             assert!(!x.sum().requires_grad());
         }
         assert!(!x.mul_scalar(2.0).unwrap().requires_grad());
+        assert!(!x.add_scalar(2.0).unwrap().requires_grad());
     }
     assert!(x.mul(&x).unwrap().requires_grad());
+
+    assert!(!detached.add_scalar(2.0).unwrap().requires_grad());
 }
 
 #[test]
