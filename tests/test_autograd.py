@@ -209,6 +209,46 @@ class AutogradApiTests(unittest.TestCase):
         sequence_target.backward([torch.tensor(4.0)])
         self.assertEqual(sequence_target.grad.item(), 4.0)
 
+        extra_target = torch.tensor(1.0, requires_grad=True)
+        extra_target.backward([torch.tensor(2.0), torch.tensor(3.0)])
+        self.assertEqual(extra_target.grad.item(), 2.0)
+
+        ignored_invalid_target = torch.tensor(1.0, requires_grad=True)
+        ignored_invalid_target.backward([torch.tensor(5.0), torch.float32])
+        self.assertEqual(ignored_invalid_target.grad.item(), 5.0)
+
+        with self.assertRaises(RuntimeError) as empty_error:
+            torch.tensor(1.0, requires_grad=True).backward([])
+        self.assertEqual(str(empty_error.exception), "got 1 tensors and 0 gradients")
+
+        for invalid, expected_name in (
+            (torch.float32, "dtype"),
+            (torch.device("cpu"), "device"),
+            (torch.contiguous_format, "memory_format"),
+            (np.float32(2.0), "float32"),
+        ):
+            with self.subTest(extension_type=expected_name):
+                with self.assertRaises(TypeError) as extension_type_error:
+                    torch.tensor(1.0, requires_grad=True).backward([invalid])
+                self.assertEqual(
+                    str(extension_type_error.exception),
+                    "gradients can be either Tensors or None, but got "
+                    f"{expected_name}",
+                )
+
+        class ThrowingLengthHint:
+            def __iter__(self):
+                yield torch.tensor(2.0)
+
+            def __length_hint__(self):
+                raise RuntimeError("length hint exploded")
+
+        hint_target = torch.tensor(1.0, requires_grad=True)
+        with self.assertRaisesRegex(RuntimeError, "^length hint exploded$"):
+            hint_target.backward(ThrowingLengthHint())
+        hint_target.backward(torch.tensor(3.0))
+        self.assertEqual(hint_target.grad.item(), 3.0)
+
     def test_deep_graph_transformations_and_negative_zero(self):
         deep_leaf = torch.tensor(3.0, requires_grad=True)
         deep_output = deep_leaf
@@ -618,6 +658,12 @@ class AutogradReferenceTests(unittest.TestCase):
             sequence_target = module.tensor(1.0, requires_grad=True)
             sequence_target.backward([module.tensor(4.0)])
 
+            extra_target = module.tensor(1.0, requires_grad=True)
+            extra_target.backward([module.tensor(2.0), module.tensor(3.0)])
+
+            ignored_invalid_target = module.tensor(1.0, requires_grad=True)
+            ignored_invalid_target.backward([module.tensor(5.0), module.float32])
+
             module_errors = []
             for target, gradient in (
                 (
@@ -630,6 +676,17 @@ class AutogradReferenceTests(unittest.TestCase):
                 ),
                 (module.tensor(4.0, requires_grad=True), 2.0),
                 (module.tensor(4.0, requires_grad=True), [2.0]),
+                (module.tensor(4.0, requires_grad=True), []),
+                (module.tensor(4.0, requires_grad=True), [module.float32]),
+                (
+                    module.tensor(4.0, requires_grad=True),
+                    [module.device("cpu")],
+                ),
+                (
+                    module.tensor(4.0, requires_grad=True),
+                    [module.contiguous_format],
+                ),
+                (module.tensor(4.0, requires_grad=True), [np.float32(2.0)]),
             ):
                 try:
                     target.backward(gradient)
@@ -640,19 +697,38 @@ class AutogradReferenceTests(unittest.TestCase):
                         f"{module.__name__} accepted incompatible gradient {gradient!r}"
                     )
 
+            class ThrowingLengthHint:
+                def __iter__(self):
+                    yield module.tensor(2.0)
+
+                def __length_hint__(self):
+                    raise RuntimeError("length hint exploded")
+
+            hint_target = module.tensor(1.0, requires_grad=True)
+            try:
+                hint_target.backward(ThrowingLengthHint())
+            except RuntimeError as error:
+                module_errors.append((type(error).__name__, str(error)))
+            else:
+                self.fail(f"{module.__name__} suppressed a __length_hint__ error")
+            hint_target.backward(module.tensor(3.0))
+
             outcomes.append(
                 (
                     np.asarray(leaf.grad).copy(),
                     np.asarray(accumulated.grad).copy(),
                     np.asarray(one_element.grad).copy(),
                     sequence_target.grad.item(),
+                    extra_target.grad.item(),
+                    ignored_invalid_target.grad.item(),
+                    hint_target.grad.item(),
                 )
             )
             errors.append(module_errors)
 
         for native, expected in zip(outcomes[0][:3], outcomes[1][:3]):
             np.testing.assert_array_equal(native, expected)
-        self.assertEqual(outcomes[0][3], outcomes[1][3])
+        self.assertEqual(outcomes[0][3:], outcomes[1][3:])
         self.assertEqual(errors[0], errors[1])
 
     def test_transform_and_signed_zero_gradients_match_pytorch_2_13(self):

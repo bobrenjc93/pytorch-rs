@@ -651,21 +651,23 @@ impl PyTensor {
 
         // Tensor.backward forwards its argument through autograd's
         // tensor-or-tensors normalization. Preserve those public type errors
-        // (and the accepted singleton sequence forms) even though this method
+        // (and the accepted sequence forms) even though this method
         // differentiates only one output.
-        let gradients = gradient.try_iter()?.collect::<PyResult<Vec<_>>>()?;
-        if gradients.len() != 1 {
-            return Err(PyRuntimeError::new_err(format!(
-                "got 1 tensors and {} gradients",
-                gradients.len()
-            )));
+        let gradients = gradient.py().get_type::<PyTuple>().call1((gradient,))?;
+        let gradients = gradients
+            .cast::<PyTuple>()
+            .expect("the tuple constructor must return a tuple");
+        if gradients.is_empty() {
+            return Err(PyRuntimeError::new_err("got 1 tensors and 0 gradients"));
         }
-        let gradient = &gradients[0];
+        // PyTorch's _make_grads pairs outputs and gradients with zip, so extra
+        // gradients are materialized by tuple() but otherwise ignored.
+        let gradient = gradients.get_item(0)?;
         if gradient.is_none() {
             return self.inner.backward().map_err(|error| tensor_error(&error));
         }
         let Ok(gradient) = gradient.cast::<PyTensor>() else {
-            let name = transpose_type_name(gradient)?;
+            let name = gradient.get_type().name()?;
             return Err(PyTypeError::new_err(format!(
                 "gradients can be either Tensors or None, but got {name}"
             )));
