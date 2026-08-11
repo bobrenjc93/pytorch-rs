@@ -3,12 +3,12 @@
   "evaluations": [
     {
       "name": "Correctness parity",
-      "prompt": "Score this repository's correctness parity with stable public PyTorch behavior from 0 to 100. Inspect executable Rust, Python, and differential tests and their implementation evidence. Evaluate outputs, shapes, strides, dtypes, devices, errors, aliasing and view semantics, numerical edge cases, autograd behavior, empty tensors, and interactions among supported features. Treat unsupported features as coverage gaps rather than silently excluding them, and do not award correctness credit for documentation or untested claims. A regression in any previously supported behavior must lower the score.",
+      "prompt": "Score the correctness of behavior this repository currently implements and claims to support against stable public PyTorch, from 0 to 100. Missing APIs belong exclusively to the separate PyTorch feature coverage evaluation and must not lower this correctness score. Inspect executable Rust, Python, and differential tests and their implementation evidence. Evaluate outputs, shapes, strides, dtypes, devices, errors, aliasing and view semantics, numerical edge cases, autograd behavior, empty tensors, and interactions among supported features. A score of 100 means the supported surface is indistinguishable from PyTorch and comprehensively edge-tested; any regression in previously supported behavior must lower the score.",
       "weight": 5,
       "enabled": true,
       "id": "eval_7af648fb",
       "createdAt": "2026-08-07T16:22:36.605Z",
-      "definitionVersion": "evaldef_repo_7af648fb_v1"
+      "definitionVersion": "evaldef_repo_7af648fb_v2"
     },
     {
       "name": "PyTorch feature coverage",
@@ -21,12 +21,12 @@
     },
     {
       "name": "Performance parity",
-      "prompt": "Score performance parity with PyTorch from 0 to 100 under BENCHMARKING.md. Require equivalent Python calls and work, correctness-gated workload cells, symmetric warmup and sampling, fixed category weights, geometric aggregation, representative shapes/layouts/thread counts, and protection against dead-code elimination or deferred work. Incorrect or unsupported cells receive zero rather than disappearing from the denominator. Credit concrete reproducible benchmark evidence, not isolated favorable microkernels or unverified performance claims; parity across the durable workload matrix is the 100-point target.",
+      "prompt": "Score performance parity of behavior this repository currently implements and claims to support against equivalent PyTorch operations, from 0 to 100. Missing APIs belong exclusively to the separate PyTorch feature coverage evaluation and must not lower this performance score; incorrect supported behavior still receives zero performance credit. Apply BENCHMARKING.md: compare equivalent work, release/native execution, symmetric warmup and sampling, representative shapes/layouts/thread counts, geometric aggregation, and protection against dead-code elimination or deferred work. Credit concrete implementation and benchmark evidence rather than isolated favorable microkernels. A score of 100 means the supported workload is broadly at parity with or faster than PyTorch without semantic shortcuts.",
       "weight": 4,
       "enabled": true,
       "id": "eval_63a24994",
       "createdAt": "2026-08-07T16:22:36.605Z",
-      "definitionVersion": "evaldef_repo_63a24994_v1"
+      "definitionVersion": "evaldef_repo_63a24994_v2"
     },
     {
       "name": "Python API compatibility",
