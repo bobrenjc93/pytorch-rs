@@ -31,6 +31,62 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(result.shape, (2, 2))
         self.assertEqual(result.tolist(), [[0.0, 3.0], [4.0, 0.0]])
 
+    def test_unary_negation_handles_values_metadata_and_strided_views(self):
+        scalar = -torch.tensor(2.5)
+        self.assertEqual(scalar.shape, ())
+        self.assertEqual(scalar.stride(), ())
+        self.assertEqual(scalar.storage_offset(), 0)
+        self.assertEqual(scalar.item(), -2.5)
+
+        for shape, expected_stride in (
+            ((0,), (1,)),
+            ((1, 0), (1, 1)),
+            ((0, 1), (1, 1)),
+            ((1, 0, 1), (1, 1, 1)),
+            ((2, 0, 3), (3, 3, 1)),
+        ):
+            with self.subTest(shape=shape):
+                output = -torch.zeros(shape)
+                self.assertEqual(output.shape, shape)
+                self.assertEqual(output.stride(), expected_stride)
+                self.assertEqual(output.storage_offset(), 0)
+                self.assertEqual(output.tolist(), torch.zeros(shape).tolist())
+
+        source = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )
+        dense_view = source.transpose(0, 2)
+        dense_output = -dense_view
+        self.assertEqual(dense_output.shape, dense_view.shape)
+        self.assertEqual(dense_output.stride(), (1, 4, 12))
+        self.assertEqual(dense_output.storage_offset(), 0)
+        np.testing.assert_array_equal(np.asarray(dense_output), -np.asarray(dense_view))
+
+        offset_view = dense_view[1]
+        self.assertEqual(offset_view.stride(), (4, 12))
+        self.assertEqual(offset_view.storage_offset(), 1)
+        offset_output = -offset_view
+        self.assertEqual(offset_output.stride(), (1, 3))
+        self.assertEqual(offset_output.storage_offset(), 0)
+        np.testing.assert_array_equal(np.asarray(offset_output), -np.asarray(offset_view))
+
+        bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        special = torch.tensor(memoryview(bits.view(np.float32)), dtype=torch.float32)
+        actual_bits = np.asarray(-special).view(np.uint32)
+        np.testing.assert_array_equal(actual_bits, bits ^ np.uint32(0x8000_0000))
+        self.assertIs((-special).dtype, torch.float32)
+        self.assertEqual((-special).device, torch.device("cpu"))
+
     def test_sin_matches_pytorch_float32_reference_and_metadata(self):
         source = torch.tensor(
             [

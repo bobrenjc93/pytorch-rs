@@ -689,6 +689,13 @@ impl PyTensor {
         self.binary_operation(py, other, BinaryOperation::Multiply, true)
     }
 
+    fn __neg__(&self) -> PyResult<Self> {
+        self.inner
+            .negate()
+            .map(Self::new)
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn __truediv__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         self.binary_operation(py, other, BinaryOperation::Divide, false)
     }

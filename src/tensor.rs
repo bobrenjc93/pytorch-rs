@@ -2140,6 +2140,58 @@ impl Tensor {
         Ok(output)
     }
 
+    /// Negates every element through the scalar-multiplication kernel and
+    /// gradient edge.
+    ///
+    /// Unary `TensorIterator` output layout differs from tensor-scalar
+    /// multiplication for some empty tensors, so the result is restrided with
+    /// the existing unary layout planner after multiplication.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub(crate) fn negate(&self) -> Result<Self, TensorError> {
+        let unary_strides = self.unary_output_strides(&self.shape, self.elements)?;
+        let mut output = self.mul_scalar(-1.0)?;
+        if output.strides != unary_strides {
+            if output.elements != 0 {
+                let data = output.materialize_with_strides(&unary_strides, |value| value)?;
+                output.storage = Arc::new(Storage {
+                    data: StorageData::Owned(data),
+                    dtype: output.dtype(),
+                    device: output.device(),
+                });
+                output.offset = 0;
+            }
+            output.strides = unary_strides;
+        }
+
+        // IEEE multiplication preserves the input NaN sign on the supported
+        // CPU path, whereas unary negation flips the sign bit without changing
+        // the payload (including for signaling NaNs). Keep the multiplication
+        // result for ordinary values and repair only NaN lanes in place.
+        let mut nan_values = self
+            .logical_values()
+            .enumerate()
+            .filter_map(|(index, value)| value.is_nan().then_some((index, value)));
+        let Some(first_nan) = nan_values.next() else {
+            return Ok(output);
+        };
+        let output_shape = &output.shape;
+        let output_strides = &output.strides;
+        let storage = Arc::get_mut(&mut output.storage)
+            .expect("fresh negation output storage must be uniquely owned");
+        let StorageData::Owned(data) = &mut storage.data else {
+            unreachable!("negation always materializes owned output storage");
+        };
+        for (linear_index, value) in std::iter::once(first_nan).chain(nan_values) {
+            let output_offset =
+                logical_offset_for_linear_index(output_shape, output_strides, 0, linear_index)?;
+            data[output_offset] = f32::from_bits(value.to_bits() ^ (1_u32 << 31));
+        }
+        Ok(output)
+    }
+
     /// Divides every element by a scalar using IEEE 754 true division.
     ///
     /// # Errors
@@ -3597,6 +3649,36 @@ mod tests {
         assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0, 2.0]);
         saved_loss.backward().unwrap();
         assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [1.0, 1.0]);
+    }
+
+    #[test]
+    fn negation_preserves_float_bits_and_the_scalar_gradient_edge() {
+        let bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+        ];
+        let values = bits.map(f32::from_bits);
+        let input = Tensor::from_vec(values.to_vec(), [bits.len()]).unwrap();
+        let output = input.negate().unwrap();
+        assert!(!output.shares_storage_with(&input));
+        assert!(
+            output
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(bits.map(|value| value ^ (1_u32 << 31)))
+        );
+
+        let leaf = Tensor::from_vec(vec![2.0, -3.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        leaf.negate().unwrap().sum().backward().unwrap();
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [-1.0, -1.0]);
     }
 
     #[test]

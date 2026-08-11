@@ -56,6 +56,27 @@ class AutogradApiTests(unittest.TestCase):
         with torch.no_grad():
             self.assertFalse((1.0 + values).requires_grad)
 
+    def test_unary_negation_records_gradients_and_obeys_no_grad(self):
+        values = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        weights = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        negated = -values.transpose(0, 1)
+        self.assertTrue(negated.requires_grad)
+        self.assertEqual(negated.stride(), (1, 3))
+
+        (negated * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(values.grad),
+            -np.asarray(weights).transpose(1, 0),
+        )
+
+        with torch.no_grad():
+            untracked = -values.transpose(0, 1)
+            self.assertFalse(untracked.requires_grad)
+            self.assertEqual(untracked.stride(), (1, 3))
+        self.assertTrue((-values).requires_grad)
+
     def test_saved_live_gradient_values_are_frozen_at_forward(self):
         source = torch.tensor([4.0, 5.0], requires_grad=True)
         source.sum().backward()
