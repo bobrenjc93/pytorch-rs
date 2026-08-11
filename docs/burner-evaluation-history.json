@@ -593,6 +593,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 52
       }
+    },
+    {
+      "key": "pr:33",
+      "recordedAt": "2026-08-11T21:42:51.635Z",
+      "label": "PR #33",
+      "kind": "leaf",
+      "prNumber": 33,
+      "title": "Require pinned PyTorch differential tests in CI",
+      "scores": {
+        "eval_7af648fb": 92,
+        "eval_8417a4a8": 51.8,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 16,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 53
+      }
     }
   ]
 }
