@@ -636,8 +636,44 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
-    fn backward(&self) -> PyResult<()> {
-        self.inner.backward().map_err(|error| tensor_error(&error))
+    #[pyo3(signature = (gradient=None))]
+    fn backward(&self, gradient: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        let Some(gradient) = gradient else {
+            return self.inner.backward().map_err(|error| tensor_error(&error));
+        };
+        if let Ok(gradient) = gradient.cast::<PyTensor>() {
+            let gradient = gradient.try_borrow()?;
+            return self
+                .inner
+                .backward_with_gradient(&gradient.inner)
+                .map_err(|error| tensor_error(&error));
+        }
+
+        // Tensor.backward forwards its argument through autograd's
+        // tensor-or-tensors normalization. Preserve those public type errors
+        // (and the accepted singleton sequence forms) even though this method
+        // differentiates only one output.
+        let gradients = gradient.try_iter()?.collect::<PyResult<Vec<_>>>()?;
+        if gradients.len() != 1 {
+            return Err(PyRuntimeError::new_err(format!(
+                "got 1 tensors and {} gradients",
+                gradients.len()
+            )));
+        }
+        let gradient = &gradients[0];
+        if gradient.is_none() {
+            return self.inner.backward().map_err(|error| tensor_error(&error));
+        }
+        let Ok(gradient) = gradient.cast::<PyTensor>() else {
+            let name = transpose_type_name(gradient)?;
+            return Err(PyTypeError::new_err(format!(
+                "gradients can be either Tensors or None, but got {name}"
+            )));
+        };
+        let gradient = gradient.try_borrow()?;
+        self.inner
+            .backward_with_gradient(&gradient.inner)
+            .map_err(|error| tensor_error(&error))
     }
 
     fn relu(&self) -> PyResult<Self> {
@@ -2864,6 +2900,7 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::FlattenStartAfterEnd
         | TensorError::FlattenNonConcreteInteger
         | TensorError::ElementCountOverflow
+        | TensorError::BackwardGradientShapeMismatch { .. }
         | TensorError::BackwardRequiresScalar { .. }
         | TensorError::DoesNotRequireGrad
         | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),

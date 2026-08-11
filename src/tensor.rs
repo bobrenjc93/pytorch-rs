@@ -497,6 +497,10 @@ pub enum TensorError {
         expected_rank: usize,
         actual_rank: usize,
     },
+    BackwardGradientShapeMismatch {
+        gradient: Vec<usize>,
+        output: Vec<usize>,
+    },
     BackwardRequiresScalar {
         elements: usize,
     },
@@ -597,7 +601,8 @@ impl Display for TensorError {
             | Self::ContiguousMemoryFormatRankMismatch { .. }) => {
                 format_memory_format_error(formatter, error)
             }
-            error @ (Self::BackwardRequiresScalar { .. }
+            error @ (Self::BackwardGradientShapeMismatch { .. }
+            | Self::BackwardRequiresScalar { .. }
             | Self::DoesNotRequireGrad
             | Self::BackwardGraphFreed) => format_autograd_error(formatter, error),
         }
@@ -714,6 +719,12 @@ fn format_memory_format_error(
 
 fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
     match error {
+        TensorError::BackwardGradientShapeMismatch { gradient, output } => write!(
+            formatter,
+            "Mismatch in shape: grad_output[0] has a shape of {} and output[0] has a shape of {}.",
+            TorchSize(gradient),
+            TorchSize(output)
+        ),
         TensorError::BackwardRequiresScalar { elements } => write!(
             formatter,
             "grad can be implicitly created only for scalar outputs (output has {elements} elements)"
@@ -725,6 +736,21 @@ fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> 
             "Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). Saved intermediate values of the graph are freed when you call .backward(). Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.",
         ),
         _ => unreachable!("only autograd errors are formatted here"),
+    }
+}
+
+struct TorchSize<'a>(&'a [usize]);
+
+impl Display for TorchSize<'_> {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("torch.Size([")?;
+        for (index, dimension) in self.0.iter().enumerate() {
+            if index != 0 {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, "{dimension}")?;
+        }
+        formatter.write_str("])")
     }
 }
 
@@ -1087,6 +1113,33 @@ impl Tensor {
     /// Returns an error for multi-element outputs, tensors which do not require
     /// gradients, or graphs already consumed by a prior backward pass.
     pub fn backward(&self) -> Result<(), TensorError> {
+        self.backward_from(None)
+    }
+
+    /// Runs eager reverse-mode differentiation with an explicit root gradient.
+    ///
+    /// The gradient must have exactly the same shape as this one-element
+    /// output. Its value replaces the implicit unit seed used by
+    /// [`Self::backward`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a shape mismatch, multi-element outputs, tensors
+    /// which do not require gradients, or graphs already consumed by a prior
+    /// backward pass.
+    pub fn backward_with_gradient(&self, gradient: &Self) -> Result<(), TensorError> {
+        self.backward_from(Some(gradient))
+    }
+
+    fn backward_from(&self, gradient: Option<&Self>) -> Result<(), TensorError> {
+        if let Some(gradient) = gradient
+            && gradient.shape != self.shape
+        {
+            return Err(TensorError::BackwardGradientShapeMismatch {
+                gradient: gradient.shape.clone(),
+                output: self.shape.clone(),
+            });
+        }
         if !self.requires_grad() {
             return Err(TensorError::DoesNotRequireGrad);
         }
@@ -1099,7 +1152,8 @@ impl Tensor {
             .autograd
             .as_ref()
             .ok_or(TensorError::DoesNotRequireGrad)?;
-        run_backward(meta)
+        let seed = gradient.map_or(1.0, |gradient| gradient.value_at_linear_index(0));
+        run_backward(meta, seed)
     }
 
     fn records_grad(&self) -> bool {
@@ -2574,7 +2628,7 @@ impl SavedTensor {
 
 type Topology = Vec<(Arc<AutogradMeta>, Option<GradFn>)>;
 
-fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
+fn run_backward(root: &Arc<AutogradMeta>, seed: f32) -> Result<(), TensorError> {
     // Saved values form a transaction: a traversal must either consume all of
     // them and commit its leaf gradients, or consume none. Serializing the
     // complete operation prevents concurrent roots which share intermediates
@@ -2585,7 +2639,7 @@ fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
     let topology = collect_topology(root)?;
 
     let mut gradients = HashMap::new();
-    gradients.insert(autograd_id(root), vec![1.0]);
+    gradients.insert(autograd_id(root), vec![seed]);
     let mut leaf_gradients = Vec::new();
 
     for (meta, grad_fn) in topology.iter().rev() {

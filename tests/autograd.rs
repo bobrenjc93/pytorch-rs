@@ -222,6 +222,86 @@ fn one_element_nonscalar_leaf_can_seed_implicit_backward_repeatedly() {
 }
 
 #[test]
+fn explicit_backward_seed_scales_multiply_sum_and_view_gradients() {
+    let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+    let loss = leaf.transpose(0, 1).unwrap().mul(&weights).unwrap().sum();
+    let seed = Tensor::from_vec(vec![-2.0], []).unwrap();
+
+    loss.backward_with_gradient(&seed).unwrap();
+    assert_eq!(
+        values(&leaf.grad().unwrap().unwrap()),
+        [-2.0, -6.0, -4.0, -8.0]
+    );
+
+    let accumulated = Tensor::from_vec(vec![5.0, 6.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let reusable_sum = accumulated.sum();
+    let scaled_seed = Tensor::from_vec(vec![2.5], []).unwrap();
+    reusable_sum.backward_with_gradient(&scaled_seed).unwrap();
+    reusable_sum.backward().unwrap();
+    assert_eq!(values(&accumulated.grad().unwrap().unwrap()), [3.5, 3.5]);
+
+    let one_element = Tensor::from_vec(vec![7.0], [1])
+        .unwrap()
+        .with_requires_grad(true);
+    let one_element_seed = Tensor::from_vec(vec![3.0], [1]).unwrap();
+    one_element
+        .backward_with_gradient(&one_element_seed)
+        .unwrap();
+    assert_eq!(values(&one_element.grad().unwrap().unwrap()), [3.0]);
+}
+
+#[test]
+fn explicit_backward_seed_requires_the_exact_output_shape() {
+    let scalar = Tensor::from_vec(vec![4.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let vector_seed = Tensor::from_vec(vec![2.0], [1]).unwrap();
+    assert_eq!(
+        scalar.backward_with_gradient(&vector_seed),
+        Err(TensorError::BackwardGradientShapeMismatch {
+            gradient: vec![1],
+            output: vec![],
+        })
+    );
+    assert_eq!(
+        scalar
+            .backward_with_gradient(&vector_seed)
+            .unwrap_err()
+            .to_string(),
+        "Mismatch in shape: grad_output[0] has a shape of torch.Size([1]) and output[0] has a shape of torch.Size([])."
+    );
+
+    let scalar_seed = Tensor::from_vec(vec![2.0], []).unwrap();
+    scalar.backward_with_gradient(&scalar_seed).unwrap();
+    assert_eq!(scalar.grad().unwrap().unwrap().item().unwrap(), 2.0);
+
+    let vector = Tensor::from_vec(vec![4.0], [1])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(
+        vector.backward_with_gradient(&scalar_seed),
+        Err(TensorError::BackwardGradientShapeMismatch {
+            gradient: vec![],
+            output: vec![1],
+        })
+    );
+
+    let multiple = Tensor::from_vec(vec![1.0, 2.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let multiple_seed = Tensor::from_vec(vec![3.0, 4.0], [2]).unwrap();
+    assert_eq!(
+        multiple.backward_with_gradient(&multiple_seed),
+        Err(TensorError::BackwardRequiresScalar { elements: 2 })
+    );
+}
+
+#[test]
 fn metadata_only_graphs_support_repeated_backward() {
     let summed_leaf = Tensor::from_vec(vec![1.0, 2.0], [2])
         .unwrap()

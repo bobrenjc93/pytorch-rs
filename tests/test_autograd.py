@@ -144,6 +144,71 @@ class AutogradApiTests(unittest.TestCase):
             np.asarray(transformed_leaf.grad), [[2.0, 2.0], [2.0, 2.0]]
         )
 
+    def test_explicit_backward_seed_scales_existing_graphs_and_accumulation(self):
+        leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        weights = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        loss = (leaf.T * weights).sum()
+        loss.backward(torch.tensor(-2.0))
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad), [[-2.0, -6.0], [-4.0, -8.0]]
+        )
+
+        accumulated = torch.tensor([5.0, 6.0], requires_grad=True)
+        reusable_sum = accumulated.sum()
+        reusable_sum.backward(None)
+        reusable_sum.backward(gradient=torch.tensor(2.5))
+        np.testing.assert_array_equal(np.asarray(accumulated.grad), [3.5, 3.5])
+
+        keyword_none = torch.tensor(9.0, requires_grad=True)
+        keyword_none.backward(gradient=None)
+        self.assertEqual(keyword_none.grad.item(), 1.0)
+
+        one_element = torch.tensor([7.0], requires_grad=True)
+        one_element.backward(gradient=torch.tensor([3.0]))
+        self.assertEqual(one_element.grad.tolist(), [3.0])
+
+    def test_explicit_backward_seed_type_and_shape_errors_match_pytorch(self):
+        scalar = torch.tensor(4.0, requires_grad=True)
+        with self.assertRaises(RuntimeError) as mismatch:
+            scalar.backward(torch.tensor([2.0]))
+        self.assertEqual(
+            str(mismatch.exception),
+            "Mismatch in shape: grad_output[0] has a shape of torch.Size([1]) "
+            "and output[0] has a shape of torch.Size([]).",
+        )
+        scalar.backward(torch.tensor(2.0))
+        self.assertEqual(scalar.grad.item(), 2.0)
+
+        vector = torch.tensor([4.0], requires_grad=True)
+        with self.assertRaises(RuntimeError) as mismatch:
+            vector.backward(gradient=torch.tensor(2.0))
+        self.assertEqual(
+            str(mismatch.exception),
+            "Mismatch in shape: grad_output[0] has a shape of torch.Size([]) "
+            "and output[0] has a shape of torch.Size([1]).",
+        )
+
+        for invalid in (2.0, object()):
+            with self.subTest(invalid=type(invalid).__name__):
+                target = torch.tensor(1.0, requires_grad=True)
+                with self.assertRaises(TypeError) as type_error:
+                    target.backward(invalid)
+                self.assertEqual(
+                    str(type_error.exception),
+                    f"'{type(invalid).__name__}' object is not iterable",
+                )
+
+        with self.assertRaises(TypeError) as element_type_error:
+            torch.tensor(1.0, requires_grad=True).backward([2.0])
+        self.assertEqual(
+            str(element_type_error.exception),
+            "gradients can be either Tensors or None, but got float",
+        )
+
+        sequence_target = torch.tensor(1.0, requires_grad=True)
+        sequence_target.backward([torch.tensor(4.0)])
+        self.assertEqual(sequence_target.grad.item(), 4.0)
+
     def test_deep_graph_transformations_and_negative_zero(self):
         deep_leaf = torch.tensor(3.0, requires_grad=True)
         deep_output = deep_leaf
@@ -531,6 +596,64 @@ class AutogradReferenceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "does not require grad"):
                 module.tensor([1.0, 2.0]).backward()
         np.testing.assert_array_equal(accumulated_gradients[0], accumulated_gradients[1])
+
+    def test_explicit_one_element_backward_seeds_match_pytorch_2_13(self):
+        outcomes = []
+        errors = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+            )
+            weights = module.tensor([[1.0, 2.0], [3.0, 4.0]])
+            (leaf.T * weights).sum().backward(module.tensor(-2.0))
+
+            accumulated = module.tensor([5.0, 6.0], requires_grad=True)
+            reusable_sum = accumulated.sum()
+            reusable_sum.backward(None)
+            reusable_sum.backward(gradient=module.tensor(2.5))
+
+            one_element = module.tensor([7.0], requires_grad=True)
+            one_element.backward(gradient=module.tensor([3.0]))
+
+            sequence_target = module.tensor(1.0, requires_grad=True)
+            sequence_target.backward([module.tensor(4.0)])
+
+            module_errors = []
+            for target, gradient in (
+                (
+                    module.tensor(4.0, requires_grad=True),
+                    module.tensor([2.0]),
+                ),
+                (
+                    module.tensor([4.0], requires_grad=True),
+                    module.tensor(2.0),
+                ),
+                (module.tensor(4.0, requires_grad=True), 2.0),
+                (module.tensor(4.0, requires_grad=True), [2.0]),
+            ):
+                try:
+                    target.backward(gradient)
+                except (RuntimeError, TypeError) as error:
+                    module_errors.append((type(error).__name__, str(error)))
+                else:
+                    self.fail(
+                        f"{module.__name__} accepted incompatible gradient {gradient!r}"
+                    )
+
+            outcomes.append(
+                (
+                    np.asarray(leaf.grad).copy(),
+                    np.asarray(accumulated.grad).copy(),
+                    np.asarray(one_element.grad).copy(),
+                    sequence_target.grad.item(),
+                )
+            )
+            errors.append(module_errors)
+
+        for native, expected in zip(outcomes[0][:3], outcomes[1][:3]):
+            np.testing.assert_array_equal(native, expected)
+        self.assertEqual(outcomes[0][3], outcomes[1][3])
+        self.assertEqual(errors[0], errors[1])
 
     def test_transform_and_signed_zero_gradients_match_pytorch_2_13(self):
         gradients = []
