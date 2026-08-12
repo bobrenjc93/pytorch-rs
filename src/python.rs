@@ -18,6 +18,7 @@ use pyo3::types::{
 
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, enter_no_grad, exit_no_grad,
+    is_grad_enabled as core_is_grad_enabled,
 };
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
@@ -887,6 +888,28 @@ impl BinaryOperation {
             (Self::Divide, true) => tensor.scalar_div(scalar),
         }
     }
+}
+
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[doc = "\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n"]
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn is_grad_enabled(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch.is_grad_enabled() takes no keyword arguments",
+        ));
+    }
+    if !args.is_empty() {
+        return Err(PyTypeError::new_err(format!(
+            "torch.is_grad_enabled() takes no arguments ({} given)",
+            args.len()
+        )));
+    }
+    Ok(core_is_grad_enabled())
 }
 
 #[pyfunction(
@@ -3377,6 +3400,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
         .call_method1("remove", ("_NoGradContext",))?;
     module.delattr("_NoGradContext")?;
     module.add("no_grad", no_grad_class)?;
+    module.add_function(wrap_pyfunction!(is_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;

@@ -3,6 +3,7 @@ import inspect
 import statistics
 import threading
 import time
+import types
 import unittest
 import weakref
 
@@ -16,6 +17,81 @@ except ImportError:
 
 
 class AutogradApiTests(unittest.TestCase):
+    def test_is_grad_enabled_state_restoration_and_thread_isolation(self):
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        with torch.no_grad():
+            self.assertIs(torch.is_grad_enabled(), False)
+            with torch.no_grad():
+                self.assertIs(torch.is_grad_enabled(), False)
+            self.assertIs(torch.is_grad_enabled(), False)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        @torch.no_grad()
+        def decorated():
+            return torch.is_grad_enabled()
+
+        self.assertIs(decorated(), False)
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        with self.assertRaisesRegex(RuntimeError, "restore grad mode"):
+            with torch.no_grad():
+                self.assertIs(torch.is_grad_enabled(), False)
+                raise RuntimeError("restore grad mode")
+        self.assertIs(torch.is_grad_enabled(), True)
+
+        worker_states = []
+        with torch.no_grad():
+            thread = threading.Thread(
+                target=lambda: worker_states.extend(
+                    [torch.is_grad_enabled(), decorated(), torch.is_grad_enabled()]
+                )
+            )
+            thread.start()
+            thread.join()
+            self.assertIs(torch.is_grad_enabled(), False)
+        self.assertEqual(worker_states, [True, False, True])
+        self.assertIs(torch.is_grad_enabled(), True)
+
+    def test_is_grad_enabled_public_contract_and_argument_errors(self):
+        function = torch.is_grad_enabled
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "is_grad_enabled")
+        self.assertEqual(function.__module__, torch.tensor.__module__)
+        self.assertIsNone(function.__text_signature__)
+        self.assertEqual(
+            function.__doc__,
+            "\nis_grad_enabled() -> (bool)\n\n"
+            "Returns True if grad mode is currently enabled.\n",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+        self.assertIn("is_grad_enabled", torch.__all__)
+
+        cases = (
+            (
+                lambda: function(None),
+                "torch.is_grad_enabled() takes no arguments (1 given)",
+            ),
+            (
+                lambda: function(None, None),
+                "torch.is_grad_enabled() takes no arguments (2 given)",
+            ),
+            (
+                lambda: function(enabled=True),
+                "torch.is_grad_enabled() takes no keyword arguments",
+            ),
+            (
+                lambda: function(None, enabled=True),
+                "torch.is_grad_enabled() takes no keyword arguments",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
+
     def test_requires_grad_leaf_grad_accumulation_and_nonleaf_grad(self):
         x = torch.tensor([-2.0, 0.5, 3.0], requires_grad=True)
         self.assertTrue(x.requires_grad)
@@ -694,6 +770,73 @@ class AutogradReferenceTests(unittest.TestCase):
             rtol=1.0e-6,
             atol=1.0e-6,
         )
+
+    def test_is_grad_enabled_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            function = module.is_grad_enabled
+            states = [function()]
+            with module.no_grad():
+                states.append(function())
+                with module.no_grad():
+                    states.append(function())
+                states.append(function())
+            states.append(function())
+
+            @module.no_grad()
+            def decorated():
+                return function()
+
+            states.extend((decorated(), function()))
+            try:
+                with module.no_grad():
+                    states.append(function())
+                    raise RuntimeError("restore grad mode")
+            except RuntimeError:
+                states.append(function())
+
+            worker_states = []
+            with module.no_grad():
+                thread = threading.Thread(
+                    target=lambda: worker_states.extend(
+                        [function(), decorated(), function()]
+                    )
+                )
+                thread.start()
+                thread.join()
+                states.append(function())
+            states.append(function())
+
+            errors = []
+            for call in (
+                lambda: function(None),
+                lambda: function(None, None),
+                lambda: function(enabled=True),
+                lambda: function(None, enabled=True),
+            ):
+                try:
+                    call()
+                except TypeError as error:
+                    errors.append((type(error).__name__, str(error)))
+                else:
+                    self.fail(f"{module.__name__}.is_grad_enabled accepted arguments")
+
+            with self.assertRaises(ValueError):
+                inspect.signature(function)
+            outcomes.append(
+                (
+                    states,
+                    worker_states,
+                    errors,
+                    type(function),
+                    function.__name__,
+                    function.__text_signature__,
+                    function.__doc__,
+                    "is_grad_enabled" in module.__all__,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
 
     def test_requires_grad_argument_types_match_pytorch_2_13(self):
         class Truthy:
