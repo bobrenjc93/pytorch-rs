@@ -673,6 +673,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:41",
+      "recordedAt": "2026-08-12T07:47:39.973Z",
+      "label": "PR #41",
+      "kind": "leaf",
+      "prNumber": 41,
+      "title": "Match Tensor introspection descriptor signatures",
+      "scores": {
+        "eval_7af648fb": 97,
+        "eval_8417a4a8": 54.6,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 22,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
