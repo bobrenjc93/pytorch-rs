@@ -650,6 +650,40 @@ fn no_grad_views_preserve_requires_grad_without_recording_history() {
 }
 
 #[test]
+fn leaf_status_reflects_recorded_autograd_history() {
+    let ordinary = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+    assert!(ordinary.is_leaf());
+    assert!(ordinary.mul_scalar(2.0).unwrap().is_leaf());
+    assert!(ordinary.transpose(0, 1).unwrap().is_leaf());
+
+    let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    assert!(leaf.is_leaf());
+
+    let operation = leaf.mul_scalar(2.0).unwrap();
+    let view = leaf.transpose(0, 1).unwrap();
+    assert!(!operation.is_leaf());
+    assert!(!view.is_leaf());
+    assert!(operation.detach().unwrap().is_leaf());
+
+    let no_grad_views = {
+        let _guard = no_grad();
+        let no_grad_operation = leaf.mul_scalar(2.0).unwrap();
+        assert!(no_grad_operation.is_leaf());
+        [
+            leaf.transpose(0, 1).unwrap(),
+            operation.transpose(0, 1).unwrap(),
+        ]
+    };
+    for no_grad_view in no_grad_views {
+        assert!(no_grad_view.requires_grad());
+        assert!(no_grad_view.is_leaf());
+        assert!(!no_grad_view.mul_scalar(2.0).unwrap().is_leaf());
+    }
+}
+
+#[test]
 fn multiply_backward_preserves_first_negative_zero_contribution() {
     let left = Tensor::from_vec(vec![2.0], [1])
         .unwrap()

@@ -989,6 +989,20 @@ impl Tensor {
         self.autograd.is_some() || self.view_requires_grad
     }
 
+    /// Returns whether this tensor has no recorded autograd operation producing it.
+    ///
+    /// Tensors which do not require gradients are leaves by convention. Views
+    /// created while gradient recording is disabled can still report
+    /// [`Self::requires_grad`] without carrying a recorded backward edge, and
+    /// are leaves for the same reason.
+    #[must_use]
+    pub fn is_leaf(&self) -> bool {
+        !matches!(
+            self.autograd.as_deref().map(|metadata| &metadata.kind),
+            Some(AutogradKind::NonLeaf { .. })
+        )
+    }
+
     /// Marks an owned tensor as a gradient-accumulating leaf, or detaches it
     /// when `requires_grad` is false.
     ///
