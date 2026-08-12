@@ -380,6 +380,11 @@ impl PyTensor {
     }
 
     #[getter]
+    fn is_leaf(&self) -> bool {
+        self.inner.is_leaf()
+    }
+
+    #[getter]
     fn grad(&self, py: Python<'_>) -> PyResult<Option<Py<Self>>> {
         if let Some(gradient) = self.grad_cache.get(py) {
             return Ok(Some(gradient.clone_ref(py)));

@@ -785,6 +785,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:51",
+      "recordedAt": "2026-08-12T19:02:39.848Z",
+      "label": "PR #51",
+      "kind": "leaf",
+      "prNumber": 51,
+      "title": "Expose the Tensor.is_leaf property",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 55.7,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 27,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
