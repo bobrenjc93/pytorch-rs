@@ -689,6 +689,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:42",
+      "recordedAt": "2026-08-12T08:15:47.689Z",
+      "label": "PR #42",
+      "kind": "leaf",
+      "prNumber": 42,
+      "title": "Differentiate tensor-tensor addition",
+      "scores": {
+        "eval_7af648fb": 98,
+        "eval_8417a4a8": 55.2,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 23,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
