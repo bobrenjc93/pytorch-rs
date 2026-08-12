@@ -705,6 +705,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:45",
+      "recordedAt": "2026-08-12T13:56:01.782Z",
+      "label": "PR #45",
+      "kind": "leaf",
+      "prNumber": 45,
+      "title": "Expose top-level torch.reshape",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 54.6,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 24,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
