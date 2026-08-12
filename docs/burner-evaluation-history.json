@@ -769,6 +769,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:50",
+      "recordedAt": "2026-08-12T16:15:00.107Z",
+      "label": "PR #50",
+      "kind": "leaf",
+      "prNumber": 50,
+      "title": "Make Tensor.sin differentiable",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 55.5,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 26,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
