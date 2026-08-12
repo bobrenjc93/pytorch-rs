@@ -226,6 +226,136 @@ fn real_scalar_subtraction_records_reusable_signed_gradients() {
 }
 
 #[test]
+fn tensor_by_scalar_division_records_float32_vjps_for_special_values_views_and_empties() {
+    let upstream = [
+        0x46d7_5128, // Distinguishes division from reciprocal multiplication.
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+        0x0000_0001,
+        0x8000_0001,
+    ]
+    .map(f32::from_bits);
+    let scalar_bits = [
+        0x383a_7098,
+        0x4000_0000,
+        0xc000_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+
+    let rounding_scalar = f32::from_bits(scalar_bits[0]);
+    assert_eq!((upstream[0] / rounding_scalar).to_bits(), 0x4e13_d35b);
+    assert_eq!(
+        (upstream[0] * rounding_scalar.recip()).to_bits(),
+        0x4e13_d35a
+    );
+
+    for scalar_bits in scalar_bits {
+        let scalar = f32::from_bits(scalar_bits);
+        let leaf = Tensor::ones([upstream.len()])
+            .unwrap()
+            .with_requires_grad(true);
+        let weights = Tensor::from_vec(upstream.to_vec(), [upstream.len()]).unwrap();
+        leaf.div_scalar(scalar)
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+
+        let actual = values(&leaf.grad().unwrap().unwrap())
+            .into_iter()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>();
+        let expected = upstream
+            .iter()
+            .map(|value| (value / scalar).to_bits())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "scalar bits {scalar_bits:#010x}");
+    }
+
+    let view_leaf = Tensor::ones([2, 3]).unwrap().with_requires_grad(true);
+    let view = view_leaf.transpose(0, 1).unwrap();
+    let view_upstream = [
+        f32::from_bits(0x46d7_5128),
+        -0.0,
+        f32::INFINITY,
+        -1.0,
+        0.0,
+        f32::NEG_INFINITY,
+    ];
+    let weights = Tensor::from_vec(view_upstream.to_vec(), [3, 2]).unwrap();
+    let divided = view.div_scalar(rounding_scalar).unwrap();
+    assert!(divided.requires_grad());
+    assert_eq!(divided.stride(), [1, 3]);
+    divided.mul(&weights).unwrap().sum().backward().unwrap();
+
+    let actual = values(&view_leaf.grad().unwrap().unwrap())
+        .into_iter()
+        .map(f32::to_bits)
+        .collect::<Vec<_>>();
+    let expected =
+        [0, 2, 4, 1, 3, 5].map(|index| (view_upstream[index] / rounding_scalar).to_bits());
+    assert_eq!(actual, expected);
+
+    let empty_leaf = Tensor::zeros([0]).unwrap().with_requires_grad(true);
+    let empty = empty_leaf.reshape([2, 0, 3]).unwrap();
+    let empty_output = empty.div_scalar(-0.0).unwrap();
+    assert!(empty_output.requires_grad());
+    assert_eq!(empty_output.shape(), [2, 0, 3]);
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    empty_output.sum().backward().unwrap();
+    let empty_gradient = empty_leaf.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [0]);
+    assert!(values(&empty_gradient).is_empty());
+}
+
+#[test]
+fn tensor_by_scalar_division_obeys_boundaries_and_graph_lifetime() {
+    let leaf = Tensor::from_vec(vec![2.0, 3.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let tracked = leaf.div_scalar(2.0).unwrap();
+    assert!(tracked.requires_grad());
+
+    let reflected = leaf.scalar_div(2.0).unwrap();
+    assert!(!reflected.requires_grad());
+    assert!(
+        !leaf
+            .detach()
+            .unwrap()
+            .div_scalar(2.0)
+            .unwrap()
+            .requires_grad()
+    );
+    {
+        let _guard = no_grad();
+        let suppressed = leaf.transpose(0, 0).unwrap().div_scalar(2.0).unwrap();
+        assert!(!suppressed.requires_grad());
+        assert_eq!(
+            suppressed.sum().backward(),
+            Err(TensorError::DoesNotRequireGrad)
+        );
+    }
+
+    let loss = tracked.sum();
+    loss.backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [0.5, 0.5]);
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
 fn detach_and_nested_no_grad_are_graph_boundaries() {
     let x = Tensor::from_vec(vec![2.0], [])
         .unwrap()

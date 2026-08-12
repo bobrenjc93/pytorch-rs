@@ -120,6 +120,48 @@ class AutogradApiTests(unittest.TestCase):
             self.assertFalse((forward_leaf - 1.0).requires_grad)
             self.assertFalse((1.0 - forward_leaf).requires_grad)
 
+    def test_tensor_by_real_scalar_division_retains_gradient_history(self):
+        leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        weights = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+        )
+        divided = leaf.transpose(0, 1) / 2.0
+        self.assertTrue(divided.requires_grad)
+        self.assertEqual(divided.stride(), (1, 3))
+        (divided * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad),
+            [[0.5, 1.5, 2.5], [1.0, 2.0, 3.0]],
+        )
+
+        empty_leaf = torch.tensor(
+            np.empty((0,), dtype=np.float32), requires_grad=True
+        )
+        empty_output = empty_leaf.reshape(2, 0, 3) / -0.0
+        self.assertTrue(empty_output.requires_grad)
+        self.assertEqual(empty_output.stride(), (3, 3, 1))
+        empty_output.sum().backward()
+        self.assertEqual(empty_leaf.grad.shape, (0,))
+        self.assertEqual(empty_leaf.grad.numel(), 0)
+
+        consumed_leaf = torch.tensor([2.0, 3.0], requires_grad=True)
+        consumed_loss = (consumed_leaf / np.float32(2.0)).sum()
+        consumed_loss.backward()
+        np.testing.assert_array_equal(np.asarray(consumed_leaf.grad), [0.5, 0.5])
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            consumed_loss.backward()
+
+        self.assertFalse((leaf.detach() / 2.0).requires_grad)
+        with torch.no_grad():
+            self.assertFalse((leaf.transpose(0, 1) / 2.0).requires_grad)
+
+        # Reflected division's value-dependent VJP remains outside this increment.
+        self.assertFalse((2.0 / leaf).requires_grad)
+
     def test_unary_negation_records_gradients_and_obeys_no_grad(self):
         values = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
@@ -656,6 +698,135 @@ class AutogradReferenceTests(unittest.TestCase):
         for native, expected in zip(outcomes[0][6], outcomes[1][6]):
             np.testing.assert_array_equal(native, expected)
         self.assertEqual(outcomes[0][7:], outcomes[1][7:])
+
+    def test_tensor_by_real_scalar_division_gradients_match_pytorch_2_13(self):
+        upstream_bits = np.asarray(
+            (
+                0x46D7_5128,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x0000_0001,
+                0x8000_0001,
+            ),
+            dtype=np.uint32,
+        )
+        upstream = upstream_bits.view(np.float32)
+        scalars = np.asarray(
+            (
+                0x383A_7098,
+                0x4000_0000,
+                0xC000_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        ).view(np.float32)
+
+        outcomes = []
+        for module in (torch, reference_torch):
+            special_gradients = []
+            for scalar in scalars:
+                leaf = module.tensor(
+                    [1.0] * len(upstream), requires_grad=True
+                )
+                weights = module.tensor(memoryview(upstream))
+                output = leaf / scalar
+                self.assertTrue(output.requires_grad)
+                (output * weights).sum().backward()
+                special_gradients.append(
+                    np.asarray(leaf.grad)
+                    .reshape(-1)
+                    .view(np.uint32)
+                    .copy()
+                )
+
+            view_leaf = module.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                requires_grad=True,
+            )
+            view_weights = module.tensor(memoryview(upstream[:6])).reshape(3, 2)
+            divided_view = view_leaf.transpose(0, 1) / scalars[0]
+            (divided_view * view_weights).sum().backward()
+            view_metadata = (
+                tuple(divided_view.shape),
+                divided_view.stride(),
+                divided_view.requires_grad,
+            )
+            view_gradient = (
+                np.asarray(view_leaf.grad)
+                .reshape(-1)
+                .view(np.uint32)
+                .copy()
+            )
+
+            empty_leaf = module.tensor(
+                np.empty((0,), dtype=np.float32), requires_grad=True
+            )
+            empty_output = empty_leaf.reshape(2, 0, 3) / np.float32(-0.0)
+            empty_output.sum().backward()
+            empty_metadata = (
+                tuple(empty_output.shape),
+                empty_output.stride(),
+                empty_output.requires_grad,
+                tuple(empty_leaf.grad.shape),
+                empty_leaf.grad.numel(),
+            )
+
+            boundary = module.tensor([2.0, 3.0], requires_grad=True)
+            tracked = boundary / 2.0
+            detached = boundary.detach() / 2.0
+            with module.no_grad():
+                suppressed = boundary.transpose(0, 0) / 2.0
+            loss = tracked.sum()
+            loss.backward()
+            boundary_gradient = (
+                np.asarray(boundary.grad)
+                .reshape(-1)
+                .view(np.uint32)
+                .copy()
+            )
+            try:
+                loss.backward()
+            except RuntimeError as error:
+                reuse_error = (type(error).__name__, str(error))
+            else:
+                self.fail(f"{module.__name__} reused a scalar-division graph")
+            boundary_metadata = (
+                tracked.requires_grad,
+                detached.requires_grad,
+                suppressed.requires_grad,
+                reuse_error,
+            )
+
+            outcomes.append(
+                (
+                    special_gradients,
+                    view_metadata,
+                    view_gradient,
+                    empty_metadata,
+                    boundary_metadata,
+                    boundary_gradient,
+                )
+            )
+
+        native, expected = outcomes
+        for native_gradient, expected_gradient in zip(native[0], expected[0]):
+            np.testing.assert_array_equal(native_gradient, expected_gradient)
+        self.assertEqual(native[1], expected[1])
+        np.testing.assert_array_equal(native[2], expected[2])
+        self.assertEqual(native[3:5], expected[3:5])
+        np.testing.assert_array_equal(native[5], expected[5])
+        self.assertEqual(native[0][0][0], 0x4E13_D35B)
 
     def test_seeded_square_sum_and_broadcast_gradients_match_pytorch_2_13(self):
         rng = np.random.default_rng(0xA670_213)

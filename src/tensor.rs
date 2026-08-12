@@ -241,6 +241,10 @@ enum GradFn {
         input: SavedTensor,
         scalar: Option<f32>,
     },
+    DivideScalar {
+        input: SavedTensor,
+        scalar: Option<f32>,
+    },
     Negate {
         input: SavedTensor,
     },
@@ -281,6 +285,7 @@ impl GradFn {
                 right.take_parent(pending);
             }
             Self::MultiplyScalar { input, .. }
+            | Self::DivideScalar { input, .. }
             | Self::Negate { input }
             | Self::Sum { input }
             | Self::Transform { input, .. } => input.take_parent(pending),
@@ -296,7 +301,7 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::MultiplyScalar { input, scalar } => {
+            Self::MultiplyScalar { input, scalar } | Self::DivideScalar { input, scalar } => {
                 if input.autograd.is_some() && scalar.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
@@ -313,7 +318,9 @@ impl GradFn {
                 left.storage = None;
                 right.storage = None;
             }
-            Self::MultiplyScalar { scalar, .. } => *scalar = None,
+            Self::MultiplyScalar { scalar, .. } | Self::DivideScalar { scalar, .. } => {
+                *scalar = None;
+            }
             Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
@@ -728,7 +735,7 @@ fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> 
             "element 0 of tensors does not require grad and does not have a grad_fn",
         ),
         TensorError::BackwardGraphFreed => formatter.write_str(
-            "Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). Saved intermediate values of the graph are freed when you call .backward(). Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.",
+            "Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). Saved intermediate values of the graph are freed when you call .backward() or autograd.grad(). Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.",
         ),
         _ => unreachable!("only autograd errors are formatted here"),
     }
@@ -2176,7 +2183,17 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn div_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| value / scalar)
+        let mut output = self.map_scalar(scalar, |value, scalar| value / scalar)?;
+        if self.requires_grad() && grad_enabled() {
+            let input = SavedTensor::try_from_tensor(self, false)?;
+            let scalar = input.autograd.is_some().then_some(scalar);
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::DivideScalar { input, scalar })),
+                },
+            }));
+        }
+        Ok(output)
     }
 
     /// Subtracts every element from a scalar.
@@ -2687,6 +2704,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             push_saved_parent(&mut stack, left);
                         }
                         GradFn::MultiplyScalar { input, .. }
+                        | GradFn::DivideScalar { input, .. }
                         | GradFn::Negate { input }
                         | GradFn::Sum { input }
                         | GradFn::Transform { input, .. } => {
@@ -2723,6 +2741,14 @@ fn apply_grad_fn(
                 let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
                 gradient.extend(upstream.iter().map(|value| value * scalar));
+                add_gradient(gradients, meta, gradient);
+            }
+        }
+        GradFn::DivideScalar { input, scalar } => {
+            if let Some(meta) = &input.autograd {
+                let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
+                let mut gradient = try_result_vector(input.elements, input.elements)?;
+                gradient.extend(upstream.iter().map(|value| value / scalar));
                 add_gradient(gradients, meta, gradient);
             }
         }
