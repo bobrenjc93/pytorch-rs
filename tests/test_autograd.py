@@ -56,6 +56,70 @@ class AutogradApiTests(unittest.TestCase):
         with torch.no_grad():
             self.assertFalse((1.0 + values).requires_grad)
 
+    def test_real_scalar_subtraction_retains_gradient_history(self):
+        weights = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+
+        forward_leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        forward = forward_leaf.transpose(0, 1) - 2.0
+        self.assertTrue(forward.requires_grad)
+        self.assertEqual(forward.stride(), (1, 3))
+        np.testing.assert_array_equal(
+            np.asarray(forward), [[-1.0, 2.0], [0.0, 3.0], [1.0, 4.0]]
+        )
+        (forward * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(forward_leaf.grad), [[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]]
+        )
+
+        reflected_leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        reflected = 10.0 - reflected_leaf.transpose(0, 1)
+        self.assertTrue(reflected.requires_grad)
+        self.assertEqual(reflected.stride(), (1, 3))
+        np.testing.assert_array_equal(
+            np.asarray(reflected), [[9.0, 6.0], [8.0, 5.0], [7.0, 4.0]]
+        )
+        (reflected * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(reflected_leaf.grad),
+            [[-1.0, -3.0, -5.0], [-2.0, -4.0, -6.0]],
+        )
+
+        for operation in (
+            lambda value: value - 7.0,
+            lambda value: 7.0 - value,
+        ):
+            empty_leaf = torch.tensor(
+                np.empty((0,), dtype=np.float32), requires_grad=True
+            )
+            empty_output = operation(empty_leaf.reshape(2, 0, 3))
+            self.assertTrue(empty_output.requires_grad)
+            self.assertEqual(empty_output.stride(), (3, 3, 1))
+            empty_output.sum().backward()
+            self.assertEqual(empty_leaf.grad.shape, (0,))
+            self.assertEqual(empty_leaf.grad.numel(), 0)
+
+        for operation, expected in (
+            (lambda value: value - 1.0, [2.0, 2.0]),
+            (lambda value: 1.0 - value, [-2.0, -2.0]),
+        ):
+            repeated_leaf = torch.tensor([2.0, 3.0], requires_grad=True)
+            repeated_loss = operation(repeated_leaf).sum()
+            repeated_loss.backward()
+            repeated_loss.backward()
+            np.testing.assert_array_equal(
+                np.asarray(repeated_leaf.grad), expected
+            )
+
+        self.assertFalse((forward_leaf.detach() - 1.0).requires_grad)
+        self.assertFalse((1.0 - forward_leaf.detach()).requires_grad)
+        with torch.no_grad():
+            self.assertFalse((forward_leaf - 1.0).requires_grad)
+            self.assertFalse((1.0 - forward_leaf).requires_grad)
+
     def test_unary_negation_records_gradients_and_obeys_no_grad(self):
         values = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
@@ -509,6 +573,89 @@ class AutogradReferenceTests(unittest.TestCase):
         np.testing.assert_array_equal(outcomes[0][0], outcomes[1][0])
         np.testing.assert_array_equal(outcomes[0][1], outcomes[1][1])
         self.assertEqual(outcomes[0][2:], outcomes[1][2:])
+
+    def test_real_scalar_subtraction_gradients_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            weights = module.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+
+            forward_leaf = module.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+            )
+            forward = forward_leaf.transpose(0, 1) - 2.0
+            forward_loss = (forward * weights).sum()
+            forward_loss.backward()
+
+            reflected_leaf = module.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+            )
+            reflected = 10.0 - reflected_leaf.transpose(0, 1)
+            reflected_loss = (reflected * weights).sum()
+            reflected_loss.backward()
+
+            repeated_results = []
+            for operation in (
+                lambda value: value - 1.0,
+                lambda value: 1.0 - value,
+            ):
+                repeated_leaf = module.tensor([2.0, 3.0], requires_grad=True)
+                repeated_loss = operation(repeated_leaf).sum()
+                repeated_loss.backward()
+                repeated_loss.backward()
+                repeated_results.append(np.asarray(repeated_leaf.grad).copy())
+
+            empty_results = []
+            for operation in (
+                lambda value: value - 7.0,
+                lambda value: 7.0 - value,
+            ):
+                empty_leaf = module.tensor(
+                    np.empty((0,), dtype=np.float32), requires_grad=True
+                )
+                empty_output = operation(empty_leaf.reshape(2, 0, 3))
+                empty_output.sum().backward()
+                empty_results.append(
+                    (
+                        tuple(empty_output.shape),
+                        empty_output.stride(),
+                        empty_output.requires_grad,
+                        tuple(empty_leaf.grad.shape),
+                        empty_leaf.grad.numel(),
+                    )
+                )
+
+            detached = (
+                (forward_leaf.detach() - 1.0).requires_grad,
+                (1.0 - forward_leaf.detach()).requires_grad,
+            )
+            with module.no_grad():
+                suppressed = (
+                    (forward_leaf - 1.0).requires_grad,
+                    (1.0 - forward_leaf).requires_grad,
+                )
+
+            outcomes.append(
+                (
+                    forward.detach().tolist(),
+                    forward.stride(),
+                    np.asarray(forward_leaf.grad).copy(),
+                    reflected.detach().tolist(),
+                    reflected.stride(),
+                    np.asarray(reflected_leaf.grad).copy(),
+                    repeated_results,
+                    empty_results,
+                    detached,
+                    suppressed,
+                )
+            )
+
+        self.assertEqual(outcomes[0][0:2], outcomes[1][0:2])
+        np.testing.assert_array_equal(outcomes[0][2], outcomes[1][2])
+        self.assertEqual(outcomes[0][3:5], outcomes[1][3:5])
+        np.testing.assert_array_equal(outcomes[0][5], outcomes[1][5])
+        for native, expected in zip(outcomes[0][6], outcomes[1][6]):
+            np.testing.assert_array_equal(native, expected)
+        self.assertEqual(outcomes[0][7:], outcomes[1][7:])
 
     def test_seeded_square_sum_and_broadcast_gradients_match_pytorch_2_13(self):
         rng = np.random.default_rng(0xA670_213)
