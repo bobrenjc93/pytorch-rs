@@ -657,6 +657,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:39",
+      "recordedAt": "2026-08-12T06:56:51.486Z",
+      "label": "PR #39",
+      "kind": "leaf",
+      "prNumber": 39,
+      "title": "Differentiate tensor-by-scalar division",
+      "scores": {
+        "eval_7af648fb": 96,
+        "eval_8417a4a8": 54.5,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 21,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
