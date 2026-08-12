@@ -8,6 +8,8 @@ use std::mem::size_of;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+const F32_SIGN_MASK: u32 = 0x8000_0000;
+
 /// Native scalar types implemented by tensor storage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum DType {
@@ -239,6 +241,9 @@ enum GradFn {
         input: SavedTensor,
         scalar: Option<f32>,
     },
+    Negate {
+        input: SavedTensor,
+    },
     Sum {
         input: SavedTensor,
     },
@@ -276,6 +281,7 @@ impl GradFn {
                 right.take_parent(pending);
             }
             Self::MultiplyScalar { input, .. }
+            | Self::Negate { input }
             | Self::Sum { input }
             | Self::Transform { input, .. } => input.take_parent(pending),
         }
@@ -295,7 +301,7 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::Sum { .. } | Self::Transform { .. } => {}
+            Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
     }
@@ -308,7 +314,7 @@ impl GradFn {
                 right.storage = None;
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
-            Self::Sum { .. } | Self::Transform { .. } => {}
+            Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
     }
@@ -2140,6 +2146,25 @@ impl Tensor {
         Ok(output)
     }
 
+    /// Negates every element by toggling its IEEE 754 sign bit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub(crate) fn negate(&self) -> Result<Self, TensorError> {
+        let mut output = self.unary_map(negate_value)?;
+        if self.requires_grad() && grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Negate {
+                        input: SavedTensor::try_from_tensor(self, false)?,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
     /// Divides every element by a scalar using IEEE 754 true division.
     ///
     /// # Errors
@@ -2656,6 +2681,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             push_saved_parent(&mut stack, left);
                         }
                         GradFn::MultiplyScalar { input, .. }
+                        | GradFn::Negate { input }
                         | GradFn::Sum { input }
                         | GradFn::Transform { input, .. } => {
                             push_saved_parent(&mut stack, input);
@@ -2691,6 +2717,14 @@ fn apply_grad_fn(
                 let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
                 gradient.extend(upstream.iter().map(|value| value * scalar));
+                add_gradient(gradients, meta, gradient);
+            }
+        }
+        GradFn::Negate { input } => {
+            if let Some(meta) = &input.autograd {
+                debug_assert_eq!(input.elements, upstream.len());
+                let mut gradient = try_result_vector(input.elements, input.elements)?;
+                gradient.extend(upstream.iter().copied().map(negate_value));
                 add_gradient(gradients, meta, gradient);
             }
         }
@@ -3549,6 +3583,10 @@ fn checked_physical_stride_product(stride: usize, dimension: usize) -> Result<us
         .ok_or(TensorError::StrideCalculationOverflow)
 }
 
+fn negate_value(value: f32) -> f32 {
+    f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
+}
+
 fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {
     validate_storage_capacity(elements)?;
 
@@ -3579,7 +3617,9 @@ fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
 mod tests {
     use std::sync::Arc;
 
-    use super::{DType, Device, Storage, StorageData, Tensor, TensorError, try_result_vector};
+    use super::{
+        DType, Device, F32_SIGN_MASK, Storage, StorageData, Tensor, TensorError, try_result_vector,
+    };
 
     #[test]
     fn multiply_snapshots_live_gradient_operands_for_backward() {
@@ -3597,6 +3637,82 @@ mod tests {
         assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0, 2.0]);
         saved_loss.backward().unwrap();
         assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [1.0, 1.0]);
+    }
+
+    #[test]
+    fn negation_toggles_every_float_sign_bit() {
+        let bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+        ];
+        let values = bits.map(f32::from_bits);
+        let input = Tensor::from_vec(values.to_vec(), [bits.len()]).unwrap();
+        let output = input.negate().unwrap();
+        assert!(!output.shares_storage_with(&input));
+        assert!(
+            output
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(bits.map(|value| value ^ F32_SIGN_MASK))
+        );
+    }
+
+    #[test]
+    fn negation_gradient_edge_is_reusable_shared_and_bitwise() {
+        let leaf = Tensor::from_vec(vec![2.0, -3.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let repeated = leaf.negate().unwrap().sum();
+        repeated.backward().unwrap();
+        repeated.backward().unwrap();
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [-2.0, -2.0]);
+
+        let shared_leaf = Tensor::from_vec(vec![5.0, 7.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let shared_negative = shared_leaf.negate().unwrap();
+        let first_root = shared_negative.sum();
+        let second_root = shared_negative.sum();
+        first_root.backward().unwrap();
+        second_root.backward().unwrap();
+        assert_eq!(
+            shared_leaf.grad().unwrap().unwrap().as_slice(),
+            [-2.0, -2.0]
+        );
+
+        let nan_leaf = Tensor::from_vec(vec![1.0, 2.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let weights = Tensor::from_vec(
+            vec![f32::from_bits(0x7fc1_2345), f32::from_bits(0xffc5_4321)],
+            [2],
+        )
+        .unwrap();
+        nan_leaf
+            .negate()
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert!(
+            nan_leaf
+                .grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([0xffc1_2345, 0x7fc5_4321])
+        );
     }
 
     #[test]

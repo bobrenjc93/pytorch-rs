@@ -56,6 +56,55 @@ class AutogradApiTests(unittest.TestCase):
         with torch.no_grad():
             self.assertFalse((1.0 + values).requires_grad)
 
+    def test_unary_negation_records_gradients_and_obeys_no_grad(self):
+        values = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        weights = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        negated = -values.transpose(0, 1)
+        self.assertTrue(negated.requires_grad)
+        self.assertEqual(negated.stride(), (1, 3))
+
+        (negated * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(values.grad),
+            -np.asarray(weights).transpose(1, 0),
+        )
+
+        with torch.no_grad():
+            untracked = -values.transpose(0, 1)
+            self.assertFalse(untracked.requires_grad)
+            self.assertEqual(untracked.stride(), (1, 3))
+        self.assertTrue((-values).requires_grad)
+
+    def test_unary_negation_gradient_is_reusable_shared_and_bitwise(self):
+        repeated_values = torch.tensor([2.0, 3.0], requires_grad=True)
+        repeated_loss = (-repeated_values).sum()
+        repeated_loss.backward()
+        repeated_loss.backward()
+        np.testing.assert_array_equal(
+            np.asarray(repeated_values.grad), [-2.0, -2.0]
+        )
+
+        shared_values = torch.tensor([5.0, 7.0], requires_grad=True)
+        shared_negative = -shared_values
+        first_root = shared_negative.sum()
+        second_root = shared_negative.sum()
+        first_root.backward()
+        second_root.backward()
+        np.testing.assert_array_equal(
+            np.asarray(shared_values.grad), [-2.0, -2.0]
+        )
+
+        nan_bits = np.asarray((0x7FC1_2345, 0xFFC5_4321), dtype=np.uint32)
+        weights = torch.tensor(memoryview(nan_bits.view(np.float32)))
+        nan_values = torch.tensor([1.0, 2.0], requires_grad=True)
+        ((-nan_values) * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(nan_values.grad).view(np.uint32),
+            np.asarray((0xFFC1_2345, 0x7FC5_4321), dtype=np.uint32),
+        )
+
     def test_saved_live_gradient_values_are_frozen_at_forward(self):
         source = torch.tensor([4.0, 5.0], requires_grad=True)
         source.sum().backward()
