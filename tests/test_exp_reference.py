@@ -233,6 +233,32 @@ class ExpReferenceTests(unittest.TestCase):
             case="no_grad output",
         )
 
+        with torch.no_grad():
+            actual_no_grad_view = actual_leaf.transpose(0, 1)
+        with reference_torch.no_grad():
+            expected_no_grad_view = expected_leaf.transpose(0, 1)
+        actual_boundary_output = actual_no_grad_view.exp()
+        expected_boundary_output = expected_no_grad_view.exp()
+        self.assert_metadata_matches(
+            actual_boundary_output,
+            expected_boundary_output,
+            case="operation after no_grad view",
+        )
+        actual_boundary_loss = actual_boundary_output.sum()
+        expected_boundary_loss = expected_boundary_output.sum()
+        actual_boundary_loss.backward()
+        expected_boundary_loss.backward()
+        self.assertIsNone(actual_leaf.grad)
+        self.assertIsNone(expected_leaf.grad)
+        with self.assertRaises(RuntimeError) as expected_boundary_raised:
+            expected_boundary_loss.backward()
+        with self.assertRaises(RuntimeError) as actual_boundary_raised:
+            actual_boundary_loss.backward()
+        self.assertEqual(
+            str(actual_boundary_raised.exception),
+            str(expected_boundary_raised.exception),
+        )
+
         actual_loss = actual_tracked.sum()
         expected_loss = expected_tracked.sum()
         actual_loss.backward()

@@ -251,6 +251,19 @@ fn exponential_obeys_detach_and_no_grad_boundaries() {
         assert_eq!(output.storage_offset(), 0);
     }
     assert!(leaf.exp().unwrap().requires_grad());
+
+    let no_grad_view = {
+        let _guard = no_grad();
+        leaf.transpose(0, 1).unwrap()
+    };
+    let no_grad_view_loss = no_grad_view.exp().unwrap().sum();
+    assert!(no_grad_view_loss.requires_grad());
+    no_grad_view_loss.backward().unwrap();
+    assert!(leaf.grad().unwrap().is_none());
+    assert_eq!(
+        no_grad_view_loss.backward(),
+        Err(TensorError::BackwardGraphFreed)
+    );
 }
 
 #[test]

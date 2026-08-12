@@ -306,8 +306,8 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::Exp { input, result } => {
-                if input.autograd.is_some() && result.storage.is_none() {
+            Self::Exp { result, .. } => {
+                if result.storage.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
@@ -1184,7 +1184,7 @@ impl Tensor {
     fn finish_exp_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
         if self.records_grad() {
             let input = SavedTensor::try_from_tensor(self, false)?;
-            let result = SavedTensor::try_from_tensor(&output, input.autograd.is_some())?;
+            let result = SavedTensor::try_from_tensor(&output, true)?;
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Exp { input, result })),
