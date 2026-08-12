@@ -689,6 +689,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:43",
+      "recordedAt": "2026-08-12T08:40:32.996Z",
+      "label": "PR #43",
+      "kind": "leaf",
+      "prNumber": 43,
+      "title": "Align transpose warning literals with PyTorch 2.13",
+      "scores": {
+        "eval_7af648fb": 98,
+        "eval_8417a4a8": 54.6,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 23,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
