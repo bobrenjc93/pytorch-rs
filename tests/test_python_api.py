@@ -1,7 +1,9 @@
 import math
 import operator
 import re
+import subprocess
 import sys
+import textwrap
 import unittest
 from decimal import Decimal
 
@@ -86,6 +88,57 @@ class PythonApiBaselineTests(unittest.TestCase):
         np.testing.assert_array_equal(actual_bits, bits ^ np.uint32(0x8000_0000))
         self.assertIs((-special).dtype, torch.float32)
         self.assertEqual((-special).device, torch.device("cpu"))
+
+        extreme_shape = (7, 2, 3, 0, 1 << 60)
+        extreme = -torch.zeros((0,)).reshape(extreme_shape)
+        self.assertEqual(extreme.shape, extreme_shape)
+        self.assertEqual(
+            extreme.stride(),
+            (6 << 60, 3 << 60, 1 << 60, 1 << 60, 1),
+        )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_unary_negation_materializes_one_full_output_buffer(self):
+        script = textwrap.dedent(
+            """\
+            import math
+            import os
+            import resource
+            import sys
+
+            import torch_rs as torch
+
+            elements = 4_000_000
+            source = torch.zeros((1, elements)).transpose(0, 1)
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 26 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            output = -source
+            assert output.shape == (elements, 1)
+            assert output.stride() == (1, 1)
+            assert math.copysign(1.0, output[0, 0].item()) == -1.0
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode == 77:
+            self.skipTest("process hard address-space limit is too low")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_sin_matches_pytorch_float32_reference_and_metadata(self):
         source = torch.tensor(

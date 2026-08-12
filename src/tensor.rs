@@ -8,6 +8,8 @@ use std::mem::size_of;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+const F32_SIGN_MASK: u32 = 0x8000_0000;
+
 /// Native scalar types implemented by tensor storage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum DType {
@@ -239,6 +241,9 @@ enum GradFn {
         input: SavedTensor,
         scalar: Option<f32>,
     },
+    Negate {
+        input: SavedTensor,
+    },
     Sum {
         input: SavedTensor,
     },
@@ -276,6 +281,7 @@ impl GradFn {
                 right.take_parent(pending);
             }
             Self::MultiplyScalar { input, .. }
+            | Self::Negate { input }
             | Self::Sum { input }
             | Self::Transform { input, .. } => input.take_parent(pending),
         }
@@ -295,7 +301,7 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::Sum { .. } | Self::Transform { .. } => {}
+            Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
     }
@@ -308,7 +314,7 @@ impl GradFn {
                 right.storage = None;
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
-            Self::Sum { .. } | Self::Transform { .. } => {}
+            Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
     }
@@ -2140,54 +2146,21 @@ impl Tensor {
         Ok(output)
     }
 
-    /// Negates every element through the scalar-multiplication kernel and
-    /// gradient edge.
-    ///
-    /// Unary `TensorIterator` output layout differs from tensor-scalar
-    /// multiplication for some empty tensors, so the result is restrided with
-    /// the existing unary layout planner after multiplication.
+    /// Negates every element by toggling its IEEE 754 sign bit.
     ///
     /// # Errors
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub(crate) fn negate(&self) -> Result<Self, TensorError> {
-        let unary_strides = self.unary_output_strides(&self.shape, self.elements)?;
-        let mut output = self.mul_scalar(-1.0)?;
-        if output.strides != unary_strides {
-            if output.elements != 0 {
-                let data = output.materialize_with_strides(&unary_strides, |value| value)?;
-                output.storage = Arc::new(Storage {
-                    data: StorageData::Owned(data),
-                    dtype: output.dtype(),
-                    device: output.device(),
-                });
-                output.offset = 0;
-            }
-            output.strides = unary_strides;
-        }
-
-        // IEEE multiplication preserves the input NaN sign on the supported
-        // CPU path, whereas unary negation flips the sign bit without changing
-        // the payload (including for signaling NaNs). Keep the multiplication
-        // result for ordinary values and repair only NaN lanes in place.
-        let mut nan_values = self
-            .logical_values()
-            .enumerate()
-            .filter_map(|(index, value)| value.is_nan().then_some((index, value)));
-        let Some(first_nan) = nan_values.next() else {
-            return Ok(output);
-        };
-        let output_shape = &output.shape;
-        let output_strides = &output.strides;
-        let storage = Arc::get_mut(&mut output.storage)
-            .expect("fresh negation output storage must be uniquely owned");
-        let StorageData::Owned(data) = &mut storage.data else {
-            unreachable!("negation always materializes owned output storage");
-        };
-        for (linear_index, value) in std::iter::once(first_nan).chain(nan_values) {
-            let output_offset =
-                logical_offset_for_linear_index(output_shape, output_strides, 0, linear_index)?;
-            data[output_offset] = f32::from_bits(value.to_bits() ^ (1_u32 << 31));
+        let mut output = self.unary_map(negate_value)?;
+        if self.requires_grad() && grad_enabled() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Negate {
+                        input: SavedTensor::try_from_tensor(self, false)?,
+                    })),
+                },
+            }));
         }
         Ok(output)
     }
@@ -2708,6 +2681,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             push_saved_parent(&mut stack, left);
                         }
                         GradFn::MultiplyScalar { input, .. }
+                        | GradFn::Negate { input }
                         | GradFn::Sum { input }
                         | GradFn::Transform { input, .. } => {
                             push_saved_parent(&mut stack, input);
@@ -2743,6 +2717,14 @@ fn apply_grad_fn(
                 let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
                 gradient.extend(upstream.iter().map(|value| value * scalar));
+                add_gradient(gradients, meta, gradient);
+            }
+        }
+        GradFn::Negate { input } => {
+            if let Some(meta) = &input.autograd {
+                debug_assert_eq!(input.elements, upstream.len());
+                let mut gradient = try_result_vector(input.elements, input.elements)?;
+                gradient.extend(upstream.iter().copied().map(negate_value));
                 add_gradient(gradients, meta, gradient);
             }
         }
@@ -3601,6 +3583,10 @@ fn checked_physical_stride_product(stride: usize, dimension: usize) -> Result<us
         .ok_or(TensorError::StrideCalculationOverflow)
 }
 
+fn negate_value(value: f32) -> f32 {
+    f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
+}
+
 fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {
     validate_storage_capacity(elements)?;
 
@@ -3631,7 +3617,9 @@ fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
 mod tests {
     use std::sync::Arc;
 
-    use super::{DType, Device, Storage, StorageData, Tensor, TensorError, try_result_vector};
+    use super::{
+        DType, Device, F32_SIGN_MASK, Storage, StorageData, Tensor, TensorError, try_result_vector,
+    };
 
     #[test]
     fn multiply_snapshots_live_gradient_operands_for_backward() {
@@ -3652,10 +3640,12 @@ mod tests {
     }
 
     #[test]
-    fn negation_preserves_float_bits_and_the_scalar_gradient_edge() {
+    fn negation_toggles_every_float_sign_bit() {
         let bits = [
             0x0000_0000,
             0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
             0x7f80_0000,
             0xff80_0000,
             0x7fc1_2345,
@@ -3671,14 +3661,58 @@ mod tests {
             output
                 .logical_values()
                 .map(f32::to_bits)
-                .eq(bits.map(|value| value ^ (1_u32 << 31)))
+                .eq(bits.map(|value| value ^ F32_SIGN_MASK))
         );
+    }
 
+    #[test]
+    fn negation_gradient_edge_is_reusable_shared_and_bitwise() {
         let leaf = Tensor::from_vec(vec![2.0, -3.0], [2])
             .unwrap()
             .with_requires_grad(true);
-        leaf.negate().unwrap().sum().backward().unwrap();
-        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [-1.0, -1.0]);
+        let repeated = leaf.negate().unwrap().sum();
+        repeated.backward().unwrap();
+        repeated.backward().unwrap();
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [-2.0, -2.0]);
+
+        let shared_leaf = Tensor::from_vec(vec![5.0, 7.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let shared_negative = shared_leaf.negate().unwrap();
+        let first_root = shared_negative.sum();
+        let second_root = shared_negative.sum();
+        first_root.backward().unwrap();
+        second_root.backward().unwrap();
+        assert_eq!(
+            shared_leaf.grad().unwrap().unwrap().as_slice(),
+            [-2.0, -2.0]
+        );
+
+        let nan_leaf = Tensor::from_vec(vec![1.0, 2.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let weights = Tensor::from_vec(
+            vec![f32::from_bits(0x7fc1_2345), f32::from_bits(0xffc5_4321)],
+            [2],
+        )
+        .unwrap();
+        nan_leaf
+            .negate()
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert!(
+            nan_leaf
+                .grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([0xffc1_2345, 0x7fc5_4321])
+        );
     }
 
     #[test]

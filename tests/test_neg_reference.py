@@ -122,6 +122,64 @@ class UnaryNegationReferenceTests(unittest.TestCase):
             case="empty gradient",
         )
 
+        actual_repeated = torch.tensor([2.0, 3.0], requires_grad=True)
+        expected_repeated = reference_torch.tensor(
+            [2.0, 3.0], requires_grad=True
+        )
+        actual_repeated_loss = (-actual_repeated).sum()
+        expected_repeated_loss = (-expected_repeated).sum()
+        actual_repeated_loss.backward()
+        expected_repeated_loss.backward()
+        actual_repeated_loss.backward()
+        expected_repeated_loss.backward()
+        self.assert_matches(
+            actual_repeated.grad,
+            expected_repeated.grad,
+            case="repeated backward",
+        )
+
+        actual_shared = torch.tensor([5.0, 7.0], requires_grad=True)
+        expected_shared = reference_torch.tensor(
+            [5.0, 7.0], requires_grad=True
+        )
+        actual_shared_negative = -actual_shared
+        expected_shared_negative = -expected_shared
+        actual_shared_roots = (
+            actual_shared_negative.sum(),
+            actual_shared_negative.sum(),
+        )
+        expected_shared_roots = (
+            expected_shared_negative.sum(),
+            expected_shared_negative.sum(),
+        )
+        for actual_root, expected_root in zip(
+            actual_shared_roots, expected_shared_roots
+        ):
+            actual_root.backward()
+            expected_root.backward()
+        self.assert_matches(
+            actual_shared.grad,
+            expected_shared.grad,
+            case="shared roots",
+        )
+
+        nan_bits = np.asarray((0x7FC1_2345, 0xFFC5_4321), dtype=np.uint32)
+        actual_nan_leaf = torch.tensor([1.0, 2.0], requires_grad=True)
+        expected_nan_leaf = reference_torch.tensor(
+            [1.0, 2.0], requires_grad=True
+        )
+        actual_nan_weights = torch.tensor(memoryview(nan_bits.view(np.float32)))
+        expected_nan_weights = reference_torch.tensor(
+            memoryview(nan_bits.view(np.float32))
+        )
+        ((-actual_nan_leaf) * actual_nan_weights).sum().backward()
+        ((-expected_nan_leaf) * expected_nan_weights).sum().backward()
+        self.assert_matches(
+            actual_nan_leaf.grad,
+            expected_nan_leaf.grad,
+            case="NaN upstream gradient",
+        )
+
         with torch.no_grad():
             actual_untracked = -actual_leaf.transpose(0, 1)
         with reference_torch.no_grad():
@@ -134,6 +192,33 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         self.assertTrue((-actual_leaf).requires_grad)
         self.assertTrue((-expected_leaf).requires_grad)
 
+    def test_denormal_flush_mode_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        subnormal_bits = np.asarray((0x0000_0001, 0x8000_0001), dtype=np.uint32)
+        values = memoryview(subnormal_bits.view(np.float32))
+        actual = torch.tensor(values)
+        expected = reference_torch.tensor(values)
+
+        # Stable PyTorch supplies the process-wide FTZ/DAZ switch; construct
+        # both inputs first and always restore the default mode for later tests.
+        reference_torch.set_flush_denormal(False)
+        try:
+            self.assertTrue(reference_torch.set_flush_denormal(True))
+            actual_output = -actual
+            expected_output = -expected
+        finally:
+            reference_torch.set_flush_denormal(False)
+
+        self.assert_matches(
+            actual_output,
+            expected_output,
+            case="denormal flushing",
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_output).view(np.uint32),
+            np.asarray((0x8000_0001, 0x0000_0001), dtype=np.uint32),
+        )
+
     def test_extreme_empty_layouts_and_errors_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         for shape in (
@@ -141,6 +226,7 @@ class UnaryNegationReferenceTests(unittest.TestCase):
             (0, 2, sys.maxsize, sys.maxsize),
             (0, 1, 2, 1 << 61),
             (2, 0, sys.maxsize),
+            (7, 2, 3, 0, 1 << 60),
         ):
             actual = torch.zeros((0,)).reshape(shape)
             expected = reference_torch.zeros((0,)).reshape(shape)
