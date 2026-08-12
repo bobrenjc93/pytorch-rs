@@ -948,6 +948,21 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn detach(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let input = bind_detach_argument(args, kwargs)?;
+    let input = input
+        .value
+        .cast::<PyTensor>()
+        .expect("the detach input type was checked while binding");
+    input
+        .try_borrow()?
+        .inner
+        .detach()
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))
+}
+
 /// equal(input, other) -> bool
 ///
 /// Returns ``True`` if two tensors have the same size and elements, and
@@ -2222,6 +2237,66 @@ fn squeeze_argument_type_error(
     ))
 }
 
+fn bind_detach_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ParsedCallArgument<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "detach() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut input = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            if key != "input" {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "detach() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            } else if input.is_some() {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err("detach() got multiple values for argument 'input'")
+                });
+            } else {
+                input = Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                });
+            }
+        }
+    }
+
+    let input = input.ok_or_else(|| {
+        PyTypeError::new_err("detach() missing 1 required positional arguments: \"input\"")
+    })?;
+    if input.value.cast::<PyTensor>().is_err() {
+        let position = input
+            .position
+            .map_or_else(String::new, |position| format!(" (position {position})"));
+        let actual = transpose_type_name(&input.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "detach(): argument 'input'{position} must be Tensor, not {actual}"
+        )));
+    }
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    Ok(input)
+}
+
 fn bind_equal_arguments<'py, const N: usize>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -3191,6 +3266,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("no_grad", no_grad_class)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
+    module.add_function(wrap_pyfunction!(detach, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
