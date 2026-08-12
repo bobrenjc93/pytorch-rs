@@ -625,6 +625,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 53
       }
+    },
+    {
+      "key": "pr:37",
+      "recordedAt": "2026-08-12T00:15:39.620Z",
+      "label": "PR #37",
+      "kind": "leaf",
+      "prNumber": 37,
+      "title": "Add differentiable unary tensor negation",
+      "scores": {
+        "eval_7af648fb": 94,
+        "eval_8417a4a8": 54.3,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 19,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
