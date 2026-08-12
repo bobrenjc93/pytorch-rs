@@ -629,6 +629,24 @@ impl PyTensor {
         self.inner.item().map_err(|error| tensor_error(&error))
     }
 
+    /// equal(other) -> bool
+    ///
+    /// See :func:`torch.equal`.
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn equal(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<bool> {
+        let (arguments, keyword_error) = bind_equal_arguments(args, kwargs, ["other"])?;
+        let other = parse_equal_tensor_argument("other", &arguments[0])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        let other = other.try_borrow()?;
+        Ok(self.inner == other.inner)
+    }
+
     #[pyo3(signature = (*, memory_format=None))]
     fn clone(&self, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let memory_format = parse_clone_memory_format(memory_format)?;
@@ -928,6 +946,23 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
         .try_clone_with_memory_format(memory_format)
         .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
+}
+
+/// equal(input, other) -> bool
+///
+/// Returns ``True`` if two tensors have the same size and elements, and
+/// ``False`` otherwise. NaNs compare unequal, while tensor dtype is ignored.
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn equal(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    let (arguments, keyword_error) = bind_equal_arguments(args, kwargs, ["input", "other"])?;
+    let input = parse_equal_tensor_argument("input", &arguments[0])?;
+    let other = parse_equal_tensor_argument("other", &arguments[1])?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    let input = input.try_borrow()?;
+    let other = other.try_borrow()?;
+    Ok(input.inner == other.inner)
 }
 
 #[pyfunction(signature = (*args, **kwargs))]
@@ -2187,6 +2222,107 @@ fn squeeze_argument_type_error(
     ))
 }
 
+fn bind_equal_arguments<'py, const N: usize>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    names: [&str; N],
+) -> PyResult<([ParsedCallArgument<'py>; N], Option<PyErr>)> {
+    if positional.len() > N {
+        return Err(PyTypeError::new_err(format!(
+            "equal() takes {N} positional {} but {} were given",
+            if N == 1 { "argument" } else { "arguments" },
+            positional.len()
+        )));
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; N] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            let Some(index) = names.iter().position(|name| *name == key) else {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "equal() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+                continue;
+            };
+            if arguments[index].is_some() {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "equal() got multiple values for argument '{}'",
+                        names[index]
+                    ))
+                });
+                continue;
+            }
+            arguments[index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    if let Some(first_missing) = arguments.iter().position(Option::is_none) {
+        // Supplied arguments earlier in the schema are converted before a
+        // missing later argument is reported.
+        for (name, argument) in names.iter().zip(arguments.iter()).take(first_missing) {
+            parse_equal_tensor_argument(
+                name,
+                argument
+                    .as_ref()
+                    .expect("arguments preceding the first gap are present"),
+            )?;
+        }
+        // PyTorch reports the complete remaining schema suffix even when a
+        // later argument in that suffix was supplied by keyword.
+        let missing = &names[first_missing..];
+        let quoted_names = missing
+            .iter()
+            .map(|name| format!("\"{name}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let argument = if missing.len() == 1 {
+            "arguments"
+        } else {
+            "argument"
+        };
+        return Err(PyTypeError::new_err(format!(
+            "equal() missing {} required positional {argument}: {quoted_names}",
+            missing.len()
+        )));
+    }
+
+    Ok((
+        arguments.map(|argument| argument.expect("all required equal arguments were checked")),
+        keyword_error,
+    ))
+}
+
+fn parse_equal_tensor_argument<'a, 'py>(
+    argument: &str,
+    value: &'a ParsedCallArgument<'py>,
+) -> PyResult<&'a Bound<'py, PyTensor>> {
+    let Ok(tensor) = value.value.cast::<PyTensor>() else {
+        let position = value
+            .position
+            .map_or_else(String::new, |position| format!(" (position {position})"));
+        let actual = transpose_type_name(&value.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "equal(): argument '{argument}'{position} must be Tensor, not {actual}"
+        )));
+    };
+    Ok(tensor)
+}
+
 fn bind_transpose_arguments<'py, const N: usize>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -3055,6 +3191,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("no_grad", no_grad_class)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
+    module.add_function(wrap_pyfunction!(equal, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
