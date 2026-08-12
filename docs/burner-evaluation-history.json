@@ -705,6 +705,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:44",
+      "recordedAt": "2026-08-12T09:15:35.411Z",
+      "label": "PR #44",
+      "kind": "leaf",
+      "prNumber": 44,
+      "title": "Make Tensor.exp differentiable",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 56,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 24,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 55
+      }
     }
   ]
 }
