@@ -154,6 +154,78 @@ fn scalar_addition_records_reusable_identity_gradients() {
 }
 
 #[test]
+fn real_scalar_subtraction_records_reusable_signed_gradients() {
+    let forward_leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let forward_view = forward_leaf.transpose(0, 1).unwrap();
+    let weights = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [3, 2]).unwrap();
+    let forward = forward_view.sub_scalar(2.0).unwrap();
+    assert!(forward.requires_grad());
+    assert_eq!(forward.stride(), [1, 3]);
+    assert_eq!(values(&forward), [-1.0, 2.0, 0.0, 3.0, 1.0, 4.0]);
+    forward.mul(&weights).unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&forward_leaf.grad().unwrap().unwrap()),
+        [1.0, 3.0, 5.0, 2.0, 4.0, 6.0]
+    );
+
+    let reflected_leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let reflected = reflected_leaf
+        .transpose(0, 1)
+        .unwrap()
+        .scalar_sub(10.0)
+        .unwrap();
+    assert!(reflected.requires_grad());
+    assert_eq!(reflected.stride(), [1, 3]);
+    assert_eq!(values(&reflected), [9.0, 6.0, 8.0, 5.0, 7.0, 4.0]);
+    reflected.mul(&weights).unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&reflected_leaf.grad().unwrap().unwrap()),
+        [-1.0, -3.0, -5.0, -2.0, -4.0, -6.0]
+    );
+
+    for reflected in [false, true] {
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+        let empty_output = if reflected {
+            empty.scalar_sub(7.0).unwrap()
+        } else {
+            empty.sub_scalar(7.0).unwrap()
+        };
+        assert!(empty_output.requires_grad());
+        assert_eq!(empty_output.stride(), [3, 3, 1]);
+        empty_output.sum().backward().unwrap();
+        let gradient = empty.grad().unwrap().unwrap();
+        assert_eq!(gradient.shape(), [2, 0, 3]);
+        assert!(values(&gradient).is_empty());
+    }
+
+    let forward_repeated = Tensor::from_vec(vec![2.0, 3.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let forward_loss = forward_repeated.sub_scalar(1.0).unwrap().sum();
+    forward_loss.backward().unwrap();
+    forward_loss.backward().unwrap();
+    assert_eq!(
+        values(&forward_repeated.grad().unwrap().unwrap()),
+        [2.0, 2.0]
+    );
+
+    let reflected_repeated = Tensor::from_vec(vec![2.0, 3.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let reflected_loss = reflected_repeated.scalar_sub(1.0).unwrap().sum();
+    reflected_loss.backward().unwrap();
+    reflected_loss.backward().unwrap();
+    assert_eq!(
+        values(&reflected_repeated.grad().unwrap().unwrap()),
+        [-2.0, -2.0]
+    );
+}
+
+#[test]
 fn detach_and_nested_no_grad_are_graph_boundaries() {
     let x = Tensor::from_vec(vec![2.0], [])
         .unwrap()
@@ -175,10 +247,14 @@ fn detach_and_nested_no_grad_are_graph_boundaries() {
         }
         assert!(!x.mul_scalar(2.0).unwrap().requires_grad());
         assert!(!x.add_scalar(2.0).unwrap().requires_grad());
+        assert!(!x.sub_scalar(2.0).unwrap().requires_grad());
+        assert!(!x.scalar_sub(2.0).unwrap().requires_grad());
     }
     assert!(x.mul(&x).unwrap().requires_grad());
 
     assert!(!detached.add_scalar(2.0).unwrap().requires_grad());
+    assert!(!detached.sub_scalar(2.0).unwrap().requires_grad());
+    assert!(!detached.scalar_sub(2.0).unwrap().requires_grad());
 }
 
 #[test]

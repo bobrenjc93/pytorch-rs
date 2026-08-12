@@ -1157,6 +1157,19 @@ impl Tensor {
         Ok(output)
     }
 
+    fn finish_negate_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Negate {
+                        input: SavedTensor::try_from_tensor(self, false)?,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
     /// Returns whether logical row-major iteration visits adjacent storage.
     ///
     /// As in `PyTorch`, scalars and tensors with no elements are contiguous,
@@ -2124,7 +2137,8 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn sub_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| value - scalar)
+        let output = self.map_scalar(scalar, |value, scalar| value - scalar)?;
+        self.finish_copy_transform(output, TransformMapping::Identity)
     }
 
     /// Multiplies every element by a scalar.
@@ -2152,17 +2166,8 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub(crate) fn negate(&self) -> Result<Self, TensorError> {
-        let mut output = self.unary_map(negate_value)?;
-        if self.requires_grad() && grad_enabled() {
-            output.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Negate {
-                        input: SavedTensor::try_from_tensor(self, false)?,
-                    })),
-                },
-            }));
-        }
-        Ok(output)
+        let output = self.unary_map(negate_value)?;
+        self.finish_negate_vjp(output)
     }
 
     /// Divides every element by a scalar using IEEE 754 true division.
@@ -2180,7 +2185,8 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn scalar_sub(&self, scalar: f32) -> Result<Self, TensorError> {
-        self.map_scalar(scalar, |value, scalar| scalar - value)
+        let output = self.map_scalar(scalar, |value, scalar| scalar - value)?;
+        self.finish_negate_vjp(output)
     }
 
     /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal

@@ -641,6 +641,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:38",
+      "recordedAt": "2026-08-12T00:42:07.931Z",
+      "label": "PR #38",
+      "kind": "leaf",
+      "prNumber": 38,
+      "title": "Preserve autograd through real-scalar subtraction",
+      "scores": {
+        "eval_7af648fb": 95,
+        "eval_8417a4a8": 54.4,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 20,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
