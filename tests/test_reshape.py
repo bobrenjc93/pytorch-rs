@@ -26,6 +26,26 @@ class OverflowThenIndex:
         return 2
 
 
+class ChangingIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        return 3 if self.calls == 1 else 2
+
+
+class UnpackOverflowIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        if self.calls == 1:
+            return 2
+        raise OverflowError("raised during unpack")
+
+
 class ReshapeTests(unittest.TestCase):
     def assert_tensor(self, actual, expected, shape, stride, offset=0):
         self.assertEqual(actual.shape, shape)
@@ -210,6 +230,21 @@ class ReshapeTests(unittest.TestCase):
                 "reshape(): argument 'shape' (position 2) must be tuple of ints, but found element of type float at pos 0",
             ),
             (
+                lambda: torch.reshape(tensor, (2, 3.0)),
+                TypeError,
+                "reshape(): argument 'shape' failed to unpack the object at pos 2 with error \"type must be tuple of ints,but got float\"",
+            ),
+            (
+                lambda: torch.reshape(tensor, (2, 3.0), input=tensor),
+                TypeError,
+                "reshape() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.reshape(tensor, (2, 3.0), extra=True),
+                TypeError,
+                "reshape() got an unexpected keyword argument 'extra'",
+            ),
+            (
                 lambda: torch.reshape(tensor, shape=(2.0, 3)),
                 TypeError,
                 "reshape(): argument 'shape' must be tuple of ints, not tuple",
@@ -252,6 +287,43 @@ class ReshapeTests(unittest.TestCase):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     torch.reshape(tensor, (dimension, 3), **kwargs)
                 self.assertEqual(dimension.calls, 1)
+
+    def test_later_dimensions_unpack_once_after_keyword_binding(self):
+        bool_output = torch.reshape(torch.zeros((2,)), (2, True))
+        self.assertEqual(bool_output.shape, (2, 1))
+        self.assertEqual(bool_output.stride(), (1, 1))
+
+        dimension = ChangingIndex()
+        changing_output = torch.reshape(torch.zeros((6,)), (2, dimension))
+        self.assertEqual(changing_output.shape, (2, 3))
+        self.assertEqual(dimension.calls, 1)
+
+        tensor = torch.zeros((6,))
+        for kwargs, message in (
+            ({"input": tensor}, "reshape() got multiple values for argument 'input'"),
+            ({"extra": True}, "reshape() got an unexpected keyword argument 'extra'"),
+        ):
+            with self.subTest(keywords=tuple(kwargs)):
+                dimension = ChangingIndex()
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    torch.reshape(tensor, (2, dimension), **kwargs)
+                self.assertEqual(dimension.calls, 0)
+
+    def test_unpack_stage_protocol_failure_uses_unpack_diagnostic(self):
+        tensor = torch.zeros((6,))
+        message = (
+            "reshape(): argument 'shape' failed to unpack the object at pos 1 "
+            'with error "type must be tuple of ints,but got UnpackOverflowIndex"'
+        )
+        for keyword_shape in (False, True):
+            with self.subTest(keyword_shape=keyword_shape):
+                dimension = UnpackOverflowIndex()
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    if keyword_shape:
+                        torch.reshape(input=tensor, shape=(dimension, 3))
+                    else:
+                        torch.reshape(tensor, (dimension, 3))
+                self.assertEqual(dimension.calls, 2)
 
 
 if __name__ == "__main__":

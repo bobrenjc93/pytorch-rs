@@ -21,6 +21,26 @@ class OverflowThenIndex:
         return 2
 
 
+class ChangingIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        return 3 if self.calls == 1 else 2
+
+
+class UnpackOverflowIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        if self.calls == 1:
+            return 2
+        raise OverflowError("raised during unpack")
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class ReshapeReferenceTests(unittest.TestCase):
     def assert_matches(self, actual, expected, *, case):
@@ -217,6 +237,20 @@ class ReshapeReferenceTests(unittest.TestCase):
                 lambda: reference_torch.reshape(expected, (2.0, 3), extra=True),
             ),
             (
+                lambda: torch.reshape(actual, (2, 3.0)),
+                lambda: reference_torch.reshape(expected, (2, 3.0)),
+            ),
+            (
+                lambda: torch.reshape(actual, (2, 3.0), input=actual),
+                lambda: reference_torch.reshape(
+                    expected, (2, 3.0), input=expected
+                ),
+            ),
+            (
+                lambda: torch.reshape(actual, (2, 3.0), extra=True),
+                lambda: reference_torch.reshape(expected, (2, 3.0), extra=True),
+            ),
+            (
                 lambda: torch.reshape(actual, shape=(2.0, 3)),
                 lambda: reference_torch.reshape(expected, shape=(2.0, 3)),
             ),
@@ -268,6 +302,73 @@ class ReshapeReferenceTests(unittest.TestCase):
                 )
                 self.assertEqual(actual_dimension.calls, expected_dimension.calls)
                 self.assertEqual(actual_dimension.calls, 1)
+
+    def test_later_dimensions_unpack_once_after_keyword_binding(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual_bool = torch.reshape(torch.zeros((2,)), (2, True))
+        expected_bool = reference_torch.reshape(
+            reference_torch.zeros((2,)), (2, True)
+        )
+        self.assert_matches(actual_bool, expected_bool, case="later-bool")
+
+        actual_dimension = ChangingIndex()
+        expected_dimension = ChangingIndex()
+        actual_output = torch.reshape(torch.zeros((6,)), (2, actual_dimension))
+        expected_output = reference_torch.reshape(
+            reference_torch.zeros((6,)), (2, expected_dimension)
+        )
+        self.assert_matches(actual_output, expected_output, case="later-stateful")
+        self.assertEqual(actual_dimension.calls, expected_dimension.calls)
+        self.assertEqual(actual_dimension.calls, 1)
+
+        actual = torch.zeros((6,))
+        expected = reference_torch.zeros((6,))
+        for mode in ("duplicate", "unexpected"):
+            with self.subTest(mode=mode):
+                actual_dimension = ChangingIndex()
+                expected_dimension = ChangingIndex()
+                if mode == "duplicate":
+                    actual_kwargs = {"input": actual}
+                    expected_kwargs = {"input": expected}
+                else:
+                    actual_kwargs = {"extra": True}
+                    expected_kwargs = {"extra": True}
+                self.assert_error_matches(
+                    lambda: torch.reshape(
+                        actual, (2, actual_dimension), **actual_kwargs
+                    ),
+                    lambda: reference_torch.reshape(
+                        expected, (2, expected_dimension), **expected_kwargs
+                    ),
+                )
+                self.assertEqual(actual_dimension.calls, expected_dimension.calls)
+                self.assertEqual(actual_dimension.calls, 0)
+
+    def test_unpack_stage_protocol_failure_uses_unpack_diagnostic(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual = torch.zeros((6,))
+        expected = reference_torch.zeros((6,))
+        for keyword_shape in (False, True):
+            with self.subTest(keyword_shape=keyword_shape):
+                actual_dimension = UnpackOverflowIndex()
+                expected_dimension = UnpackOverflowIndex()
+                if keyword_shape:
+                    actual_call = lambda: torch.reshape(
+                        input=actual, shape=(actual_dimension, 3)
+                    )
+                    expected_call = lambda: reference_torch.reshape(
+                        input=expected, shape=(expected_dimension, 3)
+                    )
+                else:
+                    actual_call = lambda: torch.reshape(
+                        actual, (actual_dimension, 3)
+                    )
+                    expected_call = lambda: reference_torch.reshape(
+                        expected, (expected_dimension, 3)
+                    )
+                self.assert_error_matches(actual_call, expected_call)
+                self.assertEqual(actual_dimension.calls, expected_dimension.calls)
+                self.assertEqual(actual_dimension.calls, 2)
 
 
 if __name__ == "__main__":

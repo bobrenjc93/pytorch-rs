@@ -2546,7 +2546,7 @@ fn bind_top_level_reshape_arguments<'py>(
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
-    let shape = parse_top_level_reshape_shape(&shape.value, shape.position)?;
+    let shape = unpack_top_level_reshape_shape(&shape.value, shape.position)?;
     Ok((input.value, shape))
 }
 
@@ -2555,87 +2555,76 @@ fn validate_top_level_reshape_shape(
     position: Option<usize>,
 ) -> PyResult<()> {
     if let Ok(dimensions) = shape.cast::<PyList>() {
-        return validate_top_level_reshape_dimensions(shape, position, dimensions.iter());
+        return validate_top_level_reshape_first_dimension(shape, position, dimensions.iter());
     }
     if let Ok(dimensions) = shape.cast::<PyTuple>() {
-        return validate_top_level_reshape_dimensions(shape, position, dimensions.iter());
+        return validate_top_level_reshape_first_dimension(shape, position, dimensions.iter());
     }
     Err(top_level_reshape_shape_type_error(shape, position))
 }
 
-fn validate_top_level_reshape_dimensions<'py>(
+fn validate_top_level_reshape_first_dimension<'py>(
     shape: &Bound<'py, PyAny>,
     position: Option<usize>,
-    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+    mut dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
 ) -> PyResult<()> {
+    // PyTorch probes only element zero while resolving the overload. Later
+    // elements are left untouched until binding errors have been handled.
+    let Some(dimension) = dimensions.next() else {
+        return Ok(());
+    };
     let operator_index = PyModule::import(shape.py(), "operator")?.getattr("index")?;
-    for (index, dimension) in dimensions.enumerate() {
-        if dimension.is_instance_of::<PyBool>() {
+    if dimension.is_instance_of::<PyBool>() {
+        return Err(top_level_reshape_element_type_error(
+            shape, &dimension, position, 0,
+        ));
+    }
+    let indexed = match operator_index.call1((&dimension,)) {
+        Ok(indexed) => indexed,
+        Err(_) => {
             return Err(top_level_reshape_element_type_error(
-                shape, &dimension, position, index,
+                shape, &dimension, position, 0,
             ));
         }
-        let indexed = match operator_index.call1((&dimension,)) {
-            Ok(indexed) => indexed,
-            Err(_) => {
-                return Err(top_level_reshape_element_type_error(
-                    shape, &dimension, position, index,
-                ));
-            }
-        };
-        match indexed.extract::<i64>() {
-            Ok(_) => {}
-            // PyTorch's initial overload check treats an out-of-range integer
-            // as a structurally valid dimension. The later unpack pass emits
-            // the overflow, after duplicate and unknown keywords are handled.
-            Err(error) if error.is_instance_of::<PyOverflowError>(shape.py()) => return Ok(()),
-            Err(_) => {
-                return Err(top_level_reshape_element_type_error(
-                    shape, &dimension, position, index,
-                ));
-            }
-        }
+    };
+    match indexed.extract::<i64>() {
+        Ok(_) => Ok(()),
+        // PyTorch's initial overload check treats an out-of-range integer
+        // as a structurally valid dimension. The later unpack pass emits
+        // the overflow, after duplicate and unknown keywords are handled.
+        Err(error) if error.is_instance_of::<PyOverflowError>(shape.py()) => Ok(()),
+        Err(_) => Err(top_level_reshape_element_type_error(
+            shape, &dimension, position, 0,
+        )),
     }
-    Ok(())
 }
 
-fn parse_top_level_reshape_shape(
+fn unpack_top_level_reshape_shape(
     shape: &Bound<'_, PyAny>,
     position: Option<usize>,
 ) -> PyResult<Vec<i64>> {
     if let Ok(dimensions) = shape.cast::<PyList>() {
-        return parse_top_level_reshape_dimensions(
-            shape,
-            position,
-            dimensions.len(),
-            dimensions.iter(),
-        );
+        return unpack_top_level_reshape_dimensions(shape, dimensions.len(), dimensions.iter());
     }
     if let Ok(dimensions) = shape.cast::<PyTuple>() {
-        return parse_top_level_reshape_dimensions(
-            shape,
-            position,
-            dimensions.len(),
-            dimensions.iter(),
-        );
+        return unpack_top_level_reshape_dimensions(shape, dimensions.len(), dimensions.iter());
     }
     Err(top_level_reshape_shape_type_error(shape, position))
 }
 
-fn parse_top_level_reshape_dimensions<'py>(
+fn unpack_top_level_reshape_dimensions<'py>(
     shape: &Bound<'py, PyAny>,
-    position: Option<usize>,
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
 ) -> PyResult<Vec<i64>> {
     let mut parsed = try_size_vector(length)?;
+    let operator_index = PyModule::import(shape.py(), "operator")?.getattr("index")?;
     for (index, dimension) in dimensions.enumerate() {
-        if dimension.is_instance_of::<PyBool>() {
-            return Err(top_level_reshape_element_type_error(
-                shape, &dimension, position, index,
-            ));
-        }
-        match dimension.extract::<i64>() {
+        let indexed = match operator_index.call1((&dimension,)) {
+            Ok(indexed) => indexed,
+            Err(_) => return Err(top_level_reshape_unpack_type_error(&dimension, index)),
+        };
+        match indexed.extract::<i64>() {
             Ok(dimension) => try_push_size(&mut parsed, dimension)?,
             Err(error) if error.is_instance_of::<PyOverflowError>(shape.py()) => {
                 return Err(PyTypeError::new_err(format!(
@@ -2643,14 +2632,18 @@ fn parse_top_level_reshape_dimensions<'py>(
                     index + 1
                 )));
             }
-            Err(_) => {
-                return Err(top_level_reshape_element_type_error(
-                    shape, &dimension, position, index,
-                ));
-            }
+            Err(_) => return Err(top_level_reshape_unpack_type_error(&dimension, index)),
         }
     }
     Ok(parsed)
+}
+
+fn top_level_reshape_unpack_type_error(dimension: &Bound<'_, PyAny>, index: usize) -> PyErr {
+    let actual = transpose_type_name(dimension).unwrap_or_else(|_| "unknown".to_owned());
+    PyTypeError::new_err(format!(
+        "reshape(): argument 'shape' failed to unpack the object at pos {} with error \"type must be tuple of ints,but got {actual}\"",
+        index + 1
+    ))
 }
 
 fn top_level_reshape_shape_type_error(shape: &Bound<'_, PyAny>, position: Option<usize>) -> PyErr {
