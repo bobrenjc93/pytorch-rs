@@ -1,4 +1,5 @@
 import inspect
+import operator
 import unittest
 
 import numpy as np
@@ -39,6 +40,16 @@ class UnpackOverflowIndex:
         if self.calls == 1:
             return 2
         raise OverflowError("raised during unpack")
+
+
+class OperatorPatchingIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        operator.index = lambda value: 1
+        return 2
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -369,6 +380,82 @@ class ReshapeReferenceTests(unittest.TestCase):
                 self.assert_error_matches(actual_call, expected_call)
                 self.assertEqual(actual_dimension.calls, expected_dimension.calls)
                 self.assertEqual(actual_dimension.calls, 2)
+
+    def test_shape_indexing_ignores_mutable_operator_index(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        original_index = operator.index
+        try:
+            operator.index = lambda value: 1
+            actual_output = torch.reshape(torch.zeros((6,)), (2, 3))
+            expected_output = reference_torch.reshape(
+                reference_torch.zeros((6,)), (2, 3)
+            )
+        finally:
+            operator.index = original_index
+        self.assert_matches(actual_output, expected_output, case="patched-operator")
+
+        actual_dimension = OperatorPatchingIndex()
+        try:
+            actual_output = torch.reshape(
+                torch.zeros((6,)), (actual_dimension, 3)
+            )
+        finally:
+            operator.index = original_index
+
+        expected_dimension = OperatorPatchingIndex()
+        try:
+            expected_output = reference_torch.reshape(
+                reference_torch.zeros((6,)), (expected_dimension, 3)
+            )
+        finally:
+            operator.index = original_index
+        self.assert_matches(actual_output, expected_output, case="mid-call-patch")
+        self.assertEqual(actual_dimension.calls, expected_dimension.calls)
+        self.assertEqual(actual_dimension.calls, 2)
+
+    def test_shape_diagnostics_ignore_mutable_type_metadata(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+
+        class NoModule:
+            pass
+
+        NoModule.__module__ = None
+        metadata_reads = []
+
+        class TrappingMeta(type):
+            def __getattribute__(cls, name):
+                if name in {"__module__", "__flags__", "__name__", "__qualname__"}:
+                    metadata_reads.append(name)
+                    raise RuntimeError(f"trapped {name}")
+                return super().__getattribute__(name)
+
+        class Trapped(metaclass=TrappingMeta):
+            pass
+
+        actual = torch.zeros((6,))
+        expected = reference_torch.zeros((6,))
+        cases = (
+            (
+                lambda: torch.reshape(NoModule(), ()),
+                lambda: reference_torch.reshape(NoModule(), ()),
+            ),
+            (
+                lambda: torch.reshape(actual, (NoModule(), 3)),
+                lambda: reference_torch.reshape(expected, (NoModule(), 3)),
+            ),
+            (
+                lambda: torch.reshape(Trapped(), ()),
+                lambda: reference_torch.reshape(Trapped(), ()),
+            ),
+            (
+                lambda: torch.reshape(actual, (Trapped(), 3)),
+                lambda: reference_torch.reshape(expected, (Trapped(), 3)),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+        self.assertEqual(metadata_reads, [])
 
 
 if __name__ == "__main__":

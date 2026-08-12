@@ -13,7 +13,7 @@ use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView, PyModule,
-    PySequence, PyString, PyTuple,
+    PyRange, PySequence, PyString, PyTuple, PyType,
 };
 
 use crate::{
@@ -903,7 +903,7 @@ fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyRe
     if requires_grad.is_exact_instance_of::<PyBool>() {
         return requires_grad.is_truthy();
     }
-    let type_name = transpose_type_name(requires_grad)?;
+    let type_name = transpose_type_name(requires_grad);
     Err(PyTypeError::new_err(format!(
         "{function}(): argument 'requires_grad' must be bool, not {type_name}"
     )))
@@ -933,7 +933,7 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
 #[pyfunction(signature = (*args, **kwargs))]
 fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let [input, dim0, dim1] = bind_transpose_arguments(args, kwargs, ["input", "dim0", "dim1"])?;
-    let input_type = transpose_type_name(&input.value)?;
+    let input_type = transpose_type_name(&input.value);
     let input_tensor = input.value.cast::<PyTensor>().map_err(|_| {
         transpose_argument_type_error("input", input.position, "Tensor", &input_type)
     })?;
@@ -950,7 +950,7 @@ fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
 #[pyfunction(signature = (*args, **kwargs), text_signature = "(input, dim=None)")]
 fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let (input, input_position, dimension) = bind_top_level_squeeze_arguments(args, kwargs)?;
-    let input_type = transpose_type_name(&input)?;
+    let input_type = transpose_type_name(&input);
     let input = match input.cast::<PyTensor>() {
         Ok(input) => input,
         Err(_) if matches!(&dimension, ParsedSqueezeDimensions::All) => {
@@ -1046,7 +1046,7 @@ fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     let Ok(tensor) = input.cast::<PyTensor>() else {
         let position =
             position.map_or_else(String::new, |position| format!(" (position {position})"));
-        let input_type = transpose_type_name(input)?;
+        let input_type = transpose_type_name(input);
         return Err(PyTypeError::new_err(format!(
             "numel(): argument 'input'{position} must be Tensor, not {input_type}"
         )));
@@ -1502,7 +1502,7 @@ fn parse_transpose_dimension(
         }
     }
 
-    let type_name = transpose_type_name(dimension)?;
+    let type_name = transpose_type_name(dimension);
     Err(transpose_argument_type_error(
         argument, position, "int", &type_name,
     ))
@@ -1528,7 +1528,7 @@ fn parse_flatten_dimension(
         }
     }
 
-    let actual = transpose_type_name(dimension)?;
+    let actual = transpose_type_name(dimension);
     let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
     Err(PyTypeError::new_err(format!(
         "flatten(): argument '{argument}'{position} must be int, not {actual}"
@@ -1665,7 +1665,7 @@ fn validate_flatten_input(input: &Bound<'_, PyAny>, position: Option<usize>) -> 
     if input.cast::<PyTensor>().is_ok() {
         return Ok(());
     }
-    let actual = transpose_type_name(input)?;
+    let actual = transpose_type_name(input);
     let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
     Err(PyTypeError::new_err(format!(
         "flatten(): argument 'input'{position} must be Tensor, not {actual}"
@@ -1757,7 +1757,7 @@ fn bind_method_squeeze_arguments(
         length => {
             let mut dimensions = try_size_vector(length)?;
             for dimension in positional.iter() {
-                let actual = transpose_type_name(&dimension)?;
+                let actual = transpose_type_name(&dimension);
                 let Some(dimension) = parse_squeeze_integer(&dimension, true)? else {
                     return Err(squeeze_method_invalid_positional(&actual));
                 };
@@ -1861,7 +1861,7 @@ fn parse_squeeze_argument(
         );
     }
 
-    let actual = transpose_type_name(argument)?;
+    let actual = transpose_type_name(argument);
     let Some(dimension) = parse_squeeze_integer(argument, allow_index_protocol)? else {
         return Err(match (top_level, keyword) {
             (true, Some(keyword)) => {
@@ -1885,7 +1885,7 @@ fn parse_squeeze_sequence<'py>(
 ) -> PyResult<ParsedSqueezeDimensions> {
     let mut parsed = try_size_vector(length)?;
     for (index, dimension) in dimensions.enumerate() {
-        let actual = transpose_type_name(&dimension)?;
+        let actual = transpose_type_name(&dimension);
         let parsed_dimension = parse_squeeze_integer(&dimension, true).map_err(|_| {
             PyTypeError::new_err(format!(
                 "squeeze(): argument 'dim' failed to unpack the object at pos {} with error \"Overflow when unpacking long long\"",
@@ -1894,7 +1894,7 @@ fn parse_squeeze_sequence<'py>(
         })?;
         let Some(dimension) = parsed_dimension else {
             if index == 0 {
-                let sequence_type = transpose_type_name(sequence)?;
+                let sequence_type = transpose_type_name(sequence);
                 let detail = squeeze_sequence_type_description(sequence)?;
                 return Err(match (top_level, keyword) {
                     (true, Some(keyword)) => squeeze_top_level_invalid_keyword(
@@ -1975,7 +1975,7 @@ fn squeeze_sequence_type_description(sequence: &Bound<'_, PyAny>) -> PyResult<St
     let sequence = sequence.cast::<PySequence>()?;
     let mut names = try_size_vector(sequence.len()?)?;
     for item in sequence.try_iter()? {
-        names.push(transpose_type_name(&item?)?);
+        names.push(transpose_type_name(&item?));
     }
     let names = names.join(", ");
     let trailing = if trailing { "," } else { "" };
@@ -1988,14 +1988,14 @@ fn squeeze_call_summary(
 ) -> PyResult<String> {
     let mut positional_names = try_size_vector(positional.len())?;
     for value in positional.iter() {
-        positional_names.push(transpose_type_name(&value)?);
+        positional_names.push(transpose_type_name(&value));
     }
 
     let keyword_length = keywords.map_or(0, PyDictMethods::len);
     let mut keyword_names = try_size_vector(keyword_length)?;
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
-            keyword_names.push((key.extract::<String>()?, transpose_type_name(&value)?));
+            keyword_names.push((key.extract::<String>()?, transpose_type_name(&value)));
         }
         keyword_names.sort_unstable_by(|left, right| left.0.cmp(&right.0));
     }
@@ -2057,7 +2057,7 @@ fn squeeze_top_level_input_with_dimension_error(
     } else {
         positional.get_item(0)?
     };
-    let input_type = transpose_type_name(&input)?;
+    let input_type = transpose_type_name(&input);
 
     let (dimension_value, dimension_keyword) = if positional.len() > 1 {
         (positional.get_item(1)?, None)
@@ -2075,7 +2075,7 @@ fn squeeze_top_level_input_with_dimension_error(
             .map(|(value, keyword)| (value, Some(keyword)))
             .expect("a non-omitted bound dimension must remain present")
     };
-    let dimension_type = transpose_type_name(&dimension_value)?;
+    let dimension_type = transpose_type_name(&dimension_value);
     let dimension_detail_type = if dimension_value.is_instance_of::<PyTuple>()
         || dimension_value.is_instance_of::<PyList>()
     {
@@ -2275,21 +2275,57 @@ fn bind_transpose_arguments<'py, const N: usize>(
         .map(|argument| argument.expect("all required transpose arguments were checked above")))
 }
 
-fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+fn transpose_type_name(value: &Bound<'_, PyAny>) -> String {
     // PyTorch reports CPython's `tp_name`: heap types use their unqualified
     // class name, while static extension types retain their module prefix.
     const PY_TPFLAGS_HEAPTYPE: u64 = 1 << 9;
 
     let value_type = value.get_type();
-    let name = value_type.name()?.to_str()?.to_owned();
-    let module = value_type.getattr("__module__")?.extract::<String>()?;
-    let flags = value_type.getattr("__flags__")?.extract::<u64>()?;
-    if module == "torch_rs" && matches!(name.as_str(), "dtype" | "device" | "memory_format") {
-        Ok(format!("torch.{name}"))
-    } else if flags & PY_TPFLAGS_HEAPTYPE == 0 && module != "builtins" {
-        Ok(format!("{module}.{name}"))
+    let type_type = value.py().get_type::<PyType>();
+
+    // Calling type's implementation directly avoids a custom metaclass's
+    // __getattribute__ and produces a stable qualified representation even
+    // when __module__ is malformed. It is also the safe ABI3 fallback for the
+    // runtime type name on Python 3.10, where PyType_GetName is unavailable.
+    let represented_name = type_type
+        .call_method1("__repr__", (&value_type,))
+        .and_then(|representation| representation.extract::<String>())
+        .ok()
+        .and_then(|representation| {
+            representation
+                .strip_prefix("<class '")
+                .and_then(|name| name.strip_suffix("'>"))
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "unknown".to_owned());
+    let fallback_name = represented_name
+        .rsplit('.')
+        .next()
+        .unwrap_or("unknown")
+        .to_owned();
+
+    // Metadata on an exact `type` instance is served by the immutable builtin
+    // metaclass and cannot execute user code. For a custom metaclass, avoid
+    // __name__ and __flags__ entirely: either may be an arbitrary descriptor.
+    if !value_type.get_type().is(&type_type) {
+        return fallback_name;
+    }
+    let name = type_type
+        .call_method1("__getattribute__", (&value_type, "__name__"))
+        .and_then(|name| name.extract::<String>())
+        .unwrap_or(fallback_name);
+    let flags = type_type
+        .call_method1("__getattribute__", (&value_type, "__flags__"))
+        .and_then(|flags| flags.extract::<u64>())
+        .unwrap_or(PY_TPFLAGS_HEAPTYPE);
+    if represented_name.starts_with("torch_rs.")
+        && matches!(name.as_str(), "dtype" | "device" | "memory_format")
+    {
+        format!("torch.{name}")
+    } else if flags & PY_TPFLAGS_HEAPTYPE == 0 {
+        represented_name
     } else {
-        Ok(name)
+        name
     }
 }
 
@@ -2513,7 +2549,7 @@ fn bind_top_level_reshape_arguments<'py>(
     if let Some(input) = arguments[0].as_ref()
         && input.value.cast::<PyTensor>().is_err()
     {
-        let actual = transpose_type_name(&input.value)?;
+        let actual = transpose_type_name(&input.value);
         let position = input
             .position
             .map_or_else(String::new, |position| format!(" (position {position})"));
@@ -2573,29 +2609,43 @@ fn validate_top_level_reshape_first_dimension<'py>(
     let Some(dimension) = dimensions.next() else {
         return Ok(());
     };
-    let operator_index = PyModule::import(shape.py(), "operator")?.getattr("index")?;
     if dimension.is_instance_of::<PyBool>() {
         return Err(top_level_reshape_element_type_error(
             shape, &dimension, position, 0,
         ));
     }
-    let indexed = match operator_index.call1((&dimension,)) {
-        Ok(indexed) => indexed,
-        Err(_) => {
-            return Err(top_level_reshape_element_type_error(
-                shape, &dimension, position, 0,
-            ));
-        }
-    };
-    match indexed.extract::<i64>() {
-        Ok(_) => Ok(()),
+    match top_level_reshape_dimension(&dimension) {
+        Ok(TopLevelReshapeDimension::Value(_)) => Ok(()),
         // PyTorch's initial overload check treats an out-of-range integer
         // as a structurally valid dimension. The later unpack pass emits
         // the overflow, after duplicate and unknown keywords are handled.
-        Err(error) if error.is_instance_of::<PyOverflowError>(shape.py()) => Ok(()),
+        Ok(TopLevelReshapeDimension::OutOfRange) => Ok(()),
         Err(_) => Err(top_level_reshape_element_type_error(
             shape, &dimension, position, 0,
         )),
+    }
+}
+
+enum TopLevelReshapeDimension {
+    Value(i64),
+    OutOfRange,
+}
+
+fn top_level_reshape_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<TopLevelReshapeDimension> {
+    // The native range constructor uses PyNumber_Index and stores the exact
+    // arbitrary-precision result. Unlike operator.index, its implementation
+    // cannot be replaced while argument binding is in progress.
+    let indexed = dimension
+        .py()
+        .get_type::<PyRange>()
+        .call1((dimension,))?
+        .getattr("stop")?;
+    match indexed.extract::<i64>() {
+        Ok(value) => Ok(TopLevelReshapeDimension::Value(value)),
+        Err(error) if error.is_instance_of::<PyOverflowError>(dimension.py()) => {
+            Ok(TopLevelReshapeDimension::OutOfRange)
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -2604,29 +2654,25 @@ fn unpack_top_level_reshape_shape(
     position: Option<usize>,
 ) -> PyResult<Vec<i64>> {
     if let Ok(dimensions) = shape.cast::<PyList>() {
-        return unpack_top_level_reshape_dimensions(shape, dimensions.len(), dimensions.iter());
+        return unpack_top_level_reshape_dimensions(dimensions.len(), dimensions.iter());
     }
     if let Ok(dimensions) = shape.cast::<PyTuple>() {
-        return unpack_top_level_reshape_dimensions(shape, dimensions.len(), dimensions.iter());
+        return unpack_top_level_reshape_dimensions(dimensions.len(), dimensions.iter());
     }
     Err(top_level_reshape_shape_type_error(shape, position))
 }
 
 fn unpack_top_level_reshape_dimensions<'py>(
-    shape: &Bound<'py, PyAny>,
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
 ) -> PyResult<Vec<i64>> {
     let mut parsed = try_size_vector(length)?;
-    let operator_index = PyModule::import(shape.py(), "operator")?.getattr("index")?;
     for (index, dimension) in dimensions.enumerate() {
-        let indexed = match operator_index.call1((&dimension,)) {
-            Ok(indexed) => indexed,
-            Err(_) => return Err(top_level_reshape_unpack_type_error(&dimension, index)),
-        };
-        match indexed.extract::<i64>() {
-            Ok(dimension) => try_push_size(&mut parsed, dimension)?,
-            Err(error) if error.is_instance_of::<PyOverflowError>(shape.py()) => {
+        match top_level_reshape_dimension(&dimension) {
+            Ok(TopLevelReshapeDimension::Value(dimension)) => {
+                try_push_size(&mut parsed, dimension)?;
+            }
+            Ok(TopLevelReshapeDimension::OutOfRange) => {
                 return Err(PyTypeError::new_err(format!(
                     "reshape(): argument 'shape' failed to unpack the object at pos {} with error \"Overflow when unpacking long long\"",
                     index + 1
@@ -2639,7 +2685,7 @@ fn unpack_top_level_reshape_dimensions<'py>(
 }
 
 fn top_level_reshape_unpack_type_error(dimension: &Bound<'_, PyAny>, index: usize) -> PyErr {
-    let actual = transpose_type_name(dimension).unwrap_or_else(|_| "unknown".to_owned());
+    let actual = transpose_type_name(dimension);
     PyTypeError::new_err(format!(
         "reshape(): argument 'shape' failed to unpack the object at pos {} with error \"type must be tuple of ints,but got {actual}\"",
         index + 1
@@ -2647,7 +2693,7 @@ fn top_level_reshape_unpack_type_error(dimension: &Bound<'_, PyAny>, index: usiz
 }
 
 fn top_level_reshape_shape_type_error(shape: &Bound<'_, PyAny>, position: Option<usize>) -> PyErr {
-    let actual = transpose_type_name(shape).unwrap_or_else(|_| "unknown".to_owned());
+    let actual = transpose_type_name(shape);
     let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
     PyTypeError::new_err(format!(
         "reshape(): argument 'shape'{position} must be tuple of ints, not {actual}"
@@ -2663,7 +2709,7 @@ fn top_level_reshape_element_type_error(
     if position.is_none() {
         return top_level_reshape_shape_type_error(shape, position);
     }
-    let actual = transpose_type_name(dimension).unwrap_or_else(|_| "unknown".to_owned());
+    let actual = transpose_type_name(dimension);
     PyTypeError::new_err(format!(
         "reshape(): argument 'shape' (position 2) must be tuple of ints, but found element of type {actual} at pos {index}"
     ))
@@ -3065,7 +3111,7 @@ fn unsupported_tensor_data_error(
     value: &Bound<'_, PyAny>,
     dtype_was_explicit: bool,
 ) -> PyResult<PyErr> {
-    let type_name = transpose_type_name(value)?;
+    let type_name = transpose_type_name(value);
     if dtype_was_explicit {
         Ok(PyTypeError::new_err(format!(
             "must be real number, not {type_name}"

@@ -1,4 +1,5 @@
 import inspect
+import operator
 import re
 import types
 import unittest
@@ -44,6 +45,16 @@ class UnpackOverflowIndex:
         if self.calls == 1:
             return 2
         raise OverflowError("raised during unpack")
+
+
+class OperatorPatchingIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        operator.index = lambda value: 1
+        return 2
 
 
 class ReshapeTests(unittest.TestCase):
@@ -324,6 +335,54 @@ class ReshapeTests(unittest.TestCase):
                     else:
                         torch.reshape(tensor, (dimension, 3))
                 self.assertEqual(dimension.calls, 2)
+
+    def test_shape_indexing_does_not_use_mutable_operator_index(self):
+        tensor = torch.zeros((6,))
+        original_index = operator.index
+        try:
+            operator.index = lambda value: 1
+            output = torch.reshape(tensor, (2, 3))
+        finally:
+            operator.index = original_index
+        self.assertEqual(output.shape, (2, 3))
+
+        dimension = OperatorPatchingIndex()
+        try:
+            output = torch.reshape(tensor, (dimension, 3))
+        finally:
+            operator.index = original_index
+        self.assertEqual(output.shape, (2, 3))
+        self.assertEqual(dimension.calls, 2)
+
+    def test_shape_diagnostics_do_not_execute_mutable_type_metadata(self):
+        class NoModule:
+            pass
+
+        NoModule.__module__ = None
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^reshape\(\): argument 'input' \(position 1\) must be Tensor, not NoModule$",
+        ):
+            torch.reshape(NoModule(), ())
+
+        metadata_reads = []
+
+        class TrappingMeta(type):
+            def __getattribute__(cls, name):
+                if name in {"__module__", "__flags__", "__name__", "__qualname__"}:
+                    metadata_reads.append(name)
+                    raise RuntimeError(f"trapped {name}")
+                return super().__getattribute__(name)
+
+        class Trapped(metaclass=TrappingMeta):
+            pass
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^reshape\(\): argument 'input' \(position 1\) must be Tensor, not Trapped$",
+        ):
+            torch.reshape(Trapped(), ())
+        self.assertEqual(metadata_reads, [])
 
 
 if __name__ == "__main__":
