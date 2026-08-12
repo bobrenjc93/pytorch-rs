@@ -159,6 +159,19 @@ class AutogradApiTests(unittest.TestCase):
         with torch.no_grad():
             self.assertFalse((leaf.transpose(0, 1) / 2.0).requires_grad)
 
+        no_edge_leaf = torch.tensor([4.0, 6.0], requires_grad=True)
+        with torch.no_grad():
+            no_edge_view = no_edge_leaf.transpose(0, 0)
+        no_edge_loss = (no_edge_view / 2.0).sum()
+        self.assertTrue(no_edge_view.requires_grad)
+        self.assertTrue(no_edge_loss.requires_grad)
+        no_edge_loss.backward()
+        self.assertIsNone(no_edge_leaf.grad)
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            no_edge_loss.backward()
+
         # Reflected division's value-dependent VJP remains outside this increment.
         self.assertFalse((2.0 / leaf).requires_grad)
 
@@ -801,11 +814,30 @@ class AutogradReferenceTests(unittest.TestCase):
                 reuse_error = (type(error).__name__, str(error))
             else:
                 self.fail(f"{module.__name__} reused a scalar-division graph")
+
+            no_edge_leaf = module.tensor([4.0, 6.0], requires_grad=True)
+            with module.no_grad():
+                no_edge_view = no_edge_leaf.transpose(0, 0)
+            no_edge_output = no_edge_view / 2.0
+            no_edge_loss = no_edge_output.sum()
+            no_edge_loss.backward()
+            try:
+                no_edge_loss.backward()
+            except RuntimeError as error:
+                no_edge_reuse_error = (type(error).__name__, str(error))
+            else:
+                self.fail(
+                    f"{module.__name__} reused a no-edge scalar-division graph"
+                )
             boundary_metadata = (
                 tracked.requires_grad,
                 detached.requires_grad,
                 suppressed.requires_grad,
                 reuse_error,
+                no_edge_view.requires_grad,
+                no_edge_output.requires_grad,
+                no_edge_leaf.grad is None,
+                no_edge_reuse_error,
             )
 
             outcomes.append(

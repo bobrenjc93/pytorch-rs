@@ -301,8 +301,13 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::MultiplyScalar { input, scalar } | Self::DivideScalar { input, scalar } => {
+            Self::MultiplyScalar { input, scalar } => {
                 if input.autograd.is_some() && scalar.is_none() {
+                    return Err(TensorError::BackwardGraphFreed);
+                }
+            }
+            Self::DivideScalar { scalar, .. } => {
+                if scalar.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
@@ -2186,10 +2191,12 @@ impl Tensor {
         let mut output = self.map_scalar(scalar, |value, scalar| value / scalar)?;
         if self.requires_grad() && grad_enabled() {
             let input = SavedTensor::try_from_tensor(self, false)?;
-            let scalar = input.autograd.is_some().then_some(scalar);
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::DivideScalar { input, scalar })),
+                    grad_fn: Mutex::new(Some(GradFn::DivideScalar {
+                        input,
+                        scalar: Some(scalar),
+                    })),
                 },
             }));
         }

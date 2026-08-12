@@ -349,6 +349,23 @@ fn tensor_by_scalar_division_obeys_boundaries_and_graph_lifetime() {
         );
     }
 
+    let no_edge_leaf = Tensor::from_vec(vec![4.0, 6.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let no_edge_view = {
+        let _guard = no_grad();
+        no_edge_leaf.transpose(0, 0).unwrap()
+    };
+    assert!(no_edge_view.requires_grad());
+    let no_edge_loss = no_edge_view.div_scalar(2.0).unwrap().sum();
+    assert!(no_edge_loss.requires_grad());
+    no_edge_loss.backward().unwrap();
+    assert!(no_edge_leaf.grad().unwrap().is_none());
+    assert_eq!(
+        no_edge_loss.backward(),
+        Err(TensorError::BackwardGraphFreed)
+    );
+
     let loss = tracked.sum();
     loss.backward().unwrap();
     assert_eq!(values(&leaf.grad().unwrap().unwrap()), [0.5, 0.5]);
