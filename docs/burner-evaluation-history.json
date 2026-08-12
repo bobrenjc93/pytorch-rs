@@ -721,6 +721,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:47",
+      "recordedAt": "2026-08-12T14:45:20.029Z",
+      "label": "PR #47",
+      "kind": "leaf",
+      "prNumber": 47,
+      "title": "Expose top-level torch.detach",
+      "scores": {
+        "eval_7af648fb": 98,
+        "eval_8417a4a8": 55,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 24,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
