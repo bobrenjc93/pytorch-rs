@@ -104,6 +104,95 @@ fn multiply_backward_unbroadcasts_both_operands() {
 }
 
 #[test]
+fn addition_backward_unbroadcasts_both_operands_and_accumulates_shared_edges() {
+    let left = Tensor::from_vec(vec![2.0, 3.0], [2, 1])
+        .unwrap()
+        .with_requires_grad(true);
+    let right = Tensor::from_vec(vec![5.0, 7.0, 11.0], [1, 3])
+        .unwrap()
+        .with_requires_grad(true);
+
+    let output = left.add(&right).unwrap();
+    assert!(output.requires_grad());
+    let weights = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
+    output.mul(&weights).unwrap().sum().backward().unwrap();
+
+    assert_eq!(values(&left.grad().unwrap().unwrap()), [6.0, 15.0]);
+    assert_eq!(values(&right.grad().unwrap().unwrap()), [5.0, 7.0, 9.0]);
+
+    let shared = Tensor::from_vec(vec![13.0, 17.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let shared_loss = shared.add(&shared).unwrap().sum();
+    shared_loss.backward().unwrap();
+    shared_loss.backward().unwrap();
+    assert_eq!(values(&shared.grad().unwrap().unwrap()), [4.0, 4.0]);
+}
+
+#[test]
+fn addition_tracks_views_empties_and_autograd_boundaries() {
+    let view_leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let row = Tensor::from_vec(vec![10.0, 20.0], [1, 2]).unwrap();
+    let view_output = view_leaf.transpose(0, 1).unwrap().add(&row).unwrap();
+    assert!(view_output.requires_grad());
+    view_output.sum().backward().unwrap();
+    assert_eq!(
+        values(&view_leaf.grad().unwrap().unwrap()),
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    );
+
+    let right_leaf = Tensor::from_vec(vec![2.0, 3.0, 5.0], [1, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let plain_left = Tensor::ones([2, 1]).unwrap();
+    let right_output = plain_left.add(&right_leaf).unwrap();
+    assert!(right_output.requires_grad());
+    right_output.sum().backward().unwrap();
+    assert_eq!(
+        values(&right_leaf.grad().unwrap().unwrap()),
+        [2.0, 2.0, 2.0]
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let singleton = Tensor::ones([1, 1, 3]).unwrap().with_requires_grad(true);
+    let empty_output = empty.add(&singleton).unwrap();
+    assert!(empty_output.requires_grad());
+    empty_output.sum().backward().unwrap();
+    assert_eq!(empty.grad().unwrap().unwrap().shape(), [2, 0, 3]);
+    assert!(values(&empty.grad().unwrap().unwrap()).is_empty());
+    assert_eq!(values(&singleton.grad().unwrap().unwrap()), [0.0, 0.0, 0.0]);
+
+    let detached = view_leaf.detach().unwrap();
+    assert!(!detached.add(&detached).unwrap().requires_grad());
+    {
+        let _guard = no_grad();
+        assert!(
+            !view_leaf
+                .transpose(0, 1)
+                .unwrap()
+                .add(&row)
+                .unwrap()
+                .requires_grad()
+        );
+        assert!(
+            !row.add(&view_leaf.transpose(0, 1).unwrap())
+                .unwrap()
+                .requires_grad()
+        );
+    }
+    assert!(
+        view_leaf
+            .transpose(0, 1)
+            .unwrap()
+            .add(&row)
+            .unwrap()
+            .requires_grad()
+    );
+}
+
+#[test]
 fn scalar_and_empty_reductions_produce_correct_leaf_gradients() {
     let scalar = Tensor::from_vec(vec![4.0], [])
         .unwrap()

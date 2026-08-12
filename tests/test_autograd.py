@@ -56,6 +56,44 @@ class AutogradApiTests(unittest.TestCase):
         with torch.no_grad():
             self.assertFalse((1.0 + values).requires_grad)
 
+    def test_tensor_addition_retains_and_unbroadcasts_gradient_history(self):
+        left = torch.tensor([[2.0], [3.0]], requires_grad=True)
+        right = torch.tensor([[5.0, 7.0, 11.0]], requires_grad=True)
+        broadcast = left + right
+        self.assertTrue(broadcast.requires_grad)
+        weights = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        (broadcast * weights).sum().backward()
+        np.testing.assert_array_equal(np.asarray(left.grad), [[6.0], [15.0]])
+        np.testing.assert_array_equal(np.asarray(right.grad), [[5.0, 7.0, 9.0]])
+
+        shared = torch.tensor([13.0, 17.0], requires_grad=True)
+        shared_loss = (shared + shared).sum()
+        shared_loss.backward()
+        shared_loss.backward()
+        np.testing.assert_array_equal(np.asarray(shared.grad), [4.0, 4.0])
+
+        view_leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        view_output = view_leaf.transpose(0, 1) + torch.tensor([[10.0, 20.0]])
+        self.assertTrue(view_output.requires_grad)
+        view_output.sum().backward()
+        np.testing.assert_array_equal(np.asarray(view_leaf.grad), np.ones((2, 3)))
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        singleton = torch.ones((1, 1, 3), requires_grad=True)
+        empty_output = empty + singleton
+        self.assertTrue(empty_output.requires_grad)
+        empty_output.sum().backward()
+        self.assertEqual(empty.grad.shape, (2, 0, 3))
+        np.testing.assert_array_equal(np.asarray(singleton.grad), np.zeros((1, 1, 3)))
+
+        detached = view_leaf.detach()
+        self.assertFalse((detached + detached).requires_grad)
+        with torch.no_grad():
+            self.assertFalse((view_leaf + view_leaf).requires_grad)
+        self.assertTrue((view_leaf + view_leaf).requires_grad)
+
     def test_real_scalar_subtraction_retains_gradient_history(self):
         weights = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
 
@@ -804,6 +842,68 @@ class AutogradReferenceTests(unittest.TestCase):
         np.testing.assert_array_equal(outcomes[0][0], outcomes[1][0])
         np.testing.assert_array_equal(outcomes[0][1], outcomes[1][1])
         self.assertEqual(outcomes[0][2:], outcomes[1][2:])
+
+    def test_tensor_addition_autograd_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            left = module.tensor([[2.0], [3.0]], requires_grad=True)
+            right = module.tensor([[5.0, 7.0, 11.0]], requires_grad=True)
+            broadcast = left + right
+            weights = module.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+            (broadcast * weights).sum().backward()
+
+            shared = module.tensor([13.0, 17.0], requires_grad=True)
+            shared_loss = (shared + shared).sum()
+            shared_loss.backward()
+            shared_loss.backward()
+
+            view_leaf = module.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+            )
+            view_output = view_leaf.transpose(0, 1) + module.tensor([[10.0, 20.0]])
+            view_output.sum().backward()
+
+            right_only = module.tensor([[2.0, 3.0, 5.0]], requires_grad=True)
+            right_output = module.ones((2, 1)) + right_only
+            right_output.sum().backward()
+
+            empty = module.zeros((2, 0, 3), requires_grad=True)
+            singleton = module.ones((1, 1, 3), requires_grad=True)
+            empty_output = empty + singleton
+            empty_output.sum().backward()
+
+            boundary = module.tensor([2.0, 3.0], requires_grad=True)
+            detached = boundary.detach()
+            detached_requires_grad = (detached + detached).requires_grad
+            with module.no_grad():
+                suppressed_requires_grad = (boundary + boundary).requires_grad
+
+            outcomes.append(
+                (
+                    broadcast.requires_grad,
+                    np.asarray(left.grad).copy(),
+                    np.asarray(right.grad).copy(),
+                    np.asarray(shared.grad).copy(),
+                    view_output.requires_grad,
+                    np.asarray(view_leaf.grad).copy(),
+                    right_output.requires_grad,
+                    np.asarray(right_only.grad).copy(),
+                    tuple(empty_output.shape),
+                    empty_output.stride(),
+                    empty_output.requires_grad,
+                    tuple(empty.grad.shape),
+                    empty.grad.numel(),
+                    np.asarray(singleton.grad).copy(),
+                    detached_requires_grad,
+                    suppressed_requires_grad,
+                    (boundary + boundary).requires_grad,
+                )
+            )
+
+        for index in (1, 2, 3, 5, 7, 13):
+            np.testing.assert_array_equal(outcomes[0][index], outcomes[1][index])
+        for index in (0, 4, 6, 8, 9, 10, 11, 12, 14, 15, 16):
+            self.assertEqual(outcomes[0][index], outcomes[1][index])
 
     def test_real_scalar_subtraction_gradients_match_pytorch_2_13(self):
         outcomes = []

@@ -231,6 +231,12 @@ struct SavedTensor {
 
 #[derive(Clone)]
 enum GradFn {
+    Add {
+        left: SavedTensor,
+        right: SavedTensor,
+        output_shape: Vec<usize>,
+        output_elements: usize,
+    },
     Multiply {
         left: SavedTensor,
         right: SavedTensor,
@@ -276,7 +282,7 @@ impl SavedTensor {
 impl GradFn {
     fn take_parents(&mut self, pending: &mut Vec<Arc<AutogradMeta>>) {
         match self {
-            Self::Multiply { left, right, .. } => {
+            Self::Add { left, right, .. } | Self::Multiply { left, right, .. } => {
                 left.take_parent(pending);
                 right.take_parent(pending);
             }
@@ -296,12 +302,12 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
+            Self::Add { .. } | Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
             Self::MultiplyScalar { input, scalar } => {
                 if input.autograd.is_some() && scalar.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
     }
@@ -314,7 +320,7 @@ impl GradFn {
                 right.storage = None;
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
-            Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
+            Self::Add { .. } | Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
     }
@@ -2070,7 +2076,21 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn add(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, |left, right| left + right)
+        let mut output = self.zip_map(other, |left, right| left + right)?;
+        if (self.requires_grad() || other.requires_grad()) && grad_enabled() {
+            let grad_fn = GradFn::Add {
+                left: SavedTensor::try_from_tensor(self, false)?,
+                right: SavedTensor::try_from_tensor(other, false)?,
+                output_shape: try_clone_result_shape(&output.shape, output.elements)?,
+                output_elements: output.elements,
+            };
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(grad_fn)),
+                },
+            }));
+        }
+        Ok(output)
     }
 
     /// Subtracts tensors element by element with trailing-dimension broadcasting.
@@ -2682,7 +2702,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                 stack.push(TopologyFrame::Exit(Arc::clone(&meta), grad_fn.clone()));
                 if let Some(grad_fn) = &grad_fn {
                     match grad_fn {
-                        GradFn::Multiply { left, right, .. } => {
+                        GradFn::Add { left, right, .. } | GradFn::Multiply { left, right, .. } => {
                             push_saved_parent(&mut stack, right);
                             push_saved_parent(&mut stack, left);
                         }
@@ -2712,6 +2732,54 @@ fn apply_grad_fn(
     gradients: &mut HashMap<usize, Vec<f32>>,
 ) -> Result<(), TensorError> {
     match grad_fn {
+        GradFn::Add {
+            left,
+            right,
+            output_shape,
+            output_elements,
+        } => {
+            debug_assert_eq!(*output_elements, upstream.len());
+            let mut left_gradient = if left.autograd.is_some() {
+                Some(GradientAccumulator::new(
+                    left.elements,
+                    left.elements == *output_elements,
+                )?)
+            } else {
+                None
+            };
+            let mut right_gradient = if right.autograd.is_some() {
+                Some(GradientAccumulator::new(
+                    right.elements,
+                    right.elements == *output_elements,
+                )?)
+            } else {
+                None
+            };
+            let mut coordinates = try_result_vector(output_shape.len(), *output_elements)?;
+            coordinates.resize(output_shape.len(), 0_usize);
+
+            for (output_index, &output_gradient) in upstream.iter().enumerate() {
+                let mut remaining = output_index;
+                for axis in (0..output_shape.len()).rev() {
+                    coordinates[axis] = remaining % output_shape[axis];
+                    remaining /= output_shape[axis];
+                }
+                if let Some(gradient) = &mut left_gradient {
+                    let (left_index, _) = left.broadcast_position(output_shape, &coordinates);
+                    gradient.add(left_index, output_gradient);
+                }
+                if let Some(gradient) = &mut right_gradient {
+                    let (right_index, _) = right.broadcast_position(output_shape, &coordinates);
+                    gradient.add(right_index, output_gradient);
+                }
+            }
+            if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
+                add_gradient(gradients, meta, gradient.values);
+            }
+            if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
+                add_gradient(gradients, meta, gradient.values);
+            }
+        }
         GradFn::Sum { input } => {
             if let Some(meta) = &input.autograd {
                 let gradient = filled_storage(input.elements, upstream[0])?;
