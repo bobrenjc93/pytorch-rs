@@ -124,6 +124,136 @@ fn scalar_and_empty_reductions_produce_correct_leaf_gradients() {
 }
 
 #[test]
+fn exponential_preserves_scalar_empty_and_strided_autograd_history() {
+    let scalar = Tensor::from_vec(vec![1.5], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let scalar_output = scalar.exp().unwrap();
+    assert!(scalar_output.requires_grad());
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert_eq!(scalar_output.storage_offset(), 0);
+    scalar_output.backward().unwrap();
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        1.5_f32.exp().to_bits()
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_output = empty.exp().unwrap();
+    assert!(empty_output.requires_grad());
+    assert_eq!(empty_output.shape(), [2, 0, 3]);
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    assert_eq!(empty_output.storage_offset(), 0);
+    empty_output.sum().backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert_eq!(empty_gradient.stride(), [3, 3, 1]);
+    assert!(values(&empty_gradient).is_empty());
+
+    let leaf = Tensor::from_vec(vec![-2.0, 0.0, 1.0, 2.0, 4.0, 6.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let view = leaf.transpose(0, 1).unwrap();
+    let weights = Tensor::from_vec(vec![1.0, -2.0, 3.0, -4.0, 5.0, -6.0], [3, 2]).unwrap();
+    let output = view.exp().unwrap();
+    assert!(output.requires_grad());
+    assert_eq!(output.shape(), [3, 2]);
+    assert_eq!(output.stride(), [1, 3]);
+    assert_eq!(output.storage_offset(), 0);
+    output.mul(&weights).unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&leaf.grad().unwrap().unwrap()),
+        [
+            (-2.0_f32).exp(),
+            3.0 * 0.0_f32.exp(),
+            5.0 * 1.0_f32.exp(),
+            -2.0 * 2.0_f32.exp(),
+            -4.0 * 4.0_f32.exp(),
+            -6.0 * 6.0_f32.exp(),
+        ]
+    );
+}
+
+#[test]
+fn exponential_vjp_uses_saved_result_for_special_values_and_is_single_use() {
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x3f80_0000,
+        0xc000_0000,
+        0x42b0_0000,
+        0x42b2_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let weight_bits = [
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0000_0000,
+        0x7f80_0000,
+        0x3f00_0000,
+        0x0000_0000,
+        0x0000_0000,
+        0x7f80_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+    ];
+    let leaf = Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(
+        weight_bits.map(f32::from_bits).to_vec(),
+        [weight_bits.len()],
+    )
+    .unwrap();
+    let output = leaf.exp().unwrap();
+    let expected_bits = output
+        .logical_values()
+        .zip(weights.logical_values())
+        .map(|(result, upstream)| (upstream * result).to_bits())
+        .collect::<Vec<_>>();
+    let loss = output.mul(&weights).unwrap().sum();
+
+    loss.backward().unwrap();
+    assert!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .eq(expected_bits)
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
+fn exponential_obeys_detach_and_no_grad_boundaries() {
+    let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let detached_input = leaf.detach().unwrap().exp().unwrap();
+    assert!(!detached_input.requires_grad());
+
+    let tracked = leaf.exp().unwrap();
+    let detached_output = tracked.detach().unwrap();
+    assert!(!detached_output.requires_grad());
+    assert!(detached_output.shares_storage_with(&tracked));
+
+    {
+        let _guard = no_grad();
+        let output = leaf.transpose(0, 1).unwrap().exp().unwrap();
+        assert!(!output.requires_grad());
+        assert_eq!(output.shape(), [2, 2]);
+        assert_eq!(output.stride(), [1, 2]);
+        assert_eq!(output.storage_offset(), 0);
+    }
+    assert!(leaf.exp().unwrap().requires_grad());
+}
+
+#[test]
 fn scalar_addition_records_reusable_identity_gradients() {
     let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
         .unwrap()

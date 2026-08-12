@@ -244,6 +244,10 @@ enum GradFn {
     Negate {
         input: SavedTensor,
     },
+    Exp {
+        input: SavedTensor,
+        result: SavedTensor,
+    },
     Sum {
         input: SavedTensor,
     },
@@ -282,6 +286,7 @@ impl GradFn {
             }
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input }
+            | Self::Exp { input, .. }
             | Self::Sum { input }
             | Self::Transform { input, .. } => input.take_parent(pending),
         }
@@ -301,6 +306,11 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
+            Self::Exp { input, result } => {
+                if input.autograd.is_some() && result.storage.is_none() {
+                    return Err(TensorError::BackwardGraphFreed);
+                }
+            }
             Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
@@ -314,6 +324,7 @@ impl GradFn {
                 right.storage = None;
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
+            Self::Exp { result, .. } => result.storage = None,
             Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
@@ -728,7 +739,7 @@ fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> 
             "element 0 of tensors does not require grad and does not have a grad_fn",
         ),
         TensorError::BackwardGraphFreed => formatter.write_str(
-            "Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). Saved intermediate values of the graph are freed when you call .backward(). Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.",
+            "Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). Saved intermediate values of the graph are freed when you call .backward() or autograd.grad(). Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.",
         ),
         _ => unreachable!("only autograd errors are formatted here"),
     }
@@ -1164,6 +1175,19 @@ impl Tensor {
                     grad_fn: Mutex::new(Some(GradFn::Negate {
                         input: SavedTensor::try_from_tensor(self, false)?,
                     })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    fn finish_exp_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            let input = SavedTensor::try_from_tensor(self, false)?;
+            let result = SavedTensor::try_from_tensor(&output, input.autograd.is_some())?;
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Exp { input, result })),
                 },
             }));
         }
@@ -2244,7 +2268,8 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn exp(&self) -> Result<Self, TensorError> {
-        self.unary_map(f32::exp)
+        let output = self.unary_map(f32::exp)?;
+        self.finish_exp_vjp(output)
     }
 
     #[must_use]
@@ -2576,6 +2601,17 @@ impl SavedTensor {
         })
     }
 
+    fn value_at_linear_index(&self, index: usize) -> f32 {
+        let offset =
+            logical_offset_for_linear_index(&self.shape, &self.strides, self.offset, index)
+                .expect("validated saved tensor logical offset must fit in usize");
+        self.storage
+            .as_ref()
+            .expect("value-dependent derivative must retain saved tensor storage")
+            .value(offset)
+            .expect("validated saved tensor logical offset must address storage")
+    }
+
     fn broadcast_position(&self, output_shape: &[usize], coordinates: &[usize]) -> (usize, usize) {
         let leading = output_shape.len() - self.shape.len();
         let mut logical_index = 0_usize;
@@ -2688,6 +2724,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         }
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input }
+                        | GradFn::Exp { input, .. }
                         | GradFn::Sum { input }
                         | GradFn::Transform { input, .. } => {
                             push_saved_parent(&mut stack, input);
@@ -2731,6 +2768,20 @@ fn apply_grad_fn(
                 debug_assert_eq!(input.elements, upstream.len());
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
                 gradient.extend(upstream.iter().copied().map(negate_value));
+                add_gradient(gradients, meta, gradient);
+            }
+        }
+        GradFn::Exp { input, result } => {
+            if let Some(meta) = &input.autograd {
+                debug_assert_eq!(input.elements, upstream.len());
+                debug_assert_eq!(result.elements, upstream.len());
+                let mut gradient = try_result_vector(input.elements, input.elements)?;
+                gradient.extend(
+                    upstream
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| value * result.value_at_linear_index(index)),
+                );
                 add_gradient(gradients, meta, gradient);
             }
         }
