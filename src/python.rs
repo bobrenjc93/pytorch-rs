@@ -309,6 +309,15 @@ struct ParsedCallArgument<'py> {
     position: Option<usize>,
 }
 
+struct CreationCallArguments<'py> {
+    size: Option<Bound<'py, PyAny>>,
+    shape: Option<Bound<'py, PyAny>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 enum ParsedSqueezeDimensions {
     All,
     Single(i64),
@@ -906,6 +915,7 @@ fn parse_factory_requires_grad(
 ) -> PyResult<bool> {
     match requires_grad {
         None => Ok(false),
+        Some(requires_grad) if requires_grad.is_none() => Ok(false),
         Some(requires_grad) => parse_requires_grad(function, requires_grad),
     }
 }
@@ -1048,42 +1058,24 @@ fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 }
 
 #[pyfunction(
-    signature = (size=None, *extra, shape=None, dtype=None, device=None, requires_grad=None),
+    signature = (*args, **kwargs),
     text_signature = "(size=None, *, shape=None, dtype=None, device=None, requires_grad=False)"
 )]
-fn zeros(
-    size: Option<&Bound<'_, PyAny>>,
-    extra: &Bound<'_, PyTuple>,
-    shape: Option<&Bound<'_, PyAny>>,
-    dtype: Option<&Bound<'_, PyAny>>,
-    device: Option<&Bound<'_, PyAny>>,
-    requires_grad: Option<&Bound<'_, PyAny>>,
-) -> PyResult<PyTensor> {
-    reject_extra_creation_positionals("zeros", extra)?;
-    let requires_grad = parse_factory_requires_grad("zeros", requires_grad)?;
-    let size = parse_creation_size("zeros", size, shape)?;
-    let (dtype, device) = parse_metadata("zeros", dtype, device)?;
+fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let arguments = bind_creation_arguments("zeros", args, kwargs)?;
+    let (size, dtype, device, requires_grad) = parse_creation_arguments("zeros", arguments)?;
     CoreTensor::zeros_with_metadata(size, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
 }
 
 #[pyfunction(
-    signature = (size=None, *extra, shape=None, dtype=None, device=None, requires_grad=None),
+    signature = (*args, **kwargs),
     text_signature = "(size=None, *, shape=None, dtype=None, device=None, requires_grad=False)"
 )]
-fn ones(
-    size: Option<&Bound<'_, PyAny>>,
-    extra: &Bound<'_, PyTuple>,
-    shape: Option<&Bound<'_, PyAny>>,
-    dtype: Option<&Bound<'_, PyAny>>,
-    device: Option<&Bound<'_, PyAny>>,
-    requires_grad: Option<&Bound<'_, PyAny>>,
-) -> PyResult<PyTensor> {
-    reject_extra_creation_positionals("ones", extra)?;
-    let requires_grad = parse_factory_requires_grad("ones", requires_grad)?;
-    let size = parse_creation_size("ones", size, shape)?;
-    let (dtype, device) = parse_metadata("ones", dtype, device)?;
+fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let arguments = bind_creation_arguments("ones", args, kwargs)?;
+    let (size, dtype, device, requires_grad) = parse_creation_arguments("ones", arguments)?;
     CoreTensor::ones_with_metadata(size, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
@@ -1211,14 +1203,95 @@ fn parse_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<
     )))
 }
 
-fn reject_extra_creation_positionals(function: &str, extra: &Bound<'_, PyTuple>) -> PyResult<()> {
-    if extra.is_empty() {
-        return Ok(());
+fn bind_creation_arguments<'py>(
+    function: &str,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<CreationCallArguments<'py>> {
+    // PyTorch rejects excess positional arguments before inspecting keywords.
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
     }
-    let given = extra.len() + 1;
-    Err(PyTypeError::new_err(format!(
-        "{function}() takes 1 positional argument but {given} were given"
-    )))
+
+    let mut size_was_provided = !positional.is_empty();
+    let mut arguments = CreationCallArguments {
+        size: if positional.is_empty() {
+            None
+        } else {
+            optional_call_argument(positional.get_item(0)?)
+        },
+        shape: None,
+        dtype: None,
+        device: None,
+        requires_grad: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "size" => {
+                if size_was_provided {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "{function}() got multiple values for argument 'size'"
+                        ))
+                    });
+                } else {
+                    size_was_provided = true;
+                    arguments.size = optional_call_argument(value);
+                }
+            }
+            "shape" => arguments.shape = optional_call_argument(value),
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "{function}() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
+    if value.is_none() { None } else { Some(value) }
+}
+
+fn parse_creation_arguments(
+    function: &str,
+    arguments: CreationCallArguments<'_>,
+) -> PyResult<(Vec<usize>, DType, Device, bool)> {
+    let CreationCallArguments {
+        size,
+        shape,
+        dtype,
+        device,
+        requires_grad,
+        keyword_error,
+    } = arguments;
+
+    // PyTorch validates declared argument types in signature order, then
+    // reports duplicate or unknown keywords, and only then resolves a valid
+    // device specification.
+    let size = parse_creation_size(function, size.as_ref(), shape.as_ref())?;
+    let dtype = parse_dtype(function, dtype.as_ref())?;
+    validate_device_argument_type(function, device.as_ref())?;
+    let requires_grad = parse_factory_requires_grad(function, requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    let device = parse_device(function, device.as_ref())?;
+    Ok((size, dtype, device, requires_grad))
 }
 
 fn parse_creation_size(
@@ -1273,6 +1346,20 @@ fn parse_device(function: &str, device: Option<&Bound<'_, PyAny>>) -> PyResult<D
     })
 }
 
+fn validate_device_argument_type(
+    function: &str,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if device.cast::<PyDevice>().is_ok() || device.cast::<PyString>().is_ok() {
+        return Ok(());
+    }
+    let error = device_argument_type_error(function, device)?;
+    Err(error)
+}
+
 fn parse_device_value(function: &str, device: &Bound<'_, PyAny>) -> PyResult<Device> {
     if let Ok(device) = device.cast::<PyDevice>() {
         return Ok(device.try_borrow()?.inner);
@@ -1287,13 +1374,18 @@ fn parse_device_value(function: &str, device: &Bound<'_, PyAny>) -> PyResult<Dev
         )));
     }
 
+    let error = device_argument_type_error(function, device)?;
+    Err(error)
+}
+
+fn device_argument_type_error(function: &str, device: &Bound<'_, PyAny>) -> PyResult<PyErr> {
     let argument = if function == "device" {
         "type"
     } else {
         "device"
     };
     let type_name = device.get_type().name()?;
-    Err(PyTypeError::new_err(format!(
+    Ok(PyTypeError::new_err(format!(
         "{function}(): argument '{argument}' must be torch.device or str, not {type_name}"
     )))
 }

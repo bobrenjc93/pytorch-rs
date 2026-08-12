@@ -263,6 +263,42 @@ class AutogradApiTests(unittest.TestCase):
                     f"{name}() takes 1 positional argument but 2 were given",
                 )
 
+            for competing_keyword in (
+                {"wat": 1},
+                {"size": (1,)},
+                {"requires_grad": 1},
+            ):
+                with self.subTest(
+                    factory=name,
+                    argument="positional",
+                    competing_keyword=competing_keyword,
+                ):
+                    with self.assertRaises(TypeError) as raised:
+                        factory((1,), True, **competing_keyword)
+                    self.assertEqual(
+                        str(raised.exception),
+                        f"{name}() takes 1 positional argument but 2 were given",
+                    )
+
+            mixed_invalid = (
+                lambda: factory("bad", requires_grad=1),
+                lambda: factory((1,), dtype=object(), requires_grad=1),
+                lambda: factory((1,), device=object(), requires_grad=1),
+            )
+            for call in mixed_invalid:
+                with self.subTest(factory=name, argument="mixed invalid"):
+                    with self.assertRaises(TypeError) as raised:
+                        call()
+                    self.assertNotIn("argument 'requires_grad'", str(raised.exception))
+
+            with self.subTest(factory=name, argument="deferred device validation"):
+                with self.assertRaises(TypeError) as raised:
+                    factory((1,), device="not-a-device", requires_grad=1)
+                self.assertEqual(
+                    str(raised.exception),
+                    f"{name}(): argument 'requires_grad' must be bool, not int",
+                )
+
     def test_detach_and_no_grad_context_decorator_are_boundaries(self):
         x = torch.tensor([2.0, 3.0], requires_grad=True)
         detached = x.detach()
@@ -588,6 +624,16 @@ class AutogradReferenceTests(unittest.TestCase):
             Truthy(),
             object(),
         ]
+        mixed_invalid = (
+            lambda factory: factory("bad", requires_grad=1),
+            lambda factory: factory((1,), dtype=object(), requires_grad=1),
+            lambda factory: factory((1,), device=object(), requires_grad=1),
+        )
+        competing_errors = (
+            lambda factory: factory((1,), True, wat=1),
+            lambda factory: factory((1,), True, size=(1,)),
+            lambda factory: factory((1,), True, requires_grad=1),
+        )
         outcomes = []
         for module in (torch, reference_torch):
             module_outcomes = []
@@ -611,6 +657,33 @@ class AutogradReferenceTests(unittest.TestCase):
                 else:
                     self.fail(f"{module.__name__}.{name} accepted positional True")
 
+                mixed_error_precedence = []
+                for call in mixed_invalid:
+                    try:
+                        call(factory)
+                    except TypeError as error:
+                        mixed_error_precedence.append(
+                            (type(error).__name__, "argument 'requires_grad'" in str(error))
+                        )
+                    else:
+                        self.fail(f"{module.__name__}.{name} accepted mixed invalid arguments")
+
+                positional_precedence = []
+                for call in competing_errors:
+                    try:
+                        call(factory)
+                    except TypeError as error:
+                        positional_precedence.append(str(error))
+                    else:
+                        self.fail(f"{module.__name__}.{name} accepted excess positionals")
+
+                try:
+                    factory((1,), device="not-a-device", requires_grad=1)
+                except TypeError as error:
+                    deferred_device_error = str(error)
+                else:
+                    self.fail(f"{module.__name__}.{name} accepted invalid requires_grad")
+
                 module_outcomes.append(
                     (
                         factory((1,)).requires_grad,
@@ -619,6 +692,9 @@ class AutogradReferenceTests(unittest.TestCase):
                         factory((1,), requires_grad=True).requires_grad,
                         errors,
                         positional_error,
+                        mixed_error_precedence,
+                        positional_precedence,
+                        deferred_device_error,
                     )
                 )
             outcomes.append(module_outcomes)
