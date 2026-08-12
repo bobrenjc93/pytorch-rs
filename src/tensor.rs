@@ -181,7 +181,9 @@ pub fn no_grad() -> NoGradGuard {
     }
 }
 
-fn grad_enabled() -> bool {
+/// Returns whether eager graph recording is enabled on the current thread.
+#[must_use]
+pub fn is_grad_enabled() -> bool {
     NO_GRAD_DEPTH.get() == 0
 }
 
@@ -1109,7 +1111,7 @@ impl Tensor {
     }
 
     fn records_grad(&self) -> bool {
-        self.requires_grad() && grad_enabled()
+        self.requires_grad() && is_grad_enabled()
     }
 
     fn record_transform(
@@ -2091,7 +2093,7 @@ impl Tensor {
     /// shape calculation or allocation fails.
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
         let mut output = self.zip_map(other, |left, right| left * right)?;
-        if (self.requires_grad() || other.requires_grad()) && grad_enabled() {
+        if (self.requires_grad() || other.requires_grad()) && is_grad_enabled() {
             let left_has_edge = self.autograd.is_some();
             let right_has_edge = other.autograd.is_some();
             let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
@@ -2148,7 +2150,7 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn mul_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
         let mut output = self.map_scalar(scalar, |value, scalar| value * scalar)?;
-        if self.requires_grad() && grad_enabled() {
+        if self.requires_grad() && is_grad_enabled() {
             let input = SavedTensor::try_from_tensor(self, false)?;
             let scalar = input.autograd.is_some().then_some(scalar);
             output.autograd = Some(Arc::new(AutogradMeta {
@@ -2256,7 +2258,7 @@ impl Tensor {
             self.dtype(),
             self.device(),
         );
-        if self.requires_grad() && grad_enabled() {
+        if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Sum {

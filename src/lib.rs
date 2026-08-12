@@ -11,5 +11,6 @@ mod tensor;
 pub(crate) use tensor::{enter_no_grad, exit_no_grad};
 
 pub use tensor::{
-    DType, Device, LogicalValues, MemoryFormat, NoGradGuard, Tensor, TensorError, no_grad,
+    DType, Device, LogicalValues, MemoryFormat, NoGradGuard, Tensor, TensorError, is_grad_enabled,
+    no_grad,
 };

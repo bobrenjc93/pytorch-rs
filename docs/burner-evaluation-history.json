@@ -753,6 +753,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:49",
+      "recordedAt": "2026-08-12T15:41:46.284Z",
+      "label": "PR #49",
+      "kind": "leaf",
+      "prNumber": 49,
+      "title": "Expose torch.is_grad_enabled",
+      "scores": {
+        "eval_7af648fb": 98,
+        "eval_8417a4a8": 55.2,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 25,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
