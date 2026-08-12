@@ -299,6 +299,112 @@ class AutogradApiTests(unittest.TestCase):
                     f"{name}(): argument 'requires_grad' must be bool, not int",
                 )
 
+    def test_full_creates_scalar_ordinary_and_empty_leaves(self):
+        for requires_grad in (None, False):
+            with self.subTest(requires_grad=requires_grad):
+                scalar = torch.full((), -2.5, requires_grad=requires_grad)
+                self.assertFalse(scalar.requires_grad)
+                self.assertEqual(scalar.item(), -2.5)
+
+        omitted = torch.full((2,), 3.25)
+        self.assertFalse(omitted.requires_grad)
+        self.assertEqual(omitted.tolist(), [3.25, 3.25])
+
+        scalar = torch.full((), -2.5, requires_grad=True)
+        self.assertTrue(scalar.requires_grad)
+        self.assertIsNone(scalar.grad)
+        ((scalar + 2.0) * 3.0).backward()
+        self.assertEqual(scalar.grad.shape, ())
+        self.assertEqual(scalar.grad.item(), 3.0)
+
+        ordinary = torch.full((2, 2), 3.25, requires_grad=True)
+        self.assertTrue(ordinary.requires_grad)
+        self.assertIsNone(ordinary.grad)
+        weights = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        ((ordinary + 2.0) * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(ordinary.grad),
+            [[1.0, 2.0], [3.0, 4.0]],
+        )
+
+        empty = torch.full((2, 0, 3), 7.0, requires_grad=True)
+        self.assertTrue(empty.requires_grad)
+        self.assertIsNone(empty.grad)
+        self.assertEqual(empty.tolist(), [[], []])
+        (empty + 2.0).sum().backward()
+        self.assertEqual(empty.grad.shape, (2, 0, 3))
+        self.assertEqual(empty.grad.numel(), 0)
+
+    def test_full_requires_keyword_only_builtin_bool_or_none(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        parameter = inspect.signature(torch.full).parameters["requires_grad"]
+        self.assertIs(parameter.kind, inspect.Parameter.KEYWORD_ONLY)
+        self.assertIs(parameter.default, False)
+
+        invalid = (
+            (np.bool_(True), "numpy.bool"),
+            (np.bool_(False), "numpy.bool"),
+            (1, "int"),
+            (0, "int"),
+            (1.0, "float"),
+            ("true", "str"),
+            (Truthy(), "Truthy"),
+            (object(), "object"),
+        )
+        for value, type_name in invalid:
+            with self.subTest(value=value):
+                with self.assertRaises(TypeError) as raised:
+                    torch.full((1,), 2.0, requires_grad=value)
+                self.assertEqual(
+                    str(raised.exception),
+                    f"full(): argument 'requires_grad' must be bool, not {type_name}",
+                )
+
+        for competing_keyword in (
+            {"wat": 1},
+            {"size": (1,)},
+            {"fill_value": 2.0},
+            {"requires_grad": 1},
+        ):
+            with self.subTest(competing_keyword=competing_keyword):
+                with self.assertRaises(TypeError) as raised:
+                    torch.full((1,), 2.0, True, **competing_keyword)
+                self.assertEqual(
+                    str(raised.exception),
+                    "full() takes 2 positional arguments but 3 were given",
+                )
+
+        mixed_invalid = (
+            lambda: torch.full("bad", 2.0, requires_grad=1),
+            lambda: torch.full((1,), object(), requires_grad=1),
+            lambda: torch.full((1,), 2.0, dtype=object(), requires_grad=1),
+            lambda: torch.full((1,), 2.0, device=object(), requires_grad=1),
+        )
+        for call in mixed_invalid:
+            with self.subTest(argument="mixed invalid"):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertNotIn("argument 'requires_grad'", str(raised.exception))
+
+        requires_grad_precedence = (
+            lambda: torch.full((-1,), 2.0, requires_grad=1),
+            lambda: torch.full((1,), 2.0, device="not-a-device", requires_grad=1),
+            lambda: torch.full((1,), 2.0, wat=1, requires_grad=1),
+            lambda: torch.full((1,), 2.0, size=(1,), requires_grad=1),
+            lambda: torch.full((1,), 2.0, fill_value=2.0, requires_grad=1),
+        )
+        for call in requires_grad_precedence:
+            with self.subTest(argument="requires_grad precedence"):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(
+                    str(raised.exception),
+                    "full(): argument 'requires_grad' must be bool, not int",
+                )
+
     def test_detach_and_no_grad_context_decorator_are_boundaries(self):
         x = torch.tensor([2.0, 3.0], requires_grad=True)
         detached = x.detach()
@@ -734,6 +840,134 @@ class AutogradReferenceTests(unittest.TestCase):
             self.assertEqual(native[:2], expected[:2])
             np.testing.assert_array_equal(native[2], expected[2])
             self.assertEqual(native[3:], expected[3:])
+
+    def test_full_requires_grad_arguments_match_pytorch_2_13(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        invalid = [
+            np.bool_(True),
+            np.bool_(False),
+            1,
+            0,
+            1.0,
+            "true",
+            Truthy(),
+            object(),
+        ]
+        mixed_invalid = (
+            lambda factory: factory("bad", 2.0, requires_grad=1),
+            lambda factory: factory((1,), object(), requires_grad=1),
+            lambda factory: factory((1,), 2.0, dtype=object(), requires_grad=1),
+            lambda factory: factory((1,), 2.0, device=object(), requires_grad=1),
+        )
+        requires_grad_precedence = (
+            lambda factory: factory((-1,), 2.0, requires_grad=1),
+            lambda factory: factory(
+                (1,), 2.0, device="not-a-device", requires_grad=1
+            ),
+            lambda factory: factory((1,), 2.0, wat=1, requires_grad=1),
+            lambda factory: factory(
+                (1,), 2.0, size=(1,), requires_grad=1
+            ),
+            lambda factory: factory(
+                (1,), 2.0, fill_value=2.0, requires_grad=1
+            ),
+        )
+        competing_errors = (
+            lambda factory: factory((1,), 2.0, True, wat=1),
+            lambda factory: factory((1,), 2.0, True, size=(1,)),
+            lambda factory: factory((1,), 2.0, True, fill_value=2.0),
+            lambda factory: factory((1,), 2.0, True, requires_grad=1),
+        )
+
+        outcomes = []
+        for module in (torch, reference_torch):
+            factory = module.full
+            errors = []
+            for value in invalid:
+                try:
+                    factory((1,), 2.0, requires_grad=value)
+                except TypeError as error:
+                    errors.append(str(error))
+                else:
+                    self.fail(
+                        f"{module.__name__}.full accepted requires_grad={value!r}"
+                    )
+
+            mixed_error_precedence = []
+            for call in mixed_invalid:
+                try:
+                    call(factory)
+                except TypeError as error:
+                    mixed_error_precedence.append(
+                        (type(error).__name__, "argument 'requires_grad'" in str(error))
+                    )
+                else:
+                    self.fail(f"{module.__name__}.full accepted mixed invalid arguments")
+
+            requires_grad_errors = []
+            for call in requires_grad_precedence:
+                try:
+                    call(factory)
+                except TypeError as error:
+                    requires_grad_errors.append(str(error))
+                else:
+                    self.fail(f"{module.__name__}.full accepted invalid requires_grad")
+
+            positional_precedence = []
+            for call in competing_errors:
+                try:
+                    call(factory)
+                except TypeError as error:
+                    positional_precedence.append(str(error))
+                else:
+                    self.fail(f"{module.__name__}.full accepted excess positionals")
+
+            outcomes.append(
+                (
+                    factory((1,), 3.25).requires_grad,
+                    factory((1,), 3.25, requires_grad=None).requires_grad,
+                    factory((1,), 3.25, requires_grad=False).requires_grad,
+                    factory((1,), 3.25, requires_grad=True).requires_grad,
+                    factory((2,), 3.25, requires_grad=None).tolist(),
+                    errors,
+                    mixed_error_precedence,
+                    requires_grad_errors,
+                    positional_precedence,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_full_leaf_gradients_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            scalar = module.full((), -2.5, requires_grad=True)
+            ((scalar + 2.0) * 3.0).backward()
+
+            ordinary = module.full((2, 2), 3.25, requires_grad=True)
+            weights = module.tensor([[1.0, 2.0], [3.0, 4.0]])
+            ((ordinary + 2.0) * weights).sum().backward()
+
+            empty = module.full((2, 0, 3), 7.0, requires_grad=True)
+            (empty + 2.0).sum().backward()
+
+            outcomes.append(
+                (
+                    scalar.requires_grad,
+                    scalar.grad.item(),
+                    np.asarray(ordinary.grad).copy(),
+                    empty.requires_grad,
+                    tuple(empty.grad.shape),
+                    empty.grad.numel(),
+                )
+            )
+
+        self.assertEqual(outcomes[0][:2], outcomes[1][:2])
+        np.testing.assert_array_equal(outcomes[0][2], outcomes[1][2])
+        self.assertEqual(outcomes[0][3:], outcomes[1][3:])
 
     def test_leaf_grad_identity_and_live_accumulation_match_pytorch_2_13(self):
         outcomes = []
