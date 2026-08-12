@@ -165,6 +165,28 @@ class ReshapeReferenceTests(unittest.TestCase):
                 lambda: torch.reshape(actual, (2, 3), extra=True),
                 lambda: reference_torch.reshape(expected, (2, 3), extra=True),
             ),
+            (
+                lambda: torch.reshape(actual, (2**100, 3), input=actual),
+                lambda: reference_torch.reshape(
+                    expected, (2**100, 3), input=expected
+                ),
+            ),
+            (
+                lambda: torch.reshape(actual, (2**100, 3), shape=(2, 3)),
+                lambda: reference_torch.reshape(
+                    expected, (2**100, 3), shape=(2, 3)
+                ),
+            ),
+            (
+                lambda: torch.reshape(actual, (2**100, 3), extra=True),
+                lambda: reference_torch.reshape(expected, (2**100, 3), extra=True),
+            ),
+            (
+                lambda: torch.reshape(actual, shape=(2**100, 3), extra=True),
+                lambda: reference_torch.reshape(
+                    expected, shape=(2**100, 3), extra=True
+                ),
+            ),
             (lambda: torch.reshape([], (0,)), lambda: reference_torch.reshape([], (0,))),
             (
                 lambda: torch.reshape(input=None, shape=()),
@@ -178,6 +200,10 @@ class ReshapeReferenceTests(unittest.TestCase):
             (
                 lambda: torch.reshape(actual, (2.0, 3)),
                 lambda: reference_torch.reshape(expected, (2.0, 3)),
+            ),
+            (
+                lambda: torch.reshape(actual, (2.0, 3), extra=True),
+                lambda: reference_torch.reshape(expected, (2.0, 3), extra=True),
             ),
             (
                 lambda: torch.reshape(actual, shape=(2.0, 3)),

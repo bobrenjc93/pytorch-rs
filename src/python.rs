@@ -2542,11 +2542,52 @@ fn bind_top_level_reshape_arguments<'py>(
 
     let [input, shape] = arguments
         .map(|argument| argument.expect("all required reshape arguments were checked above"));
-    let shape = parse_top_level_reshape_shape(&shape.value, shape.position)?;
+    validate_top_level_reshape_shape(&shape.value, shape.position)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
+    let shape = parse_top_level_reshape_shape(&shape.value, shape.position)?;
     Ok((input.value, shape))
+}
+
+fn validate_top_level_reshape_shape(
+    shape: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<()> {
+    if let Ok(dimensions) = shape.cast::<PyList>() {
+        return validate_top_level_reshape_dimensions(shape, position, dimensions.iter());
+    }
+    if let Ok(dimensions) = shape.cast::<PyTuple>() {
+        return validate_top_level_reshape_dimensions(shape, position, dimensions.iter());
+    }
+    Err(top_level_reshape_shape_type_error(shape, position))
+}
+
+fn validate_top_level_reshape_dimensions<'py>(
+    shape: &Bound<'py, PyAny>,
+    position: Option<usize>,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+) -> PyResult<()> {
+    for (index, dimension) in dimensions.enumerate() {
+        if dimension.is_instance_of::<PyBool>() {
+            return Err(top_level_reshape_element_type_error(
+                shape, &dimension, position, index,
+            ));
+        }
+        match dimension.extract::<i64>() {
+            Ok(_) => {}
+            // PyTorch's initial overload check treats an out-of-range integer
+            // as a structurally valid dimension. The later unpack pass emits
+            // the overflow, after duplicate and unknown keywords are handled.
+            Err(error) if error.is_instance_of::<PyOverflowError>(shape.py()) => return Ok(()),
+            Err(_) => {
+                return Err(top_level_reshape_element_type_error(
+                    shape, &dimension, position, index,
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn parse_top_level_reshape_shape(

@@ -149,6 +149,26 @@ class ReshapeTests(unittest.TestCase):
                 "reshape() got an unexpected keyword argument 'extra'",
             ),
             (
+                lambda: torch.reshape(tensor, (2**100, 3), input=tensor),
+                TypeError,
+                "reshape() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.reshape(tensor, (2**100, 3), shape=(2, 3)),
+                TypeError,
+                "reshape() got multiple values for argument 'shape'",
+            ),
+            (
+                lambda: torch.reshape(tensor, (2**100, 3), extra=True),
+                TypeError,
+                "reshape() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.reshape(tensor, shape=(2**100, 3), extra=True),
+                TypeError,
+                "reshape() got an unexpected keyword argument 'extra'",
+            ),
+            (
                 lambda: torch.reshape([], (0,)),
                 TypeError,
                 "reshape(): argument 'input' (position 1) must be Tensor, not list",
@@ -170,6 +190,11 @@ class ReshapeTests(unittest.TestCase):
             ),
             (
                 lambda: torch.reshape(tensor, (2.0, 3)),
+                TypeError,
+                "reshape(): argument 'shape' (position 2) must be tuple of ints, but found element of type float at pos 0",
+            ),
+            (
+                lambda: torch.reshape(tensor, (2.0, 3), extra=True),
                 TypeError,
                 "reshape(): argument 'shape' (position 2) must be tuple of ints, but found element of type float at pos 0",
             ),
