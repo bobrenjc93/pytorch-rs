@@ -705,6 +705,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:46",
+      "recordedAt": "2026-08-12T14:18:44.049Z",
+      "label": "PR #46",
+      "kind": "leaf",
+      "prNumber": 46,
+      "title": "Add exact tensor equality APIs",
+      "scores": {
+        "eval_7af648fb": 98,
+        "eval_8417a4a8": 55,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 24,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
