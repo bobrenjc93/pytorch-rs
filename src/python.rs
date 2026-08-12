@@ -300,7 +300,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for StrictBool {
     type Error = PyErr;
 
     fn extract(object: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        parse_requires_grad(&object.to_owned()).map(Self)
+        parse_requires_grad("tensor", &object.to_owned()).map(Self)
     }
 }
 
@@ -890,14 +890,24 @@ fn tensor(
         .map_err(|error| tensor_error(&error))
 }
 
-fn parse_requires_grad(requires_grad: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyResult<bool> {
     if requires_grad.is_exact_instance_of::<PyBool>() {
         return requires_grad.is_truthy();
     }
     let type_name = transpose_type_name(requires_grad)?;
     Err(PyTypeError::new_err(format!(
-        "tensor(): argument 'requires_grad' must be bool, not {type_name}"
+        "{function}(): argument 'requires_grad' must be bool, not {type_name}"
     )))
+}
+
+fn parse_factory_requires_grad(
+    function: &str,
+    requires_grad: Option<&Bound<'_, PyAny>>,
+) -> PyResult<bool> {
+    match requires_grad {
+        None => Ok(false),
+        Some(requires_grad) => parse_requires_grad(function, requires_grad),
+    }
 }
 
 #[pyfunction(signature = (input, *, memory_format=None))]
@@ -1037,31 +1047,45 @@ fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     Ok(tensor.try_borrow()?.inner.numel())
 }
 
-#[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
+#[pyfunction(
+    signature = (size=None, *extra, shape=None, dtype=None, device=None, requires_grad=None),
+    text_signature = "(size=None, *, shape=None, dtype=None, device=None, requires_grad=False)"
+)]
 fn zeros(
     size: Option<&Bound<'_, PyAny>>,
+    extra: &Bound<'_, PyTuple>,
     shape: Option<&Bound<'_, PyAny>>,
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
+    requires_grad: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
+    reject_extra_creation_positionals("zeros", extra)?;
+    let requires_grad = parse_factory_requires_grad("zeros", requires_grad)?;
     let size = parse_creation_size("zeros", size, shape)?;
     let (dtype, device) = parse_metadata("zeros", dtype, device)?;
     CoreTensor::zeros_with_metadata(size, dtype, device)
-        .map(PyTensor::new)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
 }
 
-#[pyfunction(signature = (size=None, *, shape=None, dtype=None, device=None))]
+#[pyfunction(
+    signature = (size=None, *extra, shape=None, dtype=None, device=None, requires_grad=None),
+    text_signature = "(size=None, *, shape=None, dtype=None, device=None, requires_grad=False)"
+)]
 fn ones(
     size: Option<&Bound<'_, PyAny>>,
+    extra: &Bound<'_, PyTuple>,
     shape: Option<&Bound<'_, PyAny>>,
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
+    requires_grad: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<PyTensor> {
+    reject_extra_creation_positionals("ones", extra)?;
+    let requires_grad = parse_factory_requires_grad("ones", requires_grad)?;
     let size = parse_creation_size("ones", size, shape)?;
     let (dtype, device) = parse_metadata("ones", dtype, device)?;
     CoreTensor::ones_with_metadata(size, dtype, device)
-        .map(PyTensor::new)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
 }
 
@@ -1184,6 +1208,16 @@ fn parse_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<
     let type_name = memory_format.get_type().name()?;
     Err(PyTypeError::new_err(format!(
         "contiguous(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
+}
+
+fn reject_extra_creation_positionals(function: &str, extra: &Bound<'_, PyTuple>) -> PyResult<()> {
+    if extra.is_empty() {
+        return Ok(());
+    }
+    let given = extra.len() + 1;
+    Err(PyTypeError::new_err(format!(
+        "{function}() takes 1 positional argument but {given} were given"
     )))
 }
 
