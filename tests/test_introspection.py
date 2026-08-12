@@ -66,9 +66,11 @@ class TensorIntrospectionTests(unittest.TestCase):
                 self.assertIs(type(descriptor), types.MethodDescriptorType)
                 self.assertIs(type(bound), types.BuiltinMethodType)
                 self.assertEqual(descriptor.__name__, name)
-                self.assertEqual(descriptor.__text_signature__, "($self, /)")
-                self.assertEqual(str(inspect.signature(descriptor)), "(self, /)")
-                self.assertEqual(str(inspect.signature(bound)), "()")
+                self.assertIsNone(descriptor.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(descriptor)
+                with self.assertRaises(ValueError):
+                    inspect.signature(bound)
                 self.assertEqual(descriptor(tensor), expected)
 
         self.assertIs(type(torch.numel), types.BuiltinFunctionType)
