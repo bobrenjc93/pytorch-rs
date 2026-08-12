@@ -2568,13 +2568,22 @@ fn validate_top_level_reshape_dimensions<'py>(
     position: Option<usize>,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
 ) -> PyResult<()> {
+    let operator_index = PyModule::import(shape.py(), "operator")?.getattr("index")?;
     for (index, dimension) in dimensions.enumerate() {
         if dimension.is_instance_of::<PyBool>() {
             return Err(top_level_reshape_element_type_error(
                 shape, &dimension, position, index,
             ));
         }
-        match dimension.extract::<i64>() {
+        let indexed = match operator_index.call1((&dimension,)) {
+            Ok(indexed) => indexed,
+            Err(_) => {
+                return Err(top_level_reshape_element_type_error(
+                    shape, &dimension, position, index,
+                ));
+            }
+        };
+        match indexed.extract::<i64>() {
             Ok(_) => {}
             // PyTorch's initial overload check treats an out-of-range integer
             // as a structurally valid dimension. The later unpack pass emits

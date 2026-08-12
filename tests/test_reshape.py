@@ -15,6 +15,17 @@ class IndexDimension:
         return self.value
 
 
+class OverflowThenIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        if self.calls == 1:
+            raise OverflowError("raised by __index__")
+        return 2
+
+
 class ReshapeTests(unittest.TestCase):
     def assert_tensor(self, actual, expected, shape, stride, offset=0):
         self.assertEqual(actual.shape, shape)
@@ -228,6 +239,19 @@ class ReshapeTests(unittest.TestCase):
             with self.subTest(message=message):
                 with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
                     call()
+
+    def test_user_index_overflow_is_not_retried_or_deferred(self):
+        tensor = torch.zeros((6,))
+        message = (
+            "reshape(): argument 'shape' (position 2) must be tuple of ints, "
+            "but found element of type OverflowThenIndex at pos 0"
+        )
+        for kwargs in ({}, {"input": tensor}, {"extra": True}):
+            with self.subTest(keywords=tuple(kwargs)):
+                dimension = OverflowThenIndex()
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    torch.reshape(tensor, (dimension, 3), **kwargs)
+                self.assertEqual(dimension.calls, 1)
 
 
 if __name__ == "__main__":

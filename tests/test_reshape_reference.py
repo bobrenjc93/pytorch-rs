@@ -10,6 +10,17 @@ except ImportError:
     reference_torch = None
 
 
+class OverflowThenIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        if self.calls == 1:
+            raise OverflowError("raised by __index__")
+        return 2
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class ReshapeReferenceTests(unittest.TestCase):
     def assert_matches(self, actual, expected, *, case):
@@ -229,6 +240,34 @@ class ReshapeReferenceTests(unittest.TestCase):
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
+
+    def test_user_index_overflow_is_not_retried_or_deferred(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual = torch.zeros((6,))
+        expected = reference_torch.zeros((6,))
+        for mode in ("plain", "duplicate", "unexpected"):
+            with self.subTest(mode=mode):
+                actual_dimension = OverflowThenIndex()
+                expected_dimension = OverflowThenIndex()
+                if mode == "plain":
+                    actual_kwargs = {}
+                    expected_kwargs = {}
+                elif mode == "duplicate":
+                    actual_kwargs = {"input": actual}
+                    expected_kwargs = {"input": expected}
+                else:
+                    actual_kwargs = {"extra": True}
+                    expected_kwargs = {"extra": True}
+                self.assert_error_matches(
+                    lambda: torch.reshape(
+                        actual, (actual_dimension, 3), **actual_kwargs
+                    ),
+                    lambda: reference_torch.reshape(
+                        expected, (expected_dimension, 3), **expected_kwargs
+                    ),
+                )
+                self.assertEqual(actual_dimension.calls, expected_dimension.calls)
+                self.assertEqual(actual_dimension.calls, 1)
 
 
 if __name__ == "__main__":
