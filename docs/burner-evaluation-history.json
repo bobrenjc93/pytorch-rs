@@ -1105,6 +1105,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 57
       }
+    },
+    {
+      "key": "pr:72",
+      "recordedAt": "2026-08-13T13:25:45.648Z",
+      "label": "PR #72",
+      "kind": "leaf",
+      "prNumber": 72,
+      "title": "Expose Tensor.is_complex only",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 58.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 37.5,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 57
+      }
     }
   ]
 }

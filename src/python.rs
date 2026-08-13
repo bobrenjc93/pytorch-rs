@@ -269,6 +269,15 @@ impl PyTensorBase {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         Ok(tensor.inner.element_size())
     }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nis_complex() -> bool\n\nReturns True if the data type of :attr:`self` is a complex data type.\n"]
+    #[pyo3(text_signature = None)]
+    fn is_complex(slf: &Bound<'_, Self>) -> PyResult<bool> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        Ok(tensor.inner.is_complex())
+    }
 }
 
 /// Python-facing tensor backed by the native Rust tensor core.
