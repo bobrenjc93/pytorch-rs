@@ -1057,6 +1057,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 56
       }
+    },
+    {
+      "key": "pr:69",
+      "recordedAt": "2026-08-13T11:47:15.910Z",
+      "label": "PR #69",
+      "kind": "leaf",
+      "prNumber": 69,
+      "title": "Add Tensor.is_same_size",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 58,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 37.2,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 56
+      }
     }
   ]
 }
