@@ -589,7 +589,8 @@ impl PyTensor {
         if let Some(keyword_error) = keyword_error {
             return Err(keyword_error);
         }
-        let [dim0, dim1] = parse_dimension_swap_dimensions("transpose", &dim0, &dim1)?;
+        let [dim0, dim1] =
+            parse_dimension_swap_dimensions("transpose", ["dim0", "dim1"], &dim0, &dim1)?;
         self.inner
             .transpose(dim0, dim1)
             .map(Self::new)
@@ -610,9 +611,32 @@ impl PyTensor {
         if let Some(keyword_error) = keyword_error {
             return Err(keyword_error);
         }
-        let [dim0, dim1] = parse_dimension_swap_dimensions("swapdims", &dim0, &dim1)?;
+        let [dim0, dim1] =
+            parse_dimension_swap_dimensions("swapdims", ["dim0", "dim1"], &dim0, &dim1)?;
         self.inner
             .transpose(dim0, dim1)
+            .map(Self::new)
+            .map_err(|error| transpose_error(&error))
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nswapaxes(axis0, axis1) -> Tensor\n\nSee :func:`torch.swapaxes`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn swapaxes(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let ([axis0, axis1], keyword_error) =
+            bind_dimension_swap_arguments("swapaxes", args, kwargs, ["axis0", "axis1"])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        let [axis0, axis1] =
+            parse_dimension_swap_dimensions("swapaxes", ["axis0", "axis1"], &axis0, &axis1)?;
+        self.inner
+            .transpose(axis0, axis1)
             .map(Self::new)
             .map_err(|error| transpose_error(&error))
     }
@@ -1222,7 +1246,8 @@ fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
         )
     })?;
     let input_tensor = input_tensor.try_borrow()?;
-    let [dim0, dim1] = parse_dimension_swap_dimensions("transpose", &dim0, &dim1)?;
+    let [dim0, dim1] =
+        parse_dimension_swap_dimensions("transpose", ["dim0", "dim1"], &dim0, &dim1)?;
     input_tensor
         .inner
         .transpose(dim0, dim1)
@@ -2067,14 +2092,15 @@ fn validate_dimension_swap_dimension(
 
 fn parse_dimension_swap_dimensions(
     operation: &str,
+    argument_names: [&str; 2],
     dim0: &ParsedCallArgument<'_>,
     dim1: &ParsedCallArgument<'_>,
 ) -> PyResult<[i64; 2]> {
     // PyTorch validates the declared types in signature order before it
     // converts either integer. This lets a later type mismatch take
     // precedence over an earlier integer that overflows during conversion.
-    validate_dimension_swap_dimension(operation, "dim0", dim0.position, &dim0.value)?;
-    validate_dimension_swap_dimension(operation, "dim1", dim1.position, &dim1.value)?;
+    validate_dimension_swap_dimension(operation, argument_names[0], dim0.position, &dim0.value)?;
+    validate_dimension_swap_dimension(operation, argument_names[1], dim1.position, &dim1.value)?;
     // TensorOptions-style generated bindings convert dimensions in reverse
     // declaration order after type checking. Keep the values in declaration
     // order for the transpose engine after reproducing that observable order.
@@ -4079,6 +4105,30 @@ mod tests {
             assert_eq!(swapped.inner.shape(), [4, 3, 2]);
             assert_eq!(swapped.inner.stride(), [1, 4, 12]);
             assert_eq!(swapped.inner.storage_offset(), 0);
+            assert!(swapped.inner.shares_storage_with(&source.inner));
+        });
+    }
+
+    #[test]
+    fn swapaxes_binding_preserves_strided_storage_and_offset() {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let module = PyModule::new(py, "torch_rs").unwrap();
+            torch_rs(&module).unwrap();
+            let base = module
+                .getattr("zeros")
+                .unwrap()
+                .call1(((2, 3, 4),))
+                .unwrap();
+            let transposed = base.call_method1("transpose", (0, 2)).unwrap();
+            let source = transposed.get_item(1).unwrap();
+            let swapped = source.call_method1("swapaxes", (0, -1)).unwrap();
+            let source = source.cast::<PyTensor>().unwrap().try_borrow().unwrap();
+            let swapped = swapped.cast::<PyTensor>().unwrap().try_borrow().unwrap();
+
+            assert_eq!(swapped.inner.shape(), [2, 3]);
+            assert_eq!(swapped.inner.stride(), [12, 4]);
+            assert_eq!(swapped.inner.storage_offset(), 1);
             assert!(swapped.inner.shares_storage_with(&source.inner));
         });
     }
