@@ -1250,6 +1250,79 @@ fn flatten_normalizes_dimensions_and_reports_pytorch_errors() {
 }
 
 #[test]
+fn ravel_reuses_contiguous_storage_and_packs_strided_inputs() {
+    let source = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [3, 4]).unwrap();
+
+    let scalar = source.index([1, 2]).unwrap();
+    let scalar_ravel = scalar.ravel().unwrap();
+    assert_eq!(scalar_ravel.shape(), [1]);
+    assert_eq!(scalar_ravel.stride(), [1]);
+    assert_eq!(scalar_ravel.storage_offset(), 6);
+    assert!(scalar_ravel.shares_storage_with(&source));
+
+    let row = source.index_integer(1).unwrap();
+    let row_ravel = row.ravel().unwrap();
+    assert_eq!(row_ravel.shape(), [4]);
+    assert_eq!(row_ravel.stride(), [1]);
+    assert_eq!(row_ravel.storage_offset(), 4);
+    assert!(row_ravel.shares_storage_with(&source));
+
+    let ordinary = source.ravel().unwrap();
+    assert_eq!(ordinary.shape(), [12]);
+    assert_eq!(ordinary.stride(), [1]);
+    assert!(ordinary.shares_storage_with(&source));
+
+    // Size-one dimensions are contiguous regardless of their stride, and
+    // PyTorch preserves that stride through contiguous().view(-1).
+    let singleton_source = Tensor::from_vec((0_u8..4).map(f32::from).collect(), [1, 4]).unwrap();
+    let singleton = singleton_source
+        .transpose(0, 1)
+        .unwrap()
+        .index_integer(2)
+        .unwrap();
+    assert_eq!(singleton.shape(), [1]);
+    assert_eq!(singleton.stride(), [4]);
+    let singleton_ravel = singleton.ravel().unwrap();
+    assert_eq!(singleton_ravel.shape(), [1]);
+    assert_eq!(singleton_ravel.stride(), [4]);
+    assert_eq!(singleton_ravel.storage_offset(), 2);
+    assert!(singleton_ravel.shares_storage_with(&singleton_source));
+
+    let strided_vector = source.transpose(0, 1).unwrap().index_integer(0).unwrap();
+    assert_eq!(strided_vector.shape(), [3]);
+    assert_eq!(strided_vector.stride(), [4]);
+    let packed_vector = strided_vector.ravel().unwrap();
+    assert_eq!(packed_vector.shape(), [3]);
+    assert_eq!(packed_vector.stride(), [1]);
+    assert_eq!(packed_vector.storage_offset(), 0);
+    assert!(!packed_vector.shares_storage_with(&source));
+    assert_eq!(packed_vector.as_slice(), [0.0, 4.0, 8.0]);
+
+    let transposed = source.transpose(0, 1).unwrap();
+    let packed = transposed.ravel().unwrap();
+    assert_eq!(packed.shape(), [12]);
+    assert_eq!(packed.stride(), [1]);
+    assert_eq!(packed.storage_offset(), 0);
+    assert!(!packed.shares_storage_with(&source));
+    assert_eq!(
+        packed.as_slice(),
+        [0.0, 4.0, 8.0, 1.0, 5.0, 9.0, 2.0, 6.0, 10.0, 3.0, 7.0, 11.0]
+    );
+
+    let empty_source = Tensor::zeros([2, 0, 3]).unwrap();
+    let empty = empty_source
+        .transpose(0, 2)
+        .unwrap()
+        .index_integer(1)
+        .unwrap();
+    let empty_ravel = empty.ravel().unwrap();
+    assert_eq!(empty_ravel.shape(), [0]);
+    assert_eq!(empty_ravel.stride(), [1]);
+    assert_eq!(empty_ravel.storage_offset(), 1);
+    assert!(empty_ravel.shares_storage_with(&empty_source));
+}
+
+#[test]
 fn rank_two_matmul_reads_transposed_strides() {
     let left = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [2, 3])
         .unwrap()
