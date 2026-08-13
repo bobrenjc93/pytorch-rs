@@ -2820,11 +2820,16 @@ fn bind_dimension_swap_arguments<'py, const N: usize>(
         )));
     }
 
-    validate_dimension_swap_argument_prefix(operation, &names, &arguments, N)?;
+    if keyword_error.is_some() {
+        // Type errors take precedence over duplicate and unexpected keyword
+        // errors. Successful calls defer validation to conversion below so
+        // each dimension is inspected only once on the hot path.
+        validate_dimension_swap_argument_prefix(operation, &names, &arguments, N)?;
+    }
 
     Ok((
         arguments.map(|argument| {
-            argument.expect("all required dimension-swap arguments were checked above")
+            argument.expect("all required dimension-swap arguments were bound above")
         }),
         keyword_error,
     ))
