@@ -107,14 +107,6 @@ name = "pytorch-rs"
 version = "0.1.0"
 dependencies = [
  "pyo3",
- "pytorch-rs-python-layout",
-]
-
-[[package]]
-name = "pytorch-rs-python-layout"
-version = "0.1.0"
-dependencies = [
- "pyo3",
 ]
 
 [[package]]

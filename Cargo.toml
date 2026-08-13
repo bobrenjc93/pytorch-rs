@@ -6,8 +6,6 @@ rust-version = "1.92"
 license = "MIT"
 description = "A native Rust tensor and deep-learning library pursuing PyTorch semantics and performance"
 repository = "https://github.com/bobrenjc93/pytorch-rs"
-# The Python layout ABI shim is a private path dependency.
-publish = false
 
 [lib]
 name = "pytorch_rs"
@@ -16,19 +14,19 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
-python-bindings = ["dep:pyo3", "dep:pytorch-rs-python-layout"]
+python-bindings = ["dep:pyo3"]
 extension-module = ["python-bindings", "pyo3/extension-module"]
 
 [dependencies]
 pyo3 = { version = "0.29.2", optional = true, features = ["abi3-py310", "multiple-pymethods"] }
-pytorch-rs-python-layout = { path = "crates/python-layout", optional = true }
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
 
 [lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
 
 [lints.clippy]
 all = "warn"

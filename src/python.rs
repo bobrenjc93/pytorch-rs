@@ -14,11 +14,11 @@ use pyo3::types::{
     PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView, PyModule,
     PySequence, PyString, PyTuple,
 };
-use pytorch_rs_python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects};
 
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, enter_no_grad, exit_no_grad,
     is_grad_enabled as core_is_grad_enabled,
+    python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
 };
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();

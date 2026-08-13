@@ -10,13 +10,17 @@ use std::ffi::c_void;
 use pyo3::{Bound, Py, PyAny, PyResult, Python, exceptions::PyRuntimeError, ffi};
 
 /// The canonical Python layout type and its sole supported instance.
-pub struct LayoutObjects {
+pub(crate) struct LayoutObjects {
     /// Immutable `torch_rs.layout` type object.
-    pub layout: Py<PyAny>,
+    pub(crate) layout: Py<PyAny>,
     /// Canonical `torch.strided` descriptor.
-    pub strided: Py<PyAny>,
+    pub(crate) strided: Py<PyAny>,
 }
 
+#[allow(
+    unsafe_code,
+    reason = "the CPython repr slot and stable-ABI constructor are unsafe FFI calls"
+)]
 unsafe extern "C" fn layout_repr(_object: *mut ffi::PyObject) -> *mut ffi::PyObject {
     // SAFETY: the literal is a static NUL-terminated string and the CPython
     // repr slot requires a new reference, which PyUnicode_FromString returns.
@@ -29,7 +33,11 @@ unsafe extern "C" fn layout_repr(_object: *mut ffi::PyObject) -> *mut ffi::PyObj
 ///
 /// Returns a Python exception if the stable-ABI type or singleton allocation
 /// fails.
-pub fn create_layout_objects(py: Python<'_>) -> PyResult<LayoutObjects> {
+#[allow(
+    unsafe_code,
+    reason = "PyType_FromSpec and PyType_GenericAlloc require audited raw-pointer calls"
+)]
+pub(crate) fn create_layout_objects(py: Python<'_>) -> PyResult<LayoutObjects> {
     let mut slots = [
         ffi::PyType_Slot {
             slot: ffi::Py_tp_repr,

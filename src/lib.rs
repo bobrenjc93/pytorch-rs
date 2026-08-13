@@ -7,6 +7,8 @@
 
 #[cfg(feature = "python-bindings")]
 mod python;
+#[cfg(feature = "python-bindings")]
+mod python_layout;
 mod tensor;
 
 #[cfg(feature = "python-bindings")]
