@@ -212,21 +212,24 @@ fn sine_vjp_uses_saved_input_for_signed_zero_non_finites_and_nans() {
     let input_values = input_bits.map(f32::from_bits);
     let weight_values = weight_bits.map(f32::from_bits);
     // PyTorch 2.13's CPU results, also checked independently by
-    // `test_sin_reference.py`. Keeping the oracle as bits prevents LLVM from
-    // constant-folding this calculation differently from the runtime VJP.
+    // `test_sin_reference.py`. Keeping the oracle as constants prevents LLVM
+    // from folding this calculation differently from the runtime VJP. The
+    // canonical NaN sign produced by cosine of an infinity differs by target, so
+    // `None` denotes a semantic NaN check for those two results. Every other
+    // result is checked bit-for-bit, including signed zeros and NaN payloads.
     let expected_bits = [
-        0x3f80_0000,
-        0xbf80_0000,
-        0x0000_0000,
-        0x8000_0000,
-        0x7f80_0000,
-        0x7f80_0000,
-        0xbf00_0000,
-        0xbedf_84c5,
-        0xffc0_0000,
-        0xffc0_0000,
-        0x7fc1_2345,
-        0xffc5_4321,
+        Some(0x3f80_0000),
+        Some(0xbf80_0000),
+        Some(0x0000_0000),
+        Some(0x8000_0000),
+        Some(0x7f80_0000),
+        Some(0x7f80_0000),
+        Some(0xbf00_0000),
+        Some(0xbedf_84c5),
+        None,
+        None,
+        Some(0x7fc1_2345),
+        Some(0xffc5_4321),
     ];
     let leaf = Tensor::from_vec(input_values.to_vec(), [input_bits.len()])
         .unwrap()
@@ -235,14 +238,16 @@ fn sine_vjp_uses_saved_input_for_signed_zero_non_finites_and_nans() {
     let loss = leaf.sin().unwrap().mul(&weights).unwrap().sum();
 
     loss.backward().unwrap();
-    assert!(
-        leaf.grad()
-            .unwrap()
-            .unwrap()
-            .logical_values()
-            .map(f32::to_bits)
-            .eq(expected_bits)
-    );
+    let gradient = leaf.grad().unwrap().unwrap();
+    let gradient_values = gradient.logical_values();
+    assert_eq!(gradient_values.len(), expected_bits.len());
+    for (index, (actual, expected)) in gradient_values.zip(expected_bits).enumerate() {
+        if let Some(expected) = expected {
+            assert_eq!(actual.to_bits(), expected, "gradient at index {index}");
+        } else {
+            assert!(actual.is_nan(), "gradient at index {index} was {actual}");
+        }
+    }
     assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
 }
 
