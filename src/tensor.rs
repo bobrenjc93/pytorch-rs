@@ -578,10 +578,9 @@ impl Display for TensorError {
                 formatter,
                 "matmul currently requires two rank-2 tensors, got {left:?} and {right:?}"
             ),
-            Self::MatmulInnerDimensionMismatch { left, right } => write!(
-                formatter,
-                "matmul inner dimensions differ for {left:?} and {right:?}"
-            ),
+            Self::MatmulInnerDimensionMismatch { left, right } => {
+                format_matmul_inner_dimension_mismatch(formatter, left, right)
+            }
             Self::ItemRequiresOneElement { elements } => {
                 write!(formatter, "item requires one element, got {elements}")
             }
@@ -683,6 +682,23 @@ fn format_shape_mismatch(
             formatter,
             "tensor shapes are not broadcastable: {left:?} and {right:?}"
         )
+    }
+}
+
+fn format_matmul_inner_dimension_mismatch(
+    formatter: &mut Formatter<'_>,
+    left: &[usize],
+    right: &[usize],
+) -> std::fmt::Result {
+    match (left, right) {
+        ([rows, inner], [other_inner, columns]) => write!(
+            formatter,
+            "mat1 and mat2 shapes cannot be multiplied ({rows}x{inner} and {other_inner}x{columns})"
+        ),
+        _ => write!(
+            formatter,
+            "matmul inner dimensions differ for {left:?} and {right:?}"
+        ),
     }
 }
 

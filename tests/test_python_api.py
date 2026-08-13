@@ -1336,6 +1336,25 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(output.shape, (2, 2))
         self.assertEqual(output.tolist(), [[58.0, 64.0], [139.0, 154.0]])
 
+    def test_matrix_multiplication_reports_pytorch_shape_errors(self):
+        cases = (
+            ((2, 3), (4, 2)),
+            ((0, 3), (4, 0)),
+            ((sys.maxsize, 0), (1, 0)),
+            ((0, sys.maxsize), (0, 0)),
+        )
+        for left_shape, right_shape in cases:
+            message = (
+                "mat1 and mat2 shapes cannot be multiplied "
+                f"({left_shape[0]}x{left_shape[1]} and "
+                f"{right_shape[0]}x{right_shape[1]})"
+            )
+            with self.subTest(left=left_shape, right=right_shape):
+                with self.assertRaises(RuntimeError) as raised:
+                    torch.zeros(left_shape) @ torch.zeros(right_shape)
+                self.assertIs(type(raised.exception), RuntimeError)
+                self.assertEqual(str(raised.exception), message)
+
     def test_binary_arithmetic_broadcasts_trailing_dimensions(self):
         left = torch.tensor([[[1.0, 2.0, 4.0]], [[8.0, 16.0, 32.0]]])
         right = torch.tensor([[1.0], [2.0], [4.0]])
