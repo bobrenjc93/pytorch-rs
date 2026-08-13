@@ -668,6 +668,11 @@ impl PyTensor {
         self.inner.item().map_err(|error| tensor_error(&error))
     }
 
+    #[pyo3(text_signature = None)]
+    fn is_nonzero(&self) -> PyResult<bool> {
+        self.truth_value()
+    }
+
     /// equal(other) -> bool
     ///
     /// See :func:`torch.equal`.
@@ -778,19 +783,7 @@ impl PyTensor {
     }
 
     fn __bool__(&self) -> PyResult<bool> {
-        match self.inner.numel() {
-            0 => Err(PyRuntimeError::new_err(
-                "Boolean value of Tensor with no values is ambiguous",
-            )),
-            1 => self
-                .inner
-                .item()
-                .map(|value| value != 0.0)
-                .map_err(|error| tensor_error(&error)),
-            _ => Err(PyRuntimeError::new_err(
-                "Boolean value of Tensor with more than one value is ambiguous",
-            )),
-        }
+        self.truth_value()
     }
 
     fn __len__(&self) -> PyResult<usize> {
@@ -815,6 +808,22 @@ impl PyTensor {
 }
 
 impl PyTensor {
+    fn truth_value(&self) -> PyResult<bool> {
+        match self.inner.numel() {
+            0 => Err(PyRuntimeError::new_err(
+                "Boolean value of Tensor with no values is ambiguous",
+            )),
+            1 => self
+                .inner
+                .item()
+                .map(|value| value != 0.0)
+                .map_err(|error| tensor_error(&error)),
+            _ => Err(PyRuntimeError::new_err(
+                "Boolean value of Tensor with more than one value is ambiguous",
+            )),
+        }
+    }
+
     fn numpy_array_copy(
         &self,
         py: Python<'_>,
