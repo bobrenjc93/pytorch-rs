@@ -145,6 +145,38 @@ class IsTensorReferenceTests(unittest.TestCase):
         self.assertEqual(actual_trap.calls, expected_trap.calls)
         self.assertEqual(actual_trap.calls, [])
 
+    def rebound_tensor_outcomes(self, module):
+        native_tensor_type = module.Tensor
+        tensor = module.tensor([1.0])
+        try:
+            module.Tensor = int
+            integer_binding = (
+                module.is_tensor(1),
+                module.is_tensor(tensor),
+                module.is_tensor("tensor"),
+            )
+
+            module.Tensor = (int, str)
+            tuple_binding = module.is_tensor("tensor")
+
+            module.Tensor = 42
+            try:
+                module.is_tensor(1)
+            except Exception as error:
+                invalid_binding = (type(error).__name__, str(error))
+            else:
+                self.fail(f"{module.__name__}.is_tensor accepted a non-type binding")
+        finally:
+            module.Tensor = native_tensor_type
+
+        return integer_binding, tuple_binding, invalid_binding, module.is_tensor(tensor)
+
+    def test_live_public_tensor_rebinding_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.rebound_tensor_outcomes(torch),
+            self.rebound_tensor_outcomes(reference_torch),
+        )
+
     def test_callable_metadata_matches_pytorch_2_13(self):
         actual = torch.is_tensor
         expected = reference_torch.is_tensor

@@ -124,6 +124,28 @@ class IsTensorTests(unittest.TestCase):
                 self.assertIs(result, False)
         self.assertEqual(conversion_trap.calls, [])
 
+    def test_predicate_reads_the_live_public_tensor_binding(self):
+        native_tensor_type = torch.Tensor
+        tensor = torch.tensor([1.0])
+        try:
+            torch.Tensor = int
+            self.assertIs(torch.is_tensor(1), True)
+            self.assertIs(torch.is_tensor(tensor), False)
+
+            torch.Tensor = (int, str)
+            self.assertIs(torch.is_tensor("tensor"), True)
+
+            torch.Tensor = 42
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^isinstance\(\) arg 2 must be a type, a tuple of types, or a union$",
+            ):
+                torch.is_tensor(1)
+        finally:
+            torch.Tensor = native_tensor_type
+
+        self.assertIs(torch.is_tensor(tensor), True)
+
     def test_callable_metadata_matches_pytorch_2_13(self):
         function = torch.is_tensor
         return_annotation = TypeIs[typing.ForwardRef("torch.Tensor")]
