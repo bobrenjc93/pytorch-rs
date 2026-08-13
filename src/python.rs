@@ -741,6 +741,27 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nneg() -> Tensor\n\nSee :func:`torch.neg`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn neg(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        // PyTorch exposes Tensor.neg from its internal TensorBase descriptor,
+        // which remains observable in the no-argument binding errors.
+        if kwargs.is_some_and(|values| !values.is_empty()) {
+            return Err(PyTypeError::new_err(
+                "TensorBase.neg() takes no keyword arguments",
+            ));
+        }
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "TensorBase.neg() takes no arguments ({} given)",
+                args.len()
+            )));
+        }
+        self.negated()
+    }
+
     fn sum(&self) -> Self {
         Self::new(self.inner.sum())
     }
@@ -770,10 +791,7 @@ impl PyTensor {
     }
 
     fn __neg__(&self) -> PyResult<Self> {
-        self.inner
-            .negate()
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+        self.negated()
     }
 
     fn __truediv__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -817,6 +835,13 @@ impl PyTensor {
 }
 
 impl PyTensor {
+    fn negated(&self) -> PyResult<Self> {
+        self.inner
+            .negate()
+            .map(Self::new)
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn truth_value(&self) -> PyResult<bool> {
         match self.inner.numel() {
             0 => Err(PyRuntimeError::new_err(
