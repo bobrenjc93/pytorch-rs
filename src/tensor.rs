@@ -68,6 +68,16 @@ pub enum Device {
     Cpu,
 }
 
+impl Device {
+    /// Reports whether this device executes on host CPU memory.
+    #[must_use]
+    pub const fn is_cpu(self) -> bool {
+        match self {
+            Self::Cpu => true,
+        }
+    }
+}
+
 impl Display for Device {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1045,6 +1055,12 @@ impl Tensor {
     #[must_use]
     pub fn is_signed(&self) -> bool {
         self.dtype().is_signed()
+    }
+
+    /// Reports whether this tensor's device is the CPU.
+    #[must_use]
+    pub fn is_cpu(&self) -> bool {
+        self.device().is_cpu()
     }
 
     /// Returns the device owning this tensor's storage.
