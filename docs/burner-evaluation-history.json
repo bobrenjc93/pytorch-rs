@@ -833,6 +833,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:54",
+      "recordedAt": "2026-08-13T02:02:36.928Z",
+      "label": "PR #54",
+      "kind": "leaf",
+      "prNumber": 54,
+      "title": "Add Tensor.ravel using the flatten engine",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 56,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 29,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
