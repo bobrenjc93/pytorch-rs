@@ -1826,10 +1826,12 @@ impl Tensor {
         operation: impl Fn(f32) -> f32,
     ) -> Result<Vec<f32>, TensorError> {
         let mut output = try_result_vector(self.elements, self.elements)?;
-        if layout_is_contiguous(&self.shape, output_strides, self.elements)
-            && let Some(values) = self.contiguous_slice()
-        {
-            output.extend(values.iter().copied().map(&operation));
+        if layout_is_contiguous(&self.shape, output_strides, self.elements) {
+            if let Some(values) = self.contiguous_slice() {
+                output.extend(values.iter().copied().map(&operation));
+            } else {
+                output.extend(self.logical_values().map(&operation));
+            }
             return Ok(output);
         }
         output.resize(self.elements, 0.0);
