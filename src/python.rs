@@ -725,6 +725,29 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
+    // Preserve PyTorch's public docstring and its TensorBase-specific
+    // diagnostics for this no-argument method.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\ncos() -> Tensor\n\nSee :func:`torch.cos`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn cos(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        if kwargs.is_some_and(|values| !values.is_empty()) {
+            return Err(PyTypeError::new_err(
+                "TensorBase.cos() takes no keyword arguments",
+            ));
+        }
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "TensorBase.cos() takes no arguments ({} given)",
+                args.len()
+            )));
+        }
+        self.inner
+            .cos()
+            .map(Self::new)
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn exp(&self) -> PyResult<Self> {
         self.inner
             .exp()

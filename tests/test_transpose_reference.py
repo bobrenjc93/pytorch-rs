@@ -81,6 +81,7 @@ class TransposeReferenceTests(unittest.TestCase):
                 ("clone", actual.clone(), expected.clone()),
                 ("relu", actual.relu(), expected.relu()),
                 ("sin", actual.sin(), expected.sin()),
+                ("cos", actual.cos(), expected.cos()),
                 ("exp", actual.exp(), expected.exp()),
                 ("scalar", actual + 1.25, expected + 1.25),
                 ("binary", actual + actual, expected + expected),
@@ -270,6 +271,7 @@ class TransposeReferenceTests(unittest.TestCase):
         for operation, actual_output, expected_output in (
             ("relu", actual.relu(), expected.relu()),
             ("sin", actual.sin(), expected.sin()),
+            ("cos", actual.cos(), expected.cos()),
             ("binary", actual + actual, expected + expected),
             ("reflected_division", 1.0 / actual, 1.0 / expected),
         ):

@@ -274,6 +274,88 @@ fn sine_handles_scalar_and_empty_tensors_with_pytorch_layouts() {
 }
 
 #[test]
+fn cosine_matches_pytorch_values_layouts_and_ieee_special_cases() {
+    const ATOL: f32 = 1.0e-6;
+    const RTOL: f32 = 1.0e-6;
+
+    let input = Tensor::from_vec(
+        vec![
+            0.25,
+            -0.5,
+            1.0,
+            -2.0,
+            std::f32::consts::PI,
+            1.0e10,
+            -1.0e10,
+            f32::MAX,
+        ],
+        [2, 2, 2],
+    )
+    .unwrap();
+    let pytorch_reference = [
+        0.968_912_4,
+        0.877_582_55,
+        0.540_302_34,
+        -0.416_146_84,
+        -1.0,
+        0.873_119_65,
+        0.873_119_65,
+        0.853_021,
+    ];
+    let output = input.cos().unwrap();
+
+    assert_eq!(output.shape(), input.shape());
+    assert_eq!(output.stride(), input.stride());
+    assert_eq!(output.storage_offset(), 0);
+    assert_eq!(output.dtype(), input.dtype());
+    assert_eq!(output.device(), input.device());
+    for (actual, expected) in output.as_slice().iter().zip(pytorch_reference) {
+        assert!((actual - expected).abs() <= ATOL + RTOL * expected.abs());
+    }
+
+    let special = Tensor::from_vec(
+        vec![0.0, -0.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY],
+        [5],
+    )
+    .unwrap()
+    .cos()
+    .unwrap();
+    assert_eq!(special.as_slice()[0].to_bits(), 1.0_f32.to_bits());
+    assert_eq!(special.as_slice()[1].to_bits(), 1.0_f32.to_bits());
+    assert!(special.as_slice()[2..].iter().all(|value| value.is_nan()));
+
+    let scalar = Tensor::from_vec(vec![0.5], []).unwrap().cos().unwrap();
+    assert!(scalar.shape().is_empty());
+    assert!(scalar.stride().is_empty());
+    assert!((scalar.item().unwrap() - 0.877_582_55).abs() <= ATOL);
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().cos().unwrap();
+    assert_eq!(empty.shape(), [2, 0, 3]);
+    assert_eq!(empty.stride(), [3, 3, 1]);
+    assert!(empty.as_slice().is_empty());
+
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let view = source.transpose(0, 2).unwrap().index([1]).unwrap();
+    assert_eq!(view.shape(), [3, 2]);
+    assert_eq!(view.stride(), [4, 12]);
+    assert_eq!(view.storage_offset(), 1);
+    let strided = view.cos().unwrap();
+    assert_eq!(strided.shape(), [3, 2]);
+    assert_eq!(strided.stride(), [1, 3]);
+    assert_eq!(strided.storage_offset(), 0);
+    for (actual, expected) in strided.logical_values().zip([
+        0.540_302_34,
+        0.907_446_8,
+        0.283_662_2,
+        -0.275_163_35,
+        -0.911_130_25,
+        -0.547_729_25,
+    ]) {
+        assert!((actual - expected).abs() <= ATOL + RTOL * expected.abs());
+    }
+}
+
+#[test]
 fn exponential_matches_pytorch_float32_values_and_ieee_special_cases() {
     const ATOL: f32 = f32::from_bits(1);
     const RTOL: f32 = 2.0e-6;
@@ -1033,6 +1115,7 @@ fn pointwise_outputs_canonicalize_singleton_channels_last_strides() {
     for output in [
         view.relu().unwrap(),
         view.sin().unwrap(),
+        view.cos().unwrap(),
         view.add(&view).unwrap(),
     ] {
         assert_eq!(output.shape(), view.shape());
@@ -1077,6 +1160,7 @@ fn stride_aware_consumers_handle_transposed_and_indexed_views() {
     for output in [
         view.relu().unwrap(),
         view.sin().unwrap(),
+        view.cos().unwrap(),
         view.exp().unwrap(),
     ] {
         assert_eq!(output.shape(), view.shape());
@@ -1591,6 +1675,7 @@ fn empty_elementwise_results_match_pytorch_strides() {
     let chained = Tensor::zeros([0, 1]).unwrap().add_scalar(1.0).unwrap();
     assert_eq!(chained.stride(), [1, 0]);
     assert_eq!(chained.relu().unwrap().stride(), [1, 1]);
+    assert_eq!(chained.cos().unwrap().stride(), [1, 1]);
 }
 
 #[test]
@@ -1606,6 +1691,7 @@ fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
     assert_eq!(scalar_output.stride(), [1, 0, 0]);
     assert_eq!(tensor.relu(), Err(TensorError::StrideCalculationOverflow));
     assert_eq!(tensor.sin(), Err(TensorError::StrideCalculationOverflow));
+    assert_eq!(tensor.cos(), Err(TensorError::StrideCalculationOverflow));
 
     let wrapped_shape = Tensor::zeros([0])
         .unwrap()
@@ -1619,6 +1705,10 @@ fn extreme_empty_pointwise_outputs_match_pytorch_stride_boundaries() {
     assert_eq!(wrapped_output.stride(), [2, usize::MAX / 2, 1, 1]);
     assert_eq!(
         wrapped_shape.sin(),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+    assert_eq!(
+        wrapped_shape.cos(),
         Err(TensorError::StrideCalculationOverflow)
     );
 

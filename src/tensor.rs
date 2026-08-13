@@ -249,6 +249,9 @@ enum GradFn {
     Sin {
         input: SavedTensor,
     },
+    Cos {
+        input: SavedTensor,
+    },
     Sum {
         input: SavedTensor,
     },
@@ -288,6 +291,7 @@ impl GradFn {
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input }
             | Self::Sin { input }
+            | Self::Cos { input }
             | Self::Sum { input }
             | Self::Transform { input, .. } => input.take_parent(pending),
         }
@@ -307,7 +311,7 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::Sin { input } => {
+            Self::Sin { input } | Self::Cos { input } => {
                 if input.storage.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
@@ -325,7 +329,7 @@ impl GradFn {
                 right.storage = None;
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
-            Self::Sin { input } => input.storage = None,
+            Self::Sin { input } | Self::Cos { input } => input.storage = None,
             Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
@@ -1201,6 +1205,19 @@ impl Tensor {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Sin {
+                        input: SavedTensor::try_from_tensor(self, true)?,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    fn finish_cos_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Cos {
                         input: SavedTensor::try_from_tensor(self, true)?,
                     })),
                 },
@@ -2295,6 +2312,16 @@ impl Tensor {
         self.finish_sin_vjp(output)
     }
 
+    /// Computes the cosine of every element in radians.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn cos(&self) -> Result<Self, TensorError> {
+        let output = self.unary_map(f32::cos)?;
+        self.finish_cos_vjp(output)
+    }
+
     /// Computes the base-e exponential of every element.
     ///
     /// # Errors
@@ -2757,6 +2784,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input }
                         | GradFn::Sin { input }
+                        | GradFn::Cos { input }
                         | GradFn::Sum { input }
                         | GradFn::Transform { input, .. } => {
                             push_saved_parent(&mut stack, input);
@@ -2804,6 +2832,7 @@ fn apply_grad_fn(
             }
         }
         GradFn::Sin { input } => apply_sin_grad_fn(input, upstream, gradients)?,
+        GradFn::Cos { input } => apply_cos_grad_fn(input, upstream, gradients)?,
         GradFn::Multiply {
             left,
             right,
@@ -2897,6 +2926,23 @@ fn apply_sin_grad_fn(
             .enumerate()
             .map(|(index, value)| value * input.value_at_linear_index(index).cos()),
     );
+    add_gradient(gradients, meta, gradient);
+    Ok(())
+}
+
+fn apply_cos_grad_fn(
+    input: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut HashMap<usize, Vec<f32>>,
+) -> Result<(), TensorError> {
+    let Some(meta) = &input.autograd else {
+        return Ok(());
+    };
+    debug_assert_eq!(input.elements, upstream.len());
+    let mut gradient = try_result_vector(input.elements, input.elements)?;
+    gradient.extend(upstream.iter().enumerate().map(|(index, grad_output)| {
+        negate_value(input.value_at_linear_index(index).sin()) * grad_output
+    }));
     add_gradient(gradients, meta, gradient);
     Ok(())
 }

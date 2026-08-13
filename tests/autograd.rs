@@ -283,6 +283,119 @@ fn sine_obeys_detach_no_grad_and_freed_graph_boundaries() {
 }
 
 #[test]
+fn cosine_vjp_uses_saved_input_through_composed_view_graphs() {
+    let leaf = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let view = leaf
+        .transpose(0, 2)
+        .unwrap()
+        .index([1])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    let weights = Tensor::from_vec(vec![1.0, -2.0, 3.0, -4.0, 5.0, -6.0], [2, 3]).unwrap();
+    let output = view.cos().unwrap();
+    assert!(output.requires_grad());
+    assert_eq!(output.shape(), [2, 3]);
+    assert_eq!(output.stride(), [3, 1]);
+
+    let loss = output.mul(&weights).unwrap().sum();
+    loss.backward().unwrap();
+
+    let mut expected = vec![0.0_f32; 24];
+    for ((offset, input), weight) in [
+        (1_usize, 1.0_f32),
+        (5, 5.0),
+        (9, 9.0),
+        (13, 13.0),
+        (17, 17.0),
+        (21, 21.0),
+    ]
+    .into_iter()
+    .zip([1.0_f32, -2.0, 3.0, -4.0, 5.0, -6.0])
+    {
+        expected[offset] = -input.sin() * weight;
+    }
+    assert!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .eq(expected.into_iter().map(f32::to_bits))
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+
+    let scalar = Tensor::from_vec(vec![1.5], [])
+        .unwrap()
+        .with_requires_grad(true);
+    scalar.cos().unwrap().backward().unwrap();
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        (-1.5_f32.sin()).to_bits()
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_output = empty.cos().unwrap();
+    assert!(empty_output.requires_grad());
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    empty_output.sum().backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert!(values(&empty_gradient).is_empty());
+}
+
+#[test]
+fn cosine_obeys_detach_no_grad_and_freed_graph_boundaries() {
+    let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    assert!(!leaf.detach().unwrap().cos().unwrap().requires_grad());
+
+    let tracked = leaf.transpose(0, 1).unwrap().cos().unwrap();
+    let detached_output = tracked.detach().unwrap();
+    assert!(!detached_output.requires_grad());
+    assert!(detached_output.shares_storage_with(&tracked));
+
+    {
+        let _guard = no_grad();
+        let output = leaf.transpose(0, 1).unwrap().cos().unwrap();
+        assert!(!output.requires_grad());
+        assert_eq!(output.stride(), [1, 2]);
+    }
+
+    let no_grad_view = {
+        let _guard = no_grad();
+        leaf.transpose(0, 1).unwrap()
+    };
+    let boundary_loss = no_grad_view.cos().unwrap().sum();
+    assert!(boundary_loss.requires_grad());
+    boundary_loss.backward().unwrap();
+    assert!(leaf.grad().unwrap().is_none());
+    assert_eq!(
+        boundary_loss.backward(),
+        Err(TensorError::BackwardGraphFreed)
+    );
+
+    let tracked_loss = tracked.sum();
+    tracked_loss.backward().unwrap();
+    assert_eq!(
+        values(&leaf.grad().unwrap().unwrap()),
+        [
+            -1.0_f32.sin(),
+            -2.0_f32.sin(),
+            -3.0_f32.sin(),
+            -4.0_f32.sin(),
+        ]
+    );
+    assert_eq!(
+        tracked_loss.backward(),
+        Err(TensorError::BackwardGraphFreed)
+    );
+}
+
+#[test]
 fn scalar_addition_records_reusable_identity_gradients() {
     let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
         .unwrap()
