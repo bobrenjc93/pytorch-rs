@@ -86,6 +86,46 @@ def _make_no_grad(context_base):
     return no_grad
 "#;
 
+const IS_TENSOR_SOURCE: &CStr = cr#"
+import copy as _copy
+import sys as _sys
+from typing import Any as _Any
+
+try:
+    from typing_extensions import TypeIs as _TypeIs
+except ModuleNotFoundError as _type_is_error:
+    if _type_is_error.name != "typing_extensions":
+        raise
+    _TypeIs = None
+
+
+torch = _sys.modules.get("torch_rs")
+
+
+def is_tensor(obj, /):
+    r"""Returns True if `obj` is a PyTorch tensor.
+
+    Args:
+        obj (object): Object to test
+    Example::
+
+        >>> x = torch.tensor([1, 2, 3])
+        >>> torch.is_tensor(x)
+        True
+
+    """
+    return isinstance(obj, torch.Tensor)
+
+
+if _TypeIs is not None:
+    # Do not share a mutable ForwardRef cache with another torch implementation.
+    is_tensor.__annotations__ = {
+        "obj": _Any,
+        "return": _copy.deepcopy(_TypeIs["torch.Tensor"]),
+    }
+is_tensor.__module__ = "torch_rs"
+"#;
+
 thread_local! {
     static NO_GRAD_CONTEXT_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
@@ -3880,6 +3920,19 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
         .call_method1("remove", ("_NoGradContext",))?;
     module.delattr("_NoGradContext")?;
     module.add("no_grad", no_grad_class)?;
+    // Define this public Python helper outside the partially initialized package.
+    // A package import binds it to the live public module; direct native module
+    // initialization (including Rust tests) falls back to the module being built.
+    let is_tensor_helpers = PyModule::from_code(
+        py,
+        IS_TENSOR_SOURCE,
+        c"torch_rs/_is_tensor.py",
+        c"torch_rs._is_tensor",
+    )?;
+    if is_tensor_helpers.getattr("torch")?.is_none() {
+        is_tensor_helpers.setattr("torch", module)?;
+    }
+    module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
     module.add_function(wrap_pyfunction!(is_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;

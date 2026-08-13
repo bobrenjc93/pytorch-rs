@@ -961,6 +961,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 55
       }
+    },
+    {
+      "key": "pr:63",
+      "recordedAt": "2026-08-13T07:28:44.253Z",
+      "label": "PR #63",
+      "kind": "leaf",
+      "prNumber": 63,
+      "title": "Add the positional-only torch.is_tensor predicate",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 57.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 36,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 55
+      }
     }
   ]
 }
