@@ -1929,6 +1929,17 @@ impl Tensor {
         values.get(self.offset..end)
     }
 
+    fn dense_physical_slice(&self) -> Option<&[f32]> {
+        // A non-overlapping dense view covers one contiguous physical interval
+        // even when its logical dimension order is permuted.
+        if !self.is_non_overlapping_and_dense() {
+            return None;
+        }
+        let values = self.storage.owned_values()?;
+        let end = self.offset.checked_add(self.elements)?;
+        values.get(self.offset..end)
+    }
+
     fn value_at_linear_index(&self, index: usize) -> f32 {
         if let Some(values) = self.contiguous_slice() {
             return values[index];
@@ -2576,9 +2587,17 @@ impl Tensor {
             return self.zip_map_same_shape(other, operation);
         }
 
+        self.zip_map_broadcast(other, operation)
+    }
+
+    fn zip_map_broadcast(
+        &self,
+        other: &Self,
+        operation: impl Fn(f32, f32) -> f32,
+    ) -> Result<Self, TensorError> {
         let plan = BroadcastPlan::new(self, other)?;
-        let mut data = try_result_vector(plan.elements, plan.elements)?;
         if plan.elements == 0 {
+            let data = try_result_vector(plan.elements, plan.elements)?;
             return Ok(Self::from_owned_parts(
                 data,
                 plan.shape,
@@ -2587,7 +2606,21 @@ impl Tensor {
                 self.device(),
             ));
         }
+        if self.shape.is_empty() != other.shape.is_empty() {
+            let scalar = if self.shape.is_empty() {
+                self.value_at_linear_index(0)
+            } else {
+                other.value_at_linear_index(0)
+            };
+            // A NaN scalar can meet another NaN in the materialized operand.
+            // Keep that case in the original loop because payload precedence
+            // depends on the target's scalar instruction selection.
+            if !scalar.is_nan() {
+                return self.zip_map_rank_zero(other, plan, scalar, operation);
+            }
+        }
 
+        let mut data = try_result_vector(plan.elements, plan.elements)?;
         let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
         coordinates.resize(plan.shape.len(), 0_usize);
         let mut left_offset = self.offset;
@@ -2695,6 +2728,34 @@ impl Tensor {
                 self.device(),
             ));
         }
+        // Identical dense strides give both inputs and the output the same
+        // physical iteration order, avoiding repeated logical index decoding.
+        if self.strides == strides
+            && other.strides == strides
+            && let (Some(left), Some(right)) =
+                (self.dense_physical_slice(), other.dense_physical_slice())
+            // Vector code may choose a different NaN payload than the original
+            // scalar loop. Preserve target-specific behavior for NaN pairs.
+            && !left
+                .iter()
+                .zip(right)
+                .any(|(left, right)| left.is_nan() && right.is_nan())
+        {
+            let mut data = try_result_vector(elements, elements)?;
+            data.extend(
+                left.iter()
+                    .copied()
+                    .zip(right.iter().copied())
+                    .map(|(left, right)| operation(left, right)),
+            );
+            return Ok(Self::from_owned_parts(
+                data,
+                shape,
+                strides,
+                self.dtype(),
+                self.device(),
+            ));
+        }
         let mut data = filled_storage(elements, 0.0)?;
         for linear_index in 0..elements {
             let output_offset = logical_offset_for_linear_index(&shape, &strides, 0, linear_index)?;
@@ -2760,6 +2821,29 @@ impl Tensor {
         } else {
             elementwise_output_strides(shape, &[ElementwiseLayout::from_tensor(self)], elements)
         }
+    }
+
+    fn zip_map_rank_zero(
+        &self,
+        other: &Self,
+        plan: BroadcastPlan,
+        scalar: f32,
+        operation: impl Fn(f32, f32) -> f32,
+    ) -> Result<Self, TensorError> {
+        debug_assert!(!scalar.is_nan());
+        let data = if self.shape.is_empty() {
+            other.materialize_with_strides(&plan.strides, |value| operation(scalar, value))?
+        } else {
+            debug_assert!(other.shape.is_empty());
+            self.materialize_with_strides(&plan.strides, |value| operation(value, scalar))?
+        };
+        Ok(Self::from_owned_parts(
+            data,
+            plan.shape,
+            plan.strides,
+            self.dtype(),
+            self.device(),
+        ))
     }
 
     fn is_channels_last_contiguous(&self) -> bool {
@@ -4049,6 +4133,63 @@ mod tests {
             left.matmul(&shared_right).unwrap(),
             shared_left.matmul(&right).unwrap(),
         ] {
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn owned_dense_binary_fast_path_is_bitwise_identical_to_shared_gradient_fallback() {
+        let left = offset_strided_matrix([
+            0x7f81_2345,
+            0xffc5_4321,
+            0x7f80_0000,
+            0xff80_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x3f80_0000,
+        ]);
+        let right = offset_strided_matrix([
+            0xff85_4321,
+            0x7fc1_2345,
+            0xff80_0000,
+            0x7f80_0000,
+            0x8000_0000,
+            0x0000_0000,
+            0x8000_0001,
+            0x0000_0001,
+            0xbf80_0000,
+        ]);
+        let shared_left = shared_gradient_copy(&left);
+        let shared_right = shared_gradient_copy(&right);
+        let cases = [
+            (
+                left.add(&right).unwrap(),
+                shared_left.add(&shared_right).unwrap(),
+            ),
+            (
+                left.sub(&right).unwrap(),
+                shared_left.sub(&shared_right).unwrap(),
+            ),
+            (
+                left.mul(&right).unwrap(),
+                shared_left.mul(&shared_right).unwrap(),
+            ),
+            (
+                left.div(&right).unwrap(),
+                shared_left.div(&shared_right).unwrap(),
+            ),
+        ];
+
+        for (actual, expected) in cases {
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
             assert!(
                 actual
                     .logical_values()
