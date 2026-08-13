@@ -544,9 +544,33 @@ impl PyTensor {
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
-        let [dim0, dim1] = bind_transpose_arguments(args, kwargs, ["dim0", "dim1"])?;
-        let dim0 = parse_transpose_dimension("dim0", dim0.position, &dim0.value)?;
-        let dim1 = parse_transpose_dimension("dim1", dim1.position, &dim1.value)?;
+        let ([dim0, dim1], keyword_error) =
+            bind_dimension_swap_arguments("transpose", args, kwargs, ["dim0", "dim1"])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        let [dim0, dim1] = parse_dimension_swap_dimensions("transpose", &dim0, &dim1)?;
+        self.inner
+            .transpose(dim0, dim1)
+            .map(Self::new)
+            .map_err(|error| transpose_error(&error))
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nswapdims(dim0, dim1) -> Tensor\n\nSee :func:`torch.swapdims`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn swapdims(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let ([dim0, dim1], keyword_error) =
+            bind_dimension_swap_arguments("swapdims", args, kwargs, ["dim0", "dim1"])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        let [dim0, dim1] = parse_dimension_swap_dimensions("swapdims", &dim0, &dim1)?;
         self.inner
             .transpose(dim0, dim1)
             .map(Self::new)
@@ -1086,14 +1110,23 @@ fn equal(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 
 #[pyfunction(signature = (*args, **kwargs))]
 fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
-    let [input, dim0, dim1] = bind_transpose_arguments(args, kwargs, ["input", "dim0", "dim1"])?;
+    let ([input, dim0, dim1], keyword_error) =
+        bind_dimension_swap_arguments("transpose", args, kwargs, ["input", "dim0", "dim1"])?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
     let input_type = transpose_type_name(&input.value)?;
     let input_tensor = input.value.cast::<PyTensor>().map_err(|_| {
-        transpose_argument_type_error("input", input.position, "Tensor", &input_type)
+        dimension_swap_argument_type_error(
+            "transpose",
+            "input",
+            input.position,
+            "Tensor",
+            &input_type,
+        )
     })?;
     let input_tensor = input_tensor.try_borrow()?;
-    let dim0 = parse_transpose_dimension("dim0", dim0.position, &dim0.value)?;
-    let dim1 = parse_transpose_dimension("dim1", dim1.position, &dim1.value)?;
+    let [dim0, dim1] = parse_dimension_swap_dimensions("transpose", &dim0, &dim1)?;
     input_tensor
         .inner
         .transpose(dim0, dim1)
@@ -1816,30 +1849,74 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     )))
 }
 
-fn parse_transpose_dimension(
-    argument: &str,
-    position: Option<usize>,
-    dimension: &Bound<'_, PyAny>,
-) -> PyResult<i64> {
+fn is_dimension_swap_integer(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
     if !dimension.is_instance_of::<PyBool>() && dimension.is_instance_of::<PyInt>() {
-        return dimension
-            .extract::<i64>()
-            .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+        return Ok(true);
     }
 
     if let Ok(numpy) = PyModule::import(dimension.py(), "numpy") {
         let numpy_integer = numpy.getattr("integer")?;
         if dimension.is_instance(&numpy_integer)? {
-            return dimension
-                .extract::<i64>()
-                .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"));
+            return Ok(true);
         }
     }
 
+    Ok(false)
+}
+
+fn validate_dimension_swap_dimension(
+    operation: &str,
+    argument: &str,
+    position: Option<usize>,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<()> {
+    if is_dimension_swap_integer(dimension)? {
+        return Ok(());
+    }
+
     let type_name = transpose_type_name(dimension)?;
-    Err(transpose_argument_type_error(
-        argument, position, "int", &type_name,
+    Err(dimension_swap_argument_type_error(
+        operation, argument, position, "int", &type_name,
     ))
+}
+
+fn parse_dimension_swap_dimensions(
+    operation: &str,
+    dim0: &ParsedCallArgument<'_>,
+    dim1: &ParsedCallArgument<'_>,
+) -> PyResult<[i64; 2]> {
+    // PyTorch validates the declared types in signature order before it
+    // converts either integer. This lets a later type mismatch take
+    // precedence over an earlier integer that overflows during conversion.
+    validate_dimension_swap_dimension(operation, "dim0", dim0.position, &dim0.value)?;
+    validate_dimension_swap_dimension(operation, "dim1", dim1.position, &dim1.value)?;
+    // TensorOptions-style generated bindings convert dimensions in reverse
+    // declaration order after type checking. Keep the values in declaration
+    // order for the transpose engine after reproducing that observable order.
+    let dim1 = extract_dimension_swap_dimension(&dim1.value)?;
+    let dim0 = extract_dimension_swap_dimension(&dim0.value)?;
+    Ok([dim0, dim1])
+}
+
+fn extract_dimension_swap_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+    dimension.extract::<i64>().map_err(|error| {
+        let py = dimension.py();
+        // PyLong_AsLongLong reports a traceback-free range error with this
+        // CPython message. An accepted integer object's __index__ can raise
+        // its own OverflowError; preserve that exception and traceback.
+        let message = error.value(py).to_string();
+        let is_range_overflow = error.is_instance_of::<PyOverflowError>(py)
+            && error.traceback(py).is_none()
+            && matches!(
+                message.as_str(),
+                "int too big to convert" | "Python int too large to convert to C long"
+            );
+        if is_range_overflow {
+            PyValueError::new_err("Overflow when unpacking long long")
+        } else {
+            error
+        }
+    })
 }
 
 fn parse_flatten_dimension(
@@ -2696,14 +2773,15 @@ fn parse_equal_tensor_argument<'a, 'py>(
     Ok(tensor)
 }
 
-fn bind_transpose_arguments<'py, const N: usize>(
+fn bind_dimension_swap_arguments<'py, const N: usize>(
+    operation: &str,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
     names: [&str; N],
-) -> PyResult<[ParsedCallArgument<'py>; N]> {
+) -> PyResult<([ParsedCallArgument<'py>; N], Option<PyErr>)> {
     if positional.len() > N {
         return Err(PyTypeError::new_err(format!(
-            "transpose() takes {N} positional arguments but {} were given",
+            "{operation}() takes {N} positional arguments but {} were given",
             positional.len()
         )));
     }
@@ -2723,7 +2801,7 @@ fn bind_transpose_arguments<'py, const N: usize>(
             let Some(index) = names.iter().position(|name| *name == key) else {
                 keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
-                        "transpose() got an unexpected keyword argument '{key}'"
+                        "{operation}() got an unexpected keyword argument '{key}'"
                     ))
                 });
                 continue;
@@ -2731,7 +2809,7 @@ fn bind_transpose_arguments<'py, const N: usize>(
             if arguments[index].is_some() {
                 keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
-                        "transpose() got multiple values for argument '{}'",
+                        "{operation}() got multiple values for argument '{}'",
                         names[index]
                     ))
                 });
@@ -2745,6 +2823,10 @@ fn bind_transpose_arguments<'py, const N: usize>(
     }
 
     if let Some(first_missing) = arguments.iter().position(Option::is_none) {
+        // PyTorch validates the recognized types before reporting a later
+        // missing argument, but leaves integer conversion (and therefore
+        // overflow) until the complete signature has bound successfully.
+        validate_dimension_swap_argument_prefix(operation, &names, &arguments, first_missing)?;
         let missing = &names[first_missing..];
         let quoted_names = missing
             .iter()
@@ -2757,17 +2839,52 @@ fn bind_transpose_arguments<'py, const N: usize>(
             "argument"
         };
         return Err(PyTypeError::new_err(format!(
-            "transpose() missing {} required positional {argument}: {quoted_names}",
+            "{operation}() missing {} required positional {argument}: {quoted_names}",
             missing.len()
         )));
     }
 
-    if let Some(keyword_error) = keyword_error {
-        return Err(keyword_error);
+    if keyword_error.is_some() {
+        // Type errors take precedence over duplicate and unexpected keyword
+        // errors. Successful calls defer validation to argument parsing so
+        // each dimension is inspected only once on the hot path.
+        validate_dimension_swap_argument_prefix(operation, &names, &arguments, N)?;
     }
 
-    Ok(arguments
-        .map(|argument| argument.expect("all required transpose arguments were checked above")))
+    Ok((
+        arguments.map(|argument| {
+            argument.expect("all required dimension-swap arguments were bound above")
+        }),
+        keyword_error,
+    ))
+}
+
+fn validate_dimension_swap_argument_prefix<const N: usize>(
+    operation: &str,
+    names: &[&str; N],
+    arguments: &[Option<ParsedCallArgument<'_>>; N],
+    length: usize,
+) -> PyResult<()> {
+    for (name, argument) in names.iter().zip(arguments.iter()).take(length) {
+        let argument = argument
+            .as_ref()
+            .expect("arguments preceding the first dimension-swap gap are present");
+        if *name == "input" {
+            if argument.value.cast::<PyTensor>().is_err() {
+                let actual = transpose_type_name(&argument.value)?;
+                return Err(dimension_swap_argument_type_error(
+                    operation,
+                    name,
+                    argument.position,
+                    "Tensor",
+                    &actual,
+                ));
+            }
+        } else {
+            validate_dimension_swap_dimension(operation, name, argument.position, &argument.value)?;
+        }
+    }
+    Ok(())
 }
 
 fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
@@ -2788,7 +2905,8 @@ fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     }
 }
 
-fn transpose_argument_type_error(
+fn dimension_swap_argument_type_error(
+    operation: &str,
     argument: &str,
     position: Option<usize>,
     expected: &str,
@@ -2796,7 +2914,7 @@ fn transpose_argument_type_error(
 ) -> PyErr {
     let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
     PyTypeError::new_err(format!(
-        "transpose(): argument '{argument}'{position} must be {expected}, not {actual}"
+        "{operation}(): argument '{argument}'{position} must be {expected}, not {actual}"
     ))
 }
 
@@ -3595,7 +3713,7 @@ mod tests {
     use pyo3::exceptions::PyTypeError;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyMemoryView, PyModule, PySlice};
 
-    use super::{flatten_buffer, half_to_f32, nested_list, torch_rs, try_size_vector};
+    use super::{PyTensor, flatten_buffer, half_to_f32, nested_list, torch_rs, try_size_vector};
 
     #[test]
     fn half_precision_buffer_values_convert_to_float32() {
@@ -3686,6 +3804,28 @@ mod tests {
                 .call_method0("reshape")
                 .expect_err("reshape without a shape must fail");
             assert!(error.is_instance_of::<PyTypeError>(py));
+        });
+    }
+
+    #[test]
+    fn swapdims_binding_returns_a_shared_storage_transpose_view() {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let module = PyModule::new(py, "torch_rs").unwrap();
+            torch_rs(&module).unwrap();
+            let source = module
+                .getattr("zeros")
+                .unwrap()
+                .call1(((2, 3, 4),))
+                .unwrap();
+            let swapped = source.call_method1("swapdims", (0, -1)).unwrap();
+            let source = source.cast::<PyTensor>().unwrap().try_borrow().unwrap();
+            let swapped = swapped.cast::<PyTensor>().unwrap().try_borrow().unwrap();
+
+            assert_eq!(swapped.inner.shape(), [4, 3, 2]);
+            assert_eq!(swapped.inner.stride(), [1, 4, 12]);
+            assert_eq!(swapped.inner.storage_offset(), 0);
+            assert!(swapped.inner.shares_storage_with(&source.inner));
         });
     }
 }
