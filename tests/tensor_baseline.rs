@@ -816,12 +816,32 @@ fn matrix_multiplication_matches_known_result() {
 
 #[test]
 fn matrix_multiplication_rejects_incompatible_shapes() {
-    let left = Tensor::zeros([2, 3]).unwrap();
-    let right = Tensor::zeros([4, 2]).unwrap();
-    assert!(matches!(
-        left.matmul(&right),
-        Err(TensorError::MatmulInnerDimensionMismatch { .. })
-    ));
+    let maximum = isize::MAX.unsigned_abs();
+    for (left_shape, right_shape) in [
+        ([2, 3], [4, 2]),
+        ([0, 3], [4, 0]),
+        ([maximum, 0], [1, 0]),
+        ([0, maximum], [0, 0]),
+    ] {
+        let error = Tensor::zeros(left_shape)
+            .unwrap()
+            .matmul(&Tensor::zeros(right_shape).unwrap())
+            .unwrap_err();
+        assert_eq!(
+            error,
+            TensorError::MatmulInnerDimensionMismatch {
+                left: left_shape.to_vec(),
+                right: right_shape.to_vec(),
+            }
+        );
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "mat1 and mat2 shapes cannot be multiplied ({}x{} and {}x{})",
+                left_shape[0], left_shape[1], right_shape[0], right_shape[1]
+            )
+        );
+    }
 }
 
 #[test]

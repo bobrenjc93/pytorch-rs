@@ -134,6 +134,25 @@ class TransposeReferenceTests(unittest.TestCase):
                 operation="matmul",
             )
 
+    def test_rank_two_matmul_shape_errors_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        shapes = (
+            ((2, 3), (4, 2)),
+            ((0, 3), (4, 0)),
+            ((sys.maxsize, 0), (1, 0)),
+            ((0, sys.maxsize), (0, 0)),
+        )
+        for left_shape, right_shape in shapes:
+            actual_left = torch.zeros(left_shape)
+            actual_right = torch.zeros(right_shape)
+            expected_left = reference_torch.zeros(left_shape)
+            expected_right = reference_torch.zeros(right_shape)
+            with self.subTest(left=left_shape, right=right_shape):
+                self.assert_error_matches(
+                    lambda: actual_left @ actual_right,
+                    lambda: expected_left @ expected_right,
+                )
+
     def test_python_layout_queries_and_transpose_diagnostics_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual_channels_3d = (
