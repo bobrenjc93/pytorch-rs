@@ -865,6 +865,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:56",
+      "recordedAt": "2026-08-13T03:08:06.690Z",
+      "label": "PR #56",
+      "kind": "leaf",
+      "prNumber": 56,
+      "title": "Add differentiable Tensor.cos only",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 57.4,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 31,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
