@@ -76,6 +76,14 @@ impl Device {
             Self::Cpu => true,
         }
     }
+
+    /// Reports whether this device executes on a CUDA accelerator.
+    #[must_use]
+    pub const fn is_cuda(self) -> bool {
+        match self {
+            Self::Cpu => false,
+        }
+    }
 }
 
 impl Display for Device {
@@ -1077,6 +1085,12 @@ impl Tensor {
     #[must_use]
     pub fn is_cpu(&self) -> bool {
         self.device().is_cpu()
+    }
+
+    /// Reports whether this tensor's device is a CUDA accelerator.
+    #[must_use]
+    pub fn is_cuda(&self) -> bool {
+        self.device().is_cuda()
     }
 
     /// Returns the device owning this tensor's storage.
