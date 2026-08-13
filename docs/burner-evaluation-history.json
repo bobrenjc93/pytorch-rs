@@ -1313,6 +1313,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 59
       }
+    },
+    {
+      "key": "pr:87",
+      "recordedAt": "2026-08-13T23:58:07.924Z",
+      "label": "PR #87",
+      "kind": "leaf",
+      "prNumber": 87,
+      "title": "Expose strided layout metadata only",
+      "scores": {
+        "eval_7af648fb": 99.6,
+        "eval_8417a4a8": 59.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 38.5,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 59
+      }
     }
   ]
 }

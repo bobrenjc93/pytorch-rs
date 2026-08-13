@@ -18,9 +18,11 @@ use pyo3::types::{
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, enter_no_grad, exit_no_grad,
     is_grad_enabled as core_is_grad_enabled,
+    python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
 };
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
+static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -275,6 +277,11 @@ struct PyTensorBase;
 
 #[pymethods]
 impl PyTensorBase {
+    #[getter]
+    fn layout(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        Ok(strided_object(slf.py())?.clone_ref(slf.py()))
+    }
+
     #[pyo3(text_signature = None)]
     fn int_scalar<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyInt>> {
         let value = slf
@@ -1710,6 +1717,14 @@ fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
             },
         )
     })
+}
+
+fn layout_objects(py: Python<'_>) -> PyResult<&'static PyLayoutObjects> {
+    LAYOUT_OBJECTS.get_or_try_init(py, || create_layout_objects(py))
+}
+
+fn strided_object(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+    Ok(&layout_objects(py)?.strided)
 }
 
 fn memory_format_object(
@@ -4287,6 +4302,11 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let float32 = float32_object(py)?;
     module.add("float32", float32.clone_ref(py))?;
     module.add("float", float32.clone_ref(py))?;
+    module.add("layout", layout_objects(py)?.layout.clone_ref(py))?;
+    module.add("strided", strided_object(py)?.clone_ref(py))?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("strided",))?;
     for (name, memory_format) in [
         ("preserve_format", MemoryFormat::Preserve),
         ("contiguous_format", MemoryFormat::Contiguous),

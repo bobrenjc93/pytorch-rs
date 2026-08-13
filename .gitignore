@@ -5,3 +5,4 @@
 *.profraw
 __pycache__/
 *.py[cod]
+/python/torch_rs/*.so
