@@ -1249,6 +1249,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 58
       }
+    },
+    {
+      "key": "pr:83",
+      "recordedAt": "2026-08-13T18:06:45.281Z",
+      "label": "PR #83",
+      "kind": "leaf",
+      "prNumber": 83,
+      "title": "Add Python float conversion for one-element tensors",
+      "scores": {
+        "eval_7af648fb": 99.3,
+        "eval_8417a4a8": 59,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 38.2,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 58
+      }
     }
   ]
 }
