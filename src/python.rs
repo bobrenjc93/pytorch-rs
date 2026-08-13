@@ -283,6 +283,27 @@ impl PyTensorBase {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         Ok(tensor.inner.is_complex())
     }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\ntype_as(tensor) -> Tensor\n\nReturns this tensor cast to the type of the given tensor.\n\nThis is a no-op if the tensor is already of the correct type. This is\nequivalent to ``self.type(tensor.type())``\n\nArgs:\n    tensor (Tensor): the tensor which has the desired type\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn type_as(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyTensor>> {
+        let (arguments, keyword_error) = bind_tensor_arguments("type_as", args, kwargs, ["other"])?;
+        parse_tensor_argument("type_as", "other", &arguments[0])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        // Float32 on CPU is the only supported tensor type, so matching
+        // PyTorch's no-op path also preserves the exact Python wrapper and its
+        // storage and autograd state.
+        Ok(slf.as_any().cast::<PyTensor>()?.clone().unbind())
+    }
 }
 
 /// Python-facing tensor backed by the native Rust tensor core.
