@@ -689,6 +689,14 @@ impl PyTensor {
         self.inner.numel()
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nis_floating_point() -> bool\n\nReturns True if the data type of :attr:`self` is a floating point data type.\n"]
+    #[pyo3(text_signature = None)]
+    fn is_floating_point(&self) -> bool {
+        self.inner.is_floating_point()
+    }
+
     fn tolist(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let values = self
             .inner
@@ -1290,6 +1298,69 @@ fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     }
 
     Ok(tensor.try_borrow()?.inner.numel())
+}
+
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[doc = "\nis_floating_point(input: Tensor) -> bool\n\nReturns True if the data type of :attr:`input` is a floating point data type i.e.,\none of ``torch.float64``, ``torch.float32``, ``torch.float16``, and ``torch.bfloat16``.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0]))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.int32))\n    False\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0], dtype=torch.float16))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.complex64))\n    False\n"]
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn is_floating_point(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    if args.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "is_floating_point() takes 1 positional argument but {} were given",
+            args.len()
+        )));
+    }
+
+    let keyword_input = match kwargs {
+        Some(values) => values.get_item("input")?,
+        None => None,
+    };
+    if args.is_empty() && keyword_input.is_none() {
+        return Err(PyTypeError::new_err(
+            "is_floating_point() missing 1 required positional arguments: \"input\"",
+        ));
+    }
+
+    let (input, position) = if args.is_empty() {
+        (
+            keyword_input
+                .as_ref()
+                .expect("the required keyword input was checked above"),
+            None,
+        )
+    } else {
+        (&args.get_item(0)?, Some(1))
+    };
+    let Ok(tensor) = input.cast::<PyTensor>() else {
+        let position =
+            position.map_or_else(String::new, |position| format!(" (position {position})"));
+        let input_type = transpose_type_name(input)?;
+        return Err(PyTypeError::new_err(format!(
+            "is_floating_point(): argument 'input'{position} must be Tensor, not {input_type}"
+        )));
+    };
+
+    if !args.is_empty() && keyword_input.is_some() {
+        return Err(PyTypeError::new_err(
+            "is_floating_point() got multiple values for argument 'input'",
+        ));
+    }
+    if let Some(kwargs) = kwargs {
+        for key in kwargs.keys() {
+            let key = key.extract::<String>()?;
+            if key != "input" {
+                return Err(PyTypeError::new_err(format!(
+                    "is_floating_point() got an unexpected keyword argument '{key}'"
+                )));
+            }
+        }
+    }
+
+    Ok(tensor.try_borrow()?.inner.is_floating_point())
 }
 
 #[pyfunction(
@@ -3792,6 +3863,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     module.add_function(wrap_pyfunction!(numel, module)?)?;
+    module.add_function(wrap_pyfunction!(is_floating_point, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
