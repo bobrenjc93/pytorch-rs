@@ -1389,6 +1389,23 @@ fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 #[allow(clippy::doc_markdown)]
 #[cfg_attr(
     not(doc),
+    doc = "\nis_nonzero(input) -> (bool)\n\nReturns True if the :attr:`input` is a single element tensor which is not equal to zero\nafter type conversions.\ni.e. not equal to ``torch.tensor([0.])`` or ``torch.tensor([0])`` or\n``torch.tensor([False])``.\nThrows a ``RuntimeError`` if ``torch.numel() != 1`` (even in case\nof sparse tensors).\n\nArgs:\n    input (Tensor): the input tensor.\n\nExamples::\n\n    >>> torch.is_nonzero(torch.tensor([0.]))\n    False\n    >>> torch.is_nonzero(torch.tensor([1.5]))\n    True\n    >>> torch.is_nonzero(torch.tensor([False]))\n    False\n    >>> torch.is_nonzero(torch.tensor([3]))\n    True\n    >>> torch.is_nonzero(torch.tensor([1, 3, 5]))\n    Traceback (most recent call last):\n    ...\n    RuntimeError: Boolean value of Tensor with more than one value is ambiguous\n    >>> torch.is_nonzero(torch.tensor([]))\n    Traceback (most recent call last):\n    ...\n    RuntimeError: Boolean value of Tensor with no values is ambiguous\n"
+)]
+#[cfg_attr(doc, doc = "See the runtime Python documentation for examples.")]
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn is_nonzero(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    let input = bind_legacy_single_tensor_argument("is_nonzero", args, kwargs)?;
+    let tensor = input
+        .value
+        .cast::<PyTensor>()
+        .expect("the is_nonzero input type was checked while binding");
+    tensor.try_borrow()?.truth_value()
+}
+
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[cfg_attr(
+    not(doc),
     doc = "\nis_floating_point(input: Tensor) -> bool\n\nReturns True if the data type of :attr:`input` is a floating point data type i.e.,\none of ``torch.float64``, ``torch.float32``, ``torch.float16``, and ``torch.bfloat16``.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0]))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.int32))\n    False\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0], dtype=torch.float16))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.complex64))\n    False\n"
 )]
 #[cfg_attr(doc, doc = "See the runtime Python documentation for examples.")]
@@ -1397,80 +1414,11 @@ fn is_floating_point(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<bool> {
-    if args.len() > 1 {
-        return Err(PyTypeError::new_err(format!(
-            "is_floating_point() takes 1 positional argument but {} were given",
-            args.len()
-        )));
-    }
-
-    // PyTorch's legacy parser resolves `input`, then `x`, then `a` for type checking.
-    let (keyword_input, keyword_alias) = match kwargs {
-        Some(values) => {
-            if let Some(input) = values.get_item("input")? {
-                (Some(input), None)
-            } else if let Some(input) = values.get_item("x")? {
-                (Some(input), Some("x"))
-            } else if let Some(input) = values.get_item("a")? {
-                (Some(input), Some("a"))
-            } else {
-                (None, None)
-            }
-        }
-        None => (None, None),
-    };
-    if args.is_empty() && keyword_input.is_none() {
-        return Err(PyTypeError::new_err(
-            "is_floating_point() missing 1 required positional arguments: \"input\"",
-        ));
-    }
-
-    let (input, position) = if args.is_empty() {
-        (
-            keyword_input
-                .as_ref()
-                .expect("the required keyword input was checked above"),
-            None,
-        )
-    } else {
-        (&args.get_item(0)?, Some(1))
-    };
-    let Ok(tensor) = input.cast::<PyTensor>() else {
-        let position =
-            position.map_or_else(String::new, |position| format!(" (position {position})"));
-        let input_type = transpose_type_name(input)?;
-        return Err(PyTypeError::new_err(format!(
-            "is_floating_point(): argument 'input'{position} must be Tensor, not {input_type}"
-        )));
-    };
-
-    if let Some(kwargs) = kwargs {
-        // The legacy aliases are accepted only as the sole keyword. Mixed calls
-        // validate their original keyword order and report an alias as unexpected.
-        let sole_alias = if args.is_empty() && kwargs.len() == 1 {
-            keyword_alias
-        } else {
-            None
-        };
-        for key in kwargs.keys() {
-            let key = key.extract::<String>()?;
-            if sole_alias == Some(key.as_str()) {
-                continue;
-            }
-            if key == "input" {
-                if !args.is_empty() {
-                    return Err(PyTypeError::new_err(
-                        "is_floating_point() got multiple values for argument 'input'",
-                    ));
-                }
-                continue;
-            }
-            return Err(PyTypeError::new_err(format!(
-                "is_floating_point() got an unexpected keyword argument '{key}'"
-            )));
-        }
-    }
-
+    let input = bind_legacy_single_tensor_argument("is_floating_point", args, kwargs)?;
+    let tensor = input
+        .value
+        .cast::<PyTensor>()
+        .expect("the is_floating_point input type was checked while binding");
     Ok(tensor.try_borrow()?.inner.is_floating_point())
 }
 
@@ -2903,6 +2851,90 @@ fn bind_detach_argument<'py>(
     Ok(input)
 }
 
+fn bind_legacy_single_tensor_argument<'py>(
+    function: &str,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ParsedCallArgument<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    // PyTorch's legacy parser resolves `input`, then `x`, then `a` for type checking.
+    let (keyword_input, keyword_alias) = match keywords {
+        Some(values) => {
+            if let Some(input) = values.get_item("input")? {
+                (Some(input), None)
+            } else if let Some(input) = values.get_item("x")? {
+                (Some(input), Some("x"))
+            } else if let Some(input) = values.get_item("a")? {
+                (Some(input), Some("a"))
+            } else {
+                (None, None)
+            }
+        }
+        None => (None, None),
+    };
+    if positional.is_empty() && keyword_input.is_none() {
+        return Err(PyTypeError::new_err(format!(
+            "{function}() missing 1 required positional arguments: \"input\""
+        )));
+    }
+
+    let input = if positional.is_empty() {
+        ParsedCallArgument {
+            value: keyword_input.expect("the required keyword input was checked above"),
+            position: None,
+        }
+    } else {
+        ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        }
+    };
+    if input.value.cast::<PyTensor>().is_err() {
+        let position = input
+            .position
+            .map_or_else(String::new, |position| format!(" (position {position})"));
+        let input_type = transpose_type_name(&input.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "{function}(): argument 'input'{position} must be Tensor, not {input_type}"
+        )));
+    }
+
+    if let Some(keywords) = keywords {
+        // The legacy aliases are accepted only as the sole keyword. Mixed calls
+        // validate their original keyword order and report an alias as unexpected.
+        let sole_alias = if positional.is_empty() && keywords.len() == 1 {
+            keyword_alias
+        } else {
+            None
+        };
+        for key in keywords.keys() {
+            let key = key.extract::<String>()?;
+            if sole_alias == Some(key.as_str()) {
+                continue;
+            }
+            if key == "input" {
+                if !positional.is_empty() {
+                    return Err(PyTypeError::new_err(format!(
+                        "{function}() got multiple values for argument 'input'"
+                    )));
+                }
+                continue;
+            }
+            return Err(PyTypeError::new_err(format!(
+                "{function}() got an unexpected keyword argument '{key}'"
+            )));
+        }
+    }
+
+    Ok(input)
+}
+
 fn bind_tensor_arguments<'py, const N: usize>(
     function: &str,
     positional: &Bound<'py, PyTuple>,
@@ -3991,6 +4023,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     module.add_function(wrap_pyfunction!(numel, module)?)?;
+    module.add_function(wrap_pyfunction!(is_nonzero, module)?)?;
     module.add_function(wrap_pyfunction!(is_floating_point, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
