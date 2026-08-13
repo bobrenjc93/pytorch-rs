@@ -2437,12 +2437,16 @@ impl Tensor {
         if let (Some(left_data), Some(right_data)) =
             (self.contiguous_slice(), other.contiguous_slice())
         {
-            for row in 0..rows {
-                for depth in 0..inner {
-                    let left = left_data[row * inner + depth];
-                    for column in 0..columns {
-                        output[row * columns + column] +=
-                            left * right_data[depth * columns + column];
+            if output_elements != 0 && inner != 0 {
+                for (left_row, output_row) in left_data
+                    .chunks_exact(inner)
+                    .zip(output.chunks_exact_mut(columns))
+                {
+                    for (&left, right_row) in left_row.iter().zip(right_data.chunks_exact(columns))
+                    {
+                        for (output_value, &right) in output_row.iter_mut().zip(right_row) {
+                            *output_value += left * right;
+                        }
                     }
                 }
             }
@@ -3869,6 +3873,82 @@ mod tests {
             .unwrap()
             .transpose(0, 1)
             .unwrap()
+    }
+
+    #[test]
+    fn contiguous_matmul_is_bitwise_identical_to_shared_gradient_fallback() {
+        let left = Tensor::from_vec(
+            [
+                0x60ad_78ec,
+                0xe0ad_78ec,
+                0x3f80_0000,
+                0xff80_0000,
+                0x8000_0000,
+                0x7fc1_2345,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [2, 3],
+        )
+        .unwrap();
+        let right = Tensor::from_vec(
+            [
+                0x3f80_0000,
+                0xbf80_0000,
+                0x7f80_0000,
+                0x3f80_0000,
+                0x3f80_0000,
+                0xff80_0000,
+                0x3f80_0000,
+                0x0000_0000,
+                0x3f80_0000,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [3, 3],
+        )
+        .unwrap();
+        let shared_left = shared_gradient_copy(&left);
+        let shared_right = shared_gradient_copy(&right);
+        let expected = shared_left.matmul(&shared_right).unwrap();
+        assert_eq!(expected.as_slice()[0].to_bits(), 0x3f80_0000);
+
+        for actual in [
+            left.matmul(&right).unwrap(),
+            left.matmul(&shared_right).unwrap(),
+            shared_left.matmul(&right).unwrap(),
+        ] {
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn contiguous_matmul_preserves_empty_dimension_outputs() {
+        let no_rows = Tensor::zeros([0, 3])
+            .unwrap()
+            .matmul(&Tensor::ones([3, 4]).unwrap())
+            .unwrap();
+        assert_eq!(no_rows.shape(), [0, 4]);
+        assert!(no_rows.as_slice().is_empty());
+
+        let no_columns = Tensor::ones([2, 3])
+            .unwrap()
+            .matmul(&Tensor::zeros([3, 0]).unwrap())
+            .unwrap();
+        assert_eq!(no_columns.shape(), [2, 0]);
+        assert!(no_columns.as_slice().is_empty());
+
+        let no_inner = Tensor::ones([2, 0])
+            .unwrap()
+            .matmul(&Tensor::zeros([0, 4]).unwrap())
+            .unwrap();
+        assert_eq!(no_inner.shape(), [2, 4]);
+        assert!(no_inner.as_slice().iter().all(|value| value.to_bits() == 0));
     }
 
     #[test]

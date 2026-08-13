@@ -1137,6 +1137,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 58
       }
+    },
+    {
+      "key": "pr:74",
+      "recordedAt": "2026-08-13T14:14:47.414Z",
+      "label": "PR #74",
+      "kind": "leaf",
+      "prNumber": 74,
+      "title": "Slice the contiguous matmul inner loop",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 58.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 37.5,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 58
+      }
     }
   ]
 }
