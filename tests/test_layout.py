@@ -1,4 +1,7 @@
+import copy
+import copyreg
 import inspect
+import pickle
 import sys
 import types
 import unittest
@@ -7,6 +10,20 @@ import torch_rs as torch
 
 
 class TensorLayoutTests(unittest.TestCase):
+    def test_copy_and_pickle_restore_the_canonical_singleton(self):
+        reducer = copyreg.dispatch_table[type(torch.strided)]
+        constructor, arguments = reducer(torch.strided)
+
+        self.assertEqual(arguments, ("torch.strided",))
+        self.assertIs(constructor(*arguments), torch.strided)
+        self.assertIs(copy.copy(torch.strided), torch.strided)
+        self.assertIs(copy.deepcopy(torch.strided), torch.strided)
+
+        for protocol in range(6):
+            with self.subTest(protocol=protocol):
+                payload = pickle.dumps(torch.strided, protocol=protocol)
+                self.assertIs(pickle.loads(payload), torch.strided)
+
     def test_strided_is_the_canonical_layout_singleton(self):
         self.assertIs(type(torch.strided), torch.layout)
         self.assertIsInstance(torch.strided, torch.layout)

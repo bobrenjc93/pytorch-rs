@@ -1,4 +1,7 @@
+import copy
+import copyreg
 import inspect
+import pickle
 import sys
 import types
 import unittest
@@ -103,6 +106,30 @@ class TensorLayoutReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.layout_contract(torch),
             self.layout_contract(reference_torch),
+        )
+
+    def copy_and_pickle_contract(self, module):
+        layout = module.strided
+        reducer = copyreg.dispatch_table.get(type(layout))
+        if reducer is None:
+            return {"registered_reducer": False}
+        constructor, arguments = reducer(layout)
+        return {
+            "registered_reducer": True,
+            "reducer_arguments": arguments,
+            "reducer_identity": constructor(*arguments) is layout,
+            "copy_identity": copy.copy(layout) is layout,
+            "deepcopy_identity": copy.deepcopy(layout) is layout,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(layout, protocol=protocol)) is layout
+                for protocol in range(6)
+            ),
+        }
+
+    def test_copy_and_pickle_identity_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.copy_and_pickle_contract(torch),
+            self.copy_and_pickle_contract(reference_torch),
         )
 
     def class_mutation_contract(self, module):
