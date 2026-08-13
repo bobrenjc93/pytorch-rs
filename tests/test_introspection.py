@@ -7,6 +7,20 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+ELEMENT_SIZE_DOC = """
+element_size() -> int
+
+Returns the size in bytes of an individual element.
+
+Example::
+
+    >>> torch.tensor([]).element_size()
+    4
+    >>> torch.tensor([], dtype=torch.uint8).element_size()
+    1
+
+"""
+
 
 class TensorIntrospectionTests(unittest.TestCase):
     def assert_introspection(self, tensor, *, rank, elements):
@@ -21,11 +35,18 @@ class TensorIntrospectionTests(unittest.TestCase):
             torch.numel(tensor),
             torch.numel(input=tensor),
         )
-        for value in (*rank_values, *element_values, tensor.nbytes):
+        for value in (
+            *rank_values,
+            *element_values,
+            tensor.element_size(),
+            tensor.nbytes,
+        ):
             self.assertIs(type(value), int)
         self.assertEqual(rank_values, (rank,) * len(rank_values))
         self.assertEqual(element_values, (elements,) * len(element_values))
-        self.assertEqual(tensor.nbytes, elements * 4)
+        self.assertIs(tensor.dtype, torch.float32)
+        self.assertEqual(tensor.element_size(), 4)
+        self.assertEqual(tensor.nbytes, elements * tensor.element_size())
 
     def test_scalar_empty_and_metadata_only_views(self):
         cases = (
@@ -55,6 +76,7 @@ class TensorIntrospectionTests(unittest.TestCase):
                 3,
                 0,
             ),
+            (torch.zeros((sys.maxsize, 0))[sys.maxsize - 1], 1, 0),
         )
         for tensor, rank, elements in cases:
             with self.subTest(shape=tensor.shape, stride=tensor.stride()):
@@ -81,6 +103,7 @@ class TensorIntrospectionTests(unittest.TestCase):
             ("ndimension", 3),
             ("nelement", 0),
             ("numel", 0),
+            ("element_size", 4),
         ):
             with self.subTest(name=name):
                 descriptor = inspect.getattr_static(torch.Tensor, name)
@@ -94,6 +117,12 @@ class TensorIntrospectionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     inspect.signature(bound)
                 self.assertEqual(descriptor(tensor), expected)
+                if name == "element_size":
+                    self.assertEqual(descriptor.__doc__, ELEMENT_SIZE_DOC)
+                    self.assertEqual(bound.__doc__, ELEMENT_SIZE_DOC)
+                    self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
+                    self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
+                    self.assertEqual(bound(), 4)
 
         self.assertIs(type(torch.numel), types.BuiltinFunctionType)
         self.assertIsNone(torch.numel.__text_signature__)
@@ -132,6 +161,64 @@ class TensorIntrospectionTests(unittest.TestCase):
                     getattr(torch.Tensor, name)()
                 with self.assertRaises(TypeError):
                     getattr(torch.Tensor, name)(1)
+
+        descriptor = inspect.getattr_static(torch.Tensor, "element_size")
+        bound = tensor.element_size
+        invalid_element_size_calls = (
+            (
+                "inline positional",
+                lambda: tensor.element_size(1),
+                "TensorBase.element_size() takes no arguments (1 given)",
+            ),
+            (
+                "stored positional",
+                lambda: bound(1),
+                "Tensor.element_size() takes no arguments (1 given)",
+            ),
+            (
+                "descriptor positional",
+                lambda: descriptor(tensor, 1),
+                "TensorBase.element_size() takes no arguments (1 given)",
+            ),
+            (
+                "inline keyword",
+                lambda: tensor.element_size(unexpected=True),
+                "TensorBase.element_size() takes no keyword arguments",
+            ),
+            (
+                "stored keyword",
+                lambda: bound(unexpected=True),
+                "Tensor.element_size() takes no keyword arguments",
+            ),
+            (
+                "descriptor keyword",
+                lambda: descriptor(tensor, unexpected=True),
+                "TensorBase.element_size() takes no keyword arguments",
+            ),
+        )
+        for case, call, message in invalid_element_size_calls:
+            with self.subTest(method="element_size", case=case):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                actual_message = str(raised.exception)
+                if case == "inline keyword":
+                    # CPython 3.10 materializes this keyword call as a bound
+                    # method, while newer runtimes retain the descriptor fast
+                    # path. The reference suite checks the exact message
+                    # against PyTorch for the active runtime.
+                    self.assertIn(
+                        actual_message,
+                        {
+                            message,
+                            "Tensor.element_size() takes no keyword arguments",
+                        },
+                    )
+                else:
+                    self.assertEqual(actual_message, message)
+
+        for call in (lambda: descriptor(), lambda: descriptor(1)):
+            with self.assertRaises(TypeError):
+                call()
 
     def test_top_level_numel_binding_errors_match_pytorch(self):
         tensor = torch.zeros((2, 3))

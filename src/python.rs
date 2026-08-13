@@ -1,6 +1,5 @@
 use std::cell::Cell;
 use std::ffi::CStr;
-use std::mem::size_of;
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -251,11 +250,56 @@ impl PyDevice {
     }
 }
 
+// Internal descriptor owner matching PyTorch's native tensor base class.
+#[pyclass(
+    name = "TensorBase",
+    module = "torch._C",
+    subclass,
+    skip_from_py_object
+)]
+struct PyTensorBase;
+
+#[pymethods]
+impl PyTensorBase {
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nelement_size() -> int\n\nReturns the size in bytes of an individual element.\n\nExample::\n\n    >>> torch.tensor([]).element_size()\n    4\n    >>> torch.tensor([], dtype=torch.uint8).element_size()\n    1\n\n"]
+    #[pyo3(text_signature = None)]
+    fn element_size(slf: &Bound<'_, Self>) -> PyResult<usize> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        Ok(tensor.inner.element_size())
+    }
+}
+
 /// Python-facing tensor backed by the native Rust tensor core.
-#[pyclass(name = "Tensor", module = "torch_rs", skip_from_py_object)]
+#[pyclass(
+    name = "Tensor",
+    module = "torch_rs",
+    extends = PyTensorBase,
+    skip_from_py_object
+)]
 struct PyTensor {
     inner: CoreTensor,
     grad_cache: PyOnceLock<Py<PyTensor>>,
+}
+
+impl From<PyTensor> for PyClassInitializer<PyTensor> {
+    fn from(tensor: PyTensor) -> Self {
+        PyClassInitializer::from(PyTensorBase).add_subclass(tensor)
+    }
+}
+
+// PyO3 deliberately leaves conversion unspecified for native subclasses because
+// their base initializer is application-defined. Every Tensor owns the same
+// stateless TensorBase portion, so construction can provide it consistently.
+impl<'py> IntoPyObject<'py> for PyTensor {
+    type Target = Self;
+    type Output = Bound<'py, Self>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Bound::new(py, self)
+    }
 }
 
 impl PyTensor {
@@ -399,10 +443,7 @@ impl PyTensor {
     #[doc = "\nReturns the number of bytes consumed by the \"view\" of elements of the Tensor\nif the Tensor does not use sparse storage layout.\nDefined to be :meth:`~Tensor.numel()` * :meth:`~Tensor.element_size()`\n"]
     #[getter]
     fn nbytes(&self) -> usize {
-        let element_size = match self.inner.dtype() {
-            DType::Float32 => size_of::<f32>(),
-        };
-        self.inner.numel() * element_size
+        self.inner.numel() * self.inner.element_size()
     }
 
     #[getter]
