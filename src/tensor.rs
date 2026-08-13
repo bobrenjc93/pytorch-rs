@@ -2941,7 +2941,14 @@ fn apply_cos_grad_fn(
     debug_assert_eq!(input.elements, upstream.len());
     let mut gradient = try_result_vector(input.elements, input.elements)?;
     gradient.extend(upstream.iter().enumerate().map(|(index, grad_output)| {
-        negate_value(input.value_at_linear_index(index).sin()) * grad_output
+        let derivative = negate_value(input.value_at_linear_index(index).sin());
+        // Optimized floating-point multiplication may commute its operands,
+        // but PyTorch's right-hand NaN payload selection is observable here.
+        if derivative.is_nan() {
+            derivative
+        } else {
+            grad_output * derivative
+        }
     }));
     add_gradient(gradients, meta, gradient);
     Ok(())

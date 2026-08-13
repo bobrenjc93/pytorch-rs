@@ -347,6 +347,27 @@ fn cosine_vjp_uses_saved_input_through_composed_view_graphs() {
 }
 
 #[test]
+fn cosine_vjp_matches_pytorch_nan_upstream_operand_order() {
+    let leaf = Tensor::from_vec(vec![f32::INFINITY], [1])
+        .unwrap()
+        .with_requires_grad(true);
+    let upstream = Tensor::from_vec(vec![f32::from_bits(0x7fc1_2345)], [1]).unwrap();
+
+    leaf.cos()
+        .unwrap()
+        .mul(&upstream)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+
+    assert_eq!(
+        leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        0x7fc0_0000
+    );
+}
+
+#[test]
 fn cosine_obeys_detach_no_grad_and_freed_graph_boundaries() {
     let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
         .unwrap()

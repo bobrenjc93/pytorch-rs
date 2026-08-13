@@ -135,7 +135,7 @@ class CosReferenceTests(unittest.TestCase):
         (actual_output * actual_weights).sum().backward()
         (expected_output * expected_weights).sum().backward()
 
-        expected_formula = -expected_view.detach().sin() * expected_weights
+        expected_formula = expected_weights * -expected_view.detach().sin()
         np.testing.assert_array_equal(
             expected_view.grad.numpy().view(np.uint32),
             expected_formula.numpy().view(np.uint32),
@@ -216,7 +216,7 @@ class CosReferenceTests(unittest.TestCase):
 
         (actual_view.cos() * actual_weights).sum().backward()
         (expected_view.cos() * expected_weights).sum().backward()
-        expected_formula = -expected_view.detach().sin() * expected_weights
+        expected_formula = expected_weights * -expected_view.detach().sin()
         np.testing.assert_array_equal(
             expected_view.grad.numpy().view(np.uint32),
             expected_formula.numpy().view(np.uint32),
@@ -224,6 +224,28 @@ class CosReferenceTests(unittest.TestCase):
         np.testing.assert_array_equal(
             np.asarray(actual_leaf.grad).view(np.uint32),
             expected_leaf.grad.numpy().view(np.uint32),
+        )
+
+    def test_vjp_nan_upstream_operand_order_matches_pytorch_bitwise(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        input_bits = np.asarray([0x7F80_0000], dtype=np.uint32)
+        upstream_bits = np.asarray([0x7FC1_2345], dtype=np.uint32)
+        actual_leaf = torch.tensor(
+            memoryview(input_bits.view(np.float32)), requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            input_bits.view(np.float32), requires_grad=True
+        )
+        actual_upstream = torch.tensor(memoryview(upstream_bits.view(np.float32)))
+        expected_upstream = reference_torch.tensor(upstream_bits.view(np.float32))
+
+        (actual_leaf.cos() * actual_upstream).sum().backward()
+        (expected_leaf.cos() * expected_upstream).sum().backward()
+
+        expected_bits = expected_leaf.grad.numpy().view(np.uint32)
+        np.testing.assert_array_equal(expected_bits, [0x7FC0_0000])
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad).view(np.uint32), expected_bits
         )
 
     def test_detach_no_grad_freed_graph_and_no_argument_errors_match(self):
