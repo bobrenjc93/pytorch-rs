@@ -217,6 +217,47 @@ class AutogradApiTests(unittest.TestCase):
             self.assertEqual(untracked.stride(), (1, 3))
         self.assertTrue((-values).requires_grad)
 
+    def test_named_neg_matches_operator_autograd_and_no_grad(self):
+        method_values = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        operator_values = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        weights = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+
+        method_output = method_values.transpose(0, 1).neg()
+        operator_output = -operator_values.transpose(0, 1)
+        self.assertEqual(method_output.stride(), operator_output.stride())
+        self.assertEqual(method_output.requires_grad, operator_output.requires_grad)
+        np.testing.assert_array_equal(
+            np.asarray(method_output), np.asarray(operator_output)
+        )
+        (method_output * weights).sum().backward()
+        (operator_output * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(method_values.grad), np.asarray(operator_values.grad)
+        )
+
+        method_empty = torch.zeros((2, 0, 3), requires_grad=True)
+        operator_empty = torch.zeros((2, 0, 3), requires_grad=True)
+        method_empty.neg().sum().backward()
+        (-operator_empty).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(method_empty.grad), np.asarray(operator_empty.grad)
+        )
+
+        with torch.no_grad():
+            method_untracked = method_values.transpose(0, 1).neg()
+            operator_untracked = -operator_values.transpose(0, 1)
+        self.assertFalse(method_untracked.requires_grad)
+        self.assertEqual(method_untracked.requires_grad, operator_untracked.requires_grad)
+        self.assertEqual(method_untracked.stride(), operator_untracked.stride())
+        np.testing.assert_array_equal(
+            np.asarray(method_untracked), np.asarray(operator_untracked)
+        )
+        self.assertTrue(method_values.neg().requires_grad)
+
     def test_unary_negation_gradient_is_reusable_shared_and_bitwise(self):
         repeated_values = torch.tensor([2.0, 3.0], requires_grad=True)
         repeated_loss = (-repeated_values).sum()

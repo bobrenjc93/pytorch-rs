@@ -881,6 +881,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:58",
+      "recordedAt": "2026-08-13T03:48:18.651Z",
+      "label": "PR #58",
+      "kind": "leaf",
+      "prNumber": 58,
+      "title": "Expose the named Tensor.neg method",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 57.2,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 32,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }

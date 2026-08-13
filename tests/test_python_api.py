@@ -1,9 +1,11 @@
+import inspect
 import math
 import operator
 import re
 import subprocess
 import sys
 import textwrap
+import types
 import unittest
 from decimal import Decimal
 
@@ -96,6 +98,69 @@ class PythonApiBaselineTests(unittest.TestCase):
             extreme.stride(),
             (6 << 60, 3 << 60, 1 << 60, 1 << 60, 1),
         )
+
+    def test_named_neg_matches_unary_operator_and_builtin_contract(self):
+        scalar = torch.tensor(2.5)
+        empty = torch.zeros((2, 0, 3))
+        source = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )
+        strided = source.transpose(0, 2)[1]
+        for case, tensor in (("scalar", scalar), ("empty", empty), ("strided", strided)):
+            method_output = tensor.neg()
+            operator_output = -tensor
+            with self.subTest(case=case):
+                self.assertEqual(method_output.shape, operator_output.shape)
+                self.assertEqual(method_output.stride(), operator_output.stride())
+                self.assertEqual(
+                    method_output.storage_offset(), operator_output.storage_offset()
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(method_output).reshape(-1).view(np.uint32),
+                    np.asarray(operator_output).reshape(-1).view(np.uint32),
+                )
+
+        descriptor = inspect.getattr_static(torch.Tensor, "neg")
+        bound = scalar.neg
+        self.assertIs(type(descriptor), types.MethodDescriptorType)
+        self.assertIs(type(bound), types.BuiltinMethodType)
+        self.assertEqual(descriptor.__name__, "neg")
+        self.assertEqual(bound.__name__, "neg")
+        self.assertIsNone(descriptor.__text_signature__)
+        self.assertIsNone(bound.__text_signature__)
+        self.assertEqual(
+            descriptor.__doc__, "\nneg() -> Tensor\n\nSee :func:`torch.neg`\n"
+        )
+        for callable_object in (descriptor, bound):
+            with self.assertRaises(ValueError):
+                inspect.signature(callable_object)
+
+        self.assertEqual(descriptor(scalar).item(), -2.5)
+        calls = (
+            (lambda: scalar.neg(1), "TensorBase.neg() takes no arguments (1 given)"),
+            (
+                lambda: scalar.neg(1, 2),
+                "TensorBase.neg() takes no arguments (2 given)",
+            ),
+            (
+                lambda: scalar.neg(dim=0),
+                "TensorBase.neg() takes no keyword arguments",
+            ),
+            (
+                lambda: descriptor(scalar, 1),
+                "TensorBase.neg() takes no arguments (1 given)",
+            ),
+        )
+        for call, message in calls:
+            with self.subTest(message=message):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
+
+        with self.assertRaises(TypeError):
+            descriptor()
+        with self.assertRaises(TypeError):
+            descriptor(1)
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
     def test_unary_negation_materializes_one_full_output_buffer(self):
