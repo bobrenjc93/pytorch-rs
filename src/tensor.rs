@@ -9,7 +9,6 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
-const F32_QUIET_NAN_MASK: u32 = 0x0040_0000;
 
 /// Native scalar types implemented by tensor storage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -2608,7 +2607,17 @@ impl Tensor {
             ));
         }
         if self.shape.is_empty() != other.shape.is_empty() {
-            return self.zip_map_rank_zero(other, plan, operation);
+            let scalar = if self.shape.is_empty() {
+                self.value_at_linear_index(0)
+            } else {
+                other.value_at_linear_index(0)
+            };
+            // A NaN scalar can meet another NaN in the materialized operand.
+            // Keep that case in the original loop because payload precedence
+            // depends on the target's scalar instruction selection.
+            if !scalar.is_nan() {
+                return self.zip_map_rank_zero(other, plan, scalar, operation);
+            }
         }
 
         let mut data = try_result_vector(plan.elements, plan.elements)?;
@@ -2725,21 +2734,19 @@ impl Tensor {
             && other.strides == strides
             && let (Some(left), Some(right)) =
                 (self.dense_physical_slice(), other.dense_physical_slice())
+            // Vector code may choose a different NaN payload than the original
+            // scalar loop. Preserve target-specific behavior for NaN pairs.
+            && !left
+                .iter()
+                .zip(right)
+                .any(|(left, right)| left.is_nan() && right.is_nan())
         {
             let mut data = try_result_vector(elements, elements)?;
             data.extend(
                 left.iter()
                     .copied()
                     .zip(right.iter().copied())
-                    .map(|(left, right)| {
-                        if left.is_nan() {
-                            quiet_nan(left)
-                        } else if right.is_nan() {
-                            quiet_nan(right)
-                        } else {
-                            operation(left, right)
-                        }
-                    }),
+                    .map(|(left, right)| operation(left, right)),
             );
             return Ok(Self::from_owned_parts(
                 data,
@@ -2820,33 +2827,15 @@ impl Tensor {
         &self,
         other: &Self,
         plan: BroadcastPlan,
+        scalar: f32,
         operation: impl Fn(f32, f32) -> f32,
     ) -> Result<Self, TensorError> {
-        // The general broadcast loop retains the first NaN operand's payload.
-        // Preserve that ordering explicitly before LLVM vectorizes commutative
-        // operations in the single-input materializer.
+        debug_assert!(!scalar.is_nan());
         let data = if self.shape.is_empty() {
-            let scalar = self.value_at_linear_index(0);
-            if scalar.is_nan() {
-                let scalar = quiet_nan(scalar);
-                other.materialize_with_strides(&plan.strides, |_| scalar)?
-            } else {
-                other.materialize_with_strides(&plan.strides, |value| operation(scalar, value))?
-            }
+            other.materialize_with_strides(&plan.strides, |value| operation(scalar, value))?
         } else {
             debug_assert!(other.shape.is_empty());
-            let scalar = other.value_at_linear_index(0);
-            if scalar.is_nan() {
-                self.materialize_with_strides(&plan.strides, |value| {
-                    if value.is_nan() {
-                        quiet_nan(value)
-                    } else {
-                        operation(value, scalar)
-                    }
-                })?
-            } else {
-                self.materialize_with_strides(&plan.strides, |value| operation(value, scalar))?
-            }
+            self.materialize_with_strides(&plan.strides, |value| operation(value, scalar))?
         };
         Ok(Self::from_owned_parts(
             data,
@@ -3965,11 +3954,6 @@ fn checked_physical_stride_product(stride: usize, dimension: usize) -> Result<us
 
 fn negate_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
-}
-
-fn quiet_nan(value: f32) -> f32 {
-    debug_assert!(value.is_nan());
-    f32::from_bits(value.to_bits() | F32_QUIET_NAN_MASK)
 }
 
 fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {
