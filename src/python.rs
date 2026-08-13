@@ -1302,7 +1302,11 @@ fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
 #[allow(clippy::doc_markdown)]
-#[doc = "\nis_floating_point(input: Tensor) -> bool\n\nReturns True if the data type of :attr:`input` is a floating point data type i.e.,\none of ``torch.float64``, ``torch.float32``, ``torch.float16``, and ``torch.bfloat16``.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0]))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.int32))\n    False\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0], dtype=torch.float16))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.complex64))\n    False\n"]
+#[cfg_attr(
+    not(doc),
+    doc = "\nis_floating_point(input: Tensor) -> bool\n\nReturns True if the data type of :attr:`input` is a floating point data type i.e.,\none of ``torch.float64``, ``torch.float32``, ``torch.float16``, and ``torch.bfloat16``.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0]))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.int32))\n    False\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0], dtype=torch.float16))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.complex64))\n    False\n"
+)]
+#[cfg_attr(doc, doc = "See the runtime Python documentation for examples.")]
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
 fn is_floating_point(
     args: &Bound<'_, PyTuple>,
@@ -1315,9 +1319,20 @@ fn is_floating_point(
         )));
     }
 
-    let keyword_input = match kwargs {
-        Some(values) => values.get_item("input")?,
-        None => None,
+    // PyTorch's legacy parser resolves `input`, then `x`, then `a` for type checking.
+    let (keyword_input, keyword_alias) = match kwargs {
+        Some(values) => {
+            if let Some(input) = values.get_item("input")? {
+                (Some(input), None)
+            } else if let Some(input) = values.get_item("x")? {
+                (Some(input), Some("x"))
+            } else if let Some(input) = values.get_item("a")? {
+                (Some(input), Some("a"))
+            } else {
+                (None, None)
+            }
+        }
+        None => (None, None),
     };
     if args.is_empty() && keyword_input.is_none() {
         return Err(PyTypeError::new_err(
@@ -1344,19 +1359,30 @@ fn is_floating_point(
         )));
     };
 
-    if !args.is_empty() && keyword_input.is_some() {
-        return Err(PyTypeError::new_err(
-            "is_floating_point() got multiple values for argument 'input'",
-        ));
-    }
     if let Some(kwargs) = kwargs {
+        // The legacy aliases are accepted only as the sole keyword. Mixed calls
+        // validate their original keyword order and report an alias as unexpected.
+        let sole_alias = if args.is_empty() && kwargs.len() == 1 {
+            keyword_alias
+        } else {
+            None
+        };
         for key in kwargs.keys() {
             let key = key.extract::<String>()?;
-            if key != "input" {
-                return Err(PyTypeError::new_err(format!(
-                    "is_floating_point() got an unexpected keyword argument '{key}'"
-                )));
+            if sole_alias == Some(key.as_str()) {
+                continue;
             }
+            if key == "input" {
+                if !args.is_empty() {
+                    return Err(PyTypeError::new_err(
+                        "is_floating_point() got multiple values for argument 'input'",
+                    ));
+                }
+                continue;
+            }
+            return Err(PyTypeError::new_err(format!(
+                "is_floating_point() got an unexpected keyword argument '{key}'"
+            )));
         }
     }
 

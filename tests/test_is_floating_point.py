@@ -45,8 +45,10 @@ class TensorIsFloatingPointTests(unittest.TestCase):
             tensor.is_floating_point(),
             torch.is_floating_point(tensor),
             torch.is_floating_point(input=tensor),
+            torch.is_floating_point(a=tensor),
+            torch.is_floating_point(x=tensor),
         )
-        self.assertEqual(results, (True, True, True))
+        self.assertEqual(results, (True, True, True, True, True))
         self.assertTrue(all(type(result) is bool for result in results))
         self.assertEqual(
             (
@@ -142,6 +144,18 @@ class TensorIsFloatingPointTests(unittest.TestCase):
                 "is_floating_point() got multiple values for argument 'input'",
             ),
             (
+                lambda: torch.is_floating_point(
+                    tensor, extra=True, input=tensor
+                ),
+                "is_floating_point() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.is_floating_point(
+                    tensor, input=tensor, extra=True
+                ),
+                "is_floating_point() got multiple values for argument 'input'",
+            ),
+            (
                 lambda: torch.is_floating_point(tensor, extra=True),
                 "is_floating_point() got an unexpected keyword argument 'extra'",
             ),
@@ -151,6 +165,14 @@ class TensorIsFloatingPointTests(unittest.TestCase):
             ),
             (
                 lambda: torch.is_floating_point(input=[]),
+                "is_floating_point(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.is_floating_point(a=1),
+                "is_floating_point(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_floating_point(x=[]),
                 "is_floating_point(): argument 'input' must be Tensor, not list",
             ),
             (

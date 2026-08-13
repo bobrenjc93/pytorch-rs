@@ -72,11 +72,15 @@ class TensorIsFloatingPointReferenceTests(unittest.TestCase):
                     actual.is_floating_point(),
                     torch.is_floating_point(actual),
                     torch.is_floating_point(input=actual),
+                    torch.is_floating_point(a=actual),
+                    torch.is_floating_point(x=actual),
                 )
                 expected_values = (
                     expected.is_floating_point(),
                     reference_torch.is_floating_point(expected),
                     reference_torch.is_floating_point(input=expected),
+                    reference_torch.is_floating_point(a=expected),
+                    reference_torch.is_floating_point(x=expected),
                 )
                 self.assertEqual(actual_values, expected_values)
                 self.assertTrue(all(type(value) is bool for value in actual_values))
@@ -152,6 +156,22 @@ class TensorIsFloatingPointReferenceTests(unittest.TestCase):
                 ),
             ),
             (
+                lambda: torch.is_floating_point(
+                    actual, extra=True, input=actual
+                ),
+                lambda: reference_torch.is_floating_point(
+                    expected, extra=True, input=expected
+                ),
+            ),
+            (
+                lambda: torch.is_floating_point(
+                    actual, input=actual, extra=True
+                ),
+                lambda: reference_torch.is_floating_point(
+                    expected, input=expected, extra=True
+                ),
+            ),
+            (
                 lambda: torch.is_floating_point(actual, extra=True),
                 lambda: reference_torch.is_floating_point(expected, extra=True),
             ),
@@ -159,6 +179,14 @@ class TensorIsFloatingPointReferenceTests(unittest.TestCase):
             (
                 lambda: torch.is_floating_point(input=[]),
                 lambda: reference_torch.is_floating_point(input=[]),
+            ),
+            (
+                lambda: torch.is_floating_point(a=1),
+                lambda: reference_torch.is_floating_point(a=1),
+            ),
+            (
+                lambda: torch.is_floating_point(x=[]),
+                lambda: reference_torch.is_floating_point(x=[]),
             ),
             (
                 lambda: torch.is_floating_point(
