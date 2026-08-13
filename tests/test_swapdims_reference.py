@@ -133,6 +133,10 @@ class TensorSwapdimsReferenceTests(unittest.TestCase):
         self.assert_matches(actual_offset, expected_offset, case="offset-view")
 
     def test_binding_dimension_and_overflow_errors_match_pytorch_2_13(self):
+        class UserOverflow(np.int64):
+            def __index__(self):
+                raise OverflowError("user overflow")
+
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual = torch.zeros((2, 3))
         expected = reference_torch.zeros((2, 3))
@@ -188,6 +192,18 @@ class TensorSwapdimsReferenceTests(unittest.TestCase):
                 lambda: actual.swapdims(np.uint64(2**63), 0),
                 lambda: expected.swapdims(np.uint64(2**63), 0),
             ),
+            (
+                lambda: actual.swapdims(2**100, timedelta),
+                lambda: expected.swapdims(2**100, timedelta),
+            ),
+            (
+                lambda: actual.swapdims(timedelta, 2**100),
+                lambda: expected.swapdims(timedelta, 2**100),
+            ),
+            (
+                lambda: actual.swapdims(2**100, UserOverflow(0)),
+                lambda: expected.swapdims(2**100, UserOverflow(0)),
+            ),
             (lambda: actual.swapdims(2**100, 0), lambda: expected.swapdims(2**100, 0)),
             (lambda: actual.swapdims(-3, 0), lambda: expected.swapdims(-3, 0)),
             (lambda: actual.swapdims(0, 2), lambda: expected.swapdims(0, 2)),
@@ -209,6 +225,38 @@ class TensorSwapdimsReferenceTests(unittest.TestCase):
             lambda: actual_extreme.swapdims(1, 3),
             lambda: expected_extreme.swapdims(1, 3),
         )
+
+    def test_stateful_dimension_conversion_order_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+
+        def stateful_dimensions():
+            state = {"dim1_converted": False, "calls": []}
+
+            class StatefulInteger(np.int64):
+                def __new__(cls, role):
+                    value = np.int64.__new__(cls, 0)
+                    value.role = role
+                    return value
+
+                def __index__(self):
+                    state["calls"].append(self.role)
+                    if self.role == "dim1":
+                        state["dim1_converted"] = True
+                        return 1
+                    return 0 if state["dim1_converted"] else 2
+
+            return state, StatefulInteger("dim0"), StatefulInteger("dim1")
+
+        actual_state, actual_dim0, actual_dim1 = stateful_dimensions()
+        expected_state, expected_dim0, expected_dim1 = stateful_dimensions()
+        actual = torch.zeros((2, 3, 4)).swapdims(actual_dim0, actual_dim1)
+        expected = reference_torch.zeros((2, 3, 4)).swapdims(
+            expected_dim0, expected_dim1
+        )
+
+        self.assert_matches(actual, expected, case="stateful-conversion-order")
+        self.assertEqual(actual_state["calls"], expected_state["calls"])
+        self.assertEqual(actual_state["calls"], ["dim1", "dim0"])
 
     def test_descriptor_matches_pytorch_2_13(self):
         actual_descriptor = torch.Tensor.swapdims

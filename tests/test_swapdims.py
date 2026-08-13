@@ -128,6 +128,10 @@ class TensorSwapdimsTests(unittest.TestCase):
                     tensor.swapdims(0, dimension)
 
     def test_binding_errors_and_validation_precedence_match_pytorch(self):
+        class UserOverflow(np.int64):
+            def __index__(self):
+                raise OverflowError("user overflow")
+
         tensor = torch.zeros((2, 3))
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
@@ -196,6 +200,40 @@ class TensorSwapdimsTests(unittest.TestCase):
             ValueError, "^Overflow when unpacking long long$"
         ):
             tensor.swapdims(np.uint64(2**63), 0)
+        with self.assertRaisesRegex(
+            TypeError,
+            "^'numpy.timedelta64' object cannot be interpreted as an integer$",
+        ):
+            tensor.swapdims(2**100, timedelta)
+        with self.assertRaisesRegex(
+            ValueError, "^Overflow when unpacking long long$"
+        ):
+            tensor.swapdims(timedelta, 2**100)
+        with self.assertRaisesRegex(OverflowError, "^user overflow$"):
+            tensor.swapdims(2**100, UserOverflow(0))
+
+    def test_dimension_values_convert_dim1_before_dim0(self):
+        state = {"dim1_converted": False, "calls": []}
+
+        class StatefulInteger(np.int64):
+            def __new__(cls, role):
+                value = np.int64.__new__(cls, 0)
+                value.role = role
+                return value
+
+            def __index__(self):
+                state["calls"].append(self.role)
+                if self.role == "dim1":
+                    state["dim1_converted"] = True
+                    return 1
+                return 0 if state["dim1_converted"] else 2
+
+        output = torch.zeros((2, 3, 4)).swapdims(
+            StatefulInteger("dim0"), StatefulInteger("dim1")
+        )
+        self.assertEqual(state["calls"], ["dim1", "dim0"])
+        self.assertEqual(output.shape, (3, 2, 4))
+        self.assertEqual(output.stride(), (4, 12, 1))
 
     def test_autograd_uses_inverse_swap_and_no_grad_policy(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)

@@ -1890,15 +1890,28 @@ fn parse_dimension_swap_dimensions(
     // precedence over an earlier integer that overflows during conversion.
     validate_dimension_swap_dimension(operation, "dim0", dim0.position, &dim0.value)?;
     validate_dimension_swap_dimension(operation, "dim1", dim1.position, &dim1.value)?;
-    Ok([
-        extract_dimension_swap_dimension(&dim0.value)?,
-        extract_dimension_swap_dimension(&dim1.value)?,
-    ])
+    // TensorOptions-style generated bindings convert dimensions in reverse
+    // declaration order after type checking. Keep the values in declaration
+    // order for the transpose engine after reproducing that observable order.
+    let dim1 = extract_dimension_swap_dimension(&dim1.value)?;
+    let dim0 = extract_dimension_swap_dimension(&dim0.value)?;
+    Ok([dim0, dim1])
 }
 
 fn extract_dimension_swap_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     dimension.extract::<i64>().map_err(|error| {
-        if error.is_instance_of::<PyOverflowError>(dimension.py()) {
+        let py = dimension.py();
+        // PyLong_AsLongLong reports a traceback-free range error with this
+        // CPython message. An accepted integer object's __index__ can raise
+        // its own OverflowError; preserve that exception and traceback.
+        let message = error.value(py).to_string();
+        let is_range_overflow = error.is_instance_of::<PyOverflowError>(py)
+            && error.traceback(py).is_none()
+            && matches!(
+                message.as_str(),
+                "int too big to convert" | "Python int too large to convert to C long"
+            );
+        if is_range_overflow {
             PyValueError::new_err("Overflow when unpacking long long")
         } else {
             error
