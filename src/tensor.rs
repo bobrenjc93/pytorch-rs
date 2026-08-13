@@ -974,6 +974,12 @@ impl Tensor {
         Arc::ptr_eq(&self.storage, &other.storage)
     }
 
+    /// Reports whether two tensors have identical shapes.
+    #[must_use]
+    pub fn is_same_size(&self, other: &Self) -> bool {
+        self.shape() == other.shape()
+    }
+
     /// Reports whether two tensors point to the exact same logical view.
     ///
     /// Matching views share storage and have identical storage offsets, shapes,

@@ -761,6 +761,22 @@ impl PyTensor {
         self.inner.is_floating_point()
     }
 
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn is_same_size(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<bool> {
+        let (arguments, keyword_error) =
+            bind_tensor_arguments("is_same_size", args, kwargs, ["other"])?;
+        let other = parse_tensor_argument("is_same_size", "other", &arguments[0])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        let other = other.try_borrow()?;
+        Ok(self.inner.is_same_size(&other.inner))
+    }
+
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nis_set_to(tensor) -> bool\n\nReturns True if both tensors are pointing to the exact same memory (same\nstorage, offset, size and stride).\n"]
