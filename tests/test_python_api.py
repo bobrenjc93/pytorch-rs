@@ -439,7 +439,7 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(argument="device", value=device):
                 with self.assertRaises(RuntimeError):
                     torch.eye(1, device=device)
-        for keyword in ("out", "layout", "requires_grad", "pin_memory"):
+        for keyword in ("out", "layout", "pin_memory"):
             with self.subTest(keyword=keyword):
                 with self.assertRaises(TypeError):
                     torch.eye(1, **{keyword: None})

@@ -375,6 +375,118 @@ class AutogradApiTests(unittest.TestCase):
                     f"{name}(): argument 'requires_grad' must be bool, not int",
                 )
 
+    def test_eye_creates_square_rectangular_and_empty_leaves(self):
+        cases = (
+            ((2,), (2, 2), [[1.0, 0.0], [0.0, 1.0]]),
+            ((2, 3), (2, 3), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+            ((0, 3), (0, 3), []),
+            ((3, 0), (3, 0), [[], [], []]),
+        )
+        for arguments, shape, values in cases:
+            with self.subTest(shape=shape):
+                for requires_grad in (None, False):
+                    ordinary = torch.eye(*arguments, requires_grad=requires_grad)
+                    self.assertFalse(ordinary.requires_grad)
+                    self.assertEqual(ordinary.tolist(), values)
+
+                omitted = torch.eye(*arguments)
+                self.assertFalse(omitted.requires_grad)
+                self.assertEqual(omitted.tolist(), values)
+
+                leaf = torch.eye(*arguments, requires_grad=True)
+                self.assertTrue(leaf.requires_grad)
+                self.assertTrue(leaf.is_leaf)
+                self.assertIsNone(leaf.grad)
+                self.assertEqual(leaf.tolist(), values)
+
+                weights = torch.ones(shape)
+                loss = (leaf * weights).sum()
+                self.assertTrue(loss.requires_grad)
+                loss.backward()
+                self.assertEqual(leaf.grad.shape, shape)
+                np.testing.assert_array_equal(
+                    np.asarray(leaf.grad),
+                    np.ones(shape, dtype=np.float32),
+                )
+
+    def test_eye_requires_keyword_only_builtin_bool_or_none(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        parameter = inspect.signature(torch.eye).parameters["requires_grad"]
+        self.assertIs(parameter.kind, inspect.Parameter.KEYWORD_ONLY)
+        self.assertIs(parameter.default, False)
+
+        invalid = (
+            (np.bool_(True), "numpy.bool"),
+            (np.bool_(False), "numpy.bool"),
+            (1, "int"),
+            (0, "int"),
+            (1.0, "float"),
+            ("true", "str"),
+            (Truthy(), "Truthy"),
+            (object(), "object"),
+        )
+        for value, type_name in invalid:
+            with self.subTest(value=value):
+                with self.assertRaises(TypeError) as raised:
+                    torch.eye(1, requires_grad=value)
+                self.assertEqual(
+                    str(raised.exception),
+                    f"eye(): argument 'requires_grad' must be bool, not {type_name}",
+                )
+
+        competing_positionals = (
+            lambda: torch.eye(1, 1, True),
+            lambda: torch.eye(1, 1, True, requires_grad=1),
+            lambda: torch.eye(1, 1, True, wat=1),
+            lambda: torch.eye(1, 1, True, n=1),
+        )
+        for call in competing_positionals:
+            with self.subTest(argument="positional"):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(
+                    str(raised.exception),
+                    "eye() takes from 1 to 2 positional arguments but 3 were given",
+                )
+
+        metadata_precedence = (
+            lambda: torch.eye(2**63, dtype=object(), requires_grad=1),
+            lambda: torch.eye(2**63, device=object(), requires_grad=1),
+        )
+        for call in metadata_precedence:
+            with self.subTest(argument="metadata precedence"):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertNotIn("argument 'requires_grad'", str(raised.exception))
+
+        requires_grad_precedence = (
+            lambda: torch.eye(2**63, requires_grad=1),
+            lambda: torch.eye(-1, requires_grad=1),
+            lambda: torch.eye(1, -1, requires_grad=1),
+            lambda: torch.eye(1, device="not-a-device", requires_grad=1),
+            lambda: torch.eye(1, wat=1, requires_grad=1),
+            lambda: torch.eye(1, n=1, requires_grad=1),
+            lambda: torch.eye(1, 1, m=1, requires_grad=1),
+        )
+        for call in requires_grad_precedence:
+            with self.subTest(argument="requires_grad precedence"):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(
+                    str(raised.exception),
+                    "eye(): argument 'requires_grad' must be bool, not int",
+                )
+
+        with self.assertRaises(TypeError) as raised:
+            torch.eye(requires_grad=1)
+        self.assertEqual(
+            str(raised.exception),
+            "eye() missing 1 required positional argument: 'n'",
+        )
+
     def test_full_creates_scalar_ordinary_and_empty_leaves(self):
         for requires_grad in (None, False):
             with self.subTest(requires_grad=requires_grad):
@@ -983,6 +1095,113 @@ class AutogradReferenceTests(unittest.TestCase):
             self.assertEqual(native[:2], expected[:2])
             np.testing.assert_array_equal(native[2], expected[2])
             self.assertEqual(native[3:], expected[3:])
+
+    def test_eye_requires_grad_arguments_match_pytorch_2_13(self):
+        class Truthy:
+            def __bool__(self):
+                return True
+
+        invalid = (
+            np.bool_(True),
+            np.bool_(False),
+            1,
+            0,
+            1.0,
+            "true",
+            Truthy(),
+            object(),
+        )
+        positional_calls = (
+            lambda factory: factory(1, 1, True),
+            lambda factory: factory(1, 1, True, requires_grad=1),
+            lambda factory: factory(1, 1, True, wat=1),
+        )
+        precedence_calls = (
+            lambda factory: factory(2**63, dtype=object(), requires_grad=1),
+            lambda factory: factory(2**63, device=object(), requires_grad=1),
+            lambda factory: factory(2**63, requires_grad=1),
+            lambda factory: factory(-1, requires_grad=1),
+            lambda factory: factory(1, -1, requires_grad=1),
+            lambda factory: factory(
+                1, device="not-a-device", requires_grad=1
+            ),
+            lambda factory: factory(1, wat=1, requires_grad=1),
+            lambda factory: factory(1, n=1, requires_grad=1),
+            lambda factory: factory(requires_grad=1),
+        )
+
+        outcomes = []
+        for module in (torch, reference_torch):
+            factory = module.eye
+            invalid_errors = []
+            for value in invalid:
+                try:
+                    factory(1, requires_grad=value)
+                except Exception as error:
+                    invalid_errors.append(type(error).__name__)
+                else:
+                    self.fail(
+                        f"{module.__name__}.eye accepted requires_grad={value!r}"
+                    )
+
+            positional_errors = []
+            for call in positional_calls:
+                try:
+                    call(factory)
+                except Exception as error:
+                    positional_errors.append(type(error).__name__)
+                else:
+                    self.fail(f"{module.__name__}.eye accepted positional options")
+
+            precedence_errors = []
+            for call in precedence_calls:
+                try:
+                    call(factory)
+                except Exception as error:
+                    precedence_errors.append(type(error).__name__)
+                else:
+                    self.fail(f"{module.__name__}.eye accepted invalid arguments")
+
+            outcomes.append(
+                (
+                    factory(2).requires_grad,
+                    factory(2, requires_grad=None).requires_grad,
+                    factory(2, requires_grad=False).requires_grad,
+                    factory(2, requires_grad=True).requires_grad,
+                    factory(2, requires_grad=True).is_leaf,
+                    factory(2, 3, requires_grad=None).tolist(),
+                    invalid_errors,
+                    positional_errors,
+                    precedence_errors,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_eye_leaf_gradients_match_pytorch_2_13(self):
+        cases = ((2,), (2, 3), (0, 3), (3, 0))
+        outcomes = []
+        for module in (torch, reference_torch):
+            module_outcomes = []
+            for arguments in cases:
+                leaf = module.eye(*arguments, requires_grad=True)
+                weights = module.ones(tuple(leaf.shape))
+                loss = (leaf * weights).sum()
+                loss.backward()
+                module_outcomes.append(
+                    (
+                        tuple(leaf.shape),
+                        leaf.tolist(),
+                        leaf.requires_grad,
+                        leaf.is_leaf,
+                        np.asarray(leaf.grad).copy(),
+                    )
+                )
+            outcomes.append(module_outcomes)
+
+        for native, expected in zip(outcomes[0], outcomes[1]):
+            self.assertEqual(native[:4], expected[:4])
+            np.testing.assert_array_equal(native[4], expected[4])
 
     def test_full_requires_grad_arguments_match_pytorch_2_13(self):
         class Truthy:

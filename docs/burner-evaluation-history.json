@@ -801,6 +801,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:52",
+      "recordedAt": "2026-08-13T00:59:16.034Z",
+      "label": "PR #52",
+      "kind": "leaf",
+      "prNumber": 52,
+      "title": "Let torch.eye create autograd leaves",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 55.8,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 27,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
