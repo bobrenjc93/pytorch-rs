@@ -817,6 +817,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:53",
+      "recordedAt": "2026-08-13T01:30:17.544Z",
+      "label": "PR #53",
+      "kind": "leaf",
+      "prNumber": 53,
+      "title": "Add the rank-limited Tensor.t method",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 55.9,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 28,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
