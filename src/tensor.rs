@@ -42,6 +42,14 @@ impl DType {
             Self::Float32 => false,
         }
     }
+
+    /// Reports whether values of this scalar type are signed.
+    #[must_use]
+    pub const fn is_signed(self) -> bool {
+        match self {
+            Self::Float32 => true,
+        }
+    }
 }
 
 impl Display for DType {
@@ -1031,6 +1039,12 @@ impl Tensor {
     #[must_use]
     pub fn is_complex(&self) -> bool {
         self.dtype().is_complex()
+    }
+
+    /// Reports whether the tensor's native scalar type is signed.
+    #[must_use]
+    pub fn is_signed(&self) -> bool {
+        self.dtype().is_signed()
     }
 
     /// Returns the device owning this tensor's storage.
