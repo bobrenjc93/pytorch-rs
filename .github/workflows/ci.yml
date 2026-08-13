@@ -27,7 +27,8 @@ jobs:
       - run: PYO3_PYTHON="$GITHUB_WORKSPACE/.venv/bin/python" cargo test --all-targets --features python-bindings
       - run: env -u CONDA_PREFIX VIRTUAL_ENV="$GITHUB_WORKSPACE/.venv" PYO3_PYTHON="$GITHUB_WORKSPACE/.venv/bin/python" .venv/bin/maturin develop --release --uv
       - name: Verify native-extension provenance
-        run: "$GITHUB_WORKSPACE/.venv/bin/python" .github/scripts/verify_native_extension.py
+        run: |
+          "$GITHUB_WORKSPACE/.venv/bin/python" .github/scripts/verify_native_extension.py
       - name: Run Python suite
         run: |
           if "$GITHUB_WORKSPACE/.venv/bin/python" -m unittest discover -s tests -p 'test_*.py'; then
