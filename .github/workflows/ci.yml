@@ -20,6 +20,7 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all-targets
+      - run: cargo test --release --all-targets
       - run: uv venv --clear --python 3.12
       - run: uv sync --locked --no-install-project
       - run: uv pip install --python .venv/bin/python 'maturin>=1.14,<2'

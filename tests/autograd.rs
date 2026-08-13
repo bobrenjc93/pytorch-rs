@@ -211,11 +211,23 @@ fn sine_vjp_uses_saved_input_for_signed_zero_non_finites_and_nans() {
     ];
     let input_values = input_bits.map(f32::from_bits);
     let weight_values = weight_bits.map(f32::from_bits);
-    let expected_bits = input_values
-        .iter()
-        .zip(weight_values)
-        .map(|(&input, upstream)| (upstream * input.cos()).to_bits())
-        .collect::<Vec<_>>();
+    // PyTorch 2.13's CPU results, also checked independently by
+    // `test_sin_reference.py`. Keeping the oracle as bits prevents LLVM from
+    // constant-folding this calculation differently from the runtime VJP.
+    let expected_bits = [
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x7f80_0000,
+        0x7f80_0000,
+        0xbf00_0000,
+        0xbedf_84c5,
+        0xffc0_0000,
+        0xffc0_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
     let leaf = Tensor::from_vec(input_values.to_vec(), [input_bits.len()])
         .unwrap()
         .with_requires_grad(true);
