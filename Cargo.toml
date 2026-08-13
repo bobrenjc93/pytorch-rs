@@ -18,7 +18,7 @@ python-bindings = ["dep:pyo3"]
 extension-module = ["python-bindings", "pyo3/extension-module"]
 
 [dependencies]
-pyo3 = { version = "0.29.2", optional = true, features = ["abi3-py310"] }
+pyo3 = { version = "0.29.2", optional = true, features = ["abi3-py310", "multiple-pymethods"] }
 
 [profile.release]
 lto = "thin"

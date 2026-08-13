@@ -25,6 +25,7 @@ static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
+static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -130,12 +131,16 @@ thread_local! {
 }
 
 #[cfg(target_os = "macos")]
+const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:823.)";
+#[cfg(target_os = "macos")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4317.)";
 #[cfg(target_os = "macos")]
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4322.)";
 #[cfg(target_os = "macos")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4374.)";
 
+#[cfg(target_os = "linux")]
+const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)";
 #[cfg(target_os = "linux")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4314.)";
 #[cfg(target_os = "linux")]
@@ -144,12 +149,16 @@ const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This fu
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4373.)";
 
 #[cfg(target_os = "windows")]
+const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\autograd\\generated\\python_variable_methods.cpp:823.)";
+#[cfg(target_os = "windows")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4317.)";
 #[cfg(target_os = "windows")]
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4322.)";
 #[cfg(target_os = "windows")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4374.)";
 
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first.";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor.";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -266,6 +275,23 @@ struct PyTensorBase;
 
 #[pymethods]
 impl PyTensorBase {
+    #[pyo3(text_signature = None)]
+    fn float_scalar(slf: &Bound<'_, Self>) -> PyResult<f64> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        if core_is_grad_enabled() && tensor.inner.requires_grad() {
+            warn_once(
+                slf.py(),
+                &FLOAT_REQUIRES_GRAD_WARNING_EMITTED,
+                FLOAT_REQUIRES_GRAD_WARNING,
+            )?;
+        }
+        tensor
+            .inner
+            .item()
+            .map(f64::from)
+            .map_err(|error| float_error(&error))
+    }
+
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is stored on the CPU, ``False`` otherwise.\n"]
@@ -322,6 +348,26 @@ impl PyTensorBase {
         // storage and autograd state.
         Ok(slf.as_any().cast::<PyTensor>()?.clone().unbind())
     }
+}
+
+// PyTorch publishes __float__ as a METH_NOARGS method on TensorBase instead of
+// the slot wrapper CPython normally exposes for extension types. Register the
+// same method shape, then let module initialization connect it to nb_float.
+pyo3::inventory::submit! {
+    type Inventory = <PyTensorBase as pyo3::impl_::pyclass::PyClassImpl>::Inventory;
+    Inventory::new(pyo3::impl_::pyclass::PyClassItems {
+        methods: &[pyo3::impl_::pymethods::PyMethodDefType::Method(
+            pyo3::impl_::pymethods::PyMethodDef::noargs(
+                c"__float__",
+                pyo3::impl_::trampoline::get_trampoline_function!(
+                    noargs,
+                    PyTensorBase::__pymethod_float_scalar__
+                ),
+                c"",
+            ),
+        )],
+        slots: &[],
+    })
 }
 
 /// Python-facing tensor backed by the native Rust tensor core.
@@ -4118,6 +4164,14 @@ fn item_error(error: &TensorError) -> PyErr {
     }
 }
 
+fn float_error(error: &TensorError) -> PyErr {
+    if matches!(error, TensorError::ItemRequiresOneElement { .. }) {
+        PyValueError::new_err("only one element tensors can be converted to Python scalars")
+    } else {
+        tensor_error(error)
+    }
+}
+
 fn transpose_error(error: &TensorError) -> PyErr {
     if matches!(error, TensorError::ElementCountOverflow) {
         PyRuntimeError::new_err("numel: integer multiplication overflow")
@@ -4130,6 +4184,12 @@ fn transpose_error(error: &TensorError) -> PyErr {
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     module.add_class::<PyTensor>()?;
+    let tensor_base = py.get_type::<PyTensorBase>();
+    let float_descriptor = tensor_base.getattr("__float__")?;
+    tensor_base.setattr("__float__", float_descriptor)?;
+    if tensor_base.hasattr("float_scalar")? {
+        tensor_base.delattr("float_scalar")?;
+    }
     module.add_class::<PyDType>()?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
