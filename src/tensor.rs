@@ -34,6 +34,14 @@ impl DType {
             Self::Float32 => true,
         }
     }
+
+    /// Reports whether values of this scalar type are complex.
+    #[must_use]
+    pub const fn is_complex(self) -> bool {
+        match self {
+            Self::Float32 => false,
+        }
+    }
 }
 
 impl Display for DType {
@@ -1017,6 +1025,12 @@ impl Tensor {
     #[must_use]
     pub fn is_floating_point(&self) -> bool {
         self.dtype().is_floating_point()
+    }
+
+    /// Reports whether the tensor's native scalar type is complex.
+    #[must_use]
+    pub fn is_complex(&self) -> bool {
+        self.dtype().is_complex()
     }
 
     /// Returns the device owning this tensor's storage.
