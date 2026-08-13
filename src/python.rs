@@ -4304,6 +4304,9 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("float", float32.clone_ref(py))?;
     module.add("layout", layout_objects(py)?.layout.clone_ref(py))?;
     module.add("strided", strided_object(py)?.clone_ref(py))?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("strided",))?;
     for (name, memory_format) in [
         ("preserve_format", MemoryFormat::Preserve),
         ("contiguous_format", MemoryFormat::Contiguous),

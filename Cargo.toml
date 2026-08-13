@@ -6,6 +6,8 @@ rust-version = "1.92"
 license = "MIT"
 description = "A native Rust tensor and deep-learning library pursuing PyTorch semantics and performance"
 repository = "https://github.com/bobrenjc93/pytorch-rs"
+# The Python layout ABI shim is a private path dependency.
+publish = false
 
 [lib]
 name = "pytorch_rs"

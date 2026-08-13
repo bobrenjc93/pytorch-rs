@@ -25,7 +25,12 @@ class TensorLayoutTests(unittest.TestCase):
         self.assertIs(type(repr_descriptor), types.WrapperDescriptorType)
         self.assertIs(repr_descriptor.__objclass__, torch.layout)
         self.assertIn("layout", torch.__all__)
-        self.assertIn("strided", torch.__all__)
+        self.assertNotIn("strided", torch.__all__)
+
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIn("layout", wildcard_namespace)
+        self.assertNotIn("strided", wildcard_namespace)
 
         for arguments in ((), ("strided",), (1, 2)):
             with self.subTest(arguments=arguments):

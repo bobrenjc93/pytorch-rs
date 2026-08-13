@@ -30,6 +30,8 @@ class TensorLayoutReferenceTests(unittest.TestCase):
 
     def layout_contract(self, module):
         layout = module.strided
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
         others = (
             None,
             0,
@@ -92,6 +94,9 @@ class TensorLayoutReferenceTests(unittest.TestCase):
             "constructor_errors": constructor_errors,
             "assignment_errors": assignment_errors,
             "layout_in_all": "layout" in module.__all__,
+            "strided_in_all": "strided" in module.__all__,
+            "layout_in_wildcard": "layout" in wildcard_namespace,
+            "strided_in_wildcard": "strided" in wildcard_namespace,
         }
 
     def test_type_representation_equality_and_hash_match_pytorch_2_13(self):
