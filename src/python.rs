@@ -86,6 +86,35 @@ def _make_no_grad(context_base):
     return no_grad
 "#;
 
+const IS_TENSOR_SOURCE: &CStr = cr#"
+import copy as _copy
+from typing import Any as _Any
+from typing_extensions import TypeIs as _TypeIs
+
+
+_tensor_type = None
+
+
+def is_tensor(obj: _Any, /) -> _TypeIs["torch.Tensor"]:
+    r"""Returns True if `obj` is a PyTorch tensor.
+
+    Args:
+        obj (object): Object to test
+    Example::
+
+        >>> x = torch.tensor([1, 2, 3])
+        >>> torch.is_tensor(x)
+        True
+
+    """
+    return isinstance(obj, _tensor_type)
+
+
+# Do not share a mutable ForwardRef cache with another torch implementation.
+is_tensor.__annotations__["return"] = _copy.deepcopy(is_tensor.__annotations__["return"])
+is_tensor.__module__ = "torch_rs"
+"#;
+
 thread_local! {
     static NO_GRAD_CONTEXT_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
@@ -3880,6 +3909,17 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
         .call_method1("remove", ("_NoGradContext",))?;
     module.delattr("_NoGradContext")?;
     module.add("no_grad", no_grad_class)?;
+    // Define this public Python helper outside the partially initialized package,
+    // then inject the native class it predicates on to avoid a recursive import.
+    let is_tensor_helpers = PyModule::from_code(
+        py,
+        IS_TENSOR_SOURCE,
+        c"torch_rs/_is_tensor.py",
+        c"torch_rs._is_tensor",
+    )?;
+    is_tensor_helpers.setattr("_tensor_type", module.getattr("Tensor")?)?;
+    is_tensor_helpers.setattr("torch", module)?;
+    module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
     module.add_function(wrap_pyfunction!(is_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
