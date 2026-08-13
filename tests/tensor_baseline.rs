@@ -832,6 +832,35 @@ fn is_set_to_requires_identical_storage_offset_shape_and_strides() {
 }
 
 #[test]
+fn is_same_size_compares_only_shape_metadata() {
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let clone = source.try_clone().unwrap();
+    let independent = Tensor::zeros([2, 3, 4]).unwrap();
+    let restored = source.transpose(0, 2).unwrap().transpose(0, 2).unwrap();
+
+    assert!(source.is_same_size(&source));
+    assert!(source.is_same_size(&source.detach().unwrap()));
+    assert!(source.is_same_size(&clone));
+    assert!(source.is_same_size(&independent));
+    assert!(source.is_same_size(&restored));
+    assert!(!source.is_same_size(&source.reshape([6, 4]).unwrap()));
+    assert!(!source.is_same_size(&source.transpose(0, 2).unwrap()));
+
+    let square = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+    let transposed = square.transpose(0, 1).unwrap();
+    assert_ne!(square.stride(), transposed.stride());
+    assert!(square.is_same_size(&transposed));
+
+    let scalar = Tensor::from_vec(vec![3.0], []).unwrap();
+    assert!(scalar.is_same_size(&Tensor::from_vec(vec![-8.0], []).unwrap()));
+    assert!(!scalar.is_same_size(&Tensor::from_vec(vec![3.0], [1]).unwrap()));
+
+    let extreme_empty = Tensor::zeros([2, 0, usize::MAX / 2]).unwrap();
+    assert!(extreme_empty.is_same_size(&extreme_empty.try_clone().unwrap()));
+    assert!(!extreme_empty.is_same_size(&extreme_empty.transpose(0, 2).unwrap()));
+}
+
+#[test]
 fn arbitrary_dimension_permutations_power_t_and_mt_views() {
     let source = Tensor::from_vec((0_u8..120).map(f32::from).collect(), [2, 3, 4, 5]).unwrap();
     let offset_view = source.transpose(0, 3).unwrap().index_integer(1).unwrap();
