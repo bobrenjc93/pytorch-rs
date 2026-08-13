@@ -185,6 +185,53 @@ fn full_preserves_signed_zero() {
 }
 
 #[test]
+fn item_preserves_exact_values_across_scalar_offset_and_strided_layouts() {
+    let bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let source = Tensor::from_vec(bits.map(f32::from_bits).to_vec(), [1, bits.len()]).unwrap();
+    let transposed = source.transpose(0, 1).unwrap();
+
+    for (index, expected) in bits.into_iter().enumerate() {
+        let scalar = Tensor::from_vec(vec![f32::from_bits(expected)], []).unwrap();
+        let offset = source.index([0, i64::try_from(index).unwrap()]).unwrap();
+        let strided = transposed.index([i64::try_from(index).unwrap()]).unwrap();
+
+        assert!(scalar.shape().is_empty());
+        assert_eq!(scalar.storage_offset(), 0);
+        assert!(offset.shape().is_empty());
+        assert_eq!(offset.storage_offset(), index);
+        assert_eq!(strided.shape(), [1]);
+        assert_eq!(strided.stride(), [bits.len()]);
+        assert_eq!(strided.storage_offset(), index);
+        for tensor in [&scalar, &offset, &strided] {
+            assert_eq!(tensor.item().unwrap().to_bits(), expected);
+        }
+    }
+}
+
+#[test]
+fn item_cardinality_failures_remain_typed_rust_errors() {
+    for (tensor, elements) in [
+        (Tensor::zeros([0]).unwrap(), 0),
+        (Tensor::zeros([2]).unwrap(), 2),
+        (Tensor::zeros([2, 3]).unwrap().transpose(0, 1).unwrap(), 6),
+    ] {
+        let error = tensor.item().unwrap_err();
+        assert_eq!(error, TensorError::ItemRequiresOneElement { elements });
+        assert_eq!(
+            error.to_string(),
+            format!("item requires one element, got {elements}")
+        );
+    }
+}
+
+#[test]
 fn full_rejects_storage_capacity_overflow_without_allocating() {
     let elements = isize::MAX.unsigned_abs() / size_of::<f32>() + 1;
     assert_eq!(
