@@ -250,11 +250,56 @@ impl PyDevice {
     }
 }
 
+// Internal descriptor owner matching PyTorch's native tensor base class.
+#[pyclass(
+    name = "TensorBase",
+    module = "torch._C",
+    subclass,
+    skip_from_py_object
+)]
+struct PyTensorBase;
+
+#[pymethods]
+impl PyTensorBase {
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nelement_size() -> int\n\nReturns the size in bytes of an individual element.\n\nExample::\n\n    >>> torch.tensor([]).element_size()\n    4\n    >>> torch.tensor([], dtype=torch.uint8).element_size()\n    1\n\n"]
+    #[pyo3(text_signature = None)]
+    fn element_size(slf: &Bound<'_, Self>) -> PyResult<usize> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        Ok(tensor.inner.element_size())
+    }
+}
+
 /// Python-facing tensor backed by the native Rust tensor core.
-#[pyclass(name = "Tensor", module = "torch_rs", skip_from_py_object)]
+#[pyclass(
+    name = "Tensor",
+    module = "torch_rs",
+    extends = PyTensorBase,
+    skip_from_py_object
+)]
 struct PyTensor {
     inner: CoreTensor,
     grad_cache: PyOnceLock<Py<PyTensor>>,
+}
+
+impl From<PyTensor> for PyClassInitializer<PyTensor> {
+    fn from(tensor: PyTensor) -> Self {
+        PyClassInitializer::from(PyTensorBase).add_subclass(tensor)
+    }
+}
+
+// PyO3 deliberately leaves conversion unspecified for native subclasses because
+// their base initializer is application-defined. Every Tensor owns the same
+// stateless TensorBase portion, so construction can provide it consistently.
+impl<'py> IntoPyObject<'py> for PyTensor {
+    type Target = Self;
+    type Output = Bound<'py, Self>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Bound::new(py, self)
+    }
 }
 
 impl PyTensor {
@@ -747,31 +792,6 @@ impl PyTensor {
     #[pyo3(text_signature = None)]
     fn numel(&self) -> usize {
         self.inner.numel()
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nelement_size() -> int\n\nReturns the size in bytes of an individual element.\n\nExample::\n\n    >>> torch.tensor([]).element_size()\n    4\n    >>> torch.tensor([], dtype=torch.uint8).element_size()\n    1\n\n"]
-    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn element_size(
-        &self,
-        args: &Bound<'_, PyTuple>,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<usize> {
-        // PyTorch exposes Tensor.element_size from its internal TensorBase
-        // descriptor, which remains observable in argument binding errors.
-        if kwargs.is_some_and(|values| !values.is_empty()) {
-            return Err(PyTypeError::new_err(
-                "TensorBase.element_size() takes no keyword arguments",
-            ));
-        }
-        if !args.is_empty() {
-            return Err(PyTypeError::new_err(format!(
-                "TensorBase.element_size() takes no arguments ({} given)",
-                args.len()
-            )));
-        }
-        Ok(self.inner.element_size())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.

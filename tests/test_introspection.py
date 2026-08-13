@@ -120,6 +120,9 @@ class TensorIntrospectionTests(unittest.TestCase):
                 if name == "element_size":
                     self.assertEqual(descriptor.__doc__, ELEMENT_SIZE_DOC)
                     self.assertEqual(bound.__doc__, ELEMENT_SIZE_DOC)
+                    self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
+                    self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
+                    self.assertEqual(bound(), 4)
 
         self.assertIs(type(torch.numel), types.BuiltinFunctionType)
         self.assertIsNone(torch.numel.__text_signature__)
@@ -140,18 +143,17 @@ class TensorIntrospectionTests(unittest.TestCase):
                 ):
                     delattr(tensor, name)
 
-        for name in ("dim", "ndimension", "nelement", "numel", "element_size"):
-            owner = "TensorBase" if name == "element_size" else "Tensor"
+        for name in ("dim", "ndimension", "nelement", "numel"):
             with self.subTest(name=name, kind="positional"):
                 with self.assertRaisesRegex(
                     TypeError,
-                    rf"^{owner}\.{name}\(\) takes no arguments \(1 given\)$",
+                    rf"^Tensor\.{name}\(\) takes no arguments \(1 given\)$",
                 ):
                     getattr(tensor, name)(1)
             with self.subTest(name=name, kind="keyword"):
                 with self.assertRaisesRegex(
                     TypeError,
-                    rf"^{owner}\.{name}\(\) takes no keyword arguments$",
+                    rf"^Tensor\.{name}\(\) takes no keyword arguments$",
                 ):
                     getattr(tensor, name)(input=tensor)
             with self.subTest(name=name, kind="unbound"):
@@ -160,11 +162,49 @@ class TensorIntrospectionTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     getattr(torch.Tensor, name)(1)
 
-        with self.assertRaisesRegex(
-            TypeError,
-            r"^TensorBase\.element_size\(\) takes no keyword arguments$",
-        ):
-            tensor.element_size(1, unexpected=True)
+        descriptor = inspect.getattr_static(torch.Tensor, "element_size")
+        bound = tensor.element_size
+        invalid_element_size_calls = (
+            (
+                "inline positional",
+                lambda: tensor.element_size(1),
+                "TensorBase.element_size() takes no arguments (1 given)",
+            ),
+            (
+                "stored positional",
+                lambda: bound(1),
+                "Tensor.element_size() takes no arguments (1 given)",
+            ),
+            (
+                "descriptor positional",
+                lambda: descriptor(tensor, 1),
+                "TensorBase.element_size() takes no arguments (1 given)",
+            ),
+            (
+                "inline keyword",
+                lambda: tensor.element_size(unexpected=True),
+                "TensorBase.element_size() takes no keyword arguments",
+            ),
+            (
+                "stored keyword",
+                lambda: bound(unexpected=True),
+                "Tensor.element_size() takes no keyword arguments",
+            ),
+            (
+                "descriptor keyword",
+                lambda: descriptor(tensor, unexpected=True),
+                "TensorBase.element_size() takes no keyword arguments",
+            ),
+        )
+        for case, call, message in invalid_element_size_calls:
+            with self.subTest(method="element_size", case=case):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
+
+        for call in (lambda: descriptor(), lambda: descriptor(1)):
+            with self.assertRaises(TypeError):
+                call()
 
     def test_top_level_numel_binding_errors_match_pytorch(self):
         tensor = torch.zeros((2, 3))

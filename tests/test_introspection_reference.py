@@ -166,27 +166,26 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                     self.assertEqual(
                         getattr(actual, name).__doc__, getattr(expected, name).__doc__
                     )
-
-                if name == "element_size":
-                    positional_calls = (
-                        lambda: actual_descriptor(actual, 1),
-                        lambda: expected_descriptor(expected, 1),
+                    self.assertEqual(
+                        actual_descriptor.__objclass__.__name__,
+                        expected_descriptor.__objclass__.__name__,
                     )
-                    keyword_calls = (
-                        lambda: actual_descriptor(actual, other=1),
-                        lambda: expected_descriptor(expected, other=1),
+                    self.assertEqual(
+                        actual_descriptor.__objclass__.__module__,
+                        expected_descriptor.__objclass__.__module__,
+                    )
+                    self.assertEqual(
+                        getattr(actual, name)(), getattr(expected, name)()
                     )
                 else:
-                    positional_calls = (
+                    self.assert_error_matches(
                         lambda name=name: getattr(actual, name)(1),
                         lambda name=name: getattr(expected, name)(1),
                     )
-                    keyword_calls = (
+                    self.assert_error_matches(
                         lambda name=name: getattr(actual, name)(other=1),
                         lambda name=name: getattr(expected, name)(other=1),
                     )
-                self.assert_error_matches(*positional_calls)
-                self.assert_error_matches(*keyword_calls)
                 with self.assertRaises(TypeError):
                     actual_descriptor()
                 with self.assertRaises(TypeError):
@@ -196,10 +195,50 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     expected_descriptor(1)
 
-        self.assert_error_matches(
-            lambda: actual_descriptor(actual, 1, unexpected=True),
-            lambda: expected_descriptor(expected, 1, unexpected=True),
+        actual_descriptor = inspect.getattr_static(torch.Tensor, "element_size")
+        expected_descriptor = inspect.getattr_static(
+            reference_torch.Tensor, "element_size"
         )
+        actual_bound = actual.element_size
+        expected_bound = expected.element_size
+        call_pairs = (
+            (
+                lambda: actual.element_size(1),
+                lambda: expected.element_size(1),
+            ),
+            (lambda: actual_bound(1), lambda: expected_bound(1)),
+            (
+                lambda: actual_descriptor(actual, 1),
+                lambda: expected_descriptor(expected, 1),
+            ),
+            (
+                lambda: actual.element_size(unexpected=True),
+                lambda: expected.element_size(unexpected=True),
+            ),
+            (
+                lambda: actual_bound(unexpected=True),
+                lambda: expected_bound(unexpected=True),
+            ),
+            (
+                lambda: actual_descriptor(actual, unexpected=True),
+                lambda: expected_descriptor(expected, unexpected=True),
+            ),
+            (
+                lambda: actual.element_size(1, unexpected=True),
+                lambda: expected.element_size(1, unexpected=True),
+            ),
+            (
+                lambda: actual_bound(1, unexpected=True),
+                lambda: expected_bound(1, unexpected=True),
+            ),
+            (
+                lambda: actual_descriptor(actual, 1, unexpected=True),
+                lambda: expected_descriptor(expected, 1, unexpected=True),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(call_pairs):
+            with self.subTest(method="element_size", invalid_call=case):
+                self.assert_error_matches(actual_call, expected_call)
 
         self.assertIsNone(torch.numel.__text_signature__)
         self.assertIsNone(reference_torch.numel.__text_signature__)
