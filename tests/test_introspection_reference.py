@@ -35,6 +35,7 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                 actual.numel(),
                 torch.numel(actual),
                 torch.numel(input=actual),
+                actual.nbytes,
             )
             expected_values = (
                 expected.ndim,
@@ -44,6 +45,7 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                 expected.numel(),
                 reference_torch.numel(expected),
                 reference_torch.numel(input=expected),
+                expected.nbytes,
             )
             self.assertEqual(actual_values, expected_values)
             self.assertTrue(all(type(value) is int for value in actual_values))
@@ -80,24 +82,48 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
             actual_extreme, expected_extreme, case="extreme-empty-view"
         )
 
+        values = [
+            [0.0, 1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0, 7.0],
+            [8.0, 9.0, 10.0, 11.0],
+        ]
+        actual_offset = torch.tensor(values).transpose(0, 1)[1]
+        expected_offset = reference_torch.tensor(
+            values, dtype=reference_torch.float32
+        ).transpose(0, 1)[1]
+        self.assertGreater(actual_offset.storage_offset(), 0)
+        self.assertLess(actual_offset.nbytes, torch.tensor(values).nbytes)
+        self.assert_introspection_matches(
+            actual_offset, expected_offset, case="noncontiguous-offset-view"
+        )
+
     def test_descriptors_signatures_and_bound_unbound_behavior_match(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual = torch.zeros((2, 0, 3))
         expected = reference_torch.zeros((2, 0, 3))
 
-        actual_ndim = inspect.getattr_static(torch.Tensor, "ndim")
-        expected_ndim = inspect.getattr_static(reference_torch.Tensor, "ndim")
-        self.assertIs(type(actual_ndim), types.GetSetDescriptorType)
-        self.assertIs(type(expected_ndim), types.GetSetDescriptorType)
-        self.assertEqual(actual_ndim.__name__, expected_ndim.__name__)
-        self.assertEqual(
-            actual_ndim.__get__(actual, torch.Tensor),
-            expected_ndim.__get__(expected, reference_torch.Tensor),
-        )
-        self.assertIs(actual_ndim.__get__(None, torch.Tensor), actual_ndim)
-        self.assertIs(
-            expected_ndim.__get__(None, reference_torch.Tensor), expected_ndim
-        )
+        for name in ("ndim", "nbytes"):
+            with self.subTest(name=name):
+                actual_property = inspect.getattr_static(torch.Tensor, name)
+                expected_property = inspect.getattr_static(reference_torch.Tensor, name)
+                self.assertIs(type(actual_property), types.GetSetDescriptorType)
+                self.assertIs(type(expected_property), types.GetSetDescriptorType)
+                self.assertEqual(actual_property.__name__, expected_property.__name__)
+                self.assertEqual(
+                    actual_property.__get__(actual, torch.Tensor),
+                    expected_property.__get__(expected, reference_torch.Tensor),
+                )
+                self.assertIs(
+                    actual_property.__get__(None, torch.Tensor), actual_property
+                )
+                self.assertIs(
+                    expected_property.__get__(None, reference_torch.Tensor),
+                    expected_property,
+                )
+
+        actual_nbytes = inspect.getattr_static(torch.Tensor, "nbytes")
+        expected_nbytes = inspect.getattr_static(reference_torch.Tensor, "nbytes")
+        self.assertEqual(actual_nbytes.__doc__, expected_nbytes.__doc__)
 
         for name in ("dim", "ndimension", "nelement", "numel"):
             with self.subTest(name=name):
@@ -140,6 +166,30 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
             inspect.signature(torch.numel)
         with self.assertRaises(ValueError):
             inspect.signature(reference_torch.numel)
+
+    def test_nbytes_assignment_behavior_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        errors = []
+        for module in (torch, reference_torch):
+            tensor = module.tensor([1.0, 2.0])
+            module_errors = []
+            for action in ("set", "delete"):
+                try:
+                    if action == "set":
+                        tensor.nbytes = 99
+                    else:
+                        del tensor.nbytes
+                except Exception as error:
+                    module_errors.append((type(error).__name__, str(error)))
+                else:
+                    self.fail(f"{module.__name__} allowed nbytes to be {action}")
+            errors.append(module_errors)
+
+        for actual, expected in zip(errors[0], errors[1], strict=True):
+            self.assertEqual(actual[0], expected[0])
+            for _, message in (actual, expected):
+                self.assertIn("attribute 'nbytes'", message)
+                self.assertTrue(message.endswith("objects is not writable"))
 
     def test_argument_and_type_errors_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
