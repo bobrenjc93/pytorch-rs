@@ -276,6 +276,26 @@ struct PyTensorBase;
 #[pymethods]
 impl PyTensorBase {
     #[pyo3(text_signature = None)]
+    fn int_scalar<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyInt>> {
+        let value = slf
+            .as_any()
+            .cast::<PyTensor>()?
+            .try_borrow()?
+            .inner
+            .item()
+            .map_err(|error| scalar_conversion_error(&error))?;
+
+        // CPython's float-to-int conversion truncates toward zero, produces a
+        // PyLong of any required size, and supplies the canonical infinity and
+        // NaN errors. Float32 values are represented exactly as Python floats.
+        slf.py()
+            .get_type::<PyInt>()
+            .call1((f64::from(value),))?
+            .cast_into::<PyInt>()
+            .map_err(Into::into)
+    }
+
+    #[pyo3(text_signature = None)]
     fn float_scalar(slf: &Bound<'_, Self>) -> PyResult<f64> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         if core_is_grad_enabled() && tensor.inner.requires_grad() {
@@ -289,7 +309,7 @@ impl PyTensorBase {
             .inner
             .item()
             .map(f64::from)
-            .map_err(|error| float_error(&error))
+            .map_err(|error| scalar_conversion_error(&error))
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -359,22 +379,35 @@ impl PyTensorBase {
     }
 }
 
-// PyTorch publishes __float__ as a METH_NOARGS method on TensorBase instead of
-// the slot wrapper CPython normally exposes for extension types. Register the
-// same method shape, then let module initialization connect it to nb_float.
+// PyTorch publishes __int__ and __float__ as METH_NOARGS methods on TensorBase
+// instead of the slot wrappers CPython normally exposes for extension types.
+// Register the same method shapes, then let module initialization connect them
+// to the numeric slots.
 pyo3::inventory::submit! {
     type Inventory = <PyTensorBase as pyo3::impl_::pyclass::PyClassImpl>::Inventory;
     Inventory::new(pyo3::impl_::pyclass::PyClassItems {
-        methods: &[pyo3::impl_::pymethods::PyMethodDefType::Method(
-            pyo3::impl_::pymethods::PyMethodDef::noargs(
-                c"__float__",
-                pyo3::impl_::trampoline::get_trampoline_function!(
-                    noargs,
-                    PyTensorBase::__pymethod_float_scalar__
+        methods: &[
+            pyo3::impl_::pymethods::PyMethodDefType::Method(
+                pyo3::impl_::pymethods::PyMethodDef::noargs(
+                    c"__int__",
+                    pyo3::impl_::trampoline::get_trampoline_function!(
+                        noargs,
+                        PyTensorBase::__pymethod_int_scalar__
+                    ),
+                    c"",
                 ),
-                c"",
             ),
-        )],
+            pyo3::impl_::pymethods::PyMethodDefType::Method(
+                pyo3::impl_::pymethods::PyMethodDef::noargs(
+                    c"__float__",
+                    pyo3::impl_::trampoline::get_trampoline_function!(
+                        noargs,
+                        PyTensorBase::__pymethod_float_scalar__
+                    ),
+                    c"",
+                ),
+            ),
+        ],
         slots: &[],
     })
 }
@@ -4173,7 +4206,7 @@ fn item_error(error: &TensorError) -> PyErr {
     }
 }
 
-fn float_error(error: &TensorError) -> PyErr {
+fn scalar_conversion_error(error: &TensorError) -> PyErr {
     if matches!(error, TensorError::ItemRequiresOneElement { .. }) {
         PyValueError::new_err("only one element tensors can be converted to Python scalars")
     } else {
@@ -4194,8 +4227,13 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     module.add_class::<PyTensor>()?;
     let tensor_base = py.get_type::<PyTensorBase>();
+    let int_descriptor = tensor_base.getattr("__int__")?;
+    tensor_base.setattr("__int__", int_descriptor)?;
     let float_descriptor = tensor_base.getattr("__float__")?;
     tensor_base.setattr("__float__", float_descriptor)?;
+    if tensor_base.hasattr("int_scalar")? {
+        tensor_base.delattr("int_scalar")?;
+    }
     if tensor_base.hasattr("float_scalar")? {
         tensor_base.delattr("float_scalar")?;
     }
