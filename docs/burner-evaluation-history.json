@@ -945,6 +945,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 55
       }
+    },
+    {
+      "key": "pr:62",
+      "recordedAt": "2026-08-13T06:47:52.160Z",
+      "label": "PR #62",
+      "kind": "leaf",
+      "prNumber": 62,
+      "title": "Expose is_floating_point only",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 57.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 35,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 55
+      }
     }
   ]
 }
