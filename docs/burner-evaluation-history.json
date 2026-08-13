@@ -1121,6 +1121,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 57
       }
+    },
+    {
+      "key": "pr:73",
+      "recordedAt": "2026-08-13T13:49:57.676Z",
+      "label": "PR #73",
+      "kind": "leaf",
+      "prNumber": 73,
+      "title": "Assert native-extension provenance after CI builds",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 58.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 37.5,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 58
+      }
     }
   ]
 }
