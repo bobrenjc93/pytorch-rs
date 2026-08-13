@@ -6,7 +6,7 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 | Area | Weight | Baseline |
 | --- | ---: | --- |
-| tensor storage, shapes, strides, views, indexing | 15% | CPU `f32` with strided transpose, squeeze, view-or-copy flatten/reshape, indexing views, and native row-major/channel-last contiguous materialization |
+| tensor storage, shapes, strides, views, indexing | 15% | CPU `f32` with strided transpose and `Tensor.swapdims`, squeeze, view-or-copy flatten/reshape, indexing views, and native row-major/channel-last contiguous materialization |
 | dtypes, promotion, devices, dispatch | 10% | CPU `f32` only |
 | creation, elementwise, reductions | 15% | basic arithmetic, reductions, and exact tensor equality |
 | linear algebra and signal operations | 10% | rank-2 matmul only |
