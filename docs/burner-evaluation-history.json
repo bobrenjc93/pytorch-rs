@@ -977,6 +977,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 55
       }
+    },
+    {
+      "key": "pr:64",
+      "recordedAt": "2026-08-13T07:58:03.315Z",
+      "label": "PR #64",
+      "kind": "leaf",
+      "prNumber": 64,
+      "title": "Decouple native Rust tests from libpython",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 57.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 36,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 56
+      }
     }
   ]
 }

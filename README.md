@@ -64,10 +64,12 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test --all-targets
 cargo test --doc
-uv venv --clear
+uv venv --clear --python 3.12
 uv sync --locked --no-install-project
 uv pip install --python .venv/bin/python 'maturin>=1.14,<2'
-.venv/bin/maturin develop --release --uv
+PYO3_PYTHON="$PWD/.venv/bin/python" cargo clippy --all-targets --features python-bindings -- -D warnings
+PYO3_PYTHON="$PWD/.venv/bin/python" cargo test --all-targets --features python-bindings
+env -u CONDA_PREFIX VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" .venv/bin/maturin develop --release --uv
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
 

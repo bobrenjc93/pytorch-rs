@@ -921,6 +921,7 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    #[cfg(feature = "python-bindings")]
     pub(crate) fn validate_full_shape(shape: &[usize]) -> Result<usize, TensorError> {
         let (elements, _) = validated_layout(shape)?;
         validate_storage_capacity(elements)?;
@@ -1086,6 +1087,7 @@ impl Tensor {
         )))
     }
 
+    #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn live_grad(&self) -> Result<Option<Self>, TensorError> {
         let Some(meta) = &self.autograd else {
             return Ok(None);
@@ -2239,6 +2241,7 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn negate(&self) -> Result<Self, TensorError> {
         let output = self.unary_map(negate_value)?;
         self.finish_negate_vjp(output)
