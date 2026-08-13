@@ -168,6 +168,11 @@ struct PyDType {
 
 #[pymethods]
 impl PyDType {
+    #[getter]
+    fn itemsize(&self) -> usize {
+        self.inner.element_size()
+    }
+
     fn __repr__(&self) -> &'static str {
         match self.inner {
             DType::Float32 => "torch.float32",
