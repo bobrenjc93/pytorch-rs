@@ -1233,6 +1233,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 58
       }
+    },
+    {
+      "key": "pr:82",
+      "recordedAt": "2026-08-13T17:33:08.923Z",
+      "label": "PR #82",
+      "kind": "leaf",
+      "prNumber": 82,
+      "title": "Match rank-2 matmul shape errors",
+      "scores": {
+        "eval_7af648fb": 99.2,
+        "eval_8417a4a8": 58.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 38.1,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 58
+      }
     }
   ]
 }
