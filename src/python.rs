@@ -810,6 +810,54 @@ impl PyTensor {
         self.binary_operation(py, other, BinaryOperation::Multiply, false)
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nmul(value) -> Tensor\n\nSee :func:`torch.mul`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn mul(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let (other, keyword_error) = bind_mul_argument(args, kwargs)?;
+        let other_tensor = other.value.cast::<Self>().ok();
+        let scalar = other_tensor
+            .is_none()
+            .then(|| parse_arithmetic_scalar(&other.value));
+
+        if scalar
+            .as_ref()
+            .is_some_and(|result| matches!(result, Ok(None)))
+        {
+            let actual = transpose_type_name(&other.value)?;
+            return Err(mul_argument_type_error(other.position, &actual));
+        }
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        let result = if let Some(other_tensor) = other_tensor {
+            let other_tensor = other_tensor.try_borrow()?;
+            BinaryOperation::Multiply.apply_tensors(&self.inner, &other_tensor.inner)
+        } else {
+            let scalar = match scalar.expect("a non-tensor mul operand has a scalar parse result") {
+                Ok(Some(scalar)) => scalar,
+                Ok(None) => unreachable!("unsupported mul operand types were rejected above"),
+                Err(_) if other.value.is_instance_of::<PyInt>() => {
+                    let message = if other.value.lt(0_i64)? {
+                        "can't convert negative int to unsigned"
+                    } else {
+                        "int too big to convert"
+                    };
+                    return Err(PyOverflowError::new_err(message));
+                }
+                Err(error) => return Err(error),
+            };
+            if matches!(scalar, ParsedArithmeticScalar::WideNumpyUnsigned) {
+                return Err(PyTypeError::new_err("an integer is required"));
+            }
+            BinaryOperation::Multiply.apply_scalar(&self.inner, scalar.into_f32(), false)
+        };
+
+        result.map(Self::new).map_err(|error| tensor_error(&error))
+    }
+
     fn __rmul__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         self.binary_operation(py, other, BinaryOperation::Multiply, true)
     }
@@ -2771,6 +2819,61 @@ fn parse_equal_tensor_argument<'a, 'py>(
         )));
     };
     Ok(tensor)
+}
+
+fn bind_mul_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "mul() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut other = if positional.is_empty() {
+        None
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            if key != "other" {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "mul() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            } else if other.is_some() {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err("mul() got multiple values for argument 'other'")
+                });
+            } else {
+                other = Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                });
+            }
+        }
+    }
+
+    let other = other.ok_or_else(|| {
+        PyTypeError::new_err("mul() missing 1 required positional arguments: \"other\"")
+    })?;
+    Ok((other, keyword_error))
+}
+
+fn mul_argument_type_error(position: Option<usize>, actual: &str) -> PyErr {
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    PyTypeError::new_err(format!(
+        "mul(): argument 'other'{position} must be Tensor, not {actual}"
+    ))
 }
 
 fn bind_dimension_swap_arguments<'py, const N: usize>(
