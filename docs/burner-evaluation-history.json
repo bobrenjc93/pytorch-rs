@@ -913,6 +913,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 55
       }
+    },
+    {
+      "key": "pr:60",
+      "recordedAt": "2026-08-13T05:30:39.510Z",
+      "label": "PR #60",
+      "kind": "leaf",
+      "prNumber": 60,
+      "title": "Skip offset calculation for contiguous materialization outputs",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 57.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 33,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 55
+      }
     }
   ]
 }
