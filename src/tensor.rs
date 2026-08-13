@@ -19,6 +19,14 @@ pub enum DType {
 }
 
 impl DType {
+    /// Returns the number of bytes used to store one scalar value.
+    #[must_use]
+    pub const fn element_size(self) -> usize {
+        match self {
+            Self::Float32 => size_of::<f32>(),
+        }
+    }
+
     /// Reports whether values of this scalar type are floating point.
     #[must_use]
     pub const fn is_floating_point(self) -> bool {
@@ -997,6 +1005,12 @@ impl Tensor {
     #[must_use]
     pub fn dtype(&self) -> DType {
         self.storage.dtype
+    }
+
+    /// Returns the number of bytes used to store one tensor element.
+    #[must_use]
+    pub fn element_size(&self) -> usize {
+        self.dtype().element_size()
     }
 
     /// Reports whether the tensor's native scalar type is floating point.
@@ -3542,7 +3556,7 @@ fn aligned_broadcast_stride_bytes(
         .aligned_broadcast_stride(output_rank, output_axis, output_dimension)
         .cast_signed();
     let element_size =
-        i64::try_from(size_of::<f32>()).expect("an f32 element size must fit in i64");
+        i64::try_from(DType::Float32.element_size()).expect("an f32 element size must fit in i64");
     i64::try_from(stride)
         .expect("an isize stride must fit in a signed 64-bit TensorIterator stride")
         .wrapping_mul(element_size)
@@ -3680,7 +3694,7 @@ fn elementwise_output_strides(
     }
 
     let element_size =
-        i64::try_from(size_of::<f32>()).expect("an f32 element size must fit in i64");
+        i64::try_from(DType::Float32.element_size()).expect("an f32 element size must fit in i64");
     let mut byte_strides = try_result_vector(rank, elements)?;
     byte_strides.resize(rank, 0_i64);
     let mut next_byte_stride = element_size;
@@ -3799,7 +3813,7 @@ fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorErr
 }
 
 fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
-    let maximum_elements = isize::MAX.unsigned_abs() / size_of::<f32>();
+    let maximum_elements = isize::MAX.unsigned_abs() / DType::Float32.element_size();
     if elements > maximum_elements {
         return Err(TensorError::StorageCapacityOverflow { elements });
     }

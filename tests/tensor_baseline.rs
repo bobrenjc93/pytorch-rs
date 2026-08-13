@@ -7,6 +7,8 @@ fn native_metadata_describes_all_supported_storage_shapes() {
     assert_eq!(Device::default(), Device::Cpu);
     assert_eq!(MemoryFormat::default(), MemoryFormat::Preserve);
     assert_eq!(DType::Float32.to_string(), "float32");
+    assert_eq!(DType::Float32.element_size(), size_of::<f32>());
+    assert_eq!(DType::Float32.element_size(), 4);
     assert!(DType::Float32.is_floating_point());
     assert_eq!(Device::Cpu.to_string(), "cpu");
     assert_eq!(MemoryFormat::Preserve.to_string(), "preserve_format");
@@ -20,6 +22,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
         Tensor::full([4], -1.25).unwrap(),
     ] {
         assert_eq!(tensor.dtype(), DType::Float32);
+        assert_eq!(tensor.element_size(), tensor.dtype().element_size());
         assert_eq!(tensor.device(), Device::Cpu);
         assert!(tensor.is_floating_point());
     }
@@ -41,6 +44,7 @@ fn native_metadata_survives_views_kernels_and_reductions() {
 
     for output in outputs {
         assert_eq!(output.dtype(), source.dtype());
+        assert_eq!(output.element_size(), source.element_size());
         assert_eq!(output.device(), source.device());
         assert!(output.is_floating_point());
     }

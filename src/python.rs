@@ -1,6 +1,5 @@
 use std::cell::Cell;
 use std::ffi::CStr;
-use std::mem::size_of;
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -399,10 +398,7 @@ impl PyTensor {
     #[doc = "\nReturns the number of bytes consumed by the \"view\" of elements of the Tensor\nif the Tensor does not use sparse storage layout.\nDefined to be :meth:`~Tensor.numel()` * :meth:`~Tensor.element_size()`\n"]
     #[getter]
     fn nbytes(&self) -> usize {
-        let element_size = match self.inner.dtype() {
-            DType::Float32 => size_of::<f32>(),
-        };
-        self.inner.numel() * element_size
+        self.inner.numel() * self.inner.element_size()
     }
 
     #[getter]
@@ -751,6 +747,31 @@ impl PyTensor {
     #[pyo3(text_signature = None)]
     fn numel(&self) -> usize {
         self.inner.numel()
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nelement_size() -> int\n\nReturns the size in bytes of an individual element.\n\nExample::\n\n    >>> torch.tensor([]).element_size()\n    4\n    >>> torch.tensor([], dtype=torch.uint8).element_size()\n    1\n\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn element_size(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<usize> {
+        // PyTorch exposes Tensor.element_size from its internal TensorBase
+        // descriptor, which remains observable in argument binding errors.
+        if kwargs.is_some_and(|values| !values.is_empty()) {
+            return Err(PyTypeError::new_err(
+                "TensorBase.element_size() takes no keyword arguments",
+            ));
+        }
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "TensorBase.element_size() takes no arguments ({} given)",
+                args.len()
+            )));
+        }
+        Ok(self.inner.element_size())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.

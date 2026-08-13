@@ -7,6 +7,20 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+ELEMENT_SIZE_DOC = """
+element_size() -> int
+
+Returns the size in bytes of an individual element.
+
+Example::
+
+    >>> torch.tensor([]).element_size()
+    4
+    >>> torch.tensor([], dtype=torch.uint8).element_size()
+    1
+
+"""
+
 
 class TensorIntrospectionTests(unittest.TestCase):
     def assert_introspection(self, tensor, *, rank, elements):
@@ -21,11 +35,18 @@ class TensorIntrospectionTests(unittest.TestCase):
             torch.numel(tensor),
             torch.numel(input=tensor),
         )
-        for value in (*rank_values, *element_values, tensor.nbytes):
+        for value in (
+            *rank_values,
+            *element_values,
+            tensor.element_size(),
+            tensor.nbytes,
+        ):
             self.assertIs(type(value), int)
         self.assertEqual(rank_values, (rank,) * len(rank_values))
         self.assertEqual(element_values, (elements,) * len(element_values))
-        self.assertEqual(tensor.nbytes, elements * 4)
+        self.assertIs(tensor.dtype, torch.float32)
+        self.assertEqual(tensor.element_size(), 4)
+        self.assertEqual(tensor.nbytes, elements * tensor.element_size())
 
     def test_scalar_empty_and_metadata_only_views(self):
         cases = (
@@ -55,6 +76,7 @@ class TensorIntrospectionTests(unittest.TestCase):
                 3,
                 0,
             ),
+            (torch.zeros((sys.maxsize, 0))[sys.maxsize - 1], 1, 0),
         )
         for tensor, rank, elements in cases:
             with self.subTest(shape=tensor.shape, stride=tensor.stride()):
@@ -81,6 +103,7 @@ class TensorIntrospectionTests(unittest.TestCase):
             ("ndimension", 3),
             ("nelement", 0),
             ("numel", 0),
+            ("element_size", 4),
         ):
             with self.subTest(name=name):
                 descriptor = inspect.getattr_static(torch.Tensor, name)
@@ -94,6 +117,9 @@ class TensorIntrospectionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     inspect.signature(bound)
                 self.assertEqual(descriptor(tensor), expected)
+                if name == "element_size":
+                    self.assertEqual(descriptor.__doc__, ELEMENT_SIZE_DOC)
+                    self.assertEqual(bound.__doc__, ELEMENT_SIZE_DOC)
 
         self.assertIs(type(torch.numel), types.BuiltinFunctionType)
         self.assertIsNone(torch.numel.__text_signature__)
@@ -114,17 +140,18 @@ class TensorIntrospectionTests(unittest.TestCase):
                 ):
                     delattr(tensor, name)
 
-        for name in ("dim", "ndimension", "nelement", "numel"):
+        for name in ("dim", "ndimension", "nelement", "numel", "element_size"):
+            owner = "TensorBase" if name == "element_size" else "Tensor"
             with self.subTest(name=name, kind="positional"):
                 with self.assertRaisesRegex(
                     TypeError,
-                    rf"^Tensor\.{name}\(\) takes no arguments \(1 given\)$",
+                    rf"^{owner}\.{name}\(\) takes no arguments \(1 given\)$",
                 ):
                     getattr(tensor, name)(1)
             with self.subTest(name=name, kind="keyword"):
                 with self.assertRaisesRegex(
                     TypeError,
-                    rf"^Tensor\.{name}\(\) takes no keyword arguments$",
+                    rf"^{owner}\.{name}\(\) takes no keyword arguments$",
                 ):
                     getattr(tensor, name)(input=tensor)
             with self.subTest(name=name, kind="unbound"):
@@ -132,6 +159,12 @@ class TensorIntrospectionTests(unittest.TestCase):
                     getattr(torch.Tensor, name)()
                 with self.assertRaises(TypeError):
                     getattr(torch.Tensor, name)(1)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^TensorBase\.element_size\(\) takes no keyword arguments$",
+        ):
+            tensor.element_size(1, unexpected=True)
 
     def test_top_level_numel_binding_errors_match_pytorch(self):
         tensor = torch.zeros((2, 3))

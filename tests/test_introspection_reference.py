@@ -35,6 +35,7 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                 actual.numel(),
                 torch.numel(actual),
                 torch.numel(input=actual),
+                actual.element_size(),
                 actual.nbytes,
             )
             expected_values = (
@@ -45,10 +46,15 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                 expected.numel(),
                 reference_torch.numel(expected),
                 reference_torch.numel(input=expected),
+                expected.element_size(),
                 expected.nbytes,
             )
             self.assertEqual(actual_values, expected_values)
             self.assertTrue(all(type(value) is int for value in actual_values))
+            self.assertEqual(actual.nbytes, actual.numel() * actual.element_size())
+            self.assertEqual(
+                expected.nbytes, expected.numel() * expected.element_size()
+            )
 
     def test_seeded_shapes_and_metadata_views_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
@@ -97,6 +103,17 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
             actual_offset, expected_offset, case="noncontiguous-offset-view"
         )
 
+        actual_huge_offset = torch.zeros((sys.maxsize, 0))[sys.maxsize - 1]
+        expected_huge_offset = reference_torch.zeros((sys.maxsize, 0))[
+            sys.maxsize - 1
+        ]
+        self.assertGreater(actual_huge_offset.storage_offset(), 0)
+        self.assert_introspection_matches(
+            actual_huge_offset,
+            expected_huge_offset,
+            case="extreme-empty-offset-view",
+        )
+
     def test_descriptors_signatures_and_bound_unbound_behavior_match(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual = torch.zeros((2, 0, 3))
@@ -125,7 +142,7 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
         expected_nbytes = inspect.getattr_static(reference_torch.Tensor, "nbytes")
         self.assertEqual(actual_nbytes.__doc__, expected_nbytes.__doc__)
 
-        for name in ("dim", "ndimension", "nelement", "numel"):
+        for name in ("dim", "ndimension", "nelement", "numel", "element_size"):
             with self.subTest(name=name):
                 actual_descriptor = inspect.getattr_static(torch.Tensor, name)
                 expected_descriptor = inspect.getattr_static(reference_torch.Tensor, name)
@@ -142,15 +159,34 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         inspect.signature(bound)
                 self.assertEqual(actual_descriptor(actual), expected_descriptor(expected))
+                if name == "element_size":
+                    self.assertEqual(
+                        actual_descriptor.__doc__, expected_descriptor.__doc__
+                    )
+                    self.assertEqual(
+                        getattr(actual, name).__doc__, getattr(expected, name).__doc__
+                    )
 
-                self.assert_error_matches(
-                    lambda name=name: getattr(actual, name)(1),
-                    lambda name=name: getattr(expected, name)(1),
-                )
-                self.assert_error_matches(
-                    lambda name=name: getattr(actual, name)(other=1),
-                    lambda name=name: getattr(expected, name)(other=1),
-                )
+                if name == "element_size":
+                    positional_calls = (
+                        lambda: actual_descriptor(actual, 1),
+                        lambda: expected_descriptor(expected, 1),
+                    )
+                    keyword_calls = (
+                        lambda: actual_descriptor(actual, other=1),
+                        lambda: expected_descriptor(expected, other=1),
+                    )
+                else:
+                    positional_calls = (
+                        lambda name=name: getattr(actual, name)(1),
+                        lambda name=name: getattr(expected, name)(1),
+                    )
+                    keyword_calls = (
+                        lambda name=name: getattr(actual, name)(other=1),
+                        lambda name=name: getattr(expected, name)(other=1),
+                    )
+                self.assert_error_matches(*positional_calls)
+                self.assert_error_matches(*keyword_calls)
                 with self.assertRaises(TypeError):
                     actual_descriptor()
                 with self.assertRaises(TypeError):
@@ -159,6 +195,11 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                     actual_descriptor(1)
                 with self.assertRaises(TypeError):
                     expected_descriptor(1)
+
+        self.assert_error_matches(
+            lambda: actual_descriptor(actual, 1, unexpected=True),
+            lambda: expected_descriptor(expected, 1, unexpected=True),
+        )
 
         self.assertIsNone(torch.numel.__text_signature__)
         self.assertIsNone(reference_torch.numel.__text_signature__)
