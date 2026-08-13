@@ -427,6 +427,23 @@ impl PyTensor {
         Py::new(slf.py(), Self::new(inner))
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nt() -> Tensor\n\nSee :func:`torch.t`\n"]
+    #[pyo3(text_signature = None)]
+    fn t(&self) -> PyResult<Self> {
+        let rank = self.inner.shape().len();
+        if rank > 2 {
+            return Err(PyRuntimeError::new_err(format!(
+                "t() expects a tensor with <= 2 dimensions, but self is {rank}D"
+            )));
+        }
+        self.inner
+            .reverse_dimensions()
+            .map(Self::new)
+            .map_err(|error| transpose_error(&error))
+    }
+
     #[pyo3(signature = (dim=None))]
     fn stride(&self, py: Python<'_>, dim: Option<&Bound<'_, PyAny>>) -> PyResult<Py<PyAny>> {
         let Some(dim) = dim else {
