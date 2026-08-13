@@ -18,6 +18,16 @@ pub enum DType {
     Float32,
 }
 
+impl DType {
+    /// Reports whether values of this scalar type are floating point.
+    #[must_use]
+    pub const fn is_floating_point(self) -> bool {
+        match self {
+            Self::Float32 => true,
+        }
+    }
+}
+
 impl Display for DType {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -967,6 +977,12 @@ impl Tensor {
     #[must_use]
     pub fn dtype(&self) -> DType {
         self.storage.dtype
+    }
+
+    /// Reports whether the tensor's native scalar type is floating point.
+    #[must_use]
+    pub fn is_floating_point(&self) -> bool {
+        self.dtype().is_floating_point()
     }
 
     /// Returns the device owning this tensor's storage.
