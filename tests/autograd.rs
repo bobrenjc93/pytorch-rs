@@ -134,6 +134,36 @@ fn multiply_backward_unbroadcasts_both_operands() {
 }
 
 #[test]
+fn rank_zero_tensor_multiply_preserves_view_gradients_in_both_operand_orders() {
+    for scalar_on_left in [true, false] {
+        let mut input_values = vec![0.0; 6];
+        input_values.extend([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let source = Tensor::from_vec(input_values, [2, 2, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = source.index([1]).unwrap().transpose(0, 1).unwrap();
+        let scalar = Tensor::from_vec(vec![2.0], [])
+            .unwrap()
+            .with_requires_grad(true);
+
+        let output = if scalar_on_left {
+            scalar.mul(&view).unwrap()
+        } else {
+            view.mul(&scalar).unwrap()
+        };
+        assert_eq!(output.shape(), [3, 2]);
+        assert_eq!(output.stride(), [1, 3]);
+        output.sum().backward().unwrap();
+
+        assert_eq!(values(&scalar.grad().unwrap().unwrap()), [21.0]);
+        assert_eq!(
+            values(&source.grad().unwrap().unwrap()),
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0]
+        );
+    }
+}
+
+#[test]
 fn scalar_and_empty_reductions_produce_correct_leaf_gradients() {
     let scalar = Tensor::from_vec(vec![4.0], [])
         .unwrap()

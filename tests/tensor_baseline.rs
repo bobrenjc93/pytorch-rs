@@ -543,6 +543,105 @@ fn binary_arithmetic_broadcasts_rank_zero_and_zero_sized_tensors() {
 }
 
 #[test]
+fn rank_zero_binary_arithmetic_matches_general_broadcast_bits_and_view_layout() {
+    let mut source_values = vec![0.0; 6];
+    source_values.extend(
+        [
+            0x0000_0000,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc5_4321,
+            0xffc6_789a,
+        ]
+        .map(f32::from_bits),
+    );
+    let view = Tensor::from_vec(source_values, [2, 2, 3])
+        .unwrap()
+        .index([1])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    assert_eq!(view.stride(), [1, 3]);
+    assert_eq!(view.storage_offset(), 6);
+
+    for scalar_bits in [0x7f81_2345, 0xffc1_2345] {
+        let scalar_value = f32::from_bits(scalar_bits);
+        let scalar = Tensor::from_vec(vec![0.0, scalar_value], [2])
+            .unwrap()
+            .index([1])
+            .unwrap();
+        let singleton = Tensor::from_vec(vec![scalar_value], [1, 1]).unwrap();
+        assert!(scalar.shape().is_empty());
+        assert_eq!(scalar.storage_offset(), 1);
+
+        let cases = [
+            (scalar.add(&view).unwrap(), singleton.add(&view).unwrap()),
+            (view.add(&scalar).unwrap(), view.add(&singleton).unwrap()),
+            (scalar.sub(&view).unwrap(), singleton.sub(&view).unwrap()),
+            (view.sub(&scalar).unwrap(), view.sub(&singleton).unwrap()),
+            (scalar.mul(&view).unwrap(), singleton.mul(&view).unwrap()),
+            (view.mul(&scalar).unwrap(), view.mul(&singleton).unwrap()),
+            (scalar.div(&view).unwrap(), singleton.div(&view).unwrap()),
+            (view.div(&scalar).unwrap(), view.div(&singleton).unwrap()),
+        ];
+        for (actual, expected) in cases {
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.stride(), [1, 3]);
+            assert_eq!(actual.storage_offset(), 0);
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+}
+
+#[test]
+fn rank_zero_binary_arithmetic_preserves_extreme_empty_metadata_and_errors() {
+    let scalar = Tensor::from_vec(vec![1.0], []).unwrap();
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3])
+        .unwrap();
+    for output in [
+        scalar.add(&extreme).unwrap(),
+        extreme.add(&scalar).unwrap(),
+        scalar.sub(&extreme).unwrap(),
+        extreme.sub(&scalar).unwrap(),
+        scalar.mul(&extreme).unwrap(),
+        extreme.mul(&scalar).unwrap(),
+        scalar.div(&extreme).unwrap(),
+        extreme.div(&scalar).unwrap(),
+    ] {
+        assert_eq!(output.shape(), [0, isize::MAX.unsigned_abs(), 3]);
+        assert_eq!(output.stride(), [1, 0, 0]);
+        assert_eq!(output.storage_offset(), 0);
+        assert_eq!(output.numel(), 0);
+    }
+
+    let overflowing = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, 1, 1_i64 << 62, 1_i64 << 32])
+        .unwrap();
+    for result in [
+        scalar.add(&overflowing),
+        overflowing.add(&scalar),
+        scalar.sub(&overflowing),
+        overflowing.sub(&scalar),
+        scalar.mul(&overflowing),
+        overflowing.mul(&scalar),
+        scalar.div(&overflowing),
+        overflowing.div(&scalar),
+    ] {
+        assert_eq!(result, Err(TensorError::StrideCalculationOverflow));
+    }
+}
+
+#[test]
 fn empty_broadcast_rejects_unrepresentable_result_strides() {
     let large = isize::MAX.unsigned_abs() / 2 + 1;
     let left = Tensor::from_vec(Vec::new(), [0, large, 1]).unwrap();
