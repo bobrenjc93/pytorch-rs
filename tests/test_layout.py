@@ -18,6 +18,12 @@ class TensorLayoutTests(unittest.TestCase):
         self.assertEqual(torch.layout.__name__, "layout")
         self.assertEqual(torch.layout.__qualname__, "layout")
         self.assertIsNone(torch.layout.__doc__)
+        self.assertIs(type(torch.layout), type)
+        self.assertEqual(torch.layout.__bases__, (object,))
+        self.assertTrue(torch.layout.__flags__ & (1 << 8))
+        repr_descriptor = inspect.getattr_static(torch.layout, "__repr__")
+        self.assertIs(type(repr_descriptor), types.WrapperDescriptorType)
+        self.assertIs(repr_descriptor.__objclass__, torch.layout)
         self.assertIn("layout", torch.__all__)
         self.assertIn("strided", torch.__all__)
 
@@ -68,6 +74,48 @@ class TensorLayoutTests(unittest.TestCase):
                 self.assertIs(layout != other, True)
                 self.assertIs(torch.layout.__eq__(layout, other), NotImplemented)
                 self.assertIs(torch.layout.__ne__(layout, other), NotImplemented)
+
+    def test_layout_type_rejects_class_assignment_and_deletion(self):
+        mutations = (
+            (
+                "__repr__",
+                lambda: setattr(torch.layout, "__repr__", lambda _: "broken"),
+            ),
+            ("__repr__", lambda: delattr(torch.layout, "__repr__")),
+            (
+                "__eq__",
+                lambda: setattr(torch.layout, "__eq__", lambda *_: True),
+            ),
+            ("__eq__", lambda: delattr(torch.layout, "__eq__")),
+            (
+                "__hash__",
+                lambda: setattr(torch.layout, "__hash__", lambda _: 0),
+            ),
+            ("__hash__", lambda: delattr(torch.layout, "__hash__")),
+            ("marker", lambda: setattr(torch.layout, "marker", object())),
+            ("marker", lambda: delattr(torch.layout, "marker")),
+            (
+                "marker",
+                lambda: type.__setattr__(torch.layout, "marker", object()),
+            ),
+            ("marker", lambda: type.__delattr__(torch.layout, "marker")),
+        )
+        expected_hash = hash(torch.strided)
+        for name, mutation in mutations:
+            with self.subTest(name=name, mutation=mutation):
+                with self.assertRaises(TypeError) as raised:
+                    mutation()
+                self.assertEqual(
+                    str(raised.exception),
+                    f"cannot set '{name}' attribute of immutable type "
+                    "'torch_rs.layout'",
+                )
+
+        self.assertEqual(repr(torch.strided), "torch.strided")
+        self.assertEqual(hash(torch.strided), expected_hash)
+        self.assertIs(torch.strided == torch.strided, True)
+        self.assertIs(torch.strided == object(), False)
+        self.assertFalse(hasattr(torch.layout, "marker"))
 
     def test_scalar_empty_views_and_autograd_return_one_singleton(self):
         leaf = torch.tensor(

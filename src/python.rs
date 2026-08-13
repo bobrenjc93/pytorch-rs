@@ -14,6 +14,7 @@ use pyo3::types::{
     PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView, PyModule,
     PySequence, PyString, PyTuple,
 };
+use pytorch_rs_python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects};
 
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, enter_no_grad, exit_no_grad,
@@ -21,7 +22,7 @@ use crate::{
 };
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
-static STRIDED: PyOnceLock<Py<PyLayout>> = PyOnceLock::new();
+static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -194,17 +195,6 @@ impl PyDType {
     }
 }
 
-#[pyclass(name = "layout", module = "torch_rs", frozen, skip_from_py_object)]
-struct PyLayout;
-
-#[pymethods]
-impl PyLayout {
-    #[allow(clippy::unused_self)] // Python's representation protocol requires an instance method.
-    fn __repr__(&self) -> &'static str {
-        "torch.strided"
-    }
-}
-
 /// Python memory-format descriptor backed by a native [`MemoryFormat`].
 #[pyclass(
     name = "memory_format",
@@ -288,7 +278,7 @@ struct PyTensorBase;
 #[pymethods]
 impl PyTensorBase {
     #[getter]
-    fn layout(slf: &Bound<'_, Self>) -> PyResult<Py<PyLayout>> {
+    fn layout(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
         Ok(strided_object(slf.py())?.clone_ref(slf.py()))
     }
 
@@ -1729,8 +1719,12 @@ fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
     })
 }
 
-fn strided_object(py: Python<'_>) -> PyResult<&'static Py<PyLayout>> {
-    STRIDED.get_or_try_init(py, || Py::new(py, PyLayout))
+fn layout_objects(py: Python<'_>) -> PyResult<&'static PyLayoutObjects> {
+    LAYOUT_OBJECTS.get_or_try_init(py, || create_layout_objects(py))
+}
+
+fn strided_object(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+    Ok(&layout_objects(py)?.strided)
 }
 
 fn memory_format_object(
@@ -4260,7 +4254,6 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     module.add_class::<PyDType>()?;
     module.add_class::<PyDevice>()?;
-    module.add_class::<PyLayout>()?;
     module.add_class::<PyMemoryFormat>()?;
     module.add_class::<PyNoGrad>()?;
     let no_grad_helpers = PyModule::from_code(
@@ -4309,6 +4302,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let float32 = float32_object(py)?;
     module.add("float32", float32.clone_ref(py))?;
     module.add("float", float32.clone_ref(py))?;
+    module.add("layout", layout_objects(py)?.layout.clone_ref(py))?;
     module.add("strided", strided_object(py)?.clone_ref(py))?;
     for (name, memory_format) in [
         ("preserve_format", MemoryFormat::Preserve),

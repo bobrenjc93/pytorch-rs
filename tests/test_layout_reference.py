@@ -59,6 +59,16 @@ class TensorLayoutReferenceTests(unittest.TestCase):
             "type_qualname": module.layout.__qualname__,
             "type_repr": self.normalize(module, repr(module.layout)),
             "type_doc": module.layout.__doc__,
+            "metatype_is_type": type(module.layout) is type,
+            "object_base": module.layout.__bases__ == (object,),
+            "immutable_flag": bool(module.layout.__flags__ & (1 << 8)),
+            "repr_descriptor_type": type(
+                inspect.getattr_static(module.layout, "__repr__")
+            ).__name__,
+            "repr_descriptor_owner": (
+                inspect.getattr_static(module.layout, "__repr__").__objclass__
+                is module.layout
+            ),
             "repr": repr(layout),
             "str": str(layout),
             "self_identity": layout is module.strided,
@@ -88,6 +98,48 @@ class TensorLayoutReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.layout_contract(torch),
             self.layout_contract(reference_torch),
+        )
+
+    def class_mutation_contract(self, module):
+        mutations = (
+            (
+                "__repr__",
+                lambda: setattr(module.layout, "__repr__", lambda _: "broken"),
+            ),
+            ("__repr__", lambda: delattr(module.layout, "__repr__")),
+            (
+                "__eq__",
+                lambda: setattr(module.layout, "__eq__", lambda *_: True),
+            ),
+            ("__eq__", lambda: delattr(module.layout, "__eq__")),
+            (
+                "__hash__",
+                lambda: setattr(module.layout, "__hash__", lambda _: 0),
+            ),
+            ("__hash__", lambda: delattr(module.layout, "__hash__")),
+            ("marker", lambda: setattr(module.layout, "marker", object())),
+            ("marker", lambda: delattr(module.layout, "marker")),
+            (
+                "marker",
+                lambda: type.__setattr__(module.layout, "marker", object()),
+            ),
+            ("marker", lambda: type.__delattr__(module.layout, "marker")),
+        )
+        initial_hash = hash(module.strided)
+        errors = tuple(self.error(module, mutation) for _, mutation in mutations)
+        return {
+            "errors": errors,
+            "repr": repr(module.strided),
+            "hash_unchanged": hash(module.strided) == initial_hash,
+            "self_equality": module.strided == module.strided,
+            "other_equality": module.strided == object(),
+            "marker_absent": not hasattr(module.layout, "marker"),
+        }
+
+    def test_layout_type_immutability_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.class_mutation_contract(torch),
+            self.class_mutation_contract(reference_torch),
         )
 
     def tensor_contract(self, module):
