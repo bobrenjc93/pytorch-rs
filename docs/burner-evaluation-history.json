@@ -1009,6 +1009,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 56
       }
+    },
+    {
+      "key": "pr:66",
+      "recordedAt": "2026-08-13T08:54:39.562Z",
+      "label": "PR #66",
+      "kind": "leaf",
+      "prNumber": 66,
+      "title": "Expose Tensor.swapaxes as a transpose alias",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 57.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 37,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 56
+      }
     }
   ]
 }
