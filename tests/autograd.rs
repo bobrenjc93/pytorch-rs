@@ -41,6 +41,36 @@ fn leaf_gradient_snapshots_preserve_the_contiguous_slice_contract() {
 }
 
 #[test]
+fn item_does_not_mutate_a_one_element_view_graph() {
+    let leaf = Tensor::from_vec(
+        [0x0000_0000, 0x7fc1_2345].map(f32::from_bits).to_vec(),
+        [1, 2],
+    )
+    .unwrap()
+    .with_requires_grad(true);
+    let view = leaf.transpose(0, 1).unwrap().index([1]).unwrap();
+
+    assert!(view.requires_grad());
+    assert!(!view.is_leaf());
+    assert!(leaf.grad().unwrap().is_none());
+    assert_eq!(view.item().unwrap().to_bits(), 0x7fc1_2345);
+    assert!(view.requires_grad());
+    assert!(!view.is_leaf());
+    assert!(leaf.grad().unwrap().is_none());
+
+    view.sum().backward().unwrap();
+    assert_eq!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        [0x0000_0000, 0x3f80_0000]
+    );
+}
+
+#[test]
 fn concurrent_backward_on_shared_graph_commits_one_complete_traversal() {
     let leaf = Tensor::from_vec(vec![3.0], [])
         .unwrap()

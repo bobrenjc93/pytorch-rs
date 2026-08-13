@@ -899,7 +899,7 @@ impl PyTensor {
     }
 
     fn item(&self) -> PyResult<f32> {
-        self.inner.item().map_err(|error| tensor_error(&error))
+        self.inner.item().map_err(|error| item_error(&error))
     }
 
     #[pyo3(text_signature = None)]
@@ -4105,6 +4105,16 @@ fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
         | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
+    }
+}
+
+fn item_error(error: &TensorError) -> PyErr {
+    if let TensorError::ItemRequiresOneElement { elements } = error {
+        PyRuntimeError::new_err(format!(
+            "a Tensor with {elements} elements cannot be converted to Scalar"
+        ))
+    } else {
+        tensor_error(error)
     }
 }
 
