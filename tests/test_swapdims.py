@@ -1,6 +1,7 @@
 import inspect
 import sys
 import unittest
+import warnings
 
 import numpy as np
 import torch_rs as torch
@@ -128,6 +129,9 @@ class TensorSwapdimsTests(unittest.TestCase):
 
     def test_binding_errors_and_validation_precedence_match_pytorch(self):
         tensor = torch.zeros((2, 3))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            timedelta = np.timedelta64(1)
         cases = (
             (
                 lambda: tensor.swapdims(),
@@ -173,12 +177,25 @@ class TensorSwapdimsTests(unittest.TestCase):
                 lambda: tensor.swapdims(2**100, 0, unexpected=None),
                 "swapdims() got an unexpected keyword argument 'unexpected'",
             ),
+            (
+                lambda: tensor.swapdims(2**100, 1.5),
+                "swapdims(): argument 'dim1' (position 2) must be int, not float",
+            ),
+            (
+                lambda: tensor.swapdims(timedelta, 0),
+                "'numpy.timedelta64' object cannot be interpreted as an integer",
+            ),
         )
         for call, expected in cases:
             with self.subTest(expected=expected):
                 with self.assertRaises(TypeError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), expected)
+
+        with self.assertRaisesRegex(
+            ValueError, "^Overflow when unpacking long long$"
+        ):
+            tensor.swapdims(np.uint64(2**63), 0)
 
     def test_autograd_uses_inverse_swap_and_no_grad_policy(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)

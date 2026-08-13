@@ -1,6 +1,7 @@
 import inspect
 import sys
 import unittest
+import warnings
 
 import numpy as np
 import torch_rs as torch
@@ -135,6 +136,9 @@ class TensorSwapdimsReferenceTests(unittest.TestCase):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual = torch.zeros((2, 3))
         expected = reference_torch.zeros((2, 3))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            timedelta = np.timedelta64(1)
         cases = (
             (lambda: actual.swapdims(), lambda: expected.swapdims()),
             (lambda: actual.swapdims(0), lambda: expected.swapdims(0)),
@@ -171,6 +175,18 @@ class TensorSwapdimsReferenceTests(unittest.TestCase):
             (
                 lambda: actual.swapdims(2**100, 0, unexpected=None),
                 lambda: expected.swapdims(2**100, 0, unexpected=None),
+            ),
+            (
+                lambda: actual.swapdims(2**100, 1.5),
+                lambda: expected.swapdims(2**100, 1.5),
+            ),
+            (
+                lambda: actual.swapdims(timedelta, 0),
+                lambda: expected.swapdims(timedelta, 0),
+            ),
+            (
+                lambda: actual.swapdims(np.uint64(2**63), 0),
+                lambda: expected.swapdims(np.uint64(2**63), 0),
             ),
             (lambda: actual.swapdims(2**100, 0), lambda: expected.swapdims(2**100, 0)),
             (lambda: actual.swapdims(-3, 0), lambda: expected.swapdims(-3, 0)),

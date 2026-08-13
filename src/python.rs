@@ -549,8 +549,7 @@ impl PyTensor {
         if let Some(keyword_error) = keyword_error {
             return Err(keyword_error);
         }
-        let dim0 = parse_dimension_swap_dimension("transpose", "dim0", dim0.position, &dim0.value)?;
-        let dim1 = parse_dimension_swap_dimension("transpose", "dim1", dim1.position, &dim1.value)?;
+        let [dim0, dim1] = parse_dimension_swap_dimensions("transpose", &dim0, &dim1)?;
         self.inner
             .transpose(dim0, dim1)
             .map(Self::new)
@@ -571,8 +570,7 @@ impl PyTensor {
         if let Some(keyword_error) = keyword_error {
             return Err(keyword_error);
         }
-        let dim0 = parse_dimension_swap_dimension("swapdims", "dim0", dim0.position, &dim0.value)?;
-        let dim1 = parse_dimension_swap_dimension("swapdims", "dim1", dim1.position, &dim1.value)?;
+        let [dim0, dim1] = parse_dimension_swap_dimensions("swapdims", &dim0, &dim1)?;
         self.inner
             .transpose(dim0, dim1)
             .map(Self::new)
@@ -1128,8 +1126,7 @@ fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
         )
     })?;
     let input_tensor = input_tensor.try_borrow()?;
-    let dim0 = parse_dimension_swap_dimension("transpose", "dim0", dim0.position, &dim0.value)?;
-    let dim1 = parse_dimension_swap_dimension("transpose", "dim1", dim1.position, &dim1.value)?;
+    let [dim0, dim1] = parse_dimension_swap_dimensions("transpose", &dim0, &dim1)?;
     input_tensor
         .inner
         .transpose(dim0, dim1)
@@ -1883,16 +1880,30 @@ fn validate_dimension_swap_dimension(
     ))
 }
 
-fn parse_dimension_swap_dimension(
+fn parse_dimension_swap_dimensions(
     operation: &str,
-    argument: &str,
-    position: Option<usize>,
-    dimension: &Bound<'_, PyAny>,
-) -> PyResult<i64> {
-    validate_dimension_swap_dimension(operation, argument, position, dimension)?;
-    dimension
-        .extract::<i64>()
-        .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))
+    dim0: &ParsedCallArgument<'_>,
+    dim1: &ParsedCallArgument<'_>,
+) -> PyResult<[i64; 2]> {
+    // PyTorch validates the declared types in signature order before it
+    // converts either integer. This lets a later type mismatch take
+    // precedence over an earlier integer that overflows during conversion.
+    validate_dimension_swap_dimension(operation, "dim0", dim0.position, &dim0.value)?;
+    validate_dimension_swap_dimension(operation, "dim1", dim1.position, &dim1.value)?;
+    Ok([
+        extract_dimension_swap_dimension(&dim0.value)?,
+        extract_dimension_swap_dimension(&dim1.value)?,
+    ])
+}
+
+fn extract_dimension_swap_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+    dimension.extract::<i64>().map_err(|error| {
+        if error.is_instance_of::<PyOverflowError>(dimension.py()) {
+            PyValueError::new_err("Overflow when unpacking long long")
+        } else {
+            error
+        }
+    })
 }
 
 fn parse_flatten_dimension(
@@ -2822,7 +2833,7 @@ fn bind_dimension_swap_arguments<'py, const N: usize>(
 
     if keyword_error.is_some() {
         // Type errors take precedence over duplicate and unexpected keyword
-        // errors. Successful calls defer validation to conversion below so
+        // errors. Successful calls defer validation to argument parsing so
         // each dimension is inspected only once on the hot path.
         validate_dimension_swap_argument_prefix(operation, &names, &arguments, N)?;
     }
