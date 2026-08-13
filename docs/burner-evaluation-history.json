@@ -1281,6 +1281,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 58
       }
+    },
+    {
+      "key": "pr:85",
+      "recordedAt": "2026-08-13T19:40:07.951Z",
+      "label": "PR #85",
+      "kind": "leaf",
+      "prNumber": 85,
+      "title": "Fast-path 0-D tensor broadcasting after validation",
+      "scores": {
+        "eval_7af648fb": 99.4,
+        "eval_8417a4a8": 59.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 38.3,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 59
+      }
     }
   ]
 }
