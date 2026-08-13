@@ -10,25 +10,40 @@ import torch_rs as torch
 
 class TensorIntrospectionTests(unittest.TestCase):
     def assert_introspection(self, tensor, *, rank, elements):
-        calls = (
+        rank_values = (
             tensor.ndim,
             tensor.dim(),
             tensor.ndimension(),
+        )
+        element_values = (
             tensor.nelement(),
             tensor.numel(),
             torch.numel(tensor),
             torch.numel(input=tensor),
         )
-        for value in calls:
+        for value in (*rank_values, *element_values, tensor.nbytes):
             self.assertIs(type(value), int)
-        self.assertEqual(calls[:3], (rank,) * 3)
-        self.assertEqual(calls[3:], (elements,) * 4)
+        self.assertEqual(rank_values, (rank,) * len(rank_values))
+        self.assertEqual(element_values, (elements,) * len(element_values))
+        self.assertEqual(tensor.nbytes, elements * 4)
 
     def test_scalar_empty_and_metadata_only_views(self):
         cases = (
             (torch.tensor(3.5), 0, 1),
             (torch.zeros((0,)), 1, 0),
             (torch.zeros((2, 3, 4)), 3, 24),
+            (torch.zeros((2, 3, 4)).transpose(0, 2), 3, 24),
+            (
+                torch.tensor(
+                    [
+                        [0.0, 1.0, 2.0, 3.0],
+                        [4.0, 5.0, 6.0, 7.0],
+                        [8.0, 9.0, 10.0, 11.0],
+                    ]
+                ).transpose(0, 1)[1],
+                1,
+                3,
+            ),
             (torch.zeros((1,) * 65), 65, 1),
             (torch.zeros((2, 0, 3)).transpose(0, 2), 3, 0),
             (torch.zeros((4, 2, 0, 3)).transpose(0, 3)[1], 3, 0),
@@ -54,6 +69,13 @@ class TensorIntrospectionTests(unittest.TestCase):
         self.assertEqual(ndim.__get__(tensor, torch.Tensor), 3)
         self.assertIs(ndim.__get__(None, torch.Tensor), ndim)
 
+        nbytes = inspect.getattr_static(torch.Tensor, "nbytes")
+        self.assertIs(type(nbytes), types.GetSetDescriptorType)
+        self.assertFalse(callable(nbytes))
+        self.assertEqual(nbytes.__name__, "nbytes")
+        self.assertEqual(nbytes.__get__(tensor, torch.Tensor), 0)
+        self.assertIs(nbytes.__get__(None, torch.Tensor), nbytes)
+
         for name, expected in (
             ("dim", 3),
             ("ndimension", 3),
@@ -78,16 +100,19 @@ class TensorIntrospectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             inspect.signature(torch.numel)
 
-    def test_ndim_is_read_only_and_methods_reject_arguments(self):
+    def test_metadata_properties_are_read_only_and_methods_reject_arguments(self):
         tensor = torch.zeros((2, 3))
-        with self.assertRaisesRegex(
-            AttributeError, r"attribute 'ndim'.*not writable"
-        ):
-            tensor.ndim = 9
-        with self.assertRaisesRegex(
-            AttributeError, r"attribute 'ndim'.*not writable"
-        ):
-            del tensor.ndim
+        for name, value in (("ndim", 9), ("nbytes", 99)):
+            with self.subTest(name=name, action="set"):
+                with self.assertRaisesRegex(
+                    AttributeError, rf"attribute '{name}'.*not writable"
+                ):
+                    setattr(tensor, name, value)
+            with self.subTest(name=name, action="delete"):
+                with self.assertRaisesRegex(
+                    AttributeError, rf"attribute '{name}'.*not writable"
+                ):
+                    delattr(tensor, name)
 
         for name in ("dim", "ndimension", "nelement", "numel"):
             with self.subTest(name=name, kind="positional"):

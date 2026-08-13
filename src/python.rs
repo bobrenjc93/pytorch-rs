@@ -356,6 +356,15 @@ impl PyTensor {
         self.inner.shape().len()
     }
 
+    #[doc = "\nReturns the number of bytes consumed by the \"view\" of elements of the Tensor\nif the Tensor does not use sparse storage layout.\nDefined to be :meth:`~Tensor.numel()` * :meth:`~Tensor.element_size()`\n"]
+    #[getter]
+    fn nbytes(&self) -> usize {
+        let element_size = match self.inner.dtype() {
+            DType::Float32 => size_of::<f32>(),
+        };
+        self.inner.numel() * element_size
+    }
+
     #[getter]
     fn dtype(&self, py: Python<'_>) -> PyResult<Py<PyDType>> {
         match self.inner.dtype() {
