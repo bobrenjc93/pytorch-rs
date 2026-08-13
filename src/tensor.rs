@@ -1593,6 +1593,23 @@ impl Tensor {
         self.collapse_dimensions(start_dim, end_dim)
     }
 
+    /// Returns a contiguous one-dimensional tensor using view-or-copy semantics.
+    ///
+    /// Row-contiguous inputs retain shared storage and their offset. Inputs
+    /// which are not contiguous are packed first, so even an already
+    /// one-dimensional strided input gets independent storage. The final
+    /// collapse is delegated to [`Self::flatten`], including its scalar,
+    /// empty, stride, and autograd behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when contiguous storage or result metadata cannot be
+    /// created.
+    pub fn ravel(&self) -> Result<Self, TensorError> {
+        self.try_contiguous(MemoryFormat::Contiguous)?
+            .flatten(0, -1)
+    }
+
     /// Creates an independent copy of this tensor's logical values.
     ///
     /// The returned tensor preserves dense layouts and has a storage offset of

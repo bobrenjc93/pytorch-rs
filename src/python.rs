@@ -573,6 +573,17 @@ impl PyTensor {
         Py::new(slf.py(), Self::new(inner))
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nravel() -> Tensor\n\nsee :func:`torch.ravel`\n"]
+    #[pyo3(text_signature = None)]
+    fn ravel(&self) -> PyResult<Self> {
+        self.inner
+            .ravel()
+            .map(Self::new)
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
         let inner = if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() > self.inner.shape().len() {

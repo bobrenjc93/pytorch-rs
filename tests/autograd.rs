@@ -618,6 +618,57 @@ fn transformations_record_inverse_gradient_mappings() {
 }
 
 #[test]
+fn ravel_records_view_and_copy_gradients_and_obeys_no_grad() {
+    let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let raveled = leaf.transpose(0, 1).unwrap().ravel().unwrap();
+    assert_eq!(raveled.shape(), [6]);
+    assert_eq!(raveled.stride(), [1]);
+    assert!(!raveled.shares_storage_with(&leaf));
+    assert!(raveled.requires_grad());
+    assert!(!raveled.is_leaf());
+
+    let weights = Tensor::from_vec(vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0], [6]).unwrap();
+    raveled.mul(&weights).unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&leaf.grad().unwrap().unwrap()),
+        [10.0, 30.0, 50.0, 20.0, 40.0, 60.0]
+    );
+
+    let scalar = Tensor::from_vec(vec![2.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    scalar
+        .ravel()
+        .unwrap()
+        .mul_scalar(7.0)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        7.0_f32.to_bits()
+    );
+
+    let no_grad_leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let no_grad_transposed = no_grad_leaf.transpose(0, 1).unwrap();
+    let _guard = no_grad();
+    let alias = no_grad_leaf.ravel().unwrap();
+    assert!(alias.requires_grad());
+    assert!(alias.is_leaf());
+    assert!(alias.shares_storage_with(&no_grad_leaf));
+
+    let copy = no_grad_transposed.ravel().unwrap();
+    assert!(!copy.requires_grad());
+    assert!(copy.is_leaf());
+    assert!(!copy.shares_storage_with(&no_grad_leaf));
+}
+
+#[test]
 fn no_grad_views_preserve_requires_grad_without_recording_history() {
     let source = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
         .unwrap()
