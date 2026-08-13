@@ -5,9 +5,11 @@
 //! core. Burner grows the supported surface monotonically while correctness,
 //! benchmark integrity, and existing performance remain merge gates.
 
+#[cfg(feature = "python-bindings")]
 mod python;
 mod tensor;
 
+#[cfg(feature = "python-bindings")]
 pub(crate) use tensor::{enter_no_grad, exit_no_grad};
 
 pub use tensor::{

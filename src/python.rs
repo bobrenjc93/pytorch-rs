@@ -3663,7 +3663,7 @@ fn flatten_buffer(
     if format == b'e' && value.py().version_info() < (3, 12) {
         return Err(buffer_shape_error(value)?);
     }
-    if matches!(format, b'?' | b'e') {
+    if format == b'e' || (format == b'?' && value.py().version_info() >= (3, 14)) {
         let mut output = Vec::new();
         output.try_reserve_exact(elements).map_err(|_| {
             PyMemoryError::new_err("unable to allocate native tensor storage for buffer")
