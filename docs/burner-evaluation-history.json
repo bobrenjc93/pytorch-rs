@@ -1185,6 +1185,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 58
       }
+    },
+    {
+      "key": "pr:79",
+      "recordedAt": "2026-08-13T16:23:40.930Z",
+      "label": "PR #79",
+      "kind": "leaf",
+      "prNumber": 79,
+      "title": "Expose Tensor.is_signed only",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 58.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 37.8,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 58
+      }
     }
   ]
 }
