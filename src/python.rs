@@ -761,6 +761,25 @@ impl PyTensor {
         self.inner.is_floating_point()
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nis_set_to(tensor) -> bool\n\nReturns True if both tensors are pointing to the exact same memory (same\nstorage, offset, size and stride).\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn is_set_to(
+        &self,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<bool> {
+        let (arguments, keyword_error) =
+            bind_tensor_arguments("is_set_to", args, kwargs, ["tensor"])?;
+        let tensor = parse_tensor_argument("is_set_to", "tensor", &arguments[0])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        let tensor = tensor.try_borrow()?;
+        Ok(self.inner.is_set_to(&tensor.inner))
+    }
+
     fn tolist(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let values = self
             .inner
@@ -787,8 +806,8 @@ impl PyTensor {
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<bool> {
-        let (arguments, keyword_error) = bind_equal_arguments(args, kwargs, ["other"])?;
-        let other = parse_equal_tensor_argument("other", &arguments[0])?;
+        let (arguments, keyword_error) = bind_tensor_arguments("equal", args, kwargs, ["other"])?;
+        let other = parse_tensor_argument("equal", "other", &arguments[0])?;
         if let Some(keyword_error) = keyword_error {
             return Err(keyword_error);
         }
@@ -1217,9 +1236,10 @@ fn detach(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRe
 /// ``False`` otherwise. NaNs compare unequal, while tensor dtype is ignored.
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
 fn equal(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
-    let (arguments, keyword_error) = bind_equal_arguments(args, kwargs, ["input", "other"])?;
-    let input = parse_equal_tensor_argument("input", &arguments[0])?;
-    let other = parse_equal_tensor_argument("other", &arguments[1])?;
+    let (arguments, keyword_error) =
+        bind_tensor_arguments("equal", args, kwargs, ["input", "other"])?;
+    let input = parse_tensor_argument("equal", "input", &arguments[0])?;
+    let other = parse_tensor_argument("equal", "other", &arguments[1])?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
@@ -2883,14 +2903,15 @@ fn bind_detach_argument<'py>(
     Ok(input)
 }
 
-fn bind_equal_arguments<'py, const N: usize>(
+fn bind_tensor_arguments<'py, const N: usize>(
+    function: &str,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
     names: [&str; N],
 ) -> PyResult<([ParsedCallArgument<'py>; N], Option<PyErr>)> {
     if positional.len() > N {
         return Err(PyTypeError::new_err(format!(
-            "equal() takes {N} positional {} but {} were given",
+            "{function}() takes {N} positional {} but {} were given",
             if N == 1 { "argument" } else { "arguments" },
             positional.len()
         )));
@@ -2911,7 +2932,7 @@ fn bind_equal_arguments<'py, const N: usize>(
             let Some(index) = names.iter().position(|name| *name == key) else {
                 keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
-                        "equal() got an unexpected keyword argument '{key}'"
+                        "{function}() got an unexpected keyword argument '{key}'"
                     ))
                 });
                 continue;
@@ -2919,7 +2940,7 @@ fn bind_equal_arguments<'py, const N: usize>(
             if arguments[index].is_some() {
                 keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
-                        "equal() got multiple values for argument '{}'",
+                        "{function}() got multiple values for argument '{}'",
                         names[index]
                     ))
                 });
@@ -2936,7 +2957,8 @@ fn bind_equal_arguments<'py, const N: usize>(
         // Supplied arguments earlier in the schema are converted before a
         // missing later argument is reported.
         for (name, argument) in names.iter().zip(arguments.iter()).take(first_missing) {
-            parse_equal_tensor_argument(
+            parse_tensor_argument(
+                function,
                 name,
                 argument
                     .as_ref()
@@ -2957,18 +2979,19 @@ fn bind_equal_arguments<'py, const N: usize>(
             "argument"
         };
         return Err(PyTypeError::new_err(format!(
-            "equal() missing {} required positional {argument}: {quoted_names}",
+            "{function}() missing {} required positional {argument}: {quoted_names}",
             missing.len()
         )));
     }
 
     Ok((
-        arguments.map(|argument| argument.expect("all required equal arguments were checked")),
+        arguments.map(|argument| argument.expect("all required tensor arguments were checked")),
         keyword_error,
     ))
 }
 
-fn parse_equal_tensor_argument<'a, 'py>(
+fn parse_tensor_argument<'a, 'py>(
+    function: &str,
     argument: &str,
     value: &'a ParsedCallArgument<'py>,
 ) -> PyResult<&'a Bound<'py, PyTensor>> {
@@ -2978,7 +3001,7 @@ fn parse_equal_tensor_argument<'a, 'py>(
             .map_or_else(String::new, |position| format!(" (position {position})"));
         let actual = transpose_type_name(&value.value)?;
         return Err(PyTypeError::new_err(format!(
-            "equal(): argument '{argument}'{position} must be Tensor, not {actual}"
+            "{function}(): argument '{argument}'{position} must be Tensor, not {actual}"
         )));
     };
     Ok(tensor)

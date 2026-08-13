@@ -799,6 +799,39 @@ fn transpose_is_a_metadata_only_shared_storage_view() {
 }
 
 #[test]
+fn is_set_to_requires_identical_storage_offset_shape_and_strides() {
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let detached = source.detach().unwrap();
+    let identical_view = source.reshape([2, 3, 4]).unwrap();
+    let clone = source.try_clone().unwrap();
+    let reshaped = source.reshape([6, 4]).unwrap();
+    let transposed = source.transpose(0, 2).unwrap();
+
+    assert!(source.is_set_to(&source));
+    assert!(source.is_set_to(&detached));
+    assert!(source.is_set_to(&identical_view));
+    assert!(!source.is_set_to(&clone));
+    assert!(!source.is_set_to(&reshaped));
+    assert!(!source.is_set_to(&transposed));
+
+    let first_offset_view = source.transpose(0, 2).unwrap().index_integer(1).unwrap();
+    let second_offset_view = source.transpose(0, 2).unwrap().index_integer(1).unwrap();
+    let different_offset = source.transpose(0, 2).unwrap().index_integer(2).unwrap();
+    assert!(first_offset_view.is_set_to(&second_offset_view));
+    assert!(first_offset_view.is_set_to(&first_offset_view.detach().unwrap()));
+    assert!(!first_offset_view.is_set_to(&different_offset));
+
+    let scalar = Tensor::from_vec(vec![3.0], []).unwrap();
+    assert!(scalar.is_set_to(&scalar.detach().unwrap()));
+    assert!(!scalar.is_set_to(&scalar.try_clone().unwrap()));
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap();
+    assert!(empty.is_set_to(&empty.detach().unwrap()));
+    assert!(!empty.is_set_to(&empty.try_clone().unwrap()));
+    assert!(!empty.is_set_to(&empty.transpose(0, 2).unwrap()));
+}
+
+#[test]
 fn arbitrary_dimension_permutations_power_t_and_mt_views() {
     let source = Tensor::from_vec((0_u8..120).map(f32::from).collect(), [2, 3, 4, 5]).unwrap();
     let offset_view = source.transpose(0, 3).unwrap().index_integer(1).unwrap();

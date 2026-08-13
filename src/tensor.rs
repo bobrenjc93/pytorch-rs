@@ -974,6 +974,19 @@ impl Tensor {
         Arc::ptr_eq(&self.storage, &other.storage)
     }
 
+    /// Reports whether two tensors point to the exact same logical view.
+    ///
+    /// Matching views share storage and have identical storage offsets, shapes,
+    /// and strides. Autograd metadata and tensor wrapper identity do not affect
+    /// the result.
+    #[must_use]
+    pub fn is_set_to(&self, other: &Self) -> bool {
+        self.storage_offset() == other.storage_offset()
+            && self.shape() == other.shape()
+            && self.stride() == other.stride()
+            && self.shares_storage_with(other)
+    }
+
     /// Returns the scalar type physically represented by this tensor's storage.
     #[must_use]
     pub fn dtype(&self) -> DType {

@@ -1025,6 +1025,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 56
       }
+    },
+    {
+      "key": "pr:67",
+      "recordedAt": "2026-08-13T09:19:23.977Z",
+      "label": "PR #67",
+      "kind": "leaf",
+      "prNumber": 67,
+      "title": "Expose Tensor.is_set_to alias inspection",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 57.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 37,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 56
+      }
     }
   ]
 }
