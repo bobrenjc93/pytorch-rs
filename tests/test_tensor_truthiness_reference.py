@@ -1,4 +1,6 @@
+import inspect
 import operator
+import types
 import unittest
 
 import torch_rs as torch
@@ -16,6 +18,8 @@ class TensorTruthinessReferenceTests(unittest.TestCase):
         self.assertEqual(bool(actual), bool(expected))
         self.assertIs(type(operator.truth(actual)), type(operator.truth(expected)))
         self.assertEqual(operator.truth(actual), operator.truth(expected))
+        self.assertIs(type(actual.is_nonzero()), type(expected.is_nonzero()))
+        self.assertEqual(actual.is_nonzero(), expected.is_nonzero())
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -79,10 +83,65 @@ class TensorTruthinessReferenceTests(unittest.TestCase):
         )
         for actual, expected in cases:
             with self.subTest(shape=actual.shape, stride=actual.stride()):
-                self.assert_error_matches(
-                    lambda actual=actual: bool(actual),
-                    lambda expected=expected: bool(expected),
-                )
+                for actual_call, expected_call in (
+                    (
+                        lambda actual=actual: bool(actual),
+                        lambda expected=expected: bool(expected),
+                    ),
+                    (
+                        lambda actual=actual: operator.truth(actual),
+                        lambda expected=expected: operator.truth(expected),
+                    ),
+                    (actual.is_nonzero, expected.is_nonzero),
+                ):
+                    self.assert_error_matches(actual_call, expected_call)
+
+    def test_is_nonzero_method_contract_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual = torch.tensor(1.0)
+        expected = reference_torch.tensor(1.0)
+        actual_descriptor = inspect.getattr_static(torch.Tensor, "is_nonzero")
+        expected_descriptor = inspect.getattr_static(
+            reference_torch.Tensor, "is_nonzero"
+        )
+
+        for descriptor in (actual_descriptor, expected_descriptor):
+            self.assertIs(type(descriptor), types.MethodDescriptorType)
+            self.assertEqual(descriptor.__name__, "is_nonzero")
+            self.assertIsNone(descriptor.__text_signature__)
+            self.assertIsNone(descriptor.__doc__)
+            with self.assertRaises(ValueError):
+                inspect.signature(descriptor)
+        actual_bound = actual.is_nonzero
+        expected_bound = expected.is_nonzero
+        for bound in (actual_bound, expected_bound):
+            self.assertIs(type(bound), types.BuiltinMethodType)
+            self.assertEqual(bound.__name__, "is_nonzero")
+            self.assertIsNone(bound.__text_signature__)
+            self.assertIsNone(bound.__doc__)
+            with self.assertRaises(ValueError):
+                inspect.signature(bound)
+
+        self.assertEqual(actual_descriptor(actual), expected_descriptor(expected))
+        for actual_call, expected_call in (
+            (lambda: actual_bound(1), lambda: expected_bound(1)),
+            (lambda: actual_bound(1, 2), lambda: expected_bound(1, 2)),
+            (
+                lambda: actual_bound(dim=0),
+                lambda: expected_bound(dim=0),
+            ),
+            (
+                lambda: actual_bound(input=actual),
+                lambda: expected_bound(input=expected),
+            ),
+        ):
+            self.assert_error_matches(actual_call, expected_call)
+
+        for descriptor in (actual_descriptor, expected_descriptor):
+            with self.assertRaises(TypeError):
+                descriptor()
+            with self.assertRaises(TypeError):
+                descriptor(1)
 
 
 if __name__ == "__main__":

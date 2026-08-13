@@ -1,5 +1,7 @@
+import inspect
 import operator
 import re
+import types
 import unittest
 
 import torch_rs as torch
@@ -9,6 +11,7 @@ class TensorTruthinessTests(unittest.TestCase):
     def assert_truth(self, tensor, expected):
         self.assertIs(bool(tensor), expected)
         self.assertIs(operator.truth(tensor), expected)
+        self.assertIs(tensor.is_nonzero(), expected)
 
     def test_scalar_signed_zero_and_non_finite_values(self):
         cases = (
@@ -60,8 +63,57 @@ class TensorTruthinessTests(unittest.TestCase):
         )
         for tensor, message in cases:
             with self.subTest(shape=tensor.shape, stride=tensor.stride()):
-                with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
-                    bool(tensor)
+                for operation in (bool, operator.truth, lambda value: value.is_nonzero()):
+                    with self.assertRaisesRegex(
+                        RuntimeError, f"^{re.escape(message)}$"
+                    ):
+                        operation(tensor)
+
+    def test_is_nonzero_no_argument_method_contract(self):
+        tensor = torch.tensor(1.0)
+        descriptor = inspect.getattr_static(torch.Tensor, "is_nonzero")
+        bound = tensor.is_nonzero
+
+        self.assertIs(type(descriptor), types.MethodDescriptorType)
+        self.assertIs(type(bound), types.BuiltinMethodType)
+        self.assertEqual(descriptor.__name__, "is_nonzero")
+        self.assertEqual(bound.__name__, "is_nonzero")
+        self.assertIsNone(descriptor.__text_signature__)
+        self.assertIsNone(bound.__text_signature__)
+        self.assertIsNone(descriptor.__doc__)
+        self.assertIsNone(bound.__doc__)
+        for callable_object in (descriptor, bound):
+            with self.assertRaises(ValueError):
+                inspect.signature(callable_object)
+        self.assertIs(descriptor(tensor), True)
+
+        calls = (
+            (
+                lambda: tensor.is_nonzero(1),
+                "Tensor.is_nonzero() takes no arguments (1 given)",
+            ),
+            (
+                lambda: tensor.is_nonzero(1, 2),
+                "Tensor.is_nonzero() takes no arguments (2 given)",
+            ),
+            (
+                lambda: tensor.is_nonzero(dim=0),
+                "Tensor.is_nonzero() takes no keyword arguments",
+            ),
+            (
+                lambda: descriptor(),
+                "unbound method Tensor.is_nonzero() needs an argument",
+            ),
+            (
+                lambda: descriptor(tensor, 1),
+                "Tensor.is_nonzero() takes no arguments (1 given)",
+            ),
+        )
+        for call, message in calls:
+            with self.subTest(message=message):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
 
 
 if __name__ == "__main__":

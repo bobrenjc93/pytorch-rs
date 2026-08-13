@@ -849,6 +849,22 @@
         "eval_b4945d15": 96,
         "eval_c8a1bfb9": 54
       }
+    },
+    {
+      "key": "pr:55",
+      "recordedAt": "2026-08-13T02:28:43.398Z",
+      "label": "PR #55",
+      "kind": "leaf",
+      "prNumber": 55,
+      "title": "Expose Tensor.is_nonzero",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 57,
+        "eval_63a24994": 79.8,
+        "eval_39340456": 30,
+        "eval_b4945d15": 96,
+        "eval_c8a1bfb9": 54
+      }
     }
   ]
 }
