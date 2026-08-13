@@ -1163,6 +1163,33 @@ fn is_grad_enabled(
     Ok(core_is_grad_enabled())
 }
 
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[cfg_attr(
+    not(doc),
+    doc = "\nget_default_dtype() -> torch.dtype\n\nGet the current default floating point :class:`torch.dtype`.\n\nExample::\n\n    >>> torch.get_default_dtype()  # initial default for floating point is torch.float32\n    torch.float32\n    >>> torch.set_default_dtype(torch.float64)\n    >>> torch.get_default_dtype()  # default is now changed to torch.float64\n    torch.float64\n\n"
+)]
+#[cfg_attr(doc, doc = "Get the current default floating-point dtype.")]
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn get_default_dtype(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyDType>> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch.get_default_dtype() takes no keyword arguments",
+        ));
+    }
+    if !args.is_empty() {
+        return Err(PyTypeError::new_err(format!(
+            "torch.get_default_dtype() takes no arguments ({} given)",
+            args.len()
+        )));
+    }
+    Ok(float32_object(py)?.clone_ref(py))
+}
+
 #[pyfunction(
     signature = (data, *, dtype=None, device=None, requires_grad=StrictBool(false)),
     text_signature = "(data, *, dtype=None, device=None, requires_grad=False)"
@@ -4031,6 +4058,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
     module.add_function(wrap_pyfunction!(is_grad_enabled, module)?)?;
+    module.add_function(wrap_pyfunction!(get_default_dtype, module)?)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
