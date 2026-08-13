@@ -1349,6 +1349,60 @@ fn rank_two_matmul_reads_transposed_strides() {
 }
 
 #[test]
+fn rank_two_matmul_reads_indexed_transposed_offsets() {
+    let left = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [2, 3, 2])
+        .unwrap()
+        .index_integer(1)
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    let right = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 4, 3])
+        .unwrap()
+        .index_integer(1)
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+
+    assert_eq!(left.shape(), [2, 3]);
+    assert_eq!(left.stride(), [1, 2]);
+    assert_eq!(left.storage_offset(), 6);
+    assert_eq!(right.shape(), [3, 4]);
+    assert_eq!(right.stride(), [1, 3]);
+    assert_eq!(right.storage_offset(), 12);
+
+    let output = left.matmul(&right).unwrap();
+    assert_eq!(output.shape(), [2, 4]);
+    assert_eq!(output.stride(), [4, 1]);
+    assert_eq!(
+        output.as_slice(),
+        [316.0, 388.0, 460.0, 532.0, 355.0, 436.0, 517.0, 598.0]
+    );
+}
+
+#[test]
+fn rank_two_matmul_preserves_offset_empty_results() {
+    let left = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [2, 3, 2])
+        .unwrap()
+        .index_integer(1)
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    let right = Tensor::zeros([2, 0, 3])
+        .unwrap()
+        .index_integer(1)
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    assert_eq!(right.shape(), [3, 0]);
+    assert_eq!(right.storage_offset(), 3);
+
+    let output = left.matmul(&right).unwrap();
+    assert_eq!(output.shape(), [2, 0]);
+    assert_eq!(output.storage_offset(), 0);
+    assert!(output.as_slice().is_empty());
+}
+
+#[test]
 fn transpose_preserves_exact_empty_and_extreme_strides() {
     let maximum = isize::MAX.unsigned_abs();
     let empty = Tensor::zeros([2, 0, maximum]).unwrap();

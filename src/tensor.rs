@@ -2399,6 +2399,35 @@ impl Tensor {
                     }
                 }
             }
+        } else if output_elements != 0
+            && inner != 0
+            && let (Some(left_data), Some(right_data)) =
+                (self.storage.owned_values(), other.storage.owned_values())
+        {
+            // Immutable owned storage can be borrowed for the whole kernel.
+            // Check each monotonic row span once before incrementing within it.
+            let left_depth_stride = self.strides[1];
+            let right_column_stride = other.strides[1];
+            for (row, output_row) in output.chunks_exact_mut(columns).enumerate() {
+                let mut left_offset = checked_matrix_row_base(self, row, inner, left_data.len())?;
+                for depth in 0..inner {
+                    let left = left_data[left_offset];
+                    let mut right_offset =
+                        checked_matrix_row_base(other, depth, columns, right_data.len())?;
+                    let mut column = 0;
+                    loop {
+                        output_row[column] += left * right_data[right_offset];
+                        column += 1;
+                        if column == columns {
+                            break;
+                        }
+                        right_offset += right_column_stride;
+                    }
+                    if depth + 1 != inner {
+                        left_offset += left_depth_stride;
+                    }
+                }
+            }
         } else {
             for row in 0..rows {
                 for depth in 0..inner {
@@ -3315,6 +3344,34 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
+fn checked_matrix_row_base(
+    tensor: &Tensor,
+    row: usize,
+    columns: usize,
+    storage_elements: usize,
+) -> Result<usize, TensorError> {
+    debug_assert_ne!(columns, 0);
+    let row_offset = row
+        .checked_mul(tensor.strides[0])
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    let base = tensor
+        .offset
+        .checked_add(row_offset)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    let final_column = columns
+        .checked_sub(1)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    let final_column_offset = final_column
+        .checked_mul(tensor.strides[1])
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    // Strides are non-negative, so a valid final address covers every
+    // increment from the base as well.
+    base.checked_add(final_column_offset)
+        .filter(|offset| *offset < storage_elements)
+        .map(|_| base)
+        .ok_or(TensorError::IndexCalculationOverflow)
+}
+
 fn compute_reshape_view_strides(
     old_shape: &[usize],
     old_strides: &[usize],
@@ -3732,11 +3789,114 @@ fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use super::{
         DType, Device, F32_SIGN_MASK, Storage, StorageData, Tensor, TensorError, try_result_vector,
     };
+
+    fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
+        Tensor {
+            storage: Arc::new(Storage {
+                data: StorageData::SharedGradient(Mutex::new(
+                    tensor.storage.owned_values().unwrap().to_vec(),
+                )),
+                dtype: tensor.dtype(),
+                device: tensor.device(),
+            }),
+            shape: tensor.shape.clone(),
+            strides: tensor.strides.clone(),
+            offset: tensor.offset,
+            elements: tensor.elements,
+            view_requires_grad: false,
+            autograd: None,
+        }
+    }
+
+    fn offset_strided_matrix(bits: [u32; 9]) -> Tensor {
+        let mut values = vec![0.0; 9];
+        values.extend(bits.map(f32::from_bits));
+        Tensor::from_vec(values, [2, 3, 3])
+            .unwrap()
+            .index_integer(1)
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap()
+    }
+
+    #[test]
+    fn owned_strided_matmul_is_bitwise_identical_to_shared_gradient_fallback() {
+        let left = offset_strided_matrix([
+            0x7f80_0000,
+            0x8000_0000,
+            0x3f80_0000,
+            0xff80_0000,
+            0x0000_0000,
+            0xbf80_0000,
+            0x7fc1_2345,
+            0x8000_0000,
+            0x4000_0000,
+        ]);
+        let right = offset_strided_matrix([
+            0x3f80_0000,
+            0xbf80_0000,
+            0x4000_0000,
+            0x7f80_0000,
+            0x3f80_0000,
+            0xff80_0000,
+            0x7fc6_789a,
+            0x0000_0000,
+            0x3f80_0000,
+        ]);
+        assert!(!left.is_contiguous());
+        assert!(!right.is_contiguous());
+        assert_ne!(left.storage_offset(), 0);
+        assert_ne!(right.storage_offset(), 0);
+
+        let shared_left = shared_gradient_copy(&left);
+        let shared_right = shared_gradient_copy(&right);
+        let expected = shared_left.matmul(&shared_right).unwrap();
+        assert_eq!(expected.as_slice()[3].to_bits(), 0x0000_0000);
+        for actual in [
+            left.matmul(&right).unwrap(),
+            left.matmul(&shared_right).unwrap(),
+            shared_left.matmul(&right).unwrap(),
+        ] {
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn owned_strided_matmul_preserves_fallback_index_errors() {
+        let invalid = Tensor {
+            storage: Arc::new(Storage {
+                data: StorageData::Owned(vec![1.0]),
+                dtype: DType::Float32,
+                device: Device::Cpu,
+            }),
+            shape: vec![2, 2],
+            strides: vec![2, 1],
+            offset: 0,
+            elements: 4,
+            view_requires_grad: false,
+            autograd: None,
+        };
+        let right = Tensor::ones([2, 1]).unwrap();
+
+        assert_eq!(
+            invalid.matmul(&right),
+            shared_gradient_copy(&invalid).matmul(&right)
+        );
+        assert_eq!(
+            invalid.matmul(&right),
+            Err(TensorError::IndexCalculationOverflow)
+        );
+    }
 
     #[test]
     fn multiply_snapshots_live_gradient_operands_for_backward() {
