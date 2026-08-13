@@ -281,19 +281,6 @@ enum ParsedArithmeticScalar {
     WideNumpyUnsigned,
 }
 
-enum EyeDimensionArgument {
-    Omitted,
-    Provided(Py<PyAny>),
-}
-
-impl<'a, 'py> FromPyObject<'a, 'py> for EyeDimensionArgument {
-    type Error = PyErr;
-
-    fn extract(object: pyo3::Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        Ok(Self::Provided(object.into()))
-    }
-}
-
 #[derive(Clone, Copy)]
 struct StrictBool(bool);
 
@@ -322,6 +309,15 @@ struct CreationCallArguments<'py> {
 struct FullCallArguments<'py> {
     size: Option<Bound<'py, PyAny>>,
     fill_value: Option<Bound<'py, PyAny>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
+struct EyeCallArguments<'py> {
+    n: Option<Bound<'py, PyAny>>,
+    m: Option<Bound<'py, PyAny>>,
     dtype: Option<Bound<'py, PyAny>>,
     device: Option<Bound<'py, PyAny>>,
     requires_grad: Option<Bound<'py, PyAny>>,
@@ -1169,28 +1165,16 @@ fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
 }
 
 #[pyfunction(
-    signature = (n, m=EyeDimensionArgument::Omitted, *, dtype=None, device=None),
-    text_signature = "(n, m=None, *, dtype=None, device=None)"
+    signature = (*args, **kwargs),
+    text_signature = "(n, m=None, *, dtype=None, device=None, requires_grad=False)"
 )]
-fn eye(
-    n: &Bound<'_, PyAny>,
-    m: EyeDimensionArgument,
-    dtype: Option<&Bound<'_, PyAny>>,
-    device: Option<&Bound<'_, PyAny>>,
-) -> PyResult<PyTensor> {
-    let py = n.py();
-    let (dtype, device) = parse_metadata("eye", dtype, device)?;
-    let n = parse_eye_dimension("n", n)?;
-    let m = match m {
-        EyeDimensionArgument::Omitted => n,
-        EyeDimensionArgument::Provided(m) => parse_eye_dimension("m", m.bind(py))?,
-    };
-    let n = validate_eye_dimension("n", n)?;
-    let m = validate_eye_dimension("m", m)?;
+fn eye(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let arguments = bind_eye_arguments(args, kwargs)?;
+    let (n, m, dtype, device, requires_grad) = parse_eye_arguments(arguments)?;
     let shape = [n, m];
 
     CoreTensor::eye_with_metadata(n, m, dtype, device)
-        .map(PyTensor::new)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| creation_shape_error(&error, &shape))
 }
 
@@ -1349,6 +1333,108 @@ fn bind_creation_arguments<'py>(
 
 fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
     if value.is_none() { None } else { Some(value) }
+}
+
+fn bind_eye_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<EyeCallArguments<'py>> {
+    // PyTorch rejects excess positional arguments before inspecting keywords.
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "eye() takes from 1 to 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = EyeCallArguments {
+        n: if positional.is_empty() {
+            None
+        } else {
+            Some(positional.get_item(0)?)
+        },
+        m: if positional.len() < 2 {
+            None
+        } else {
+            Some(positional.get_item(1)?)
+        },
+        dtype: None,
+        device: None,
+        requires_grad: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "n" => {
+                if arguments.n.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("eye() got multiple values for argument 'n'")
+                    });
+                } else {
+                    arguments.n = Some(value);
+                }
+            }
+            "m" => {
+                if arguments.m.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("eye() got multiple values for argument 'm'")
+                    });
+                } else {
+                    arguments.m = Some(value);
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "eye() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn parse_eye_arguments(
+    arguments: EyeCallArguments<'_>,
+) -> PyResult<(usize, usize, DType, Device, bool)> {
+    let EyeCallArguments {
+        n,
+        m,
+        dtype,
+        device,
+        requires_grad,
+        keyword_error,
+    } = arguments;
+    let Some(n) = n else {
+        return Err(PyTypeError::new_err(
+            "eye() missing 1 required positional argument: 'n'",
+        ));
+    };
+
+    // Factory options are type-checked before dimension conversion. Device
+    // resolution and shape validation happen only after all declared option
+    // types and competing keywords have been checked.
+    let dtype = parse_dtype("eye", dtype.as_ref())?;
+    validate_device_argument_type("eye", device.as_ref())?;
+    let requires_grad = parse_factory_requires_grad("eye", requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    let device = parse_device("eye", device.as_ref())?;
+    let n = parse_eye_dimension("n", &n)?;
+    let m = m.map_or(Ok(n), |m| parse_eye_dimension("m", &m))?;
+    let n = validate_eye_dimension("n", n)?;
+    let m = validate_eye_dimension("m", m)?;
+    Ok((n, m, dtype, device, requires_grad))
 }
 
 fn parse_creation_arguments(
