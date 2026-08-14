@@ -1,5 +1,5 @@
 use std::cell::Cell;
-use std::ffi::CStr;
+use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -8,6 +8,7 @@ use pyo3::exceptions::{
     PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
     PyValueError,
 };
+use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
@@ -422,6 +423,19 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nmultiply(value) -> Tensor\n\nSee :func:`torch.multiply`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn multiply(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        tensor.multiplication_method(MultiplicationMethod::Multiply, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\ntype_as(tensor) -> Tensor\n\nReturns this tensor cast to the type of the given tensor.\n\nThis is a no-op if the tensor is already of the correct type. This is\nequivalent to ``self.type(tensor.type())``\n\nArgs:\n    tensor (Tensor): the tensor which has the desired type\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn type_as(
@@ -624,6 +638,21 @@ enum BinaryOperation {
     Subtract,
     Multiply,
     Divide,
+}
+
+#[derive(Clone, Copy)]
+enum MultiplicationMethod {
+    Mul,
+    Multiply,
+}
+
+impl MultiplicationMethod {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Mul => "mul",
+            Self::Multiply => "multiply",
+        }
+    }
 }
 
 #[pymethods]
@@ -1167,47 +1196,7 @@ impl PyTensor {
     #[doc = "\nmul(value) -> Tensor\n\nSee :func:`torch.mul`.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn mul(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        let (other, keyword_error) = bind_mul_argument(args, kwargs)?;
-        let other_tensor = other.value.cast::<Self>().ok();
-        let scalar = other_tensor
-            .is_none()
-            .then(|| parse_arithmetic_scalar(&other.value));
-
-        if scalar
-            .as_ref()
-            .is_some_and(|result| matches!(result, Ok(None)))
-        {
-            let actual = transpose_type_name(&other.value)?;
-            return Err(mul_argument_type_error(other.position, &actual));
-        }
-        if let Some(keyword_error) = keyword_error {
-            return Err(keyword_error);
-        }
-
-        let result = if let Some(other_tensor) = other_tensor {
-            let other_tensor = other_tensor.try_borrow()?;
-            BinaryOperation::Multiply.apply_tensors(&self.inner, &other_tensor.inner)
-        } else {
-            let scalar = match scalar.expect("a non-tensor mul operand has a scalar parse result") {
-                Ok(Some(scalar)) => scalar,
-                Ok(None) => unreachable!("unsupported mul operand types were rejected above"),
-                Err(_) if other.value.is_instance_of::<PyInt>() => {
-                    let message = if other.value.lt(0_i64)? {
-                        "can't convert negative int to unsigned"
-                    } else {
-                        "int too big to convert"
-                    };
-                    return Err(PyOverflowError::new_err(message));
-                }
-                Err(error) => return Err(error),
-            };
-            if matches!(scalar, ParsedArithmeticScalar::WideNumpyUnsigned) {
-                return Err(PyTypeError::new_err("an integer is required"));
-            }
-            BinaryOperation::Multiply.apply_scalar(&self.inner, scalar.into_f32(), false)
-        };
-
-        result.map(Self::new).map_err(|error| tensor_error(&error))
+        self.multiplication_method(MultiplicationMethod::Mul, args, kwargs)
     }
 
     fn __rmul__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -1264,6 +1253,60 @@ impl PyTensor {
             .negate()
             .map(Self::new)
             .map_err(|error| tensor_error(&error))
+    }
+
+    fn multiplication_method(
+        &self,
+        operation: MultiplicationMethod,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let (other, keyword_error) = bind_multiplication_argument(operation, args, kwargs)?;
+        let other_tensor = other.value.cast::<Self>().ok();
+        let scalar = other_tensor
+            .is_none()
+            .then(|| parse_arithmetic_scalar(&other.value));
+
+        if scalar
+            .as_ref()
+            .is_some_and(|result| matches!(result, Ok(None)))
+        {
+            return match operation {
+                MultiplicationMethod::Mul => {
+                    let actual = transpose_type_name(&other.value)?;
+                    Err(mul_argument_type_error(other.position, &actual))
+                }
+                MultiplicationMethod::Multiply => Err(multiply_binding_error(args, kwargs)?),
+            };
+        }
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        let result = if let Some(other_tensor) = other_tensor {
+            let other_tensor = other_tensor.try_borrow()?;
+            BinaryOperation::Multiply.apply_tensors(&self.inner, &other_tensor.inner)
+        } else {
+            let scalar = match scalar.expect("a non-tensor mul operand has a scalar parse result") {
+                Ok(Some(scalar)) => scalar,
+                Ok(None) => unreachable!("unsupported mul operand types were rejected above"),
+                Err(_) if other.value.is_instance_of::<PyInt>() => {
+                    let message = if python_integer_is_negative(&other.value)? {
+                        "can't convert negative int to unsigned"
+                    } else {
+                        "int too big to convert"
+                    };
+                    return Err(PyOverflowError::new_err(message));
+                }
+                Err(error) => return Err(error),
+            };
+            if matches!(scalar, ParsedArithmeticScalar::WideNumpyUnsigned) {
+                return Err(PyTypeError::new_err("an integer is required"));
+            }
+            BinaryOperation::Multiply.apply_scalar(&self.inner, scalar.into_f32(), false)
+        };
+
+        result.map(Self::new).map_err(|error| tensor_error(&error))
     }
 
     fn truth_value(&self) -> PyResult<bool> {
@@ -2798,7 +2841,7 @@ fn parse_squeeze_sequence<'py>(
         let Some(dimension) = parsed_dimension else {
             if index == 0 {
                 let sequence_type = transpose_type_name(sequence)?;
-                let detail = squeeze_sequence_type_description(sequence)?;
+                let detail = call_argument_type_description(sequence)?;
                 return Err(match (top_level, keyword) {
                     (true, Some(keyword)) => squeeze_top_level_invalid_keyword(
                         keyword,
@@ -2868,53 +2911,871 @@ fn parse_squeeze_integer(
         .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))
 }
 
-fn squeeze_sequence_type_description(sequence: &Bound<'_, PyAny>) -> PyResult<String> {
-    let (kind, opening, closing, trailing) = if let Ok(sequence) = sequence.cast::<PyTuple>() {
-        ("tuple", "(", ")", sequence.len() == 1)
-    } else {
-        sequence.cast::<PyList>()?;
-        ("list", "[", "]", false)
-    };
-    let sequence = sequence.cast::<PySequence>()?;
-    let mut names = try_size_vector(sequence.len()?)?;
-    for item in sequence.try_iter()? {
-        names.push(transpose_type_name(&item?)?);
-    }
-    let names = names.join(", ");
-    let trailing = if trailing { "," } else { "" };
-    Ok(format!("{kind} of {opening}{names}{trailing}{closing}"))
+fn call_argument_type_description(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    let allocation = PythonAllocationFallback::new(value.py());
+    call_argument_type_description_with(value, &allocation)
 }
 
-fn squeeze_call_summary(
+fn call_argument_type_description_with(
+    value: &Bound<'_, PyAny>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    if !value.is_instance_of::<PyTuple>() && !value.is_instance_of::<PyList>() {
+        return transpose_type_name_with(value, allocation);
+    }
+
+    let kind = transpose_type_name_with(value, allocation)?;
+    let tuple = value.is_instance_of::<PyTuple>();
+    let (opening, closing) = if tuple { ("(", ")") } else { ("[", "]") };
+    let sequence = value.cast::<PySequence>()?;
+    let length = sequence.len().unwrap_or(0);
+    let mut description = kind;
+    try_push_string_with(&mut description, " of ", allocation)?;
+    try_push_string_with(&mut description, opening, allocation)?;
+    for index in 0..length {
+        if index != 0 {
+            try_push_string_with(&mut description, ", ", allocation)?;
+        }
+        let name = transpose_type_name_with(&sequence.get_item(index)?, allocation)?;
+        try_push_string_with(&mut description, &name, allocation)?;
+    }
+    if tuple && length == 1 {
+        try_push_string_with(&mut description, ",", allocation)?;
+    }
+    try_push_string_with(&mut description, closing, allocation)?;
+    Ok(description)
+}
+
+#[derive(Clone, Copy)]
+enum CallKeywordOrder {
+    Sorted,
+    PyTorchUnorderedMap,
+}
+
+fn call_type_summary(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
+    keyword_order: CallKeywordOrder,
 ) -> PyResult<String> {
-    let mut positional_names = try_size_vector(positional.len())?;
-    for value in positional.iter() {
-        positional_names.push(transpose_type_name(&value)?);
+    let allocation = PythonAllocationFallback::new(positional.py());
+    call_type_summary_with(positional, keywords, keyword_order, &allocation)
+}
+
+fn pytorch_keyword_name<'a>(key: &'a Bound<'_, PyAny>) -> PyResult<&'a str> {
+    key.cast::<PyString>()?
+        .to_str()
+        .map_err(|_| PyRuntimeError::new_err("error unpacking string as utf-8"))
+}
+
+fn call_type_summary_with(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    keyword_order: CallKeywordOrder,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let mut summary = String::new();
+    for (index, value) in positional.iter().enumerate() {
+        if index != 0 {
+            try_push_string_with(&mut summary, ", ", allocation)?;
+        }
+        let name = transpose_type_name_with(&value, allocation)?;
+        try_push_string_with(&mut summary, &name, allocation)?;
     }
 
     let keyword_length = keywords.map_or(0, PyDictMethods::len);
-    let mut keyword_names = try_size_vector(keyword_length)?;
+    let mut keyword_names = try_size_vector_with(keyword_length, allocation)?;
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
-            keyword_names.push((key.extract::<String>()?, transpose_type_name(&value)?));
+            let key = pytorch_keyword_name(&key)?;
+            try_push_size_with(
+                &mut keyword_names,
+                (
+                    try_string_from_str_with(key, allocation)?,
+                    transpose_type_name_with(&value, allocation)?,
+                ),
+                allocation,
+            )?;
         }
-        keyword_names.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        match keyword_order {
+            CallKeywordOrder::Sorted => {
+                keyword_names.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+            }
+            CallKeywordOrder::PyTorchUnorderedMap => {
+                keyword_names = pytorch_unordered_keyword_order(keyword_names, allocation)?;
+            }
+        }
     }
-    let keyword_names = keyword_names
-        .into_iter()
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect::<Vec<_>>()
-        .join(", ");
 
-    let positional_names = positional_names.join(", ");
-    match (positional_names.is_empty(), keyword_names.is_empty()) {
-        (true, true) => Ok(String::new()),
-        (false, true) => Ok(positional_names),
-        (true, false) => Ok(format!("{keyword_names}, ")),
-        (false, false) => Ok(format!("{positional_names}, {keyword_names}")),
+    if keyword_names.is_empty() {
+        return Ok(summary);
     }
+    let positional_empty = summary.is_empty();
+    if !positional_empty {
+        try_push_string_with(&mut summary, ", ", allocation)?;
+    }
+    for (index, (key, value)) in keyword_names.into_iter().enumerate() {
+        if index != 0 {
+            try_push_string_with(&mut summary, ", ", allocation)?;
+        }
+        try_push_string_with(&mut summary, &key, allocation)?;
+        try_push_string_with(&mut summary, "=", allocation)?;
+        try_push_string_with(&mut summary, &value, allocation)?;
+    }
+    if positional_empty {
+        try_push_string_with(&mut summary, ", ", allocation)?;
+    }
+    Ok(summary)
+}
+
+const PYTORCH_UNORDERED_BUCKET_COUNTS: &[u64] = &[
+    13,
+    29,
+    59,
+    127,
+    257,
+    541,
+    1_109,
+    2_357,
+    5_087,
+    10_273,
+    20_753,
+    42_043,
+    85_229,
+    172_933,
+    351_061,
+    712_697,
+    1_447_153,
+    2_938_679,
+    5_967_347,
+    12_117_689,
+    24_607_243,
+    49_969_847,
+    101_473_717,
+    206_062_531,
+    418_451_333,
+    849_749_479,
+    1_725_587_117,
+    3_504_151_727,
+    8_589_934_583,
+    25_769_803_693,
+    68_719_476_731,
+    206_158_430_123,
+    412_316_860_387,
+    1_099_511_627_689,
+    2_199_023_255_531,
+    4_398_046_511_093,
+    13_194_139_533_241,
+    26_388_279_066_581,
+    52_776_558_133_177,
+    105_553_116_266_399,
+    211_106_232_532_861,
+    562_949_953_421_231,
+    1_125_899_906_842_597,
+    4_503_599_627_370_449,
+    18_014_398_509_481_951,
+    36_028_797_018_963_913,
+    72_057_594_037_927_931,
+    288_230_376_151_711_717,
+    1_152_921_504_606_846_883,
+    2_305_843_009_213_693_951,
+    9_223_372_036_854_775_783,
+    18_446_744_073_709_551_557,
+];
+
+fn pytorch_unordered_keyword_order(
+    keywords: Vec<(String, String)>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<Vec<(String, String)>> {
+    if cfg!(target_os = "windows") {
+        pytorch_msvc_keyword_order(keywords, allocation)
+    } else if cfg!(target_os = "macos") {
+        pytorch_libcxx_keyword_order(keywords, allocation)
+    } else {
+        pytorch_libstdcxx_keyword_order(keywords, allocation)
+    }
+}
+
+fn pytorch_msvc_keyword_order(
+    keywords: Vec<(String, String)>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<Vec<(String, String)>> {
+    // MSVC's unordered map stores elements in a linked list, appending new
+    // buckets and inserting collisions at the front of an existing bucket.
+    let capacity = keywords.len();
+    if capacity == 0 {
+        return Ok(keywords);
+    }
+
+    let mut bucket_count = 8_usize;
+    let mut buckets = empty_keyword_buckets(bucket_count, allocation)?;
+    let mut nodes = try_size_vector_with(capacity, allocation)?;
+    let mut head = None;
+    let mut tail = None;
+
+    for (key, value) in keywords {
+        if nodes.len() == bucket_count {
+            bucket_count = if bucket_count < 512 {
+                bucket_count.checked_mul(8)
+            } else {
+                bucket_count.checked_mul(2)
+            }
+            .ok_or_else(|| allocation.error())?;
+            buckets = empty_keyword_buckets(bucket_count, allocation)?;
+            (head, tail) =
+                rehash_msvc_unordered_keywords(&mut nodes, &mut buckets, bucket_count, head);
+        }
+
+        let index = nodes.len();
+        try_push_size_with(
+            &mut nodes,
+            UnorderedKeywordNode {
+                hash: msvc_string_hash(&key),
+                key,
+                value,
+                previous: None,
+                next: None,
+            },
+            allocation,
+        )?;
+        link_msvc_unordered_keyword(
+            &mut nodes,
+            &mut buckets,
+            bucket_count,
+            &mut head,
+            &mut tail,
+            index,
+        );
+    }
+
+    take_unordered_keywords(nodes, head, capacity, allocation)
+}
+
+fn pytorch_libstdcxx_keyword_order(
+    keywords: Vec<(String, String)>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<Vec<(String, String)>> {
+    // PyTorch 2.13's overload formatter copies keyword arguments into
+    // libstdc++'s `std::unordered_map`. Reproduce its MurmurHash64A buckets,
+    // prime rehash policy, and bucket-local insertion order.
+
+    let capacity = keywords.len();
+    if capacity == 0 {
+        return Ok(keywords);
+    }
+
+    let mut bucket_counts = PYTORCH_UNORDERED_BUCKET_COUNTS.iter().copied();
+    let mut bucket_count = usize::try_from(
+        bucket_counts
+            .next()
+            .expect("the libstdc++ bucket sequence is nonempty"),
+    )
+    .map_err(|_| allocation.error())?;
+    let mut buckets = empty_keyword_buckets(bucket_count, allocation)?;
+    let mut nodes = try_size_vector_with(capacity, allocation)?;
+    let mut head = None;
+
+    for (key, value) in keywords {
+        if nodes.len() == bucket_count {
+            bucket_count = usize::try_from(bucket_counts.next().ok_or_else(|| allocation.error())?)
+                .map_err(|_| allocation.error())?;
+            buckets = empty_keyword_buckets(bucket_count, allocation)?;
+            head = rehash_unordered_keywords(&mut nodes, &mut buckets, bucket_count, head);
+        }
+
+        let index = nodes.len();
+        try_push_size_with(
+            &mut nodes,
+            UnorderedKeywordNode {
+                hash: pytorch_string_hash(&key),
+                key,
+                value,
+                previous: None,
+                next: None,
+            },
+            allocation,
+        )?;
+        link_unordered_keyword(&mut nodes, &mut buckets, bucket_count, &mut head, index);
+    }
+
+    take_unordered_keywords(nodes, head, capacity, allocation)
+}
+
+fn pytorch_libcxx_keyword_order(
+    keywords: Vec<(String, String)>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<Vec<(String, String)>> {
+    // The macOS build of PyTorch uses libc++, whose default unordered map
+    // starts with two buckets and then follows its prime rehash policy.
+    let capacity = keywords.len();
+    if capacity == 0 {
+        return Ok(keywords);
+    }
+
+    let mut bucket_count = 0_usize;
+    let mut buckets = Vec::new();
+    let mut nodes = try_size_vector_with(capacity, allocation)?;
+    let mut head = None;
+
+    for (key, value) in keywords {
+        if nodes.len() == bucket_count {
+            bucket_count = if bucket_count == 0 {
+                2
+            } else {
+                let candidate = bucket_count
+                    .checked_mul(2)
+                    .and_then(|count| count.checked_add(1))
+                    .ok_or_else(|| allocation.error())?;
+                libcxx_next_prime(candidate, allocation)?
+            };
+            buckets = empty_keyword_buckets(bucket_count, allocation)?;
+            head = rehash_libcxx_unordered_keywords(&mut nodes, &mut buckets, bucket_count, head);
+        }
+
+        let index = nodes.len();
+        try_push_size_with(
+            &mut nodes,
+            UnorderedKeywordNode {
+                hash: libcxx_string_hash(&key),
+                key,
+                value,
+                previous: None,
+                next: None,
+            },
+            allocation,
+        )?;
+        link_unordered_keyword(&mut nodes, &mut buckets, bucket_count, &mut head, index);
+    }
+
+    take_unordered_keywords(nodes, head, capacity, allocation)
+}
+
+fn take_unordered_keywords(
+    mut nodes: Vec<UnorderedKeywordNode>,
+    head: Option<usize>,
+    capacity: usize,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<Vec<(String, String)>> {
+    let mut ordered = try_size_vector_with(capacity, allocation)?;
+    let mut current = head;
+    while let Some(index) = current {
+        let node = &mut nodes[index];
+        current = node.next;
+        try_push_size_with(
+            &mut ordered,
+            (
+                std::mem::take(&mut node.key),
+                std::mem::take(&mut node.value),
+            ),
+            allocation,
+        )?;
+    }
+    Ok(ordered)
+}
+
+struct UnorderedKeywordNode {
+    hash: u64,
+    key: String,
+    value: String,
+    previous: Option<usize>,
+    next: Option<usize>,
+}
+
+fn empty_keyword_buckets(
+    bucket_count: usize,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<Vec<Option<usize>>> {
+    let mut buckets = try_size_vector_with(bucket_count, allocation)?;
+    buckets.resize(bucket_count, None);
+    Ok(buckets)
+}
+
+fn rehash_unordered_keywords(
+    nodes: &mut [UnorderedKeywordNode],
+    buckets: &mut [Option<usize>],
+    bucket_count: usize,
+    old_head: Option<usize>,
+) -> Option<usize> {
+    let mut head = None;
+    let mut current = old_head;
+    while let Some(index) = current {
+        current = nodes[index].next;
+        nodes[index].previous = None;
+        nodes[index].next = None;
+        link_unordered_keyword(nodes, buckets, bucket_count, &mut head, index);
+    }
+    head
+}
+
+fn rehash_libcxx_unordered_keywords(
+    nodes: &mut [UnorderedKeywordNode],
+    buckets: &mut [Option<usize>],
+    bucket_count: usize,
+    mut head: Option<usize>,
+) -> Option<usize> {
+    let first = head?;
+    let first_bucket = unordered_keyword_bucket(nodes[first].hash, bucket_count);
+    buckets[first_bucket] = Some(first);
+
+    let mut previous = first;
+    let mut previous_bucket = first_bucket;
+    while let Some(current) = nodes[previous].next {
+        let bucket = unordered_keyword_bucket(nodes[current].hash, bucket_count);
+        if bucket == previous_bucket {
+            previous = current;
+        } else if buckets[bucket].is_none() {
+            buckets[bucket] = Some(current);
+            previous = current;
+            previous_bucket = bucket;
+        } else {
+            let next = nodes[current].next;
+            nodes[previous].next = next;
+            if let Some(next) = next {
+                nodes[next].previous = Some(previous);
+            }
+
+            let bucket_first = buckets[bucket].expect("the bucket was checked as populated");
+            let before_bucket = nodes[bucket_first].previous;
+            nodes[current].previous = before_bucket;
+            nodes[current].next = Some(bucket_first);
+            nodes[bucket_first].previous = Some(current);
+            if let Some(before_bucket) = before_bucket {
+                nodes[before_bucket].next = Some(current);
+            } else {
+                head = Some(current);
+            }
+            buckets[bucket] = Some(current);
+        }
+    }
+    head
+}
+
+fn rehash_msvc_unordered_keywords(
+    nodes: &mut [UnorderedKeywordNode],
+    buckets: &mut [Option<usize>],
+    bucket_count: usize,
+    mut head: Option<usize>,
+) -> (Option<usize>, Option<usize>) {
+    let Some(first) = head else {
+        return (None, None);
+    };
+    let first_bucket = unordered_keyword_bucket(nodes[first].hash, bucket_count);
+    buckets[first_bucket] = Some(first);
+
+    let mut previous = first;
+    while let Some(current) = nodes[previous].next {
+        let bucket = unordered_keyword_bucket(nodes[current].hash, bucket_count);
+        if buckets[bucket].is_none() {
+            buckets[bucket] = Some(current);
+            previous = current;
+            continue;
+        }
+
+        let next = nodes[current].next;
+        nodes[previous].next = next;
+        if let Some(next) = next {
+            nodes[next].previous = Some(previous);
+        }
+
+        let bucket_first = buckets[bucket].expect("the bucket was checked as populated");
+        let before_bucket = nodes[bucket_first].previous;
+        nodes[current].previous = before_bucket;
+        nodes[current].next = Some(bucket_first);
+        nodes[bucket_first].previous = Some(current);
+        if let Some(before_bucket) = before_bucket {
+            nodes[before_bucket].next = Some(current);
+        } else {
+            head = Some(current);
+        }
+        buckets[bucket] = Some(current);
+    }
+
+    let mut tail = head;
+    while let Some(current) = tail
+        && nodes[current].next.is_some()
+    {
+        tail = nodes[current].next;
+    }
+    (head, tail)
+}
+
+fn link_unordered_keyword(
+    nodes: &mut [UnorderedKeywordNode],
+    buckets: &mut [Option<usize>],
+    bucket_count: usize,
+    head: &mut Option<usize>,
+    index: usize,
+) {
+    let bucket = unordered_keyword_bucket(nodes[index].hash, bucket_count);
+    if let Some(next) = buckets[bucket] {
+        let previous = nodes[next].previous;
+        nodes[index].previous = previous;
+        nodes[index].next = Some(next);
+        nodes[next].previous = Some(index);
+        if let Some(previous) = previous {
+            nodes[previous].next = Some(index);
+        } else {
+            *head = Some(index);
+        }
+    } else {
+        nodes[index].next = *head;
+        if let Some(old_head) = *head {
+            nodes[old_head].previous = Some(index);
+        }
+        *head = Some(index);
+    }
+    buckets[bucket] = Some(index);
+}
+
+fn link_msvc_unordered_keyword(
+    nodes: &mut [UnorderedKeywordNode],
+    buckets: &mut [Option<usize>],
+    bucket_count: usize,
+    head: &mut Option<usize>,
+    tail: &mut Option<usize>,
+    index: usize,
+) {
+    let bucket = unordered_keyword_bucket(nodes[index].hash, bucket_count);
+    if let Some(next) = buckets[bucket] {
+        let previous = nodes[next].previous;
+        nodes[index].previous = previous;
+        nodes[index].next = Some(next);
+        nodes[next].previous = Some(index);
+        if let Some(previous) = previous {
+            nodes[previous].next = Some(index);
+        } else {
+            *head = Some(index);
+        }
+        buckets[bucket] = Some(index);
+        return;
+    }
+
+    nodes[index].previous = *tail;
+    if let Some(old_tail) = *tail {
+        nodes[old_tail].next = Some(index);
+    } else {
+        *head = Some(index);
+    }
+    *tail = Some(index);
+    buckets[bucket] = Some(index);
+}
+
+fn unordered_keyword_bucket(hash: u64, bucket_count: usize) -> usize {
+    let bucket_count_u64 =
+        u64::try_from(bucket_count).expect("the bucket count fits the 64-bit host ABI");
+    usize::try_from(hash % bucket_count_u64).expect("a bucket index fits usize")
+}
+
+fn msvc_string_hash(value: &str) -> u64 {
+    #[cfg(target_pointer_width = "64")]
+    const OFFSET_BASIS: usize = 14_695_981_039_346_656_037;
+    #[cfg(target_pointer_width = "64")]
+    const PRIME: usize = 1_099_511_628_211;
+    #[cfg(target_pointer_width = "32")]
+    const OFFSET_BASIS: usize = 2_166_136_261;
+    #[cfg(target_pointer_width = "32")]
+    const PRIME: usize = 16_777_619;
+
+    let mut hash = OFFSET_BASIS;
+    for byte in value.as_bytes() {
+        hash ^= usize::from(*byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash as u64
+}
+
+fn libcxx_next_prime(
+    mut candidate: usize,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<usize> {
+    candidate |= 1;
+    while !libcxx_is_prime(candidate) {
+        candidate = candidate.checked_add(2).ok_or_else(|| allocation.error())?;
+    }
+    Ok(candidate)
+}
+
+fn libcxx_is_prime(candidate: usize) -> bool {
+    if candidate < 2 || candidate.is_multiple_of(2) {
+        return candidate == 2;
+    }
+    let mut divisor = 3;
+    while divisor <= candidate / divisor {
+        if candidate.is_multiple_of(divisor) {
+            return false;
+        }
+        divisor += 2;
+    }
+    true
+}
+
+fn pytorch_string_hash(value: &str) -> u64 {
+    const SEED: u64 = 0xC70F_6907;
+    const MULTIPLIER: u64 = 0xC6A4_A793_5BD1_E995;
+
+    let bytes = value.as_bytes();
+    let length = u64::try_from(bytes.len()).expect("string length fits the 64-bit host ABI");
+    let mut hash = SEED ^ length.wrapping_mul(MULTIPLIER);
+    let mut chunks = bytes.chunks_exact(8);
+    for chunk in &mut chunks {
+        let mut word = u64::from_le_bytes(
+            chunk
+                .try_into()
+                .expect("chunks_exact(8) yields eight-byte chunks"),
+        );
+        word = word.wrapping_mul(MULTIPLIER);
+        word ^= word >> 47;
+        word = word.wrapping_mul(MULTIPLIER);
+        hash ^= word;
+        hash = hash.wrapping_mul(MULTIPLIER);
+    }
+
+    let remainder = chunks.remainder();
+    for (index, byte) in remainder.iter().enumerate() {
+        hash ^= u64::from(*byte) << (index * 8);
+    }
+    if !remainder.is_empty() {
+        hash = hash.wrapping_mul(MULTIPLIER);
+    }
+    hash ^= hash >> 47;
+    hash = hash.wrapping_mul(MULTIPLIER);
+    hash ^ (hash >> 47)
+}
+
+const LIBCXX_HASH_K0: u64 = 0xC3A5_C85C_97CB_3127;
+const LIBCXX_HASH_K1: u64 = 0xB492_B66F_BE98_F273;
+const LIBCXX_HASH_K2: u64 = 0x9AE1_6A3B_2F90_404F;
+const LIBCXX_HASH_K3: u64 = 0xC949_D7C7_509E_6557;
+
+fn libcxx_string_hash(value: &str) -> u64 {
+    libcxx_city_hash(value.as_bytes())
+}
+
+fn libcxx_load_u64(bytes: &[u8], offset: usize) -> u64 {
+    u64::from_ne_bytes(
+        bytes[offset..offset + 8]
+            .try_into()
+            .expect("a CityHash word contains eight bytes"),
+    )
+}
+
+fn libcxx_load_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_ne_bytes(
+        bytes[offset..offset + 4]
+            .try_into()
+            .expect("a CityHash word contains four bytes"),
+    )
+}
+
+fn libcxx_shift_mix(value: u64) -> u64 {
+    value ^ (value >> 47)
+}
+
+fn libcxx_hash_len_16(left: u64, right: u64) -> u64 {
+    const MULTIPLIER: u64 = 0x9DDF_EA08_EB38_2D69;
+
+    let mut first = (left ^ right).wrapping_mul(MULTIPLIER);
+    first ^= first >> 47;
+    let mut second = (right ^ first).wrapping_mul(MULTIPLIER);
+    second ^= second >> 47;
+    second.wrapping_mul(MULTIPLIER)
+}
+
+fn libcxx_hash_len_0_to_16(bytes: &[u8]) -> u64 {
+    let length = bytes.len();
+    let length_u64 = u64::try_from(length).expect("string length fits the 64-bit host ABI");
+    if length > 8 {
+        let first = libcxx_load_u64(bytes, 0);
+        let last = libcxx_load_u64(bytes, length - 8);
+        return libcxx_hash_len_16(
+            first,
+            last.wrapping_add(length_u64)
+                .rotate_right(u32::try_from(length).expect("the short length fits u32")),
+        ) ^ last;
+    }
+    if length >= 4 {
+        let first = libcxx_load_u32(bytes, 0);
+        let last = u64::from(libcxx_load_u32(bytes, length - 4));
+        // PyTorch's macOS wheel uses system libc++ ABI v1. Its historical
+        // CityHash expression shifts in uint32_t before widening to size_t.
+        let shifted_first = u64::from(first.wrapping_shl(3));
+        return libcxx_hash_len_16(length_u64.wrapping_add(shifted_first), last);
+    }
+    if length > 0 {
+        let first = u32::from(bytes[0]);
+        let middle = u32::from(bytes[length >> 1]);
+        let last = u32::from(bytes[length - 1]);
+        let left = u64::from(first + (middle << 8));
+        let right =
+            u64::from(u32::try_from(length).expect("the short length fits u32") + (last << 2));
+        return libcxx_shift_mix(
+            left.wrapping_mul(LIBCXX_HASH_K2) ^ right.wrapping_mul(LIBCXX_HASH_K3),
+        )
+        .wrapping_mul(LIBCXX_HASH_K2);
+    }
+    LIBCXX_HASH_K2
+}
+
+fn libcxx_hash_len_17_to_32(bytes: &[u8]) -> u64 {
+    let length = bytes.len();
+    let length_u64 = u64::try_from(length).expect("string length fits the 64-bit host ABI");
+    let first = libcxx_load_u64(bytes, 0).wrapping_mul(LIBCXX_HASH_K1);
+    let second = libcxx_load_u64(bytes, 8);
+    let third = libcxx_load_u64(bytes, length - 8).wrapping_mul(LIBCXX_HASH_K2);
+    let fourth = libcxx_load_u64(bytes, length - 16).wrapping_mul(LIBCXX_HASH_K0);
+    libcxx_hash_len_16(
+        first
+            .wrapping_sub(second)
+            .rotate_right(43)
+            .wrapping_add(third.rotate_right(30))
+            .wrapping_add(fourth),
+        first
+            .wrapping_add((second ^ LIBCXX_HASH_K3).rotate_right(20))
+            .wrapping_sub(third)
+            .wrapping_add(length_u64),
+    )
+}
+
+fn libcxx_weak_hash_len_32_with_seeds(
+    bytes: &[u8],
+    offset: usize,
+    mut first_seed: u64,
+    mut second_seed: u64,
+) -> (u64, u64) {
+    let first = libcxx_load_u64(bytes, offset);
+    let second = libcxx_load_u64(bytes, offset + 8);
+    let third = libcxx_load_u64(bytes, offset + 16);
+    let fourth = libcxx_load_u64(bytes, offset + 24);
+
+    first_seed = first_seed.wrapping_add(first);
+    second_seed = second_seed
+        .wrapping_add(first_seed)
+        .wrapping_add(fourth)
+        .rotate_right(21);
+    let saved_first_seed = first_seed;
+    first_seed = first_seed.wrapping_add(second).wrapping_add(third);
+    second_seed = second_seed.wrapping_add(first_seed.rotate_right(44));
+    (
+        first_seed.wrapping_add(fourth),
+        second_seed.wrapping_add(saved_first_seed),
+    )
+}
+
+#[allow(clippy::many_single_char_names)]
+fn libcxx_hash_len_33_to_64(bytes: &[u8]) -> u64 {
+    let length = bytes.len();
+    let length_u64 = u64::try_from(length).expect("string length fits the 64-bit host ABI");
+    let mut z = libcxx_load_u64(bytes, 24);
+    let mut a = libcxx_load_u64(bytes, 0).wrapping_add(
+        length_u64
+            .wrapping_add(libcxx_load_u64(bytes, length - 16))
+            .wrapping_mul(LIBCXX_HASH_K0),
+    );
+    let mut b = a.wrapping_add(z).rotate_right(52);
+    let mut c = a.rotate_right(37);
+    a = a.wrapping_add(libcxx_load_u64(bytes, 8));
+    c = c.wrapping_add(a.rotate_right(7));
+    a = a.wrapping_add(libcxx_load_u64(bytes, 16));
+    let first_value = a.wrapping_add(z);
+    let second_value = b.wrapping_add(a.rotate_right(31)).wrapping_add(c);
+    a = libcxx_load_u64(bytes, 16).wrapping_add(libcxx_load_u64(bytes, length - 32));
+    z = z.wrapping_add(libcxx_load_u64(bytes, length - 8));
+    b = a.wrapping_add(z).rotate_right(52);
+    c = a.rotate_right(37);
+    a = a.wrapping_add(libcxx_load_u64(bytes, length - 24));
+    c = c.wrapping_add(a.rotate_right(7));
+    a = a.wrapping_add(libcxx_load_u64(bytes, length - 16));
+    let third_value = a.wrapping_add(z);
+    let fourth_value = b.wrapping_add(a.rotate_right(31)).wrapping_add(c);
+    let result = libcxx_shift_mix(
+        first_value
+            .wrapping_add(fourth_value)
+            .wrapping_mul(LIBCXX_HASH_K2)
+            .wrapping_add(
+                third_value
+                    .wrapping_add(second_value)
+                    .wrapping_mul(LIBCXX_HASH_K0),
+            ),
+    );
+    libcxx_shift_mix(
+        result
+            .wrapping_mul(LIBCXX_HASH_K0)
+            .wrapping_add(second_value),
+    )
+    .wrapping_mul(LIBCXX_HASH_K2)
+}
+
+#[allow(clippy::many_single_char_names)]
+fn libcxx_city_hash(bytes: &[u8]) -> u64 {
+    let length = bytes.len();
+    if length <= 16 {
+        return libcxx_hash_len_0_to_16(bytes);
+    }
+    if length <= 32 {
+        return libcxx_hash_len_17_to_32(bytes);
+    }
+    if length <= 64 {
+        return libcxx_hash_len_33_to_64(bytes);
+    }
+
+    let length_u64 = u64::try_from(length).expect("string length fits the 64-bit host ABI");
+    let mut x = libcxx_load_u64(bytes, length - 40);
+    let mut y =
+        libcxx_load_u64(bytes, length - 16).wrapping_add(libcxx_load_u64(bytes, length - 56));
+    let mut z = libcxx_hash_len_16(
+        libcxx_load_u64(bytes, length - 48).wrapping_add(length_u64),
+        libcxx_load_u64(bytes, length - 24),
+    );
+    let mut v = libcxx_weak_hash_len_32_with_seeds(bytes, length - 64, length_u64, z);
+    let mut w =
+        libcxx_weak_hash_len_32_with_seeds(bytes, length - 32, y.wrapping_add(LIBCXX_HASH_K1), x);
+    x = x
+        .wrapping_mul(LIBCXX_HASH_K1)
+        .wrapping_add(libcxx_load_u64(bytes, 0));
+
+    let mut offset = 0;
+    let mut remaining = (length - 1) & !63;
+    while remaining != 0 {
+        x = x
+            .wrapping_add(y)
+            .wrapping_add(v.0)
+            .wrapping_add(libcxx_load_u64(bytes, offset + 8))
+            .rotate_right(37)
+            .wrapping_mul(LIBCXX_HASH_K1);
+        y = y
+            .wrapping_add(v.1)
+            .wrapping_add(libcxx_load_u64(bytes, offset + 48))
+            .rotate_right(42)
+            .wrapping_mul(LIBCXX_HASH_K1);
+        x ^= w.1;
+        y = y
+            .wrapping_add(v.0)
+            .wrapping_add(libcxx_load_u64(bytes, offset + 40));
+        z = z
+            .wrapping_add(w.0)
+            .rotate_right(33)
+            .wrapping_mul(LIBCXX_HASH_K1);
+        v = libcxx_weak_hash_len_32_with_seeds(
+            bytes,
+            offset,
+            v.1.wrapping_mul(LIBCXX_HASH_K1),
+            x.wrapping_add(w.0),
+        );
+        w = libcxx_weak_hash_len_32_with_seeds(
+            bytes,
+            offset + 32,
+            z.wrapping_add(w.1),
+            y.wrapping_add(libcxx_load_u64(bytes, offset + 16)),
+        );
+        std::mem::swap(&mut z, &mut x);
+        offset += 64;
+        remaining -= 64;
+    }
+    libcxx_hash_len_16(
+        libcxx_hash_len_16(v.0, w.0)
+            .wrapping_add(libcxx_shift_mix(y).wrapping_mul(LIBCXX_HASH_K1))
+            .wrapping_add(z),
+        libcxx_hash_len_16(v.1, w.1).wrapping_add(x),
+    )
 }
 
 fn squeeze_method_binding_error(
@@ -2922,7 +3783,7 @@ fn squeeze_method_binding_error(
     keywords: Option<&Bound<'_, PyDict>>,
     unknown_keyword: Option<&str>,
 ) -> PyResult<PyErr> {
-    let summary = squeeze_call_summary(positional, keywords)?;
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::Sorted)?;
     let mismatch = unknown_keyword.map_or_else(String::new, |keyword| {
         format!("\n      didn't match because some of the keywords were incorrect: {keyword}")
     });
@@ -2936,7 +3797,7 @@ fn squeeze_top_level_binding_error(
     keywords: Option<&Bound<'_, PyDict>>,
     unknown_keyword: Option<&str>,
 ) -> PyResult<PyErr> {
-    let summary = squeeze_call_summary(positional, keywords)?;
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::Sorted)?;
     let mismatch = unknown_keyword.map_or_else(String::new, |keyword| {
         format!("\n      didn't match because some of the keywords were incorrect: {keyword}")
     });
@@ -2950,7 +3811,7 @@ fn squeeze_top_level_input_with_dimension_error(
     keywords: Option<&Bound<'_, PyDict>>,
     dimension: &ParsedSqueezeDimensions,
 ) -> PyResult<PyErr> {
-    let summary = squeeze_call_summary(positional, keywords)?;
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::Sorted)?;
     let input_is_keyword = positional.is_empty();
     let input = if input_is_keyword {
         let keywords = keywords.expect("a bound keyword input must have a keyword dictionary");
@@ -2982,7 +3843,7 @@ fn squeeze_top_level_input_with_dimension_error(
     let dimension_detail_type = if dimension_value.is_instance_of::<PyTuple>()
         || dimension_value.is_instance_of::<PyList>()
     {
-        squeeze_sequence_type_description(&dimension_value)?
+        call_argument_type_description(&dimension_value)?
     } else {
         dimension_type.clone()
     };
@@ -3352,13 +4213,55 @@ fn parse_tensor_argument<'a, 'py>(
     Ok(tensor)
 }
 
-fn bind_mul_argument<'py>(
+fn bind_multiplication_argument<'py>(
+    operation: MultiplicationMethod,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
+    if positional.is_empty()
+        && let Some(keywords) = keywords
+        && keywords.len() == 1
+        && let Some(other) = keywords.get_item("x2")?
+    {
+        return Ok((
+            ParsedCallArgument {
+                value: other,
+                position: None,
+            },
+            None,
+        ));
+    }
+
+    if matches!(operation, MultiplicationMethod::Multiply) {
+        if positional.len() == 1 && keywords.is_none_or(PyDictMethods::is_empty) {
+            return Ok((
+                ParsedCallArgument {
+                    value: positional.get_item(0)?,
+                    position: Some(1),
+                },
+                None,
+            ));
+        }
+        if positional.is_empty()
+            && let Some(keywords) = keywords
+            && keywords.len() == 1
+            && let Some(other) = keywords.get_item("other")?
+        {
+            return Ok((
+                ParsedCallArgument {
+                    value: other,
+                    position: None,
+                },
+                None,
+            ));
+        }
+        return Err(multiply_binding_error(positional, keywords)?);
+    }
+
+    let function = operation.name();
     if positional.len() > 1 {
         return Err(PyTypeError::new_err(format!(
-            "mul() takes 1 positional argument but {} were given",
+            "{function}() takes 1 positional argument but {} were given",
             positional.len()
         )));
     }
@@ -3371,19 +4274,34 @@ fn bind_mul_argument<'py>(
             position: Some(1),
         })
     };
+    let mut x2_fallback = None;
     let mut keyword_error = None;
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
             let key = key.extract::<String>()?;
-            if key != "other" {
+            if key == "x2" {
                 keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
-                        "mul() got an unexpected keyword argument '{key}'"
+                        "{function}() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+                if x2_fallback.is_none() {
+                    x2_fallback = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            } else if key != "other" {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "{function}() got an unexpected keyword argument '{key}'"
                     ))
                 });
             } else if other.is_some() {
                 keyword_error.get_or_insert_with(|| {
-                    PyTypeError::new_err("mul() got multiple values for argument 'other'")
+                    PyTypeError::new_err(format!(
+                        "{function}() got multiple values for argument 'other'"
+                    ))
                 });
             } else {
                 other = Some(ParsedCallArgument {
@@ -3394,8 +4312,10 @@ fn bind_mul_argument<'py>(
         }
     }
 
-    let other = other.ok_or_else(|| {
-        PyTypeError::new_err("mul() missing 1 required positional arguments: \"other\"")
+    let other = other.or(x2_fallback).ok_or_else(|| {
+        PyTypeError::new_err(format!(
+            "{function}() missing 1 required positional arguments: \"other\""
+        ))
     })?;
     Ok((other, keyword_error))
 }
@@ -3405,6 +4325,163 @@ fn mul_argument_type_error(position: Option<usize>, actual: &str) -> PyErr {
     PyTypeError::new_err(format!(
         "mul(): argument 'other'{position} must be Tensor, not {actual}"
     ))
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyLong_AsLongLongAndOverflow reads an int subclass without dispatching overrides"
+)]
+fn python_integer_is_negative(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let mut overflow = 0;
+    // SAFETY: the caller has verified that value is a Python int instance, the
+    // object remains live for the call, and overflow points to writable storage.
+    let converted = unsafe { ffi::PyLong_AsLongLongAndOverflow(value.as_ptr(), &raw mut overflow) };
+    if PyErr::occurred(value.py()) {
+        return Err(PyErr::fetch(value.py()));
+    }
+    Ok(if overflow == 0 {
+        converted < 0
+    } else {
+        overflow < 0
+    })
+}
+
+fn multiply_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let allocation = PythonAllocationFallback::new(positional.py());
+    let summary = call_type_summary_with(
+        positional,
+        keywords,
+        CallKeywordOrder::PyTorchUnorderedMap,
+        &allocation,
+    )?;
+    let keyword_length = keywords.map_or(0, PyDictMethods::len);
+    let (tensor_mismatch, number_mismatch) = if positional.len() + keyword_length == 1 {
+        if positional.len() == 1 {
+            let value = positional.get_item(0)?;
+            let actual_type = transpose_type_name_with(&value, &allocation)?;
+            let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
+            let number_detail = call_argument_type_description_with(&value, &allocation)?;
+            (
+                multiply_invalid_type_mismatch(
+                    &tensor_detail,
+                    &actual_type,
+                    "Tensor",
+                    None,
+                    &allocation,
+                )?,
+                multiply_invalid_type_mismatch(
+                    &number_detail,
+                    &actual_type,
+                    "Number",
+                    None,
+                    &allocation,
+                )?,
+            )
+        } else {
+            let keywords = keywords.expect("a single keyword argument is present");
+            let (key, value) = keywords
+                .iter()
+                .next()
+                .expect("a single keyword argument remains present");
+            let key = pytorch_keyword_name(&key)?;
+            if key == "other" {
+                let actual_type = transpose_type_name_with(&value, &allocation)?;
+                let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
+                let number_detail = call_argument_type_description_with(&value, &allocation)?;
+                (
+                    multiply_invalid_type_mismatch(
+                        &tensor_detail,
+                        &actual_type,
+                        "Tensor",
+                        Some("other"),
+                        &allocation,
+                    )?,
+                    multiply_invalid_type_mismatch(
+                        &number_detail,
+                        &actual_type,
+                        "Number",
+                        Some("other"),
+                        &allocation,
+                    )?,
+                )
+            } else {
+                let mismatch = multiply_invalid_keyword_mismatch(key, &allocation)?;
+                (try_string_from_str_with(&mismatch, &allocation)?, mismatch)
+            }
+        }
+    } else {
+        (String::new(), String::new())
+    };
+
+    let mut message = try_string_from_str_with(
+        "multiply() received an invalid combination of arguments - got (",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &summary, &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "), but expected one of:\n * (Tensor other)",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &tensor_mismatch, &allocation)?;
+    try_push_string_with(&mut message, "\n * (Number other)", &allocation)?;
+    try_push_string_with(&mut message, &number_mismatch, &allocation)?;
+    try_push_string_with(&mut message, "\n", &allocation)?;
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    let py = positional.py();
+    let message = PyString::from_bytes(py, message.as_bytes()).map_err(|_| allocation.error())?;
+    let exception = py
+        .get_type::<PyTypeError>()
+        .call1((message,))
+        .map_err(|_| allocation.error())?;
+    Ok(PyErr::from_value(exception))
+}
+
+fn multiply_invalid_type_mismatch(
+    detail: &str,
+    actual_type: &str,
+    expected_type: &str,
+    keyword: Option<&str>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let mut mismatch = try_string_from_str_with(
+        "\n      didn't match because some of the arguments have invalid types: (",
+        allocation,
+    )?;
+    let invalid_type = actual_type != expected_type;
+    if invalid_type {
+        try_push_string_with(&mut mismatch, "!", allocation)?;
+    }
+    if let Some(keyword) = keyword {
+        try_push_string_with(&mut mismatch, keyword, allocation)?;
+        try_push_string_with(&mut mismatch, "=", allocation)?;
+    }
+    try_push_string_with(&mut mismatch, detail, allocation)?;
+    if invalid_type {
+        try_push_string_with(&mut mismatch, "!", allocation)?;
+    }
+    if keyword.is_some() {
+        try_push_string_with(&mut mismatch, ", ", allocation)?;
+    }
+    try_push_string_with(&mut mismatch, ")", allocation)?;
+    Ok(mismatch)
+}
+
+fn multiply_invalid_keyword_mismatch(
+    keyword: &str,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let mut mismatch = try_string_from_str_with(
+        "\n      didn't match because some of the keywords were incorrect: ",
+        allocation,
+    )?;
+    try_push_string_with(&mut mismatch, keyword, allocation)?;
+    Ok(mismatch)
 }
 
 fn bind_dimension_swap_arguments<'py, const N: usize>(
@@ -3521,21 +4598,92 @@ fn validate_dimension_swap_argument_prefix<const N: usize>(
     Ok(())
 }
 
-fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
-    // PyTorch reports CPython's `tp_name`: heap types use their unqualified
-    // class name, while static extension types retain their module prefix.
-    const PY_TPFLAGS_HEAPTYPE: u64 = 1 << 9;
+#[repr(C)]
+struct PyTypeObjectNamePrefix {
+    _ob_base: ffi::PyVarObject,
+    tp_name: *const c_char,
+}
 
+#[allow(
+    unsafe_code,
+    reason = "CPython exposes tp_name only as a type-object field before Python 3.13"
+)]
+fn cpython_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     let value_type = value.get_type();
-    let name = value_type.name()?.to_str()?.to_owned();
-    let module = value_type.getattr("__module__")?.extract::<String>()?;
-    let flags = value_type.getattr("__flags__")?.extract::<u64>()?;
-    if module == "torch_rs" && matches!(name.as_str(), "dtype" | "device" | "memory_format") {
-        Ok(format!("torch.{name}"))
-    } else if flags & PY_TPFLAGS_HEAPTYPE == 0 && module != "builtins" {
-        Ok(format!("{module}.{name}"))
+    let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
+    // SAFETY: every classic CPython type object starts with PyVarObject and
+    // tp_name. The value keeps its type alive, and the attached interpreter
+    // prevents a concurrent Python-level type-name mutation while it is copied.
+    let name = unsafe { (*prefix).tp_name };
+    if name.is_null() {
+        return Err(PyRuntimeError::new_err("Python type has no tp_name"));
+    }
+    // SAFETY: CPython requires tp_name to point to a NUL-terminated UTF-8 name
+    // while the type name remains unchanged; no Python callback can run before
+    // this function copies it into owned Rust storage.
+    let name = unsafe { CStr::from_ptr(name) }
+        .to_str()
+        .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))?;
+    let mut output = String::new();
+    try_push_string(&mut output, name)?;
+    Ok(output)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "CPython exposes tp_name only as a type-object field before Python 3.13"
+)]
+fn cpython_type_name_with(
+    value: &Bound<'_, PyAny>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let value_type = value.get_type();
+    let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
+    // SAFETY: see cpython_type_name; this variant performs the same immediate
+    // copy while using the formatter's preallocated allocation error.
+    let name = unsafe { (*prefix).tp_name };
+    if name.is_null() {
+        return Err(PyRuntimeError::new_err("Python type has no tp_name"));
+    }
+    // SAFETY: no Python callback can mutate the type before this copy ends.
+    let name = unsafe { CStr::from_ptr(name) }
+        .to_str()
+        .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))?;
+    try_string_from_str_with(name, allocation)
+}
+
+fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'static str> {
+    if value.is_exact_instance_of::<PyTensor>() {
+        Some("Tensor")
+    } else if value.is_exact_instance_of::<PyDType>() {
+        Some("torch.dtype")
+    } else if value.is_exact_instance_of::<PyDevice>() {
+        Some("torch.device")
+    } else if value.is_exact_instance_of::<PyMemoryFormat>() {
+        Some("torch.memory_format")
     } else {
-        Ok(name)
+        None
+    }
+}
+
+fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    if let Some(name) = native_pytorch_type_name(value) {
+        let mut output = String::new();
+        try_push_string(&mut output, name)?;
+        Ok(output)
+    } else {
+        cpython_type_name(value)
+    }
+}
+
+fn transpose_type_name_with(
+    value: &Bound<'_, PyAny>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    if let Some(name) = native_pytorch_type_name(value) {
+        try_string_from_str_with(name, allocation)
+    } else {
+        cpython_type_name_with(value, allocation)
     }
 }
 
@@ -3757,16 +4905,87 @@ fn try_size_vector<T>(length: usize) -> PyResult<Vec<T>> {
     let mut values = Vec::new();
     values
         .try_reserve_exact(length)
-        .map_err(|_| PyRuntimeError::new_err("std::bad_alloc"))?;
+        .map_err(|_| python_allocation_error())?;
     Ok(values)
 }
 
 fn try_push_size<T>(values: &mut Vec<T>, value: T) -> PyResult<()> {
     values
         .try_reserve(1)
-        .map_err(|_| PyRuntimeError::new_err("std::bad_alloc"))?;
+        .map_err(|_| python_allocation_error())?;
     values.push(value);
     Ok(())
+}
+
+fn try_push_string(output: &mut String, value: &str) -> PyResult<()> {
+    output
+        .try_reserve(value.len())
+        .map_err(|_| python_allocation_error())?;
+    output.push_str(value);
+    Ok(())
+}
+
+struct PythonAllocationFallback<'py> {
+    py: Python<'py>,
+    error: PyErr,
+}
+
+impl<'py> PythonAllocationFallback<'py> {
+    fn new(py: Python<'py>) -> Self {
+        let error = python_allocation_error();
+        error.value(py);
+        Self { py, error }
+    }
+
+    fn error(&self) -> PyErr {
+        self.error.clone_ref(self.py)
+    }
+}
+
+fn try_size_vector_with<T>(
+    length: usize,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<Vec<T>> {
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(length)
+        .map_err(|_| allocation.error())?;
+    Ok(values)
+}
+
+fn try_push_size_with<T>(
+    values: &mut Vec<T>,
+    value: T,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<()> {
+    values.try_reserve(1).map_err(|_| allocation.error())?;
+    values.push(value);
+    Ok(())
+}
+
+fn try_push_string_with(
+    output: &mut String,
+    value: &str,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<()> {
+    output
+        .try_reserve(value.len())
+        .map_err(|_| allocation.error())?;
+    output.push_str(value);
+    Ok(())
+}
+
+fn try_string_from_str_with(
+    value: &str,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let mut output = String::new();
+    try_push_string_with(&mut output, value, allocation)?;
+    Ok(output)
+}
+
+fn python_allocation_error() -> PyErr {
+    PyRuntimeError::new_err("std::bad_alloc")
 }
 
 fn invalid_size_dimension(index: usize, reason: &str) -> PyErr {
@@ -4398,7 +5617,11 @@ mod tests {
     use pyo3::exceptions::PyTypeError;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyMemoryView, PyModule, PySlice};
 
-    use super::{PyTensor, flatten_buffer, half_to_f32, nested_list, torch_rs, try_size_vector};
+    use super::{
+        PyTensor, PythonAllocationFallback, flatten_buffer, half_to_f32, libcxx_string_hash,
+        nested_list, pytorch_libcxx_keyword_order, pytorch_msvc_keyword_order, torch_rs,
+        try_size_vector,
+    };
 
     #[test]
     fn half_precision_buffer_values_convert_to_float32() {
@@ -4442,6 +5665,92 @@ mod tests {
         let error = try_size_vector::<i64>(usize::MAX)
             .expect_err("an impossible vector capacity must return an error");
         assert_eq!(error.to_string(), "RuntimeError: std::bad_alloc");
+    }
+
+    #[test]
+    fn libcxx_keyword_order_matches_pytorch_on_macos() {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let allocation = PythonAllocationFallback::new(py);
+            let ordered = pytorch_libcxx_keyword_order(
+                ["a", "b", "d"]
+                    .into_iter()
+                    .map(|key| (key.to_owned(), "Tensor".to_owned()))
+                    .collect(),
+                &allocation,
+            )
+            .unwrap();
+            let keys = ordered.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
+            assert_eq!(keys, ["d", "b", "a"]);
+
+            let ordered = pytorch_libcxx_keyword_order(
+                (0..14)
+                    .map(|index| (format!("key{index}"), "Tensor".to_owned()))
+                    .collect(),
+                &allocation,
+            )
+            .unwrap();
+            let keys = ordered.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
+            assert_eq!(
+                keys,
+                [
+                    "key13", "key11", "key12", "key8", "key1", "key2", "key6", "key5", "key3",
+                    "key4", "key0", "key10", "key7", "key9"
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn msvc_keyword_order_matches_pytorch_on_windows() {
+        pyo3::Python::initialize();
+        pyo3::Python::attach(|py| {
+            let allocation = PythonAllocationFallback::new(py);
+            let ordered = pytorch_msvc_keyword_order(
+                ["a", "b", "d"]
+                    .into_iter()
+                    .map(|key| (key.to_owned(), "Tensor".to_owned()))
+                    .collect(),
+                &allocation,
+            )
+            .unwrap();
+            let keys = ordered.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
+            assert_eq!(keys, ["a", "b", "d"]);
+
+            let collisions = pytorch_msvc_keyword_order(
+                ["key0", "key1", "key8"]
+                    .into_iter()
+                    .map(|key| (key.to_owned(), "Tensor".to_owned()))
+                    .collect(),
+                &allocation,
+            )
+            .unwrap();
+            let keys = collisions
+                .into_iter()
+                .map(|(key, _)| key)
+                .collect::<Vec<_>>();
+            assert_eq!(keys, ["key8", "key0", "key1"]);
+        });
+    }
+
+    #[test]
+    fn libcxx_string_hash_matches_reference_boundaries() {
+        for (value, expected) in [
+            ("", 11_160_318_154_034_397_263),
+            ("a", 2_603_192_927_274_642_682),
+            ("key13", 15_487_510_319_299_464_526),
+            ("abcdefghijklmnopq", 237_482_408_704_357_350),
+            (
+                "abcdefghijklmnopqrstuvwxyz0123456",
+                11_578_587_182_705_320_317,
+            ),
+            (
+                "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ+-abcdefghijklmnopqrstuvwxyz",
+                14_968_935_594_714_716_411,
+            ),
+        ] {
+            assert_eq!(libcxx_string_hash(value), expected);
+        }
     }
 
     #[test]
