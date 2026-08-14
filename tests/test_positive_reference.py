@@ -78,9 +78,13 @@ class TensorPositiveReferenceTests(unittest.TestCase):
                 actual_detached = actual.detach()
                 expected_detached = expected.detach()
 
-                actual_result = actual.positive()
-                expected_result = expected.positive()
+                actual_method_result = actual.positive()
+                expected_method_result = expected.positive()
+                actual_result = +actual
+                expected_result = +expected
 
+                self.assertIs(actual_method_result, actual)
+                self.assertIs(expected_method_result, expected)
                 self.assertIs(actual_result, actual)
                 self.assertIs(expected_result, expected)
                 self.assertEqual(actual_metadata, expected_metadata)
@@ -101,7 +105,8 @@ class TensorPositiveReferenceTests(unittest.TestCase):
                 dtype=module.float32,
                 requires_grad=True,
             )
-            leaf_result = leaf.positive()
+            leaf_method_result = leaf.positive()
+            leaf_result = +leaf
             source = (leaf_result * 3.0).transpose(0, 1)[1]
             graph_before = (
                 source.requires_grad,
@@ -111,7 +116,8 @@ class TensorPositiveReferenceTests(unittest.TestCase):
                 source.storage_offset(),
             )
             pointer = source.data_ptr()
-            result = source.positive()
+            method_result = source.positive()
+            result = +source
             graph_after = (
                 result.requires_grad,
                 result.is_leaf,
@@ -122,7 +128,9 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             result.sum().backward()
             outcomes.append(
                 (
+                    leaf_method_result is leaf,
                     leaf_result is leaf,
+                    method_result is source,
                     result is source,
                     result.data_ptr() == pointer,
                     graph_before,
@@ -131,20 +139,39 @@ class TensorPositiveReferenceTests(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(outcomes[0][:5], outcomes[1][:5])
-        np.testing.assert_array_equal(outcomes[0][5], outcomes[1][5])
+        self.assertEqual(outcomes[0][:-1], outcomes[1][:-1])
+        np.testing.assert_array_equal(outcomes[0][-1], outcomes[1][-1])
 
     def test_descriptor_documentation_and_signature_match_pytorch_2_13(self):
         actual_tensor = torch.tensor([1.0])
         expected_tensor = reference_torch.tensor([1.0], dtype=reference_torch.float32)
         actual_descriptor = inspect.getattr_static(torch.Tensor, "positive")
         expected_descriptor = inspect.getattr_static(reference_torch.Tensor, "positive")
+        actual_operator_descriptor = inspect.getattr_static(torch.Tensor, "__pos__")
+        expected_operator_descriptor = inspect.getattr_static(
+            reference_torch.Tensor, "__pos__"
+        )
+
+        self.assertIs(actual_operator_descriptor, actual_descriptor)
+        self.assertIs(expected_operator_descriptor, expected_descriptor)
+        self.assertIs(torch.Tensor.__dict__["__pos__"], actual_descriptor)
+        self.assertIs(
+            reference_torch.Tensor.__dict__["__pos__"], expected_descriptor
+        )
+        for descriptor in (actual_descriptor, expected_descriptor):
+            with self.assertRaises(AttributeError):
+                inspect.getattr_static(descriptor.__objclass__, "__pos__")
 
         for actual, expected, expected_type in (
             (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
             (
                 actual_tensor.positive,
                 expected_tensor.positive,
+                types.BuiltinMethodType,
+            ),
+            (
+                actual_tensor.__pos__,
+                expected_tensor.__pos__,
                 types.BuiltinMethodType,
             ),
         ):
@@ -178,6 +205,8 @@ class TensorPositiveReferenceTests(unittest.TestCase):
         expected_descriptor = inspect.getattr_static(reference_torch.Tensor, "positive")
         actual_bound = actual.positive
         expected_bound = expected.positive
+        actual_operator_bound = actual.__pos__
+        expected_operator_bound = expected.__pos__
         cases = (
             (lambda: actual.positive(1), lambda: expected.positive(1)),
             (lambda: actual.positive(1, 2), lambda: expected.positive(1, 2)),
@@ -196,6 +225,14 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             (
                 lambda: actual_descriptor(self=actual),
                 lambda: expected_descriptor(self=expected),
+            ),
+            (lambda: actual.__pos__(1), lambda: expected.__pos__(1)),
+            (lambda: actual.__pos__(1, 2), lambda: expected.__pos__(1, 2)),
+            (lambda: actual.__pos__(dim=0), lambda: expected.__pos__(dim=0)),
+            (lambda: actual_operator_bound(1), lambda: expected_operator_bound(1)),
+            (
+                lambda: actual_operator_bound(unexpected=True),
+                lambda: expected_operator_bound(unexpected=True),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
