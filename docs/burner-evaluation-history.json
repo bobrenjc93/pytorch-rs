@@ -1777,6 +1777,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 58
       }
+    },
+    {
+      "key": "pr:118",
+      "recordedAt": "2026-08-14T16:34:47.107Z",
+      "label": "PR #118",
+      "kind": "leaf",
+      "prNumber": 118,
+      "title": "Add bounded cross-operation differential chains",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 62.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 41,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 59
+      }
     }
   ]
 }
