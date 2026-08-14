@@ -8,6 +8,10 @@ fn values(tensor: &Tensor) -> Vec<f32> {
     tensor.try_to_vec().unwrap()
 }
 
+fn value_bits(tensor: &Tensor) -> Vec<u32> {
+    tensor.logical_values().map(f32::to_bits).collect()
+}
+
 #[test]
 fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
     let x = Tensor::from_vec(vec![-2.0, 0.5, 3.0], [3])
@@ -19,6 +23,28 @@ fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
 
     x.mul(&x).unwrap().sum().backward().unwrap();
     assert_eq!(values(&x.grad().unwrap().unwrap()), [-8.0, 2.0, 12.0]);
+}
+
+#[test]
+fn same_shape_multiply_backward_preserves_shared_operand_bits() {
+    let input_bits = [
+        0x8000_0000,
+        0x0000_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let input = Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+
+    input.mul(&input).unwrap().sum().backward().unwrap();
+
+    assert_eq!(
+        value_bits(&input.grad().unwrap().unwrap()),
+        input_bits.to_vec()
+    );
 }
 
 #[test]
@@ -131,6 +157,134 @@ fn multiply_backward_unbroadcasts_both_operands() {
 
     assert_eq!(values(&left.grad().unwrap().unwrap()), [23.0, 23.0]);
     assert_eq!(values(&right.grad().unwrap().unwrap()), [5.0, 5.0, 5.0]);
+}
+
+#[test]
+fn same_shape_multiply_backward_preserves_contiguous_special_value_bits() {
+    let left_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let right_bits = [
+        0x8000_0000,
+        0x0000_0000,
+        0xff80_0000,
+        0x7f80_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0xffc5_4321,
+        0x7fc1_2345,
+    ];
+    let left = Tensor::from_vec(left_bits.map(f32::from_bits).to_vec(), [2, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let right = Tensor::from_vec(right_bits.map(f32::from_bits).to_vec(), [2, 4])
+        .unwrap()
+        .with_requires_grad(true);
+
+    left.mul(&right).unwrap().sum().backward().unwrap();
+
+    assert_eq!(
+        value_bits(&left.grad().unwrap().unwrap()),
+        right_bits.to_vec()
+    );
+    assert_eq!(
+        value_bits(&right.grad().unwrap().unwrap()),
+        left_bits.to_vec()
+    );
+
+    let weighted_leaf = Tensor::ones([6]).unwrap().with_requires_grad(true);
+    let weighted_other = Tensor::from_vec(
+        [
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+            0x7f80_0000,
+            0x8000_0000,
+        ]
+        .map(f32::from_bits)
+        .to_vec(),
+        [6],
+    )
+    .unwrap();
+    let weights = Tensor::from_vec(
+        [
+            0x7fc6_789a,
+            0xffca_bcde,
+            0x7fc6_789a,
+            0xffca_bcde,
+            0x0000_0000,
+            0xff80_0000,
+        ]
+        .map(f32::from_bits)
+        .to_vec(),
+        [6],
+    )
+    .unwrap();
+    weighted_leaf
+        .mul(&weighted_other)
+        .unwrap()
+        .mul(&weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        value_bits(&weighted_leaf.grad().unwrap().unwrap()),
+        [
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0xffc0_0000,
+            0xffc0_0000,
+        ]
+    );
+}
+
+#[test]
+fn same_shape_multiply_backward_preserves_strided_and_empty_gradients() {
+    let left_leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let left = left_leaf.transpose(0, 1).unwrap();
+    let right = Tensor::from_vec(vec![-1.0, -2.0, -3.0, -4.0, -5.0, -6.0], [3, 2])
+        .unwrap()
+        .with_requires_grad(true);
+
+    left.mul(&right).unwrap().sum().backward().unwrap();
+
+    assert_eq!(
+        values(&left_leaf.grad().unwrap().unwrap()),
+        [-1.0, -3.0, -5.0, -2.0, -4.0, -6.0]
+    );
+    assert_eq!(
+        values(&right.grad().unwrap().unwrap()),
+        [1.0, 4.0, 2.0, 5.0, 3.0, 6.0]
+    );
+
+    let empty_left = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_right = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    empty_left
+        .mul(&empty_right)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    for gradient in [
+        empty_left.grad().unwrap().unwrap(),
+        empty_right.grad().unwrap().unwrap(),
+    ] {
+        assert_eq!(gradient.shape(), [2, 0, 3]);
+        assert!(values(&gradient).is_empty());
+    }
 }
 
 #[test]

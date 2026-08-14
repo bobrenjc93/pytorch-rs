@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
+const F32_QUIET_NAN_MASK: u32 = 0x0040_0000;
 
 /// Native scalar types implemented by tensor storage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -2897,6 +2898,22 @@ impl SavedTensor {
             .expect("validated saved tensor logical offset must address storage")
     }
 
+    fn contiguous_values(&self) -> Option<&[f32]> {
+        if self.elements == 0 {
+            return Some(&[]);
+        }
+        if !layout_is_contiguous(&self.shape, &self.strides, self.elements) {
+            return None;
+        }
+        let values = self.storage.as_ref()?.owned_values()?;
+        let end = self.offset.checked_add(self.elements)?;
+        values.get(self.offset..end)
+    }
+
+    fn has_shape(&self, shape: &[usize]) -> bool {
+        self.shape == shape
+    }
+
     fn broadcast_position(&self, output_shape: &[usize], coordinates: &[usize]) -> (usize, usize) {
         let leading = output_shape.len() - self.shape.len();
         let mut logical_index = 0_usize;
@@ -3034,12 +3051,7 @@ fn apply_grad_fn(
     gradients: &mut HashMap<usize, Vec<f32>>,
 ) -> Result<(), TensorError> {
     match grad_fn {
-        GradFn::Sum { input } => {
-            if let Some(meta) = &input.autograd {
-                let gradient = filled_storage(input.elements, upstream[0])?;
-                add_gradient(gradients, meta, gradient);
-            }
-        }
+        GradFn::Sum { input } => apply_sum_vjp(input, upstream, gradients)?,
         GradFn::MultiplyScalar { input, scalar } => {
             if let Some(meta) = &input.autograd {
                 let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
@@ -3064,6 +3076,10 @@ fn apply_grad_fn(
             output_elements,
         } => {
             debug_assert_eq!(*output_elements, upstream.len());
+            if left.has_shape(output_shape) && right.has_shape(output_shape) {
+                apply_same_shape_multiply_vjp(left, right, upstream, gradients)?;
+                return Ok(());
+            }
             let mut left_gradient = if left.autograd.is_some() {
                 Some(GradientAccumulator::new(
                     left.elements,
@@ -3132,6 +3148,84 @@ fn apply_grad_fn(
         }
     }
     Ok(())
+}
+
+fn apply_sum_vjp(
+    input: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut HashMap<usize, Vec<f32>>,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        let gradient = filled_storage(input.elements, upstream[0])?;
+        add_gradient(gradients, meta, gradient);
+    }
+    Ok(())
+}
+
+fn apply_same_shape_multiply_vjp(
+    left: &SavedTensor,
+    right: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut HashMap<usize, Vec<f32>>,
+) -> Result<(), TensorError> {
+    debug_assert_eq!(left.elements, upstream.len());
+    debug_assert_eq!(right.elements, upstream.len());
+
+    let left_gradient = if left.autograd.is_some() {
+        Some(same_shape_multiply_gradient(upstream, right)?)
+    } else {
+        None
+    };
+    let right_gradient = if right.autograd.is_some() {
+        Some(same_shape_multiply_gradient(upstream, left)?)
+    } else {
+        None
+    };
+
+    if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
+        add_gradient(gradients, meta, gradient);
+    }
+    if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
+        add_gradient(gradients, meta, gradient);
+    }
+    Ok(())
+}
+
+fn same_shape_multiply_gradient(
+    upstream: &[f32],
+    operand: &SavedTensor,
+) -> Result<Vec<f32>, TensorError> {
+    let mut gradient = try_result_vector(upstream.len(), upstream.len())?;
+    if let Some(values) = operand.contiguous_values() {
+        gradient.extend(upstream.iter().copied().zip(values.iter().copied()).map(
+            |(output_gradient, operand)| multiply_gradient_contribution(output_gradient, operand),
+        ));
+    } else {
+        gradient.extend(
+            upstream
+                .iter()
+                .enumerate()
+                .map(|(index, &output_gradient)| {
+                    multiply_gradient_contribution(
+                        output_gradient,
+                        operand.value_at_linear_index(index),
+                    )
+                }),
+        );
+    }
+    Ok(gradient)
+}
+
+fn multiply_gradient_contribution(output_gradient: f32, operand: f32) -> f32 {
+    if output_gradient.is_nan() && operand.is_nan() {
+        // The original scalar broadcast loop selects the saved operand when
+        // both multiplication inputs are NaNs. A simpler loop can be
+        // vectorized with the opposite payload precedence, so make the
+        // existing bitwise behavior explicit while quieting signaling NaNs.
+        f32::from_bits(operand.to_bits() | F32_QUIET_NAN_MASK)
+    } else {
+        output_gradient * operand
+    }
 }
 
 fn apply_sin_grad_fn(
