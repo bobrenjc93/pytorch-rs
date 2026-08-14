@@ -2,6 +2,7 @@ import array
 import collections
 import inspect
 import io
+import numbers
 import re
 import sys
 import types
@@ -432,6 +433,28 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
             lambda: expected.multiply(guarded),
         )
         self.assertEqual(metaclass_accesses, [])
+
+        SpoofedTensor = type("torch_rs.Tensor", (), {})
+        spoofed_tensor = SpoofedTensor()
+        self.assert_error_matches(
+            lambda: actual.multiply(spoofed_tensor),
+            lambda: expected.multiply(spoofed_tensor),
+        )
+
+        number = numbers.Number()
+        self.assert_error_matches(
+            lambda: actual.multiply(number),
+            lambda: expected.multiply(number),
+        )
+        self.assert_error_matches(
+            lambda: actual.multiply(other=number),
+            lambda: expected.multiply(other=number),
+        )
+
+        self.assert_error_matches(
+            lambda: actual.multiply(**{"bad\x00tail": actual}),
+            lambda: expected.multiply(**{"bad\x00tail": expected}),
+        )
 
         comparison_calls = []
 

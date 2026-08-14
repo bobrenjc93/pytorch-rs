@@ -4361,11 +4361,24 @@ fn multiply_binding_error(
     let (tensor_mismatch, number_mismatch) = if positional.len() + keyword_length == 1 {
         if positional.len() == 1 {
             let value = positional.get_item(0)?;
+            let actual_type = transpose_type_name_with(&value, &allocation)?;
             let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
             let number_detail = call_argument_type_description_with(&value, &allocation)?;
             (
-                multiply_invalid_type_mismatch(&tensor_detail, None, &allocation)?,
-                multiply_invalid_type_mismatch(&number_detail, None, &allocation)?,
+                multiply_invalid_type_mismatch(
+                    &tensor_detail,
+                    &actual_type,
+                    "Tensor",
+                    None,
+                    &allocation,
+                )?,
+                multiply_invalid_type_mismatch(
+                    &number_detail,
+                    &actual_type,
+                    "Number",
+                    None,
+                    &allocation,
+                )?,
             )
         } else {
             let keywords = keywords.expect("a single keyword argument is present");
@@ -4375,11 +4388,24 @@ fn multiply_binding_error(
                 .expect("a single keyword argument remains present");
             let key = pytorch_keyword_name(&key)?;
             if key == "other" {
+                let actual_type = transpose_type_name_with(&value, &allocation)?;
                 let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
                 let number_detail = call_argument_type_description_with(&value, &allocation)?;
                 (
-                    multiply_invalid_type_mismatch(&tensor_detail, Some("other"), &allocation)?,
-                    multiply_invalid_type_mismatch(&number_detail, Some("other"), &allocation)?,
+                    multiply_invalid_type_mismatch(
+                        &tensor_detail,
+                        &actual_type,
+                        "Tensor",
+                        Some("other"),
+                        &allocation,
+                    )?,
+                    multiply_invalid_type_mismatch(
+                        &number_detail,
+                        &actual_type,
+                        "Number",
+                        Some("other"),
+                        &allocation,
+                    )?,
                 )
             } else {
                 let mismatch = multiply_invalid_keyword_mismatch(key, &allocation)?;
@@ -4404,6 +4430,9 @@ fn multiply_binding_error(
     try_push_string_with(&mut message, "\n * (Number other)", &allocation)?;
     try_push_string_with(&mut message, &number_mismatch, &allocation)?;
     try_push_string_with(&mut message, "\n", &allocation)?;
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
     let py = positional.py();
     let message = PyString::from_bytes(py, message.as_bytes()).map_err(|_| allocation.error())?;
     let exception = py
@@ -4415,19 +4444,27 @@ fn multiply_binding_error(
 
 fn multiply_invalid_type_mismatch(
     detail: &str,
+    actual_type: &str,
+    expected_type: &str,
     keyword: Option<&str>,
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<String> {
     let mut mismatch = try_string_from_str_with(
-        "\n      didn't match because some of the arguments have invalid types: (!",
+        "\n      didn't match because some of the arguments have invalid types: (",
         allocation,
     )?;
+    let invalid_type = actual_type != expected_type;
+    if invalid_type {
+        try_push_string_with(&mut mismatch, "!", allocation)?;
+    }
     if let Some(keyword) = keyword {
         try_push_string_with(&mut mismatch, keyword, allocation)?;
         try_push_string_with(&mut mismatch, "=", allocation)?;
     }
     try_push_string_with(&mut mismatch, detail, allocation)?;
-    try_push_string_with(&mut mismatch, "!", allocation)?;
+    if invalid_type {
+        try_push_string_with(&mut mismatch, "!", allocation)?;
+    }
     if keyword.is_some() {
         try_push_string_with(&mut mismatch, ", ", allocation)?;
     }
@@ -4615,39 +4652,39 @@ fn cpython_type_name_with(
     try_string_from_str_with(name, allocation)
 }
 
-fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
-    let mut name = cpython_type_name(value)?;
-    let replacement = match name.as_str() {
-        "torch_rs.Tensor" => Some("Tensor"),
-        "torch_rs.dtype" => Some("torch.dtype"),
-        "torch_rs.device" => Some("torch.device"),
-        "torch_rs.memory_format" => Some("torch.memory_format"),
-        _ => None,
-    };
-    if let Some(replacement) = replacement {
-        name.clear();
-        try_push_string(&mut name, replacement)?;
+fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'static str> {
+    if value.is_exact_instance_of::<PyTensor>() {
+        Some("Tensor")
+    } else if value.is_exact_instance_of::<PyDType>() {
+        Some("torch.dtype")
+    } else if value.is_exact_instance_of::<PyDevice>() {
+        Some("torch.device")
+    } else if value.is_exact_instance_of::<PyMemoryFormat>() {
+        Some("torch.memory_format")
+    } else {
+        None
     }
-    Ok(name)
+}
+
+fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    if let Some(name) = native_pytorch_type_name(value) {
+        let mut output = String::new();
+        try_push_string(&mut output, name)?;
+        Ok(output)
+    } else {
+        cpython_type_name(value)
+    }
 }
 
 fn transpose_type_name_with(
     value: &Bound<'_, PyAny>,
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<String> {
-    let mut name = cpython_type_name_with(value, allocation)?;
-    let replacement = match name.as_str() {
-        "torch_rs.Tensor" => Some("Tensor"),
-        "torch_rs.dtype" => Some("torch.dtype"),
-        "torch_rs.device" => Some("torch.device"),
-        "torch_rs.memory_format" => Some("torch.memory_format"),
-        _ => None,
-    };
-    if let Some(replacement) = replacement {
-        name.clear();
-        try_push_string_with(&mut name, replacement, allocation)?;
+    if let Some(name) = native_pytorch_type_name(value) {
+        try_string_from_str_with(name, allocation)
+    } else {
+        cpython_type_name_with(value, allocation)
     }
-    Ok(name)
 }
 
 fn dimension_swap_argument_type_error(

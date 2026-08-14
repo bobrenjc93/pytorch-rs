@@ -2,6 +2,7 @@ import array
 import collections
 import inspect
 import io
+import numbers
 import re
 import subprocess
 import sys
@@ -453,6 +454,49 @@ class TensorMultiplyTests(unittest.TestCase):
             tensor.multiply(Guarded())
         self.assertIn("got (Guarded),", str(raised.exception))
         self.assertEqual(metaclass_accesses, [])
+
+        SpoofedTensor = type("torch_rs.Tensor", (), {})
+        with self.assertRaises(TypeError) as raised:
+            tensor.multiply(SpoofedTensor())
+        self.assertIn("got (torch_rs.Tensor),", str(raised.exception))
+
+    def test_number_overload_markers_and_nul_keyword_match_pytorch(self):
+        tensor = torch.tensor([1.0])
+        cases = (
+            (
+                lambda: tensor.multiply(numbers.Number()),
+                "multiply() received an invalid combination of arguments - got "
+                "(Number), but expected one of:\n"
+                " * (Tensor other)\n"
+                "      didn't match because some of the arguments have invalid "
+                "types: (!Number!)\n"
+                " * (Number other)\n"
+                "      didn't match because some of the arguments have invalid "
+                "types: (Number)\n",
+            ),
+            (
+                lambda: tensor.multiply(other=numbers.Number()),
+                "multiply() received an invalid combination of arguments - got "
+                "(other=Number, ), but expected one of:\n"
+                " * (Tensor other)\n"
+                "      didn't match because some of the arguments have invalid "
+                "types: (!other=Number!, )\n"
+                " * (Number other)\n"
+                "      didn't match because some of the arguments have invalid "
+                "types: (other=Number, )\n",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+
+        with self.assertRaises(TypeError) as raised:
+            tensor.multiply(**{"bad\x00tail": tensor})
+        self.assertEqual(
+            str(raised.exception),
+            "multiply() received an invalid combination of arguments - got (bad",
+        )
 
     def test_overflow_sign_and_surrogate_keyword_errors_match_pytorch(self):
         comparison_calls = []
