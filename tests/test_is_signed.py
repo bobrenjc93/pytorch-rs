@@ -3,6 +3,7 @@ import sys
 import types
 import unittest
 
+import numpy as np
 import torch_rs as torch
 
 
@@ -54,8 +55,15 @@ class TensorIsSignedTests(unittest.TestCase):
                     tensor.requires_grad,
                     tensor.is_leaf,
                 )
-                result = tensor.is_signed()
-                self.assertIs(result, True)
+                results = (
+                    tensor.is_signed(),
+                    torch.is_signed(tensor),
+                    torch.is_signed(input=tensor),
+                    torch.is_signed(x=tensor),
+                    torch.is_signed(a=tensor),
+                )
+                self.assertEqual(results, (True, True, True, True, True))
+                self.assertTrue(all(type(result) is bool for result in results))
                 self.assertEqual(
                     (
                         tensor.shape,
@@ -73,22 +81,28 @@ class TensorIsSignedTests(unittest.TestCase):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "is_signed")
         bound = tensor.is_signed
+        function = torch.is_signed
 
         self.assertIs(type(descriptor), types.MethodDescriptorType)
         self.assertIs(type(bound), types.BuiltinMethodType)
-        for callable_object in (descriptor, bound):
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        for callable_object in (descriptor, bound, function):
             self.assertTrue(callable(callable_object))
             self.assertEqual(callable_object.__name__, "is_signed")
             self.assertIsNone(callable_object.__text_signature__)
-            self.assertEqual(callable_object.__doc__, METHOD_DOC)
             with self.assertRaises(ValueError):
                 inspect.signature(callable_object)
 
+        self.assertEqual(descriptor.__doc__, METHOD_DOC)
+        self.assertEqual(bound.__doc__, METHOD_DOC)
+        self.assertIsNone(function.__doc__)
+        self.assertEqual(function.__module__, torch.tensor.__module__)
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
         self.assertIs(descriptor(tensor), True)
+        self.assertIn("is_signed", torch.__all__)
 
-    def test_positional_keyword_and_receiver_errors_match_pytorch_2_13(self):
+    def test_method_and_top_level_binding_errors_match_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "is_signed")
         bound = tensor.is_signed
@@ -136,6 +150,66 @@ class TensorIsSignedTests(unittest.TestCase):
             ),
         )
         for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
+
+        top_level_cases = (
+            (
+                lambda: torch.is_signed(),
+                'is_signed() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.is_signed(tensor, tensor),
+                "is_signed() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.is_signed(tensor, input=tensor),
+                "is_signed() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.is_signed(tensor, extra=True, input=tensor),
+                "is_signed() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.is_signed(tensor, input=tensor, extra=True),
+                "is_signed() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.is_signed(tensor, extra=True),
+                "is_signed() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.is_signed(input=tensor, a=tensor),
+                "is_signed() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.is_signed(foo=tensor),
+                'is_signed() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.is_signed(1),
+                "is_signed(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_signed(input=[]),
+                "is_signed(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.is_signed(a=1),
+                "is_signed(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_signed(x=[]),
+                "is_signed(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.is_signed(np.zeros((2, 3), dtype=np.float32)),
+                "is_signed(): argument 'input' (position 1) must be Tensor, not numpy.ndarray",
+            ),
+        )
+        for call, message in top_level_cases:
             with self.subTest(message=message):
                 with self.assertRaises(TypeError) as raised:
                     call()
