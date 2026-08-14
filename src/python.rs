@@ -433,6 +433,16 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\npositive() -> Tensor\n\nSee :func:`torch.positive`\n"]
+    #[pyo3(text_signature = None)]
+    fn positive(slf: &Bound<'_, Self>) -> PyResult<Py<PyTensor>> {
+        // Unary positive is an identity for the supported float32 tensors. Return
+        // the existing wrapper so storage, layout, and autograd state are untouched.
+        Ok(slf.as_any().cast::<PyTensor>()?.clone().unbind())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nnegative() -> Tensor\n\nSee :func:`torch.negative`\n"]
     #[pyo3(text_signature = None)]
     fn negative(slf: &Bound<'_, Self>) -> PyResult<PyTensor> {

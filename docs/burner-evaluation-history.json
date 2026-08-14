@@ -1617,6 +1617,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 57
       }
+    },
+    {
+      "key": "pr:108",
+      "recordedAt": "2026-08-14T11:40:44.360Z",
+      "label": "PR #108",
+      "kind": "leaf",
+      "prNumber": 108,
+      "title": "Expose Tensor.positive as an identity operation",
+      "scores": {
+        "eval_7af648fb": 99.9,
+        "eval_8417a4a8": 61.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 40.2,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 57
+      }
     }
   ]
 }
