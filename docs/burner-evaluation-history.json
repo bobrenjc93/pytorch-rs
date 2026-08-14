@@ -1681,6 +1681,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 56
       }
+    },
+    {
+      "key": "pr:112",
+      "recordedAt": "2026-08-14T13:23:30.576Z",
+      "label": "PR #112",
+      "kind": "leaf",
+      "prNumber": 112,
+      "title": "Expose the read-only Tensor.is_sparse_csr property",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 62,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 40.7,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 56
+      }
     }
   ]
 }
