@@ -1588,6 +1588,19 @@ fn equal(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     Ok(input.inner == other.inner)
 }
 
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[doc = "\nt(input) -> Tensor\n\nExpects :attr:`input` to be <= 2-D tensor and transposes dimensions 0\nand 1.\n\n0-D and 1-D tensors are returned as is. When input is a 2-D tensor this\nis equivalent to ``transpose(input, 0, 1)``.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> x = torch.randn(())\n    >>> x\n    tensor(0.1995)\n    >>> torch.t(x)\n    tensor(0.1995)\n    >>> x = torch.randn(3)\n    >>> x\n    tensor([ 2.4320, -0.4608,  0.7702])\n    >>> torch.t(x)\n    tensor([ 2.4320, -0.4608,  0.7702])\n    >>> x = torch.randn(2, 3)\n    >>> x\n    tensor([[ 0.4875,  0.9158, -0.5872],\n            [ 0.3938, -0.6929,  0.6932]])\n    >>> torch.t(x)\n    tensor([[ 0.4875,  0.3938],\n            [ 0.9158, -0.6929],\n            [-0.5872,  0.6932]])\n\nSee also :func:`torch.transpose`.\n"]
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn t(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let input = bind_legacy_single_tensor_argument("t", args, kwargs)?;
+    let tensor = input
+        .value
+        .cast::<PyTensor>()
+        .expect("the t input type was checked while binding");
+    tensor.try_borrow()?.t()
+}
+
 #[pyfunction(signature = (*args, **kwargs))]
 fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let ([input, dim0, dim1], keyword_error) =
@@ -5590,6 +5603,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;
+    module.add_function(wrap_pyfunction!(t, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
