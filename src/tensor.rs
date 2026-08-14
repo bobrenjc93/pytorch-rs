@@ -157,14 +157,14 @@ impl Storage {
         }
     }
 
-    fn data_ptr(&self) -> usize {
+    fn data_ptr(&self) -> *const u8 {
         match &self.data {
-            StorageData::Owned(values) => values.as_ptr().addr(),
+            StorageData::Owned(values) => values.as_ptr().cast(),
             StorageData::SharedGradient(values) => values
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .as_ptr()
-                .addr(),
+                .cast(),
         }
     }
 
@@ -1073,10 +1073,13 @@ impl Tensor {
             .offset
             .checked_mul(self.element_size())
             .expect("validated tensor storage offset must fit in bytes");
+        // Retain the allocation provenance while applying the view offset,
+        // then expose it from the final pointer so integer-to-pointer round
+        // trips through FFI remain valid under Rust's strict provenance model.
         self.storage
             .data_ptr()
-            .checked_add(byte_offset)
-            .expect("a validated tensor view must address its allocation")
+            .wrapping_add(byte_offset)
+            .expose_provenance()
     }
 
     /// Reports whether two tensors refer to the same underlying allocation.

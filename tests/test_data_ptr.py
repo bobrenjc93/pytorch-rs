@@ -1,3 +1,4 @@
+import ctypes
 import inspect
 import sys
 import types
@@ -18,6 +19,33 @@ METHOD_DOC = (
 
 
 class TensorDataPtrTests(unittest.TestCase):
+    def test_pointer_round_trips_through_ctypes(self):
+        source = torch.tensor(
+            [
+                [0.25, 1.25, 2.25, 3.25],
+                [4.25, 5.25, 6.25, 7.25],
+                [8.25, 9.25, 10.25, 11.25],
+            ]
+        )
+        row = source[1]
+        row_values = (ctypes.c_float * 4).from_address(row.data_ptr())
+        self.assertEqual(list(row_values), [4.25, 5.25, 6.25, 7.25])
+
+        strided_row = source.transpose(0, 1)[1]
+        first_value = ctypes.c_float.from_address(strided_row.data_ptr())
+        self.assertEqual(first_value.value, 1.25)
+
+        materialized = strided_row.clone()
+        materialized_values = (ctypes.c_float * 3).from_address(
+            materialized.data_ptr()
+        )
+        self.assertEqual(list(materialized_values), [1.25, 5.25, 9.25])
+
+        leaf = torch.tensor([2.0, 3.0], requires_grad=True)
+        (leaf * 4.0).sum().backward()
+        gradient_values = (ctypes.c_float * 2).from_address(leaf.grad.data_ptr())
+        self.assertEqual(list(gradient_values), [4.0, 4.0])
+
     def test_pointer_offsets_empty_views_and_aliases(self):
         source = torch.tensor(
             [
