@@ -258,6 +258,17 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
             lambda: actual.mul(x2=[], wat=actual),
             lambda: expected.mul(x2=[], wat=expected),
         )
+        for actual_call, expected_call in (
+            (
+                lambda: actual.mul(x2=actual, other=[]),
+                lambda: expected.mul(x2=expected, other=[]),
+            ),
+            (
+                lambda: actual.mul(other=[], x2=actual),
+                lambda: expected.mul(other=[], x2=expected),
+            ),
+        ):
+            self.assert_error_matches(actual_call, expected_call)
 
         descriptor_cases = (
             (lambda: actual_descriptor(), lambda: expected_descriptor()),

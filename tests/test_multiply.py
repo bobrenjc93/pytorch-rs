@@ -252,6 +252,16 @@ class TensorMultiplyTests(unittest.TestCase):
             r"^mul\(\): argument 'other' must be Tensor, not list$",
         ):
             tensor.mul(x2=[], wat=tensor)
+        for call in (
+            lambda: tensor.mul(x2=tensor, other=[]),
+            lambda: tensor.mul(other=[], x2=tensor),
+        ):
+            with self.subTest(mul_x2_fallback=call):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^mul\(\): argument 'other' must be Tensor, not list$",
+                ):
+                    call()
 
         descriptor_cases = (
             (

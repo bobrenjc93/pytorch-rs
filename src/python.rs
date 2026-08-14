@@ -4264,6 +4264,7 @@ fn bind_multiplication_argument<'py>(
             position: Some(1),
         })
     };
+    let mut x2_fallback = None;
     let mut keyword_error = None;
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
@@ -4274,8 +4275,8 @@ fn bind_multiplication_argument<'py>(
                         "{function}() got an unexpected keyword argument '{key}'"
                     ))
                 });
-                if other.is_none() {
-                    other = Some(ParsedCallArgument {
+                if x2_fallback.is_none() {
+                    x2_fallback = Some(ParsedCallArgument {
                         value,
                         position: None,
                     });
@@ -4301,7 +4302,7 @@ fn bind_multiplication_argument<'py>(
         }
     }
 
-    let other = other.ok_or_else(|| {
+    let other = other.or(x2_fallback).ok_or_else(|| {
         PyTypeError::new_err(format!(
             "{function}() missing 1 required positional arguments: \"other\""
         ))
