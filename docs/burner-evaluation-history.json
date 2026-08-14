@@ -1729,6 +1729,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 57
       }
+    },
+    {
+      "key": "pr:115",
+      "recordedAt": "2026-08-14T14:53:54.219Z",
+      "label": "PR #115",
+      "kind": "leaf",
+      "prNumber": 115,
+      "title": "Support unary + as the Tensor.positive alias",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 62.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 40.9,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 57
+      }
     }
   ]
 }
