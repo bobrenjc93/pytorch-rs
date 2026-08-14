@@ -372,7 +372,8 @@ fn relu_preserves_signed_zero_and_materializes_scalar_offset_and_strided_inputs(
         assert_eq!(output.storage_offset(), 0);
         assert_eq!(output.item().unwrap().to_bits(), zero_bits);
         assert!(!output.shares_storage_with(&input));
-        assert!(!output.requires_grad());
+        assert!(output.requires_grad());
+        assert!(!output.is_leaf());
     }
 
     let mut storage = vec![1.0; INPUT_BITS.len()];
