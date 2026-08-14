@@ -2001,6 +2001,15 @@ impl Tensor {
             }
             return Ok(output);
         }
+        // Matching dense layouts have the same physical iteration order. An
+        // immutable owned slice can therefore bypass per-element logical
+        // offset decoding without changing the output layout.
+        if self.strides == output_strides
+            && let Some(values) = self.dense_physical_slice()
+        {
+            output.extend(values.iter().copied().map(&operation));
+            return Ok(output);
+        }
         output.resize(self.elements, 0.0);
         for (linear_index, value) in self.logical_values().enumerate() {
             let output_offset =
@@ -4025,6 +4034,7 @@ fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::sync::{Arc, Mutex};
 
     use super::{
@@ -4231,6 +4241,129 @@ mod tests {
         for (actual, expected) in cases {
             assert_eq!(actual.shape(), expected.shape());
             assert_eq!(actual.stride(), expected.stride());
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn dense_materialization_fast_path_requires_owned_matching_strides() {
+        let bits = [
+            0x3f80_0000,
+            0x4000_0000,
+            0x4040_0000,
+            0x4080_0000,
+            0x40a0_0000,
+            0x40c0_0000,
+            0x40e0_0000,
+            0x4100_0000,
+            0x4110_0000,
+        ];
+        let tensor = offset_strided_matrix(bits);
+        let physical_bits = bits.to_vec();
+        let logical_bits = tensor
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>();
+        assert_ne!(physical_bits, logical_bits);
+
+        let matched_visits = RefCell::new(Vec::new());
+        let matched = tensor
+            .materialize_with_strides(tensor.stride(), |value| {
+                matched_visits.borrow_mut().push(value.to_bits());
+                value
+            })
+            .unwrap();
+        assert_eq!(matched_visits.into_inner(), physical_bits);
+        assert!(matched.into_iter().map(f32::to_bits).eq(bits));
+
+        let shared = shared_gradient_copy(&tensor);
+        let shared_visits = RefCell::new(Vec::new());
+        let shared_output = shared
+            .materialize_with_strides(shared.stride(), |value| {
+                shared_visits.borrow_mut().push(value.to_bits());
+                value
+            })
+            .unwrap();
+        assert_eq!(shared_visits.into_inner(), logical_bits);
+        assert!(shared_output.into_iter().map(f32::to_bits).eq(bits));
+
+        let contiguous_strides = [3, 1];
+        let mismatched_visits = RefCell::new(Vec::new());
+        let mismatched = tensor
+            .materialize_with_strides(&contiguous_strides, |value| {
+                mismatched_visits.borrow_mut().push(value.to_bits());
+                value
+            })
+            .unwrap();
+        assert_eq!(mismatched_visits.into_inner(), logical_bits);
+        assert_eq!(
+            mismatched.into_iter().map(f32::to_bits).collect::<Vec<_>>(),
+            logical_bits
+        );
+
+        assert_eq!(
+            tensor.materialize_with_strides(&[usize::MAX, 1], |value| value),
+            Err(TensorError::IndexCalculationOverflow)
+        );
+    }
+
+    #[test]
+    fn owned_dense_materialization_is_bitwise_identical_to_shared_gradient_fallback() {
+        let tensor = offset_strided_matrix([
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0xbf80_0000,
+        ]);
+        let shared = shared_gradient_copy(&tensor);
+        let cases = [
+            (tensor.negate().unwrap(), shared.negate().unwrap()),
+            (tensor.relu().unwrap(), shared.relu().unwrap()),
+            (tensor.sin().unwrap(), shared.sin().unwrap()),
+            (tensor.exp().unwrap(), shared.exp().unwrap()),
+            (
+                tensor.add_scalar(1.25).unwrap(),
+                shared.add_scalar(1.25).unwrap(),
+            ),
+            (
+                tensor.sub_scalar(1.25).unwrap(),
+                shared.sub_scalar(1.25).unwrap(),
+            ),
+            (
+                tensor.mul_scalar(-0.0).unwrap(),
+                shared.mul_scalar(-0.0).unwrap(),
+            ),
+            (
+                tensor.div_scalar(-2.0).unwrap(),
+                shared.div_scalar(-2.0).unwrap(),
+            ),
+            (
+                tensor.scalar_sub(1.25).unwrap(),
+                shared.scalar_sub(1.25).unwrap(),
+            ),
+            (
+                tensor.scalar_div(-2.0).unwrap(),
+                shared.scalar_div(-2.0).unwrap(),
+            ),
+            (tensor.try_clone().unwrap(), shared.try_clone().unwrap()),
+        ];
+
+        for (actual, expected) in cases {
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
             assert!(
                 actual
                     .logical_values()
