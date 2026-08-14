@@ -190,6 +190,11 @@ impl PyDType {
         self.inner.is_complex()
     }
 
+    #[getter]
+    fn is_signed(&self) -> bool {
+        self.inner.is_signed()
+    }
+
     fn __repr__(&self) -> &'static str {
         match self.inner {
             DType::Float32 => "torch.float32",
