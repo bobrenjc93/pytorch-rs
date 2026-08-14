@@ -1665,6 +1665,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 57
       }
+    },
+    {
+      "key": "pr:111",
+      "recordedAt": "2026-08-14T13:01:19.211Z",
+      "label": "PR #111",
+      "kind": "leaf",
+      "prNumber": 111,
+      "title": "Expose top-level torch.is_same_size only",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 61.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 40.6,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 56
+      }
     }
   ]
 }

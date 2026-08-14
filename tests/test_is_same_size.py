@@ -10,9 +10,18 @@ import torch_rs as torch
 
 class TensorIsSameSizeTests(unittest.TestCase):
     def assert_same_size(self, left, right, expected):
-        result = left.is_same_size(right)
-        self.assertIs(type(result), bool)
-        self.assertIs(result, expected)
+        results = (
+            left.is_same_size(right),
+            torch.is_same_size(left, right),
+            torch.is_same_size(input=left, other=right),
+            torch.is_same_size(x1=left, x2=right),
+            torch.is_same_size(left, x2=right),
+            torch.is_same_size(x=left, other=right),
+            torch.is_same_size(a=left, other=right),
+        )
+        for result in results:
+            self.assertIs(type(result), bool)
+            self.assertIs(result, expected)
 
     def test_compares_only_shape_across_storage_and_layouts(self):
         source = torch.tensor(
@@ -113,12 +122,14 @@ class TensorIsSameSizeTests(unittest.TestCase):
 
     def test_descriptor_metadata_and_other_keyword(self):
         tensor = torch.tensor([1.0])
+        function = torch.is_same_size
         descriptor = inspect.getattr_static(torch.Tensor, "is_same_size")
         bound = tensor.is_same_size
 
+        self.assertIs(type(function), types.BuiltinFunctionType)
         self.assertIs(type(descriptor), types.MethodDescriptorType)
         self.assertIs(type(bound), types.BuiltinMethodType)
-        for callable_object in (descriptor, bound):
+        for callable_object in (function, descriptor, bound):
             self.assertTrue(callable(callable_object))
             self.assertEqual(callable_object.__name__, "is_same_size")
             self.assertIsNone(callable_object.__doc__)
@@ -126,9 +137,92 @@ class TensorIsSameSizeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 inspect.signature(callable_object)
 
+        self.assertEqual(function.__module__, torch.tensor.__module__)
         self.assertIs(descriptor(tensor, tensor), True)
         self.assertIs(tensor.is_same_size(other=tensor), True)
         self.assertIs(tensor.is_same_size(other=torch.tensor([[1.0]])), False)
+        self.assertIn("is_same_size", torch.__all__)
+
+    def test_top_level_binding_and_non_tensor_errors(self):
+        tensor = torch.tensor([1.0])
+        cases = (
+            (
+                lambda: torch.is_same_size(),
+                'is_same_size() missing 2 required positional argument: "input", "other"',
+            ),
+            (
+                lambda: torch.is_same_size(tensor),
+                'is_same_size() missing 1 required positional arguments: "other"',
+            ),
+            (
+                lambda: torch.is_same_size(other=tensor),
+                'is_same_size() missing 2 required positional argument: "input", "other"',
+            ),
+            (
+                lambda: torch.is_same_size(tensor, tensor, tensor),
+                "is_same_size() takes 2 positional arguments but 3 were given",
+            ),
+            (
+                lambda: torch.is_same_size(1, tensor),
+                "is_same_size(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_same_size(tensor, None),
+                "is_same_size(): argument 'other' (position 2) must be Tensor, not NoneType",
+            ),
+            (
+                lambda: torch.is_same_size(input=[], other=tensor),
+                "is_same_size(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.is_same_size(input=tensor, other=1),
+                "is_same_size(): argument 'other' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_same_size(x1=tensor, x2=[]),
+                "is_same_size(): argument 'other' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.is_same_size(np.zeros((2, 3), dtype=np.float32), tensor),
+                "is_same_size(): argument 'input' (position 1) must be Tensor, not numpy.ndarray",
+            ),
+            (
+                lambda: torch.is_same_size(tensor, tensor, extra=True),
+                "is_same_size() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.is_same_size(tensor, tensor, input=tensor),
+                "is_same_size() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.is_same_size(tensor, tensor, other=tensor),
+                "is_same_size() got multiple values for argument 'other'",
+            ),
+            (
+                lambda: torch.is_same_size(tensor, tensor, x1=tensor),
+                "is_same_size() got an unexpected keyword argument 'x1'",
+            ),
+            (
+                lambda: torch.is_same_size(tensor, other=tensor, x2=tensor),
+                "is_same_size() got an unexpected keyword argument 'x2'",
+            ),
+            (
+                lambda: torch.is_same_size(input=tensor, x1=tensor, other=tensor),
+                "is_same_size() got an unexpected keyword argument 'x1'",
+            ),
+            (
+                lambda: torch.is_same_size(input=1, other=tensor, extra=True),
+                "is_same_size(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_same_size(input=tensor, extra=True),
+                'is_same_size() missing 1 required positional arguments: "other"',
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
 
     def test_binding_and_non_tensor_errors(self):
         tensor = torch.tensor([1.0])
@@ -170,9 +264,7 @@ class TensorIsSameSizeTests(unittest.TestCase):
                 "is_same_size(): argument 'other' (position 1) must be Tensor, not list",
             ),
             (
-                lambda: tensor.is_same_size(
-                    np.zeros((2, 3), dtype=np.float32)
-                ),
+                lambda: tensor.is_same_size(np.zeros((2, 3), dtype=np.float32)),
                 "is_same_size(): argument 'other' (position 1) must be Tensor, not numpy.ndarray",
             ),
             (
