@@ -5773,7 +5773,13 @@ fn transpose_error(error: &TensorError) -> PyErr {
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     module.add_class::<PyTensor>()?;
+    let tensor_type = py.get_type::<PyTensor>();
     let tensor_base = py.get_type::<PyTensorBase>();
+    // PyTorch installs Tensor.__pos__ as the TensorBase.positive descriptor
+    // itself. Besides preserving its public metadata and call diagnostics,
+    // assigning the descriptor activates the unary-positive numeric slot.
+    let positive_descriptor = tensor_base.getattr("positive")?;
+    tensor_type.setattr("__pos__", positive_descriptor)?;
     let int_descriptor = tensor_base.getattr("__int__")?;
     tensor_base.setattr("__int__", int_descriptor)?;
     let float_descriptor = tensor_base.getattr("__float__")?;

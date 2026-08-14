@@ -26,8 +26,10 @@ class TensorPositiveTests(unittest.TestCase):
         detached = source.detach()
 
         result = source.positive()
+        operator_result = +source
 
         self.assertIs(result, source)
+        self.assertIs(operator_result, source)
         self.assertTrue(result.is_set_to(detached))
         self.assertEqual(
             (
@@ -85,6 +87,7 @@ class TensorPositiveTests(unittest.TestCase):
         leaf = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True)
         leaf_result = leaf.positive()
         self.assertIs(leaf_result, leaf)
+        self.assertIs(+leaf, leaf)
         self.assertTrue(leaf_result.requires_grad)
         self.assertTrue(leaf_result.is_leaf)
 
@@ -99,32 +102,42 @@ class TensorPositiveTests(unittest.TestCase):
         )
 
         result = source.positive()
+        operator_result = +source
 
         self.assertIs(result, source)
+        self.assertIs(operator_result, source)
         self.assertEqual(
             (
-                result.requires_grad,
-                result.is_leaf,
-                result.shape,
-                result.stride(),
-                result.storage_offset(),
-                result.data_ptr(),
+                operator_result.requires_grad,
+                operator_result.is_leaf,
+                operator_result.shape,
+                operator_result.stride(),
+                operator_result.storage_offset(),
+                operator_result.data_ptr(),
             ),
             graph_before,
         )
-        result.sum().backward()
+        operator_result.sum().backward()
         self.assertEqual(leaf.grad.tolist(), [[0.0, 3.0, 0.0], [0.0, 3.0, 0.0]])
         gradient = leaf.grad
         self.assertIs(leaf.positive(), leaf)
+        self.assertIs(+leaf, leaf)
         self.assertIs(leaf.grad, gradient)
 
     def test_descriptor_documentation_and_signature_behavior(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "positive")
+        operator_descriptor = inspect.getattr_static(torch.Tensor, "__pos__")
         bound = tensor.positive
+        operator_bound = tensor.__pos__
 
         self.assertIs(type(descriptor), types.MethodDescriptorType)
         self.assertIs(type(bound), types.BuiltinMethodType)
+        self.assertIs(type(operator_bound), types.BuiltinMethodType)
+        self.assertIs(operator_descriptor, descriptor)
+        self.assertIs(torch.Tensor.__dict__["__pos__"], descriptor)
+        with self.assertRaises(AttributeError):
+            inspect.getattr_static(descriptor.__objclass__, "__pos__")
         self.assertEqual(
             repr(descriptor),
             "<method 'positive' of 'torch._C.TensorBase' objects>",
@@ -133,7 +146,7 @@ class TensorPositiveTests(unittest.TestCase):
         self.assertEqual(bound.__qualname__, "Tensor.positive")
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
-        for callable_object in (descriptor, bound):
+        for callable_object in (descriptor, bound, operator_bound):
             self.assertEqual(callable_object.__name__, "positive")
             self.assertEqual(callable_object.__doc__, METHOD_DOC)
             self.assertIsNone(callable_object.__text_signature__)
@@ -142,11 +155,13 @@ class TensorPositiveTests(unittest.TestCase):
 
         self.assertIs(descriptor(tensor), tensor)
         self.assertIs(bound(**{}), tensor)
+        self.assertIs(operator_bound(**{}), tensor)
 
     def test_invalid_call_errors_match_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "positive")
         bound = tensor.positive
+        operator_bound = tensor.__pos__
         cases = (
             (
                 lambda: tensor.positive(1),
@@ -184,6 +199,26 @@ class TensorPositiveTests(unittest.TestCase):
             (
                 lambda: descriptor(self=tensor),
                 "unbound method TensorBase.positive() needs an argument",
+            ),
+            (
+                lambda: tensor.__pos__(1),
+                "TensorBase.positive() takes no arguments (1 given)",
+            ),
+            (
+                lambda: tensor.__pos__(1, 2),
+                "TensorBase.positive() takes no arguments (2 given)",
+            ),
+            (
+                lambda: tensor.__pos__(dim=0),
+                "TensorBase.positive() takes no keyword arguments",
+            ),
+            (
+                lambda: operator_bound(1),
+                "Tensor.positive() takes no arguments (1 given)",
+            ),
+            (
+                lambda: operator_bound(dim=0),
+                "Tensor.positive() takes no keyword arguments",
             ),
         )
         for call, message in cases:
