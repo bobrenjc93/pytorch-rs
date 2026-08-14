@@ -1,3 +1,5 @@
+import inspect
+import types
 import unittest
 
 import numpy as np
@@ -11,6 +13,14 @@ except ImportError:
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class ReluReferenceTests(unittest.TestCase):
+    @staticmethod
+    def call_relu(module, tensor, form):
+        if form == "method":
+            return tensor.relu()
+        if form == "positional":
+            return module.relu(tensor)
+        return module.relu(**{form: tensor})
+
     def assert_metadata_matches(self, actual, expected, *, case):
         with self.subTest(case=case):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -23,32 +33,37 @@ class ReluReferenceTests(unittest.TestCase):
             self.assertEqual(actual.device, torch.device("cpu"))
 
     def assert_matches(self, actual_input, expected_input, expected_bits, *, case):
-        actual_output = actual_input.relu()
-        expected_output = expected_input.relu()
-
         with self.subTest(case=case):
             self.assertEqual(actual_input.shape, tuple(expected_input.shape))
             self.assertEqual(actual_input.stride(), expected_input.stride())
             self.assertEqual(
                 actual_input.storage_offset(), expected_input.storage_offset()
             )
-            self.assertFalse(actual_output.is_set_to(actual_input))
-            self.assertFalse(expected_output.is_set_to(expected_input))
 
-        self.assert_metadata_matches(actual_output, expected_output, case=case)
-        with self.subTest(case=case):
-            actual_bits = (
-                np.asarray(actual_output, dtype=np.float32)
-                .reshape(-1)
-                .view(np.uint32)
-            )
-            reference_bits = (
-                expected_output.cpu().numpy().reshape(-1).view(np.uint32)
-            )
-            np.testing.assert_array_equal(actual_bits, reference_bits)
-            np.testing.assert_array_equal(
-                actual_bits, np.asarray(expected_bits, dtype=np.uint32).reshape(-1)
-            )
+        for form in ("method", "positional", "input", "x", "a"):
+            actual_output = self.call_relu(torch, actual_input, form)
+            expected_output = self.call_relu(reference_torch, expected_input, form)
+            invocation = (case, form)
+
+            with self.subTest(case=invocation):
+                self.assertFalse(actual_output.is_set_to(actual_input))
+                self.assertFalse(expected_output.is_set_to(expected_input))
+
+            self.assert_metadata_matches(actual_output, expected_output, case=invocation)
+            with self.subTest(case=invocation):
+                actual_bits = (
+                    np.asarray(actual_output, dtype=np.float32)
+                    .reshape(-1)
+                    .view(np.uint32)
+                )
+                reference_bits = (
+                    expected_output.cpu().numpy().reshape(-1).view(np.uint32)
+                )
+                np.testing.assert_array_equal(actual_bits, reference_bits)
+                np.testing.assert_array_equal(
+                    actual_bits,
+                    np.asarray(expected_bits, dtype=np.uint32).reshape(-1),
+                )
 
     def assert_backward_error_matches(self, actual_loss, expected_loss):
         with self.assertRaises(RuntimeError) as actual_raised:
@@ -354,6 +369,211 @@ class ReluReferenceTests(unittest.TestCase):
             expected_leaf.grad.detach().numpy().view(np.uint32),
         )
         self.assert_backward_error_matches(actual_loss, expected_loss)
+
+    def test_top_level_empty_call_forms_match_the_method_and_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual_input = torch.zeros((2, 0, 3)).transpose(0, 2)[1]
+        expected_input = reference_torch.zeros((2, 0, 3)).transpose(0, 2)[1]
+        actual_method = actual_input.relu()
+
+        for form in ("positional", "input", "x", "a"):
+            actual_output = self.call_relu(torch, actual_input, form)
+            expected_output = self.call_relu(reference_torch, expected_input, form)
+            self.assert_metadata_matches(actual_output, expected_output, case=form)
+            with self.subTest(form=form):
+                self.assertEqual(actual_output.shape, actual_method.shape)
+                self.assertEqual(actual_output.stride(), actual_method.stride())
+                self.assertEqual(
+                    actual_output.storage_offset(), actual_method.storage_offset()
+                )
+                self.assertFalse(actual_output.is_set_to(actual_input))
+                self.assertFalse(expected_output.is_set_to(expected_input))
+                np.testing.assert_array_equal(
+                    np.asarray(actual_output), np.asarray(actual_method)
+                )
+
+    def test_top_level_autograd_repeated_backward_and_no_grad_match_the_method(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+
+        def autograd_outcome(module, form):
+            values = np.asarray(
+                [9.0] * 12
+                + [
+                    -1.0,
+                    2.0,
+                    0.0,
+                    -0.0,
+                    np.inf,
+                    -np.inf,
+                    0.5,
+                    3.0,
+                    -4.0,
+                    5.0,
+                    -6.0,
+                    7.0,
+                ],
+                dtype=np.float32,
+            ).reshape(2, 3, 4)
+            leaf = module.tensor(
+                values.tolist(), dtype=module.float32, requires_grad=True
+            )
+            source = leaf[1].transpose(0, 1)
+            output = self.call_relu(module, source, form)
+            weights = module.tensor(
+                np.arange(1, 13, dtype=np.float32).reshape(4, 3).tolist(),
+                dtype=module.float32,
+            )
+            loss = (output * weights).sum()
+            state = (
+                tuple(output.shape),
+                output.stride(),
+                output.storage_offset(),
+                output.is_contiguous(),
+                output.requires_grad,
+                output.is_leaf,
+            )
+            output_values = np.asarray(output.detach()).copy()
+            loss.backward()
+            gradient = np.asarray(leaf.grad).copy()
+            try:
+                loss.backward()
+            except RuntimeError as error:
+                repeated_backward_error = (type(error).__name__, str(error))
+            else:
+                raise AssertionError("a second backward through ReLU must fail")
+            return state, output_values, gradient, repeated_backward_error
+
+        def no_grad_outcome(module, form):
+            leaf = module.tensor(
+                [[-1.0, 2.0], [0.0, 3.0]],
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            source = leaf.transpose(0, 1)
+            with module.no_grad():
+                output = self.call_relu(module, source, form)
+            return (
+                tuple(output.shape),
+                output.stride(),
+                output.storage_offset(),
+                output.requires_grad,
+                output.is_leaf,
+                np.asarray(output).copy(),
+            )
+
+        actual_method = autograd_outcome(torch, "method")
+        actual_method_no_grad = no_grad_outcome(torch, "method")
+        for form in ("positional", "input", "x", "a"):
+            actual = autograd_outcome(torch, form)
+            expected = autograd_outcome(reference_torch, form)
+            with self.subTest(form=form, behavior="autograd-state"):
+                self.assertEqual(actual[0], expected[0])
+                self.assertEqual(actual[0], actual_method[0])
+                self.assertEqual(actual[3], expected[3])
+                self.assertEqual(actual[3], actual_method[3])
+            for index, behavior in ((1, "values"), (2, "gradient")):
+                with self.subTest(form=form, behavior=behavior):
+                    np.testing.assert_array_equal(actual[index], expected[index])
+                    np.testing.assert_array_equal(actual[index], actual_method[index])
+
+            actual_no_grad = no_grad_outcome(torch, form)
+            expected_no_grad = no_grad_outcome(reference_torch, form)
+            with self.subTest(form=form, behavior="no-grad-state"):
+                self.assertEqual(actual_no_grad[:5], expected_no_grad[:5])
+                self.assertEqual(actual_no_grad[:5], actual_method_no_grad[:5])
+                np.testing.assert_array_equal(
+                    actual_no_grad[5], expected_no_grad[5]
+                )
+                np.testing.assert_array_equal(
+                    actual_no_grad[5], actual_method_no_grad[5]
+                )
+
+    def test_top_level_callable_metadata_and_export_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual = torch.relu
+        expected = reference_torch.relu
+
+        self.assertIs(type(actual), types.BuiltinFunctionType)
+        self.assertIs(type(expected), types.BuiltinFunctionType)
+        self.assertEqual(actual.__name__, expected.__name__)
+        self.assertEqual(actual.__text_signature__, expected.__text_signature__)
+        self.assertEqual(actual.__doc__, expected.__doc__)
+        self.assertEqual(actual.__module__, torch.tensor.__module__)
+        self.assertEqual(expected.__module__, reference_torch.tensor.__module__)
+        self.assertEqual(torch.__all__.count("relu"), 1)
+        self.assertEqual(reference_torch.__all__.count("relu"), 1)
+        for function in (actual, expected):
+            with self.assertRaises(ValueError):
+                inspect.signature(function)
+
+    def test_top_level_binding_and_error_precedence_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0])
+        cases = (
+            (lambda: torch.relu(), lambda: reference_torch.relu()),
+            (
+                lambda: torch.relu(actual, actual),
+                lambda: reference_torch.relu(expected, expected),
+            ),
+            (
+                lambda: torch.relu(actual, input=actual),
+                lambda: reference_torch.relu(expected, input=expected),
+            ),
+            (
+                lambda: torch.relu(actual, extra=True, input=actual),
+                lambda: reference_torch.relu(expected, extra=True, input=expected),
+            ),
+            (
+                lambda: torch.relu(actual, input=actual, extra=True),
+                lambda: reference_torch.relu(expected, input=expected, extra=True),
+            ),
+            (
+                lambda: torch.relu(extra=actual),
+                lambda: reference_torch.relu(extra=expected),
+            ),
+            (
+                lambda: torch.relu(1, extra=True),
+                lambda: reference_torch.relu(1, extra=True),
+            ),
+            (lambda: torch.relu(input=[]), lambda: reference_torch.relu(input=[])),
+            (lambda: torch.relu(a=1), lambda: reference_torch.relu(a=1)),
+            (lambda: torch.relu(x=[]), lambda: reference_torch.relu(x=[])),
+            (
+                lambda: torch.relu(np.zeros((2, 3), dtype=np.float32)),
+                lambda: reference_torch.relu(
+                    np.zeros((2, 3), dtype=np.float32)
+                ),
+            ),
+            (
+                lambda: torch.relu(input=actual, a=actual),
+                lambda: reference_torch.relu(input=expected, a=expected),
+            ),
+            (
+                lambda: torch.relu(a=actual, x=actual),
+                lambda: reference_torch.relu(a=expected, x=expected),
+            ),
+            (
+                lambda: torch.relu(x=actual, a=actual),
+                lambda: reference_torch.relu(x=expected, a=expected),
+            ),
+            (
+                lambda: torch.relu(input=1, a=actual),
+                lambda: reference_torch.relu(input=1, a=expected),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                with self.assertRaises(Exception) as actual_raised:
+                    actual_call()
+                with self.assertRaises(Exception) as expected_raised:
+                    expected_call()
+                self.assertIs(
+                    type(actual_raised.exception), type(expected_raised.exception)
+                )
+                self.assertEqual(
+                    str(actual_raised.exception), str(expected_raised.exception)
+                )
 
 
 if __name__ == "__main__":

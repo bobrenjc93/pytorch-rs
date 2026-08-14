@@ -1639,6 +1639,16 @@ fn detach(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRe
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn relu(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    let input = bind_legacy_single_tensor_argument("relu", args, kwargs)?;
+    let tensor = input
+        .value
+        .cast::<PyTensor>()
+        .expect("the relu input type was checked while binding");
+    tensor.try_borrow()?.relu()
+}
+
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
 fn is_same_size(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
     let ([input, other], keyword_error) = bind_is_same_size_arguments(args, kwargs)?;
     let input = parse_tensor_argument("is_same_size", "input", &input)?;
@@ -5810,6 +5820,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
+    module.add_function(wrap_pyfunction!(relu, module)?)?;
     module.add_function(wrap_pyfunction!(is_same_size, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;
     module.add_function(wrap_pyfunction!(t, module)?)?;
