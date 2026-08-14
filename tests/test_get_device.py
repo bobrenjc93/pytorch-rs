@@ -84,12 +84,22 @@ class TensorGetDeviceTests(unittest.TestCase):
 
         self.assertIs(type(descriptor), types.MethodDescriptorType)
         self.assertIs(type(bound), types.BuiltinMethodType)
-        for callable_object in (descriptor, bound):
+        for callable_object, python_313_signature in (
+            (descriptor, "(self, /)"),
+            (bound, "()"),
+        ):
             self.assertEqual(callable_object.__name__, "get_device")
-            self.assertIsNone(callable_object.__text_signature__)
             self.assertEqual(callable_object.__doc__, METHOD_DOC)
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+            if sys.version_info >= (3, 13):
+                self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                self.assertEqual(
+                    str(inspect.signature(callable_object)),
+                    python_313_signature,
+                )
+            else:
+                self.assertIsNone(callable_object.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(callable_object)
 
         self.assertEqual(descriptor.__qualname__, "TensorBase.get_device")
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
@@ -115,7 +125,11 @@ class TensorGetDeviceTests(unittest.TestCase):
             ),
             (
                 lambda: tensor.get_device(dim=0),
-                "TensorBase.get_device() takes no keyword arguments",
+                (
+                    "Tensor.get_device() takes no keyword arguments"
+                    if sys.version_info < (3, 11)
+                    else "TensorBase.get_device() takes no keyword arguments"
+                ),
             ),
             (
                 lambda: descriptor(tensor, unexpected=True),

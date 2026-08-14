@@ -59,6 +59,12 @@ class TensorGetDeviceReferenceTests(unittest.TestCase):
         )
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
+    def signature_outcome(self, callable_object):
+        try:
+            return "signature", inspect.signature(callable_object)
+        except Exception as error:
+            return "error", type(error)
+
     def test_cpu_results_and_device_indices_match_pytorch_2_13(self):
         actual_cases = self.make_cases(torch)
         expected_cases = self.make_cases(reference_torch)
@@ -96,10 +102,10 @@ class TensorGetDeviceReferenceTests(unittest.TestCase):
                 expected_callable.__text_signature__,
             )
             self.assertEqual(actual_callable.__doc__, expected_callable.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(actual_callable)
-            with self.assertRaises(ValueError):
-                inspect.signature(expected_callable)
+            self.assertEqual(
+                self.signature_outcome(actual_callable),
+                self.signature_outcome(expected_callable),
+            )
 
         self.assertEqual(
             actual_descriptor.__objclass__.__name__,
