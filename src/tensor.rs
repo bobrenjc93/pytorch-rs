@@ -3172,12 +3172,20 @@ fn apply_same_shape_multiply_vjp(
     debug_assert_eq!(right.elements, upstream.len());
 
     let left_gradient = if left.autograd.is_some() {
-        Some(same_shape_multiply_gradient(upstream, right)?)
+        Some(same_shape_multiply_gradient(
+            upstream,
+            right,
+            MultiplyGradientNanSource::SavedOperand,
+        )?)
     } else {
         None
     };
     let right_gradient = if right.autograd.is_some() {
-        Some(same_shape_multiply_gradient(upstream, left)?)
+        Some(same_shape_multiply_gradient(
+            upstream,
+            left,
+            MultiplyGradientNanSource::OutputGradient,
+        )?)
     } else {
         None
     };
@@ -3191,14 +3199,23 @@ fn apply_same_shape_multiply_vjp(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+enum MultiplyGradientNanSource {
+    OutputGradient,
+    SavedOperand,
+}
+
 fn same_shape_multiply_gradient(
     upstream: &[f32],
     operand: &SavedTensor,
+    nan_source: MultiplyGradientNanSource,
 ) -> Result<Vec<f32>, TensorError> {
     let mut gradient = try_result_vector(upstream.len(), upstream.len())?;
     if let Some(values) = operand.contiguous_values() {
         gradient.extend(upstream.iter().copied().zip(values.iter().copied()).map(
-            |(output_gradient, operand)| multiply_gradient_contribution(output_gradient, operand),
+            |(output_gradient, operand)| {
+                multiply_gradient_contribution(output_gradient, operand, nan_source)
+            },
         ));
     } else {
         gradient.extend(
@@ -3209,6 +3226,7 @@ fn same_shape_multiply_gradient(
                     multiply_gradient_contribution(
                         output_gradient,
                         operand.value_at_linear_index(index),
+                        nan_source,
                     )
                 }),
         );
@@ -3216,13 +3234,22 @@ fn same_shape_multiply_gradient(
     Ok(gradient)
 }
 
-fn multiply_gradient_contribution(output_gradient: f32, operand: f32) -> f32 {
+fn multiply_gradient_contribution(
+    output_gradient: f32,
+    operand: f32,
+    nan_source: MultiplyGradientNanSource,
+) -> f32 {
     if output_gradient.is_nan() && operand.is_nan() {
-        // The original scalar broadcast loop selects the saved operand when
-        // both multiplication inputs are NaNs. A simpler loop can be
-        // vectorized with the opposite payload precedence, so make the
-        // existing bitwise behavior explicit while quieting signaling NaNs.
-        f32::from_bits(operand.to_bits() | F32_QUIET_NAN_MASK)
+        // The pre-fast-path scalar loop has observably different payload
+        // precedence in its two derivative branches: the left derivative
+        // selects the saved right operand, while the right derivative selects
+        // the downstream gradient. Keep both behaviors stable if this loop is
+        // vectorized, and quiet signaling NaNs as multiplication would.
+        let source = match nan_source {
+            MultiplyGradientNanSource::OutputGradient => output_gradient,
+            MultiplyGradientNanSource::SavedOperand => operand,
+        };
+        f32::from_bits(source.to_bits() | F32_QUIET_NAN_MASK)
     } else {
         output_gradient * operand
     }

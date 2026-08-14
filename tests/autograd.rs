@@ -250,6 +250,29 @@ fn same_shape_multiply_backward_preserves_contiguous_special_value_bits() {
 }
 
 #[test]
+fn same_shape_multiply_backward_matches_both_leaf_nan_payloads() {
+    let downstream_bits = [0x7fc6_789a; 4];
+    let left = Tensor::from_vec(vec![f32::from_bits(0x7fc1_2345); 4], [4])
+        .unwrap()
+        .with_requires_grad(true);
+    let right = Tensor::from_vec(downstream_bits.map(f32::from_bits).to_vec(), [4])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(downstream_bits.map(f32::from_bits).to_vec(), [4]).unwrap();
+
+    left.mul(&right)
+        .unwrap()
+        .mul(&weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+
+    assert_eq!(value_bits(&left.grad().unwrap().unwrap()), downstream_bits);
+    assert_eq!(value_bits(&right.grad().unwrap().unwrap()), downstream_bits);
+}
+
+#[test]
 fn same_shape_multiply_backward_preserves_strided_and_empty_gradients() {
     let left_leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
         .unwrap()

@@ -1632,6 +1632,28 @@ class AutogradReferenceTests(unittest.TestCase):
         self.assertEqual(signed_zero_bits, [0x8000_0000, 0x8000_0000])
         self.assertEqual(broadcast_zero_bits, [0, 0])
 
+    def test_same_shape_multiply_both_leaf_nan_payloads_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            left_values = np.full(4, 0x7FC1_2345, dtype=np.uint32).view(np.float32)
+            downstream_values = np.full(4, 0x7FC6_789A, dtype=np.uint32).view(
+                np.float32
+            )
+            left = module.tensor(memoryview(left_values), requires_grad=True)
+            right = module.tensor(memoryview(downstream_values), requires_grad=True)
+            weights = module.tensor(memoryview(downstream_values))
+
+            (left * right * weights).sum().backward()
+            outcomes.append(
+                (
+                    np.asarray(left.grad).view(np.uint32).copy(),
+                    np.asarray(right.grad).view(np.uint32).copy(),
+                )
+            )
+
+        np.testing.assert_array_equal(outcomes[0][0], outcomes[1][0])
+        np.testing.assert_array_equal(outcomes[0][1], outcomes[1][1])
+
     def test_no_grad_generator_protocol_matches_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):
