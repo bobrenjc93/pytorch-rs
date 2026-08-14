@@ -1649,6 +1649,23 @@ fn is_nonzero(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> 
 #[allow(clippy::doc_markdown)]
 #[cfg_attr(
     not(doc),
+    doc = "\nis_complex(input: Tensor) -> bool\n\nReturns True if the data type of :attr:`input` is a complex data type i.e.,\none of ``torch.complex64``, and ``torch.complex128``.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> torch.is_complex(torch.tensor([1, 2, 3], dtype=torch.complex64))\n    True\n    >>> torch.is_complex(torch.tensor([1, 2, 3], dtype=torch.complex128))\n    True\n    >>> torch.is_complex(torch.tensor([1, 2, 3], dtype=torch.int32))\n    False\n    >>> torch.is_complex(torch.tensor([1.0, 2.0, 3.0], dtype=torch.float16))\n    False\n"
+)]
+#[cfg_attr(doc, doc = "See the runtime Python documentation for examples.")]
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn is_complex(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    let input = bind_legacy_single_tensor_argument("is_complex", args, kwargs)?;
+    let tensor = input
+        .value
+        .cast::<PyTensor>()
+        .expect("the is_complex input type was checked while binding");
+    Ok(tensor.try_borrow()?.inner.is_complex())
+}
+
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[cfg_attr(
+    not(doc),
     doc = "\nis_floating_point(input: Tensor) -> bool\n\nReturns True if the data type of :attr:`input` is a floating point data type i.e.,\none of ``torch.float64``, ``torch.float32``, ``torch.float16``, and ``torch.bfloat16``.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0]))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.int32))\n    False\n    >>> torch.is_floating_point(torch.tensor([1.0, 2.0, 3.0], dtype=torch.float16))\n    True\n    >>> torch.is_floating_point(torch.tensor([1, 2, 3], dtype=torch.complex64))\n    False\n"
 )]
 #[cfg_attr(doc, doc = "See the runtime Python documentation for examples.")]
@@ -4305,6 +4322,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     module.add_function(wrap_pyfunction!(numel, module)?)?;
     module.add_function(wrap_pyfunction!(is_nonzero, module)?)?;
+    module.add_function(wrap_pyfunction!(is_complex, module)?)?;
     module.add_function(wrap_pyfunction!(is_floating_point, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
