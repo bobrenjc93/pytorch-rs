@@ -1,4 +1,7 @@
+import array
+import collections
 import inspect
+import io
 import re
 import subprocess
 import sys
@@ -417,6 +420,67 @@ class TensorMultiplyTests(unittest.TestCase):
                 TypeError, f"^{re.escape(keyword_message)}$"
             ):
                 tensor.multiply(a=tensor, b=tensor, d=tensor)
+
+    def test_extension_type_names_do_not_dispatch_metaclass_hooks(self):
+        tensor = torch.tensor([1.0])
+        values = (
+            (re.compile("x"), "re.Pattern"),
+            (array.array("i"), "array.array"),
+            (collections.deque(), "collections.deque"),
+            (io.BytesIO(), "_io.BytesIO"),
+        )
+        for value, expected_name in values:
+            with self.subTest(type_name=expected_name):
+                with self.assertRaises(TypeError) as raised:
+                    tensor.multiply(value)
+                message = str(raised.exception)
+                self.assertIn(f"got ({expected_name}),", message)
+                self.assertEqual(message.count(f"(!{expected_name}!)"), 2)
+
+        metaclass_accesses = []
+
+        class GuardedMeta(type):
+            def __getattribute__(cls, name):
+                if name in {"__name__", "__module__", "__flags__"}:
+                    metaclass_accesses.append(name)
+                    raise RuntimeError(f"metaclass hook invoked for {name}")
+                return super().__getattribute__(name)
+
+        class Guarded(metaclass=GuardedMeta):
+            pass
+
+        with self.assertRaises(TypeError) as raised:
+            tensor.multiply(Guarded())
+        self.assertIn("got (Guarded),", str(raised.exception))
+        self.assertEqual(metaclass_accesses, [])
+
+    def test_overflow_sign_and_surrogate_keyword_errors_match_pytorch(self):
+        comparison_calls = []
+
+        class ComparisonBombInt(int):
+            def __lt__(self, other):
+                comparison_calls.append(other)
+                raise RuntimeError("comparison override must not be invoked")
+
+        tensor = torch.tensor([1.0])
+        for value, message in (
+            (ComparisonBombInt(2**64), "int too big to convert"),
+            (
+                ComparisonBombInt(-(2**63) - 1),
+                "can't convert negative int to unsigned",
+            ),
+        ):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    OverflowError, f"^{re.escape(message)}$"
+                ):
+                    tensor.multiply(value)
+        self.assertEqual(comparison_calls, [])
+
+        with self.assertRaisesRegex(
+            RuntimeError, r"^error unpacking string as utf-8$"
+        ):
+            tensor.multiply(**{"\ud800": tensor})
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
     def test_large_keyword_error_returns_bad_alloc_instead_of_aborting(self):

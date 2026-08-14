@@ -1,5 +1,5 @@
 use std::cell::Cell;
-use std::ffi::CStr;
+use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -8,6 +8,7 @@ use pyo3::exceptions::{
     PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
     PyValueError,
 };
+use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
@@ -1290,7 +1291,7 @@ impl PyTensor {
                 Ok(Some(scalar)) => scalar,
                 Ok(None) => unreachable!("unsupported mul operand types were rejected above"),
                 Err(_) if other.value.is_instance_of::<PyInt>() => {
-                    let message = if other.value.lt(0_i64)? {
+                    let message = if python_integer_is_negative(&other.value)? {
                         "can't convert negative int to unsigned"
                     } else {
                         "int too big to convert"
@@ -2960,6 +2961,12 @@ fn call_type_summary(
     call_type_summary_with(positional, keywords, keyword_order, &allocation)
 }
 
+fn pytorch_keyword_name<'a>(key: &'a Bound<'_, PyAny>) -> PyResult<&'a str> {
+    key.cast::<PyString>()?
+        .to_str()
+        .map_err(|_| PyRuntimeError::new_err("error unpacking string as utf-8"))
+}
+
 fn call_type_summary_with(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
@@ -2979,7 +2986,7 @@ fn call_type_summary_with(
     let mut keyword_names = try_size_vector_with(keyword_length, allocation)?;
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
-            let key = key.cast::<PyString>()?.to_str()?;
+            let key = pytorch_keyword_name(&key)?;
             try_push_size_with(
                 &mut keyword_names,
                 (
@@ -3586,9 +3593,12 @@ fn libcxx_hash_len_0_to_16(bytes: &[u8]) -> u64 {
         ) ^ last;
     }
     if length >= 4 {
-        let first = u64::from(libcxx_load_u32(bytes, 0));
+        let first = libcxx_load_u32(bytes, 0);
         let last = u64::from(libcxx_load_u32(bytes, length - 4));
-        return libcxx_hash_len_16(length_u64.wrapping_add(first << 3), last);
+        // PyTorch's macOS wheel uses system libc++ ABI v1. Its historical
+        // CityHash expression shifts in uint32_t before widening to size_t.
+        let shifted_first = u64::from(first.wrapping_shl(3));
+        return libcxx_hash_len_16(length_u64.wrapping_add(shifted_first), last);
     }
     if length > 0 {
         let first = u32::from(bytes[0]);
@@ -4317,6 +4327,25 @@ fn mul_argument_type_error(position: Option<usize>, actual: &str) -> PyErr {
     ))
 }
 
+#[allow(
+    unsafe_code,
+    reason = "PyLong_AsLongLongAndOverflow reads an int subclass without dispatching overrides"
+)]
+fn python_integer_is_negative(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let mut overflow = 0;
+    // SAFETY: the caller has verified that value is a Python int instance, the
+    // object remains live for the call, and overflow points to writable storage.
+    let converted = unsafe { ffi::PyLong_AsLongLongAndOverflow(value.as_ptr(), &raw mut overflow) };
+    if PyErr::occurred(value.py()) {
+        return Err(PyErr::fetch(value.py()));
+    }
+    Ok(if overflow == 0 {
+        converted < 0
+    } else {
+        overflow < 0
+    })
+}
+
 fn multiply_binding_error(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
@@ -4344,7 +4373,7 @@ fn multiply_binding_error(
                 .iter()
                 .next()
                 .expect("a single keyword argument remains present");
-            let key = key.cast::<PyString>()?.to_str()?;
+            let key = pytorch_keyword_name(&key)?;
             if key == "other" {
                 let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
                 let number_detail = call_argument_type_description_with(&value, &allocation)?;
@@ -4532,55 +4561,93 @@ fn validate_dimension_swap_argument_prefix<const N: usize>(
     Ok(())
 }
 
-fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
-    // PyTorch reports CPython's `tp_name`: heap types use their unqualified
-    // class name, while static extension types retain their module prefix.
-    const PY_TPFLAGS_HEAPTYPE: u64 = 1 << 9;
+#[repr(C)]
+struct PyTypeObjectNamePrefix {
+    _ob_base: ffi::PyVarObject,
+    tp_name: *const c_char,
+}
 
+#[allow(
+    unsafe_code,
+    reason = "CPython exposes tp_name only as a type-object field before Python 3.13"
+)]
+fn cpython_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     let value_type = value.get_type();
-    let name_object = value_type.name()?;
-    let name = name_object.to_str()?;
-    let module_object = value_type.getattr("__module__")?;
-    let module = module_object.cast::<PyString>()?.to_str()?;
-    let flags = value_type.getattr("__flags__")?.extract::<u64>()?;
-    let mut output = String::new();
-    if module == "torch_rs" && matches!(name, "dtype" | "device" | "memory_format") {
-        try_push_string(&mut output, "torch.")?;
-        try_push_string(&mut output, name)?;
-    } else if flags & PY_TPFLAGS_HEAPTYPE == 0 && module != "builtins" {
-        try_push_string(&mut output, module)?;
-        try_push_string(&mut output, ".")?;
-        try_push_string(&mut output, name)?;
-    } else {
-        try_push_string(&mut output, name)?;
+    let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
+    // SAFETY: every classic CPython type object starts with PyVarObject and
+    // tp_name. The value keeps its type alive, and the attached interpreter
+    // prevents a concurrent Python-level type-name mutation while it is copied.
+    let name = unsafe { (*prefix).tp_name };
+    if name.is_null() {
+        return Err(PyRuntimeError::new_err("Python type has no tp_name"));
     }
+    // SAFETY: CPython requires tp_name to point to a NUL-terminated UTF-8 name
+    // while the type name remains unchanged; no Python callback can run before
+    // this function copies it into owned Rust storage.
+    let name = unsafe { CStr::from_ptr(name) }
+        .to_str()
+        .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))?;
+    let mut output = String::new();
+    try_push_string(&mut output, name)?;
     Ok(output)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "CPython exposes tp_name only as a type-object field before Python 3.13"
+)]
+fn cpython_type_name_with(
+    value: &Bound<'_, PyAny>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let value_type = value.get_type();
+    let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
+    // SAFETY: see cpython_type_name; this variant performs the same immediate
+    // copy while using the formatter's preallocated allocation error.
+    let name = unsafe { (*prefix).tp_name };
+    if name.is_null() {
+        return Err(PyRuntimeError::new_err("Python type has no tp_name"));
+    }
+    // SAFETY: no Python callback can mutate the type before this copy ends.
+    let name = unsafe { CStr::from_ptr(name) }
+        .to_str()
+        .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))?;
+    try_string_from_str_with(name, allocation)
+}
+
+fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    let mut name = cpython_type_name(value)?;
+    let replacement = match name.as_str() {
+        "torch_rs.Tensor" => Some("Tensor"),
+        "torch_rs.dtype" => Some("torch.dtype"),
+        "torch_rs.device" => Some("torch.device"),
+        "torch_rs.memory_format" => Some("torch.memory_format"),
+        _ => None,
+    };
+    if let Some(replacement) = replacement {
+        name.clear();
+        try_push_string(&mut name, replacement)?;
+    }
+    Ok(name)
 }
 
 fn transpose_type_name_with(
     value: &Bound<'_, PyAny>,
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<String> {
-    const PY_TPFLAGS_HEAPTYPE: u64 = 1 << 9;
-
-    let value_type = value.get_type();
-    let name_object = value_type.name()?;
-    let name = name_object.to_str()?;
-    let module_object = value_type.getattr("__module__")?;
-    let module = module_object.cast::<PyString>()?.to_str()?;
-    let flags = value_type.getattr("__flags__")?.extract::<u64>()?;
-    let mut output = String::new();
-    if module == "torch_rs" && matches!(name, "dtype" | "device" | "memory_format") {
-        try_push_string_with(&mut output, "torch.", allocation)?;
-        try_push_string_with(&mut output, name, allocation)?;
-    } else if flags & PY_TPFLAGS_HEAPTYPE == 0 && module != "builtins" {
-        try_push_string_with(&mut output, module, allocation)?;
-        try_push_string_with(&mut output, ".", allocation)?;
-        try_push_string_with(&mut output, name, allocation)?;
-    } else {
-        try_push_string_with(&mut output, name, allocation)?;
+    let mut name = cpython_type_name_with(value, allocation)?;
+    let replacement = match name.as_str() {
+        "torch_rs.Tensor" => Some("Tensor"),
+        "torch_rs.dtype" => Some("torch.dtype"),
+        "torch_rs.device" => Some("torch.device"),
+        "torch_rs.memory_format" => Some("torch.memory_format"),
+        _ => None,
+    };
+    if let Some(replacement) = replacement {
+        name.clear();
+        try_push_string_with(&mut name, replacement, allocation)?;
     }
-    Ok(output)
+    Ok(name)
 }
 
 fn dimension_swap_argument_type_error(
@@ -5578,6 +5645,22 @@ mod tests {
             .unwrap();
             let keys = ordered.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
             assert_eq!(keys, ["d", "b", "a"]);
+
+            let ordered = pytorch_libcxx_keyword_order(
+                (0..14)
+                    .map(|index| (format!("key{index}"), "Tensor".to_owned()))
+                    .collect(),
+                &allocation,
+            )
+            .unwrap();
+            let keys = ordered.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
+            assert_eq!(
+                keys,
+                [
+                    "key13", "key11", "key12", "key8", "key1", "key2", "key6", "key5", "key3",
+                    "key4", "key0", "key10", "key7", "key9"
+                ]
+            );
         });
     }
 
@@ -5618,7 +5701,7 @@ mod tests {
         for (value, expected) in [
             ("", 11_160_318_154_034_397_263),
             ("a", 2_603_192_927_274_642_682),
-            ("key13", 16_977_941_038_263_753_328),
+            ("key13", 15_487_510_319_299_464_526),
             ("abcdefghijklmnopq", 237_482_408_704_357_350),
             (
                 "abcdefghijklmnopqrstuvwxyz0123456",

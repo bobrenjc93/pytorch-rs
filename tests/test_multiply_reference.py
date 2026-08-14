@@ -1,4 +1,9 @@
+import array
+import collections
 import inspect
+import io
+import re
+import sys
 import types
 import unittest
 
@@ -387,6 +392,79 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
 
         actual_keywords = {f"key{index}": actual for index in range(258)}
         expected_keywords = {f"key{index}": expected for index in range(258)}
+        self.assert_error_matches(
+            lambda: actual.multiply(**actual_keywords),
+            lambda: expected.multiply(**expected_keywords),
+        )
+
+    def test_type_names_overflow_and_surrogate_errors_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0])
+
+        for value in (
+            re.compile("x"),
+            array.array("i"),
+            collections.deque(),
+            io.BytesIO(),
+        ):
+            with self.subTest(value_type=type(value)):
+                self.assert_error_matches(
+                    lambda value=value: actual.multiply(value),
+                    lambda value=value: expected.multiply(value),
+                )
+
+        metaclass_accesses = []
+
+        class GuardedMeta(type):
+            def __getattribute__(cls, name):
+                if name in {"__name__", "__module__", "__flags__"}:
+                    metaclass_accesses.append(name)
+                    raise RuntimeError(f"metaclass hook invoked for {name}")
+                return super().__getattribute__(name)
+
+        class Guarded(metaclass=GuardedMeta):
+            pass
+
+        guarded = Guarded()
+        self.assert_error_matches(
+            lambda: actual.multiply(guarded),
+            lambda: expected.multiply(guarded),
+        )
+        self.assertEqual(metaclass_accesses, [])
+
+        comparison_calls = []
+
+        class ComparisonBombInt(int):
+            def __lt__(self, other):
+                comparison_calls.append(other)
+                raise RuntimeError("comparison override must not be invoked")
+
+        for value in (
+            ComparisonBombInt(2**64),
+            ComparisonBombInt(-(2**63) - 1),
+        ):
+            with self.subTest(overflow_value=value):
+                self.assert_error_matches(
+                    lambda value=value: actual.multiply(value),
+                    lambda value=value: expected.multiply(value),
+                )
+        self.assertEqual(comparison_calls, [])
+
+        self.assert_error_matches(
+            lambda: actual.multiply(**{"\ud800": actual}),
+            lambda: expected.multiply(**{"\ud800": expected}),
+        )
+
+    @unittest.skipUnless(
+        sys.platform == "darwin", "requires PyTorch linked against system libc++"
+    )
+    def test_macos_libcxx_abi_v1_keyword_order_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0])
+        actual_keywords = {f"key{index}": actual for index in range(14)}
+        expected_keywords = {f"key{index}": expected for index in range(14)}
         self.assert_error_matches(
             lambda: actual.multiply(**actual_keywords),
             lambda: expected.multiply(**expected_keywords),
