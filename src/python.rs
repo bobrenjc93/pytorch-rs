@@ -185,6 +185,11 @@ impl PyDType {
         self.inner.element_size()
     }
 
+    #[getter]
+    fn is_floating_point(&self) -> bool {
+        self.inner.is_floating_point()
+    }
+
     fn __repr__(&self) -> &'static str {
         match self.inner {
             DType::Float32 => "torch.float32",
