@@ -1861,6 +1861,33 @@ impl Tensor {
     /// preserve-format request, checked stride overflow, or allocation
     /// failure.
     pub fn try_contiguous(&self, memory_format: MemoryFormat) -> Result<Self, TensorError> {
+        self.try_contiguous_impl(memory_format, true)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn suggested_memory_format(&self) -> MemoryFormat {
+        if layout_is_strides_like_channels_last(&self.shape, &self.strides) {
+            MemoryFormat::ChannelsLast
+        } else if layout_is_strides_like_channels_last_3d(&self.shape, &self.strides) {
+            MemoryFormat::ChannelsLast3d
+        } else {
+            MemoryFormat::Contiguous
+        }
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn try_copy_with_memory_format(
+        &self,
+        memory_format: MemoryFormat,
+    ) -> Result<Self, TensorError> {
+        self.try_contiguous_impl(memory_format, false)
+    }
+
+    fn try_contiguous_impl(
+        &self,
+        memory_format: MemoryFormat,
+        reuse_matching_storage: bool,
+    ) -> Result<Self, TensorError> {
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
             MemoryFormat::ChannelsLast3d => Some(5),
@@ -1876,7 +1903,7 @@ impl Tensor {
             });
         }
 
-        if self.is_contiguous_with_memory_format(memory_format) {
+        if reuse_matching_storage && self.is_contiguous_with_memory_format(memory_format) {
             let mut output = Self {
                 storage: Arc::clone(&self.storage),
                 shape: try_clone_result_shape(&self.shape, self.elements)?,
@@ -3553,6 +3580,46 @@ fn layout_is_channels_last_contiguous(shape: &[usize], strides: &[usize]) -> boo
 
 fn layout_is_channels_last_3d_contiguous(shape: &[usize], strides: &[usize]) -> bool {
     layout_is_contiguous_in_order(shape, strides, &[1, 4, 3, 2, 0])
+}
+
+#[cfg(feature = "python-bindings")]
+fn layout_is_strides_like_channels_last(shape: &[usize], strides: &[usize]) -> bool {
+    layout_is_strides_like_channels_order(shape, strides, &[1, 3, 2, 0])
+}
+
+#[cfg(feature = "python-bindings")]
+fn layout_is_strides_like_channels_last_3d(shape: &[usize], strides: &[usize]) -> bool {
+    layout_is_strides_like_channels_order(shape, strides, &[1, 4, 3, 2, 0])
+}
+
+#[cfg(feature = "python-bindings")]
+fn layout_is_strides_like_channels_order(
+    shape: &[usize],
+    strides: &[usize],
+    order: &[usize],
+) -> bool {
+    if shape.len() != order.len() || strides.len() != order.len() || strides[1] == 0 {
+        return false;
+    }
+
+    let mut minimum_stride = 0_usize;
+    for &axis in order {
+        if shape[axis] == 0 || strides[axis] < minimum_stride {
+            return false;
+        }
+        // PyTorch defaults fully ambiguous N111 layouts to row-major.
+        if axis == 0 && minimum_stride == strides[1] {
+            return false;
+        }
+        minimum_stride = strides[axis];
+        if shape[axis] > 1 {
+            let Some(next_minimum_stride) = minimum_stride.checked_mul(shape[axis]) else {
+                return false;
+            };
+            minimum_stride = next_minimum_stride;
+        }
+    }
+    true
 }
 
 fn layout_is_contiguous_in_order(shape: &[usize], strides: &[usize], order: &[usize]) -> bool {
