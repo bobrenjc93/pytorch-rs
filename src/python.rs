@@ -386,6 +386,15 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nnegative() -> Tensor\n\nSee :func:`torch.negative`\n"]
+    #[pyo3(text_signature = None)]
+    fn negative(slf: &Bound<'_, Self>) -> PyResult<PyTensor> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        tensor.negated()
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\ntype_as(tensor) -> Tensor\n\nReturns this tensor cast to the type of the given tensor.\n\nThis is a no-op if the tensor is already of the correct type. This is\nequivalent to ``self.type(tensor.type())``\n\nArgs:\n    tensor (Tensor): the tensor which has the desired type\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn type_as(

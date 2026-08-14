@@ -162,6 +162,119 @@ class PythonApiBaselineTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             descriptor(1)
 
+    def test_negative_alias_matches_neg_values_and_builtin_contract(self):
+        scalar = torch.tensor(2.5)
+        empty = torch.zeros((2, 0, 3))
+        source = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )
+        strided = source.transpose(0, 2)
+        offset = strided[1]
+        special_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        special = torch.tensor(memoryview(special_bits.view(np.float32)))
+
+        for case, tensor in (
+            ("scalar", scalar),
+            ("empty", empty),
+            ("strided", strided),
+            ("offset", offset),
+            ("signed zeros and non-finites", special),
+        ):
+            negative_output = tensor.negative()
+            neg_output = tensor.neg()
+            with self.subTest(case=case):
+                self.assertEqual(negative_output.shape, neg_output.shape)
+                self.assertEqual(negative_output.stride(), neg_output.stride())
+                self.assertEqual(
+                    negative_output.storage_offset(), neg_output.storage_offset()
+                )
+                self.assertIs(negative_output.dtype, neg_output.dtype)
+                self.assertEqual(negative_output.device, neg_output.device)
+                np.testing.assert_array_equal(
+                    np.asarray(negative_output).reshape(-1).view(np.uint32),
+                    np.asarray(neg_output).reshape(-1).view(np.uint32),
+                )
+
+        descriptor = inspect.getattr_static(torch.Tensor, "negative")
+        bound = scalar.negative
+        self.assertIs(type(descriptor), types.MethodDescriptorType)
+        self.assertIs(type(bound), types.BuiltinMethodType)
+        self.assertEqual(descriptor.__name__, "negative")
+        self.assertEqual(bound.__name__, "negative")
+        self.assertEqual(descriptor.__qualname__, "TensorBase.negative")
+        self.assertEqual(bound.__qualname__, "Tensor.negative")
+        self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
+        self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
+        self.assertIsNone(descriptor.__text_signature__)
+        self.assertIsNone(bound.__text_signature__)
+        self.assertEqual(
+            descriptor.__doc__,
+            "\nnegative() -> Tensor\n\nSee :func:`torch.negative`\n",
+        )
+        self.assertEqual(bound.__doc__, descriptor.__doc__)
+        for callable_object in (descriptor, bound):
+            with self.assertRaises(ValueError):
+                inspect.signature(callable_object)
+
+        np.testing.assert_array_equal(
+            np.asarray(descriptor(scalar)).view(np.uint32),
+            np.asarray(scalar.neg()).view(np.uint32),
+        )
+        calls = (
+            (
+                lambda: scalar.negative(1),
+                "TensorBase.negative() takes no arguments (1 given)",
+            ),
+            (
+                lambda: scalar.negative(1, 2),
+                "TensorBase.negative() takes no arguments (2 given)",
+            ),
+            (
+                lambda: scalar.negative(dim=0),
+                "TensorBase.negative() takes no keyword arguments",
+            ),
+            (
+                lambda: bound(1),
+                "Tensor.negative() takes no arguments (1 given)",
+            ),
+            (
+                lambda: bound(dim=0),
+                "Tensor.negative() takes no keyword arguments",
+            ),
+            (
+                lambda: descriptor(scalar, 1),
+                "TensorBase.negative() takes no arguments (1 given)",
+            ),
+            (
+                lambda: descriptor(),
+                "unbound method TensorBase.negative() needs an argument",
+            ),
+            (
+                lambda: descriptor(1),
+                "descriptor 'negative' for 'torch._C.TensorBase' objects "
+                "doesn't apply to a 'int' object",
+            ),
+            (
+                lambda: descriptor(self=scalar),
+                "unbound method TensorBase.negative() needs an argument",
+            ),
+        )
+        for call, message in calls:
+            with self.subTest(message=message):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
     def test_unary_negation_materializes_one_full_output_buffer(self):
         script = textwrap.dedent(
