@@ -1585,6 +1585,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 57
       }
+    },
+    {
+      "key": "pr:106",
+      "recordedAt": "2026-08-14T10:51:03.680Z",
+      "label": "PR #106",
+      "kind": "leaf",
+      "prNumber": 106,
+      "title": "Expose top-level torch.swapdims only",
+      "scores": {
+        "eval_7af648fb": 99.9,
+        "eval_8417a4a8": 61.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 40,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 57
+      }
     }
   ]
 }
