@@ -100,6 +100,14 @@ impl Device {
             Self::Cpu => false,
         }
     }
+
+    /// Reports whether this device represents metadata-only tensor storage.
+    #[must_use]
+    pub const fn is_meta(self) -> bool {
+        match self {
+            Self::Cpu => false,
+        }
+    }
 }
 
 impl Display for Device {
@@ -1162,6 +1170,12 @@ impl Tensor {
     #[must_use]
     pub fn is_cuda(&self) -> bool {
         self.device().is_cuda()
+    }
+
+    /// Reports whether this tensor is stored on the metadata-only device.
+    #[must_use]
+    pub fn is_meta(&self) -> bool {
+        self.device().is_meta()
     }
 
     /// Returns the device owning this tensor's storage.
