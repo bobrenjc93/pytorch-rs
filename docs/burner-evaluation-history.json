@@ -1489,6 +1489,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 56
       }
+    },
+    {
+      "key": "pr:99",
+      "recordedAt": "2026-08-14T07:59:34.009Z",
+      "label": "PR #99",
+      "kind": "leaf",
+      "prNumber": 99,
+      "title": "Expose torch.dtype.is_floating_point",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 60.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 39.5,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 56
+      }
     }
   ]
 }
