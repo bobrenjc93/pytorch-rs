@@ -1662,7 +1662,7 @@ fn t(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<
 
 #[pyfunction(signature = (*args, **kwargs))]
 fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
-    apply_top_level_dimension_swap("transpose", args, kwargs)
+    apply_top_level_dimension_swap("transpose", ["input", "dim0", "dim1"], args, kwargs)
 }
 
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1670,16 +1670,25 @@ fn transpose(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
 #[doc = "\nswapdims(input, dim0, dim1) -> Tensor\n\nAlias for :func:`torch.transpose`.\n\nThis function is equivalent to NumPy's swapaxes function.\n\nExamples::\n\n    >>> x = torch.tensor([[[0,1],[2,3]],[[4,5],[6,7]]])\n    >>> x\n    tensor([[[0, 1],\n            [2, 3]],\n\n            [[4, 5],\n            [6, 7]]])\n    >>> torch.swapdims(x, 0, 1)\n    tensor([[[0, 1],\n            [4, 5]],\n\n            [[2, 3],\n            [6, 7]]])\n    >>> torch.swapdims(x, 0, 2)\n    tensor([[[0, 4],\n            [2, 6]],\n\n            [[1, 5],\n            [3, 7]]])\n"]
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
 fn swapdims(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
-    apply_top_level_dimension_swap("swapdims", args, kwargs)
+    apply_top_level_dimension_swap("swapdims", ["input", "dim0", "dim1"], args, kwargs)
+}
+
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[doc = "\nswapaxes(input, axis0, axis1) -> Tensor\n\nAlias for :func:`torch.transpose`.\n\nThis function is equivalent to NumPy's swapaxes function.\n\nExamples::\n\n    >>> x = torch.tensor([[[0,1],[2,3]],[[4,5],[6,7]]])\n    >>> x\n    tensor([[[0, 1],\n            [2, 3]],\n\n            [[4, 5],\n            [6, 7]]])\n    >>> torch.swapaxes(x, 0, 1)\n    tensor([[[0, 1],\n            [4, 5]],\n\n            [[2, 3],\n            [6, 7]]])\n    >>> torch.swapaxes(x, 0, 2)\n    tensor([[[0, 4],\n            [2, 6]],\n\n            [[1, 5],\n            [3, 7]]])\n"]
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn swapaxes(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+    apply_top_level_dimension_swap("swapaxes", ["input", "axis0", "axis1"], args, kwargs)
 }
 
 fn apply_top_level_dimension_swap(
     operation: &str,
+    argument_names: [&str; 3],
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyTensor> {
     let ([input, dim0, dim1], keyword_error) =
-        bind_dimension_swap_arguments(operation, args, kwargs, ["input", "dim0", "dim1"])?;
+        bind_dimension_swap_arguments(operation, args, kwargs, argument_names)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
@@ -1694,7 +1703,12 @@ fn apply_top_level_dimension_swap(
         )
     })?;
     let input_tensor = input_tensor.try_borrow()?;
-    let [dim0, dim1] = parse_dimension_swap_dimensions(operation, ["dim0", "dim1"], &dim0, &dim1)?;
+    let [dim0, dim1] = parse_dimension_swap_dimensions(
+        operation,
+        [argument_names[1], argument_names[2]],
+        &dim0,
+        &dim1,
+    )?;
     input_tensor
         .inner
         .transpose(dim0, dim1)
@@ -5690,6 +5704,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(t, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(swapdims, module)?)?;
+    module.add_function(wrap_pyfunction!(swapaxes, module)?)?;
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     module.add_function(wrap_pyfunction!(numel, module)?)?;

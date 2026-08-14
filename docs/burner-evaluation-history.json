@@ -1649,6 +1649,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 57
       }
+    },
+    {
+      "key": "pr:110",
+      "recordedAt": "2026-08-14T12:32:50.593Z",
+      "label": "PR #110",
+      "kind": "leaf",
+      "prNumber": 110,
+      "title": "Expose top-level torch.swapaxes only",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 61.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 40.5,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 57
+      }
     }
   ]
 }

@@ -1,10 +1,35 @@
 import inspect
 import sys
+import types
 import unittest
 import warnings
 
 import numpy as np
 import torch_rs as torch
+
+
+FUNCTION_DOC = (
+    "\nswapaxes(input, axis0, axis1) -> Tensor\n\n"
+    "Alias for :func:`torch.transpose`.\n\n"
+    "This function is equivalent to NumPy's swapaxes function.\n\n"
+    "Examples::\n\n"
+    "    >>> x = torch.tensor([[[0,1],[2,3]],[[4,5],[6,7]]])\n"
+    "    >>> x\n"
+    "    tensor([[[0, 1],\n"
+    "            [2, 3]],\n\n"
+    "            [[4, 5],\n"
+    "            [6, 7]]])\n"
+    "    >>> torch.swapaxes(x, 0, 1)\n"
+    "    tensor([[[0, 1],\n"
+    "            [4, 5]],\n\n"
+    "            [[2, 3],\n"
+    "            [6, 7]]])\n"
+    "    >>> torch.swapaxes(x, 0, 2)\n"
+    "    tensor([[[0, 4],\n"
+    "            [2, 6]],\n\n"
+    "            [[1, 5],\n"
+    "            [3, 7]]])\n"
+)
 
 
 class TensorSwapaxesTests(unittest.TestCase):
@@ -26,6 +51,9 @@ class TensorSwapaxesTests(unittest.TestCase):
             source.swapaxes(0, -1),
             source.swapaxes(axis0=0, axis1=-1),
             source.swapaxes(axis1=-1, axis0=0),
+            torch.swapaxes(source, 0, -1),
+            torch.swapaxes(source, axis0=0, axis1=-1),
+            torch.swapaxes(input=source, axis0=0, axis1=-1),
         ):
             with self.subTest(swapped=swapped):
                 self.assert_tensor(
@@ -37,27 +65,40 @@ class TensorSwapaxesTests(unittest.TestCase):
                 )
                 self.assertIs(swapped.dtype, source.dtype)
                 self.assertEqual(swapped.device, source.device)
+                self.assertEqual(swapped.data_ptr(), source.data_ptr())
                 self.assertIsNot(swapped, source)
 
-        unchanged = source.swapaxes(1, -1)
-        self.assert_tensor(
-            unchanged,
-            expected_source,
-            shape=source.shape,
-            stride=source.stride(),
-            offset=source.storage_offset(),
-        )
-        self.assertIsNot(unchanged, source)
+        for unchanged in (
+            source.swapaxes(1, -1),
+            torch.swapaxes(input=source, axis0=1, axis1=-1),
+        ):
+            self.assert_tensor(
+                unchanged,
+                expected_source,
+                shape=source.shape,
+                stride=source.stride(),
+                offset=source.storage_offset(),
+            )
+            self.assertEqual(unchanged.data_ptr(), source.data_ptr())
+            self.assertIsNot(unchanged, source)
 
     def test_scalar_empty_and_extreme_metadata(self):
         scalar = torch.tensor([2.5, 3.5])[1]
         for axis0, axis1 in ((0, 0), (-1, -1), (0, -1), (-1, 0)):
             with self.subTest(kind="scalar", axis0=axis0, axis1=axis1):
-                swapped = scalar.swapaxes(axis0, axis1)
-                self.assert_tensor(swapped, 3.5, shape=(), stride=(), offset=1)
+                for swapped in (
+                    scalar.swapaxes(axis0, axis1),
+                    torch.swapaxes(
+                        input=scalar,
+                        axis0=axis0,
+                        axis1=axis1,
+                    ),
+                ):
+                    self.assert_tensor(swapped, 3.5, shape=(), stride=(), offset=1)
+                    self.assertEqual(swapped.data_ptr(), scalar.data_ptr())
 
         empty = torch.zeros((4, 2, 0, 3)).transpose(0, 3)[2]
-        swapped_empty = empty.swapaxes(-3, -1)
+        swapped_empty = torch.swapaxes(empty, -3, -1)
         self.assertEqual(swapped_empty.shape, (4, 0, 2))
         self.assertEqual(
             swapped_empty.stride(),
@@ -71,13 +112,15 @@ class TensorSwapaxesTests(unittest.TestCase):
         for call in (
             lambda: extreme.swapaxes(1, 3),
             lambda: extreme.swapaxes(axis0=-3, axis1=-1),
+            lambda: torch.swapaxes(extreme, 1, 3),
+            lambda: torch.swapaxes(input=extreme, axis0=-3, axis1=-1),
         ):
             with self.subTest(kind="overflow"):
                 with self.assertRaisesRegex(
                     RuntimeError, "^numel: integer multiplication overflow$"
                 ):
                     call()
-        self.assertEqual(extreme.swapaxes(1, 1).numel(), 0)
+        self.assertEqual(torch.swapaxes(extreme, 1, 1).numel(), 0)
 
     def test_axis_types_and_ranges_match_pytorch(self):
         class IntSubclass(int):
@@ -93,6 +136,14 @@ class TensorSwapaxesTests(unittest.TestCase):
         )
         self.assertEqual(
             tensor.swapaxes(axis0=np.uint32(1), axis1=2).shape, (2, 4, 3)
+        )
+        self.assertEqual(
+            torch.swapaxes(tensor, IntSubclass(0), np.int64(-1)).shape,
+            (4, 3, 2),
+        )
+        self.assertEqual(
+            torch.swapaxes(input=tensor, axis0=np.uint32(1), axis1=2).shape,
+            (2, 4, 3),
         )
 
         for axis in (True, False, 1.0, "1", None, IndexOnly()):
@@ -195,6 +246,94 @@ class TensorSwapaxesTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), expected)
 
+        top_level_cases = (
+            (
+                lambda: torch.swapaxes(),
+                'swapaxes() missing 3 required positional argument: "input", "axis0", "axis1"',
+            ),
+            (
+                lambda: torch.swapaxes(tensor),
+                'swapaxes() missing 2 required positional argument: "axis0", "axis1"',
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 0),
+                'swapaxes() missing 1 required positional arguments: "axis1"',
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 0, 1, 2),
+                "swapaxes() takes 3 positional arguments but 4 were given",
+            ),
+            (
+                lambda: torch.swapaxes(axis0=0, axis1=1),
+                'swapaxes() missing 3 required positional argument: "input", "axis0", "axis1"',
+            ),
+            (
+                lambda: torch.swapaxes(input=tensor, axis1=0),
+                'swapaxes() missing 2 required positional argument: "axis0", "axis1"',
+            ),
+            (
+                lambda: torch.swapaxes(input=tensor, dim0=0, dim1=1),
+                'swapaxes() missing 2 required positional argument: "axis0", "axis1"',
+            ),
+            (
+                lambda: torch.swapaxes(1),
+                "swapaxes(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.swapaxes(input=1),
+                "swapaxes(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 1.5),
+                "swapaxes(): argument 'axis0' (position 2) must be int, not float",
+            ),
+            (
+                lambda: torch.swapaxes(input=tensor, axis0=np.bool_(True)),
+                "swapaxes(): argument 'axis0' must be int, not numpy.bool",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 0, 1.5),
+                "swapaxes(): argument 'axis1' (position 3) must be int, not float",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 0, 1, input=tensor),
+                "swapaxes() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 0, axis0=1, axis1=0),
+                "swapaxes() got multiple values for argument 'axis0'",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 0, 1, unexpected=None),
+                "swapaxes() got an unexpected keyword argument 'unexpected'",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 0, 1, dim0=0),
+                "swapaxes() got an unexpected keyword argument 'dim0'",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 1.5, 0, unexpected=None),
+                "swapaxes(): argument 'axis0' (position 2) must be int, not float",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 2**100, 0, unexpected=None),
+                "swapaxes() got an unexpected keyword argument 'unexpected'",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, 2**100, 1.5),
+                "swapaxes(): argument 'axis1' (position 3) must be int, not float",
+            ),
+            (
+                lambda: torch.swapaxes(tensor, timedelta, 0),
+                "'numpy.timedelta64' object cannot be interpreted as an integer",
+            ),
+        )
+        for call, expected in top_level_cases:
+            with self.subTest(top_level_expected=expected):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), expected)
+
         with self.assertRaisesRegex(
             ValueError, "^Overflow when unpacking long long$"
         ):
@@ -210,6 +349,21 @@ class TensorSwapaxesTests(unittest.TestCase):
             tensor.swapaxes(timedelta, 2**100)
         with self.assertRaisesRegex(OverflowError, "^user overflow$"):
             tensor.swapaxes(2**100, UserOverflow(0))
+        with self.assertRaisesRegex(
+            ValueError, "^Overflow when unpacking long long$"
+        ):
+            torch.swapaxes(tensor, np.uint64(2**63), 0)
+        with self.assertRaisesRegex(
+            TypeError,
+            "^'numpy.timedelta64' object cannot be interpreted as an integer$",
+        ):
+            torch.swapaxes(tensor, 2**100, timedelta)
+        with self.assertRaisesRegex(
+            ValueError, "^Overflow when unpacking long long$"
+        ):
+            torch.swapaxes(tensor, timedelta, 2**100)
+        with self.assertRaisesRegex(OverflowError, "^user overflow$"):
+            torch.swapaxes(tensor, 2**100, UserOverflow(0))
 
     def test_axis_values_convert_axis1_before_axis0(self):
         state = {"axis1_converted": False, "calls": []}
@@ -227,8 +381,10 @@ class TensorSwapaxesTests(unittest.TestCase):
                     return 1
                 return 0 if state["axis1_converted"] else 2
 
-        output = torch.zeros((2, 3, 4)).swapaxes(
-            StatefulInteger("axis0"), StatefulInteger("axis1")
+        output = torch.swapaxes(
+            torch.zeros((2, 3, 4)),
+            StatefulInteger("axis0"),
+            StatefulInteger("axis1"),
         )
         self.assertEqual(state["calls"], ["axis1", "axis0"])
         self.assertEqual(output.shape, (3, 2, 4))
@@ -239,7 +395,7 @@ class TensorSwapaxesTests(unittest.TestCase):
         weights = np.linspace(-2.0, 3.0, num=24, dtype=np.float32).reshape(4, 3, 2)
         axes_leaf = torch.tensor(values.tolist(), requires_grad=True)
         dims_leaf = torch.tensor(values.tolist(), requires_grad=True)
-        axes_view = axes_leaf.swapaxes(0, -1)
+        axes_view = torch.swapaxes(axes_leaf, 0, -1)
         dims_view = dims_leaf.swapdims(0, -1)
 
         self.assertEqual(axes_view.shape, dims_view.shape)
@@ -251,7 +407,11 @@ class TensorSwapaxesTests(unittest.TestCase):
         np.testing.assert_array_equal(np.asarray(axes_leaf.grad), np.asarray(dims_leaf.grad))
 
         with torch.no_grad():
-            axes_untracked = axes_leaf.swapaxes(0, 1)
+            axes_untracked = torch.swapaxes(
+                input=axes_leaf,
+                axis0=0,
+                axis1=1,
+            )
             dims_untracked = dims_leaf.swapdims(0, 1)
         self.assertEqual(axes_untracked.requires_grad, dims_untracked.requires_grad)
         self.assertEqual(axes_untracked.is_leaf, dims_untracked.is_leaf)
@@ -269,6 +429,16 @@ class TensorSwapaxesTests(unittest.TestCase):
             with self.subTest(callable_object=callable_object):
                 with self.assertRaises(ValueError):
                     inspect.signature(callable_object)
+
+        function = torch.swapaxes
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "swapaxes")
+        self.assertEqual(function.__module__, torch.tensor.__module__)
+        self.assertIsNone(function.__text_signature__)
+        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertIn("swapaxes", torch.__all__)
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
 
 
 if __name__ == "__main__":
