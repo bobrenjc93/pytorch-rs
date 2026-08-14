@@ -1793,6 +1793,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 59
       }
+    },
+    {
+      "key": "pr:119",
+      "recordedAt": "2026-08-14T17:20:01.985Z",
+      "label": "PR #119",
+      "kind": "leaf",
+      "prNumber": 119,
+      "title": "Expose Tensor.cpu for the supported CPU device",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 62.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 41.2,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 59
+      }
     }
   ]
 }
