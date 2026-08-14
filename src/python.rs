@@ -422,6 +422,19 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nmultiply(value) -> Tensor\n\nSee :func:`torch.multiply`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn multiply(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        tensor.multiplication_method(MultiplicationMethod::Multiply, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\ntype_as(tensor) -> Tensor\n\nReturns this tensor cast to the type of the given tensor.\n\nThis is a no-op if the tensor is already of the correct type. This is\nequivalent to ``self.type(tensor.type())``\n\nArgs:\n    tensor (Tensor): the tensor which has the desired type\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn type_as(
@@ -624,6 +637,21 @@ enum BinaryOperation {
     Subtract,
     Multiply,
     Divide,
+}
+
+#[derive(Clone, Copy)]
+enum MultiplicationMethod {
+    Mul,
+    Multiply,
+}
+
+impl MultiplicationMethod {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Mul => "mul",
+            Self::Multiply => "multiply",
+        }
+    }
 }
 
 #[pymethods]
@@ -1167,47 +1195,7 @@ impl PyTensor {
     #[doc = "\nmul(value) -> Tensor\n\nSee :func:`torch.mul`.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn mul(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        let (other, keyword_error) = bind_mul_argument(args, kwargs)?;
-        let other_tensor = other.value.cast::<Self>().ok();
-        let scalar = other_tensor
-            .is_none()
-            .then(|| parse_arithmetic_scalar(&other.value));
-
-        if scalar
-            .as_ref()
-            .is_some_and(|result| matches!(result, Ok(None)))
-        {
-            let actual = transpose_type_name(&other.value)?;
-            return Err(mul_argument_type_error(other.position, &actual));
-        }
-        if let Some(keyword_error) = keyword_error {
-            return Err(keyword_error);
-        }
-
-        let result = if let Some(other_tensor) = other_tensor {
-            let other_tensor = other_tensor.try_borrow()?;
-            BinaryOperation::Multiply.apply_tensors(&self.inner, &other_tensor.inner)
-        } else {
-            let scalar = match scalar.expect("a non-tensor mul operand has a scalar parse result") {
-                Ok(Some(scalar)) => scalar,
-                Ok(None) => unreachable!("unsupported mul operand types were rejected above"),
-                Err(_) if other.value.is_instance_of::<PyInt>() => {
-                    let message = if other.value.lt(0_i64)? {
-                        "can't convert negative int to unsigned"
-                    } else {
-                        "int too big to convert"
-                    };
-                    return Err(PyOverflowError::new_err(message));
-                }
-                Err(error) => return Err(error),
-            };
-            if matches!(scalar, ParsedArithmeticScalar::WideNumpyUnsigned) {
-                return Err(PyTypeError::new_err("an integer is required"));
-            }
-            BinaryOperation::Multiply.apply_scalar(&self.inner, scalar.into_f32(), false)
-        };
-
-        result.map(Self::new).map_err(|error| tensor_error(&error))
+        self.multiplication_method(MultiplicationMethod::Mul, args, kwargs)
     }
 
     fn __rmul__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -1264,6 +1252,60 @@ impl PyTensor {
             .negate()
             .map(Self::new)
             .map_err(|error| tensor_error(&error))
+    }
+
+    fn multiplication_method(
+        &self,
+        operation: MultiplicationMethod,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        let (other, keyword_error) = bind_multiplication_argument(operation, args, kwargs)?;
+        let other_tensor = other.value.cast::<Self>().ok();
+        let scalar = other_tensor
+            .is_none()
+            .then(|| parse_arithmetic_scalar(&other.value));
+
+        if scalar
+            .as_ref()
+            .is_some_and(|result| matches!(result, Ok(None)))
+        {
+            return match operation {
+                MultiplicationMethod::Mul => {
+                    let actual = transpose_type_name(&other.value)?;
+                    Err(mul_argument_type_error(other.position, &actual))
+                }
+                MultiplicationMethod::Multiply => Err(multiply_binding_error(args, kwargs)?),
+            };
+        }
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        let result = if let Some(other_tensor) = other_tensor {
+            let other_tensor = other_tensor.try_borrow()?;
+            BinaryOperation::Multiply.apply_tensors(&self.inner, &other_tensor.inner)
+        } else {
+            let scalar = match scalar.expect("a non-tensor mul operand has a scalar parse result") {
+                Ok(Some(scalar)) => scalar,
+                Ok(None) => unreachable!("unsupported mul operand types were rejected above"),
+                Err(_) if other.value.is_instance_of::<PyInt>() => {
+                    let message = if other.value.lt(0_i64)? {
+                        "can't convert negative int to unsigned"
+                    } else {
+                        "int too big to convert"
+                    };
+                    return Err(PyOverflowError::new_err(message));
+                }
+                Err(error) => return Err(error),
+            };
+            if matches!(scalar, ParsedArithmeticScalar::WideNumpyUnsigned) {
+                return Err(PyTypeError::new_err("an integer is required"));
+            }
+            BinaryOperation::Multiply.apply_scalar(&self.inner, scalar.into_f32(), false)
+        };
+
+        result.map(Self::new).map_err(|error| tensor_error(&error))
     }
 
     fn truth_value(&self) -> PyResult<bool> {
@@ -2798,7 +2840,7 @@ fn parse_squeeze_sequence<'py>(
         let Some(dimension) = parsed_dimension else {
             if index == 0 {
                 let sequence_type = transpose_type_name(sequence)?;
-                let detail = squeeze_sequence_type_description(sequence)?;
+                let detail = call_argument_type_description(sequence)?;
                 return Err(match (top_level, keyword) {
                     (true, Some(keyword)) => squeeze_top_level_invalid_keyword(
                         keyword,
@@ -2868,7 +2910,12 @@ fn parse_squeeze_integer(
         .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))
 }
 
-fn squeeze_sequence_type_description(sequence: &Bound<'_, PyAny>) -> PyResult<String> {
+fn call_argument_type_description(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    if !value.is_instance_of::<PyTuple>() && !value.is_instance_of::<PyList>() {
+        return transpose_type_name(value);
+    }
+
+    let sequence = value;
     let (kind, opening, closing, trailing) = if let Ok(sequence) = sequence.cast::<PyTuple>() {
         ("tuple", "(", ")", sequence.len() == 1)
     } else {
@@ -2885,9 +2932,10 @@ fn squeeze_sequence_type_description(sequence: &Bound<'_, PyAny>) -> PyResult<St
     Ok(format!("{kind} of {opening}{names}{trailing}{closing}"))
 }
 
-fn squeeze_call_summary(
+fn call_type_summary(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
+    reverse_keywords: bool,
 ) -> PyResult<String> {
     let mut positional_names = try_size_vector(positional.len())?;
     for value in positional.iter() {
@@ -2900,7 +2948,14 @@ fn squeeze_call_summary(
         for (key, value) in keywords {
             keyword_names.push((key.extract::<String>()?, transpose_type_name(&value)?));
         }
-        keyword_names.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        if reverse_keywords {
+            // PyTorch's overload formatter copies keywords into a small
+            // `std::unordered_map`, whose observable iteration order is the
+            // reverse of insertion order before it rehashes.
+            keyword_names.reverse();
+        } else {
+            keyword_names.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        }
     }
     let keyword_names = keyword_names
         .into_iter()
@@ -2922,7 +2977,7 @@ fn squeeze_method_binding_error(
     keywords: Option<&Bound<'_, PyDict>>,
     unknown_keyword: Option<&str>,
 ) -> PyResult<PyErr> {
-    let summary = squeeze_call_summary(positional, keywords)?;
+    let summary = call_type_summary(positional, keywords, false)?;
     let mismatch = unknown_keyword.map_or_else(String::new, |keyword| {
         format!("\n      didn't match because some of the keywords were incorrect: {keyword}")
     });
@@ -2936,7 +2991,7 @@ fn squeeze_top_level_binding_error(
     keywords: Option<&Bound<'_, PyDict>>,
     unknown_keyword: Option<&str>,
 ) -> PyResult<PyErr> {
-    let summary = squeeze_call_summary(positional, keywords)?;
+    let summary = call_type_summary(positional, keywords, false)?;
     let mismatch = unknown_keyword.map_or_else(String::new, |keyword| {
         format!("\n      didn't match because some of the keywords were incorrect: {keyword}")
     });
@@ -2950,7 +3005,7 @@ fn squeeze_top_level_input_with_dimension_error(
     keywords: Option<&Bound<'_, PyDict>>,
     dimension: &ParsedSqueezeDimensions,
 ) -> PyResult<PyErr> {
-    let summary = squeeze_call_summary(positional, keywords)?;
+    let summary = call_type_summary(positional, keywords, false)?;
     let input_is_keyword = positional.is_empty();
     let input = if input_is_keyword {
         let keywords = keywords.expect("a bound keyword input must have a keyword dictionary");
@@ -2982,7 +3037,7 @@ fn squeeze_top_level_input_with_dimension_error(
     let dimension_detail_type = if dimension_value.is_instance_of::<PyTuple>()
         || dimension_value.is_instance_of::<PyList>()
     {
-        squeeze_sequence_type_description(&dimension_value)?
+        call_argument_type_description(&dimension_value)?
     } else {
         dimension_type.clone()
     };
@@ -3352,13 +3407,41 @@ fn parse_tensor_argument<'a, 'py>(
     Ok(tensor)
 }
 
-fn bind_mul_argument<'py>(
+fn bind_multiplication_argument<'py>(
+    operation: MultiplicationMethod,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
+    if matches!(operation, MultiplicationMethod::Multiply) {
+        if positional.len() == 1 && keywords.is_none_or(PyDictMethods::is_empty) {
+            return Ok((
+                ParsedCallArgument {
+                    value: positional.get_item(0)?,
+                    position: Some(1),
+                },
+                None,
+            ));
+        }
+        if positional.is_empty()
+            && let Some(keywords) = keywords
+            && keywords.len() == 1
+            && let Some(other) = keywords.get_item("other")?
+        {
+            return Ok((
+                ParsedCallArgument {
+                    value: other,
+                    position: None,
+                },
+                None,
+            ));
+        }
+        return Err(multiply_binding_error(positional, keywords)?);
+    }
+
+    let function = operation.name();
     if positional.len() > 1 {
         return Err(PyTypeError::new_err(format!(
-            "mul() takes 1 positional argument but {} were given",
+            "{function}() takes 1 positional argument but {} were given",
             positional.len()
         )));
     }
@@ -3378,12 +3461,14 @@ fn bind_mul_argument<'py>(
             if key != "other" {
                 keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
-                        "mul() got an unexpected keyword argument '{key}'"
+                        "{function}() got an unexpected keyword argument '{key}'"
                     ))
                 });
             } else if other.is_some() {
                 keyword_error.get_or_insert_with(|| {
-                    PyTypeError::new_err("mul() got multiple values for argument 'other'")
+                    PyTypeError::new_err(format!(
+                        "{function}() got multiple values for argument 'other'"
+                    ))
                 });
             } else {
                 other = Some(ParsedCallArgument {
@@ -3395,7 +3480,9 @@ fn bind_mul_argument<'py>(
     }
 
     let other = other.ok_or_else(|| {
-        PyTypeError::new_err("mul() missing 1 required positional arguments: \"other\"")
+        PyTypeError::new_err(format!(
+            "{function}() missing 1 required positional arguments: \"other\""
+        ))
     })?;
     Ok((other, keyword_error))
 }
@@ -3405,6 +3492,44 @@ fn mul_argument_type_error(position: Option<usize>, actual: &str) -> PyErr {
     PyTypeError::new_err(format!(
         "mul(): argument 'other'{position} must be Tensor, not {actual}"
     ))
+}
+
+fn multiply_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, true)?;
+    let keyword_length = keywords.map_or(0, PyDictMethods::len);
+    let mismatch = if positional.len() + keyword_length == 1 {
+        if positional.len() == 1 {
+            let value = positional.get_item(0)?;
+            let detail = call_argument_type_description(&value)?;
+            format!(
+                "\n      didn't match because some of the arguments have invalid types: (!{detail}!)"
+            )
+        } else {
+            let keywords = keywords.expect("a single keyword argument is present");
+            let (key, value) = keywords
+                .iter()
+                .next()
+                .expect("a single keyword argument remains present");
+            let key = key.extract::<String>()?;
+            if key == "other" {
+                let detail = call_argument_type_description(&value)?;
+                format!(
+                    "\n      didn't match because some of the arguments have invalid types: (!other={detail}!, )"
+                )
+            } else {
+                format!("\n      didn't match because some of the keywords were incorrect: {key}")
+            }
+        }
+    } else {
+        String::new()
+    };
+
+    Ok(PyTypeError::new_err(format!(
+        "multiply() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (Tensor other){mismatch}\n * (Number other){mismatch}\n"
+    )))
 }
 
 fn bind_dimension_swap_arguments<'py, const N: usize>(
