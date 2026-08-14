@@ -1521,6 +1521,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 57
       }
+    },
+    {
+      "key": "pr:102",
+      "recordedAt": "2026-08-14T09:06:09.914Z",
+      "label": "PR #102",
+      "kind": "leaf",
+      "prNumber": 102,
+      "title": "Expose top-level torch.t only",
+      "scores": {
+        "eval_7af648fb": 99.9,
+        "eval_8417a4a8": 60.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 39.6,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 57
+      }
     }
   ]
 }
