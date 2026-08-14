@@ -11,6 +11,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
     assert_eq!(DType::Float32.element_size(), 4);
     assert!(DType::Float32.is_floating_point());
     assert!(!DType::Float32.is_complex());
+    assert!(!DType::Float32.is_quantized());
     assert!(DType::Float32.is_signed());
     assert_eq!(Device::Cpu.to_string(), "cpu");
     assert_eq!(Device::Cpu.index(), None);
@@ -34,6 +35,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
         assert!(!tensor.is_cuda());
         assert!(tensor.is_floating_point());
         assert!(!tensor.is_complex());
+        assert!(!tensor.is_quantized());
         assert!(tensor.is_signed());
     }
 }
@@ -60,6 +62,7 @@ fn native_metadata_survives_views_kernels_and_reductions() {
         assert!(!output.is_cuda());
         assert!(output.is_floating_point());
         assert!(!output.is_complex());
+        assert!(!output.is_quantized());
         assert!(output.is_signed());
     }
 }
