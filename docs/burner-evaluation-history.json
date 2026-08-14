@@ -1841,6 +1841,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 59
       }
+    },
+    {
+      "key": "pr:122",
+      "recordedAt": "2026-08-14T18:46:23.866Z",
+      "label": "PR #122",
+      "kind": "leaf",
+      "prNumber": 122,
+      "title": "Borrow saved contiguous values in sine backward",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 62.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 41.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 59
+      }
     }
   ]
 }
