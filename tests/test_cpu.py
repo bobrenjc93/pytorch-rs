@@ -203,6 +203,14 @@ class TensorCpuTests(unittest.TestCase):
                 ):
                     call()
 
+        extreme = torch.zeros((3, 0, 1, sys.maxsize)).transpose(0, 1)
+        for memory_format in (torch.channels_last, torch.channels_last_3d):
+            with self.subTest(extreme_memory_format=memory_format):
+                with self.assertRaisesRegex(
+                    RuntimeError, "^Stride calculation overflowed$"
+                ):
+                    extreme.cpu(memory_format=memory_format)
+
     def test_tensorbase_descriptor_metadata_documentation_and_unbound_calls(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "cpu")

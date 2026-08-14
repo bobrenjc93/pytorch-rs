@@ -106,6 +106,25 @@ class TensorCpuReferenceTests(unittest.TestCase):
                     )
                     self.assertEqual(actual_result.is_leaf, expected_result.is_leaf)
 
+    def test_extreme_empty_copy_validation_order_matches_pytorch_2_13(self):
+        actual = torch.zeros((3, 0, 1, sys.maxsize)).transpose(0, 1)
+        expected = reference_torch.zeros(
+            (3, 0, 1, sys.maxsize), dtype=reference_torch.float32
+        ).transpose(0, 1)
+        for actual_format, expected_format in (
+            (torch.channels_last, reference_torch.channels_last),
+            (torch.channels_last_3d, reference_torch.channels_last_3d),
+        ):
+            with self.subTest(memory_format=actual_format):
+                self.assert_error_matches(
+                    lambda memory_format=actual_format: actual.cpu(
+                        memory_format=memory_format
+                    ),
+                    lambda memory_format=expected_format: expected.cpu(
+                        memory_format=memory_format
+                    ),
+                )
+
     def test_channels_last_materialization_and_autograd_match_pytorch_2_13(self):
         cases = (
             (

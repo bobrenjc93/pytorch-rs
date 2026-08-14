@@ -1880,6 +1880,11 @@ impl Tensor {
         &self,
         memory_format: MemoryFormat,
     ) -> Result<Self, TensorError> {
+        // PyTorch's device-copy path validates canonical destination metadata
+        // before checking a requested channel-last format's rank. Keep this
+        // copy-specific preflight separate from contiguous's existing
+        // identity and rank-validation path.
+        let _ = contiguous_strides(&self.shape, self.elements)?;
         self.try_contiguous_impl(memory_format, false)
     }
 
