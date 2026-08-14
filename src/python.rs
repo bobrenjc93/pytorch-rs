@@ -445,6 +445,45 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nreshape_as(other) -> Tensor\n\nReturns this tensor as the same shape as :attr:`other`.\n``self.reshape_as(other)`` is equivalent to ``self.reshape(other.sizes())``.\nThis method returns a view if ``other.sizes()`` is compatible with the current\nshape. See :meth:`torch.Tensor.view` on when it is possible to return a view.\n\nPlease see :meth:`reshape` for more information about ``reshape``.\n\nArgs:\n    other (:class:`torch.Tensor`): The result tensor has the same shape\n        as :attr:`other`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn reshape_as(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        let (arguments, keyword_error) =
+            bind_tensor_arguments("reshape_as", args, kwargs, ["other"])?;
+        let other = parse_tensor_argument("reshape_as", "other", &arguments[0])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        let shape = {
+            let other = other.try_borrow()?;
+            let mut shape = try_size_vector(other.inner.shape().len())?;
+            for &dimension in other.inner.shape() {
+                let dimension = i64::try_from(dimension).map_err(|_| {
+                    PyOverflowError::new_err(
+                        "tensor dimension exceeds the signed 64-bit shape limit",
+                    )
+                })?;
+                try_push_size(&mut shape, dimension)?;
+            }
+            shape
+        };
+
+        slf.as_any()
+            .cast::<PyTensor>()?
+            .try_borrow()?
+            .inner
+            .reshape(shape)
+            .map(PyTensor::new)
+            .map_err(|error| tensor_error(&error))
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\ntype_as(tensor) -> Tensor\n\nReturns this tensor cast to the type of the given tensor.\n\nThis is a no-op if the tensor is already of the correct type. This is\nequivalent to ``self.type(tensor.type())``\n\nArgs:\n    tensor (Tensor): the tensor which has the desired type\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn type_as(
