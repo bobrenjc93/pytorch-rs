@@ -2975,6 +2975,18 @@ impl SavedTensor {
         })
     }
 
+    fn contiguous_slice(&self) -> Option<&[f32]> {
+        if self.elements == 0 {
+            return Some(&[]);
+        }
+        if !layout_is_contiguous(&self.shape, &self.strides, self.elements) {
+            return None;
+        }
+        let values = self.storage.as_ref()?.owned_values()?;
+        let end = self.offset.checked_add(self.elements)?;
+        values.get(self.offset..end)
+    }
+
     fn value_at_linear_index(&self, index: usize) -> f32 {
         let offset =
             logical_offset_for_linear_index(&self.shape, &self.strides, self.offset, index)
@@ -3235,12 +3247,20 @@ fn apply_relu_grad_fn(
     };
     debug_assert_eq!(input.elements, upstream.len());
     let mut gradient = try_result_vector(input.elements, input.elements)?;
-    gradient.extend(
-        upstream
-            .iter()
-            .enumerate()
-            .map(|(index, &value)| relu_backward_value(input.value_at_linear_index(index), value)),
-    );
+    // Borrow one exact saved range for row-contiguous layouts, including
+    // nonzero-offset views, instead of resolving layout and storage per value.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| relu_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(
+            upstream.iter().enumerate().map(|(index, &value)| {
+                relu_backward_value(input.value_at_linear_index(index), value)
+            }),
+        );
+    }
     add_gradient(gradients, meta, gradient);
     Ok(())
 }
@@ -4185,7 +4205,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use super::{
-        DType, Device, F32_SIGN_MASK, Storage, StorageData, Tensor, TensorError, try_result_vector,
+        DType, Device, F32_SIGN_MASK, SavedTensor, Storage, StorageData, Tensor, TensorError,
+        try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -4204,6 +4225,36 @@ mod tests {
             view_requires_grad: false,
             autograd: None,
         }
+    }
+
+    #[test]
+    fn saved_contiguous_slice_borrows_an_offset_range_and_rejects_strides() {
+        let source = Tensor::from_vec((0_u8..16).map(f32::from).collect(), [2, 2, 4])
+            .unwrap()
+            .with_requires_grad(true);
+        let offset = source.index_integer(1).unwrap();
+        let saved = SavedTensor::try_from_tensor(&offset, true).unwrap();
+        let saved_values = saved.contiguous_slice().unwrap();
+
+        assert_eq!(offset.storage_offset(), 8);
+        assert!(Arc::ptr_eq(
+            saved.storage.as_ref().unwrap(),
+            &source.storage
+        ));
+        assert_eq!(
+            saved_values.as_ptr(),
+            source.storage.owned_values().unwrap()[8..].as_ptr()
+        );
+        assert_eq!(saved_values, [8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0]);
+
+        let strided = offset.transpose(0, 1).unwrap();
+        let saved_strided = SavedTensor::try_from_tensor(&strided, true).unwrap();
+        assert!(saved_strided.contiguous_slice().is_none());
+        assert!(
+            (0..saved_strided.elements)
+                .map(|index| saved_strided.value_at_linear_index(index))
+                .eq([8.0, 12.0, 9.0, 13.0, 10.0, 14.0, 11.0, 15.0])
+        );
     }
 
     fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {
@@ -4671,6 +4722,61 @@ mod tests {
         assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0, 2.0]);
         saved_loss.backward().unwrap();
         assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [2.0; 3]);
+    }
+
+    #[test]
+    fn relu_snapshots_contiguous_live_gradient_storage_for_backward() {
+        let source = Tensor::ones([4]).unwrap().with_requires_grad(true);
+        let initial_weights =
+            Tensor::from_vec(vec![-1.0, 2.0, -0.0, f32::from_bits(0x7fc1_2345)], [4]).unwrap();
+        source
+            .mul(&initial_weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        let live_gradient = source
+            .live_grad()
+            .unwrap()
+            .unwrap()
+            .with_requires_grad(true);
+        assert!(matches!(
+            &live_gradient.storage.data,
+            StorageData::SharedGradient(_)
+        ));
+        let saved_loss = live_gradient.relu().unwrap().sum();
+
+        let later_weights = Tensor::from_vec(vec![3.0, -4.0, 1.0, 0.0], [4]).unwrap();
+        source
+            .mul(&later_weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert!(
+            live_gradient
+                .logical_values()
+                .take(3)
+                .map(f32::to_bits)
+                .eq([2.0_f32.to_bits(), (-2.0_f32).to_bits(), 1.0_f32.to_bits()])
+        );
+
+        saved_loss.backward().unwrap();
+        assert!(
+            live_gradient
+                .grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([
+                    0.0_f32.to_bits(),
+                    1.0_f32.to_bits(),
+                    0.0_f32.to_bits(),
+                    1.0_f32.to_bits(),
+                ])
+        );
+        assert_eq!(saved_loss.backward(), Err(TensorError::BackwardGraphFreed));
     }
 
     #[test]
