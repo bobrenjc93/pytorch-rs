@@ -204,6 +204,12 @@ impl PyDType {
     fn __str__(&self) -> &'static str {
         self.__repr__()
     }
+
+    fn __reduce__(&self) -> &'static str {
+        match self.inner {
+            DType::Float32 => "float32",
+        }
+    }
 }
 
 /// Python memory-format descriptor backed by a native [`MemoryFormat`].
