@@ -245,6 +245,49 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
         for actual_call, expected_call in descriptor_cases:
             self.assert_error_matches(actual_call, expected_call)
 
+    def test_invalid_sequence_subclasses_and_keyword_order_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+
+        class NamedList(list):
+            pass
+
+        class NamedTuple(tuple):
+            pass
+
+        class IterationBombList(list):
+            def __iter__(self):
+                raise RuntimeError("list iteration must not be invoked")
+
+        class IterationBombTuple(tuple):
+            def __iter__(self):
+                raise RuntimeError("tuple iteration must not be invoked")
+
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0])
+        for value in (
+            NamedList([1, "x"]),
+            NamedTuple((1, "x")),
+            IterationBombList([1, "x"]),
+            IterationBombTuple((1, "x")),
+        ):
+            with self.subTest(sequence=type(value).__name__):
+                self.assert_error_matches(
+                    lambda value=value: actual.multiply(value),
+                    lambda value=value: expected.multiply(value),
+                )
+
+        self.assert_error_matches(
+            lambda: actual.multiply(a=actual, b=actual, d=actual),
+            lambda: expected.multiply(a=expected, b=expected, d=expected),
+        )
+
+        actual_keywords = {f"key{index}": actual for index in range(14)}
+        expected_keywords = {f"key{index}": expected for index in range(14)}
+        self.assert_error_matches(
+            lambda: actual.multiply(**actual_keywords),
+            lambda: expected.multiply(**expected_keywords),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

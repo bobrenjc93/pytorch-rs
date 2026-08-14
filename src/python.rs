@@ -2915,27 +2915,36 @@ fn call_argument_type_description(value: &Bound<'_, PyAny>) -> PyResult<String> 
         return transpose_type_name(value);
     }
 
-    let sequence = value;
-    let (kind, opening, closing, trailing) = if let Ok(sequence) = sequence.cast::<PyTuple>() {
-        ("tuple", "(", ")", sequence.len() == 1)
+    let kind = transpose_type_name(value)?;
+    let (opening, closing, trailing, names) = if let Ok(sequence) = value.cast::<PyTuple>() {
+        let mut names = try_size_vector(sequence.len())?;
+        for index in 0..sequence.len() {
+            names.push(transpose_type_name(&sequence.get_item(index)?)?);
+        }
+        ("(", ")", sequence.len() == 1, names)
     } else {
-        sequence.cast::<PyList>()?;
-        ("list", "[", "]", false)
+        let sequence = value.cast::<PyList>()?;
+        let mut names = try_size_vector(sequence.len())?;
+        for index in 0..sequence.len() {
+            names.push(transpose_type_name(&sequence.get_item(index)?)?);
+        }
+        ("[", "]", false, names)
     };
-    let sequence = sequence.cast::<PySequence>()?;
-    let mut names = try_size_vector(sequence.len()?)?;
-    for item in sequence.try_iter()? {
-        names.push(transpose_type_name(&item?)?);
-    }
     let names = names.join(", ");
     let trailing = if trailing { "," } else { "" };
     Ok(format!("{kind} of {opening}{names}{trailing}{closing}"))
 }
 
+#[derive(Clone, Copy)]
+enum CallKeywordOrder {
+    Sorted,
+    PyTorchUnorderedMap,
+}
+
 fn call_type_summary(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
-    reverse_keywords: bool,
+    keyword_order: CallKeywordOrder,
 ) -> PyResult<String> {
     let mut positional_names = try_size_vector(positional.len())?;
     for value in positional.iter() {
@@ -2948,13 +2957,13 @@ fn call_type_summary(
         for (key, value) in keywords {
             keyword_names.push((key.extract::<String>()?, transpose_type_name(&value)?));
         }
-        if reverse_keywords {
-            // PyTorch's overload formatter copies keywords into a small
-            // `std::unordered_map`, whose observable iteration order is the
-            // reverse of insertion order before it rehashes.
-            keyword_names.reverse();
-        } else {
-            keyword_names.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        match keyword_order {
+            CallKeywordOrder::Sorted => {
+                keyword_names.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+            }
+            CallKeywordOrder::PyTorchUnorderedMap => {
+                keyword_names = pytorch_unordered_keyword_order(keyword_names)?;
+            }
         }
     }
     let keyword_names = keyword_names
@@ -2972,12 +2981,109 @@ fn call_type_summary(
     }
 }
 
+fn pytorch_unordered_keyword_order(
+    keywords: Vec<(String, String)>,
+) -> PyResult<Vec<(String, String)>> {
+    // PyTorch 2.13's overload formatter copies keyword arguments into
+    // libstdc++'s `std::unordered_map`. Reproduce its MurmurHash64A buckets
+    // and prime rehash policy so collision groups retain the same order.
+    let capacity = keywords.len();
+    let mut bucket_count = 13_u64;
+    let mut ordered = try_size_vector(capacity)?;
+
+    for (key, value) in keywords {
+        if usize::try_from(bucket_count).is_ok_and(|count| ordered.len() == count) {
+            bucket_count = next_prime(bucket_count.saturating_mul(2));
+            let previous = ordered;
+            ordered = try_size_vector(capacity)?;
+            for entry in previous {
+                insert_unordered_keyword(&mut ordered, entry, bucket_count);
+            }
+        }
+        let hash = pytorch_string_hash(&key);
+        insert_unordered_keyword(&mut ordered, (hash, key, value), bucket_count);
+    }
+
+    Ok(ordered
+        .into_iter()
+        .map(|(_, key, value)| (key, value))
+        .collect())
+}
+
+fn insert_unordered_keyword(
+    ordered: &mut Vec<(u64, String, String)>,
+    entry: (u64, String, String),
+    bucket_count: u64,
+) {
+    let bucket = entry.0 % bucket_count;
+    let position = ordered
+        .iter()
+        .position(|existing| existing.0 % bucket_count == bucket)
+        .unwrap_or(0);
+    ordered.insert(position, entry);
+}
+
+fn pytorch_string_hash(value: &str) -> u64 {
+    const SEED: u64 = 0xC70F_6907;
+    const MULTIPLIER: u64 = 0xC6A4_A793_5BD1_E995;
+
+    let bytes = value.as_bytes();
+    let length = u64::try_from(bytes.len()).expect("string length fits the 64-bit host ABI");
+    let mut hash = SEED ^ length.wrapping_mul(MULTIPLIER);
+    let mut chunks = bytes.chunks_exact(8);
+    for chunk in &mut chunks {
+        let mut word = u64::from_le_bytes(
+            chunk
+                .try_into()
+                .expect("chunks_exact(8) yields eight-byte chunks"),
+        );
+        word = word.wrapping_mul(MULTIPLIER);
+        word ^= word >> 47;
+        word = word.wrapping_mul(MULTIPLIER);
+        hash ^= word;
+        hash = hash.wrapping_mul(MULTIPLIER);
+    }
+
+    let remainder = chunks.remainder();
+    for (index, byte) in remainder.iter().enumerate() {
+        hash ^= u64::from(*byte) << (index * 8);
+    }
+    if !remainder.is_empty() {
+        hash = hash.wrapping_mul(MULTIPLIER);
+    }
+    hash ^= hash >> 47;
+    hash = hash.wrapping_mul(MULTIPLIER);
+    hash ^ (hash >> 47)
+}
+
+fn next_prime(mut candidate: u64) -> u64 {
+    candidate |= 1;
+    while !is_prime(candidate) {
+        candidate = candidate.saturating_add(2);
+    }
+    candidate
+}
+
+fn is_prime(candidate: u64) -> bool {
+    if candidate < 2 || candidate.is_multiple_of(2) {
+        return candidate == 2;
+    }
+    let mut divisor = 3;
+    while divisor <= candidate / divisor {
+        if candidate.is_multiple_of(divisor) {
+            return false;
+        }
+        divisor += 2;
+    }
+    true
+}
+
 fn squeeze_method_binding_error(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
     unknown_keyword: Option<&str>,
 ) -> PyResult<PyErr> {
-    let summary = call_type_summary(positional, keywords, false)?;
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::Sorted)?;
     let mismatch = unknown_keyword.map_or_else(String::new, |keyword| {
         format!("\n      didn't match because some of the keywords were incorrect: {keyword}")
     });
@@ -2991,7 +3097,7 @@ fn squeeze_top_level_binding_error(
     keywords: Option<&Bound<'_, PyDict>>,
     unknown_keyword: Option<&str>,
 ) -> PyResult<PyErr> {
-    let summary = call_type_summary(positional, keywords, false)?;
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::Sorted)?;
     let mismatch = unknown_keyword.map_or_else(String::new, |keyword| {
         format!("\n      didn't match because some of the keywords were incorrect: {keyword}")
     });
@@ -3005,7 +3111,7 @@ fn squeeze_top_level_input_with_dimension_error(
     keywords: Option<&Bound<'_, PyDict>>,
     dimension: &ParsedSqueezeDimensions,
 ) -> PyResult<PyErr> {
-    let summary = call_type_summary(positional, keywords, false)?;
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::Sorted)?;
     let input_is_keyword = positional.is_empty();
     let input = if input_is_keyword {
         let keywords = keywords.expect("a bound keyword input must have a keyword dictionary");
@@ -3498,7 +3604,7 @@ fn multiply_binding_error(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyErr> {
-    let summary = call_type_summary(positional, keywords, true)?;
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
     let keyword_length = keywords.map_or(0, PyDictMethods::len);
     let mismatch = if positional.len() + keyword_length == 1 {
         if positional.len() == 1 {

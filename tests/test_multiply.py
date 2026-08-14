@@ -247,6 +247,56 @@ class TensorMultiplyTests(unittest.TestCase):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
 
+    def test_invalid_sequence_subclasses_and_keyword_order_match_pytorch(self):
+        class NamedList(list):
+            pass
+
+        class NamedTuple(tuple):
+            pass
+
+        class IterationBombList(list):
+            def __iter__(self):
+                raise RuntimeError("list iteration must not be invoked")
+
+        class IterationBombTuple(tuple):
+            def __iter__(self):
+                raise RuntimeError("tuple iteration must not be invoked")
+
+        tensor = torch.tensor([1.0])
+        for value, detail in (
+            (NamedList([1, "x"]), "NamedList of [int, str]"),
+            (NamedTuple((1, "x")), "NamedTuple of (int, str)"),
+            (IterationBombList([1, "x"]), "IterationBombList of [int, str]"),
+            (
+                IterationBombTuple((1, "x")),
+                "IterationBombTuple of (int, str)",
+            ),
+        ):
+            message = (
+                "multiply() received an invalid combination of arguments - got "
+                f"({type(value).__name__}), but expected one of:\n"
+                " * (Tensor other)\n"
+                "      didn't match because some of the arguments have invalid types: "
+                f"(!{detail}!)\n"
+                " * (Number other)\n"
+                "      didn't match because some of the arguments have invalid types: "
+                f"(!{detail}!)\n"
+            )
+            with self.subTest(sequence=type(value).__name__):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    tensor.multiply(value)
+
+        keyword_message = (
+            "multiply() received an invalid combination of arguments - got "
+            "(b=Tensor, d=Tensor, a=Tensor, ), but expected one of:\n"
+            " * (Tensor other)\n"
+            " * (Number other)\n"
+        )
+        with self.assertRaisesRegex(
+            TypeError, f"^{re.escape(keyword_message)}$"
+        ):
+            tensor.multiply(a=tensor, b=tensor, d=tensor)
+
 
 if __name__ == "__main__":
     unittest.main()
