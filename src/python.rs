@@ -250,9 +250,7 @@ impl PyDevice {
 
     #[getter]
     fn index(&self) -> Option<usize> {
-        match self.inner {
-            Device::Cpu => None,
-        }
+        self.inner.index()
     }
 
     fn __repr__(&self) -> &'static str {
@@ -335,6 +333,19 @@ impl PyTensorBase {
     fn is_cuda(slf: &Bound<'_, Self>) -> PyResult<bool> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         Ok(tensor.inner.is_cuda())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nget_device() -> Device ordinal (Integer)\n\nFor CUDA tensors, this function returns the device ordinal of the GPU on which the tensor resides.\nFor CPU tensors, this function returns `-1`.\n\nExample::\n\n    >>> x = torch.randn(3, 4, 5, device='cuda:0')\n    >>> x.get_device()\n    0\n    >>> x.cpu().get_device()\n    -1\n"]
+    #[pyo3(text_signature = None)]
+    fn get_device(slf: &Bound<'_, Self>) -> PyResult<i64> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        tensor
+            .inner
+            .device()
+            .index()
+            .map_or(Ok(-1), |index| i64::try_from(index).map_err(Into::into))
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
