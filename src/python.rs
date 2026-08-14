@@ -2916,22 +2916,16 @@ fn call_argument_type_description(value: &Bound<'_, PyAny>) -> PyResult<String> 
     }
 
     let kind = transpose_type_name(value)?;
-    let (opening, closing, trailing, names) = if let Ok(sequence) = value.cast::<PyTuple>() {
-        let mut names = try_size_vector(sequence.len())?;
-        for index in 0..sequence.len() {
-            names.push(transpose_type_name(&sequence.get_item(index)?)?);
-        }
-        ("(", ")", sequence.len() == 1, names)
-    } else {
-        let sequence = value.cast::<PyList>()?;
-        let mut names = try_size_vector(sequence.len())?;
-        for index in 0..sequence.len() {
-            names.push(transpose_type_name(&sequence.get_item(index)?)?);
-        }
-        ("[", "]", false, names)
-    };
+    let tuple = value.is_instance_of::<PyTuple>();
+    let (opening, closing) = if tuple { ("(", ")") } else { ("[", "]") };
+    let sequence = value.cast::<PySequence>()?;
+    let length = sequence.len()?;
+    let mut names = try_size_vector(length)?;
+    for index in 0..length {
+        names.push(transpose_type_name(&sequence.get_item(index)?)?);
+    }
     let names = names.join(", ");
-    let trailing = if trailing { "," } else { "" };
+    let trailing = if tuple && length == 1 { "," } else { "" };
     Ok(format!("{kind} of {opening}{names}{trailing}{closing}"))
 }
 
@@ -3039,6 +3033,16 @@ const PYTORCH_UNORDERED_BUCKET_COUNTS: &[u64] = &[
 fn pytorch_unordered_keyword_order(
     keywords: Vec<(String, String)>,
 ) -> PyResult<Vec<(String, String)>> {
+    if cfg!(target_os = "macos") {
+        pytorch_libcxx_keyword_order(keywords)
+    } else {
+        pytorch_libstdcxx_keyword_order(keywords)
+    }
+}
+
+fn pytorch_libstdcxx_keyword_order(
+    keywords: Vec<(String, String)>,
+) -> PyResult<Vec<(String, String)>> {
     // PyTorch 2.13's overload formatter copies keyword arguments into
     // libstdc++'s `std::unordered_map`. Reproduce its MurmurHash64A buckets,
     // prime rehash policy, and bucket-local insertion order.
@@ -3085,6 +3089,63 @@ fn pytorch_unordered_keyword_order(
         link_unordered_keyword(&mut nodes, &mut buckets, bucket_count, &mut head, index);
     }
 
+    take_unordered_keywords(nodes, head, capacity)
+}
+
+fn pytorch_libcxx_keyword_order(
+    keywords: Vec<(String, String)>,
+) -> PyResult<Vec<(String, String)>> {
+    // The macOS build of PyTorch uses libc++, whose default unordered map
+    // starts with two buckets and then follows its prime rehash policy.
+    let capacity = keywords.len();
+    if capacity == 0 {
+        return Ok(keywords);
+    }
+
+    let mut bucket_count = 0_usize;
+    let mut buckets = Vec::new();
+    let mut nodes = try_size_vector(capacity)?;
+    let mut head = None;
+
+    for (key, value) in keywords {
+        if nodes.len() == bucket_count {
+            bucket_count = if bucket_count == 0 {
+                2
+            } else {
+                let candidate = bucket_count
+                    .checked_mul(2)
+                    .and_then(|count| count.checked_add(1))
+                    .ok_or_else(|| {
+                        PyMemoryError::new_err("keyword argument map exceeds the libc++ size limit")
+                    })?;
+                libcxx_next_prime(candidate)?
+            };
+            buckets = empty_keyword_buckets(bucket_count)?;
+            head = rehash_libcxx_unordered_keywords(&mut nodes, &mut buckets, bucket_count, head);
+        }
+
+        let index = nodes.len();
+        try_push_size(
+            &mut nodes,
+            UnorderedKeywordNode {
+                hash: libcxx_string_hash(&key),
+                key,
+                value,
+                previous: None,
+                next: None,
+            },
+        )?;
+        link_unordered_keyword(&mut nodes, &mut buckets, bucket_count, &mut head, index);
+    }
+
+    take_unordered_keywords(nodes, head, capacity)
+}
+
+fn take_unordered_keywords(
+    mut nodes: Vec<UnorderedKeywordNode>,
+    head: Option<usize>,
+    capacity: usize,
+) -> PyResult<Vec<(String, String)>> {
     let mut ordered = try_size_vector(capacity)?;
     let mut current = head;
     while let Some(index) = current {
@@ -3132,6 +3193,49 @@ fn rehash_unordered_keywords(
     head
 }
 
+fn rehash_libcxx_unordered_keywords(
+    nodes: &mut [UnorderedKeywordNode],
+    buckets: &mut [Option<usize>],
+    bucket_count: usize,
+    mut head: Option<usize>,
+) -> Option<usize> {
+    let first = head?;
+    let first_bucket = unordered_keyword_bucket(nodes[first].hash, bucket_count);
+    buckets[first_bucket] = Some(first);
+
+    let mut previous = first;
+    let mut previous_bucket = first_bucket;
+    while let Some(current) = nodes[previous].next {
+        let bucket = unordered_keyword_bucket(nodes[current].hash, bucket_count);
+        if bucket == previous_bucket {
+            previous = current;
+        } else if buckets[bucket].is_none() {
+            buckets[bucket] = Some(current);
+            previous = current;
+            previous_bucket = bucket;
+        } else {
+            let next = nodes[current].next;
+            nodes[previous].next = next;
+            if let Some(next) = next {
+                nodes[next].previous = Some(previous);
+            }
+
+            let bucket_first = buckets[bucket].expect("the bucket was checked as populated");
+            let before_bucket = nodes[bucket_first].previous;
+            nodes[current].previous = before_bucket;
+            nodes[current].next = Some(bucket_first);
+            nodes[bucket_first].previous = Some(current);
+            if let Some(before_bucket) = before_bucket {
+                nodes[before_bucket].next = Some(current);
+            } else {
+                head = Some(current);
+            }
+            buckets[bucket] = Some(current);
+        }
+    }
+    head
+}
+
 fn link_unordered_keyword(
     nodes: &mut [UnorderedKeywordNode],
     buckets: &mut [Option<usize>],
@@ -3139,10 +3243,7 @@ fn link_unordered_keyword(
     head: &mut Option<usize>,
     index: usize,
 ) {
-    let bucket_count_u64 =
-        u64::try_from(bucket_count).expect("the bucket count fits the 64-bit host ABI");
-    let bucket =
-        usize::try_from(nodes[index].hash % bucket_count_u64).expect("a bucket index fits usize");
+    let bucket = unordered_keyword_bucket(nodes[index].hash, bucket_count);
     if let Some(next) = buckets[bucket] {
         let previous = nodes[next].previous;
         nodes[index].previous = previous;
@@ -3161,6 +3262,36 @@ fn link_unordered_keyword(
         *head = Some(index);
     }
     buckets[bucket] = Some(index);
+}
+
+fn unordered_keyword_bucket(hash: u64, bucket_count: usize) -> usize {
+    let bucket_count_u64 =
+        u64::try_from(bucket_count).expect("the bucket count fits the 64-bit host ABI");
+    usize::try_from(hash % bucket_count_u64).expect("a bucket index fits usize")
+}
+
+fn libcxx_next_prime(mut candidate: usize) -> PyResult<usize> {
+    candidate |= 1;
+    while !libcxx_is_prime(candidate) {
+        candidate = candidate.checked_add(2).ok_or_else(|| {
+            PyMemoryError::new_err("keyword argument map exceeds the libc++ size limit")
+        })?;
+    }
+    Ok(candidate)
+}
+
+fn libcxx_is_prime(candidate: usize) -> bool {
+    if candidate < 2 || candidate.is_multiple_of(2) {
+        return candidate == 2;
+    }
+    let mut divisor = 3;
+    while divisor <= candidate / divisor {
+        if candidate.is_multiple_of(divisor) {
+            return false;
+        }
+        divisor += 2;
+    }
+    true
 }
 
 fn pytorch_string_hash(value: &str) -> u64 {
@@ -3194,6 +3325,240 @@ fn pytorch_string_hash(value: &str) -> u64 {
     hash ^= hash >> 47;
     hash = hash.wrapping_mul(MULTIPLIER);
     hash ^ (hash >> 47)
+}
+
+const LIBCXX_HASH_K0: u64 = 0xC3A5_C85C_97CB_3127;
+const LIBCXX_HASH_K1: u64 = 0xB492_B66F_BE98_F273;
+const LIBCXX_HASH_K2: u64 = 0x9AE1_6A3B_2F90_404F;
+const LIBCXX_HASH_K3: u64 = 0xC949_D7C7_509E_6557;
+
+fn libcxx_string_hash(value: &str) -> u64 {
+    libcxx_city_hash(value.as_bytes())
+}
+
+fn libcxx_load_u64(bytes: &[u8], offset: usize) -> u64 {
+    u64::from_ne_bytes(
+        bytes[offset..offset + 8]
+            .try_into()
+            .expect("a CityHash word contains eight bytes"),
+    )
+}
+
+fn libcxx_load_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_ne_bytes(
+        bytes[offset..offset + 4]
+            .try_into()
+            .expect("a CityHash word contains four bytes"),
+    )
+}
+
+fn libcxx_shift_mix(value: u64) -> u64 {
+    value ^ (value >> 47)
+}
+
+fn libcxx_hash_len_16(left: u64, right: u64) -> u64 {
+    const MULTIPLIER: u64 = 0x9DDF_EA08_EB38_2D69;
+
+    let mut first = (left ^ right).wrapping_mul(MULTIPLIER);
+    first ^= first >> 47;
+    let mut second = (right ^ first).wrapping_mul(MULTIPLIER);
+    second ^= second >> 47;
+    second.wrapping_mul(MULTIPLIER)
+}
+
+fn libcxx_hash_len_0_to_16(bytes: &[u8]) -> u64 {
+    let length = bytes.len();
+    let length_u64 = u64::try_from(length).expect("string length fits the 64-bit host ABI");
+    if length > 8 {
+        let first = libcxx_load_u64(bytes, 0);
+        let last = libcxx_load_u64(bytes, length - 8);
+        return libcxx_hash_len_16(
+            first,
+            last.wrapping_add(length_u64)
+                .rotate_right(u32::try_from(length).expect("the short length fits u32")),
+        ) ^ last;
+    }
+    if length >= 4 {
+        let first = u64::from(libcxx_load_u32(bytes, 0));
+        let last = u64::from(libcxx_load_u32(bytes, length - 4));
+        return libcxx_hash_len_16(length_u64.wrapping_add(first << 3), last);
+    }
+    if length > 0 {
+        let first = u32::from(bytes[0]);
+        let middle = u32::from(bytes[length >> 1]);
+        let last = u32::from(bytes[length - 1]);
+        let left = u64::from(first + (middle << 8));
+        let right =
+            u64::from(u32::try_from(length).expect("the short length fits u32") + (last << 2));
+        return libcxx_shift_mix(
+            left.wrapping_mul(LIBCXX_HASH_K2) ^ right.wrapping_mul(LIBCXX_HASH_K3),
+        )
+        .wrapping_mul(LIBCXX_HASH_K2);
+    }
+    LIBCXX_HASH_K2
+}
+
+fn libcxx_hash_len_17_to_32(bytes: &[u8]) -> u64 {
+    let length = bytes.len();
+    let length_u64 = u64::try_from(length).expect("string length fits the 64-bit host ABI");
+    let first = libcxx_load_u64(bytes, 0).wrapping_mul(LIBCXX_HASH_K1);
+    let second = libcxx_load_u64(bytes, 8);
+    let third = libcxx_load_u64(bytes, length - 8).wrapping_mul(LIBCXX_HASH_K2);
+    let fourth = libcxx_load_u64(bytes, length - 16).wrapping_mul(LIBCXX_HASH_K0);
+    libcxx_hash_len_16(
+        first
+            .wrapping_sub(second)
+            .rotate_right(43)
+            .wrapping_add(third.rotate_right(30))
+            .wrapping_add(fourth),
+        first
+            .wrapping_add((second ^ LIBCXX_HASH_K3).rotate_right(20))
+            .wrapping_sub(third)
+            .wrapping_add(length_u64),
+    )
+}
+
+fn libcxx_weak_hash_len_32_with_seeds(
+    bytes: &[u8],
+    offset: usize,
+    mut first_seed: u64,
+    mut second_seed: u64,
+) -> (u64, u64) {
+    let first = libcxx_load_u64(bytes, offset);
+    let second = libcxx_load_u64(bytes, offset + 8);
+    let third = libcxx_load_u64(bytes, offset + 16);
+    let fourth = libcxx_load_u64(bytes, offset + 24);
+
+    first_seed = first_seed.wrapping_add(first);
+    second_seed = second_seed
+        .wrapping_add(first_seed)
+        .wrapping_add(fourth)
+        .rotate_right(21);
+    let saved_first_seed = first_seed;
+    first_seed = first_seed.wrapping_add(second).wrapping_add(third);
+    second_seed = second_seed.wrapping_add(first_seed.rotate_right(44));
+    (
+        first_seed.wrapping_add(fourth),
+        second_seed.wrapping_add(saved_first_seed),
+    )
+}
+
+#[allow(clippy::many_single_char_names)]
+fn libcxx_hash_len_33_to_64(bytes: &[u8]) -> u64 {
+    let length = bytes.len();
+    let length_u64 = u64::try_from(length).expect("string length fits the 64-bit host ABI");
+    let mut z = libcxx_load_u64(bytes, 24);
+    let mut a = libcxx_load_u64(bytes, 0).wrapping_add(
+        length_u64
+            .wrapping_add(libcxx_load_u64(bytes, length - 16))
+            .wrapping_mul(LIBCXX_HASH_K0),
+    );
+    let mut b = a.wrapping_add(z).rotate_right(52);
+    let mut c = a.rotate_right(37);
+    a = a.wrapping_add(libcxx_load_u64(bytes, 8));
+    c = c.wrapping_add(a.rotate_right(7));
+    a = a.wrapping_add(libcxx_load_u64(bytes, 16));
+    let first_value = a.wrapping_add(z);
+    let second_value = b.wrapping_add(a.rotate_right(31)).wrapping_add(c);
+    a = libcxx_load_u64(bytes, 16).wrapping_add(libcxx_load_u64(bytes, length - 32));
+    z = z.wrapping_add(libcxx_load_u64(bytes, length - 8));
+    b = a.wrapping_add(z).rotate_right(52);
+    c = a.rotate_right(37);
+    a = a.wrapping_add(libcxx_load_u64(bytes, length - 24));
+    c = c.wrapping_add(a.rotate_right(7));
+    a = a.wrapping_add(libcxx_load_u64(bytes, length - 16));
+    let third_value = a.wrapping_add(z);
+    let fourth_value = b.wrapping_add(a.rotate_right(31)).wrapping_add(c);
+    let result = libcxx_shift_mix(
+        first_value
+            .wrapping_add(fourth_value)
+            .wrapping_mul(LIBCXX_HASH_K2)
+            .wrapping_add(
+                third_value
+                    .wrapping_add(second_value)
+                    .wrapping_mul(LIBCXX_HASH_K0),
+            ),
+    );
+    libcxx_shift_mix(
+        result
+            .wrapping_mul(LIBCXX_HASH_K0)
+            .wrapping_add(second_value),
+    )
+    .wrapping_mul(LIBCXX_HASH_K2)
+}
+
+#[allow(clippy::many_single_char_names)]
+fn libcxx_city_hash(bytes: &[u8]) -> u64 {
+    let length = bytes.len();
+    if length <= 16 {
+        return libcxx_hash_len_0_to_16(bytes);
+    }
+    if length <= 32 {
+        return libcxx_hash_len_17_to_32(bytes);
+    }
+    if length <= 64 {
+        return libcxx_hash_len_33_to_64(bytes);
+    }
+
+    let length_u64 = u64::try_from(length).expect("string length fits the 64-bit host ABI");
+    let mut x = libcxx_load_u64(bytes, length - 40);
+    let mut y =
+        libcxx_load_u64(bytes, length - 16).wrapping_add(libcxx_load_u64(bytes, length - 56));
+    let mut z = libcxx_hash_len_16(
+        libcxx_load_u64(bytes, length - 48).wrapping_add(length_u64),
+        libcxx_load_u64(bytes, length - 24),
+    );
+    let mut v = libcxx_weak_hash_len_32_with_seeds(bytes, length - 64, length_u64, z);
+    let mut w =
+        libcxx_weak_hash_len_32_with_seeds(bytes, length - 32, y.wrapping_add(LIBCXX_HASH_K1), x);
+    x = x
+        .wrapping_mul(LIBCXX_HASH_K1)
+        .wrapping_add(libcxx_load_u64(bytes, 0));
+
+    let mut offset = 0;
+    let mut remaining = (length - 1) & !63;
+    while remaining != 0 {
+        x = x
+            .wrapping_add(y)
+            .wrapping_add(v.0)
+            .wrapping_add(libcxx_load_u64(bytes, offset + 8))
+            .rotate_right(37)
+            .wrapping_mul(LIBCXX_HASH_K1);
+        y = y
+            .wrapping_add(v.1)
+            .wrapping_add(libcxx_load_u64(bytes, offset + 48))
+            .rotate_right(42)
+            .wrapping_mul(LIBCXX_HASH_K1);
+        x ^= w.1;
+        y = y
+            .wrapping_add(v.0)
+            .wrapping_add(libcxx_load_u64(bytes, offset + 40));
+        z = z
+            .wrapping_add(w.0)
+            .rotate_right(33)
+            .wrapping_mul(LIBCXX_HASH_K1);
+        v = libcxx_weak_hash_len_32_with_seeds(
+            bytes,
+            offset,
+            v.1.wrapping_mul(LIBCXX_HASH_K1),
+            x.wrapping_add(w.0),
+        );
+        w = libcxx_weak_hash_len_32_with_seeds(
+            bytes,
+            offset + 32,
+            z.wrapping_add(w.1),
+            y.wrapping_add(libcxx_load_u64(bytes, offset + 16)),
+        );
+        std::mem::swap(&mut z, &mut x);
+        offset += 64;
+        remaining -= 64;
+    }
+    libcxx_hash_len_16(
+        libcxx_hash_len_16(v.0, w.0)
+            .wrapping_add(libcxx_shift_mix(y).wrapping_mul(LIBCXX_HASH_K1))
+            .wrapping_add(z),
+        libcxx_hash_len_16(v.1, w.1).wrapping_add(x),
+    )
 }
 
 fn squeeze_method_binding_error(
@@ -3636,6 +4001,20 @@ fn bind_multiplication_argument<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
+    if positional.is_empty()
+        && let Some(keywords) = keywords
+        && keywords.len() == 1
+        && let Some(other) = keywords.get_item("x2")?
+    {
+        return Ok((
+            ParsedCallArgument {
+                value: other,
+                position: None,
+            },
+            None,
+        ));
+    }
+
     if matches!(operation, MultiplicationMethod::Multiply) {
         if positional.len() == 1 && keywords.is_none_or(PyDictMethods::is_empty) {
             return Ok((
@@ -3679,10 +4058,12 @@ fn bind_multiplication_argument<'py>(
         })
     };
     let mut keyword_error = None;
+    let mut has_x2_keyword = false;
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
             let key = key.extract::<String>()?;
             if key != "other" {
+                has_x2_keyword |= key == "x2";
                 keyword_error.get_or_insert_with(|| {
                     PyTypeError::new_err(format!(
                         "{function}() got an unexpected keyword argument '{key}'"
@@ -3701,6 +4082,10 @@ fn bind_multiplication_argument<'py>(
                 });
             }
         }
+    }
+
+    if other.is_none() && has_x2_keyword {
+        return Err(keyword_error.expect("x2 was recorded as an unexpected keyword"));
     }
 
     let other = other.ok_or_else(|| {
@@ -3724,12 +4109,18 @@ fn multiply_binding_error(
 ) -> PyResult<PyErr> {
     let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
     let keyword_length = keywords.map_or(0, PyDictMethods::len);
-    let mismatch = if positional.len() + keyword_length == 1 {
+    let (tensor_mismatch, number_mismatch) = if positional.len() + keyword_length == 1 {
         if positional.len() == 1 {
             let value = positional.get_item(0)?;
-            let detail = call_argument_type_description(&value)?;
-            format!(
-                "\n      didn't match because some of the arguments have invalid types: (!{detail}!)"
+            let tensor_detail = call_argument_type_description(&value)?;
+            let number_detail = call_argument_type_description(&value)?;
+            (
+                format!(
+                    "\n      didn't match because some of the arguments have invalid types: (!{tensor_detail}!)"
+                ),
+                format!(
+                    "\n      didn't match because some of the arguments have invalid types: (!{number_detail}!)"
+                ),
             )
         } else {
             let keywords = keywords.expect("a single keyword argument is present");
@@ -3739,20 +4130,29 @@ fn multiply_binding_error(
                 .expect("a single keyword argument remains present");
             let key = key.extract::<String>()?;
             if key == "other" {
-                let detail = call_argument_type_description(&value)?;
-                format!(
-                    "\n      didn't match because some of the arguments have invalid types: (!other={detail}!, )"
+                let tensor_detail = call_argument_type_description(&value)?;
+                let number_detail = call_argument_type_description(&value)?;
+                (
+                    format!(
+                        "\n      didn't match because some of the arguments have invalid types: (!other={tensor_detail}!, )"
+                    ),
+                    format!(
+                        "\n      didn't match because some of the arguments have invalid types: (!other={number_detail}!, )"
+                    ),
                 )
             } else {
-                format!("\n      didn't match because some of the keywords were incorrect: {key}")
+                let mismatch = format!(
+                    "\n      didn't match because some of the keywords were incorrect: {key}"
+                );
+                (mismatch.clone(), mismatch)
             }
         }
     } else {
-        String::new()
+        (String::new(), String::new())
     };
 
     Ok(PyTypeError::new_err(format!(
-        "multiply() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (Tensor other){mismatch}\n * (Number other){mismatch}\n"
+        "multiply() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (Tensor other){tensor_mismatch}\n * (Number other){number_mismatch}\n"
     )))
 }
 
@@ -4747,7 +5147,10 @@ mod tests {
     use pyo3::exceptions::PyTypeError;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods, PyMemoryView, PyModule, PySlice};
 
-    use super::{PyTensor, flatten_buffer, half_to_f32, nested_list, torch_rs, try_size_vector};
+    use super::{
+        PyTensor, flatten_buffer, half_to_f32, libcxx_string_hash, nested_list,
+        pytorch_libcxx_keyword_order, torch_rs, try_size_vector,
+    };
 
     #[test]
     fn half_precision_buffer_values_convert_to_float32() {
@@ -4791,6 +5194,39 @@ mod tests {
         let error = try_size_vector::<i64>(usize::MAX)
             .expect_err("an impossible vector capacity must return an error");
         assert_eq!(error.to_string(), "RuntimeError: std::bad_alloc");
+    }
+
+    #[test]
+    fn libcxx_keyword_order_matches_pytorch_on_macos() {
+        let ordered = pytorch_libcxx_keyword_order(
+            ["a", "b", "d"]
+                .into_iter()
+                .map(|key| (key.to_owned(), "Tensor".to_owned()))
+                .collect(),
+        )
+        .unwrap();
+        let keys = ordered.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
+        assert_eq!(keys, ["d", "b", "a"]);
+    }
+
+    #[test]
+    fn libcxx_string_hash_matches_reference_boundaries() {
+        for (value, expected) in [
+            ("", 11_160_318_154_034_397_263),
+            ("a", 2_603_192_927_274_642_682),
+            ("key13", 16_977_941_038_263_753_328),
+            ("abcdefghijklmnopq", 237_482_408_704_357_350),
+            (
+                "abcdefghijklmnopqrstuvwxyz0123456",
+                11_578_587_182_705_320_317,
+            ),
+            (
+                "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ+-abcdefghijklmnopqrstuvwxyz",
+                14_968_935_594_714_716_411,
+            ),
+        ] {
+            assert_eq!(libcxx_string_hash(value), expected);
+        }
     }
 
     #[test]

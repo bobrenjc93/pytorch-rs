@@ -58,6 +58,11 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
                 expected_left.multiply(other=expected_right),
             ),
             (
+                "tensor x2 keyword",
+                actual_left.multiply(x2=actual_right),
+                expected_left.multiply(x2=expected_right),
+            ),
+            (
                 "offset scalar positional",
                 actual_left[1].multiply(-2.5),
                 expected_left[1].multiply(-2.5),
@@ -68,9 +73,19 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
                 expected_left[1].multiply(other=np.float32(-0.0)),
             ),
             (
+                "offset scalar x2 keyword",
+                actual_left[1].multiply(x2=np.float32(-2.5)),
+                expected_left[1].multiply(x2=np.float32(-2.5)),
+            ),
+            (
                 "numpy integer scalar",
                 actual_left.multiply(np.int64(3)),
                 expected_left.multiply(np.int64(3)),
+            ),
+            (
+                "mul x2 keyword",
+                actual_left.mul(x2=actual_right),
+                expected_left.mul(x2=expected_right),
             ),
         )
         for case, actual, expected in calls:
@@ -214,6 +229,10 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
                 lambda: expected.multiply(other=None),
             ),
             (
+                lambda: actual.multiply(x2=[]),
+                lambda: expected.multiply(x2=[]),
+            ),
+            (
                 lambda: actual.multiply([], out=actual),
                 lambda: expected.multiply([], out=expected),
             ),
@@ -230,6 +249,11 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
+
+        self.assert_error_matches(
+            lambda: actual.mul(x2=actual, wat=actual),
+            lambda: expected.mul(x2=expected, wat=expected),
+        )
 
         descriptor_cases = (
             (lambda: actual_descriptor(), lambda: expected_descriptor()),
@@ -262,6 +286,30 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
             def __iter__(self):
                 raise RuntimeError("tuple iteration must not be invoked")
 
+        class ProtocolList(list):
+            def __iter__(self):
+                raise RuntimeError("list iteration must not be invoked")
+
+            def __len__(self):
+                self.calls.append("len")
+                return 1
+
+            def __getitem__(self, index):
+                self.calls.append(("getitem", index))
+                return 3.5
+
+        class ProtocolTuple(tuple):
+            def __iter__(self):
+                raise RuntimeError("tuple iteration must not be invoked")
+
+            def __len__(self):
+                self.calls.append("len")
+                return 1
+
+            def __getitem__(self, index):
+                self.calls.append(("getitem", index))
+                return 3.5
+
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor([1.0])
         for value in (
@@ -275,6 +323,18 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
                     lambda value=value: actual.multiply(value),
                     lambda value=value: expected.multiply(value),
                 )
+
+        for sequence_type in (ProtocolList, ProtocolTuple):
+            actual_value = sequence_type([1, "x"])
+            expected_value = sequence_type([1, "x"])
+            actual_value.calls = []
+            expected_value.calls = []
+            with self.subTest(protocol_sequence=sequence_type.__name__):
+                self.assert_error_matches(
+                    lambda: actual.multiply(actual_value),
+                    lambda: expected.multiply(expected_value),
+                )
+                self.assertEqual(actual_value.calls, expected_value.calls)
 
         self.assert_error_matches(
             lambda: actual.multiply(a=actual, b=actual, d=actual),

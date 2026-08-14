@@ -1,5 +1,6 @@
 import inspect
 import re
+import sys
 import types
 import unittest
 
@@ -36,6 +37,9 @@ class TensorMultiplyTests(unittest.TestCase):
             left.mul(other=right),
             case="tensor keyword",
         )
+        self.assert_tensor_matches(
+            left.multiply(x2=right), left.mul(other=right), case="tensor x2 keyword"
+        )
 
         offset_view = left[1]
         for scalar in (
@@ -56,6 +60,11 @@ class TensorMultiplyTests(unittest.TestCase):
                 offset_view.mul(other=scalar),
                 case=("scalar keyword", scalar),
             )
+        self.assert_tensor_matches(
+            offset_view.multiply(x2=np.float32(-2.5)),
+            offset_view.mul(other=np.float32(-2.5)),
+            case="scalar x2 keyword",
+        )
 
         empty = torch.zeros((2, 0, 3)).transpose(0, 2)
         broadcast = torch.ones((1, 1, 2))
@@ -211,6 +220,15 @@ class TensorMultiplyTests(unittest.TestCase):
                 "(!other=NoneType!, )\n",
             ),
             (
+                lambda: tensor.multiply(x2=[]),
+                "multiply() received an invalid combination of arguments - got "
+                "(x2=list, ), but expected one of:\n"
+                " * (Tensor other)\n"
+                "      didn't match because some of the keywords were incorrect: x2\n"
+                " * (Number other)\n"
+                "      didn't match because some of the keywords were incorrect: x2\n",
+            ),
+            (
                 lambda: tensor.multiply([], out=tensor),
                 "multiply() received an invalid combination of arguments - got "
                 f"(list, out=Tensor), {overloads}",
@@ -262,6 +280,30 @@ class TensorMultiplyTests(unittest.TestCase):
             def __iter__(self):
                 raise RuntimeError("tuple iteration must not be invoked")
 
+        class ProtocolList(list):
+            def __iter__(self):
+                raise RuntimeError("list iteration must not be invoked")
+
+            def __len__(self):
+                self.calls.append("len")
+                return 1
+
+            def __getitem__(self, index):
+                self.calls.append(("getitem", index))
+                return 3.5
+
+        class ProtocolTuple(tuple):
+            def __iter__(self):
+                raise RuntimeError("tuple iteration must not be invoked")
+
+            def __len__(self):
+                self.calls.append("len")
+                return 1
+
+            def __getitem__(self, index):
+                self.calls.append(("getitem", index))
+                return 3.5
+
         tensor = torch.tensor([1.0])
         for value, detail in (
             (NamedList([1, "x"]), "NamedList of [int, str]"),
@@ -286,16 +328,45 @@ class TensorMultiplyTests(unittest.TestCase):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     tensor.multiply(value)
 
-        keyword_message = (
-            "multiply() received an invalid combination of arguments - got "
-            "(b=Tensor, d=Tensor, a=Tensor, ), but expected one of:\n"
-            " * (Tensor other)\n"
-            " * (Number other)\n"
-        )
-        with self.assertRaisesRegex(
-            TypeError, f"^{re.escape(keyword_message)}$"
+        for value, detail in (
+            (ProtocolList([1, "x"]), "ProtocolList of [float]"),
+            (ProtocolTuple((1, "x")), "ProtocolTuple of (float,)"),
         ):
-            tensor.multiply(a=tensor, b=tensor, d=tensor)
+            value.calls = []
+            message = (
+                "multiply() received an invalid combination of arguments - got "
+                f"({type(value).__name__}), but expected one of:\n"
+                " * (Tensor other)\n"
+                "      didn't match because some of the arguments have invalid types: "
+                f"(!{detail}!)\n"
+                " * (Number other)\n"
+                "      didn't match because some of the arguments have invalid types: "
+                f"(!{detail}!)\n"
+            )
+            with self.subTest(protocol_sequence=type(value).__name__):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    tensor.multiply(value)
+                self.assertEqual(
+                    value.calls,
+                    ["len", ("getitem", 0), "len", ("getitem", 0)],
+                )
+
+        keyword_order = None
+        if sys.platform == "darwin":
+            keyword_order = "d=Tensor, b=Tensor, a=Tensor"
+        elif sys.platform.startswith("linux"):
+            keyword_order = "b=Tensor, d=Tensor, a=Tensor"
+        if keyword_order is not None:
+            keyword_message = (
+                "multiply() received an invalid combination of arguments - got "
+                f"({keyword_order}, ), but expected one of:\n"
+                " * (Tensor other)\n"
+                " * (Number other)\n"
+            )
+            with self.assertRaisesRegex(
+                TypeError, f"^{re.escape(keyword_message)}$"
+            ):
+                tensor.multiply(a=tensor, b=tensor, d=tensor)
 
 
 if __name__ == "__main__":
