@@ -1629,6 +1629,19 @@ fn detach(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRe
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn is_same_size(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    let ([input, other], keyword_error) = bind_is_same_size_arguments(args, kwargs)?;
+    let input = parse_tensor_argument("is_same_size", "input", &input)?;
+    let other = parse_tensor_argument("is_same_size", "other", &other)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    let input = input.try_borrow()?;
+    let other = other.try_borrow()?;
+    Ok(input.inner.is_same_size(&other.inner))
+}
+
 /// equal(input, other) -> bool
 ///
 /// Returns ``True`` if two tensors have the same size and elements, and
@@ -4316,6 +4329,94 @@ fn bind_tensor_arguments<'py, const N: usize>(
     ))
 }
 
+fn bind_is_same_size_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<([ParsedCallArgument<'py>; 2], Option<PyErr>)> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "is_same_size() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_argument = |names: &[&str]| -> PyResult<Option<Bound<'py, PyAny>>> {
+        let Some(keywords) = keywords else {
+            return Ok(None);
+        };
+        for name in names {
+            if let Some(value) = keywords.get_item(*name)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
+    };
+
+    let input = if positional.is_empty() {
+        keyword_argument(&["input", "x", "a", "x1"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let other = if positional.len() < 2 {
+        keyword_argument(&["other", "x2"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "is_same_size() missing 2 required positional argument: \"input\", \"other\"",
+        ));
+    };
+    let Some(other) = other else {
+        parse_tensor_argument("is_same_size", "input", &input)?;
+        return Err(PyTypeError::new_err(
+            "is_same_size() missing 1 required positional arguments: \"other\"",
+        ));
+    };
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        let keyword_arguments =
+            usize::from(input.position.is_none()) + usize::from(other.position.is_none());
+        if keywords.len() > keyword_arguments {
+            for key in keywords.keys() {
+                let key = key.extract::<String>()?;
+                let position = match key.as_str() {
+                    "input" => 0,
+                    "other" => 1,
+                    _ => {
+                        keyword_error = Some(PyTypeError::new_err(format!(
+                            "is_same_size() got an unexpected keyword argument '{key}'"
+                        )));
+                        break;
+                    }
+                };
+                if position < positional.len() {
+                    keyword_error = Some(PyTypeError::new_err(format!(
+                        "is_same_size() got multiple values for argument '{key}'"
+                    )));
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(([input, other], keyword_error))
+}
+
 fn parse_tensor_argument<'a, 'py>(
     function: &str,
     argument: &str,
@@ -5700,6 +5801,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
+    module.add_function(wrap_pyfunction!(is_same_size, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;
     module.add_function(wrap_pyfunction!(t, module)?)?;
     module.add_function(wrap_pyfunction!(transpose, module)?)?;

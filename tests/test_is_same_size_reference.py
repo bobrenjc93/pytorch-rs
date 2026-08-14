@@ -17,7 +17,9 @@ class TensorIsSameSizeReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
-            raise AssertionError("is_same_size differentials require pinned PyTorch 2.13.0")
+            raise AssertionError(
+                "is_same_size differentials require pinned PyTorch 2.13.0"
+            )
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -70,16 +72,31 @@ class TensorIsSameSizeReferenceTests(unittest.TestCase):
     def test_shape_results_match_pytorch_2_13(self):
         actual_cases = self.make_shape_cases(torch)
         expected_cases = self.make_shape_cases(reference_torch)
-        for case, ((actual_left, actual_right), (expected_left, expected_right)) in enumerate(
-            zip(actual_cases, expected_cases, strict=True)
-        ):
+        for case, (
+            (actual_left, actual_right),
+            (expected_left, expected_right),
+        ) in enumerate(zip(actual_cases, expected_cases, strict=True)):
             with self.subTest(case=case):
                 self.assertEqual(actual_left.shape, tuple(expected_left.shape))
                 self.assertEqual(actual_right.shape, tuple(expected_right.shape))
-                actual = actual_left.is_same_size(actual_right)
-                expected = expected_left.is_same_size(expected_right)
-                self.assertIs(type(actual), bool)
-                self.assertEqual(actual, expected)
+                actual_results = (
+                    actual_left.is_same_size(actual_right),
+                    torch.is_same_size(actual_left, actual_right),
+                    torch.is_same_size(input=actual_left, other=actual_right),
+                    torch.is_same_size(x1=actual_left, x2=actual_right),
+                    torch.is_same_size(actual_left, x2=actual_right),
+                )
+                expected_results = (
+                    expected_left.is_same_size(expected_right),
+                    reference_torch.is_same_size(expected_left, expected_right),
+                    reference_torch.is_same_size(
+                        input=expected_left, other=expected_right
+                    ),
+                    reference_torch.is_same_size(x1=expected_left, x2=expected_right),
+                    reference_torch.is_same_size(expected_left, x2=expected_right),
+                )
+                self.assertTrue(all(type(result) is bool for result in actual_results))
+                self.assertEqual(actual_results, expected_results)
 
     def test_extreme_empty_and_autograd_behavior_matches_pytorch_2_13(self):
         outcomes = []
@@ -114,8 +131,12 @@ class TensorIsSameSizeReferenceTests(unittest.TestCase):
             )
             results = (
                 extreme_empty.is_same_size(independent_empty),
-                extreme_empty.is_same_size(independent_empty.transpose(0, 2)),
-                tracked.is_same_size(independent),
+                module.is_same_size(input=extreme_empty, other=independent_empty),
+                module.is_same_size(
+                    x1=extreme_empty,
+                    x2=independent_empty.transpose(0, 2),
+                ),
+                module.is_same_size(tracked, independent),
             )
             graph_after = (
                 leaf.requires_grad,
@@ -129,7 +150,13 @@ class TensorIsSameSizeReferenceTests(unittest.TestCase):
             )
             tracked.sum().backward()
             outcomes.append(
-                (results, graph_before, graph_after, leaf.grad.tolist(), independent.grad)
+                (
+                    results,
+                    graph_before,
+                    graph_after,
+                    leaf.grad.tolist(),
+                    independent.grad,
+                )
             )
 
         self.assertEqual(outcomes[0], outcomes[1])
@@ -143,6 +170,11 @@ class TensorIsSameSizeReferenceTests(unittest.TestCase):
         )
 
         for actual, expected, expected_type in (
+            (
+                torch.is_same_size,
+                reference_torch.is_same_size,
+                types.BuiltinFunctionType,
+            ),
             (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
             (
                 actual_tensor.is_same_size,
@@ -161,6 +193,16 @@ class TensorIsSameSizeReferenceTests(unittest.TestCase):
                 inspect.signature(expected)
 
         self.assertEqual(
+            torch.is_same_size.__module__,
+            torch.tensor.__module__,
+        )
+        self.assertEqual(
+            reference_torch.is_same_size.__module__,
+            reference_torch.tensor.__module__,
+        )
+        self.assertIn("is_same_size", torch.__all__)
+        self.assertIn("is_same_size", reference_torch.__all__)
+        self.assertEqual(
             actual_descriptor(actual_tensor, actual_tensor),
             expected_descriptor(expected_tensor, expected_tensor),
         )
@@ -168,11 +210,96 @@ class TensorIsSameSizeReferenceTests(unittest.TestCase):
             actual_tensor.is_same_size(other=actual_tensor),
             expected_tensor.is_same_size(other=expected_tensor),
         )
+        self.assertEqual(
+            torch.is_same_size(x1=actual_tensor, x2=actual_tensor),
+            reference_torch.is_same_size(x1=expected_tensor, x2=expected_tensor),
+        )
 
     def test_binding_and_non_tensor_errors_match_pytorch_2_13(self):
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor([1.0])
         cases = (
+            (lambda: torch.is_same_size(), lambda: reference_torch.is_same_size()),
+            (
+                lambda: torch.is_same_size(actual),
+                lambda: reference_torch.is_same_size(expected),
+            ),
+            (
+                lambda: torch.is_same_size(other=actual),
+                lambda: reference_torch.is_same_size(other=expected),
+            ),
+            (
+                lambda: torch.is_same_size(actual, actual, actual),
+                lambda: reference_torch.is_same_size(expected, expected, expected),
+            ),
+            (
+                lambda: torch.is_same_size(1, actual),
+                lambda: reference_torch.is_same_size(1, expected),
+            ),
+            (
+                lambda: torch.is_same_size(actual, None),
+                lambda: reference_torch.is_same_size(expected, None),
+            ),
+            (
+                lambda: torch.is_same_size(input=[], other=actual),
+                lambda: reference_torch.is_same_size(input=[], other=expected),
+            ),
+            (
+                lambda: torch.is_same_size(input=actual, other=1),
+                lambda: reference_torch.is_same_size(input=expected, other=1),
+            ),
+            (
+                lambda: torch.is_same_size(x1=actual, x2=[]),
+                lambda: reference_torch.is_same_size(x1=expected, x2=[]),
+            ),
+            (
+                lambda: torch.is_same_size(np.zeros((2, 3), dtype=np.float32), actual),
+                lambda: reference_torch.is_same_size(
+                    np.zeros((2, 3), dtype=np.float32), expected
+                ),
+            ),
+            (
+                lambda: torch.is_same_size(actual, actual, extra=True),
+                lambda: reference_torch.is_same_size(expected, expected, extra=True),
+            ),
+            (
+                lambda: torch.is_same_size(actual, actual, input=actual),
+                lambda: reference_torch.is_same_size(
+                    expected, expected, input=expected
+                ),
+            ),
+            (
+                lambda: torch.is_same_size(actual, actual, other=actual),
+                lambda: reference_torch.is_same_size(
+                    expected, expected, other=expected
+                ),
+            ),
+            (
+                lambda: torch.is_same_size(actual, actual, x1=actual),
+                lambda: reference_torch.is_same_size(expected, expected, x1=expected),
+            ),
+            (
+                lambda: torch.is_same_size(actual, other=actual, x2=actual),
+                lambda: reference_torch.is_same_size(
+                    expected, other=expected, x2=expected
+                ),
+            ),
+            (
+                lambda: torch.is_same_size(input=actual, x1=actual, other=actual),
+                lambda: reference_torch.is_same_size(
+                    input=expected, x1=expected, other=expected
+                ),
+            ),
+            (
+                lambda: torch.is_same_size(input=1, other=actual, extra=True),
+                lambda: reference_torch.is_same_size(
+                    input=1, other=expected, extra=True
+                ),
+            ),
+            (
+                lambda: torch.is_same_size(input=actual, extra=True),
+                lambda: reference_torch.is_same_size(input=expected, extra=True),
+            ),
             (lambda: actual.is_same_size(), lambda: expected.is_same_size()),
             (
                 lambda: actual.is_same_size(actual, actual),
@@ -198,12 +325,8 @@ class TensorIsSameSizeReferenceTests(unittest.TestCase):
             (lambda: actual.is_same_size(None), lambda: expected.is_same_size(None)),
             (lambda: actual.is_same_size([]), lambda: expected.is_same_size([])),
             (
-                lambda: actual.is_same_size(
-                    np.zeros((2, 3), dtype=np.float32)
-                ),
-                lambda: expected.is_same_size(
-                    np.zeros((2, 3), dtype=np.float32)
-                ),
+                lambda: actual.is_same_size(np.zeros((2, 3), dtype=np.float32)),
+                lambda: expected.is_same_size(np.zeros((2, 3), dtype=np.float32)),
             ),
             (
                 lambda: actual.is_same_size(other=1),
