@@ -1329,6 +1329,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 59
       }
+    },
+    {
+      "key": "pr:88",
+      "recordedAt": "2026-08-14T00:30:57.761Z",
+      "label": "PR #88",
+      "kind": "leaf",
+      "prNumber": 88,
+      "title": "Expose Tensor.get_device through Device metadata",
+      "scores": {
+        "eval_7af648fb": 99.7,
+        "eval_8417a4a8": 59.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 38.6,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 59
+      }
     }
   ]
 }
