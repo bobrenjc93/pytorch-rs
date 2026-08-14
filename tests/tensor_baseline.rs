@@ -270,6 +270,102 @@ fn elementwise_operations_preserve_shape() {
 }
 
 #[test]
+fn relu_preserves_signed_zero_and_materializes_scalar_offset_and_strided_inputs() {
+    const INPUT_BITS: [u32; 12] = [
+        0x8000_0000,
+        0x0000_0000,
+        0xbf80_0000,
+        0x3f80_0000,
+        0xff80_0000,
+        0x7f80_0000,
+        0x8000_0001,
+        0x0000_0001,
+        0xff7f_ffff,
+        0x7f7f_ffff,
+        0xbf00_0000,
+        0x3f00_0000,
+    ];
+    const EXPECTED_BITS: [u32; 12] = [
+        0x8000_0000,
+        0x0000_0000,
+        0x0000_0000,
+        0x3f80_0000,
+        0x0000_0000,
+        0x7f80_0000,
+        0x0000_0000,
+        0x0000_0001,
+        0x0000_0000,
+        0x7f7f_ffff,
+        0x0000_0000,
+        0x3f00_0000,
+    ];
+    const TRANSPOSED_EXPECTED_BITS: [u32; 12] = [
+        0x8000_0000,
+        0x0000_0000,
+        0x0000_0000,
+        0x0000_0000,
+        0x7f80_0000,
+        0x7f7f_ffff,
+        0x0000_0000,
+        0x0000_0000,
+        0x0000_0000,
+        0x3f80_0000,
+        0x0000_0001,
+        0x3f00_0000,
+    ];
+
+    for zero_bits in [0x8000_0000, 0x0000_0000] {
+        let input = Tensor::from_vec(vec![f32::from_bits(zero_bits)], [])
+            .unwrap()
+            .with_requires_grad(true);
+        let output = input.relu().unwrap();
+        assert!(output.shape().is_empty());
+        assert!(output.stride().is_empty());
+        assert_eq!(output.storage_offset(), 0);
+        assert_eq!(output.item().unwrap().to_bits(), zero_bits);
+        assert!(!output.shares_storage_with(&input));
+        assert!(!output.requires_grad());
+    }
+
+    let mut storage = vec![1.0; INPUT_BITS.len()];
+    storage.extend(INPUT_BITS.map(f32::from_bits));
+    let base = Tensor::from_vec(storage, [2, 3, 4]).unwrap();
+    let offset = base.index_integer(1).unwrap();
+    assert_eq!(offset.storage_offset(), INPUT_BITS.len());
+
+    let offset_output = offset.relu().unwrap();
+    assert_eq!(offset_output.shape(), offset.shape());
+    assert_eq!(offset_output.stride(), offset.stride());
+    assert_eq!(offset_output.storage_offset(), 0);
+    assert_eq!(
+        offset_output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        EXPECTED_BITS
+    );
+    assert!(!offset_output.shares_storage_with(&offset));
+
+    let strided = offset.transpose(0, 1).unwrap();
+    assert_eq!(strided.shape(), [4, 3]);
+    assert_eq!(strided.stride(), [1, 4]);
+    assert_eq!(strided.storage_offset(), INPUT_BITS.len());
+
+    let strided_output = strided.relu().unwrap();
+    assert_eq!(strided_output.shape(), strided.shape());
+    assert_eq!(strided_output.stride(), strided.stride());
+    assert_eq!(strided_output.storage_offset(), 0);
+    assert_eq!(
+        strided_output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        TRANSPOSED_EXPECTED_BITS
+    );
+    assert!(!strided_output.shares_storage_with(&strided));
+}
+
+#[test]
 fn sine_matches_pytorch_float32_values_and_special_cases() {
     const ATOL: f32 = 1.0e-6;
     const RTOL: f32 = 1.0e-6;

@@ -2429,7 +2429,7 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn relu(&self) -> Result<Self, TensorError> {
-        self.unary_map(|value| value.max(0.0))
+        self.unary_map(relu_value)
     }
 
     /// Computes the sine of every element in radians.
@@ -3962,6 +3962,16 @@ fn checked_physical_stride_product(stride: usize, dimension: usize) -> Result<us
 
 fn negate_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
+}
+
+fn relu_value(value: f32) -> f32 {
+    // Only exact zeros bypass the established max path, so FTZ/DAZ cannot
+    // classify a subnormal as zero and NaN behavior remains unchanged.
+    if (value.to_bits() & !F32_SIGN_MASK) == 0 {
+        value
+    } else {
+        value.max(0.0)
+    }
 }
 
 fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {
