@@ -384,6 +384,60 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\ncpu(memory_format=torch.preserve_format) -> Tensor\n\nReturns a copy of this object in CPU memory.\n\nIf this object is already in CPU memory,\nthen no copy is performed and the original object is returned.\n\nArgs:\n    memory_format (:class:`torch.memory_format`, optional): the desired memory format of\n        returned Tensor. Default: ``torch.preserve_format``.\n\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn cpu(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyTensor>> {
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "cpu() takes 0 positional arguments but {} {} given",
+                args.len(),
+                if args.len() == 1 { "was" } else { "were" }
+            )));
+        }
+
+        let mut memory_format = MemoryFormat::Preserve;
+        if let Some(kwargs) = kwargs {
+            // PyTorch converts the recognized argument before reporting any
+            // extra keywords, independent of keyword insertion order.
+            if let Some(value) = kwargs.get_item("memory_format")? {
+                memory_format = parse_cpu_memory_format(&value)?;
+            }
+            for (key, _) in kwargs {
+                let key = key.extract::<String>()?;
+                if key != "memory_format" {
+                    return Err(PyTypeError::new_err(format!(
+                        "cpu() got an unexpected keyword argument '{key}'"
+                    )));
+                }
+            }
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        // CPU is the only supported device. Preserve never normalizes an
+        // existing CPU tensor, including arbitrary non-contiguous views.
+        if memory_format == MemoryFormat::Preserve {
+            return Ok(tensor.clone().unbind());
+        }
+
+        let inner = {
+            let tensor_ref = tensor.try_borrow()?;
+            if tensor_ref.inner.suggested_memory_format() == memory_format {
+                return Ok(tensor.clone().unbind());
+            }
+            tensor_ref
+                .inner
+                .try_copy_with_memory_format(memory_format)
+                .map_err(|error| tensor_error(&error))?
+        };
+        Py::new(slf.py(), PyTensor::new(inner))
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nget_device() -> Device ordinal (Integer)\n\nFor CUDA tensors, this function returns the device ordinal of the GPU on which the tensor resides.\nFor CPU tensors, this function returns `-1`.\n\nExample::\n\n    >>> x = torch.randn(3, 4, 5, device='cuda:0')\n    >>> x.get_device()\n    0\n    >>> x.cpu().get_device()\n    -1\n"]
     #[pyo3(text_signature = None)]
     fn get_device(slf: &Bound<'_, Self>) -> PyResult<i64> {
@@ -2068,6 +2122,20 @@ fn parse_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<
     let type_name = memory_format.get_type().name()?;
     Err(PyTypeError::new_err(format!(
         "contiguous(): argument 'memory_format' must be torch.memory_format, not {type_name}"
+    )))
+}
+
+fn parse_cpu_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryFormat> {
+    if memory_format.is_none() {
+        return Ok(MemoryFormat::Preserve);
+    }
+    if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
+        return Ok(memory_format.try_borrow()?.inner);
+    }
+
+    let type_name = memory_format.get_type().name()?;
+    Err(PyTypeError::new_err(format!(
+        "cpu(): argument 'memory_format' must be torch.memory_format, not {type_name}"
     )))
 }
 
