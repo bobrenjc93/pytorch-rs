@@ -346,6 +346,15 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nIs ``True`` if the Tensor uses sparse COO storage layout, ``False`` otherwise.\n"]
+    #[getter]
+    fn is_sparse(slf: &Bound<'_, Self>) -> PyResult<bool> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        Ok(tensor.inner.is_sparse())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nget_device() -> Device ordinal (Integer)\n\nFor CUDA tensors, this function returns the device ordinal of the GPU on which the tensor resides.\nFor CPU tensors, this function returns `-1`.\n\nExample::\n\n    >>> x = torch.randn(3, 4, 5, device='cuda:0')\n    >>> x.get_device()\n    0\n    >>> x.cpu().get_device()\n    -1\n"]
     #[pyo3(text_signature = None)]
     fn get_device(slf: &Bound<'_, Self>) -> PyResult<i64> {
