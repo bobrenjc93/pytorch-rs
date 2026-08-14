@@ -70,6 +70,46 @@ fn native_metadata_survives_views_kernels_and_reductions() {
 }
 
 #[test]
+fn data_ptr_tracks_empty_offset_alias_and_materialized_storage() {
+    let source = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [3, 4]).unwrap();
+    let source_ptr = source.data_ptr();
+    assert_ne!(source_ptr, 0);
+
+    let row = source.index_integer(2).unwrap();
+    assert_eq!(row.storage_offset(), 8);
+    assert_eq!(
+        row.data_ptr(),
+        source_ptr + row.storage_offset() * source.element_size()
+    );
+
+    let transposed = source.transpose(0, 1).unwrap();
+    assert_eq!(transposed.data_ptr(), source_ptr);
+    let strided_row = transposed.index_integer(1).unwrap();
+    assert_eq!(strided_row.storage_offset(), 1);
+    assert_eq!(strided_row.data_ptr(), source_ptr + source.element_size());
+    assert_eq!(
+        strided_row.detach().unwrap().data_ptr(),
+        strided_row.data_ptr()
+    );
+
+    let cloned = strided_row.try_clone().unwrap();
+    assert_ne!(cloned.data_ptr(), strided_row.data_ptr());
+    assert!(!cloned.shares_storage_with(&strided_row));
+
+    let packed = transposed.try_contiguous(MemoryFormat::Contiguous).unwrap();
+    assert_ne!(packed.data_ptr(), transposed.data_ptr());
+    assert!(!packed.shares_storage_with(&transposed));
+
+    let empty = Tensor::zeros([3, 0, 4]).unwrap();
+    assert_eq!(empty.data_ptr(), 0);
+    let offset_empty = empty.index_integer(2).unwrap();
+    assert_ne!(offset_empty.storage_offset(), 0);
+    assert_eq!(offset_empty.data_ptr(), 0);
+    assert_eq!(offset_empty.detach().unwrap().data_ptr(), 0);
+    assert_eq!(offset_empty.try_clone().unwrap().data_ptr(), 0);
+}
+
+#[test]
 fn construction_validates_shape() {
     let error = Tensor::from_vec(vec![1.0, 2.0], [3]).unwrap_err();
     assert_eq!(

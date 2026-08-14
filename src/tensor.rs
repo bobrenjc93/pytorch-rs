@@ -157,6 +157,17 @@ impl Storage {
         }
     }
 
+    fn data_ptr(&self) -> usize {
+        match &self.data {
+            StorageData::Owned(values) => values.as_ptr().addr(),
+            StorageData::SharedGradient(values) => values
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ptr()
+                .addr(),
+        }
+    }
+
     fn owned_values(&self) -> Option<&[f32]> {
         match &self.data {
             StorageData::Owned(values) => Some(values),
@@ -1040,6 +1051,32 @@ impl Tensor {
     #[must_use]
     pub fn storage_offset(&self) -> usize {
         self.offset
+    }
+
+    /// Returns the address of the tensor's first logical element.
+    ///
+    /// Empty tensors return zero. Views otherwise add their element offset,
+    /// scaled by the storage dtype's byte width, to the stable backing
+    /// allocation address.
+    ///
+    /// # Panics
+    ///
+    /// Panics if validated internal storage metadata does not fit in the
+    /// process address space.
+    #[must_use]
+    pub fn data_ptr(&self) -> usize {
+        if self.elements == 0 {
+            return 0;
+        }
+
+        let byte_offset = self
+            .offset
+            .checked_mul(self.element_size())
+            .expect("validated tensor storage offset must fit in bytes");
+        self.storage
+            .data_ptr()
+            .checked_add(byte_offset)
+            .expect("a validated tensor view must address its allocation")
     }
 
     /// Reports whether two tensors refer to the same underlying allocation.
