@@ -186,6 +186,11 @@ impl PyDType {
     }
 
     #[getter]
+    fn is_floating_point(&self) -> bool {
+        self.inner.is_floating_point()
+    }
+
+    #[getter]
     fn is_complex(&self) -> bool {
         self.inner.is_complex()
     }
