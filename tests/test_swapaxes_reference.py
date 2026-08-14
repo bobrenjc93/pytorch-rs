@@ -1,5 +1,6 @@
 import inspect
 import sys
+import types
 import unittest
 import warnings
 
@@ -64,15 +65,34 @@ class TensorSwapaxesReferenceTests(unittest.TestCase):
 
             rank = len(actual.shape)
             dimensions = [0, -1] if rank == 0 else list(range(-rank, rank))
-            for chain in range(2):
+            for chain in range(4):
                 axis0 = dimensions[int(rng.integers(0, len(dimensions)))]
                 axis1 = dimensions[int(rng.integers(0, len(dimensions)))]
-                if (case + chain) % 2:
+                actual_pointer = actual.data_ptr()
+                expected_pointer = expected.data_ptr()
+                call_style = (case + chain) % 4
+                if call_style == 0:
                     actual = actual.swapaxes(axis0, axis1)
                     expected = expected.swapaxes(axis0, axis1)
-                else:
+                elif call_style == 1:
                     actual = actual.swapaxes(axis0=axis0, axis1=axis1)
                     expected = expected.swapaxes(axis0=axis0, axis1=axis1)
+                elif call_style == 2:
+                    actual = torch.swapaxes(actual, axis0, axis1)
+                    expected = reference_torch.swapaxes(expected, axis0, axis1)
+                else:
+                    actual = torch.swapaxes(
+                        input=actual,
+                        axis0=axis0,
+                        axis1=axis1,
+                    )
+                    expected = reference_torch.swapaxes(
+                        input=expected,
+                        axis0=axis0,
+                        axis1=axis1,
+                    )
+                self.assertEqual(actual.data_ptr(), actual_pointer)
+                self.assertEqual(expected.data_ptr(), expected_pointer)
 
             self.assert_matches(actual, expected, case=f"view-{case}")
             for operation, actual_output, expected_output in (
@@ -92,12 +112,13 @@ class TensorSwapaxesReferenceTests(unittest.TestCase):
         weights = np.linspace(-2.0, 3.0, num=24, dtype=np.float32).reshape(4, 3, 2)
         actual_leaf = torch.tensor(values.tolist(), requires_grad=True)
         expected_leaf = reference_torch.tensor(values, requires_grad=True)
-        actual = actual_leaf.swapaxes(0, -1)
-        expected = expected_leaf.swapaxes(0, -1)
+        actual = torch.swapaxes(actual_leaf, 0, -1)
+        expected = reference_torch.swapaxes(expected_leaf, 0, -1)
 
         self.assert_matches(actual, expected, case="tracked-view")
         self.assertEqual(actual.requires_grad, expected.requires_grad)
         self.assertEqual(actual.is_leaf, expected.is_leaf)
+        self.assertEqual(actual.data_ptr(), actual_leaf.data_ptr())
         self.assertEqual(expected.data_ptr(), expected_leaf.data_ptr())
         (actual * torch.tensor(weights.tolist())).sum().backward()
         (expected * reference_torch.tensor(weights)).sum().backward()
@@ -105,8 +126,16 @@ class TensorSwapaxesReferenceTests(unittest.TestCase):
 
         actual_scalar = torch.tensor(2.5, requires_grad=True)
         expected_scalar = reference_torch.tensor(2.5, requires_grad=True)
-        actual_scalar_view = actual_scalar.swapaxes(0, -1)
-        expected_scalar_view = expected_scalar.swapaxes(0, -1)
+        actual_scalar_view = torch.swapaxes(
+            input=actual_scalar,
+            axis0=0,
+            axis1=-1,
+        )
+        expected_scalar_view = reference_torch.swapaxes(
+            input=expected_scalar,
+            axis0=0,
+            axis1=-1,
+        )
         (actual_scalar_view * 7.0).backward()
         (expected_scalar_view * 7.0).backward()
         self.assert_matches(
@@ -115,22 +144,28 @@ class TensorSwapaxesReferenceTests(unittest.TestCase):
 
         actual_empty = torch.zeros((2, 0, 3), requires_grad=True)
         expected_empty = reference_torch.zeros((2, 0, 3), requires_grad=True)
-        actual_empty.swapaxes(0, -1).sum().backward()
-        expected_empty.swapaxes(0, -1).sum().backward()
+        torch.swapaxes(actual_empty, 0, -1).sum().backward()
+        reference_torch.swapaxes(expected_empty, 0, -1).sum().backward()
         self.assert_matches(actual_empty.grad, expected_empty.grad, case="empty-gradient")
 
         with torch.no_grad():
-            actual_untracked = actual_leaf.swapaxes(0, 1)
+            actual_untracked = torch.swapaxes(actual_leaf, 0, 1)
         with reference_torch.no_grad():
-            expected_untracked = expected_leaf.swapaxes(0, 1)
+            expected_untracked = reference_torch.swapaxes(expected_leaf, 0, 1)
         self.assertEqual(actual_untracked.requires_grad, expected_untracked.requires_grad)
         self.assertEqual(actual_untracked.is_leaf, expected_untracked.is_leaf)
 
-        actual_offset = torch.tensor(values.tolist()).transpose(0, 2)[1].swapaxes(0, 1)
-        expected_offset = (
-            reference_torch.tensor(values).transpose(0, 2)[1].swapaxes(0, 1)
+        actual_offset_source = torch.tensor(values.tolist()).transpose(0, 2)[1]
+        expected_offset_source = reference_torch.tensor(values).transpose(0, 2)[1]
+        actual_offset = torch.swapaxes(actual_offset_source, 0, 1)
+        expected_offset = reference_torch.swapaxes(
+            expected_offset_source,
+            0,
+            1,
         )
         self.assert_matches(actual_offset, expected_offset, case="offset-view")
+        self.assertEqual(actual_offset.data_ptr(), actual_offset_source.data_ptr())
+        self.assertEqual(expected_offset.data_ptr(), expected_offset_source.data_ptr())
 
     def test_binding_dimension_and_overflow_errors_match_pytorch_2_13(self):
         class UserOverflow(np.int64):
@@ -207,6 +242,143 @@ class TensorSwapaxesReferenceTests(unittest.TestCase):
             (lambda: actual.swapaxes(2**100, 0), lambda: expected.swapaxes(2**100, 0)),
             (lambda: actual.swapaxes(-3, 0), lambda: expected.swapaxes(-3, 0)),
             (lambda: actual.swapaxes(0, 2), lambda: expected.swapaxes(0, 2)),
+            (lambda: torch.swapaxes(), lambda: reference_torch.swapaxes()),
+            (
+                lambda: torch.swapaxes(actual),
+                lambda: reference_torch.swapaxes(expected),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 0),
+                lambda: reference_torch.swapaxes(expected, 0),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 0, 1, 2),
+                lambda: reference_torch.swapaxes(expected, 0, 1, 2),
+            ),
+            (
+                lambda: torch.swapaxes(axis0=0, axis1=1),
+                lambda: reference_torch.swapaxes(axis0=0, axis1=1),
+            ),
+            (
+                lambda: torch.swapaxes(input=actual, axis1=0, unexpected=None),
+                lambda: reference_torch.swapaxes(
+                    input=expected,
+                    axis1=0,
+                    unexpected=None,
+                ),
+            ),
+            (
+                lambda: torch.swapaxes(input=actual, dim0=0, dim1=1),
+                lambda: reference_torch.swapaxes(
+                    input=expected,
+                    dim0=0,
+                    dim1=1,
+                ),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 0, 1, unexpected=None),
+                lambda: reference_torch.swapaxes(
+                    expected,
+                    0,
+                    1,
+                    unexpected=None,
+                ),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 0, 1, dim0=0),
+                lambda: reference_torch.swapaxes(expected, 0, 1, dim0=0),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 0, axis0=1, axis1=0),
+                lambda: reference_torch.swapaxes(
+                    expected,
+                    0,
+                    axis0=1,
+                    axis1=0,
+                ),
+            ),
+            (lambda: torch.swapaxes(1), lambda: reference_torch.swapaxes(1)),
+            (
+                lambda: torch.swapaxes(input=1),
+                lambda: reference_torch.swapaxes(input=1),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 1.5),
+                lambda: reference_torch.swapaxes(expected, 1.5),
+            ),
+            (
+                lambda: torch.swapaxes(input=actual, axis0=np.bool_(True)),
+                lambda: reference_torch.swapaxes(
+                    input=expected,
+                    axis0=np.bool_(True),
+                ),
+            ),
+            (
+                lambda: torch.swapaxes(actual, np.float64(1.5), 0),
+                lambda: reference_torch.swapaxes(expected, np.float64(1.5), 0),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 1.5, 0, unexpected=None),
+                lambda: reference_torch.swapaxes(
+                    expected,
+                    1.5,
+                    0,
+                    unexpected=None,
+                ),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 2**100, 0, unexpected=None),
+                lambda: reference_torch.swapaxes(
+                    expected,
+                    2**100,
+                    0,
+                    unexpected=None,
+                ),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 2**100, 1.5),
+                lambda: reference_torch.swapaxes(expected, 2**100, 1.5),
+            ),
+            (
+                lambda: torch.swapaxes(actual, timedelta, 0),
+                lambda: reference_torch.swapaxes(expected, timedelta, 0),
+            ),
+            (
+                lambda: torch.swapaxes(actual, np.uint64(2**63), 0),
+                lambda: reference_torch.swapaxes(
+                    expected,
+                    np.uint64(2**63),
+                    0,
+                ),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 2**100, timedelta),
+                lambda: reference_torch.swapaxes(expected, 2**100, timedelta),
+            ),
+            (
+                lambda: torch.swapaxes(actual, timedelta, 2**100),
+                lambda: reference_torch.swapaxes(expected, timedelta, 2**100),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 2**100, UserOverflow(0)),
+                lambda: reference_torch.swapaxes(
+                    expected,
+                    2**100,
+                    UserOverflow(0),
+                ),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 2**100, 0),
+                lambda: reference_torch.swapaxes(expected, 2**100, 0),
+            ),
+            (
+                lambda: torch.swapaxes(actual, -3, 0),
+                lambda: reference_torch.swapaxes(expected, -3, 0),
+            ),
+            (
+                lambda: torch.swapaxes(actual, 0, 2),
+                lambda: reference_torch.swapaxes(expected, 0, 2),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(error_case=case):
@@ -218,12 +390,20 @@ class TensorSwapaxesReferenceTests(unittest.TestCase):
             lambda: actual_scalar.swapaxes(-2, 0),
             lambda: expected_scalar.swapaxes(-2, 0),
         )
+        self.assert_error_matches(
+            lambda: torch.swapaxes(actual_scalar, -2, 0),
+            lambda: reference_torch.swapaxes(expected_scalar, -2, 0),
+        )
 
         actual_extreme = torch.zeros((sys.maxsize, 0, 2, 2))
         expected_extreme = reference_torch.zeros((sys.maxsize, 0, 2, 2))
         self.assert_error_matches(
             lambda: actual_extreme.swapaxes(1, 3),
             lambda: expected_extreme.swapaxes(1, 3),
+        )
+        self.assert_error_matches(
+            lambda: torch.swapaxes(actual_extreme, 1, 3),
+            lambda: reference_torch.swapaxes(expected_extreme, 1, 3),
         )
 
     def test_stateful_dimension_conversion_order_matches_pytorch_2_13(self):
@@ -249,9 +429,15 @@ class TensorSwapaxesReferenceTests(unittest.TestCase):
 
         actual_state, actual_axis0, actual_axis1 = stateful_dimensions()
         expected_state, expected_axis0, expected_axis1 = stateful_dimensions()
-        actual = torch.zeros((2, 3, 4)).swapaxes(actual_axis0, actual_axis1)
-        expected = reference_torch.zeros((2, 3, 4)).swapaxes(
-            expected_axis0, expected_axis1
+        actual = torch.swapaxes(
+            torch.zeros((2, 3, 4)),
+            actual_axis0,
+            actual_axis1,
+        )
+        expected = reference_torch.swapaxes(
+            reference_torch.zeros((2, 3, 4)),
+            expected_axis0,
+            expected_axis1,
         )
 
         self.assert_matches(actual, expected, case="stateful-conversion-order")
@@ -269,6 +455,26 @@ class TensorSwapaxesReferenceTests(unittest.TestCase):
             with self.subTest(descriptor=descriptor):
                 with self.assertRaises(ValueError):
                     inspect.signature(descriptor)
+
+        actual_function = torch.swapaxes
+        expected_function = reference_torch.swapaxes
+        self.assertIs(type(actual_function), types.BuiltinFunctionType)
+        self.assertIs(type(expected_function), types.BuiltinFunctionType)
+        self.assertEqual(actual_function.__name__, expected_function.__name__)
+        self.assertEqual(
+            actual_function.__text_signature__, expected_function.__text_signature__
+        )
+        self.assertEqual(actual_function.__doc__, expected_function.__doc__)
+        self.assertEqual(
+            "swapaxes" in torch.__all__,
+            "swapaxes" in reference_torch.__all__,
+        )
+        self.assertEqual(actual_function.__module__, torch.tensor.__module__)
+        self.assertEqual(expected_function.__module__, "torch")
+        for function in (actual_function, expected_function):
+            with self.subTest(function=function):
+                with self.assertRaises(ValueError):
+                    inspect.signature(function)
 
 
 if __name__ == "__main__":
