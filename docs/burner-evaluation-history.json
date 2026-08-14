@@ -1489,6 +1489,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 56
       }
+    },
+    {
+      "key": "pr:100",
+      "recordedAt": "2026-08-14T08:10:56.926Z",
+      "label": "PR #100",
+      "kind": "leaf",
+      "prNumber": 100,
+      "title": "Expose the read-only Tensor.is_meta property",
+      "scores": {
+        "eval_7af648fb": 99.9,
+        "eval_8417a4a8": 60.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 39.5,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 56
+      }
     }
   ]
 }
