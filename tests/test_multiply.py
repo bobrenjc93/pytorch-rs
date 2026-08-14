@@ -1,6 +1,8 @@
 import inspect
 import re
+import subprocess
 import sys
+import textwrap
 import types
 import unittest
 
@@ -245,6 +247,12 @@ class TensorMultiplyTests(unittest.TestCase):
                 with self.assertRaisesRegex(Exception, f"^{re.escape(message)}$"):
                     call()
 
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^mul\(\): argument 'other' must be Tensor, not list$",
+        ):
+            tensor.mul(x2=[], wat=tensor)
+
         descriptor_cases = (
             (
                 lambda: descriptor(),
@@ -304,6 +312,16 @@ class TensorMultiplyTests(unittest.TestCase):
                 self.calls.append(("getitem", index))
                 return 3.5
 
+        class RaisingLengthList(list):
+            def __len__(self):
+                self.calls.append("len")
+                raise RuntimeError("length must be cleared")
+
+        class InvalidLengthTuple(tuple):
+            def __len__(self):
+                self.calls.append("len")
+                return -1
+
         tensor = torch.tensor([1.0])
         for value, detail in (
             (NamedList([1, "x"]), "NamedList of [int, str]"),
@@ -351,9 +369,31 @@ class TensorMultiplyTests(unittest.TestCase):
                     ["len", ("getitem", 0), "len", ("getitem", 0)],
                 )
 
+        for value, detail in (
+            (RaisingLengthList([1, "x"]), "RaisingLengthList of []"),
+            (InvalidLengthTuple((1, "x")), "InvalidLengthTuple of ()"),
+        ):
+            value.calls = []
+            message = (
+                "multiply() received an invalid combination of arguments - got "
+                f"({type(value).__name__}), but expected one of:\n"
+                " * (Tensor other)\n"
+                "      didn't match because some of the arguments have invalid types: "
+                f"(!{detail}!)\n"
+                " * (Number other)\n"
+                "      didn't match because some of the arguments have invalid types: "
+                f"(!{detail}!)\n"
+            )
+            with self.subTest(invalid_length=type(value).__name__):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    tensor.multiply(value)
+                self.assertEqual(value.calls, ["len", "len"])
+
         keyword_order = None
         if sys.platform == "darwin":
             keyword_order = "d=Tensor, b=Tensor, a=Tensor"
+        elif sys.platform == "win32":
+            keyword_order = "a=Tensor, b=Tensor, d=Tensor"
         elif sys.platform.startswith("linux"):
             keyword_order = "b=Tensor, d=Tensor, a=Tensor"
         if keyword_order is not None:
@@ -367,6 +407,49 @@ class TensorMultiplyTests(unittest.TestCase):
                 TypeError, f"^{re.escape(keyword_message)}$"
             ):
                 tensor.multiply(a=tensor, b=tensor, d=tensor)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_keyword_error_returns_bad_alloc_instead_of_aborting(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+
+            import torch_rs as torch
+
+            tensor = torch.tensor([1.0])
+            keywords = {f"key{index}": tensor for index in range(50_000)}
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 4 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            try:
+                tensor.multiply(**keywords)
+            except RuntimeError as error:
+                assert str(error) == "std::bad_alloc", repr(error)
+            else:
+                raise AssertionError("the constrained call unexpectedly succeeded")
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode == 77:
+            self.skipTest("process hard address-space limit is too low")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
 
 if __name__ == "__main__":

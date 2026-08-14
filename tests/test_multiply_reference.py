@@ -254,6 +254,10 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
             lambda: actual.mul(x2=actual, wat=actual),
             lambda: expected.mul(x2=expected, wat=expected),
         )
+        self.assert_error_matches(
+            lambda: actual.mul(x2=[], wat=actual),
+            lambda: expected.mul(x2=[], wat=expected),
+        )
 
         descriptor_cases = (
             (lambda: actual_descriptor(), lambda: expected_descriptor()),
@@ -310,6 +314,16 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
                 self.calls.append(("getitem", index))
                 return 3.5
 
+        class RaisingLengthList(list):
+            def __len__(self):
+                self.calls.append("len")
+                raise RuntimeError("length must be cleared")
+
+        class InvalidLengthTuple(tuple):
+            def __len__(self):
+                self.calls.append("len")
+                return -1
+
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor([1.0])
         for value in (
@@ -330,6 +344,18 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
             actual_value.calls = []
             expected_value.calls = []
             with self.subTest(protocol_sequence=sequence_type.__name__):
+                self.assert_error_matches(
+                    lambda: actual.multiply(actual_value),
+                    lambda: expected.multiply(expected_value),
+                )
+                self.assertEqual(actual_value.calls, expected_value.calls)
+
+        for sequence_type in (RaisingLengthList, InvalidLengthTuple):
+            actual_value = sequence_type([1, "x"])
+            expected_value = sequence_type([1, "x"])
+            actual_value.calls = []
+            expected_value.calls = []
+            with self.subTest(invalid_length=sequence_type.__name__):
                 self.assert_error_matches(
                     lambda: actual.multiply(actual_value),
                     lambda: expected.multiply(expected_value),
