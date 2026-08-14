@@ -333,6 +333,9 @@ enum GradFn {
     Negate {
         input: SavedTensor,
     },
+    Relu {
+        input: SavedTensor,
+    },
     Sin {
         input: SavedTensor,
     },
@@ -374,6 +377,7 @@ impl GradFn {
             }
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input }
+            | Self::Relu { input }
             | Self::Sin { input }
             | Self::Sum { input }
             | Self::Transform { input, .. } => input.take_parent(pending),
@@ -394,7 +398,7 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::Sin { input } => {
+            Self::Relu { input } | Self::Sin { input } => {
                 if input.storage.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
@@ -412,7 +416,7 @@ impl GradFn {
                 right.storage = None;
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
-            Self::Sin { input } => input.storage = None,
+            Self::Relu { input } | Self::Sin { input } => input.storage = None,
             Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
         }
         Ok(())
@@ -1411,6 +1415,19 @@ impl Tensor {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Sin {
+                        input: SavedTensor::try_from_tensor(self, true)?,
+                    })),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    fn finish_relu_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Relu {
                         input: SavedTensor::try_from_tensor(self, true)?,
                     })),
                 },
@@ -2515,7 +2532,8 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn relu(&self) -> Result<Self, TensorError> {
-        self.unary_map(relu_value)
+        let output = self.unary_map(relu_value)?;
+        self.finish_relu_vjp(output)
     }
 
     /// Computes the sine of every element in radians.
@@ -3071,6 +3089,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         }
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input }
+                        | GradFn::Relu { input }
                         | GradFn::Sin { input }
                         | GradFn::Sum { input }
                         | GradFn::Transform { input, .. } => {
@@ -3118,6 +3137,7 @@ fn apply_grad_fn(
                 add_gradient(gradients, meta, gradient);
             }
         }
+        GradFn::Relu { input } => apply_relu_grad_fn(input, upstream, gradients)?,
         GradFn::Sin { input } => apply_sin_grad_fn(input, upstream, gradients)?,
         GradFn::Multiply {
             left,
@@ -3193,6 +3213,26 @@ fn apply_grad_fn(
             }
         }
     }
+    Ok(())
+}
+
+fn apply_relu_grad_fn(
+    input: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut HashMap<usize, Vec<f32>>,
+) -> Result<(), TensorError> {
+    let Some(meta) = &input.autograd else {
+        return Ok(());
+    };
+    debug_assert_eq!(input.elements, upstream.len());
+    let mut gradient = try_result_vector(input.elements, input.elements)?;
+    gradient.extend(
+        upstream
+            .iter()
+            .enumerate()
+            .map(|(index, &value)| relu_backward_value(input.value_at_linear_index(index), value)),
+    );
+    add_gradient(gradients, meta, gradient);
     Ok(())
 }
 
@@ -4089,6 +4129,18 @@ fn relu_value(value: f32) -> f32 {
         value
     } else {
         value.max(0.0)
+    }
+}
+
+fn relu_backward_value(input: f32, upstream: f32) -> f32 {
+    let bits = input.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    let is_nan = magnitude > f32::INFINITY.to_bits();
+    let is_positive_nonzero = bits & F32_SIGN_MASK == 0 && magnitude != 0;
+    if is_nan || is_positive_nonzero {
+        upstream
+    } else {
+        0.0
     }
 }
 

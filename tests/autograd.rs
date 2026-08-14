@@ -184,6 +184,201 @@ fn scalar_and_empty_reductions_produce_correct_leaf_gradients() {
 }
 
 #[test]
+fn relu_vjp_selects_upstream_for_positives_and_nans() {
+    let input_bits = [
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+        0x0000_0001,
+        0x8000_0001,
+        0x7f7f_ffff,
+        0xff7f_ffff,
+    ];
+    let weight_bits = [
+        0x8000_0000,
+        0x8000_0000,
+        0xff80_0000,
+        0x7f80_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x3f00_0000,
+        0xbf00_0000,
+        0xc040_0000,
+        0x4040_0000,
+        0x4000_0000,
+        0x7fc0_1234,
+    ];
+    let expected_gradient_bits = [
+        0x8000_0000,
+        0x0000_0000,
+        0x0000_0000,
+        0x0000_0000,
+        0x7f80_0000,
+        0x0000_0000,
+        0x3f00_0000,
+        0xbf00_0000,
+        0xc040_0000,
+        0x0000_0000,
+        0x4000_0000,
+        0x0000_0000,
+    ];
+    let leaf = Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(
+        weight_bits.map(f32::from_bits).to_vec(),
+        [weight_bits.len()],
+    )
+    .unwrap();
+    let output = leaf.relu().unwrap();
+
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
+    assert!(!output.shares_storage_with(&leaf));
+    let loss = output.mul(&weights).unwrap().sum();
+    loss.backward().unwrap();
+
+    assert!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .eq(expected_gradient_bits)
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
+fn relu_preserves_scalar_empty_offset_and_strided_autograd() {
+    let scalar = Tensor::from_vec(vec![2.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let scalar_output = scalar.relu().unwrap();
+    assert!(scalar_output.requires_grad());
+    assert!(!scalar_output.is_leaf());
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    scalar_output.backward().unwrap();
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        1.0_f32.to_bits()
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_loss = empty.relu().unwrap().sum();
+    assert!(empty_loss.requires_grad());
+    empty_loss.backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert_eq!(empty_gradient.stride(), [3, 3, 1]);
+    assert!(values(&empty_gradient).is_empty());
+    assert_eq!(empty_loss.backward(), Err(TensorError::BackwardGraphFreed));
+
+    let mut storage = vec![9.0; 12];
+    storage.extend([
+        -1.0,
+        2.0,
+        0.0,
+        -0.0,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::from_bits(0x7fc1_2345),
+        3.0,
+        -4.0,
+        5.0,
+        -6.0,
+        7.0,
+    ]);
+    let source = Tensor::from_vec(storage, [2, 3, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let offset = source.index([1]).unwrap();
+    let offset_output = offset.relu().unwrap();
+    assert!(offset_output.requires_grad());
+    assert_eq!(offset.storage_offset(), 12);
+    assert_eq!(offset_output.shape(), [3, 4]);
+    assert_eq!(offset_output.stride(), [4, 1]);
+    assert_eq!(offset_output.storage_offset(), 0);
+    assert!(!offset_output.shares_storage_with(&offset));
+    offset_output.sum().backward().unwrap();
+
+    let strided = offset.transpose(0, 1).unwrap();
+    let strided_output = strided.relu().unwrap();
+    assert!(strided_output.requires_grad());
+    assert_eq!(strided.storage_offset(), 12);
+    assert_eq!(strided_output.shape(), [4, 3]);
+    assert_eq!(strided_output.stride(), [1, 4]);
+    assert_eq!(strided_output.storage_offset(), 0);
+    assert!(!strided_output.shares_storage_with(&strided));
+    let weights = Tensor::from_vec((1_u8..=12).map(f32::from).collect(), [4, 3]).unwrap();
+    strided_output
+        .mul(&weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+
+    assert_eq!(
+        values(&source.grad().unwrap().unwrap()),
+        [
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 3.0,
+            0.0, 9.0, 12.0, 0.0, 7.0, 0.0, 13.0,
+        ]
+    );
+}
+
+#[test]
+fn relu_obeys_detach_no_grad_and_freed_graph_boundaries() {
+    let leaf = Tensor::from_vec(vec![-1.0, 2.0, 0.0, f32::NAN], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let detached_input = leaf.detach().unwrap().relu().unwrap();
+    assert!(!detached_input.requires_grad());
+
+    let tracked = leaf.relu().unwrap();
+    let detached_output = tracked.detach().unwrap();
+    assert!(!detached_output.requires_grad());
+    assert!(detached_output.shares_storage_with(&tracked));
+
+    {
+        let _guard = no_grad();
+        let output = leaf.transpose(0, 1).unwrap().relu().unwrap();
+        assert!(!output.requires_grad());
+        assert_eq!(output.shape(), [2, 2]);
+        assert_eq!(output.stride(), [1, 2]);
+        assert_eq!(output.storage_offset(), 0);
+    }
+    assert!(leaf.relu().unwrap().requires_grad());
+
+    let no_grad_view = {
+        let _guard = no_grad();
+        leaf.transpose(0, 1).unwrap()
+    };
+    let boundary_loss = no_grad_view.relu().unwrap().sum();
+    assert!(boundary_loss.requires_grad());
+    boundary_loss.backward().unwrap();
+    assert!(leaf.grad().unwrap().is_none());
+    assert_eq!(
+        boundary_loss.backward(),
+        Err(TensorError::BackwardGraphFreed)
+    );
+
+    let tracked_loss = tracked.sum();
+    tracked_loss.backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [0.0, 1.0, 0.0, 1.0]);
+    assert_eq!(
+        tracked_loss.backward(),
+        Err(TensorError::BackwardGraphFreed)
+    );
+}
+
+#[test]
 fn sine_preserves_scalar_empty_and_strided_autograd_history() {
     let scalar = Tensor::from_vec(vec![1.5], [])
         .unwrap()
