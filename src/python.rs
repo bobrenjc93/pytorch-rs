@@ -2981,46 +2981,186 @@ fn call_type_summary(
     }
 }
 
+const PYTORCH_UNORDERED_BUCKET_COUNTS: &[u64] = &[
+    13,
+    29,
+    59,
+    127,
+    257,
+    541,
+    1_109,
+    2_357,
+    5_087,
+    10_273,
+    20_753,
+    42_043,
+    85_229,
+    172_933,
+    351_061,
+    712_697,
+    1_447_153,
+    2_938_679,
+    5_967_347,
+    12_117_689,
+    24_607_243,
+    49_969_847,
+    101_473_717,
+    206_062_531,
+    418_451_333,
+    849_749_479,
+    1_725_587_117,
+    3_504_151_727,
+    8_589_934_583,
+    25_769_803_693,
+    68_719_476_731,
+    206_158_430_123,
+    412_316_860_387,
+    1_099_511_627_689,
+    2_199_023_255_531,
+    4_398_046_511_093,
+    13_194_139_533_241,
+    26_388_279_066_581,
+    52_776_558_133_177,
+    105_553_116_266_399,
+    211_106_232_532_861,
+    562_949_953_421_231,
+    1_125_899_906_842_597,
+    4_503_599_627_370_449,
+    18_014_398_509_481_951,
+    36_028_797_018_963_913,
+    72_057_594_037_927_931,
+    288_230_376_151_711_717,
+    1_152_921_504_606_846_883,
+    2_305_843_009_213_693_951,
+    9_223_372_036_854_775_783,
+    18_446_744_073_709_551_557,
+];
+
 fn pytorch_unordered_keyword_order(
     keywords: Vec<(String, String)>,
 ) -> PyResult<Vec<(String, String)>> {
     // PyTorch 2.13's overload formatter copies keyword arguments into
-    // libstdc++'s `std::unordered_map`. Reproduce its MurmurHash64A buckets
-    // and prime rehash policy so collision groups retain the same order.
-    let capacity = keywords.len();
-    let mut bucket_count = 13_u64;
-    let mut ordered = try_size_vector(capacity)?;
+    // libstdc++'s `std::unordered_map`. Reproduce its MurmurHash64A buckets,
+    // prime rehash policy, and bucket-local insertion order.
 
-    for (key, value) in keywords {
-        if usize::try_from(bucket_count).is_ok_and(|count| ordered.len() == count) {
-            bucket_count = next_prime(bucket_count.saturating_mul(2));
-            let previous = ordered;
-            ordered = try_size_vector(capacity)?;
-            for entry in previous {
-                insert_unordered_keyword(&mut ordered, entry, bucket_count);
-            }
-        }
-        let hash = pytorch_string_hash(&key);
-        insert_unordered_keyword(&mut ordered, (hash, key, value), bucket_count);
+    let capacity = keywords.len();
+    if capacity == 0 {
+        return Ok(keywords);
     }
 
-    Ok(ordered
-        .into_iter()
-        .map(|(_, key, value)| (key, value))
-        .collect())
+    let mut bucket_counts = PYTORCH_UNORDERED_BUCKET_COUNTS.iter().copied();
+    let mut bucket_count = usize::try_from(
+        bucket_counts
+            .next()
+            .expect("the libstdc++ bucket sequence is nonempty"),
+    )
+    .map_err(|_| PyMemoryError::new_err("keyword argument map exceeds the platform size"))?;
+    let mut buckets = empty_keyword_buckets(bucket_count)?;
+    let mut nodes = try_size_vector(capacity)?;
+    let mut head = None;
+
+    for (key, value) in keywords {
+        if nodes.len() == bucket_count {
+            bucket_count = usize::try_from(bucket_counts.next().ok_or_else(|| {
+                PyMemoryError::new_err("keyword argument map exceeds the libstdc++ size limit")
+            })?)
+            .map_err(|_| {
+                PyMemoryError::new_err("keyword argument map exceeds the platform size")
+            })?;
+            buckets = empty_keyword_buckets(bucket_count)?;
+            head = rehash_unordered_keywords(&mut nodes, &mut buckets, bucket_count, head);
+        }
+
+        let index = nodes.len();
+        try_push_size(
+            &mut nodes,
+            UnorderedKeywordNode {
+                hash: pytorch_string_hash(&key),
+                key,
+                value,
+                previous: None,
+                next: None,
+            },
+        )?;
+        link_unordered_keyword(&mut nodes, &mut buckets, bucket_count, &mut head, index);
+    }
+
+    let mut ordered = try_size_vector(capacity)?;
+    let mut current = head;
+    while let Some(index) = current {
+        let node = &mut nodes[index];
+        current = node.next;
+        try_push_size(
+            &mut ordered,
+            (
+                std::mem::take(&mut node.key),
+                std::mem::take(&mut node.value),
+            ),
+        )?;
+    }
+    Ok(ordered)
 }
 
-fn insert_unordered_keyword(
-    ordered: &mut Vec<(u64, String, String)>,
-    entry: (u64, String, String),
-    bucket_count: u64,
+struct UnorderedKeywordNode {
+    hash: u64,
+    key: String,
+    value: String,
+    previous: Option<usize>,
+    next: Option<usize>,
+}
+
+fn empty_keyword_buckets(bucket_count: usize) -> PyResult<Vec<Option<usize>>> {
+    let mut buckets = try_size_vector(bucket_count)?;
+    buckets.resize(bucket_count, None);
+    Ok(buckets)
+}
+
+fn rehash_unordered_keywords(
+    nodes: &mut [UnorderedKeywordNode],
+    buckets: &mut [Option<usize>],
+    bucket_count: usize,
+    old_head: Option<usize>,
+) -> Option<usize> {
+    let mut head = None;
+    let mut current = old_head;
+    while let Some(index) = current {
+        current = nodes[index].next;
+        nodes[index].previous = None;
+        nodes[index].next = None;
+        link_unordered_keyword(nodes, buckets, bucket_count, &mut head, index);
+    }
+    head
+}
+
+fn link_unordered_keyword(
+    nodes: &mut [UnorderedKeywordNode],
+    buckets: &mut [Option<usize>],
+    bucket_count: usize,
+    head: &mut Option<usize>,
+    index: usize,
 ) {
-    let bucket = entry.0 % bucket_count;
-    let position = ordered
-        .iter()
-        .position(|existing| existing.0 % bucket_count == bucket)
-        .unwrap_or(0);
-    ordered.insert(position, entry);
+    let bucket_count_u64 =
+        u64::try_from(bucket_count).expect("the bucket count fits the 64-bit host ABI");
+    let bucket =
+        usize::try_from(nodes[index].hash % bucket_count_u64).expect("a bucket index fits usize");
+    if let Some(next) = buckets[bucket] {
+        let previous = nodes[next].previous;
+        nodes[index].previous = previous;
+        nodes[index].next = Some(next);
+        nodes[next].previous = Some(index);
+        if let Some(previous) = previous {
+            nodes[previous].next = Some(index);
+        } else {
+            *head = Some(index);
+        }
+    } else {
+        nodes[index].next = *head;
+        if let Some(old_head) = *head {
+            nodes[old_head].previous = Some(index);
+        }
+        *head = Some(index);
+    }
+    buckets[bucket] = Some(index);
 }
 
 fn pytorch_string_hash(value: &str) -> u64 {
@@ -3054,28 +3194,6 @@ fn pytorch_string_hash(value: &str) -> u64 {
     hash ^= hash >> 47;
     hash = hash.wrapping_mul(MULTIPLIER);
     hash ^ (hash >> 47)
-}
-
-fn next_prime(mut candidate: u64) -> u64 {
-    candidate |= 1;
-    while !is_prime(candidate) {
-        candidate = candidate.saturating_add(2);
-    }
-    candidate
-}
-
-fn is_prime(candidate: u64) -> bool {
-    if candidate < 2 || candidate.is_multiple_of(2) {
-        return candidate == 2;
-    }
-    let mut divisor = 3;
-    while divisor <= candidate / divisor {
-        if candidate.is_multiple_of(divisor) {
-            return false;
-        }
-        divisor += 2;
-    }
-    true
 }
 
 fn squeeze_method_binding_error(

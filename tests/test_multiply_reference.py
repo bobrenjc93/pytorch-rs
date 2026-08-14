@@ -288,6 +288,13 @@ class TensorMultiplyReferenceTests(unittest.TestCase):
             lambda: expected.multiply(**expected_keywords),
         )
 
+        actual_keywords = {f"key{index}": actual for index in range(258)}
+        expected_keywords = {f"key{index}": expected for index in range(258)}
+        self.assert_error_matches(
+            lambda: actual.multiply(**actual_keywords),
+            lambda: expected.multiply(**expected_keywords),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
