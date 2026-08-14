@@ -13,6 +13,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
     assert!(!DType::Float32.is_complex());
     assert!(DType::Float32.is_signed());
     assert_eq!(Device::Cpu.to_string(), "cpu");
+    assert_eq!(Device::Cpu.index(), None);
     assert!(Device::Cpu.is_cpu());
     assert!(!Device::Cpu.is_cuda());
     assert_eq!(MemoryFormat::Preserve.to_string(), "preserve_format");
@@ -28,6 +29,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
         assert_eq!(tensor.dtype(), DType::Float32);
         assert_eq!(tensor.element_size(), tensor.dtype().element_size());
         assert_eq!(tensor.device(), Device::Cpu);
+        assert_eq!(tensor.device().index(), None);
         assert!(tensor.is_cpu());
         assert!(!tensor.is_cuda());
         assert!(tensor.is_floating_point());

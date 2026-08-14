@@ -69,6 +69,14 @@ pub enum Device {
 }
 
 impl Device {
+    /// Returns the device ordinal, or [`None`] when this device has no ordinal.
+    #[must_use]
+    pub const fn index(self) -> Option<usize> {
+        match self {
+            Self::Cpu => None,
+        }
+    }
+
     /// Reports whether this device executes on host CPU memory.
     #[must_use]
     pub const fn is_cpu(self) -> bool {
