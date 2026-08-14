@@ -2714,60 +2714,36 @@ impl Tensor {
             }
         }
 
-        let mut data = try_result_vector(plan.elements, plan.elements)?;
-        let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
-        coordinates.resize(plan.shape.len(), 0_usize);
-        let mut left_offset = self.offset;
-        let mut right_offset = other.offset;
-        let contiguous_output = layout_is_contiguous(&plan.shape, &plan.strides, plan.elements);
-
-        if !contiguous_output {
-            data.resize(plan.elements, 0.0);
-        }
-        for output_index in 0..plan.elements {
-            let value = operation(
-                self.storage
-                    .value(left_offset)
-                    .expect("validated broadcast offset must address left storage"),
-                other
-                    .storage
-                    .value(right_offset)
-                    .expect("validated broadcast offset must address right storage"),
-            );
-            if contiguous_output {
-                data.push(value);
-            } else {
-                let output_offset =
-                    logical_offset_for_linear_index(&plan.shape, &plan.strides, 0, output_index)?;
-                data[output_offset] = value;
-            }
-            if output_index + 1 == plan.elements {
-                break;
-            }
-
-            for axis in (0..plan.shape.len()).rev() {
-                coordinates[axis] = coordinates[axis]
-                    .checked_add(1)
-                    .ok_or(TensorError::StrideCalculationOverflow)?;
-                if coordinates[axis] < plan.shape[axis] {
-                    left_offset = left_offset
-                        .checked_add(plan.dimensions[axis].left_step)
-                        .ok_or(TensorError::StrideCalculationOverflow)?;
-                    right_offset = right_offset
-                        .checked_add(plan.dimensions[axis].right_step)
-                        .ok_or(TensorError::StrideCalculationOverflow)?;
-                    break;
-                }
-
-                coordinates[axis] = 0;
-                left_offset = left_offset
-                    .checked_sub(plan.dimensions[axis].left_rewind)
-                    .ok_or(TensorError::StrideCalculationOverflow)?;
-                right_offset = right_offset
-                    .checked_sub(plan.dimensions[axis].right_rewind)
-                    .ok_or(TensorError::StrideCalculationOverflow)?;
-            }
-        }
+        let data = if let (Some(left_values), Some(right_values)) =
+            (self.storage.owned_values(), other.storage.owned_values())
+        {
+            materialize_broadcast(
+                &plan,
+                self.offset,
+                other.offset,
+                |offset| left_values[offset],
+                |offset| right_values[offset],
+                operation,
+            )?
+        } else {
+            materialize_broadcast(
+                &plan,
+                self.offset,
+                other.offset,
+                |offset| {
+                    self.storage
+                        .value(offset)
+                        .expect("validated broadcast offset must address left storage")
+                },
+                |offset| {
+                    other
+                        .storage
+                        .value(offset)
+                        .expect("validated broadcast offset must address right storage")
+                },
+                operation,
+            )?
+        };
 
         Ok(Self::from_owned_parts(
             data,
@@ -3385,6 +3361,62 @@ struct BroadcastPlan {
     strides: Vec<usize>,
     dimensions: Vec<BroadcastDimension>,
     elements: usize,
+}
+
+#[inline]
+fn materialize_broadcast(
+    plan: &BroadcastPlan,
+    mut left_offset: usize,
+    mut right_offset: usize,
+    left_value: impl Fn(usize) -> f32,
+    right_value: impl Fn(usize) -> f32,
+    operation: impl Fn(f32, f32) -> f32,
+) -> Result<Vec<f32>, TensorError> {
+    let mut data = try_result_vector(plan.elements, plan.elements)?;
+    let mut coordinates = try_result_vector(plan.shape.len(), plan.elements)?;
+    coordinates.resize(plan.shape.len(), 0_usize);
+    let contiguous_output = layout_is_contiguous(&plan.shape, &plan.strides, plan.elements);
+
+    if !contiguous_output {
+        data.resize(plan.elements, 0.0);
+    }
+    for output_index in 0..plan.elements {
+        let value = operation(left_value(left_offset), right_value(right_offset));
+        if contiguous_output {
+            data.push(value);
+        } else {
+            let output_offset =
+                logical_offset_for_linear_index(&plan.shape, &plan.strides, 0, output_index)?;
+            data[output_offset] = value;
+        }
+        if output_index + 1 == plan.elements {
+            break;
+        }
+
+        for axis in (0..plan.shape.len()).rev() {
+            coordinates[axis] = coordinates[axis]
+                .checked_add(1)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            if coordinates[axis] < plan.shape[axis] {
+                left_offset = left_offset
+                    .checked_add(plan.dimensions[axis].left_step)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                right_offset = right_offset
+                    .checked_add(plan.dimensions[axis].right_step)
+                    .ok_or(TensorError::StrideCalculationOverflow)?;
+                break;
+            }
+
+            coordinates[axis] = 0;
+            left_offset = left_offset
+                .checked_sub(plan.dimensions[axis].left_rewind)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+            right_offset = right_offset
+                .checked_sub(plan.dimensions[axis].right_rewind)
+                .ok_or(TensorError::StrideCalculationOverflow)?;
+        }
+    }
+    Ok(data)
 }
 
 impl BroadcastPlan {
@@ -4113,6 +4145,15 @@ mod tests {
         }
     }
 
+    fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {
+        [
+            left.add(right).unwrap(),
+            left.sub(right).unwrap(),
+            left.mul(right).unwrap(),
+            left.div(right).unwrap(),
+        ]
+    }
+
     fn offset_strided_matrix(bits: [u32; 9]) -> Tensor {
         let mut values = vec![0.0; 9];
         values.extend(bits.map(f32::from_bits));
@@ -4305,6 +4346,87 @@ mod tests {
     }
 
     #[test]
+    fn owned_general_broadcast_is_bitwise_identical_to_shared_gradient_fallback() {
+        let verify = |left: &Tensor, right: &Tensor| {
+            assert_ne!(left.shape(), right.shape());
+            let shared_left = shared_gradient_copy(left);
+            let shared_right = shared_gradient_copy(right);
+            let expected = binary_outputs(&shared_left, &shared_right);
+
+            for actual in [
+                binary_outputs(left, right),
+                binary_outputs(left, &shared_right),
+                binary_outputs(&shared_left, right),
+            ] {
+                for (actual, expected) in actual.into_iter().zip(&expected) {
+                    assert_eq!(actual.shape(), expected.shape());
+                    assert_eq!(actual.stride(), expected.stride());
+                    assert_eq!(actual.storage_offset(), expected.storage_offset());
+                    assert_eq!(actual.dtype(), expected.dtype());
+                    assert_eq!(actual.device(), expected.device());
+                    assert!(
+                        actual
+                            .logical_values()
+                            .map(f32::to_bits)
+                            .eq(expected.logical_values().map(f32::to_bits))
+                    );
+                }
+            }
+        };
+
+        let left = Tensor::from_vec(
+            [
+                0x7f81_2345,
+                0xffc5_4321,
+                0x7f80_0000,
+                0xff80_0000,
+                0x0000_0000,
+                0x8000_0000,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [2, 1, 3],
+        )
+        .unwrap();
+        let right = Tensor::from_vec(
+            [0xff85_4321, 0x8000_0001].map(f32::from_bits).to_vec(),
+            [1, 2, 1],
+        )
+        .unwrap();
+        verify(&left, &right);
+
+        let strided = offset_strided_matrix([
+            0x7f81_2345,
+            0xffc5_4321,
+            0x7f80_0000,
+            0xff80_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x3f80_0000,
+        ]);
+        let row = Tensor::from_vec(
+            [0_u32, 0, 0, 0xff85_4321, 0x8000_0001, 0xbf80_0000]
+                .map(f32::from_bits)
+                .to_vec(),
+            [2, 3],
+        )
+        .unwrap()
+        .index_integer(1)
+        .unwrap();
+        assert_eq!(strided.add(&row).unwrap().stride(), [1, 3]);
+        verify(&strided, &row);
+
+        let nan_scalar = Tensor::from_vec([0_u32, 0xff81_2345].map(f32::from_bits).to_vec(), [2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        verify(&nan_scalar, &strided);
+        verify(&strided, &nan_scalar);
+    }
+
+    #[test]
     fn dense_materialization_fast_path_requires_owned_matching_strides() {
         let bits = [
             0x3f80_0000,
@@ -4470,6 +4592,24 @@ mod tests {
         assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0, 2.0]);
         saved_loss.backward().unwrap();
         assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [1.0, 1.0]);
+    }
+
+    #[test]
+    fn broadcast_multiply_snapshots_live_gradient_operands_for_backward() {
+        let source = Tensor::from_vec(vec![4.0, 5.0], [2, 1])
+            .unwrap()
+            .with_requires_grad(true);
+        source.sum().backward().unwrap();
+        let live_gradient = source.live_grad().unwrap().unwrap();
+        let weights = Tensor::from_vec(vec![2.0, 3.0, 4.0], [1, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        let saved_loss = weights.mul(&live_gradient).unwrap().sum();
+
+        source.sum().backward().unwrap();
+        assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0, 2.0]);
+        saved_loss.backward().unwrap();
+        assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [2.0; 3]);
     }
 
     #[test]
