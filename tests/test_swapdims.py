@@ -1,10 +1,35 @@
 import inspect
 import sys
+import types
 import unittest
 import warnings
 
 import numpy as np
 import torch_rs as torch
+
+
+FUNCTION_DOC = (
+    "\nswapdims(input, dim0, dim1) -> Tensor\n\n"
+    "Alias for :func:`torch.transpose`.\n\n"
+    "This function is equivalent to NumPy's swapaxes function.\n\n"
+    "Examples::\n\n"
+    "    >>> x = torch.tensor([[[0,1],[2,3]],[[4,5],[6,7]]])\n"
+    "    >>> x\n"
+    "    tensor([[[0, 1],\n"
+    "            [2, 3]],\n\n"
+    "            [[4, 5],\n"
+    "            [6, 7]]])\n"
+    "    >>> torch.swapdims(x, 0, 1)\n"
+    "    tensor([[[0, 1],\n"
+    "            [4, 5]],\n\n"
+    "            [[2, 3],\n"
+    "            [6, 7]]])\n"
+    "    >>> torch.swapdims(x, 0, 2)\n"
+    "    tensor([[[0, 4],\n"
+    "            [2, 6]],\n\n"
+    "            [[1, 5],\n"
+    "            [3, 7]]])\n"
+)
 
 
 class TensorSwapdimsTests(unittest.TestCase):
@@ -26,6 +51,9 @@ class TensorSwapdimsTests(unittest.TestCase):
             source.swapdims(0, -1),
             source.swapdims(dim0=0, dim1=-1),
             source.swapdims(dim1=-1, dim0=0),
+            torch.swapdims(source, 0, -1),
+            torch.swapdims(source, dim0=0, dim1=-1),
+            torch.swapdims(input=source, dim0=0, dim1=-1),
         ):
             with self.subTest(swapped=swapped):
                 self.assert_tensor(
@@ -37,33 +65,42 @@ class TensorSwapdimsTests(unittest.TestCase):
                 )
                 self.assertIs(swapped.dtype, source.dtype)
                 self.assertEqual(swapped.device, source.device)
+                self.assertEqual(swapped.data_ptr(), source.data_ptr())
                 self.assertIsNot(swapped, source)
 
-        unchanged = source.swapdims(1, -1)
-        self.assert_tensor(
-            unchanged,
-            expected_source,
-            shape=source.shape,
-            stride=source.stride(),
-            offset=source.storage_offset(),
-        )
-        self.assertIsNot(unchanged, source)
+        for unchanged in (
+            source.swapdims(1, -1),
+            torch.swapdims(input=source, dim0=1, dim1=-1),
+        ):
+            self.assert_tensor(
+                unchanged,
+                expected_source,
+                shape=source.shape,
+                stride=source.stride(),
+                offset=source.storage_offset(),
+            )
+            self.assertEqual(unchanged.data_ptr(), source.data_ptr())
+            self.assertIsNot(unchanged, source)
 
     def test_scalar_empty_and_extreme_metadata(self):
         scalar = torch.tensor([2.5, 3.5])[1]
         for dim0, dim1 in ((0, 0), (-1, -1), (0, -1), (-1, 0)):
             with self.subTest(kind="scalar", dim0=dim0, dim1=dim1):
-                swapped = scalar.swapdims(dim0, dim1)
-                self.assert_tensor(
-                    swapped,
-                    3.5,
-                    shape=(),
-                    stride=(),
-                    offset=1,
-                )
+                for swapped in (
+                    scalar.swapdims(dim0, dim1),
+                    torch.swapdims(input=scalar, dim0=dim0, dim1=dim1),
+                ):
+                    self.assert_tensor(
+                        swapped,
+                        3.5,
+                        shape=(),
+                        stride=(),
+                        offset=1,
+                    )
+                    self.assertEqual(swapped.data_ptr(), scalar.data_ptr())
 
         empty = torch.zeros((4, 2, 0, 3)).transpose(0, 3)[2]
-        swapped_empty = empty.swapdims(-3, -1)
+        swapped_empty = torch.swapdims(empty, -3, -1)
         self.assertEqual(swapped_empty.shape, (4, 0, 2))
         self.assertEqual(
             swapped_empty.stride(), (empty.stride()[2], empty.stride()[1], empty.stride()[0])
@@ -76,13 +113,15 @@ class TensorSwapdimsTests(unittest.TestCase):
         for call in (
             lambda: extreme.swapdims(1, 3),
             lambda: extreme.swapdims(dim0=-3, dim1=-1),
+            lambda: torch.swapdims(extreme, 1, 3),
+            lambda: torch.swapdims(input=extreme, dim0=-3, dim1=-1),
         ):
             with self.subTest(kind="overflow"):
                 with self.assertRaisesRegex(
                     RuntimeError, "^numel: integer multiplication overflow$"
                 ):
                     call()
-        self.assertEqual(extreme.swapdims(1, 1).numel(), 0)
+        self.assertEqual(torch.swapdims(extreme, 1, 1).numel(), 0)
 
     def test_dimensions_accept_pytorch_integer_types_and_report_ranges(self):
         class IntSubclass(int):
@@ -98,6 +137,14 @@ class TensorSwapdimsTests(unittest.TestCase):
         )
         self.assertEqual(
             tensor.swapdims(dim0=np.uint32(1), dim1=2).shape, (2, 4, 3)
+        )
+        self.assertEqual(
+            torch.swapdims(tensor, IntSubclass(0), np.int64(-1)).shape,
+            (4, 3, 2),
+        )
+        self.assertEqual(
+            torch.swapdims(input=tensor, dim0=np.uint32(1), dim1=2).shape,
+            (2, 4, 3),
         )
 
         for dimension in (True, False, 1.0, "1", None, IndexOnly()):
@@ -196,6 +243,86 @@ class TensorSwapdimsTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), expected)
 
+        top_level_cases = (
+            (
+                lambda: torch.swapdims(),
+                'swapdims() missing 3 required positional argument: "input", "dim0", "dim1"',
+            ),
+            (
+                lambda: torch.swapdims(tensor),
+                'swapdims() missing 2 required positional argument: "dim0", "dim1"',
+            ),
+            (
+                lambda: torch.swapdims(tensor, 0),
+                'swapdims() missing 1 required positional arguments: "dim1"',
+            ),
+            (
+                lambda: torch.swapdims(tensor, 0, 1, 2),
+                "swapdims() takes 3 positional arguments but 4 were given",
+            ),
+            (
+                lambda: torch.swapdims(dim0=0, dim1=1),
+                'swapdims() missing 3 required positional argument: "input", "dim0", "dim1"',
+            ),
+            (
+                lambda: torch.swapdims(input=tensor, dim1=0),
+                'swapdims() missing 2 required positional argument: "dim0", "dim1"',
+            ),
+            (
+                lambda: torch.swapdims(1),
+                "swapdims(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.swapdims(input=1),
+                "swapdims(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.swapdims(tensor, 1.5),
+                "swapdims(): argument 'dim0' (position 2) must be int, not float",
+            ),
+            (
+                lambda: torch.swapdims(input=tensor, dim0=np.bool_(True)),
+                "swapdims(): argument 'dim0' must be int, not numpy.bool",
+            ),
+            (
+                lambda: torch.swapdims(tensor, 0, 1.5),
+                "swapdims(): argument 'dim1' (position 3) must be int, not float",
+            ),
+            (
+                lambda: torch.swapdims(tensor, 0, 1, input=tensor),
+                "swapdims() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.swapdims(tensor, 0, dim0=1, dim1=0),
+                "swapdims() got multiple values for argument 'dim0'",
+            ),
+            (
+                lambda: torch.swapdims(tensor, 0, 1, unexpected=None),
+                "swapdims() got an unexpected keyword argument 'unexpected'",
+            ),
+            (
+                lambda: torch.swapdims(tensor, 1.5, 0, unexpected=None),
+                "swapdims(): argument 'dim0' (position 2) must be int, not float",
+            ),
+            (
+                lambda: torch.swapdims(tensor, 2**100, 0, unexpected=None),
+                "swapdims() got an unexpected keyword argument 'unexpected'",
+            ),
+            (
+                lambda: torch.swapdims(tensor, 2**100, 1.5),
+                "swapdims(): argument 'dim1' (position 3) must be int, not float",
+            ),
+            (
+                lambda: torch.swapdims(tensor, timedelta, 0),
+                "'numpy.timedelta64' object cannot be interpreted as an integer",
+            ),
+        )
+        for call, expected in top_level_cases:
+            with self.subTest(top_level_expected=expected):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), expected)
+
         with self.assertRaisesRegex(
             ValueError, "^Overflow when unpacking long long$"
         ):
@@ -211,6 +338,21 @@ class TensorSwapdimsTests(unittest.TestCase):
             tensor.swapdims(timedelta, 2**100)
         with self.assertRaisesRegex(OverflowError, "^user overflow$"):
             tensor.swapdims(2**100, UserOverflow(0))
+        with self.assertRaisesRegex(
+            ValueError, "^Overflow when unpacking long long$"
+        ):
+            torch.swapdims(tensor, np.uint64(2**63), 0)
+        with self.assertRaisesRegex(
+            TypeError,
+            "^'numpy.timedelta64' object cannot be interpreted as an integer$",
+        ):
+            torch.swapdims(tensor, 2**100, timedelta)
+        with self.assertRaisesRegex(
+            ValueError, "^Overflow when unpacking long long$"
+        ):
+            torch.swapdims(tensor, timedelta, 2**100)
+        with self.assertRaisesRegex(OverflowError, "^user overflow$"):
+            torch.swapdims(tensor, 2**100, UserOverflow(0))
 
     def test_dimension_values_convert_dim1_before_dim0(self):
         state = {"dim1_converted": False, "calls": []}
@@ -228,8 +370,10 @@ class TensorSwapdimsTests(unittest.TestCase):
                     return 1
                 return 0 if state["dim1_converted"] else 2
 
-        output = torch.zeros((2, 3, 4)).swapdims(
-            StatefulInteger("dim0"), StatefulInteger("dim1")
+        output = torch.swapdims(
+            torch.zeros((2, 3, 4)),
+            StatefulInteger("dim0"),
+            StatefulInteger("dim1"),
         )
         self.assertEqual(state["calls"], ["dim1", "dim0"])
         self.assertEqual(output.shape, (3, 2, 4))
@@ -239,7 +383,7 @@ class TensorSwapdimsTests(unittest.TestCase):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         weights = np.linspace(-2.0, 3.0, num=24, dtype=np.float32).reshape(4, 3, 2)
         leaf = torch.tensor(values.tolist(), requires_grad=True)
-        swapped = leaf.swapdims(0, -1)
+        swapped = torch.swapdims(leaf, 0, -1)
 
         self.assertTrue(swapped.requires_grad)
         self.assertFalse(swapped.is_leaf)
@@ -249,14 +393,14 @@ class TensorSwapdimsTests(unittest.TestCase):
         )
 
         identity_leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
-        identity = identity_leaf.swapdims(1, 1)
+        identity = torch.swapdims(input=identity_leaf, dim0=1, dim1=1)
         (identity * torch.tensor([[2.0, 3.0], [5.0, 7.0]])).sum().backward()
         np.testing.assert_array_equal(
             np.asarray(identity_leaf.grad), [[2.0, 3.0], [5.0, 7.0]]
         )
 
         with torch.no_grad():
-            untracked = leaf.swapdims(0, 1)
+            untracked = torch.swapdims(input=leaf, dim0=0, dim1=1)
         self.assertTrue(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
 
@@ -273,6 +417,16 @@ class TensorSwapdimsTests(unittest.TestCase):
             with self.subTest(callable_object=callable_object):
                 with self.assertRaises(ValueError):
                     inspect.signature(callable_object)
+
+        function = torch.swapdims
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "swapdims")
+        self.assertEqual(function.__module__, torch.tensor.__module__)
+        self.assertIsNone(function.__text_signature__)
+        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertIn("swapdims", torch.__all__)
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
 
 
 if __name__ == "__main__":
