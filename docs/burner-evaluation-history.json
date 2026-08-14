@@ -1393,6 +1393,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 59
       }
+    },
+    {
+      "key": "pr:93",
+      "recordedAt": "2026-08-14T02:41:20.712Z",
+      "label": "PR #93",
+      "kind": "leaf",
+      "prNumber": 93,
+      "title": "Expose Tensor.negative as a neg alias",
+      "scores": {
+        "eval_7af648fb": 99.9,
+        "eval_8417a4a8": 60.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 39,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 59
+      }
     }
   ]
 }
