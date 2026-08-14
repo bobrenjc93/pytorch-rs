@@ -100,6 +100,7 @@ class UnaryNegationReferenceTests(unittest.TestCase):
             for operation, actual_output, expected_output in (
                 ("operator", -actual, -expected),
                 ("method", actual.neg(), expected.neg()),
+                ("negative alias", actual.negative(), expected.negative()),
             ):
                 self.assert_matches(
                     actual_output,
@@ -116,8 +117,8 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         actual_weights = torch.tensor(weights)
         expected_weights = reference_torch.tensor(weights)
 
-        actual_output = actual_leaf.transpose(0, 1).neg()
-        expected_output = expected_leaf.transpose(0, 1).neg()
+        actual_output = actual_leaf.transpose(0, 1).negative()
+        expected_output = expected_leaf.transpose(0, 1).negative()
         self.assert_matches(actual_output, expected_output, case="tracked view")
         (actual_output * actual_weights).sum().backward()
         (expected_output * expected_weights).sum().backward()
@@ -128,8 +129,8 @@ class UnaryNegationReferenceTests(unittest.TestCase):
 
         actual_empty = torch.tensor([[]], requires_grad=True)
         expected_empty = reference_torch.tensor([[]], requires_grad=True)
-        actual_empty_output = actual_empty.neg()
-        expected_empty_output = expected_empty.neg()
+        actual_empty_output = actual_empty.negative()
+        expected_empty_output = expected_empty.negative()
         self.assert_matches(
             actual_empty_output,
             expected_empty_output,
@@ -147,8 +148,8 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         expected_repeated = reference_torch.tensor(
             [2.0, 3.0], requires_grad=True
         )
-        actual_repeated_loss = actual_repeated.neg().sum()
-        expected_repeated_loss = expected_repeated.neg().sum()
+        actual_repeated_loss = actual_repeated.negative().sum()
+        expected_repeated_loss = expected_repeated.negative().sum()
         actual_repeated_loss.backward()
         expected_repeated_loss.backward()
         actual_repeated_loss.backward()
@@ -163,8 +164,8 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         expected_shared = reference_torch.tensor(
             [5.0, 7.0], requires_grad=True
         )
-        actual_shared_negative = actual_shared.neg()
-        expected_shared_negative = expected_shared.neg()
+        actual_shared_negative = actual_shared.negative()
+        expected_shared_negative = expected_shared.negative()
         actual_shared_roots = (
             actual_shared_negative.sum(),
             actual_shared_negative.sum(),
@@ -193,8 +194,8 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         expected_nan_weights = reference_torch.tensor(
             memoryview(nan_bits.view(np.float32))
         )
-        (actual_nan_leaf.neg() * actual_nan_weights).sum().backward()
-        (expected_nan_leaf.neg() * expected_nan_weights).sum().backward()
+        (actual_nan_leaf.negative() * actual_nan_weights).sum().backward()
+        (expected_nan_leaf.negative() * expected_nan_weights).sum().backward()
         self.assert_matches(
             actual_nan_leaf.grad,
             expected_nan_leaf.grad,
@@ -202,16 +203,16 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         )
 
         with torch.no_grad():
-            actual_untracked = actual_leaf.transpose(0, 1).neg()
+            actual_untracked = actual_leaf.transpose(0, 1).negative()
         with reference_torch.no_grad():
-            expected_untracked = expected_leaf.transpose(0, 1).neg()
+            expected_untracked = expected_leaf.transpose(0, 1).negative()
         self.assert_matches(
             actual_untracked,
             expected_untracked,
             case="no_grad view",
         )
-        self.assertTrue(actual_leaf.neg().requires_grad)
-        self.assertTrue(expected_leaf.neg().requires_grad)
+        self.assertTrue(actual_leaf.negative().requires_grad)
+        self.assertTrue(expected_leaf.negative().requires_grad)
 
     def test_denormal_flush_mode_matches_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
@@ -225,8 +226,8 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         reference_torch.set_flush_denormal(False)
         try:
             self.assertTrue(reference_torch.set_flush_denormal(True))
-            actual_output = actual.neg()
-            expected_output = expected.neg()
+            actual_output = actual.negative()
+            expected_output = expected.negative()
         finally:
             reference_torch.set_flush_denormal(False)
 
@@ -253,15 +254,15 @@ class UnaryNegationReferenceTests(unittest.TestCase):
             expected = reference_torch.zeros((0,)).reshape(shape)
             with self.subTest(shape=shape):
                 try:
-                    expected_output = expected.neg()
+                    expected_output = expected.negative()
                 except Exception as expected_error:
                     with self.assertRaises(type(expected_error)) as actual_raised:
-                        actual.neg()
+                        actual.negative()
                     self.assertEqual(
                         str(actual_raised.exception), str(expected_error)
                     )
                 else:
-                    actual_output = actual.neg()
+                    actual_output = actual.negative()
                     self.assert_metadata_matches(
                         actual_output, expected_output, case=shape
                     )
@@ -313,6 +314,81 @@ class UnaryNegationReferenceTests(unittest.TestCase):
                 descriptor()
             with self.assertRaises(TypeError):
                 descriptor(1)
+
+    def test_negative_descriptor_documentation_and_errors_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0])
+        actual_descriptor = inspect.getattr_static(torch.Tensor, "negative")
+        expected_descriptor = inspect.getattr_static(
+            reference_torch.Tensor, "negative"
+        )
+        actual_bound = actual.negative
+        expected_bound = expected.negative
+
+        for actual_callable, expected_callable, expected_type in (
+            (
+                actual_descriptor,
+                expected_descriptor,
+                types.MethodDescriptorType,
+            ),
+            (actual_bound, expected_bound, types.BuiltinMethodType),
+        ):
+            self.assertIs(type(actual_callable), expected_type)
+            self.assertIs(type(expected_callable), expected_type)
+            self.assertEqual(actual_callable.__name__, expected_callable.__name__)
+            self.assertEqual(
+                actual_callable.__qualname__, expected_callable.__qualname__
+            )
+            self.assertEqual(
+                actual_callable.__text_signature__,
+                expected_callable.__text_signature__,
+            )
+            self.assertEqual(actual_callable.__doc__, expected_callable.__doc__)
+            with self.assertRaises(ValueError):
+                inspect.signature(actual_callable)
+            with self.assertRaises(ValueError):
+                inspect.signature(expected_callable)
+
+        self.assertEqual(
+            actual_descriptor.__objclass__.__name__,
+            expected_descriptor.__objclass__.__name__,
+        )
+        self.assertEqual(
+            actual_descriptor.__objclass__.__module__,
+            expected_descriptor.__objclass__.__module__,
+        )
+        self.assert_matches(
+            actual_descriptor(actual),
+            expected_descriptor(expected),
+            case="negative unbound call",
+        )
+
+        for actual_call, expected_call in (
+            (lambda: actual.negative(1), lambda: expected.negative(1)),
+            (lambda: actual.negative(1, 2), lambda: expected.negative(1, 2)),
+            (lambda: actual.negative(dim=0), lambda: expected.negative(dim=0)),
+            (
+                lambda: actual.negative(input=actual),
+                lambda: expected.negative(input=expected),
+            ),
+            (lambda: actual_bound(1), lambda: expected_bound(1)),
+            (
+                lambda: actual_bound(unexpected=True),
+                lambda: expected_bound(unexpected=True),
+            ),
+            (
+                lambda: actual_descriptor(actual, 1),
+                lambda: expected_descriptor(expected, 1),
+            ),
+            (lambda: actual_descriptor(), lambda: expected_descriptor()),
+            (lambda: actual_descriptor(1), lambda: expected_descriptor(1)),
+            (
+                lambda: actual_descriptor(self=actual),
+                lambda: expected_descriptor(self=expected),
+            ),
+        ):
+            self.assert_error_matches(actual_call, expected_call)
 
 
 if __name__ == "__main__":

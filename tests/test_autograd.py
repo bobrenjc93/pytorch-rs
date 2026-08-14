@@ -258,6 +258,84 @@ class AutogradApiTests(unittest.TestCase):
         )
         self.assertTrue(method_values.neg().requires_grad)
 
+    def test_negative_alias_matches_neg_autograd_reuse_and_no_grad(self):
+        def tensor_bits(tensor):
+            return (
+                np.asarray(tensor, dtype=np.float32)
+                .reshape(-1)
+                .view(np.uint32)
+                .tobytes()
+            )
+
+        def snapshot(method_name):
+            values = torch.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+            )
+            weights = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+            output = getattr(values.transpose(0, 1), method_name)()
+            output_snapshot = (
+                output.shape,
+                output.stride(),
+                output.storage_offset(),
+                output.requires_grad,
+                tensor_bits(output),
+            )
+            (output * weights).sum().backward()
+            gradient_snapshot = tensor_bits(values.grad)
+
+            empty = torch.zeros((2, 0, 3), requires_grad=True)
+            empty_output = getattr(empty, method_name)()
+            empty_output.sum().backward()
+            empty_snapshot = (
+                empty_output.shape,
+                empty_output.stride(),
+                empty_output.requires_grad,
+                empty.grad.shape,
+                empty.grad.stride(),
+                tensor_bits(empty.grad),
+            )
+
+            repeated = torch.tensor([2.0, 3.0], requires_grad=True)
+            repeated_loss = getattr(repeated, method_name)().sum()
+            repeated_loss.backward()
+            repeated_loss.backward()
+            repeated_snapshot = tensor_bits(repeated.grad)
+
+            shared = torch.tensor([5.0, 7.0], requires_grad=True)
+            shared_output = getattr(shared, method_name)()
+            shared_output.sum().backward()
+            shared_output.sum().backward()
+            shared_snapshot = tensor_bits(shared.grad)
+
+            nan_bits = np.asarray((0x7FC1_2345, 0xFFC5_4321), dtype=np.uint32)
+            nan_weights = torch.tensor(memoryview(nan_bits.view(np.float32)))
+            nan_values = torch.tensor([1.0, 2.0], requires_grad=True)
+            (getattr(nan_values, method_name)() * nan_weights).sum().backward()
+            nan_gradient_snapshot = tensor_bits(nan_values.grad)
+
+            with torch.no_grad():
+                untracked = getattr(values.transpose(0, 1), method_name)()
+            no_grad_snapshot = (
+                untracked.shape,
+                untracked.stride(),
+                untracked.storage_offset(),
+                untracked.requires_grad,
+                tensor_bits(untracked),
+                getattr(values, method_name)().requires_grad,
+            )
+
+            return (
+                output_snapshot,
+                gradient_snapshot,
+                empty_snapshot,
+                repeated_snapshot,
+                shared_snapshot,
+                nan_gradient_snapshot,
+                no_grad_snapshot,
+            )
+
+        self.assertEqual(snapshot("negative"), snapshot("neg"))
+
     def test_unary_negation_gradient_is_reusable_shared_and_bitwise(self):
         repeated_values = torch.tensor([2.0, 3.0], requires_grad=True)
         repeated_loss = (-repeated_values).sum()
