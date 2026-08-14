@@ -1441,6 +1441,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 59
       }
+    },
+    {
+      "key": "pr:96",
+      "recordedAt": "2026-08-14T03:54:17.257Z",
+      "label": "PR #96",
+      "kind": "leaf",
+      "prNumber": 96,
+      "title": "Fast-path matching dense materialization layouts",
+      "scores": {
+        "eval_7af648fb": 99.9,
+        "eval_8417a4a8": 60.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 39.2,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 60
+      }
     }
   ]
 }
