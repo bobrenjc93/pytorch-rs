@@ -43,6 +43,14 @@ impl DType {
         }
     }
 
+    /// Reports whether values of this scalar type use a quantized representation.
+    #[must_use]
+    pub const fn is_quantized(self) -> bool {
+        match self {
+            Self::Float32 => false,
+        }
+    }
+
     /// Reports whether values of this scalar type are signed.
     #[must_use]
     pub const fn is_signed(self) -> bool {
@@ -1081,6 +1089,12 @@ impl Tensor {
     #[must_use]
     pub fn is_complex(&self) -> bool {
         self.dtype().is_complex()
+    }
+
+    /// Reports whether the tensor's native scalar type uses a quantized representation.
+    #[must_use]
+    pub fn is_quantized(&self) -> bool {
+        self.dtype().is_quantized()
     }
 
     /// Reports whether the tensor's native scalar type is signed.
