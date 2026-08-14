@@ -157,6 +157,17 @@ impl Storage {
         }
     }
 
+    fn data_ptr(&self) -> *const u8 {
+        match &self.data {
+            StorageData::Owned(values) => values.as_ptr().cast(),
+            StorageData::SharedGradient(values) => values
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ptr()
+                .cast(),
+        }
+    }
+
     fn owned_values(&self) -> Option<&[f32]> {
         match &self.data {
             StorageData::Owned(values) => Some(values),
@@ -1040,6 +1051,35 @@ impl Tensor {
     #[must_use]
     pub fn storage_offset(&self) -> usize {
         self.offset
+    }
+
+    /// Returns the address of the tensor's first logical element.
+    ///
+    /// Empty tensors return zero. Views otherwise add their element offset,
+    /// scaled by the storage dtype's byte width, to the stable backing
+    /// allocation address.
+    ///
+    /// # Panics
+    ///
+    /// Panics if validated internal storage metadata does not fit in the
+    /// process address space.
+    #[must_use]
+    pub fn data_ptr(&self) -> usize {
+        if self.elements == 0 {
+            return 0;
+        }
+
+        let byte_offset = self
+            .offset
+            .checked_mul(self.element_size())
+            .expect("validated tensor storage offset must fit in bytes");
+        // Retain the allocation provenance while applying the view offset,
+        // then expose it from the final pointer so integer-to-pointer round
+        // trips through FFI remain valid under Rust's strict provenance model.
+        self.storage
+            .data_ptr()
+            .wrapping_add(byte_offset)
+            .expose_provenance()
     }
 
     /// Reports whether two tensors refer to the same underlying allocation.

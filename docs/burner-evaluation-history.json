@@ -1457,6 +1457,22 @@
         "eval_b4945d15": 97,
         "eval_c8a1bfb9": 60
       }
+    },
+    {
+      "key": "pr:97",
+      "recordedAt": "2026-08-14T04:26:15.466Z",
+      "label": "PR #97",
+      "kind": "leaf",
+      "prNumber": 97,
+      "title": "Expose Tensor.data_ptr",
+      "scores": {
+        "eval_7af648fb": 99.9,
+        "eval_8417a4a8": 60.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 39.3,
+        "eval_b4945d15": 97,
+        "eval_c8a1bfb9": 60
+      }
     }
   ]
 }
