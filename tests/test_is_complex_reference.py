@@ -3,6 +3,7 @@ import sys
 import types
 import unittest
 
+import numpy as np
 import torch_rs as torch
 
 try:
@@ -56,8 +57,22 @@ class TensorIsComplexReferenceTests(unittest.TestCase):
             zip(actual_cases, expected_cases, strict=True)
         ):
             with self.subTest(case=case, shape=actual.shape):
-                self.assertIs(actual.is_complex(), expected.is_complex())
-                self.assertIs(type(actual.is_complex()), bool)
+                actual_values = (
+                    actual.is_complex(),
+                    torch.is_complex(actual),
+                    torch.is_complex(input=actual),
+                    torch.is_complex(a=actual),
+                    torch.is_complex(x=actual),
+                )
+                expected_values = (
+                    expected.is_complex(),
+                    reference_torch.is_complex(expected),
+                    reference_torch.is_complex(input=expected),
+                    reference_torch.is_complex(a=expected),
+                    reference_torch.is_complex(x=expected),
+                )
+                self.assertEqual(actual_values, expected_values)
+                self.assertTrue(all(type(value) is bool for value in actual_values))
 
     def test_callable_metadata_matches_pytorch_2_13(self):
         actual_tensor = torch.tensor([1.0])
@@ -72,6 +87,11 @@ class TensorIsComplexReferenceTests(unittest.TestCase):
         for actual, expected, expected_type in (
             (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
             (actual_bound, expected_bound, types.BuiltinMethodType),
+            (
+                torch.is_complex,
+                reference_torch.is_complex,
+                types.BuiltinFunctionType,
+            ),
         ):
             self.assertIs(type(actual), expected_type)
             self.assertIs(type(expected), expected_type)
@@ -130,6 +150,66 @@ class TensorIsComplexReferenceTests(unittest.TestCase):
                     actual_call()
                 with self.assertRaises(TypeError) as expected_raised:
                     expected_call()
+                self.assertEqual(
+                    str(actual_raised.exception), str(expected_raised.exception)
+                )
+
+        top_level_cases = (
+            (lambda: torch.is_complex(), lambda: reference_torch.is_complex()),
+            (
+                lambda: torch.is_complex(actual, actual),
+                lambda: reference_torch.is_complex(expected, expected),
+            ),
+            (
+                lambda: torch.is_complex(actual, input=actual),
+                lambda: reference_torch.is_complex(expected, input=expected),
+            ),
+            (
+                lambda: torch.is_complex(actual, extra=True, input=actual),
+                lambda: reference_torch.is_complex(
+                    expected, extra=True, input=expected
+                ),
+            ),
+            (
+                lambda: torch.is_complex(actual, input=actual, extra=True),
+                lambda: reference_torch.is_complex(
+                    expected, input=expected, extra=True
+                ),
+            ),
+            (
+                lambda: torch.is_complex(actual, extra=True),
+                lambda: reference_torch.is_complex(expected, extra=True),
+            ),
+            (lambda: torch.is_complex(1), lambda: reference_torch.is_complex(1)),
+            (
+                lambda: torch.is_complex(input=[]),
+                lambda: reference_torch.is_complex(input=[]),
+            ),
+            (
+                lambda: torch.is_complex(a=1),
+                lambda: reference_torch.is_complex(a=1),
+            ),
+            (
+                lambda: torch.is_complex(x=[]),
+                lambda: reference_torch.is_complex(x=[]),
+            ),
+            (
+                lambda: torch.is_complex(np.zeros((2, 3), dtype=np.float32)),
+                lambda: reference_torch.is_complex(
+                    np.zeros((2, 3), dtype=np.float32)
+                ),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(top_level_cases):
+            with self.subTest(top_level_case=case):
+                with self.assertRaises(Exception) as actual_raised:
+                    actual_call()
+                with self.assertRaises(Exception) as expected_raised:
+                    expected_call()
+                self.assertEqual(
+                    type(actual_raised.exception).__name__,
+                    type(expected_raised.exception).__name__,
+                )
                 self.assertEqual(
                     str(actual_raised.exception), str(expected_raised.exception)
                 )
