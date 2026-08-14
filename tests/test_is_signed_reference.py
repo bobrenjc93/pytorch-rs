@@ -3,6 +3,7 @@ import sys
 import types
 import unittest
 
+import numpy as np
 import torch_rs as torch
 
 try:
@@ -56,8 +57,22 @@ class TensorIsSignedReferenceTests(unittest.TestCase):
             zip(actual_cases, expected_cases, strict=True)
         ):
             with self.subTest(case=case, shape=actual.shape):
-                self.assertIs(actual.is_signed(), expected.is_signed())
-                self.assertIs(type(actual.is_signed()), bool)
+                actual_values = (
+                    actual.is_signed(),
+                    torch.is_signed(actual),
+                    torch.is_signed(input=actual),
+                    torch.is_signed(x=actual),
+                    torch.is_signed(a=actual),
+                )
+                expected_values = (
+                    expected.is_signed(),
+                    reference_torch.is_signed(expected),
+                    reference_torch.is_signed(input=expected),
+                    reference_torch.is_signed(x=expected),
+                    reference_torch.is_signed(a=expected),
+                )
+                self.assertEqual(actual_values, expected_values)
+                self.assertTrue(all(type(value) is bool for value in actual_values))
 
     def test_callable_metadata_matches_pytorch_2_13(self):
         actual_tensor = torch.tensor([1.0])
@@ -72,6 +87,11 @@ class TensorIsSignedReferenceTests(unittest.TestCase):
         for actual, expected, expected_type in (
             (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
             (actual_bound, expected_bound, types.BuiltinMethodType),
+            (
+                torch.is_signed,
+                reference_torch.is_signed,
+                types.BuiltinFunctionType,
+            ),
         ):
             self.assertIs(type(actual), expected_type)
             self.assertIs(type(expected), expected_type)
@@ -93,8 +113,12 @@ class TensorIsSignedReferenceTests(unittest.TestCase):
         )
         self.assertIs(actual_descriptor(actual_tensor), True)
         self.assertIs(expected_descriptor(expected_tensor), True)
+        self.assertEqual(
+            "is_signed" in torch.__all__,
+            "is_signed" in reference_torch.__all__,
+        )
 
-    def test_argument_and_receiver_errors_match_pytorch_2_13(self):
+    def test_method_and_top_level_errors_match_pytorch_2_13(self):
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor([1.0])
         actual_descriptor = inspect.getattr_static(torch.Tensor, "is_signed")
@@ -136,6 +160,74 @@ class TensorIsSignedReferenceTests(unittest.TestCase):
                     actual_call()
                 with self.assertRaises(TypeError) as expected_raised:
                     expected_call()
+                self.assertEqual(
+                    str(actual_raised.exception), str(expected_raised.exception)
+                )
+
+        top_level_cases = (
+            (lambda: torch.is_signed(), lambda: reference_torch.is_signed()),
+            (
+                lambda: torch.is_signed(actual, actual),
+                lambda: reference_torch.is_signed(expected, expected),
+            ),
+            (
+                lambda: torch.is_signed(actual, input=actual),
+                lambda: reference_torch.is_signed(expected, input=expected),
+            ),
+            (
+                lambda: torch.is_signed(actual, extra=True, input=actual),
+                lambda: reference_torch.is_signed(
+                    expected, extra=True, input=expected
+                ),
+            ),
+            (
+                lambda: torch.is_signed(actual, input=actual, extra=True),
+                lambda: reference_torch.is_signed(
+                    expected, input=expected, extra=True
+                ),
+            ),
+            (
+                lambda: torch.is_signed(actual, extra=True),
+                lambda: reference_torch.is_signed(expected, extra=True),
+            ),
+            (
+                lambda: torch.is_signed(input=actual, a=actual),
+                lambda: reference_torch.is_signed(input=expected, a=expected),
+            ),
+            (
+                lambda: torch.is_signed(foo=actual),
+                lambda: reference_torch.is_signed(foo=expected),
+            ),
+            (lambda: torch.is_signed(1), lambda: reference_torch.is_signed(1)),
+            (
+                lambda: torch.is_signed(input=[]),
+                lambda: reference_torch.is_signed(input=[]),
+            ),
+            (
+                lambda: torch.is_signed(a=1),
+                lambda: reference_torch.is_signed(a=1),
+            ),
+            (
+                lambda: torch.is_signed(x=[]),
+                lambda: reference_torch.is_signed(x=[]),
+            ),
+            (
+                lambda: torch.is_signed(np.zeros((2, 3), dtype=np.float32)),
+                lambda: reference_torch.is_signed(
+                    np.zeros((2, 3), dtype=np.float32)
+                ),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(top_level_cases):
+            with self.subTest(top_level_case=case):
+                with self.assertRaises(Exception) as actual_raised:
+                    actual_call()
+                with self.assertRaises(Exception) as expected_raised:
+                    expected_call()
+                self.assertEqual(
+                    type(actual_raised.exception).__name__,
+                    type(expected_raised.exception).__name__,
+                )
                 self.assertEqual(
                     str(actual_raised.exception), str(expected_raised.exception)
                 )

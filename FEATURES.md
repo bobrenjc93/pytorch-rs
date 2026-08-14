@@ -7,7 +7,7 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 | Area | Weight | Baseline |
 | --- | ---: | --- |
 | tensor storage, shapes, strides, views, indexing | 15% | CPU `f32` with strided transpose, `Tensor.swapdims`/`Tensor.swapaxes`, and top-level `torch.swapdims`, plus squeeze, view-or-copy flatten/reshape, indexing views, and native row-major/channel-last contiguous materialization |
-| dtypes, promotion, devices, dispatch | 10% | CPU `f32` only |
+| dtypes, promotion, devices, dispatch | 10% | CPU `f32` only, with dtype-backed `torch.is_signed` introspection |
 | creation, elementwise, reductions | 15% | basic arithmetic, reductions, and exact tensor equality |
 | linear algebra and signal operations | 10% | rank-2 matmul only |
 | autograd and higher-order differentiation | 15% | unsupported |

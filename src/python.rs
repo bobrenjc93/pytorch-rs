@@ -1856,6 +1856,16 @@ fn is_floating_point(
     Ok(tensor.try_borrow()?.inner.is_floating_point())
 }
 
+#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
+fn is_signed(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
+    let input = bind_legacy_single_tensor_argument("is_signed", args, kwargs)?;
+    let tensor = input
+        .value
+        .cast::<PyTensor>()
+        .expect("the is_signed input type was checked while binding");
+    Ok(tensor.try_borrow()?.inner.is_signed())
+}
+
 #[pyfunction(
     signature = (*args, **kwargs),
     text_signature = "(size=None, *, shape=None, dtype=None, device=None, requires_grad=False)"
@@ -5676,6 +5686,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(is_nonzero, module)?)?;
     module.add_function(wrap_pyfunction!(is_complex, module)?)?;
     module.add_function(wrap_pyfunction!(is_floating_point, module)?)?;
+    module.add_function(wrap_pyfunction!(is_signed, module)?)?;
     module.add_function(wrap_pyfunction!(zeros, module)?)?;
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
