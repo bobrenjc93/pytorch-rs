@@ -2193,6 +2193,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 62
       }
+    },
+    {
+      "key": "pr:148",
+      "recordedAt": "2026-08-15T20:49:11.817Z",
+      "label": "PR #148",
+      "kind": "leaf",
+      "prNumber": 148,
+      "title": "Add one hermetic exact-HEAD Python test command",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 43.9,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 63
+      }
     }
   ]
 }
