@@ -998,10 +998,10 @@ impl Tensor {
 
     /// Swaps the final two dimensions without copying storage.
     ///
-    /// Scalars are identity aliases, matching the temporary compatibility
-    /// behavior of `PyTorch`'s `mT` property. Vectors are rejected; tensors of
-    /// rank two or greater use the same checked transpose path as
-    /// `transpose(-2, -1)`.
+    /// This is the shared primitive for `PyTorch`'s `mT` property and, for the
+    /// currently supported real-valued `float32` dtype, its `mH` property.
+    /// Scalars are identity aliases, vectors are rejected, and tensors of rank
+    /// two or greater use the same checked path as `transpose(-2, -1)`.
     ///
     /// # Errors
     ///
