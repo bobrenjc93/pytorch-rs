@@ -240,6 +240,15 @@ impl PyMemoryFormat {
     fn __str__(&self) -> String {
         self.__repr__()
     }
+
+    fn __reduce__(&self) -> &'static str {
+        match self.inner {
+            MemoryFormat::Preserve => "torch.preserve_format",
+            MemoryFormat::Contiguous => "torch.contiguous_format",
+            MemoryFormat::ChannelsLast => "torch.channels_last",
+            MemoryFormat::ChannelsLast3d => "torch.channels_last_3d",
+        }
+    }
 }
 
 /// Python device descriptor backed by a native [`Device`].
