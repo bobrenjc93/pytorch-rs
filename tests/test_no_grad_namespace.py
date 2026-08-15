@@ -13,6 +13,34 @@ except ImportError:
     reference_torch = None
 
 
+class StatefulNoGrad(torch.no_grad):
+    init_calls = 0
+
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls)
+
+    def __init__(self, required):
+        type(self).init_calls += 1
+        super().__init__()
+        self.required = required
+
+
+if reference_torch is not None:
+    class ReferenceStatefulNoGrad(reference_torch.no_grad):
+        init_calls = 0
+
+        def __new__(cls, *args, **kwargs):
+            return super().__new__(cls)
+
+        def __init__(self, required):
+            type(self).init_calls += 1
+            super().__init__()
+            self.required = required
+
+else:
+    ReferenceStatefulNoGrad = None
+
+
 class NoGradNamespaceTests(unittest.TestCase):
     def test_canonical_imports_are_identical_and_minimal(self):
         autograd = importlib.import_module("torch_rs.autograd")
@@ -72,6 +100,58 @@ class NoGradNamespaceTests(unittest.TestCase):
                 with restored:
                     self.assertFalse(torch.is_grad_enabled())
                 self.assertTrue(torch.is_grad_enabled())
+
+    def test_copy_and_pickle_preserve_instance_and_subclass_state(self):
+        instance = torch.no_grad()
+        instance.payload = {"values": [1, 2]}
+
+        shallow = copy.copy(instance)
+        self.assertEqual(shallow.payload, instance.payload)
+        self.assertIs(shallow.payload, instance.payload)
+
+        deep = copy.deepcopy(instance)
+        self.assertEqual(deep.payload, instance.payload)
+        self.assertIsNot(deep.payload, instance.payload)
+
+        StatefulNoGrad.init_calls = 0
+        required = {"required": [3, 4]}
+        subclass_instance = StatefulNoGrad(required)
+        subclass_instance.mutated = {"mutated": [5, 6]}
+
+        shallow_subclass = copy.copy(subclass_instance)
+        self.assertIs(type(shallow_subclass), StatefulNoGrad)
+        self.assertIs(shallow_subclass.required, required)
+        self.assertIs(shallow_subclass.mutated, subclass_instance.mutated)
+
+        deep_subclass = copy.deepcopy(subclass_instance)
+        self.assertIs(type(deep_subclass), StatefulNoGrad)
+        self.assertEqual(deep_subclass.required, required)
+        self.assertEqual(deep_subclass.mutated, subclass_instance.mutated)
+        self.assertIsNot(deep_subclass.required, required)
+        self.assertIsNot(deep_subclass.mutated, subclass_instance.mutated)
+
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                restored_instance = pickle.loads(
+                    pickle.dumps(instance, protocol=protocol)
+                )
+                self.assertIs(type(restored_instance), torch.no_grad)
+                self.assertEqual(restored_instance.payload, instance.payload)
+                self.assertIsNot(restored_instance.payload, instance.payload)
+
+                restored = pickle.loads(
+                    pickle.dumps(subclass_instance, protocol=protocol)
+                )
+                self.assertIs(type(restored), StatefulNoGrad)
+                self.assertEqual(restored.required, required)
+                self.assertEqual(restored.mutated, subclass_instance.mutated)
+                self.assertIsNot(restored.required, required)
+                self.assertIsNot(restored.mutated, subclass_instance.mutated)
+                with restored:
+                    self.assertFalse(torch.is_grad_enabled())
+                self.assertTrue(torch.is_grad_enabled())
+
+        self.assertEqual(StatefulNoGrad.init_calls, 1)
 
     def test_aliases_preserve_context_decorator_generator_and_thread_behavior(self):
         autograd_no_grad = torch.autograd.no_grad
@@ -164,8 +244,74 @@ class NoGradNamespaceReferenceTests(unittest.TestCase):
             ),
         }
 
+    def state_contract(self, module, subclass_type):
+        instance = module.no_grad()
+        instance.payload = {"values": [1, 2]}
+        shallow = copy.copy(instance)
+        deep = copy.deepcopy(instance)
+
+        subclass_type.init_calls = 0
+        required = {"required": [3, 4]}
+        subclass_instance = subclass_type(required)
+        subclass_instance.mutated = {"mutated": [5, 6]}
+        shallow_subclass = copy.copy(subclass_instance)
+        deep_subclass = copy.deepcopy(subclass_instance)
+        base_pickle_results = []
+        pickle_results = []
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            restored_instance = pickle.loads(
+                pickle.dumps(instance, protocol=protocol)
+            )
+            base_pickle_results.append(
+                (
+                    type(restored_instance) is module.no_grad,
+                    restored_instance.payload == instance.payload,
+                    restored_instance.payload is instance.payload,
+                )
+            )
+            restored = pickle.loads(
+                pickle.dumps(subclass_instance, protocol=protocol)
+            )
+            pickle_results.append(
+                (
+                    type(restored) is subclass_type,
+                    restored.required == required,
+                    restored.mutated == subclass_instance.mutated,
+                    restored.required is required,
+                    restored.mutated is subclass_instance.mutated,
+                )
+            )
+
+        return {
+            "base_copy": (
+                shallow.payload == instance.payload,
+                shallow.payload is instance.payload,
+                deep.payload == instance.payload,
+                deep.payload is instance.payload,
+            ),
+            "base_pickle": tuple(base_pickle_results),
+            "subclass_copy": (
+                type(shallow_subclass) is subclass_type,
+                shallow_subclass.required is required,
+                shallow_subclass.mutated is subclass_instance.mutated,
+                type(deep_subclass) is subclass_type,
+                deep_subclass.required == required,
+                deep_subclass.mutated == subclass_instance.mutated,
+                deep_subclass.required is required,
+                deep_subclass.mutated is subclass_instance.mutated,
+            ),
+            "pickle": tuple(pickle_results),
+            "init_calls": subclass_type.init_calls,
+        }
+
     def test_namespace_metadata_copy_and_pickle_match_pytorch_2_13(self):
         self.assertEqual(self.contract(torch), self.contract(reference_torch))
+
+    def test_instance_and_subclass_state_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.state_contract(torch, StatefulNoGrad),
+            self.state_contract(reference_torch, ReferenceStatefulNoGrad),
+        )
 
 
 if __name__ == "__main__":

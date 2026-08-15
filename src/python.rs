@@ -95,7 +95,9 @@ def _make_no_grad(context_base):
             return _decorate_no_grad(type(self), function)
 
         def __reduce__(self):
-            return type(self), ()
+            from torch_rs.autograd.grad_mode import _reduce_no_grad
+
+            return _reduce_no_grad(self)
 
         def __reduce_ex__(self, protocol):
             return self.__reduce__()
