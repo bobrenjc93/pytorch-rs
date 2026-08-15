@@ -2049,6 +2049,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 61
       }
+    },
+    {
+      "key": "pr:136",
+      "recordedAt": "2026-08-15T10:46:43.921Z",
+      "label": "PR #136",
+      "kind": "leaf",
+      "prNumber": 136,
+      "title": "Expose Tensor.is_conj metadata only",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 42.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 61
+      }
     }
   ]
 }

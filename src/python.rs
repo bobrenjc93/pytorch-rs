@@ -580,6 +580,17 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nis_conj() -> bool\n\nReturns True if the conjugate bit of :attr:`self` is set to true.\n"]
+    #[pyo3(text_signature = None)]
+    fn is_conj(_slf: &Bound<'_, Self>) -> bool {
+        // Complex storage and conjugate views are unsupported. Every current
+        // Tensor therefore has a clear conjugate bit, which can be reported
+        // without borrowing storage or touching its autograd graph.
+        false
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nis_signed() -> bool\n\nReturns True if the data type of :attr:`self` is a signed data type.\n"]
     #[pyo3(text_signature = None)]
     fn is_signed(slf: &Bound<'_, Self>) -> PyResult<bool> {
