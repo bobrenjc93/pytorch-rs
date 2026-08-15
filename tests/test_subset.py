@@ -160,9 +160,13 @@ class SubsetTests(unittest.TestCase):
         self.assertTrue(issubclass(Subset, Dataset))
         self.assertIsInstance(Subset([1], [0]), Dataset)
         self.assertEqual(Subset.__module__, "torch_rs.utils.data.dataset")
-        self.assertEqual(data_module.__all__, ["Dataset", "Subset", "TensorDataset"])
         self.assertEqual(
-            dataset_module.__all__, ["Dataset", "TensorDataset", "Subset"]
+            data_module.__all__,
+            ["ConcatDataset", "Dataset", "Subset", "TensorDataset"],
+        )
+        self.assertEqual(
+            dataset_module.__all__,
+            ["Dataset", "TensorDataset", "ConcatDataset", "Subset"],
         )
 
         wildcard_namespace = {}

@@ -1,10 +1,13 @@
+import bisect
 from collections.abc import Sequence
-from typing import Generic, TypeVar
+from typing import Generic, Iterable, TypeVar
+
+from typing_extensions import deprecated
 
 from torch_rs import Tensor
 
 
-__all__ = ["Dataset", "TensorDataset", "Subset"]
+__all__ = ["Dataset", "TensorDataset", "ConcatDataset", "Subset"]
 
 _T_co = TypeVar("_T_co", covariant=True)
 
@@ -30,6 +33,9 @@ class Dataset(Generic[_T_co]):
 
     def __getitem__(self, index) -> _T_co:
         raise NotImplementedError("Subclasses of Dataset should implement __getitem__.")
+
+    def __add__(self, other: "Dataset[_T_co]") -> "ConcatDataset[_T_co]":
+        return ConcatDataset([self, other])
 
 
 def _leading_size(tensor):
@@ -64,6 +70,60 @@ class TensorDataset(Dataset[tuple[Tensor, ...]]):
 
     def __len__(self) -> int:
         return _leading_size(self.tensors[0])
+
+
+class ConcatDataset(Dataset[_T_co]):
+    r"""Dataset as a concatenation of multiple datasets.
+
+    This class is useful to assemble different existing datasets.
+
+    Args:
+        datasets (sequence): List of datasets to be concatenated
+    """
+
+    datasets: list[Dataset[_T_co]]
+    cumulative_sizes: list[int]
+
+    @staticmethod
+    def cumsum(sequence):
+        r, s = [], 0
+        for e in sequence:
+            l = len(e)
+            r.append(l + s)
+            s += l
+        return r
+
+    def __init__(self, datasets: Iterable[Dataset]) -> None:
+        super().__init__()
+        self.datasets = list(datasets)
+        if len(self.datasets) == 0:
+            raise AssertionError("datasets should not be an empty iterable")
+        self.cumulative_sizes = self.cumsum(self.datasets)
+
+    def __len__(self) -> int:
+        return self.cumulative_sizes[-1]
+
+    def __getitem__(self, idx):
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError(
+                    "absolute value of index should not exceed dataset length"
+                )
+            idx = len(self) + idx
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        if dataset_idx == 0:
+            sample_idx = idx
+        else:
+            sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+        return self.datasets[dataset_idx][sample_idx]
+
+    @property
+    @deprecated(
+        "`cummulative_sizes` attribute is renamed to `cumulative_sizes`",
+        category=FutureWarning,
+    )
+    def cummulative_sizes(self):
+        return self.cumulative_sizes
 
 
 class Subset(Dataset[_T_co]):
