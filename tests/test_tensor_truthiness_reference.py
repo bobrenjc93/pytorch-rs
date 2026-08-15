@@ -1,5 +1,6 @@
 import inspect
 import operator
+import sys
 import types
 import unittest
 
@@ -108,19 +109,27 @@ class TensorTruthinessReferenceTests(unittest.TestCase):
         for descriptor in (actual_descriptor, expected_descriptor):
             self.assertIs(type(descriptor), types.MethodDescriptorType)
             self.assertEqual(descriptor.__name__, "is_nonzero")
-            self.assertIsNone(descriptor.__text_signature__)
             self.assertIsNone(descriptor.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(descriptor)
+            if sys.version_info >= (3, 13):
+                self.assertEqual(descriptor.__text_signature__, "($self, /)")
+                self.assertEqual(str(inspect.signature(descriptor)), "(self, /)")
+            else:
+                self.assertIsNone(descriptor.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(descriptor)
         actual_bound = actual.is_nonzero
         expected_bound = expected.is_nonzero
         for bound in (actual_bound, expected_bound):
             self.assertIs(type(bound), types.BuiltinMethodType)
             self.assertEqual(bound.__name__, "is_nonzero")
-            self.assertIsNone(bound.__text_signature__)
             self.assertIsNone(bound.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(bound)
+            if sys.version_info >= (3, 13):
+                self.assertEqual(bound.__text_signature__, "($self, /)")
+                self.assertEqual(str(inspect.signature(bound)), "()")
+            else:
+                self.assertIsNone(bound.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(bound)
 
         self.assertEqual(actual_descriptor(actual), expected_descriptor(expected))
         for actual_call, expected_call in (

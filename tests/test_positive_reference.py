@@ -1,6 +1,7 @@
 import inspect
 import pickle
 import re
+import sys
 import types
 import unittest
 
@@ -314,17 +315,24 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             with self.assertRaises(AttributeError):
                 inspect.getattr_static(descriptor.__objclass__, "__pos__")
 
-        for actual, expected, expected_type in (
-            (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
+        for actual, expected, expected_type, python_313_signature in (
+            (
+                actual_descriptor,
+                expected_descriptor,
+                types.MethodDescriptorType,
+                "(self, /)",
+            ),
             (
                 actual_tensor.positive,
                 expected_tensor.positive,
                 types.BuiltinMethodType,
+                "()",
             ),
             (
                 actual_tensor.__pos__,
                 expected_tensor.__pos__,
                 types.BuiltinMethodType,
+                "()",
             ),
         ):
             self.assertIs(type(actual), expected_type)
@@ -333,10 +341,17 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             self.assertEqual(actual.__qualname__, expected.__qualname__)
             self.assertEqual(actual.__doc__, expected.__doc__)
             self.assertEqual(actual.__text_signature__, expected.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(actual)
-            with self.assertRaises(ValueError):
-                inspect.signature(expected)
+            for callable_object in (actual, expected):
+                if sys.version_info >= (3, 13):
+                    self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                    self.assertEqual(
+                        str(inspect.signature(callable_object)),
+                        python_313_signature,
+                    )
+                else:
+                    self.assertIsNone(callable_object.__text_signature__)
+                    with self.assertRaises(ValueError):
+                        inspect.signature(callable_object)
 
         self.assertEqual(repr(actual_descriptor), repr(expected_descriptor))
         self.assertEqual(

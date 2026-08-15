@@ -1,6 +1,7 @@
 import gc
 import inspect
 import statistics
+import sys
 import threading
 import time
 import types
@@ -58,14 +59,18 @@ class AutogradApiTests(unittest.TestCase):
         self.assertIs(type(function), types.BuiltinFunctionType)
         self.assertEqual(function.__name__, "is_grad_enabled")
         self.assertEqual(function.__module__, torch.tensor.__module__)
-        self.assertIsNone(function.__text_signature__)
         self.assertEqual(
             function.__doc__,
             "\nis_grad_enabled() -> (bool)\n\n"
             "Returns True if grad mode is currently enabled.\n",
         )
-        with self.assertRaises(ValueError):
-            inspect.signature(function)
+        if sys.version_info >= (3, 13):
+            self.assertEqual(function.__text_signature__, "($self, /)")
+            self.assertEqual(str(inspect.signature(function)), "()")
+        else:
+            self.assertIsNone(function.__text_signature__)
+            with self.assertRaises(ValueError):
+                inspect.signature(function)
         self.assertIn("is_grad_enabled", torch.__all__)
 
         cases = (
@@ -1052,8 +1057,10 @@ class AutogradReferenceTests(unittest.TestCase):
                 else:
                     self.fail(f"{module.__name__}.is_grad_enabled accepted arguments")
 
-            with self.assertRaises(ValueError):
-                inspect.signature(function)
+            try:
+                signature_outcome = ("signature", inspect.signature(function))
+            except Exception as error:
+                signature_outcome = ("error", type(error))
             outcomes.append(
                 (
                     states,
@@ -1062,6 +1069,7 @@ class AutogradReferenceTests(unittest.TestCase):
                     type(function),
                     function.__name__,
                     function.__text_signature__,
+                    signature_outcome,
                     function.__doc__,
                     "is_grad_enabled" in module.__all__,
                 )

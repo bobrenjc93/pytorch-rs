@@ -280,17 +280,25 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         for descriptor in (actual_descriptor, expected_descriptor):
             self.assertIs(type(descriptor), types.MethodDescriptorType)
             self.assertEqual(descriptor.__name__, "neg")
-            self.assertIsNone(descriptor.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(descriptor)
+            if sys.version_info >= (3, 13):
+                self.assertEqual(descriptor.__text_signature__, "($self, /)")
+                self.assertEqual(str(inspect.signature(descriptor)), "(self, /)")
+            else:
+                self.assertIsNone(descriptor.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(descriptor)
         self.assertEqual(actual_descriptor.__doc__, expected_descriptor.__doc__)
 
         for bound in (actual.neg, expected.neg):
             self.assertIs(type(bound), types.BuiltinMethodType)
             self.assertEqual(bound.__name__, "neg")
-            self.assertIsNone(bound.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(bound)
+            if sys.version_info >= (3, 13):
+                self.assertEqual(bound.__text_signature__, "($self, /)")
+                self.assertEqual(str(inspect.signature(bound)), "()")
+            else:
+                self.assertIsNone(bound.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(bound)
 
         self.assert_matches(
             actual_descriptor(actual),
@@ -326,13 +334,14 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         actual_bound = actual.negative
         expected_bound = expected.negative
 
-        for actual_callable, expected_callable, expected_type in (
+        for actual_callable, expected_callable, expected_type, python_313_signature in (
             (
                 actual_descriptor,
                 expected_descriptor,
                 types.MethodDescriptorType,
+                "(self, /)",
             ),
-            (actual_bound, expected_bound, types.BuiltinMethodType),
+            (actual_bound, expected_bound, types.BuiltinMethodType, "()"),
         ):
             self.assertIs(type(actual_callable), expected_type)
             self.assertIs(type(expected_callable), expected_type)
@@ -345,10 +354,17 @@ class UnaryNegationReferenceTests(unittest.TestCase):
                 expected_callable.__text_signature__,
             )
             self.assertEqual(actual_callable.__doc__, expected_callable.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(actual_callable)
-            with self.assertRaises(ValueError):
-                inspect.signature(expected_callable)
+            for callable_object in (actual_callable, expected_callable):
+                if sys.version_info >= (3, 13):
+                    self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                    self.assertEqual(
+                        str(inspect.signature(callable_object)),
+                        python_313_signature,
+                    )
+                else:
+                    self.assertIsNone(callable_object.__text_signature__)
+                    with self.assertRaises(ValueError):
+                        inspect.signature(callable_object)
 
         self.assertEqual(
             actual_descriptor.__objclass__.__name__,

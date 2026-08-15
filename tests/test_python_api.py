@@ -126,14 +126,23 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertIs(type(bound), types.BuiltinMethodType)
         self.assertEqual(descriptor.__name__, "neg")
         self.assertEqual(bound.__name__, "neg")
-        self.assertIsNone(descriptor.__text_signature__)
-        self.assertIsNone(bound.__text_signature__)
         self.assertEqual(
             descriptor.__doc__, "\nneg() -> Tensor\n\nSee :func:`torch.neg`\n"
         )
-        for callable_object in (descriptor, bound):
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        for callable_object, python_313_signature in (
+            (descriptor, "(self, /)"),
+            (bound, "()"),
+        ):
+            if sys.version_info >= (3, 13):
+                self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                self.assertEqual(
+                    str(inspect.signature(callable_object)),
+                    python_313_signature,
+                )
+            else:
+                self.assertIsNone(callable_object.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(callable_object)
 
         self.assertEqual(descriptor(scalar).item(), -2.5)
         calls = (

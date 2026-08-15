@@ -97,13 +97,19 @@ class TensorIsFloatingPointReferenceTests(unittest.TestCase):
         actual_bound = actual_tensor.is_floating_point
         expected_bound = expected_tensor.is_floating_point
 
-        for actual, expected, expected_type in (
-            (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
-            (actual_bound, expected_bound, types.BuiltinMethodType),
+        for actual, expected, expected_type, python_313_signature in (
+            (
+                actual_descriptor,
+                expected_descriptor,
+                types.MethodDescriptorType,
+                "(self, /)",
+            ),
+            (actual_bound, expected_bound, types.BuiltinMethodType, "()"),
             (
                 torch.is_floating_point,
                 reference_torch.is_floating_point,
                 types.BuiltinFunctionType,
+                None,
             ),
         ):
             self.assertIs(type(actual), expected_type)
@@ -111,10 +117,17 @@ class TensorIsFloatingPointReferenceTests(unittest.TestCase):
             self.assertEqual(actual.__name__, expected.__name__)
             self.assertEqual(actual.__text_signature__, expected.__text_signature__)
             self.assertEqual(actual.__doc__, expected.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(actual)
-            with self.assertRaises(ValueError):
-                inspect.signature(expected)
+            for callable_object in (actual, expected):
+                if sys.version_info >= (3, 13) and python_313_signature is not None:
+                    self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                    self.assertEqual(
+                        str(inspect.signature(callable_object)),
+                        python_313_signature,
+                    )
+                else:
+                    self.assertIsNone(callable_object.__text_signature__)
+                    with self.assertRaises(ValueError):
+                        inspect.signature(callable_object)
 
         self.assertIs(actual_descriptor(actual_tensor), True)
         self.assertIs(expected_descriptor(expected_tensor), True)

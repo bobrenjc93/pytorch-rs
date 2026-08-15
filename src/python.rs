@@ -637,6 +637,15 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nneg() -> Tensor\n\nSee :func:`torch.neg`\n"]
+    #[pyo3(text_signature = None)]
+    fn neg(slf: &Bound<'_, Self>) -> PyResult<PyTensor> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        tensor.negated()
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nmultiply(value) -> Tensor\n\nSee :func:`torch.multiply`.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn multiply(
@@ -1735,27 +1744,6 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nneg() -> Tensor\n\nSee :func:`torch.neg`\n"]
-    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn neg(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        // PyTorch exposes Tensor.neg from its internal TensorBase descriptor,
-        // which remains observable in the no-argument binding errors.
-        if kwargs.is_some_and(|values| !values.is_empty()) {
-            return Err(PyTypeError::new_err(
-                "TensorBase.neg() takes no keyword arguments",
-            ));
-        }
-        if !args.is_empty() {
-            return Err(PyTypeError::new_err(format!(
-                "TensorBase.neg() takes no arguments ({} given)",
-                args.len()
-            )));
-        }
-        self.negated()
-    }
-
     fn sum(&self) -> Self {
         Self::new(self.inner.sum())
     }
@@ -2040,6 +2028,26 @@ fn is_grad_enabled(
     Ok(core_is_grad_enabled())
 }
 
+// CPython 3.13+ exposes PyTorch's module-bound no-argument functions with a
+// synthetic `$self` text signature. Bind this wrapper to the extension module
+// so `inspect.signature` removes that synthetic argument just as it does for
+// PyTorch, while the shared implementation preserves exact argument errors.
+#[allow(clippy::doc_markdown)]
+#[doc = "\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n"]
+#[pyfunction(
+    name = "is_grad_enabled",
+    pass_module,
+    signature = (*args, **kwargs),
+    text_signature = "($self, /)"
+)]
+fn is_grad_enabled_py313(
+    _module: &Bound<'_, PyModule>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    is_grad_enabled(args, kwargs)
+}
+
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
 #[allow(clippy::doc_markdown)]
 #[cfg_attr(
@@ -2065,6 +2073,28 @@ fn get_default_dtype(
         )));
     }
     Ok(float32_object(py)?.clone_ref(py))
+}
+
+// See `is_grad_enabled_py313`: this runtime-selected wrapper matches the
+// module binding and signature metadata PyTorch exposes on CPython 3.13+.
+#[allow(clippy::doc_markdown)]
+#[cfg_attr(
+    not(doc),
+    doc = "\nget_default_dtype() -> torch.dtype\n\nGet the current default floating point :class:`torch.dtype`.\n\nExample::\n\n    >>> torch.get_default_dtype()  # initial default for floating point is torch.float32\n    torch.float32\n    >>> torch.set_default_dtype(torch.float64)\n    >>> torch.get_default_dtype()  # default is now changed to torch.float64\n    torch.float64\n\n"
+)]
+#[cfg_attr(doc, doc = "Get the current default floating-point dtype.")]
+#[pyfunction(
+    name = "get_default_dtype",
+    pass_module,
+    signature = (*args, **kwargs),
+    text_signature = "($self, /)"
+)]
+fn get_default_dtype_py313(
+    module: &Bound<'_, PyModule>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyDType>> {
+    get_default_dtype(module.py(), args, kwargs)
 }
 
 #[pyfunction(
@@ -7230,8 +7260,13 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
         is_tensor_helpers.setattr("torch", module)?;
     }
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
-    module.add_function(wrap_pyfunction!(is_grad_enabled, module)?)?;
-    module.add_function(wrap_pyfunction!(get_default_dtype, module)?)?;
+    if py.version_info() >= (3, 13) {
+        module.add_function(wrap_pyfunction!(is_grad_enabled_py313, module)?)?;
+        module.add_function(wrap_pyfunction!(get_default_dtype_py313, module)?)?;
+    } else {
+        module.add_function(wrap_pyfunction!(is_grad_enabled, module)?)?;
+        module.add_function(wrap_pyfunction!(get_default_dtype, module)?)?;
+    }
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     add_torch_function_stack_api(module)?;
     add_variable_functions(module)?;

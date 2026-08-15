@@ -1,5 +1,6 @@
 import contextlib
 import inspect
+import sys
 import threading
 import types
 import unittest
@@ -92,9 +93,13 @@ class GetDefaultDTypeTests(unittest.TestCase):
         self.assertEqual(function.__qualname__, "get_default_dtype")
         self.assertEqual(function.__module__, torch.tensor.__module__)
         self.assertEqual(function.__doc__, FUNCTION_DOC)
-        self.assertIsNone(function.__text_signature__)
-        with self.assertRaises(ValueError):
-            inspect.signature(function)
+        if sys.version_info >= (3, 13):
+            self.assertEqual(function.__text_signature__, "($self, /)")
+            self.assertEqual(str(inspect.signature(function)), "()")
+        else:
+            self.assertIsNone(function.__text_signature__)
+            with self.assertRaises(ValueError):
+                inspect.signature(function)
         self.assertIn("get_default_dtype", torch.__all__)
 
     def test_rejects_all_arguments_with_pytorch_2_13_errors(self):

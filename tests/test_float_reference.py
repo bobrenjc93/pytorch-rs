@@ -223,12 +223,16 @@ print(json.dumps(outputs))
             self.assertIs(type(descriptor), types.MethodDescriptorType)
             self.assertEqual(descriptor.__name__, "__float__")
             self.assertEqual(descriptor.__qualname__, "TensorBase.__float__")
-            self.assertIsNone(descriptor.__text_signature__)
             self.assertIsNone(descriptor.__doc__)
             self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
             self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
-            with self.assertRaises(ValueError):
-                inspect.signature(descriptor)
+            if sys.version_info >= (3, 13):
+                self.assertEqual(descriptor.__text_signature__, "($self, /)")
+                self.assertEqual(str(inspect.signature(descriptor)), "(self, /)")
+            else:
+                self.assertIsNone(descriptor.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(descriptor)
         self.assertEqual(repr(actual_descriptor), repr(expected_descriptor))
 
         actual_bound = actual.__float__
@@ -236,10 +240,14 @@ print(json.dumps(outputs))
         for bound in (actual_bound, expected_bound):
             self.assertIs(type(bound), types.BuiltinMethodType)
             self.assertEqual(bound.__name__, "__float__")
-            self.assertIsNone(bound.__text_signature__)
             self.assertIsNone(bound.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(bound)
+            if sys.version_info >= (3, 13):
+                self.assertEqual(bound.__text_signature__, "($self, /)")
+                self.assertEqual(str(inspect.signature(bound)), "()")
+            else:
+                self.assertIsNone(bound.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(bound)
 
         self.assertEqual(actual_descriptor(actual), expected_descriptor(expected))
         call_pairs = (

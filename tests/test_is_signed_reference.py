@@ -84,13 +84,19 @@ class TensorIsSignedReferenceTests(unittest.TestCase):
         actual_bound = actual_tensor.is_signed
         expected_bound = expected_tensor.is_signed
 
-        for actual, expected, expected_type in (
-            (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
-            (actual_bound, expected_bound, types.BuiltinMethodType),
+        for actual, expected, expected_type, python_313_signature in (
+            (
+                actual_descriptor,
+                expected_descriptor,
+                types.MethodDescriptorType,
+                "(self, /)",
+            ),
+            (actual_bound, expected_bound, types.BuiltinMethodType, "()"),
             (
                 torch.is_signed,
                 reference_torch.is_signed,
                 types.BuiltinFunctionType,
+                None,
             ),
         ):
             self.assertIs(type(actual), expected_type)
@@ -98,10 +104,17 @@ class TensorIsSignedReferenceTests(unittest.TestCase):
             self.assertEqual(actual.__name__, expected.__name__)
             self.assertEqual(actual.__text_signature__, expected.__text_signature__)
             self.assertEqual(actual.__doc__, expected.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(actual)
-            with self.assertRaises(ValueError):
-                inspect.signature(expected)
+            for callable_object in (actual, expected):
+                if sys.version_info >= (3, 13) and python_313_signature is not None:
+                    self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                    self.assertEqual(
+                        str(inspect.signature(callable_object)),
+                        python_313_signature,
+                    )
+                else:
+                    self.assertIsNone(callable_object.__text_signature__)
+                    with self.assertRaises(ValueError):
+                        inspect.signature(callable_object)
 
         self.assertEqual(
             actual_descriptor.__objclass__.__name__,

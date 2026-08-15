@@ -1,5 +1,6 @@
 import contextlib
 import inspect
+import sys
 import threading
 import types
 import unittest
@@ -115,8 +116,13 @@ class GetDefaultDTypeReferenceTests(unittest.TestCase):
             "get_default_dtype" in reference_torch.__all__,
         )
         for function in (actual, expected):
-            with self.assertRaises(ValueError):
-                inspect.signature(function)
+            if sys.version_info >= (3, 13):
+                self.assertEqual(function.__text_signature__, "($self, /)")
+                self.assertEqual(str(inspect.signature(function)), "()")
+            else:
+                self.assertIsNone(function.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(function)
 
     def test_no_argument_errors_match_pytorch_2_13(self):
         cases = (

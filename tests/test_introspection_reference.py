@@ -153,11 +153,23 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                     expected_descriptor.__text_signature__,
                 )
                 for descriptor in (actual_descriptor, expected_descriptor):
-                    with self.assertRaises(ValueError):
-                        inspect.signature(descriptor)
+                    if sys.version_info >= (3, 13):
+                        self.assertEqual(descriptor.__text_signature__, "($self, /)")
+                        self.assertEqual(
+                            str(inspect.signature(descriptor)), "(self, /)"
+                        )
+                    else:
+                        self.assertIsNone(descriptor.__text_signature__)
+                        with self.assertRaises(ValueError):
+                            inspect.signature(descriptor)
                 for bound in (getattr(actual, name), getattr(expected, name)):
-                    with self.assertRaises(ValueError):
-                        inspect.signature(bound)
+                    if sys.version_info >= (3, 13):
+                        self.assertEqual(bound.__text_signature__, "($self, /)")
+                        self.assertEqual(str(inspect.signature(bound)), "()")
+                    else:
+                        self.assertIsNone(bound.__text_signature__)
+                        with self.assertRaises(ValueError):
+                            inspect.signature(bound)
                 self.assertEqual(actual_descriptor(actual), expected_descriptor(expected))
                 if name == "element_size":
                     self.assertEqual(
