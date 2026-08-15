@@ -7,6 +7,11 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -333,10 +338,13 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             self.assertEqual(actual.__qualname__, expected.__qualname__)
             self.assertEqual(actual.__doc__, expected.__doc__)
             self.assertEqual(actual.__text_signature__, expected.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(actual)
-            with self.assertRaises(ValueError):
-                inspect.signature(expected)
+            expected_signature = (
+                "(self, /)"
+                if expected_type is types.MethodDescriptorType
+                else "()"
+            )
+            assert_no_argument_signature(self, actual, expected_signature)
+            assert_no_argument_signature(self, expected, expected_signature)
 
         self.assertEqual(repr(actual_descriptor), repr(expected_descriptor))
         self.assertEqual(

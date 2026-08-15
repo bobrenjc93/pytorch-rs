@@ -1,5 +1,6 @@
 import inspect
 import re
+import sys
 import types
 import typing
 import unittest
@@ -20,6 +21,17 @@ FUNCTION_DOC = """Returns True if `obj` is a PyTorch tensor.
         True
 
     """
+
+if sys.version_info >= (3, 13):
+    FUNCTION_DOC = (
+        "Returns True if `obj` is a PyTorch tensor.\n\n"
+        "Args:\n"
+        "    obj (object): Object to test\n"
+        "Example::\n\n"
+        "    >>> x = torch.tensor([1, 2, 3])\n"
+        "    >>> torch.is_tensor(x)\n"
+        "    True\n\n"
+    )
 
 
 class ConversionTrap:
@@ -178,10 +190,12 @@ class IsTensorTests(unittest.TestCase):
             typing.get_args(resolved_annotations["return"]), (torch.Tensor,)
         )
         self.assertEqual(inspect.signature(function), expected_signature)
-        self.assertEqual(
-            str(inspect.signature(function)),
-            "(obj: Any, /) -> typing_extensions.TypeIs[ForwardRef('torch.Tensor')]",
+        expected_signature_text = (
+            "(obj: Any, /) -> TypeIs[ForwardRef('torch.Tensor')]"
+            if sys.version_info >= (3, 13)
+            else "(obj: Any, /) -> typing_extensions.TypeIs[ForwardRef('torch.Tensor')]"
         )
+        self.assertEqual(str(inspect.signature(function)), expected_signature_text)
         self.assertIn("is_tensor", torch.__all__)
 
     def test_positional_only_binding_errors_match_pytorch_2_13(self):

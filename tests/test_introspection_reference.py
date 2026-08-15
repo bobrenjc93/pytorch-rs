@@ -6,6 +6,11 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -153,11 +158,9 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                     expected_descriptor.__text_signature__,
                 )
                 for descriptor in (actual_descriptor, expected_descriptor):
-                    with self.assertRaises(ValueError):
-                        inspect.signature(descriptor)
+                    assert_no_argument_signature(self, descriptor, "(self, /)")
                 for bound in (getattr(actual, name), getattr(expected, name)):
-                    with self.assertRaises(ValueError):
-                        inspect.signature(bound)
+                    assert_no_argument_signature(self, bound, "()")
                 self.assertEqual(actual_descriptor(actual), expected_descriptor(expected))
                 if name == "element_size":
                     self.assertEqual(

@@ -2161,6 +2161,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 62
       }
+    },
+    {
+      "key": "pr:146",
+      "recordedAt": "2026-08-15T19:02:55.704Z",
+      "label": "PR #146",
+      "kind": "leaf",
+      "prNumber": 146,
+      "title": "Finish Python 3.14 CI with a hardware-aware CUDA parity test",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 43.8,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 62
+      }
     }
   ]
 }

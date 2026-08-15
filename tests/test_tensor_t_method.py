@@ -7,6 +7,11 @@ import warnings
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 
 class TensorTMethodTests(unittest.TestCase):
     def assert_tensor(self, actual, expected, *, shape, stride, offset=0):
@@ -64,14 +69,11 @@ class TensorTMethodTests(unittest.TestCase):
         self.assertIs(type(bound), types.BuiltinMethodType)
         self.assertEqual(descriptor.__name__, "t")
         self.assertEqual(bound.__name__, "t")
-        self.assertIsNone(descriptor.__text_signature__)
-        self.assertIsNone(bound.__text_signature__)
         self.assertEqual(
             descriptor.__doc__, "\nt() -> Tensor\n\nSee :func:`torch.t`\n"
         )
-        for callable_object in (descriptor, bound):
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        assert_no_argument_signature(self, descriptor, "(self, /)")
+        assert_no_argument_signature(self, bound, "()")
         self.assertEqual(descriptor(tensor).shape, (3, 2))
 
         calls = (

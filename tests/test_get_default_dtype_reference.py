@@ -6,6 +6,11 @@ import unittest
 
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -115,8 +120,7 @@ class GetDefaultDTypeReferenceTests(unittest.TestCase):
             "get_default_dtype" in reference_torch.__all__,
         )
         for function in (actual, expected):
-            with self.assertRaises(ValueError):
-                inspect.signature(function)
+            assert_no_argument_signature(self, function, "()")
 
     def test_no_argument_errors_match_pytorch_2_13(self):
         cases = (

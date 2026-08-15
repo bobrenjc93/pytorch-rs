@@ -7,6 +7,11 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 ELEMENT_SIZE_DOC = """
 element_size() -> int
 
@@ -111,11 +116,8 @@ class TensorIntrospectionTests(unittest.TestCase):
                 self.assertIs(type(descriptor), types.MethodDescriptorType)
                 self.assertIs(type(bound), types.BuiltinMethodType)
                 self.assertEqual(descriptor.__name__, name)
-                self.assertIsNone(descriptor.__text_signature__)
-                with self.assertRaises(ValueError):
-                    inspect.signature(descriptor)
-                with self.assertRaises(ValueError):
-                    inspect.signature(bound)
+                assert_no_argument_signature(self, descriptor, "(self, /)")
+                assert_no_argument_signature(self, bound, "()")
                 self.assertEqual(descriptor(tensor), expected)
                 if name == "element_size":
                     self.assertEqual(descriptor.__doc__, ELEMENT_SIZE_DOC)

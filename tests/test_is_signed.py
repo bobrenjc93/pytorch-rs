@@ -6,6 +6,11 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 
 METHOD_DOC = (
     "\nis_signed() -> bool\n\n"
@@ -89,9 +94,11 @@ class TensorIsSignedTests(unittest.TestCase):
         for callable_object in (descriptor, bound, function):
             self.assertTrue(callable(callable_object))
             self.assertEqual(callable_object.__name__, "is_signed")
-            self.assertIsNone(callable_object.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        assert_no_argument_signature(self, descriptor, "(self, /)")
+        assert_no_argument_signature(self, bound, "()")
+        self.assertIsNone(function.__text_signature__)
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
 
         self.assertEqual(descriptor.__doc__, METHOD_DOC)
         self.assertEqual(bound.__doc__, METHOD_DOC)

@@ -10,6 +10,11 @@ import weakref
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -58,14 +63,12 @@ class AutogradApiTests(unittest.TestCase):
         self.assertIs(type(function), types.BuiltinFunctionType)
         self.assertEqual(function.__name__, "is_grad_enabled")
         self.assertEqual(function.__module__, torch.tensor.__module__)
-        self.assertIsNone(function.__text_signature__)
         self.assertEqual(
             function.__doc__,
             "\nis_grad_enabled() -> (bool)\n\n"
             "Returns True if grad mode is currently enabled.\n",
         )
-        with self.assertRaises(ValueError):
-            inspect.signature(function)
+        assert_no_argument_signature(self, function, "()")
         self.assertIn("is_grad_enabled", torch.__all__)
 
         cases = (
@@ -1052,8 +1055,7 @@ class AutogradReferenceTests(unittest.TestCase):
                 else:
                     self.fail(f"{module.__name__}.is_grad_enabled accepted arguments")
 
-            with self.assertRaises(ValueError):
-                inspect.signature(function)
+            assert_no_argument_signature(self, function, "()")
             outcomes.append(
                 (
                     states,

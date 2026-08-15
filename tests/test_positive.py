@@ -7,6 +7,11 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 
 METHOD_DOC = "\npositive() -> Tensor\n\nSee :func:`torch.positive`\n"
 FUNCTION_DOC = (
@@ -163,9 +168,9 @@ class TensorPositiveTests(unittest.TestCase):
         for callable_object in (descriptor, bound, operator_bound):
             self.assertEqual(callable_object.__name__, "positive")
             self.assertEqual(callable_object.__doc__, METHOD_DOC)
-            self.assertIsNone(callable_object.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        assert_no_argument_signature(self, descriptor, "(self, /)")
+        assert_no_argument_signature(self, bound, "()")
+        assert_no_argument_signature(self, operator_bound, "()")
 
         self.assertIs(descriptor(tensor), tensor)
         self.assertIs(bound(**{}), tensor)

@@ -6,6 +6,11 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 
 class TensorRavelTests(unittest.TestCase):
     def assert_tensor(self, tensor, values, *, shape, stride, offset=0):
@@ -152,14 +157,11 @@ class TensorRavelTests(unittest.TestCase):
         self.assertIs(type(bound), types.BuiltinMethodType)
         self.assertEqual(descriptor.__name__, "ravel")
         self.assertEqual(bound.__name__, "ravel")
-        self.assertIsNone(descriptor.__text_signature__)
-        self.assertIsNone(bound.__text_signature__)
         self.assertEqual(
             descriptor.__doc__, "\nravel() -> Tensor\n\nsee :func:`torch.ravel`\n"
         )
-        for callable_object in (descriptor, bound):
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        assert_no_argument_signature(self, descriptor, "(self, /)")
+        assert_no_argument_signature(self, bound, "()")
 
         output = descriptor(tensor)
         self.assertIsNot(output, tensor)

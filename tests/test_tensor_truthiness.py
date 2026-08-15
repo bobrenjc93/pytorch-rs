@@ -6,6 +6,11 @@ import unittest
 
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 
 class TensorTruthinessTests(unittest.TestCase):
     def assert_truth(self, tensor, expected):
@@ -78,13 +83,10 @@ class TensorTruthinessTests(unittest.TestCase):
         self.assertIs(type(bound), types.BuiltinMethodType)
         self.assertEqual(descriptor.__name__, "is_nonzero")
         self.assertEqual(bound.__name__, "is_nonzero")
-        self.assertIsNone(descriptor.__text_signature__)
-        self.assertIsNone(bound.__text_signature__)
         self.assertIsNone(descriptor.__doc__)
         self.assertIsNone(bound.__doc__)
-        for callable_object in (descriptor, bound):
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        assert_no_argument_signature(self, descriptor, "(self, /)")
+        assert_no_argument_signature(self, bound, "()")
         self.assertIs(descriptor(tensor), True)
 
         calls = (

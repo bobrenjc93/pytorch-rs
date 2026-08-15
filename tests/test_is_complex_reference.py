@@ -6,6 +6,11 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -84,13 +89,19 @@ class TensorIsComplexReferenceTests(unittest.TestCase):
         actual_bound = actual_tensor.is_complex
         expected_bound = expected_tensor.is_complex
 
-        for actual, expected, expected_type in (
-            (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
-            (actual_bound, expected_bound, types.BuiltinMethodType),
+        for actual, expected, expected_type, expected_signature in (
+            (
+                actual_descriptor,
+                expected_descriptor,
+                types.MethodDescriptorType,
+                "(self, /)",
+            ),
+            (actual_bound, expected_bound, types.BuiltinMethodType, "()"),
             (
                 torch.is_complex,
                 reference_torch.is_complex,
                 types.BuiltinFunctionType,
+                None,
             ),
         ):
             self.assertIs(type(actual), expected_type)
@@ -98,10 +109,14 @@ class TensorIsComplexReferenceTests(unittest.TestCase):
             self.assertEqual(actual.__name__, expected.__name__)
             self.assertEqual(actual.__text_signature__, expected.__text_signature__)
             self.assertEqual(actual.__doc__, expected.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(actual)
-            with self.assertRaises(ValueError):
-                inspect.signature(expected)
+            if expected_signature is None:
+                with self.assertRaises(ValueError):
+                    inspect.signature(actual)
+                with self.assertRaises(ValueError):
+                    inspect.signature(expected)
+            else:
+                assert_no_argument_signature(self, actual, expected_signature)
+                assert_no_argument_signature(self, expected, expected_signature)
 
         self.assertEqual(
             actual_descriptor.__objclass__.__name__,

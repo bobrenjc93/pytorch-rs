@@ -5,6 +5,11 @@ import unittest
 
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -108,19 +113,15 @@ class TensorTruthinessReferenceTests(unittest.TestCase):
         for descriptor in (actual_descriptor, expected_descriptor):
             self.assertIs(type(descriptor), types.MethodDescriptorType)
             self.assertEqual(descriptor.__name__, "is_nonzero")
-            self.assertIsNone(descriptor.__text_signature__)
             self.assertIsNone(descriptor.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(descriptor)
+            assert_no_argument_signature(self, descriptor, "(self, /)")
         actual_bound = actual.is_nonzero
         expected_bound = expected.is_nonzero
         for bound in (actual_bound, expected_bound):
             self.assertIs(type(bound), types.BuiltinMethodType)
             self.assertEqual(bound.__name__, "is_nonzero")
-            self.assertIsNone(bound.__text_signature__)
             self.assertIsNone(bound.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(bound)
+            assert_no_argument_signature(self, bound, "()")
 
         self.assertEqual(actual_descriptor(actual), expected_descriptor(expected))
         for actual_call, expected_call in (

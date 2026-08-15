@@ -5,6 +5,11 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
+
 try:
     import torch as reference_torch
 except ImportError:
@@ -141,16 +146,12 @@ class TensorRavelReferenceTests(unittest.TestCase):
         for descriptor in (actual_descriptor, expected_descriptor):
             self.assertIs(type(descriptor), types.MethodDescriptorType)
             self.assertEqual(descriptor.__name__, "ravel")
-            self.assertIsNone(descriptor.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(descriptor)
+            assert_no_argument_signature(self, descriptor, "(self, /)")
         self.assertEqual(actual_descriptor.__doc__, expected_descriptor.__doc__)
 
         for bound in (actual.ravel, expected.ravel):
             self.assertIs(type(bound), types.BuiltinMethodType)
-            self.assertIsNone(bound.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(bound)
+            assert_no_argument_signature(self, bound, "()")
 
         self.assert_matches(
             actual_descriptor(actual), expected_descriptor(expected), case="unbound-call"
