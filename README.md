@@ -108,10 +108,11 @@ and rejects `.cargo/config` files above the archived checkout. It also ignores
 external uv configuration and explicitly installs both locked dependency
 groups. Git and tar settings are cleared, and every extracted file is checked
 against `HEAD` before testing. The committed Rust channel is explicitly selected
-and verified, while ambient Python runtime settings, including warning policy,
-are cleared. The command preserves `CUDA_VISIBLE_DEVICES`, so the existing
-hardware-aware tests use available CUDA hardware and skip their CUDA cases when
-PyTorch reports none.
+and verified, while ambient Cargo, PyO3, and Python runtime settings, including
+warning policy, are cleared. The command rejects a symlinked `target/` before
+creating artifacts and uses its verified physical path throughout. It preserves
+`CUDA_VISIBLE_DEVICES`, so the existing hardware-aware tests use available CUDA
+hardware and skip their CUDA cases when PyTorch reports none.
 
 The checked-in tests are only the public floor. Burner also uses independent generated workloads and side-by-side `torch_rs`/`torch` differential runs.
 

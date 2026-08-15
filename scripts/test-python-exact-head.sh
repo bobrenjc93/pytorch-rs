@@ -11,11 +11,6 @@ cd "$repository_root"
 # explicitly where needed.
 unset \
     CONDA_PREFIX \
-    CARGO_BUILD_RUSTC \
-    CARGO_BUILD_RUSTC_WRAPPER \
-    CARGO_BUILD_RUSTFLAGS \
-    CARGO_BUILD_TARGET \
-    CARGO_ENCODED_RUSTFLAGS \
     RUSTC \
     RUSTC_WORKSPACE_WRAPPER \
     RUSTC_WRAPPER \
@@ -24,14 +19,27 @@ unset \
     RUSTFLAGS \
     RUSTUP_TOOLCHAIN \
     TAR_OPTIONS \
-    VIRTUAL_ENV \
-    PYO3_PYTHON
+    VIRTUAL_ENV
 
-# Git and Python both expose behavior-changing settings through prefixed
-# environment variables. Clear them before selecting the exact inputs below.
-for environment_name in "${!GIT_@}" "${!PYTHON@}"; do
+# Cargo, Git, PyO3, and Python expose behavior-changing settings through
+# prefixed environment variables. Clear them before selecting exact inputs.
+for environment_name in \
+    "${!CARGO_@}" \
+    "${!GIT_@}" \
+    "${!PYO3_@}" \
+    "${!PYTHON@}"
+do
     unset "$environment_name"
 done
+if [[ -n "${HTTPS_PROXY-}" ]]; then
+    export CARGO_HTTP_PROXY="$HTTPS_PROXY"
+elif [[ -n "${https_proxy-}" ]]; then
+    export CARGO_HTTP_PROXY="$https_proxy"
+elif [[ -n "${HTTP_PROXY-}" ]]; then
+    export CARGO_HTTP_PROXY="$HTTP_PROXY"
+elif [[ -n "${http_proxy-}" ]]; then
+    export CARGO_HTTP_PROXY="$http_proxy"
+fi
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_CONFIG_NOSYSTEM=1
 export GIT_NO_REPLACE_OBJECTS=1
@@ -42,8 +50,19 @@ for environment_name in "${!UV_@}"; do
     unset "$environment_name"
 done
 
-mkdir -p "$repository_root/target"
-run_directory="$(mktemp -d "$repository_root/target/exact-head-run.XXXXXX")"
+target_path="$repository_root/target"
+if [[ -L "$target_path" ]]; then
+    echo "refusing symlinked target directory: $target_path" >&2
+    exit 1
+fi
+mkdir -p "$target_path"
+target_directory="$(cd "$target_path" && pwd -P)"
+if [[ "$target_directory" != "$target_path" ]]; then
+    echo "target directory resolved outside the worktree: $target_directory" >&2
+    exit 1
+fi
+
+run_directory="$(mktemp -d "$target_directory/exact-head-run.XXXXXX")"
 checkout="$run_directory/checkout"
 bare_repository="$run_directory/repository.git"
 head_tree_manifest="$run_directory/head-tree"
@@ -157,8 +176,8 @@ echo "verified $expected_file_count exact-HEAD files"
 
 export CARGO_HOME="$run_directory/cargo-home"
 export CARGO_TARGET_DIR="$run_directory/cargo-target"
-export UV_CACHE_DIR="$repository_root/target/uv-cache"
-export UV_PYTHON_INSTALL_DIR="$repository_root/target/uv-python"
+export UV_CACHE_DIR="$target_directory/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$target_directory/uv-python"
 export UV_PROJECT_ENVIRONMENT="$virtualenv"
 export PYTHONNOUSERSITE=1
 
