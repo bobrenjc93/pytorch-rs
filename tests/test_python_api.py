@@ -153,7 +153,11 @@ class PythonApiBaselineTests(unittest.TestCase):
             ),
             (
                 lambda: scalar.neg(dim=0),
-                "TensorBase.neg() takes no keyword arguments",
+                (
+                    "Tensor.neg() takes no keyword arguments"
+                    if sys.version_info < (3, 11)
+                    else "TensorBase.neg() takes no keyword arguments"
+                ),
             ),
             (
                 lambda: descriptor(scalar, 1),
