@@ -1,0 +1,244 @@
+import pickle
+import re
+import unittest
+
+import torch_rs as torch
+
+
+class TopLevelPositiveOverrideTests(unittest.TestCase):
+    def make_override(self, result):
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return result
+
+        return Override(), Override
+
+    def test_torch_function_override_receives_original_call_forms(self):
+        marker = object()
+        value, override_type = self.make_override(marker)
+        calls = (
+            ("positional", lambda: torch.positive(value), (value,), None),
+            (
+                "input",
+                lambda: torch.positive(input=value),
+                (),
+                {"input": value},
+            ),
+            ("x", lambda: torch.positive(x=value), (), {"x": value}),
+            ("a", lambda: torch.positive(a=value), (), {"a": value}),
+        )
+
+        for form, call, expected_args, expected_kwargs in calls:
+            with self.subTest(form=form):
+                override_type.calls.clear()
+                self.assertIs(call(), marker)
+                self.assertEqual(len(override_type.calls), 1)
+                function, types, args, kwargs = override_type.calls[0]
+                self.assertIs(function, torch.positive)
+                self.assertEqual(types, (override_type,))
+                self.assertEqual(args, expected_args)
+                self.assertEqual(kwargs, expected_kwargs)
+
+    def test_binding_errors_are_resolved_before_override_dispatch(self):
+        marker = object()
+        value, override_type = self.make_override(marker)
+        cases = (
+            (
+                lambda: torch.positive(value, value),
+                "positive() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.positive(value, input=value),
+                "positive() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.positive(value, extra=True),
+                "positive() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.positive(extra=value, input=value),
+                "positive() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.positive(extra=value),
+                'positive() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.positive(a=value, x=value),
+                "positive() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.positive(x=value, a=value),
+                "positive() got an unexpected keyword argument 'x'",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                override_type.calls.clear()
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+                self.assertEqual(override_type.calls, [])
+
+    def test_torch_function_modes_receive_calls_and_forward_to_lower_modes(self):
+        tensor = torch.tensor([1.0])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            ("positional", lambda: torch.positive(tensor), (tensor,), None),
+            (
+                "input",
+                lambda: torch.positive(input=tensor),
+                (),
+                {"input": tensor},
+            ),
+            ("x", lambda: torch.positive(x=tensor), (), {"x": tensor}),
+            ("a", lambda: torch.positive(a=tensor), (), {"a": tensor}),
+        )
+        for form, call, expected_args, expected_kwargs in calls:
+            with self.subTest(form=form):
+                mode = RecordingMode()
+                with mode:
+                    self.assertIs(call(), marker)
+                self.assertEqual(len(mode.calls), 1)
+                function, types, args, kwargs = mode.calls[0]
+                self.assertIs(function, torch.positive)
+                self.assertEqual(types, ())
+                self.assertEqual(args, expected_args)
+                self.assertEqual(kwargs, expected_kwargs)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                self.assertIs(torch.positive(tensor), tensor)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertIs(torch.positive(tensor), tensor)
+
+    def test_binding_errors_are_resolved_before_mode_dispatch(self):
+        tensor = torch.tensor([1.0])
+
+        class Mode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return object()
+
+        cases = (
+            (
+                lambda: torch.positive(),
+                'positive() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.positive(tensor, tensor),
+                "positive() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.positive(extra=tensor),
+                'positive() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.positive(1, extra=True),
+                "positive(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                mode = Mode()
+                with mode:
+                    with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                        call()
+                self.assertEqual(mode.calls, [])
+
+    def test_mode_not_implemented_falls_through_to_object_override(self):
+        marker = object()
+        value, override_type = self.make_override(marker)
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return NotImplemented
+
+        mode = DecliningMode()
+        with mode:
+            self.assertIs(torch.positive(value), marker)
+        self.assertEqual(len(mode.calls), 1)
+        self.assertEqual(len(override_type.calls), 1)
+        self.assertEqual(mode.calls[0][1], (override_type,))
+
+    def test_not_implemented_error_and_mode_cleanup_match_pytorch(self):
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        message = (
+            "Multiple dispatch failed for 'torch.positive'; all "
+            "__torch_function__ handlers returned NotImplemented:\n\n"
+            "  - tensor subclass <class "
+            f"'{DecliningOverride.__module__}.{DecliningOverride.__qualname__}'>\n\n"
+            "For more information, try re-running with "
+            "TORCH_LOGS=not_implemented"
+        )
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+            torch.positive(DecliningOverride())
+
+        tensor = torch.tensor([1.0])
+
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                raise RuntimeError("mode failure")
+
+        with self.assertRaisesRegex(RuntimeError, "^mode failure$"):
+            with RaisingMode():
+                torch.positive(tensor)
+        self.assertIs(torch.positive(tensor), tensor)
+
+    def test_variable_function_owner_is_immutable_and_pickle_safe(self):
+        function = torch.positive
+        owner = function.__reduce__()[1][0]
+        self.assertTrue(owner.__flags__ & (1 << 8))
+        actions = (
+            ("positive", lambda: setattr(owner, "positive", None)),
+            ("positive", lambda: delattr(owner, "positive")),
+            ("marker", lambda: setattr(owner, "marker", object())),
+            ("marker", lambda: delattr(owner, "marker")),
+        )
+        for attribute, action in actions:
+            with self.subTest(attribute=attribute):
+                message = (
+                    f"cannot set '{attribute}' attribute of immutable type "
+                    "'torch_rs._C._VariableFunctionsClass'"
+                )
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    action()
+                self.assertIs(owner.positive, function)
+                self.assertIs(pickle.loads(pickle.dumps(function)), function)
+
+
+if __name__ == "__main__":
+    unittest.main()

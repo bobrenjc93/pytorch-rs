@@ -1,4 +1,4 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,6 +20,7 @@ use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, enter_no_grad, exit_no_grad,
     is_grad_enabled as core_is_grad_enabled,
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
+    python_variable_functions::create_variable_functions_class,
 };
 
 static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
@@ -28,10 +29,15 @@ static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
+static POSITIVE_FUNCTION: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+
+thread_local! {
+    static TORCH_FUNCTION_MODE_STACK: RefCell<Vec<Py<PyAny>>> = const { RefCell::new(Vec::new()) };
+}
 
 const NO_GRAD_WRAPPER_SOURCE: &CStr = cr#"
 import functools
@@ -819,87 +825,64 @@ impl PyNoGrad {
     }
 }
 
-// PyTorch exposes selected top-level tensor functions as built-in static
-// methods owned by this internal type. Keeping the owner private while
-// exporting its bound methods preserves their public callable metadata.
-#[pyclass(
-    name = "_VariableFunctionsClass",
-    module = "torch_rs._C",
-    frozen,
-    skip_from_py_object
-)]
-struct PyVariableFunctionsClass;
+pub(crate) fn get_device_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_argument("get_device", args, kwargs)?;
+    let tensor = input
+        .value
+        .cast::<PyTensor>()
+        .expect("the get_device input type was checked while binding")
+        .try_borrow()?;
+    device_ordinal(tensor.inner.device())?.into_py_any(py)
+}
 
-#[pymethods]
-impl PyVariableFunctionsClass {
-    #[staticmethod]
-    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn get_device(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<i64> {
-        let input = bind_legacy_single_tensor_argument("get_device", args, kwargs)?;
-        let tensor = input
-            .value
-            .cast::<PyTensor>()
-            .expect("the get_device input type was checked while binding")
-            .try_borrow()?;
-        device_ordinal(tensor.inner.device())
-    }
+pub(crate) fn scalar_tensor_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    Ok(Bound::new(py, scalar_tensor_impl(args, kwargs)?)?
+        .into_any()
+        .unbind())
+}
 
-    #[staticmethod]
-    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn scalar_tensor(
-        args: &Bound<'_, PyTuple>,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyTensor> {
-        scalar_tensor_impl(args, kwargs)
-    }
+pub(crate) fn positive_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("positive", args, kwargs)?;
+    dispatch_positive(py, &input, args, kwargs)
+}
 
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n"]
-    #[staticmethod]
-    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn positive(
-        args: &Bound<'_, PyTuple>,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<Py<PyTensor>> {
-        let input = bind_legacy_single_tensor_argument("positive", args, kwargs)?;
-        Ok(input
-            .value
-            .cast::<PyTensor>()
-            .expect("the positive input type was checked while binding")
-            .clone()
-            .unbind())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n"]
-    #[staticmethod]
-    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn permute(
-        args: &Bound<'_, PyTuple>,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyTensor> {
-        let ([input, dimensions], keyword_error) = bind_top_level_permute_arguments(args, kwargs)?;
-        let input = parse_tensor_argument("permute", "input", &input)?;
-        let Some(dimension_arguments) = permute_sequence_arguments(&dimensions.value) else {
-            return Err(permute_argument_type_error(
-                &dimensions.value,
-                dimensions.position,
-            )?);
-        };
-        validate_permute_sequence_first(
-            &dimension_arguments,
+pub(crate) fn permute_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([input, dimensions], keyword_error) = bind_top_level_permute_arguments(args, kwargs)?;
+    let input = parse_tensor_argument("permute", "input", &input)?;
+    let Some(dimension_arguments) = permute_sequence_arguments(&dimensions.value) else {
+        return Err(permute_argument_type_error(
             &dimensions.value,
             dimensions.position,
-        )?;
-        if let Some(keyword_error) = keyword_error {
-            return Err(keyword_error);
-        }
-        let dimensions = parse_permute_dimension_arguments(dimension_arguments)?;
-        let tensor = input.try_borrow()?;
-        permute_tensor(&tensor.inner, dimensions).map(PyTensor::new)
+        )?);
+    };
+    validate_permute_sequence_first(&dimension_arguments, &dimensions.value, dimensions.position)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
     }
+    let dimensions = parse_permute_dimension_arguments(dimension_arguments)?;
+    let tensor = input.try_borrow()?;
+    Ok(Bound::new(
+        py,
+        permute_tensor(&tensor.inner, dimensions).map(PyTensor::new)?,
+    )?
+    .into_any()
+    .unbind())
 }
 
 enum ParsedFillValue {
@@ -929,6 +912,160 @@ impl<'a, 'py> FromPyObject<'a, 'py> for StrictBool {
 struct ParsedCallArgument<'py> {
     value: Bound<'py, PyAny>,
     position: Option<usize>,
+}
+
+struct ActiveTorchFunctionMode {
+    mode: Option<Py<PyAny>>,
+}
+
+impl ActiveTorchFunctionMode {
+    fn pop() -> Self {
+        let mode = TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow_mut().pop());
+        Self { mode }
+    }
+
+    fn get(&self) -> Option<&Py<PyAny>> {
+        self.mode.as_ref()
+    }
+}
+
+impl Drop for ActiveTorchFunctionMode {
+    fn drop(&mut self) {
+        if let Some(mode) = self.mode.take() {
+            TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow_mut().push(mode));
+        }
+    }
+}
+
+#[pyfunction]
+fn _push_on_torch_function_stack(mode: Py<PyAny>) {
+    TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow_mut().push(mode));
+}
+
+#[pyfunction]
+fn _pop_torch_function_stack() -> PyResult<Py<PyAny>> {
+    TORCH_FUNCTION_MODE_STACK
+        .with(|stack| stack.borrow_mut().pop())
+        .ok_or_else(|| PyRuntimeError::new_err("trying to pop from empty mode stack"))
+}
+
+#[pyfunction]
+fn _len_torch_function_stack() -> usize {
+    TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().len())
+}
+
+#[pyfunction]
+fn _get_function_stack_at(py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
+    TORCH_FUNCTION_MODE_STACK.with(|stack| {
+        stack
+            .borrow()
+            .get(index)
+            .map(|mode| mode.clone_ref(py))
+            .ok_or_else(|| PyRuntimeError::new_err("Tried to get stack at idx that's too big"))
+    })
+}
+
+fn has_torch_function_override(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.cast::<PyTensor>().is_ok() {
+        return Ok(false);
+    }
+    value.get_type().hasattr("__torch_function__")
+}
+
+fn call_torch_function_handler(
+    py: Python<'_>,
+    receiver: &Bound<'_, PyAny>,
+    function: &Py<PyAny>,
+    types: &Bound<'_, PyTuple>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let kwargs = kwargs.map_or_else(|| py.None(), |kwargs| kwargs.clone().into_any().unbind());
+    Ok(receiver
+        .call_method1(
+            "__torch_function__",
+            (function.clone_ref(py), types.clone(), args.clone(), kwargs),
+        )?
+        .unbind())
+}
+
+fn is_not_implemented(py: Python<'_>, result: &Py<PyAny>) -> bool {
+    result.as_ptr() == py.NotImplemented().as_ptr()
+}
+
+fn torch_function_dispatch_error(
+    py: Python<'_>,
+    mode: Option<&Py<PyAny>>,
+    override_type: Option<&Py<PyAny>>,
+) -> PyResult<PyErr> {
+    let mut handlers = Vec::with_capacity(2);
+    if let Some(mode) = mode {
+        handlers.push(format!(
+            "  - mode object {}",
+            mode.bind(py).repr()?.to_str()?
+        ));
+    }
+    if let Some(override_type) = override_type {
+        handlers.push(format!(
+            "  - tensor subclass {}",
+            override_type.bind(py).repr()?.to_str()?
+        ));
+    }
+    Ok(PyTypeError::new_err(format!(
+        "Multiple dispatch failed for 'torch.positive'; all __torch_function__ handlers returned NotImplemented:\n\n{}\n\nFor more information, try re-running with TORCH_LOGS=not_implemented",
+        handlers.join("\n")
+    )))
+}
+
+fn dispatch_positive(
+    py: Python<'_>,
+    input: &ParsedCallArgument<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let function = POSITIVE_FUNCTION.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err("torch.positive was called before module initialization completed")
+    })?;
+    let override_type = has_torch_function_override(&input.value)?
+        .then(|| input.value.get_type().into_any().unbind());
+    let types = override_type.as_ref().map_or_else(
+        || Ok(PyTuple::empty(py)),
+        |override_type| PyTuple::new(py, [override_type.clone_ref(py)]),
+    )?;
+
+    // PyTorch disables the top mode for the complete dispatch attempt. A mode
+    // can explicitly call `func(*args, **kwargs)` to reach the next mode.
+    let active_mode = ActiveTorchFunctionMode::pop();
+    if let Some(mode) = active_mode.get() {
+        let result =
+            call_torch_function_handler(py, mode.bind(py), function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if override_type.is_some() {
+        let result = call_torch_function_handler(py, &input.value, function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_some() || override_type.is_some() {
+        return Err(torch_function_dispatch_error(
+            py,
+            active_mode.get(),
+            override_type.as_ref(),
+        )?);
+    }
+
+    Ok(input
+        .value
+        .cast::<PyTensor>()
+        .expect("the positive input type was checked while binding")
+        .clone()
+        .unbind()
+        .into_any())
 }
 
 struct ScalarTensorCallArguments<'py> {
@@ -4900,6 +5037,23 @@ fn bind_legacy_single_tensor_argument<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<ParsedCallArgument<'py>> {
+    bind_legacy_single_argument(function, positional, keywords, false)
+}
+
+fn bind_legacy_single_tensor_or_override_argument<'py>(
+    function: &str,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ParsedCallArgument<'py>> {
+    bind_legacy_single_argument(function, positional, keywords, true)
+}
+
+fn bind_legacy_single_argument<'py>(
+    function: &str,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    allow_torch_function_override: bool,
+) -> PyResult<ParsedCallArgument<'py>> {
     if positional.len() > 1 {
         return Err(PyTypeError::new_err(format!(
             "{function}() takes 1 positional argument but {} were given",
@@ -4939,7 +5093,10 @@ fn bind_legacy_single_tensor_argument<'py>(
             position: Some(1),
         }
     };
-    if input.value.cast::<PyTensor>().is_err() {
+    let is_tensor = input.value.cast::<PyTensor>().is_ok();
+    let has_override =
+        allow_torch_function_override && !is_tensor && has_torch_function_override(&input.value)?;
+    if !is_tensor && !has_override {
         let position = input
             .position
             .map_or_else(String::new, |position| format!(" (position {position})"));
@@ -6868,6 +7025,39 @@ fn permute_error(error: &TensorError) -> PyErr {
     }
 }
 
+fn add_torch_function_stack_api(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    for function in [
+        wrap_pyfunction!(_push_on_torch_function_stack, module)?,
+        wrap_pyfunction!(_pop_torch_function_stack, module)?,
+        wrap_pyfunction!(_len_torch_function_stack, module)?,
+        wrap_pyfunction!(_get_function_stack_at, module)?,
+    ] {
+        let name = function.getattr("__name__")?;
+        module.add_function(function.clone())?;
+        module.getattr("__all__")?.call_method1("remove", (name,))?;
+    }
+    Ok(())
+}
+
+fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
+    let variable_functions = create_variable_functions_class(py)?;
+    module.add("_VariableFunctionsClass", variable_functions.clone_ref(py))?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_VariableFunctionsClass",))?;
+    let variable_functions = variable_functions.bind(py);
+    for name in ["get_device", "scalar_tensor", "positive", "permute"] {
+        let function = variable_functions.getattr(name)?;
+        function.setattr("__module__", "torch")?;
+        if name == "positive" {
+            let _ = POSITIVE_FUNCTION.set(py, function.clone().unbind());
+        }
+        module.add(name, function)?;
+    }
+    Ok(())
+}
+
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
@@ -6923,16 +7113,8 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(is_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(get_default_dtype, module)?)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
-    let variable_functions = py.get_type::<PyVariableFunctionsClass>();
-    module.add("_VariableFunctionsClass", variable_functions.clone())?;
-    module
-        .getattr("__all__")?
-        .call_method1("remove", ("_VariableFunctionsClass",))?;
-    for name in ["get_device", "scalar_tensor", "positive", "permute"] {
-        let function = variable_functions.getattr(name)?;
-        function.setattr("__module__", "torch")?;
-        module.add(name, function)?;
-    }
+    add_torch_function_stack_api(module)?;
+    add_variable_functions(module)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
     module.add_function(wrap_pyfunction!(relu, module)?)?;

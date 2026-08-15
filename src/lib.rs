@@ -9,10 +9,15 @@ mod device;
 mod dtype;
 mod grad_mode;
 mod memory_format;
-#[cfg(feature = "python-bindings")]
+// Python API docstrings intentionally contain Python examples and are tested
+// through the Python suite. They are private Rust implementation modules, so
+// omit them while rustdoc is collecting Rust doctests.
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python;
-#[cfg(feature = "python-bindings")]
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_layout;
+#[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_variable_functions;
 mod storage;
 mod tensor;
 
