@@ -2065,6 +2065,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 61
       }
+    },
+    {
+      "key": "pr:137",
+      "recordedAt": "2026-08-15T11:15:25.323Z",
+      "label": "PR #137",
+      "kind": "leaf",
+      "prNumber": 137,
+      "title": "Add integer-indexed torch.utils.data.TensorDataset",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 43,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 61
+      }
     }
   ]
 }
