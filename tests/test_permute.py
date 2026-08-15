@@ -1,4 +1,5 @@
 import inspect
+import sys
 import types
 import unittest
 
@@ -155,6 +156,20 @@ class TensorPermuteTests(unittest.TestCase):
                     lambda dimensions=dimensions: tensor.permute(dimensions),
                 )
 
+        for dimensions in ((0, 0, 3), (0, -3, 3), (-3, 0, 3)):
+            with self.subTest(mixed_duplicate=dimensions):
+                self.assert_error(
+                    RuntimeError,
+                    "permute(): duplicate dims are not allowed.",
+                    lambda dimensions=dimensions: tensor.permute(dimensions),
+                )
+
+        self.assert_error(
+            IndexError,
+            "Dimension out of range (expected to be in range of [-3, 2], but got 3)",
+            lambda: tensor.permute(0, 3, 0),
+        )
+
         for dimension in (-4, 3):
             with self.subTest(dimension=dimension):
                 self.assert_error(
@@ -163,6 +178,33 @@ class TensorPermuteTests(unittest.TestCase):
                     f"but got {dimension})",
                     lambda dimension=dimension: tensor.permute(0, 1, dimension),
                 )
+
+    def test_extreme_empty_reordered_element_count_overflow_matches_pytorch(self):
+        source = torch.zeros((3, 0, 1, sys.maxsize))
+        for call in (
+            lambda: source.permute(3, 0, 1, 2),
+            lambda: source.permute((0, 3, 1, 2)),
+            lambda: source.permute(dims=[2, 3, 0, 1]),
+        ):
+            self.assert_error(
+                RuntimeError,
+                "numel: integer multiplication overflow",
+                call,
+            )
+
+        for dimensions in ((3, 1, 0, 2), (1, 3, 0, 2)):
+            with self.subTest(dimensions=dimensions):
+                view = source.permute(dimensions)
+                self.assertEqual(
+                    view.shape,
+                    tuple(source.shape[axis] for axis in dimensions),
+                )
+                self.assertEqual(
+                    view.stride(),
+                    tuple(source.stride()[axis] for axis in dimensions),
+                )
+                self.assertEqual(view.storage_offset(), source.storage_offset())
+                self.assertEqual(view.data_ptr(), source.data_ptr())
 
     def test_dimension_types_and_binding_errors_match_pytorch(self):
         class IntSubclass(int):

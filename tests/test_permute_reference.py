@@ -1,4 +1,5 @@
 import inspect
+import sys
 import types
 import unittest
 
@@ -166,6 +167,18 @@ class TensorPermuteReferenceTests(unittest.TestCase):
                 lambda: actual.permute(0, 1, -4),
                 lambda: expected.permute(0, 1, -4),
             ),
+            (
+                lambda: actual.permute(0, 0, 3),
+                lambda: expected.permute(0, 0, 3),
+            ),
+            (
+                lambda: actual.permute(0, -3, 3),
+                lambda: expected.permute(0, -3, 3),
+            ),
+            (
+                lambda: actual.permute(0, 3, 0),
+                lambda: expected.permute(0, 3, 0),
+            ),
             (lambda: actual.permute(1.5), lambda: expected.permute(1.5)),
             (lambda: actual.permute(dims=1), lambda: expected.permute(dims=1)),
             (
@@ -216,6 +229,30 @@ class TensorPermuteReferenceTests(unittest.TestCase):
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
+
+    def test_extreme_empty_reordered_element_count_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual_source = torch.zeros((3, 0, 1, sys.maxsize))
+        expected_source = reference_torch.zeros((3, 0, 1, sys.maxsize))
+
+        failing_dimensions = ((3, 0, 1, 2), (0, 3, 1, 2), (2, 3, 0, 1))
+        for dimensions in failing_dimensions:
+            with self.subTest(dimensions=dimensions, outcome="overflow"):
+                self.assert_error_matches(
+                    lambda dimensions=dimensions: actual_source.permute(dimensions),
+                    lambda dimensions=dimensions: expected_source.permute(dimensions),
+                )
+
+        for dimensions in ((3, 1, 0, 2), (1, 3, 0, 2)):
+            with self.subTest(dimensions=dimensions, outcome="view"):
+                actual = actual_source.permute(dimensions)
+                expected = expected_source.permute(dimensions)
+                self.assertEqual(actual.shape, expected.shape)
+                self.assertEqual(actual.stride(), expected.stride())
+                self.assertEqual(actual.storage_offset(), expected.storage_offset())
+                self.assertEqual(actual.data_ptr(), actual_source.data_ptr())
+                self.assertEqual(expected.data_ptr(), expected_source.data_ptr())
+                self.assertEqual(actual.numel(), expected.numel())
 
     def test_index_conversion_order_matches_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")

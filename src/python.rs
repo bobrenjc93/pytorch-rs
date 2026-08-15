@@ -5198,6 +5198,8 @@ fn permute_tensor(input: &CoreTensor, dimensions: Vec<i64>) -> PyResult<CoreTens
 
     let signed_rank = i64::try_from(rank)
         .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    let mut seen = try_size_vector(rank)?;
+    seen.resize(rank, false);
     let mut normalized = try_size_vector(rank)?;
     for dimension in dimensions {
         if dimension < -signed_rank || dimension >= signed_rank {
@@ -5212,11 +5214,15 @@ fn permute_tensor(input: &CoreTensor, dimensions: Vec<i64>) -> PyResult<CoreTens
         } else {
             dimension
         };
-        try_push_size(
-            &mut normalized,
-            usize::try_from(dimension)
-                .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds usize"))?,
-        )?;
+        let dimension = usize::try_from(dimension)
+            .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds usize"))?;
+        if seen[dimension] {
+            return Err(permute_error(&TensorError::DuplicatePermutationDimension {
+                dimension,
+            }));
+        }
+        seen[dimension] = true;
+        try_push_size(&mut normalized, dimension)?;
     }
 
     input
@@ -6186,6 +6192,8 @@ fn transpose_error(error: &TensorError) -> PyErr {
 fn permute_error(error: &TensorError) -> PyErr {
     if matches!(error, TensorError::PermutationRankMismatch { .. }) {
         PyRuntimeError::new_err(format!("permute(sparse_coo): {error}"))
+    } else if matches!(error, TensorError::ElementCountOverflow) {
+        PyRuntimeError::new_err("numel: integer multiplication overflow")
     } else {
         tensor_error(error)
     }
