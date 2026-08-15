@@ -2017,6 +2017,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 61
       }
+    },
+    {
+      "key": "pr:134",
+      "recordedAt": "2026-08-15T09:57:04.507Z",
+      "label": "PR #134",
+      "kind": "leaf",
+      "prNumber": 134,
+      "title": "Accept one positional integer size in torch.zeros",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 63.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 42.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 60
+      }
     }
   ]
 }
