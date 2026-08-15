@@ -5,6 +5,7 @@ import types
 import unittest
 
 import torch_rs as torch
+from tests.signature_utils import assert_no_argument_signature
 
 
 FUNCTION_DOC = """
@@ -92,9 +93,7 @@ class GetDefaultDTypeTests(unittest.TestCase):
         self.assertEqual(function.__qualname__, "get_default_dtype")
         self.assertEqual(function.__module__, torch.tensor.__module__)
         self.assertEqual(function.__doc__, FUNCTION_DOC)
-        self.assertIsNone(function.__text_signature__)
-        with self.assertRaises(ValueError):
-            inspect.signature(function)
+        assert_no_argument_signature(self, function, "()")
         self.assertIn("get_default_dtype", torch.__all__)
 
     def test_rejects_all_arguments_with_pytorch_2_13_errors(self):

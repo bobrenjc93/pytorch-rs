@@ -5,6 +5,7 @@ import warnings
 
 import numpy as np
 import torch_rs as torch
+from tests.signature_utils import assert_no_argument_signature
 
 try:
     import torch as reference_torch
@@ -117,16 +118,12 @@ class TensorTMethodReferenceTests(unittest.TestCase):
         expected_descriptor = inspect.getattr_static(reference_torch.Tensor, "t")
         for descriptor in (actual_descriptor, expected_descriptor):
             self.assertIs(type(descriptor), types.MethodDescriptorType)
-            self.assertIsNone(descriptor.__text_signature__)
             self.assertEqual(descriptor.__name__, "t")
-            with self.assertRaises(ValueError):
-                inspect.signature(descriptor)
+            assert_no_argument_signature(self, descriptor, "(self, /)")
         self.assertEqual(actual_descriptor.__doc__, expected_descriptor.__doc__)
         for bound in (actual.t, expected.t):
             self.assertIs(type(bound), types.BuiltinMethodType)
-            self.assertIsNone(bound.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(bound)
+            assert_no_argument_signature(self, bound, "()")
 
         self.assert_matches(
             actual_descriptor(actual), expected_descriptor(expected), case="unbound-call"

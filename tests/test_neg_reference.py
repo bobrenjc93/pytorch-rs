@@ -5,6 +5,7 @@ import unittest
 
 import numpy as np
 import torch_rs as torch
+from tests.signature_utils import assert_no_argument_signature
 
 try:
     import torch as reference_torch
@@ -280,17 +281,24 @@ class UnaryNegationReferenceTests(unittest.TestCase):
         for descriptor in (actual_descriptor, expected_descriptor):
             self.assertIs(type(descriptor), types.MethodDescriptorType)
             self.assertEqual(descriptor.__name__, "neg")
-            self.assertIsNone(descriptor.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(descriptor)
+            assert_no_argument_signature(self, descriptor, "(self, /)")
         self.assertEqual(actual_descriptor.__doc__, expected_descriptor.__doc__)
+        self.assertEqual(
+            actual_descriptor.__qualname__, expected_descriptor.__qualname__
+        )
+        self.assertEqual(
+            actual_descriptor.__objclass__.__name__,
+            expected_descriptor.__objclass__.__name__,
+        )
+        self.assertEqual(
+            actual_descriptor.__objclass__.__module__,
+            expected_descriptor.__objclass__.__module__,
+        )
 
         for bound in (actual.neg, expected.neg):
             self.assertIs(type(bound), types.BuiltinMethodType)
             self.assertEqual(bound.__name__, "neg")
-            self.assertIsNone(bound.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(bound)
+            assert_no_argument_signature(self, bound, "()")
 
         self.assert_matches(
             actual_descriptor(actual),
@@ -345,10 +353,13 @@ class UnaryNegationReferenceTests(unittest.TestCase):
                 expected_callable.__text_signature__,
             )
             self.assertEqual(actual_callable.__doc__, expected_callable.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(actual_callable)
-            with self.assertRaises(ValueError):
-                inspect.signature(expected_callable)
+            expected_signature = (
+                "(self, /)"
+                if expected_type is types.MethodDescriptorType
+                else "()"
+            )
+            assert_no_argument_signature(self, actual_callable, expected_signature)
+            assert_no_argument_signature(self, expected_callable, expected_signature)
 
         self.assertEqual(
             actual_descriptor.__objclass__.__name__,

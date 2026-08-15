@@ -6,6 +6,7 @@ import warnings
 
 import numpy as np
 import torch_rs as torch
+from tests.signature_utils import assert_no_argument_signature
 
 
 FINITE_CASES = (
@@ -208,19 +209,15 @@ class TensorIntTests(unittest.TestCase):
         self.assertEqual(descriptor.__name__, "__int__")
         self.assertEqual(descriptor.__qualname__, "TensorBase.__int__")
         self.assertIsNone(descriptor.__doc__)
-        self.assertIsNone(descriptor.__text_signature__)
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
         self.assertFalse(hasattr(descriptor, "__module__"))
-        with self.assertRaises(ValueError):
-            inspect.signature(descriptor)
+        assert_no_argument_signature(self, descriptor, "(self, /)")
 
         self.assertIs(type(bound), types.BuiltinMethodType)
         self.assertEqual(bound.__name__, "__int__")
         self.assertIsNone(bound.__doc__)
-        self.assertIsNone(bound.__text_signature__)
-        with self.assertRaises(ValueError):
-            inspect.signature(bound)
+        assert_no_argument_signature(self, bound, "()")
         self.assertEqual(descriptor(tensor), 2)
         self.assertIs(descriptor.__get__(None, torch.Tensor), descriptor)
         self.assertEqual(descriptor.__get__(tensor, torch.Tensor)(), 2)
