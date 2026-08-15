@@ -1905,6 +1905,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 60
       }
+    },
+    {
+      "key": "pr:127",
+      "recordedAt": "2026-08-15T01:53:30.848Z",
+      "label": "PR #127",
+      "kind": "leaf",
+      "prNumber": 127,
+      "title": "Expose Tensor.float for float32 tensors",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 63,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 41.8,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 60
+      }
     }
   ]
 }
