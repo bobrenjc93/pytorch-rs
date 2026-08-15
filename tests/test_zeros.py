@@ -1,6 +1,8 @@
 import re
 import sys
 import unittest
+from collections import UserList
+from collections.abc import Sequence
 
 import numpy as np
 import torch_rs as torch
@@ -114,18 +116,50 @@ class ZerosTests(unittest.TestCase):
             torch.zeros(sys.maxsize)
 
     def test_existing_sequence_and_keyword_forms_are_unchanged(self):
-        for size in ((2,), [2]):
+        class CustomSequence(Sequence):
+            def __init__(self, values):
+                self.values = values
+
+            def __len__(self):
+                return len(self.values)
+
+            def __getitem__(self, index):
+                return self.values[index]
+
+        for size, expected_shape in (
+            ((2,), (2,)),
+            ([2], (2,)),
+            (np.array([2]), (2,)),
+            (range(2, 4), (2, 3)),
+            (UserList([2]), (2,)),
+            (CustomSequence([2]), (2,)),
+        ):
             with self.subTest(size=size):
                 tensor = torch.zeros(size)
-                self.assertEqual(tensor.shape, (2,))
-                self.assertEqual(tensor.tolist(), [0.0, 0.0])
+                self.assertEqual(tensor.shape, expected_shape)
+                self.assertEqual(tensor.numel(), int(np.prod(expected_shape)))
 
         self.assertEqual(torch.zeros(size=(2,)).tolist(), [0.0, 0.0])
         self.assertEqual(torch.zeros(shape=(2,)).tolist(), [0.0, 0.0])
+        self.assertEqual(torch.zeros(size=np.array([2])).shape, (2,))
+        self.assertEqual(torch.zeros(shape=UserList([2])).shape, (2,))
+        self.assertEqual(torch.zeros(None, shape=(2,)).tolist(), [0.0, 0.0])
+
+        with self.assertRaises(Exception) as direct_shape_error:
+            torch.zeros(shape=2)
+        with self.assertRaises(Exception) as omitted_positional_error:
+            torch.zeros(None, shape=2)
+        self.assertIs(
+            type(direct_shape_error.exception),
+            type(omitted_positional_error.exception),
+        )
+        self.assertEqual(
+            str(direct_shape_error.exception),
+            str(omitted_positional_error.exception),
+        )
 
         for call in (
             lambda: torch.zeros(size=2),
-            lambda: torch.zeros(shape=2),
             lambda: torch.zeros(2, 3),
             lambda: torch.ones(2),
         ):

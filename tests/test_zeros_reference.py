@@ -128,6 +128,73 @@ class ZerosReferenceTests(unittest.TestCase):
                 self.assertIn("Overflow when unpacking long long", actual_message)
                 self.assertIn("Overflow when unpacking long long", expected_message)
 
+    def test_mixed_invalid_scalar_validation_order_matches_pytorch_2_13(self):
+        cases = (
+            (
+                "negative and invalid dtype",
+                lambda module: module.zeros(-1, dtype=object()),
+            ),
+            (
+                "overflow and invalid dtype",
+                lambda module: module.zeros(2**63, dtype=object()),
+            ),
+            (
+                "negative and invalid device",
+                lambda module: module.zeros(-1, device=object()),
+            ),
+            (
+                "overflow and invalid device",
+                lambda module: module.zeros(2**63, device=object()),
+            ),
+            (
+                "negative and invalid requires_grad",
+                lambda module: module.zeros(-1, requires_grad=1),
+            ),
+            (
+                "index negative and invalid requires_grad",
+                lambda module: module.zeros(IndexDimension(-1), requires_grad=1),
+            ),
+            (
+                "overflow and invalid requires_grad",
+                lambda module: module.zeros(2**63, requires_grad=1),
+            ),
+            (
+                "negative and duplicate size",
+                lambda module: module.zeros(-1, size=(2,)),
+            ),
+            (
+                "overflow and duplicate size",
+                lambda module: module.zeros(2**63, size=(2,)),
+            ),
+            (
+                "negative and unknown keyword",
+                lambda module: module.zeros(-1, unexpected=True),
+            ),
+            (
+                "index overflow and unknown keyword",
+                lambda module: module.zeros(IndexDimension(2**63), unexpected=True),
+            ),
+            (
+                "negative before device resolution",
+                lambda module: module.zeros(-1, device="cuda"),
+            ),
+            (
+                "boolean type before requires_grad",
+                lambda module: module.zeros(True, requires_grad=1),
+            ),
+        )
+        for case, call in cases:
+            with self.subTest(case=case):
+                actual_type, actual_message = self.capture_error(lambda: call(torch))
+                expected_type, expected_message = self.capture_error(
+                    lambda: call(reference_torch)
+                )
+                self.assertIs(actual_type, expected_type)
+                self.assertEqual(
+                    actual_message.replace("torch.device or str", "torch.device"),
+                    expected_message,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
