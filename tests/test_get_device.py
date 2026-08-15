@@ -1,4 +1,6 @@
 import inspect
+import pickle
+import re
 import sys
 import types
 import unittest
@@ -19,7 +21,7 @@ METHOD_DOC = (
 )
 
 
-class TensorGetDeviceTests(unittest.TestCase):
+class GetDeviceTests(unittest.TestCase):
     def tensor_cases(self):
         leaf = torch.tensor(
             [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
@@ -60,9 +62,15 @@ class TensorGetDeviceTests(unittest.TestCase):
                     tensor.requires_grad,
                     tensor.is_leaf,
                 )
-                result = tensor.get_device()
-                self.assertIs(type(result), int)
-                self.assertEqual(result, -1)
+                results = (
+                    tensor.get_device(),
+                    torch.get_device(tensor),
+                    torch.get_device(input=tensor),
+                    torch.get_device(x=tensor),
+                    torch.get_device(a=tensor),
+                )
+                self.assertEqual(results, (-1, -1, -1, -1, -1))
+                self.assertTrue(all(type(result) is int for result in results))
                 self.assertIsNone(tensor.device.index)
                 self.assertEqual(
                     (
@@ -76,6 +84,24 @@ class TensorGetDeviceTests(unittest.TestCase):
                     ),
                     metadata,
                 )
+
+    def test_top_level_queries_do_not_mutate_a_pending_autograd_graph(self):
+        leaf = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+        )
+        tracked = (leaf * 2.0).transpose(0, 1)
+
+        self.assertEqual(
+            (
+                torch.get_device(tracked),
+                torch.get_device(input=tracked),
+                torch.get_device(x=tracked),
+                torch.get_device(a=tracked),
+            ),
+            (-1, -1, -1, -1),
+        )
+        tracked.sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[2.0, 2.0], [2.0, 2.0]])
 
     def test_tensorbase_descriptor_documentation_and_unbound_call(self):
         tensor = torch.tensor([1.0])
@@ -105,6 +131,41 @@ class TensorGetDeviceTests(unittest.TestCase):
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
         self.assertEqual(descriptor(tensor), -1)
+
+    def test_top_level_callable_metadata_and_exports_match_pytorch(self):
+        function = torch.get_device
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "get_device")
+        self.assertEqual(
+            function.__qualname__, "_VariableFunctionsClass.get_device"
+        )
+        self.assertEqual(function.__module__, "torch")
+        self.assertIsNone(function.__doc__)
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method get_device of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.get_device, function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                restored = pickle.loads(pickle.dumps(function, protocol=protocol))
+                self.assertIs(restored, function)
+
+        self.assertEqual(torch.__all__.count("get_device"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["get_device"], function)
 
     def test_no_argument_errors_match_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
@@ -150,6 +211,63 @@ class TensorGetDeviceTests(unittest.TestCase):
                 with self.assertRaises(TypeError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
+
+    def test_top_level_binding_and_type_errors_match_pytorch_2_13(self):
+        tensor = torch.tensor([1.0])
+        cases = (
+            (
+                lambda: torch.get_device(),
+                'get_device() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.get_device(tensor, tensor),
+                "get_device() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.get_device(tensor, input=tensor),
+                "get_device() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.get_device(tensor, x=tensor),
+                "get_device() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.get_device(tensor, a=tensor),
+                "get_device() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.get_device(input=tensor, a=tensor),
+                "get_device() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.get_device(foo=tensor),
+                'get_device() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.get_device(tensor, extra=True),
+                "get_device() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.get_device(1),
+                "get_device(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.get_device(input=[]),
+                "get_device(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.get_device(x=None),
+                "get_device(): argument 'input' must be Tensor, not NoneType",
+            ),
+            (
+                lambda: torch.get_device(a=1),
+                "get_device(): argument 'input' must be Tensor, not int",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
 
 
 if __name__ == "__main__":

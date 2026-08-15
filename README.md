@@ -18,6 +18,7 @@ assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 functional_result = torch.nn.functional.relu(x + y)
 assert functional_result.tolist() == result.tolist()
 assert torch.is_signed(input=x)
+assert torch.get_device(input=x) == -1
 
 # Transposes are native shared-storage views. Tensor.T reverses every dimension,
 # Tensor.mT swaps the final matrix dimensions, Tensor.swapdims()/torch.swapdims()
