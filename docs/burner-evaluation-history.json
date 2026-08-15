@@ -2129,6 +2129,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 62
       }
+    },
+    {
+      "key": "pr:142",
+      "recordedAt": "2026-08-15T15:55:16.270Z",
+      "label": "PR #142",
+      "kind": "leaf",
+      "prNumber": 142,
+      "title": "Add torch.utils.data.Subset",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 43.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 62
+      }
     }
   ]
 }
