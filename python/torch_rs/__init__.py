@@ -1,9 +1,15 @@
 """PyTorch-compatible public package backed by the native extension."""
 
 import copyreg as _copyreg
+import sys as _sys
 
 from . import torch_rs as _native
 from .torch_rs import *
+
+# PyTorch's memory-format reducers use dotted public names such as
+# ``torch.channels_last``. Mirror its module self-alias so those names resolve
+# from this package without adding ``torch`` to wildcard imports.
+torch = _sys.modules[__name__]
 
 # PyTorch exposes ``strided`` as an attribute without including it in
 # ``torch.__all__``. Bind it explicitly instead of widening wildcard imports.
@@ -26,4 +32,4 @@ _copyreg.pickle(layout, _reduce_layout)
 __doc__ = _native.__doc__
 __all__ = _native.__all__
 
-del _copyreg, _native
+del _copyreg, _native, _sys
