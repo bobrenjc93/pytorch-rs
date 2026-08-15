@@ -11,7 +11,7 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 | creation, elementwise, reductions | 15% | basic arithmetic, reductions, and exact tensor equality |
 | linear algebra and signal operations | 10% | rank-2 matmul only |
 | autograd and higher-order differentiation | 15% | unsupported |
-| neural-network functional API and modules | 15% | unsupported |
+| neural-network functional API and modules | 15% | out-of-place `torch.nn.functional.relu` backed by the native ReLU kernel |
 | optimizers, initialization, data utilities | 5% | unsupported |
 | serialization, state dictionaries, model interchange | 5% | unsupported |
 | compilation, parallelism, distributed execution | 5% | unsupported |
