@@ -196,7 +196,7 @@ class SubsetReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_data.__all__
-                if name in {"Dataset", "Subset", "TensorDataset"}
+                if name in {"ConcatDataset", "Dataset", "Subset", "TensorDataset"}
             ],
         )
         self.assertEqual(
@@ -204,7 +204,7 @@ class SubsetReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_module.__all__
-                if name in {"Dataset", "Subset", "TensorDataset"}
+                if name in {"ConcatDataset", "Dataset", "Subset", "TensorDataset"}
             ],
         )
         self.assertEqual(
