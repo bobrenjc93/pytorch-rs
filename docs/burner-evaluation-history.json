@@ -1921,6 +1921,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 60
       }
+    },
+    {
+      "key": "pr:128",
+      "recordedAt": "2026-08-15T02:12:53.114Z",
+      "label": "PR #128",
+      "kind": "leaf",
+      "prNumber": 128,
+      "title": "Isolate MemoryFormat metadata in one native module",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 63,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 41.8,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 61
+      }
     }
   ]
 }

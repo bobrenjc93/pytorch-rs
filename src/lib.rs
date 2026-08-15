@@ -7,6 +7,7 @@
 
 mod device;
 mod dtype;
+mod memory_format;
 #[cfg(feature = "python-bindings")]
 mod python;
 #[cfg(feature = "python-bindings")]
@@ -18,6 +19,5 @@ pub(crate) use tensor::{enter_no_grad, exit_no_grad};
 
 pub use device::Device;
 pub use dtype::DType;
-pub use tensor::{
-    LogicalValues, MemoryFormat, NoGradGuard, Tensor, TensorError, is_grad_enabled, no_grad,
-};
+pub use memory_format::MemoryFormat;
+pub use tensor::{LogicalValues, NoGradGuard, Tensor, TensorError, is_grad_enabled, no_grad};
