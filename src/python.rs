@@ -12,8 +12,8 @@ use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView, PyModule,
-    PySequence, PyString, PyTuple,
+    PyAny, PyBool, PyBytes, PyComplex, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView,
+    PyModule, PySequence, PyString, PyTuple,
 };
 
 use crate::{
@@ -806,6 +806,29 @@ impl PyNoGrad {
     }
 }
 
+// PyTorch exposes tensor factories as built-in static methods owned by this
+// internal type. Keeping the owner private while exporting its bound method
+// preserves scalar_tensor's public callable metadata.
+#[pyclass(
+    name = "_VariableFunctionsClass",
+    module = "torch._C",
+    frozen,
+    skip_from_py_object
+)]
+struct PyVariableFunctionsClass;
+
+#[pymethods]
+impl PyVariableFunctionsClass {
+    #[staticmethod]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn scalar_tensor(
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        scalar_tensor_impl(args, kwargs)
+    }
+}
+
 enum ParsedFillValue {
     Float(f64),
     SignedInteger(i64),
@@ -833,6 +856,16 @@ impl<'a, 'py> FromPyObject<'a, 'py> for StrictBool {
 struct ParsedCallArgument<'py> {
     value: Bound<'py, PyAny>,
     position: Option<usize>,
+}
+
+struct ScalarTensorCallArguments<'py> {
+    scalar: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
 }
 
 struct CreationCallArguments<'py> {
@@ -1751,6 +1784,23 @@ fn tensor(
         .map_err(|error| tensor_error(&error))
 }
 
+fn scalar_tensor_impl(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyTensor> {
+    let arguments = bind_scalar_tensor_arguments(args, kwargs)?;
+    let (value, dtype, device, pin_memory, requires_grad) =
+        parse_scalar_tensor_arguments(arguments)?;
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "scalar_tensor(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
+    CoreTensor::full_with_metadata(Vec::new(), value, dtype, device)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| tensor_error(&error))
+}
+
 fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyResult<bool> {
     if requires_grad.is_exact_instance_of::<PyBool>() {
         return requires_grad.is_truthy();
@@ -2310,6 +2360,301 @@ fn bind_creation_arguments<'py>(
 
 fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
     if value.is_none() { None } else { Some(value) }
+}
+
+fn bind_scalar_tensor_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ScalarTensorCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "scalar_tensor() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = ScalarTensorCallArguments {
+        scalar: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        dtype: None,
+        layout: None,
+        device: None,
+        pin_memory: None,
+        requires_grad: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "s" => {
+                if arguments.scalar.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("scalar_tensor() got multiple values for argument 's'")
+                    });
+                } else {
+                    arguments.scalar = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "scalar_tensor() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn parse_scalar_tensor_arguments(
+    arguments: ScalarTensorCallArguments<'_>,
+) -> PyResult<(f32, DType, Device, bool, bool)> {
+    let ScalarTensorCallArguments {
+        scalar,
+        dtype,
+        layout,
+        device,
+        pin_memory,
+        requires_grad,
+        keyword_error,
+    } = arguments;
+    let Some(scalar) = scalar else {
+        return Err(PyTypeError::new_err(
+            "scalar_tensor() missing 1 required positional arguments: \"s\"",
+        ));
+    };
+
+    validate_scalar_tensor_value(&scalar)?;
+    let dtype = parse_dtype("scalar_tensor", dtype.as_ref())?;
+    parse_scalar_tensor_layout(layout.as_ref())?;
+    validate_scalar_tensor_device_type(device.as_ref())?;
+    let pin_memory = parse_scalar_tensor_bool("pin_memory", pin_memory.as_ref())?;
+    let requires_grad = parse_factory_requires_grad("scalar_tensor", requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    let device = parse_scalar_tensor_device(device.as_ref())?;
+    let value = convert_scalar_tensor_value(&scalar)?;
+    Ok((value, dtype, device, pin_memory, requires_grad))
+}
+
+fn validate_scalar_tensor_value(scalar: &ParsedCallArgument<'_>) -> PyResult<()> {
+    let value = &scalar.value;
+    let valid = if let Ok(tensor) = value.cast::<PyTensor>() {
+        let tensor = tensor.try_borrow()?;
+        tensor.inner.shape().is_empty() && !tensor.inner.requires_grad()
+    } else if value.is_instance_of::<PyInt>()
+        || value.is_instance_of::<PyFloat>()
+        || value.is_instance_of::<PyComplex>()
+    {
+        true
+    } else {
+        is_numpy_scalar_tensor_number(value)?
+    };
+    if valid {
+        return Ok(());
+    }
+
+    let position = scalar
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = transpose_type_name(value)?;
+    Err(PyTypeError::new_err(format!(
+        "scalar_tensor(): argument 's'{position} must be Number, not {actual}"
+    )))
+}
+
+fn is_numpy_scalar_tensor_number(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(false);
+    };
+    if !value.is_instance(&numpy.getattr("generic")?)? {
+        return Ok(false);
+    }
+    for scalar_type in ["bool_", "integer", "floating", "complexfloating"] {
+        if value.is_instance(&numpy.getattr(scalar_type)?)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn convert_scalar_tensor_value(scalar: &ParsedCallArgument<'_>) -> PyResult<f32> {
+    let value = &scalar.value;
+    let parsed = if let Ok(tensor) = value.cast::<PyTensor>() {
+        tensor
+            .try_borrow()?
+            .inner
+            .item()
+            .map(ParsedFillValue::TensorScalar)
+            .map_err(|error| tensor_error(&error))?
+    } else if value.is_instance_of::<PyInt>() {
+        if let Ok(value) = value.extract::<i64>() {
+            ParsedFillValue::SignedInteger(value)
+        } else {
+            ParsedFillValue::UnsignedInteger(value.extract::<u64>()?)
+        }
+    } else if value.is_instance_of::<PyFloat>() {
+        ParsedFillValue::Float(value.extract::<f64>()?)
+    } else if value.is_instance_of::<PyComplex>() {
+        return Err(scalar_tensor_overflow());
+    } else {
+        parse_numpy_scalar_tensor_value(value)?
+    };
+    parsed.into_scalar_tensor_f32()
+}
+
+fn parse_numpy_scalar_tensor_value(value: &Bound<'_, PyAny>) -> PyResult<ParsedFillValue> {
+    let numpy = PyModule::import(value.py(), "numpy")?;
+    if value.is_instance(&numpy.getattr("bool_")?)? {
+        return value
+            .is_truthy()
+            .map(|value| ParsedFillValue::SignedInteger(i64::from(value)));
+    }
+    if value.is_instance(&numpy.getattr("integer")?)? {
+        return value
+            .extract::<i64>()
+            .map(ParsedFillValue::SignedInteger)
+            .map_err(|_| PyTypeError::new_err("an integer is required"));
+    }
+    if value.is_instance(&numpy.getattr("floating")?)?
+        || value.is_instance(&numpy.getattr("complexfloating")?)?
+    {
+        return value.extract::<f64>().map(ParsedFillValue::Float);
+    }
+    unreachable!("scalar_tensor NumPy values were validated before conversion")
+}
+
+fn parse_scalar_tensor_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(layout) = layout else {
+        return Ok(());
+    };
+    if layout.is_instance(layout_objects(layout.py())?.layout.bind(layout.py()))? {
+        return Ok(());
+    }
+    let actual = transpose_type_name(layout)?;
+    Err(PyTypeError::new_err(format!(
+        "scalar_tensor(): argument 'layout' must be torch.layout, not {actual}"
+    )))
+}
+
+fn validate_scalar_tensor_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if device.cast::<PyDevice>().is_ok() || device.cast::<PyString>().is_ok() {
+        return Ok(());
+    }
+    let actual = transpose_type_name(device)?;
+    Err(PyTypeError::new_err(format!(
+        "scalar_tensor(): argument 'device' must be torch.device, not {actual}"
+    )))
+}
+
+fn parse_scalar_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Device> {
+    let Some(device) = device else {
+        return Ok(Device::Cpu);
+    };
+    if let Ok(device) = device.cast::<PyDevice>() {
+        return Ok(device.try_borrow()?.inner);
+    }
+    let specification = device.cast::<PyString>()?.to_str()?;
+    if specification.is_empty() {
+        return Err(PyRuntimeError::new_err("Device string must not be empty"));
+    }
+    let (device_type, index) = specification
+        .split_once(':')
+        .map_or((specification, None), |(device_type, index)| {
+            (device_type, Some(index))
+        });
+    let known_type = matches!(
+        device_type,
+        "cpu"
+            | "cuda"
+            | "ipu"
+            | "xpu"
+            | "mkldnn"
+            | "opengl"
+            | "opencl"
+            | "ideep"
+            | "hip"
+            | "ve"
+            | "fpga"
+            | "maia"
+            | "xla"
+            | "lazy"
+            | "vulkan"
+            | "mps"
+            | "meta"
+            | "hpu"
+            | "mtia"
+            | "privateuseone"
+    );
+    if !known_type {
+        if !device_type.is_empty()
+            && device_type
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        {
+            return Err(PyRuntimeError::new_err(format!(
+                "Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone device type at start of device string: {device_type}"
+            )));
+        }
+        return Err(PyRuntimeError::new_err(format!(
+            "Invalid device string: '{specification}'"
+        )));
+    }
+    if let Some(index) = index {
+        let valid_digits = !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit());
+        if !valid_digits || (index.len() > 1 && index.starts_with('0')) {
+            return Err(PyRuntimeError::new_err(format!(
+                "Invalid device string: '{specification}'"
+            )));
+        }
+        if index.parse::<i32>().is_err() {
+            return Err(PyRuntimeError::new_err(format!(
+                "Could not parse device index '{index}' in device string '{specification}'"
+            )));
+        }
+    }
+    if device_type == "cpu" {
+        return Ok(Device::Cpu);
+    }
+    Err(PyRuntimeError::new_err(format!(
+        "scalar_tensor(): device '{specification}' is not supported; only 'cpu' is implemented"
+    )))
+}
+
+fn parse_scalar_tensor_bool(argument: &str, value: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let Some(value) = value else {
+        return Ok(false);
+    };
+    if value.is_exact_instance_of::<PyBool>() {
+        return value.is_truthy();
+    }
+    let actual = transpose_type_name(value)?;
+    Err(PyTypeError::new_err(format!(
+        "scalar_tensor(): argument '{argument}' must be bool, not {actual}"
+    )))
 }
 
 fn bind_eye_arguments<'py>(
@@ -5875,6 +6220,30 @@ impl ParsedFillValue {
             Self::TensorScalar(value) => value,
         }
     }
+
+    fn into_scalar_tensor_f32(self) -> PyResult<f32> {
+        match self {
+            Self::Float(value) => {
+                if value.is_finite() && value.abs() > f64::from(f32::MAX) {
+                    return Err(scalar_tensor_overflow());
+                }
+                #[allow(clippy::cast_possible_truncation)]
+                let converted = value as f32;
+                Ok(converted)
+            }
+            Self::SignedInteger(value) => {
+                #[allow(clippy::cast_precision_loss)]
+                let converted = value as f32;
+                Ok(converted)
+            }
+            Self::UnsignedInteger(value) => {
+                #[allow(clippy::cast_precision_loss)]
+                let converted = value as f32;
+                Ok(converted)
+            }
+            Self::TensorScalar(value) => Ok(value),
+        }
+    }
 }
 
 impl ParsedArithmeticScalar {
@@ -5895,6 +6264,10 @@ impl ParsedArithmeticScalar {
 
 fn fill_value_overflow() -> PyErr {
     PyRuntimeError::new_err("value cannot be converted to float32 without overflow")
+}
+
+fn scalar_tensor_overflow() -> PyErr {
+    PyRuntimeError::new_err("value cannot be converted to type float without overflow")
 }
 
 fn flatten_buffer(
@@ -6255,6 +6628,11 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(is_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(get_default_dtype, module)?)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
+    let scalar_tensor = py
+        .get_type::<PyVariableFunctionsClass>()
+        .getattr("scalar_tensor")?;
+    scalar_tensor.setattr("__module__", "torch")?;
+    module.add("scalar_tensor", scalar_tensor)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
     module.add_function(wrap_pyfunction!(relu, module)?)?;
