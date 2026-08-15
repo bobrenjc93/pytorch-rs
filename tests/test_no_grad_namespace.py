@@ -25,6 +25,29 @@ class StatefulNoGrad(torch.no_grad):
         self.required = required
 
 
+class NewArgsNoGrad(torch.no_grad):
+    __slots__ = ("constructed",)
+    init_calls = 0
+    new_calls = 0
+
+    def __new__(cls, constructed):
+        cls.new_calls += 1
+        instance = super().__new__(cls)
+        instance.constructed = constructed
+        return instance
+
+    def __init__(self, constructed):
+        type(self).init_calls += 1
+        super().__init__()
+        self.mutated = {"state": [7, 8]}
+
+    def __getnewargs__(self):
+        return (self.constructed,)
+
+    def __getstate__(self):
+        return self.__dict__
+
+
 if reference_torch is not None:
     class ReferenceStatefulNoGrad(reference_torch.no_grad):
         init_calls = 0
@@ -37,8 +60,31 @@ if reference_torch is not None:
             super().__init__()
             self.required = required
 
+    class ReferenceNewArgsNoGrad(reference_torch.no_grad):
+        __slots__ = ("constructed",)
+        init_calls = 0
+        new_calls = 0
+
+        def __new__(cls, constructed):
+            cls.new_calls += 1
+            instance = super().__new__(cls)
+            instance.constructed = constructed
+            return instance
+
+        def __init__(self, constructed):
+            type(self).init_calls += 1
+            super().__init__()
+            self.mutated = {"state": [7, 8]}
+
+        def __getnewargs__(self):
+            return (self.constructed,)
+
+        def __getstate__(self):
+            return self.__dict__
+
 else:
     ReferenceStatefulNoGrad = None
+    ReferenceNewArgsNoGrad = None
 
 
 class NoGradNamespaceTests(unittest.TestCase):
@@ -152,6 +198,37 @@ class NoGradNamespaceTests(unittest.TestCase):
                 self.assertTrue(torch.is_grad_enabled())
 
         self.assertEqual(StatefulNoGrad.init_calls, 1)
+
+    def test_copy_and_pickle_honor_subclass_getnewargs(self):
+        NewArgsNoGrad.init_calls = 0
+        NewArgsNoGrad.new_calls = 0
+        constructed = {"constructed": [1, 2]}
+        instance = NewArgsNoGrad(constructed)
+
+        shallow = copy.copy(instance)
+        self.assertIs(type(shallow), NewArgsNoGrad)
+        self.assertIs(shallow.constructed, constructed)
+        self.assertEqual(shallow.mutated, instance.mutated)
+
+        deep = copy.deepcopy(instance)
+        self.assertIs(type(deep), NewArgsNoGrad)
+        self.assertEqual(deep.constructed, constructed)
+        self.assertIsNot(deep.constructed, constructed)
+        self.assertEqual(deep.mutated, instance.mutated)
+
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                restored = pickle.loads(pickle.dumps(instance, protocol=protocol))
+                self.assertIs(type(restored), NewArgsNoGrad)
+                self.assertEqual(restored.mutated, instance.mutated)
+                if protocol < 2:
+                    self.assertFalse(hasattr(restored, "constructed"))
+                else:
+                    self.assertEqual(restored.constructed, constructed)
+                    self.assertIsNot(restored.constructed, constructed)
+
+        self.assertEqual(NewArgsNoGrad.init_calls, 1)
+        self.assertEqual(NewArgsNoGrad.new_calls, pickle.HIGHEST_PROTOCOL + 2)
 
     def test_aliases_preserve_context_decorator_generator_and_thread_behavior(self):
         autograd_no_grad = torch.autograd.no_grad
@@ -304,6 +381,42 @@ class NoGradNamespaceReferenceTests(unittest.TestCase):
             "init_calls": subclass_type.init_calls,
         }
 
+    def newargs_contract(self, subclass_type):
+        subclass_type.init_calls = 0
+        subclass_type.new_calls = 0
+        constructed = {"constructed": [1, 2]}
+        instance = subclass_type(constructed)
+        shallow = copy.copy(instance)
+        deep = copy.deepcopy(instance)
+        pickle_results = []
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            restored = pickle.loads(pickle.dumps(instance, protocol=protocol))
+            pickle_results.append(
+                (
+                    type(restored) is subclass_type,
+                    hasattr(restored, "constructed"),
+                    getattr(restored, "constructed", None) == constructed,
+                    getattr(restored, "constructed", None) is constructed,
+                    restored.mutated == instance.mutated,
+                )
+            )
+
+        return {
+            "copy": (
+                type(shallow) is subclass_type,
+                shallow.constructed == constructed,
+                shallow.constructed is constructed,
+                shallow.mutated == instance.mutated,
+                type(deep) is subclass_type,
+                deep.constructed == constructed,
+                deep.constructed is constructed,
+                deep.mutated == instance.mutated,
+            ),
+            "pickle": tuple(pickle_results),
+            "init_calls": subclass_type.init_calls,
+            "new_calls": subclass_type.new_calls,
+        }
+
     def test_namespace_metadata_copy_and_pickle_match_pytorch_2_13(self):
         self.assertEqual(self.contract(torch), self.contract(reference_torch))
 
@@ -311,6 +424,12 @@ class NoGradNamespaceReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.state_contract(torch, StatefulNoGrad),
             self.state_contract(reference_torch, ReferenceStatefulNoGrad),
+        )
+
+    def test_subclass_getnewargs_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.newargs_contract(NewArgsNoGrad),
+            self.newargs_contract(ReferenceNewArgsNoGrad),
         )
 
 
