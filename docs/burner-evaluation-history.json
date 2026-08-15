@@ -2129,6 +2129,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 62
       }
+    },
+    {
+      "key": "pr:141",
+      "recordedAt": "2026-08-15T15:41:15.543Z",
+      "label": "PR #141",
+      "kind": "leaf",
+      "prNumber": 141,
+      "title": "Add a focused Python 3.14 compatibility CI lane",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 43.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 62
+      }
     }
   ]
 }
