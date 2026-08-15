@@ -1873,6 +1873,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 59
       }
+    },
+    {
+      "key": "pr:125",
+      "recordedAt": "2026-08-15T01:03:41.061Z",
+      "label": "PR #125",
+      "kind": "leaf",
+      "prNumber": 125,
+      "title": "Isolate Device metadata in one native module",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 62.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 41.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 60
+      }
     }
   ]
 }
