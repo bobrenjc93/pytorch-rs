@@ -1937,6 +1937,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 61
       }
+    },
+    {
+      "key": "pr:129",
+      "recordedAt": "2026-08-15T06:54:06.884Z",
+      "label": "PR #129",
+      "kind": "leaf",
+      "prNumber": 129,
+      "title": "Expose Tensor.permute through the native permutation engine",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 63.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 42.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 61
+      }
     }
   ]
 }

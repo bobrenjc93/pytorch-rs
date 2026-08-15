@@ -1255,6 +1255,20 @@ fn dimension_permutation_validation_is_safe_and_rank_independent() {
         Err(TensorError::DuplicatePermutationDimension { dimension: 1 })
     );
 
+    let maximum = isize::MAX.unsigned_abs();
+    let extreme_empty = Tensor::zeros([3, 0, 1, maximum]).unwrap();
+    assert_eq!(
+        extreme_empty.permute_axes([3, 0, 1, 2]),
+        Err(TensorError::ElementCountOverflow)
+    );
+    assert_eq!(
+        extreme_empty.permute_axes([3, 0, 0, 1]),
+        Err(TensorError::DuplicatePermutationDimension { dimension: 0 })
+    );
+    let zero_before_overflow = extreme_empty.permute_axes([3, 1, 0, 2]).unwrap();
+    assert_eq!(zero_before_overflow.shape(), [maximum, 0, 3, 1]);
+    assert!(zero_before_overflow.shares_storage_with(&extreme_empty));
+
     let scalar = Tensor::from_vec(vec![2.5], []).unwrap();
     let scalar_t = scalar.reverse_dimensions().unwrap();
     assert!(scalar_t.shape().is_empty());

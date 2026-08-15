@@ -1400,12 +1400,15 @@ impl Tensor {
     /// Each source axis must occur exactly once. The output shape and stride at
     /// a position are taken from the corresponding source axis, while storage,
     /// offset, dtype, device, and element count are retained. In particular,
-    /// this operation does not recalculate strides or materialize values.
+    /// this operation does not recalculate strides or materialize values. The
+    /// requested axis order is still checked for intermediate element-count
+    /// overflow to match `PyTorch` view construction.
     ///
     /// # Errors
     ///
     /// Returns an error when the permutation has the wrong length, contains an
-    /// invalid or duplicate axis, or when view metadata allocation fails.
+    /// invalid or duplicate axis, its reordered element-count multiplication
+    /// overflows, or when view metadata allocation fails.
     pub fn permute_axes(&self, dimensions: impl AsRef<[usize]>) -> Result<Self, TensorError> {
         let dimensions = dimensions.as_ref();
         let rank = self.shape.len();
@@ -1418,7 +1421,6 @@ impl Tensor {
 
         let mut seen = try_result_vector(rank, self.elements)?;
         seen.resize(rank, false);
-        let mut shape = try_result_vector(rank, self.elements)?;
         for &dimension in dimensions {
             if dimension >= rank {
                 return Err(TensorError::PermutationDimensionOutOfRange { dimension, rank });
@@ -1427,6 +1429,12 @@ impl Tensor {
                 return Err(TensorError::DuplicatePermutationDimension { dimension });
             }
             seen[dimension] = true;
+        }
+
+        element_count_in_axis_order(&self.shape, dimensions)?;
+
+        let mut shape = try_result_vector(rank, self.elements)?;
+        for &dimension in dimensions {
             shape.push(self.shape[dimension]);
         }
 
@@ -1493,10 +1501,6 @@ impl Tensor {
             dimensions.swap(axis0, axis1);
         }
 
-        // PyTorch's transpose path checks the reordered symbolic sizes before
-        // constructing its view. Keep that observable overflow behavior while
-        // sharing the actual arbitrary-rank metadata permutation engine.
-        element_count_in_axis_order(&self.shape, &dimensions)?;
         self.permute_axes(dimensions)
     }
 
