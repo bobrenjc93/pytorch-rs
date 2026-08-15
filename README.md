@@ -102,9 +102,13 @@ reference dependencies. It clears inherited environment, import, and Python
 optimization markers; builds with the locked Maturin and Cargo dependencies;
 force-installs the new wheel; and verifies its native-extension provenance
 before checking for PyTorch 2.13.0 and running the full unittest suite. Dirty
-worktree files are therefore excluded. The command preserves
-`CUDA_VISIBLE_DEVICES`, so the existing hardware-aware tests use available CUDA
-hardware and skip their CUDA cases when PyTorch reports none.
+worktree files are therefore excluded. To keep every artifact inside the
+worktree without inheriting Cargo settings, the command uses a fresh Cargo home
+and rejects `.cargo/config` files above the archived checkout. It also ignores
+external uv configuration and explicitly installs both locked dependency
+groups. The command preserves `CUDA_VISIBLE_DEVICES`, so the existing
+hardware-aware tests use available CUDA hardware and skip their CUDA cases when
+PyTorch reports none.
 
 The checked-in tests are only the public floor. Burner also uses independent generated workloads and side-by-side `torch_rs`/`torch` differential runs.
 

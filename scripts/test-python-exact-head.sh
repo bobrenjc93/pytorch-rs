@@ -18,12 +18,13 @@ unset \
     PYTHONHOME \
     PYTHONOPTIMIZE \
     PYTHONPATH \
-    PYO3_PYTHON \
-    UV_CONFIG_FILE \
-    UV_PROJECT \
-    UV_PROJECT_ENVIRONMENT \
-    UV_PYTHON \
-    UV_WORKING_DIR
+    PYO3_PYTHON
+
+# uv exposes most command-line settings through UV_* environment variables.
+# Clear all of them before setting the few paths controlled by this command.
+for environment_name in "${!UV_@}"; do
+    unset "$environment_name"
+done
 
 mkdir -p "$repository_root/target"
 run_directory="$(mktemp -d "$repository_root/target/exact-head-run.XXXXXX")"
@@ -39,12 +40,31 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Cargo walks from the build directory to the filesystem root and merges every
+# parent .cargo/config file it finds. All artifacts must remain in this
+# worktree, so reject parent configuration instead of placing the checkout in
+# an external temporary directory.
+cargo_config_parent="$(dirname "$checkout")"
+while :; do
+    for cargo_config_name in .cargo/config .cargo/config.toml; do
+        cargo_config="$cargo_config_parent/$cargo_config_name"
+        if [[ -e "$cargo_config" || -L "$cargo_config" ]]; then
+            echo "refusing parent Cargo configuration outside exact HEAD: $cargo_config" >&2
+            exit 1
+        fi
+    done
+    if [[ "$cargo_config_parent" == / ]]; then
+        break
+    fi
+    cargo_config_parent="$(dirname "$cargo_config_parent")"
+done
+
 mkdir -p "$checkout" "$wheel_directory"
 head_commit="$(git -C "$repository_root" rev-parse --verify 'HEAD^{commit}')"
 git -C "$repository_root" archive --format=tar "$head_commit" | tar -x -C "$checkout"
 echo "testing exact HEAD $head_commit"
 
-export CARGO_HOME="$repository_root/target/cargo-home"
+export CARGO_HOME="$run_directory/cargo-home"
 export CARGO_TARGET_DIR="$run_directory/cargo-target"
 export UV_CACHE_DIR="$repository_root/target/uv-cache"
 export UV_PYTHON_INSTALL_DIR="$repository_root/target/uv-python"
@@ -52,11 +72,12 @@ export UV_PROJECT_ENVIRONMENT="$virtualenv"
 export PYTHONNOUSERSITE=1
 
 cd "$checkout"
-uv venv --clear --python 3.12 "$virtualenv"
-uv sync \
+uv --no-config venv --clear --python 3.12 "$virtualenv"
+uv --no-config sync \
     --locked \
     --python "$python" \
     --no-install-project \
+    --group dev \
     --group reference
 
 TMPDIR="$run_directory" \
@@ -72,7 +93,7 @@ if (( ${#wheels[@]} != 1 )); then
     exit 1
 fi
 
-uv pip install \
+uv --no-config pip install \
     --python "$python" \
     --force-reinstall \
     --no-deps \
