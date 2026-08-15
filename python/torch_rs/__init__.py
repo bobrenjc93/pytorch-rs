@@ -32,4 +32,6 @@ _copyreg.pickle(layout, _reduce_layout)
 __doc__ = _native.__doc__
 __all__ = _native.__all__
 
+from . import nn as nn
+
 del _copyreg, _native, _sys

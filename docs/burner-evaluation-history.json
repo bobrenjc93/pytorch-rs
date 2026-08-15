@@ -1889,6 +1889,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 60
       }
+    },
+    {
+      "key": "pr:126",
+      "recordedAt": "2026-08-15T01:27:23.203Z",
+      "label": "PR #126",
+      "kind": "leaf",
+      "prNumber": 126,
+      "title": "Expose out-of-place torch.nn.functional.relu",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 62.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 41.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 60
+      }
     }
   ]
 }
