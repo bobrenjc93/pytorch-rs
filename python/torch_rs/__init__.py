@@ -38,6 +38,7 @@ _copyreg.pickle(layout, _reduce_layout)
 __doc__ = _native.__doc__
 __all__ = _native.__all__
 
+from . import autograd as autograd
 from . import nn as nn
 from . import overrides as overrides
 from . import utils as utils
