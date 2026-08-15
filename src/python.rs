@@ -2637,7 +2637,7 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     } = size;
     CoreTensor::zeros_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| zeros_creation_error(&error, scalar_dimension))
+        .map_err(|error| scalar_creation_error(&error, scalar_dimension))
 }
 
 #[pyfunction(
@@ -2647,9 +2647,13 @@ fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
 fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let arguments = bind_creation_arguments("ones", args, kwargs)?;
     let (size, dtype, device, requires_grad) = parse_creation_arguments("ones", arguments)?;
-    CoreTensor::ones_with_metadata(size.dimensions, dtype, device)
+    let ParsedCreationSize {
+        dimensions,
+        scalar_dimension,
+    } = size;
+    CoreTensor::ones_with_metadata(dimensions, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| tensor_error(&error))
+        .map_err(|error| scalar_creation_error(&error, scalar_dimension))
 }
 
 #[pyfunction(
@@ -3286,7 +3290,7 @@ fn parse_creation_arguments(
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    let size = finish_creation_size(size)?;
+    let size = finish_creation_size(function, size)?;
     let device = parse_device(function, device.as_ref())?;
     Ok((size, dtype, device, requires_grad))
 }
@@ -3426,19 +3430,20 @@ fn parse_creation_size<'py>(
         Ok(dimensions) => return Ok(PendingCreationSize::Dimensions(dimensions)),
         Err(error) => error,
     };
-    if function != "zeros" || origin != CreationSizeOrigin::Positional {
+    if !matches!(function, "zeros" | "ones") || origin != CreationSizeOrigin::Positional {
         return Err(sequence_error);
     }
 
-    bind_zeros_positional_dimension(value, sequence_error)
+    bind_creation_positional_dimension(function, value, sequence_error)
 }
 
-fn bind_zeros_positional_dimension<'py>(
+fn bind_creation_positional_dimension<'py>(
+    function: &str,
     dimension: &Bound<'py, PyAny>,
     sequence_error: PyErr,
 ) -> PyResult<PendingCreationSize<'py>> {
     if dimension.is_instance_of::<PyBool>() {
-        return Err(zeros_dimension_type_error(dimension)?);
+        return Err(creation_dimension_type_error(function, dimension)?);
     }
 
     let indexed = if dimension.is_instance_of::<PyInt>() {
@@ -3451,14 +3456,17 @@ fn bind_zeros_positional_dimension<'py>(
             if dimension.cast::<PySequence>().is_ok() {
                 return Err(sequence_error);
             }
-            return Err(zeros_dimension_type_error(dimension)?);
+            return Err(creation_dimension_type_error(function, dimension)?);
         };
         indexed
     };
     Ok(PendingCreationSize::PositionalScalar(indexed))
 }
 
-fn finish_creation_size(size: PendingCreationSize<'_>) -> PyResult<ParsedCreationSize> {
+fn finish_creation_size(
+    function: &str,
+    size: PendingCreationSize<'_>,
+) -> PyResult<ParsedCreationSize> {
     let dimension = match size {
         PendingCreationSize::Dimensions(dimensions) => {
             return Ok(ParsedCreationSize {
@@ -3468,13 +3476,12 @@ fn finish_creation_size(size: PendingCreationSize<'_>) -> PyResult<ParsedCreatio
         }
         PendingCreationSize::PositionalScalar(dimension) => dimension,
     };
-    let dimension = extract_zeros_dimension(&dimension)?;
+    let dimension = extract_creation_dimension(function, &dimension)?;
     if dimension < 0 {
-        return Err(PyRuntimeError::new_err(
-            "zeros: Dimension size must be non-negative.",
-        ));
+        return Err(creation_negative_dimension_error(function, dimension));
     }
-    let dimension = usize::try_from(dimension).map_err(|_| zeros_dimension_overflow())?;
+    let dimension =
+        usize::try_from(dimension).map_err(|_| creation_dimension_overflow(function))?;
     let mut dimensions = try_size_vector(1)?;
     try_push_size(&mut dimensions, dimension)?;
     Ok(ParsedCreationSize {
@@ -3483,23 +3490,34 @@ fn finish_creation_size(size: PendingCreationSize<'_>) -> PyResult<ParsedCreatio
     })
 }
 
-fn extract_zeros_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+fn extract_creation_dimension(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     dimension
         .extract::<i64>()
-        .map_err(|_| zeros_dimension_overflow())
+        .map_err(|_| creation_dimension_overflow(function))
 }
 
-fn zeros_dimension_type_error(dimension: &Bound<'_, PyAny>) -> PyResult<PyErr> {
+fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<PyErr> {
     let type_name = transpose_type_name(dimension)?;
     Ok(PyTypeError::new_err(format!(
-        "zeros(): argument 'size' (position 1) must be tuple of ints, not {type_name}"
+        "{function}(): argument 'size' (position 1) must be tuple of ints, not {type_name}"
     )))
 }
 
-fn zeros_dimension_overflow() -> PyErr {
-    PyTypeError::new_err(
-        "zeros(): argument 'size' failed to unpack the object at pos 1 with error \"Overflow when unpacking long long\"",
-    )
+fn creation_dimension_overflow(function: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "{function}(): argument 'size' failed to unpack the object at pos 1 with error \"Overflow when unpacking long long\""
+    ))
+}
+
+fn creation_negative_dimension_error(function: &str, dimension: i64) -> PyErr {
+    if function == "zeros" {
+        PyRuntimeError::new_err("zeros: Dimension size must be non-negative.")
+    } else {
+        debug_assert_eq!(function, "ones");
+        PyRuntimeError::new_err(format!(
+            "Trying to create tensor with negative dimension {dimension}: [{dimension}]"
+        ))
+    }
 }
 
 fn parse_metadata(
@@ -6907,7 +6925,7 @@ fn creation_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
     }
 }
 
-fn zeros_creation_error(error: &TensorError, scalar_dimension: Option<usize>) -> PyErr {
+fn scalar_creation_error(error: &TensorError, scalar_dimension: Option<usize>) -> PyErr {
     if let Some(dimension) = scalar_dimension
         && matches!(
             error,

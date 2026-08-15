@@ -8,7 +8,7 @@ import numpy as np
 import torch_rs as torch
 
 
-class ZerosTests(unittest.TestCase):
+class OnesTests(unittest.TestCase):
     def assert_tensor_matches(self, actual, expected):
         self.assertEqual(actual.shape, expected.shape)
         self.assertEqual(actual.stride(), expected.stride())
@@ -33,8 +33,8 @@ class ZerosTests(unittest.TestCase):
         for keywords in metadata:
             with self.subTest(keywords=keywords):
                 self.assert_tensor_matches(
-                    torch.zeros(2, **keywords),
-                    torch.zeros((2,), **keywords),
+                    torch.ones(2, **keywords),
+                    torch.ones((2,), **keywords),
                 )
 
     def test_one_positional_dimension_uses_the_index_protocol(self):
@@ -55,8 +55,8 @@ class ZerosTests(unittest.TestCase):
         for dimension in dimensions:
             with self.subTest(dimension=dimension):
                 self.assert_tensor_matches(
-                    torch.zeros(dimension),
-                    torch.zeros((2,)),
+                    torch.ones(dimension),
+                    torch.ones((2,)),
                 )
         self.assertGreater(custom.calls, 0)
 
@@ -68,7 +68,7 @@ class ZerosTests(unittest.TestCase):
             def __index__(self):
                 return self.value
 
-        empty = torch.zeros(0)
+        empty = torch.ones(0)
         self.assertEqual(empty.shape, (0,))
         self.assertEqual(empty.stride(), (1,))
         self.assertEqual(empty.numel(), 0)
@@ -78,9 +78,11 @@ class ZerosTests(unittest.TestCase):
             with self.subTest(dimension=dimension):
                 with self.assertRaisesRegex(
                     RuntimeError,
-                    re.escape("zeros: Dimension size must be non-negative."),
+                    re.escape(
+                        "Trying to create tensor with negative dimension -1: [-1]"
+                    ),
                 ):
-                    torch.zeros(dimension)
+                    torch.ones(dimension)
 
         for dimension, type_name in (
             (True, "bool"),
@@ -92,7 +94,7 @@ class ZerosTests(unittest.TestCase):
                     TypeError,
                     rf"must be tuple of ints, not {re.escape(type_name)}$",
                 ):
-                    torch.zeros(dimension)
+                    torch.ones(dimension)
 
         for dimension in (
             2**63,
@@ -105,7 +107,7 @@ class ZerosTests(unittest.TestCase):
                     TypeError,
                     "failed to unpack.*Overflow when unpacking long long",
                 ):
-                    torch.zeros(dimension)
+                    torch.ones(dimension)
 
         with self.assertRaisesRegex(
             RuntimeError,
@@ -113,7 +115,7 @@ class ZerosTests(unittest.TestCase):
                 f"Storage size calculation overflowed with sizes=[{sys.maxsize}]"
             ),
         ):
-            torch.zeros(sys.maxsize)
+            torch.ones(sys.maxsize)
 
     def test_existing_sequence_and_keyword_forms_are_unchanged(self):
         class CustomSequence(Sequence):
@@ -135,20 +137,21 @@ class ZerosTests(unittest.TestCase):
             (CustomSequence([2]), (2,)),
         ):
             with self.subTest(size=size):
-                tensor = torch.zeros(size)
+                tensor = torch.ones(size)
                 self.assertEqual(tensor.shape, expected_shape)
                 self.assertEqual(tensor.numel(), int(np.prod(expected_shape)))
+                self.assertEqual(tensor.sum().item(), float(tensor.numel()))
 
-        self.assertEqual(torch.zeros(size=(2,)).tolist(), [0.0, 0.0])
-        self.assertEqual(torch.zeros(shape=(2,)).tolist(), [0.0, 0.0])
-        self.assertEqual(torch.zeros(size=np.array([2])).shape, (2,))
-        self.assertEqual(torch.zeros(shape=UserList([2])).shape, (2,))
-        self.assertEqual(torch.zeros(None, shape=(2,)).tolist(), [0.0, 0.0])
+        self.assertEqual(torch.ones(size=(2,)).tolist(), [1.0, 1.0])
+        self.assertEqual(torch.ones(shape=(2,)).tolist(), [1.0, 1.0])
+        self.assertEqual(torch.ones(size=np.array([2])).shape, (2,))
+        self.assertEqual(torch.ones(shape=UserList([2])).shape, (2,))
+        self.assertEqual(torch.ones(None, shape=(2,)).tolist(), [1.0, 1.0])
 
         with self.assertRaises(Exception) as direct_shape_error:
-            torch.zeros(shape=2)
+            torch.ones(shape=2)
         with self.assertRaises(Exception) as omitted_positional_error:
-            torch.zeros(None, shape=2)
+            torch.ones(None, shape=2)
         self.assertIs(
             type(direct_shape_error.exception),
             type(omitted_positional_error.exception),
@@ -159,8 +162,8 @@ class ZerosTests(unittest.TestCase):
         )
 
         for call in (
-            lambda: torch.zeros(size=2),
-            lambda: torch.zeros(2, 3),
+            lambda: torch.ones(size=2),
+            lambda: torch.ones(2, 3),
         ):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
