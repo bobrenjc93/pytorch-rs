@@ -30,7 +30,6 @@ static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-static PYTHON_METHOD_TYPE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -1018,20 +1017,25 @@ fn probe_torch_function_override<'py>(
     })
 }
 
-fn is_python_method_bound_to(
-    py: Python<'_>,
-    handler: &Bound<'_, PyAny>,
-    receiver: &Bound<'_, PyAny>,
-) -> PyResult<bool> {
-    let method_type = PYTHON_METHOD_TYPE.get_or_try_init(py, || -> PyResult<Py<PyAny>> {
-        Ok(PyModule::import(py, "types")?
-            .getattr("MethodType")?
-            .unbind())
-    })?;
-    if !handler.is_instance(method_type.bind(py))? {
-        return Ok(false);
+#[allow(
+    unsafe_code,
+    reason = "PyTorch suppresses errors while checking a handler's __self__ identity"
+)]
+fn has_receiver_as_self(handler: &Bound<'_, PyAny>, receiver: &Bound<'_, PyAny>) -> bool {
+    // SAFETY: `handler` is live for the call and the attribute name is a
+    // static, NUL-terminated string. A non-null result is a new reference.
+    let handler_self =
+        unsafe { ffi::PyObject_GetAttrString(handler.as_ptr(), c"__self__".as_ptr()) };
+    if handler_self.is_null() {
+        // PyTorch treats every lookup failure as a non-matching `__self__`.
+        // SAFETY: clearing the current Python exception is valid while the GIL
+        // is held, including if a broken descriptor returned null without one.
+        unsafe { ffi::PyErr_Clear() };
+        return false;
     }
-    Ok(handler.getattr("__self__")?.is(receiver))
+    // SAFETY: PyObject_GetAttrString returned a new owned reference above.
+    let handler_self = unsafe { Bound::<PyAny>::from_owned_ptr(handler.py(), handler_self) };
+    handler_self.is(receiver)
 }
 
 fn resolve_torch_function_override<'py>(
@@ -1039,7 +1043,7 @@ fn resolve_torch_function_override<'py>(
     probed: &ProbedTorchFunctionOverride<'py>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let handler = probed.receiver.getattr("__torch_function__")?;
-    if is_python_method_bound_to(py, &handler, &probed.receiver)? {
+    if has_receiver_as_self(&handler, &probed.receiver) {
         warn_once(
             py,
             &TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED,
@@ -1049,9 +1053,9 @@ fn resolve_torch_function_override<'py>(
     Ok(handler)
 }
 
-fn validate_torch_function_mode_handler(py: Python<'_>, mode: &Bound<'_, PyAny>) -> PyResult<()> {
+fn validate_torch_function_mode_handler(mode: &Bound<'_, PyAny>) -> PyResult<()> {
     let handler = mode.getattr("__torch_function__")?;
-    if !is_python_method_bound_to(py, &handler, mode)? {
+    if !has_receiver_as_self(&handler, mode) {
         return Err(PyRuntimeError::new_err(
             "Defining your mode's `__torch_function__` as a classmethod is not supported, please make it a plain method",
         ));
@@ -1122,7 +1126,7 @@ fn dispatch_positive(
     // can explicitly call `func(*args, **kwargs)` to reach the next mode.
     let active_mode = ActiveTorchFunctionMode::pop();
     if let Some(mode) = active_mode.get() {
-        validate_torch_function_mode_handler(py, mode.bind(py))?;
+        validate_torch_function_mode_handler(mode.bind(py))?;
         let handler = mode.bind(py).getattr("__torch_function__")?;
         let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
         if !is_not_implemented(py, &result) {

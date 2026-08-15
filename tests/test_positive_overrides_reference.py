@@ -3,7 +3,6 @@ import pickle
 import re
 import subprocess
 import sys
-import types
 import unittest
 
 import torch_rs as torch
@@ -434,28 +433,32 @@ class TopLevelPositiveOverrideReferenceTests(unittest.TestCase):
 
         mode_calls = []
 
+        class CallableHandler:
+            def __init__(self, receiver, resolution):
+                self.__self__ = receiver
+                self.receiver = receiver
+                self.resolution = resolution
+
+            def __call__(self, func, dispatch_types, args=(), kwargs=None):
+                mode_calls.append(
+                    (
+                        self.resolution,
+                        self.__self__ is self.receiver,
+                        func is module.positive,
+                        dispatch_types,
+                        len(args),
+                        kwargs is None,
+                    )
+                )
+                return self.resolution
+
         class StatefulModeDescriptor:
             def __init__(self):
                 self.lookups = 0
 
             def __get__(self, instance, owner):
                 self.lookups += 1
-                resolution = self.lookups
-
-                def handler(self, func, dispatch_types, args=(), kwargs=None):
-                    mode_calls.append(
-                        (
-                            resolution,
-                            self is instance,
-                            func is module.positive,
-                            dispatch_types,
-                            len(args),
-                            kwargs is None,
-                        )
-                    )
-                    return resolution
-
-                return types.MethodType(handler, instance)
+                return CallableHandler(instance, self.lookups)
 
         mode_descriptor = StatefulModeDescriptor()
 
@@ -500,6 +503,22 @@ class TopLevelPositiveOverrideReferenceTests(unittest.TestCase):
         class InstanceAssignedMode(module.overrides.TorchFunctionMode):
             pass
 
+        class RaisingSelfHandler:
+            @property
+            def __self__(self):
+                raise RuntimeError("suppressed self lookup")
+
+            def __call__(self, func, types, args=(), kwargs=None):
+                calls.append("raising-self")
+                return object()
+
+        class RaisingSelfDescriptor:
+            def __get__(self, instance, owner):
+                return RaisingSelfHandler()
+
+        class RaisingSelfMode(module.overrides.TorchFunctionMode):
+            __torch_function__ = RaisingSelfDescriptor()
+
         instance_assigned = InstanceAssignedMode()
 
         def instance_handler(func, types, args=(), kwargs=None):
@@ -508,7 +527,12 @@ class TopLevelPositiveOverrideReferenceTests(unittest.TestCase):
 
         instance_assigned.__torch_function__ = instance_handler
         errors = []
-        for mode in (ClassMethodMode(), StaticMethodMode(), instance_assigned):
+        for mode in (
+            ClassMethodMode(),
+            StaticMethodMode(),
+            instance_assigned,
+            RaisingSelfMode(),
+        ):
             try:
                 with mode:
                     module.positive(tensor)
@@ -587,6 +611,23 @@ with warnings.catch_warnings(record=True) as caught:
 
         results.append(module.positive(ClassObject))
         results.append(module.positive(ClassObject))
+    elif scenario == "callable-descriptor":
+        class CallableHandler:
+            def __init__(self, receiver):
+                self.__self__ = receiver
+
+            def __call__(self, func, types, args=(), kwargs=None):
+                return "callable-descriptor"
+
+        class Descriptor:
+            def __get__(self, instance, owner):
+                return CallableHandler(instance)
+
+        class Override:
+            __torch_function__ = Descriptor()
+
+        results.append(module.positive(Override()))
+        results.append(module.positive(Override()))
     else:
         raise AssertionError(scenario)
 
@@ -612,7 +653,7 @@ print(json.dumps({
         return json.loads(completed.stdout)
 
     def test_plain_method_override_warnings_match_pytorch_2_13(self):
-        for scenario in ("plain", "class-object"):
+        for scenario in ("plain", "class-object", "callable-descriptor"):
             with self.subTest(scenario=scenario):
                 actual = self.warning_observation("torch_rs", scenario)
                 expected = self.warning_observation("torch", scenario)

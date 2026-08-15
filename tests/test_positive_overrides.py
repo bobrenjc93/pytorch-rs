@@ -2,7 +2,6 @@ import pickle
 import re
 import subprocess
 import sys
-import types
 import unittest
 
 import torch_rs as torch
@@ -378,28 +377,31 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
     def test_mode_handler_is_resolved_again_for_invocation(self):
         calls = []
 
+        class CallableHandler:
+            def __init__(self, receiver, resolution):
+                self.__self__ = receiver
+                self.resolution = resolution
+
+            def __call__(self, func, dispatch_types, args=(), kwargs=None):
+                calls.append(
+                    (
+                        self.resolution,
+                        self.__self__,
+                        func,
+                        dispatch_types,
+                        args,
+                        kwargs,
+                    )
+                )
+                return self.resolution
+
         class StatefulModeDescriptor:
             def __init__(self):
                 self.lookups = 0
 
             def __get__(self, instance, owner):
                 self.lookups += 1
-                resolution = self.lookups
-
-                def handler(self, func, dispatch_types, args=(), kwargs=None):
-                    calls.append(
-                        (
-                            resolution,
-                            self is instance,
-                            func,
-                            dispatch_types,
-                            args,
-                            kwargs,
-                        )
-                    )
-                    return resolution
-
-                return types.MethodType(handler, instance)
+                return CallableHandler(instance, self.lookups)
 
         descriptor = StatefulModeDescriptor()
 
@@ -407,12 +409,13 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
             __torch_function__ = descriptor
 
         tensor = torch.tensor([1.0])
-        with Mode():
+        mode = Mode()
+        with mode:
             self.assertEqual(torch.positive(tensor), 2)
         self.assertEqual(descriptor.lookups, 2)
         self.assertEqual(
             calls,
-            [(2, True, torch.positive, (), (tensor,), None)],
+            [(2, mode, torch.positive, (), (tensor,), None)],
         )
 
     def test_mode_handler_form_validation_matches_pytorch(self):
@@ -438,6 +441,22 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
         class InstanceAssignedMode(torch.overrides.TorchFunctionMode):
             pass
 
+        class RaisingSelfHandler:
+            @property
+            def __self__(self):
+                raise RuntimeError("suppressed self lookup")
+
+            def __call__(self, func, types, args=(), kwargs=None):
+                calls.append("raising-self")
+                return object()
+
+        class RaisingSelfDescriptor:
+            def __get__(self, instance, owner):
+                return RaisingSelfHandler()
+
+        class RaisingSelfMode(torch.overrides.TorchFunctionMode):
+            __torch_function__ = RaisingSelfDescriptor()
+
         instance_assigned = InstanceAssignedMode()
 
         def instance_handler(func, types, args=(), kwargs=None):
@@ -445,7 +464,12 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
             return object()
 
         instance_assigned.__torch_function__ = instance_handler
-        for mode in (ClassMethodMode(), StaticMethodMode(), instance_assigned):
+        for mode in (
+            ClassMethodMode(),
+            StaticMethodMode(),
+            instance_assigned,
+            RaisingSelfMode(),
+        ):
             with self.subTest(mode=type(mode).__name__):
                 with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
                     with mode:
