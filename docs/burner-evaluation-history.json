@@ -2081,6 +2081,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 61
       }
+    },
+    {
+      "key": "pr:138",
+      "recordedAt": "2026-08-15T13:40:48.445Z",
+      "label": "PR #138",
+      "kind": "leaf",
+      "prNumber": 138,
+      "title": "Expose top-level torch.positive only",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 43.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 61
+      }
     }
   ]
 }
