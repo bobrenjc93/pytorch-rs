@@ -1969,6 +1969,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 60
       }
+    },
+    {
+      "key": "pr:131",
+      "recordedAt": "2026-08-15T08:09:15.034Z",
+      "label": "PR #131",
+      "kind": "leaf",
+      "prNumber": 131,
+      "title": "Isolate native grad-mode state in one module",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 63.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 42.2,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 61
+      }
     }
   ]
 }
