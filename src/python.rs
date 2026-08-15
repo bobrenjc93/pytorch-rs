@@ -993,12 +993,17 @@ fn probe_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
     // PyTorch's argument parser uses the legacy, exception-suppressing
-    // PyObject_HasAttr API here. The actual callable is deliberately resolved
-    // only after the active mode has declined the operation.
+    // PyObject_HasAttr API here. If the initial probe fails, its tensor-type
+    // fallback retries once before rejecting the input. The actual callable is
+    // deliberately resolved only after the active mode has declined.
     // SAFETY: `value` is live for this call and the attribute name is a static,
     // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
     let has_override =
         unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
+    let has_override = has_override
+        || unsafe {
+            ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0
+        };
     if !has_override {
         return None;
     }
@@ -1044,17 +1049,14 @@ fn resolve_torch_function_override<'py>(
     Ok(handler)
 }
 
-fn resolve_torch_function_mode_handler<'py>(
-    py: Python<'py>,
-    mode: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
+fn validate_torch_function_mode_handler(py: Python<'_>, mode: &Bound<'_, PyAny>) -> PyResult<()> {
     let handler = mode.getattr("__torch_function__")?;
     if !is_python_method_bound_to(py, &handler, mode)? {
         return Err(PyRuntimeError::new_err(
             "Defining your mode's `__torch_function__` as a classmethod is not supported, please make it a plain method",
         ));
     }
-    Ok(handler)
+    Ok(())
 }
 
 fn call_torch_function_handler(
@@ -1120,7 +1122,8 @@ fn dispatch_positive(
     // can explicitly call `func(*args, **kwargs)` to reach the next mode.
     let active_mode = ActiveTorchFunctionMode::pop();
     if let Some(mode) = active_mode.get() {
-        let handler = resolve_torch_function_mode_handler(py, mode.bind(py))?;
+        validate_torch_function_mode_handler(py, mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
         let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
         if !is_not_implemented(py, &result) {
             return Ok(result);

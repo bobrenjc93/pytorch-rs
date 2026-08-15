@@ -2,6 +2,7 @@ import pickle
 import re
 import subprocess
 import sys
+import types
 import unittest
 
 import torch_rs as torch
@@ -168,6 +169,38 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
         self.assertEqual(
             descriptor_calls,
             [(torch.positive, (DescriptorOverride,), (value,), None)],
+        )
+
+    def test_failed_override_probe_is_retried_before_type_rejection(self):
+        calls = []
+
+        class RetryDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                resolution = self.lookups
+                if resolution == 1:
+                    raise AttributeError("transient probe failure")
+
+                def handler(func, dispatch_types, args=(), kwargs=None):
+                    calls.append((resolution, func, dispatch_types, args, kwargs))
+                    return resolution
+
+                return handler
+
+        descriptor = RetryDescriptor()
+
+        class Override:
+            __torch_function__ = descriptor
+
+        value = Override()
+        self.assertEqual(torch.positive(value), 3)
+        self.assertEqual(descriptor.lookups, 3)
+        self.assertEqual(
+            calls,
+            [(3, torch.positive, (Override,), (value,), None)],
         )
 
     def test_torch_function_modes_receive_calls_and_forward_to_lower_modes(self):
@@ -341,6 +374,46 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
         with MutatingMode():
             self.assertIs(torch.positive(mutable), marker)
         self.assertEqual(calls, ["mode", "replacement"])
+
+    def test_mode_handler_is_resolved_again_for_invocation(self):
+        calls = []
+
+        class StatefulModeDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                resolution = self.lookups
+
+                def handler(self, func, dispatch_types, args=(), kwargs=None):
+                    calls.append(
+                        (
+                            resolution,
+                            self is instance,
+                            func,
+                            dispatch_types,
+                            args,
+                            kwargs,
+                        )
+                    )
+                    return resolution
+
+                return types.MethodType(handler, instance)
+
+        descriptor = StatefulModeDescriptor()
+
+        class Mode(torch.overrides.TorchFunctionMode):
+            __torch_function__ = descriptor
+
+        tensor = torch.tensor([1.0])
+        with Mode():
+            self.assertEqual(torch.positive(tensor), 2)
+        self.assertEqual(descriptor.lookups, 2)
+        self.assertEqual(
+            calls,
+            [(2, True, torch.positive, (), (tensor,), None)],
+        )
 
     def test_mode_handler_form_validation_matches_pytorch(self):
         tensor = torch.tensor([1.0])

@@ -3,6 +3,7 @@ import pickle
 import re
 import subprocess
 import sys
+import types
 import unittest
 
 import torch_rs as torch
@@ -394,6 +395,90 @@ class TopLevelPositiveOverrideReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.late_resolution_observation(torch),
             self.late_resolution_observation(reference_torch),
+        )
+
+    def retry_and_mode_reresolution_observation(self, module):
+        override_calls = []
+
+        class RetryDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                resolution = self.lookups
+                if resolution == 1:
+                    raise AttributeError("transient probe failure")
+
+                def handler(func, dispatch_types, args=(), kwargs=None):
+                    override_calls.append(
+                        (
+                            resolution,
+                            func is module.positive,
+                            dispatch_types == (Override,),
+                            args == (value,),
+                            kwargs is None,
+                        )
+                    )
+                    return resolution
+
+                return handler
+
+        retry_descriptor = RetryDescriptor()
+
+        class Override:
+            __torch_function__ = retry_descriptor
+
+        value = Override()
+        override_result = module.positive(value)
+
+        mode_calls = []
+
+        class StatefulModeDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                resolution = self.lookups
+
+                def handler(self, func, dispatch_types, args=(), kwargs=None):
+                    mode_calls.append(
+                        (
+                            resolution,
+                            self is instance,
+                            func is module.positive,
+                            dispatch_types,
+                            len(args),
+                            kwargs is None,
+                        )
+                    )
+                    return resolution
+
+                return types.MethodType(handler, instance)
+
+        mode_descriptor = StatefulModeDescriptor()
+
+        class Mode(module.overrides.TorchFunctionMode):
+            __torch_function__ = mode_descriptor
+
+        tensor = module.tensor([1.0])
+        with Mode():
+            mode_result = module.positive(tensor)
+
+        return (
+            override_result,
+            retry_descriptor.lookups,
+            override_calls,
+            mode_result,
+            mode_descriptor.lookups,
+            mode_calls,
+        )
+
+    def test_fallback_probe_and_mode_reresolution_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.retry_and_mode_reresolution_observation(torch),
+            self.retry_and_mode_reresolution_observation(reference_torch),
         )
 
     def mode_handler_form_observation(self, module):
