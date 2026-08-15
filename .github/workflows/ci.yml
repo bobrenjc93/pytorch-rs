@@ -40,3 +40,32 @@ jobs:
             "$GITHUB_WORKSPACE/.venv/bin/python" .github/scripts/verify_native_extension.py || true
             exit "$status"
           fi
+
+  python-314:
+    name: Python 3.14 compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.92.0"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+      - run: uv venv --clear --python 3.14
+      - run: uv sync --locked --no-install-project
+      - run: uv pip install --python .venv/bin/python 'maturin>=1.14,<2'
+      - name: Build Python 3.14 abi3 release wheel
+        run: env -u CONDA_PREFIX TMPDIR="$GITHUB_WORKSPACE/target" VIRTUAL_ENV="$GITHUB_WORKSPACE/.venv" PYO3_PYTHON="$GITHUB_WORKSPACE/.venv/bin/python" .venv/bin/maturin build --release --out target/wheels
+      - run: uv pip install --python "$GITHUB_WORKSPACE/.venv/bin/python" --force-reinstall --no-deps target/wheels/torch_rs-*-cp310-abi3-*.whl
+      - name: Verify native-extension provenance
+        run: |
+          "$GITHUB_WORKSPACE/.venv/bin/python" .github/scripts/verify_native_extension.py
+      - name: Run Python 3.14 signature and buffer tests
+        run: |
+          "$GITHUB_WORKSPACE/.venv/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 14), sys.version'
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m unittest \
+            tests.test_data_ptr \
+            tests.test_get_device \
+            tests.test_is_conj \
+            tests.test_tensor_buffer
