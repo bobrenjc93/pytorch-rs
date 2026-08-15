@@ -2,6 +2,7 @@
 
 import copyreg as _copyreg
 import sys as _sys
+from math import e, inf, nan, pi
 
 from . import torch_rs as _native
 from .torch_rs import *
@@ -36,7 +37,11 @@ def _reduce_layout(value):
 _copyreg.pickle(layout, _reduce_layout)
 
 __doc__ = _native.__doc__
-__all__ = _native.__all__
+# Keep package-only exports out of the native module's list, just as PyTorch's
+# numeric constants live on ``torch`` rather than ``torch._C``.  A separate
+# list also keeps reloading safe: the native wildcard import must only name
+# attributes that the extension itself owns.
+__all__ = [*_native.__all__, "e", "pi", "nan", "inf"]
 
 from . import autograd as autograd
 from . import nn as nn
