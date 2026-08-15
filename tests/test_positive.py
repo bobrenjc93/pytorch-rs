@@ -1,6 +1,7 @@
 import inspect
 import pickle
 import re
+import sys
 import types
 import unittest
 
@@ -160,12 +161,23 @@ class TensorPositiveTests(unittest.TestCase):
         self.assertEqual(bound.__qualname__, "Tensor.positive")
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
-        for callable_object in (descriptor, bound, operator_bound):
+        for callable_object, python_313_signature in (
+            (descriptor, "(self, /)"),
+            (bound, "()"),
+            (operator_bound, "()"),
+        ):
             self.assertEqual(callable_object.__name__, "positive")
             self.assertEqual(callable_object.__doc__, METHOD_DOC)
-            self.assertIsNone(callable_object.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+            if sys.version_info >= (3, 13):
+                self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                self.assertEqual(
+                    str(inspect.signature(callable_object)),
+                    python_313_signature,
+                )
+            else:
+                self.assertIsNone(callable_object.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(callable_object)
 
         self.assertIs(descriptor(tensor), tensor)
         self.assertIs(bound(**{}), tensor)

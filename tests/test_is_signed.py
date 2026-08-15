@@ -89,9 +89,23 @@ class TensorIsSignedTests(unittest.TestCase):
         for callable_object in (descriptor, bound, function):
             self.assertTrue(callable(callable_object))
             self.assertEqual(callable_object.__name__, "is_signed")
-            self.assertIsNone(callable_object.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        for callable_object, python_313_signature in (
+            (descriptor, "(self, /)"),
+            (bound, "()"),
+        ):
+            if sys.version_info >= (3, 13):
+                self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                self.assertEqual(
+                    str(inspect.signature(callable_object)),
+                    python_313_signature,
+                )
+            else:
+                self.assertIsNone(callable_object.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(callable_object)
+        self.assertIsNone(function.__text_signature__)
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
 
         self.assertEqual(descriptor.__doc__, METHOD_DOC)
         self.assertEqual(bound.__doc__, METHOD_DOC)

@@ -61,11 +61,7 @@ jobs:
       - name: Verify native-extension provenance
         run: |
           "$GITHUB_WORKSPACE/.venv/bin/python" .github/scripts/verify_native_extension.py
-      - name: Run Python 3.14 signature and buffer tests
+      - name: Run Python 3.14 suite
         run: |
           "$GITHUB_WORKSPACE/.venv/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 14), sys.version'
-          "$GITHUB_WORKSPACE/.venv/bin/python" -m unittest \
-            tests.test_data_ptr \
-            tests.test_get_device \
-            tests.test_is_conj \
-            tests.test_tensor_buffer
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m unittest discover -s tests -p 'test_*.py'

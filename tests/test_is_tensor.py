@@ -1,5 +1,6 @@
 import inspect
 import re
+import sys
 import types
 import typing
 import unittest
@@ -20,6 +21,8 @@ FUNCTION_DOC = """Returns True if `obj` is a PyTorch tensor.
         True
 
     """
+if sys.version_info >= (3, 13):
+    FUNCTION_DOC = inspect.cleandoc(FUNCTION_DOC) + "\n\n"
 
 
 class ConversionTrap:
@@ -178,9 +181,16 @@ class IsTensorTests(unittest.TestCase):
             typing.get_args(resolved_annotations["return"]), (torch.Tensor,)
         )
         self.assertEqual(inspect.signature(function), expected_signature)
+        if sys.version_info >= (3, 13):
+            rendered_signature = "(obj: Any, /) -> TypeIs[ForwardRef('torch.Tensor')]"
+        else:
+            rendered_signature = (
+                "(obj: Any, /) -> "
+                "typing_extensions.TypeIs[ForwardRef('torch.Tensor')]"
+            )
         self.assertEqual(
             str(inspect.signature(function)),
-            "(obj: Any, /) -> typing_extensions.TypeIs[ForwardRef('torch.Tensor')]",
+            rendered_signature,
         )
         self.assertIn("is_tensor", torch.__all__)
 

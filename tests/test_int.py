@@ -1,5 +1,6 @@
 import inspect
 import re
+import sys
 import types
 import unittest
 import warnings
@@ -208,19 +209,27 @@ class TensorIntTests(unittest.TestCase):
         self.assertEqual(descriptor.__name__, "__int__")
         self.assertEqual(descriptor.__qualname__, "TensorBase.__int__")
         self.assertIsNone(descriptor.__doc__)
-        self.assertIsNone(descriptor.__text_signature__)
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
         self.assertFalse(hasattr(descriptor, "__module__"))
-        with self.assertRaises(ValueError):
-            inspect.signature(descriptor)
 
         self.assertIs(type(bound), types.BuiltinMethodType)
         self.assertEqual(bound.__name__, "__int__")
         self.assertIsNone(bound.__doc__)
-        self.assertIsNone(bound.__text_signature__)
-        with self.assertRaises(ValueError):
-            inspect.signature(bound)
+        for callable_object, python_313_signature in (
+            (descriptor, "(self, /)"),
+            (bound, "()"),
+        ):
+            if sys.version_info >= (3, 13):
+                self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                self.assertEqual(
+                    str(inspect.signature(callable_object)),
+                    python_313_signature,
+                )
+            else:
+                self.assertIsNone(callable_object.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(callable_object)
         self.assertEqual(descriptor(tensor), 2)
         self.assertIs(descriptor.__get__(None, torch.Tensor), descriptor)
         self.assertEqual(descriptor.__get__(tensor, torch.Tensor)(), 2)

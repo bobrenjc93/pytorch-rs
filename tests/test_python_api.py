@@ -215,16 +215,25 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(bound.__qualname__, "Tensor.negative")
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
-        self.assertIsNone(descriptor.__text_signature__)
-        self.assertIsNone(bound.__text_signature__)
         self.assertEqual(
             descriptor.__doc__,
             "\nnegative() -> Tensor\n\nSee :func:`torch.negative`\n",
         )
         self.assertEqual(bound.__doc__, descriptor.__doc__)
-        for callable_object in (descriptor, bound):
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        for callable_object, python_313_signature in (
+            (descriptor, "(self, /)"),
+            (bound, "()"),
+        ):
+            if sys.version_info >= (3, 13):
+                self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                self.assertEqual(
+                    str(inspect.signature(callable_object)),
+                    python_313_signature,
+                )
+            else:
+                self.assertIsNone(callable_object.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(callable_object)
 
         np.testing.assert_array_equal(
             np.asarray(descriptor(scalar)).view(np.uint32),

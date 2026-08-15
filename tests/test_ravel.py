@@ -1,5 +1,6 @@
 import gc
 import inspect
+import sys
 import types
 import unittest
 
@@ -152,14 +153,23 @@ class TensorRavelTests(unittest.TestCase):
         self.assertIs(type(bound), types.BuiltinMethodType)
         self.assertEqual(descriptor.__name__, "ravel")
         self.assertEqual(bound.__name__, "ravel")
-        self.assertIsNone(descriptor.__text_signature__)
-        self.assertIsNone(bound.__text_signature__)
         self.assertEqual(
             descriptor.__doc__, "\nravel() -> Tensor\n\nsee :func:`torch.ravel`\n"
         )
-        for callable_object in (descriptor, bound):
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        for callable_object, python_313_signature in (
+            (descriptor, "(self, /)"),
+            (bound, "()"),
+        ):
+            if sys.version_info >= (3, 13):
+                self.assertEqual(callable_object.__text_signature__, "($self, /)")
+                self.assertEqual(
+                    str(inspect.signature(callable_object)),
+                    python_313_signature,
+                )
+            else:
+                self.assertIsNone(callable_object.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(callable_object)
 
         output = descriptor(tensor)
         self.assertIsNot(output, tensor)
