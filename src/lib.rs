@@ -13,6 +13,7 @@ mod memory_format;
 mod python;
 #[cfg(feature = "python-bindings")]
 mod python_layout;
+mod storage;
 mod tensor;
 
 #[cfg(feature = "python-bindings")]

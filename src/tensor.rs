@@ -8,102 +8,9 @@ use crate::device::Device;
 use crate::dtype::DType;
 use crate::grad_mode::is_grad_enabled;
 use crate::memory_format::MemoryFormat;
+use crate::storage::Storage;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
-
-struct Storage {
-    data: StorageData,
-    dtype: DType,
-    device: Device,
-}
-
-enum StorageData {
-    Owned(Vec<f32>),
-    SharedGradient(Mutex<Vec<f32>>),
-}
-
-impl Storage {
-    fn len(&self) -> usize {
-        match &self.data {
-            StorageData::Owned(values) => values.len(),
-            StorageData::SharedGradient(values) => values
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .len(),
-        }
-    }
-
-    fn data_ptr(&self) -> *const u8 {
-        match &self.data {
-            StorageData::Owned(values) => values.as_ptr().cast(),
-            StorageData::SharedGradient(values) => values
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .as_ptr()
-                .cast(),
-        }
-    }
-
-    fn owned_values(&self) -> Option<&[f32]> {
-        match &self.data {
-            StorageData::Owned(values) => Some(values),
-            StorageData::SharedGradient(_) => None,
-        }
-    }
-
-    fn value(&self, index: usize) -> Option<f32> {
-        match &self.data {
-            StorageData::Owned(values) => values.get(index).copied(),
-            StorageData::SharedGradient(values) => values
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get(index)
-                .copied(),
-        }
-    }
-
-    fn copy_range(&self, start: usize, end: usize) -> Vec<f32> {
-        match &self.data {
-            StorageData::Owned(values) => values[start..end].to_vec(),
-            StorageData::SharedGradient(values) => values
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)[start..end]
-                .to_vec(),
-        }
-    }
-
-    fn into_range(self, start: usize, end: usize) -> Vec<f32> {
-        match self.data {
-            StorageData::Owned(values) if start == 0 && end == values.len() => values,
-            StorageData::Owned(values) => values[start..end].to_vec(),
-            StorageData::SharedGradient(values) => {
-                let values = values
-                    .into_inner()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if start == 0 && end == values.len() {
-                    values
-                } else {
-                    values[start..end].to_vec()
-                }
-            }
-        }
-    }
-
-    fn try_clone_for_saved(storage: &Arc<Self>) -> Result<Arc<Self>, TensorError> {
-        let StorageData::SharedGradient(values) = &storage.data else {
-            return Ok(Arc::clone(storage));
-        };
-        let values = values
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let data = copied_storage(&values, values.len())?;
-        Ok(Arc::new(Self {
-            data: StorageData::Owned(data),
-            dtype: storage.dtype,
-            device: storage.device,
-        }))
-    }
-}
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -849,11 +756,7 @@ impl Tensor {
     ) -> Self {
         let elements = data.len();
         Self {
-            storage: Arc::new(Storage {
-                data: StorageData::Owned(data),
-                dtype,
-                device,
-            }),
+            storage: Arc::new(Storage::from_owned(data, dtype, device)),
             shape,
             strides,
             offset: 0,
@@ -937,7 +840,7 @@ impl Tensor {
     /// Returns the scalar type physically represented by this tensor's storage.
     #[must_use]
     pub fn dtype(&self) -> DType {
-        self.storage.dtype
+        self.storage.dtype()
     }
 
     /// Returns the number of bytes used to store one tensor element.
@@ -1009,7 +912,7 @@ impl Tensor {
     /// Returns the device owning this tensor's storage.
     #[must_use]
     pub fn device(&self) -> Device {
-        self.storage.device
+        self.storage.device()
     }
 
     #[must_use]
@@ -1089,21 +992,13 @@ impl Tensor {
         let elements = storage.len();
         let shape = try_clone_result_shape(shape, elements)?;
         let strides = contiguous_strides(&shape, elements)?;
-        let values = match &storage.data {
-            StorageData::Owned(values) => copied_storage(values, elements)?,
-            StorageData::SharedGradient(values) => {
-                let values = values
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                copied_storage(&values, elements)?
-            }
-        };
+        let values = storage.try_copy_values(|values| copied_storage(values, elements))?;
         Ok(Some(Self::from_owned_parts(
             values,
             shape,
             strides,
-            storage.dtype,
-            storage.device,
+            storage.dtype(),
+            storage.device(),
         )))
     }
 
@@ -2814,7 +2709,9 @@ impl SavedTensor {
     fn try_from_tensor(tensor: &Tensor, save_values: bool) -> Result<Self, TensorError> {
         Ok(Self {
             storage: if save_values {
-                Some(Storage::try_clone_for_saved(&tensor.storage)?)
+                Some(Storage::try_clone_for_saved(&tensor.storage, |values| {
+                    copied_storage(values, values.len())
+                })?)
             } else {
                 None
             },
@@ -3245,22 +3142,13 @@ fn accumulate_leaf_gradient(meta: &AutogradMeta, contribution: Vec<f32>) {
         .lock()
         .expect("leaf gradient mutex must not be poisoned");
     if let Some(storage) = grad.as_ref() {
-        let StorageData::SharedGradient(existing) = &storage.data else {
-            unreachable!("leaf gradients always use shared gradient storage");
-        };
-        let mut existing = existing
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        debug_assert_eq!(existing.len(), contribution.len());
-        for (value, contribution) in existing.iter_mut().zip(contribution) {
-            *value += contribution;
-        }
+        storage.accumulate_shared_gradient(contribution);
     } else {
-        *grad = Some(Arc::new(Storage {
-            data: StorageData::SharedGradient(Mutex::new(contribution)),
-            dtype: *dtype,
-            device: *device,
-        }));
+        *grad = Some(Arc::new(Storage::from_shared_gradient(
+            contribution,
+            *dtype,
+            *device,
+        )));
     }
 }
 
@@ -4093,22 +3981,21 @@ fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+
+    use crate::storage::Storage;
 
     use super::{
-        DType, Device, F32_SIGN_MASK, SavedTensor, Storage, StorageData, Tensor, TensorError,
-        try_result_vector,
+        DType, Device, F32_SIGN_MASK, SavedTensor, Tensor, TensorError, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
         Tensor {
-            storage: Arc::new(Storage {
-                data: StorageData::SharedGradient(Mutex::new(
-                    tensor.storage.owned_values().unwrap().to_vec(),
-                )),
-                dtype: tensor.dtype(),
-                device: tensor.device(),
-            }),
+            storage: Arc::new(Storage::from_shared_gradient(
+                tensor.storage.owned_values().unwrap().to_vec(),
+                tensor.dtype(),
+                tensor.device(),
+            )),
             shape: tensor.shape.clone(),
             strides: tensor.strides.clone(),
             offset: tensor.offset,
@@ -4555,11 +4442,7 @@ mod tests {
     #[test]
     fn owned_strided_matmul_preserves_fallback_index_errors() {
         let invalid = Tensor {
-            storage: Arc::new(Storage {
-                data: StorageData::Owned(vec![1.0]),
-                dtype: DType::Float32,
-                device: Device::Cpu,
-            }),
+            storage: Arc::new(Storage::from_owned(vec![1.0], DType::Float32, Device::Cpu)),
             shape: vec![2, 2],
             strides: vec![2, 1],
             offset: 0,
@@ -4631,10 +4514,6 @@ mod tests {
             .unwrap()
             .unwrap()
             .with_requires_grad(true);
-        assert!(matches!(
-            &live_gradient.storage.data,
-            StorageData::SharedGradient(_)
-        ));
         let saved_loss = live_gradient.relu().unwrap().sum();
 
         let later_weights = Tensor::from_vec(vec![3.0, -4.0, 1.0, 0.0], [4]).unwrap();
@@ -4765,11 +4644,7 @@ mod tests {
         // no real tensor can own this many f32 values, so the kernel must fail
         // its output reservation before attempting to read the empty fixture.
         let tensor = Tensor {
-            storage: Arc::new(Storage {
-                data: StorageData::Owned(Vec::new()),
-                dtype: DType::Float32,
-                device: Device::Cpu,
-            }),
+            storage: Arc::new(Storage::from_owned(Vec::new(), DType::Float32, Device::Cpu)),
             shape: vec![elements],
             strides: vec![1],
             offset: 0,
