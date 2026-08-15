@@ -39,6 +39,7 @@ __doc__ = _native.__doc__
 __all__ = _native.__all__
 
 from . import nn as nn
+from . import overrides as overrides
 from . import utils as utils
 
 del _copyreg, _native, _sys

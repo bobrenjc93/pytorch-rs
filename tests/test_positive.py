@@ -1,4 +1,5 @@
 import inspect
+import pickle
 import re
 import types
 import unittest
@@ -8,6 +9,19 @@ import torch_rs as torch
 
 
 METHOD_DOC = "\npositive() -> Tensor\n\nSee :func:`torch.positive`\n"
+FUNCTION_DOC = (
+    "\npositive(input) -> Tensor\n\n"
+    "Returns :attr:`input`.\n"
+    "Throws a runtime error if :attr:`input` is a bool tensor.\n\n"
+    "Args:\n"
+    "    input (Tensor): the input tensor.\n\n"
+    "Example::\n\n"
+    "    >>> t = torch.randn(5)\n"
+    "    >>> t\n"
+    "    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n"
+    "    >>> torch.positive(t)\n"
+    "    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n"
+)
 
 
 class TensorPositiveTests(unittest.TestCase):
@@ -219,6 +233,205 @@ class TensorPositiveTests(unittest.TestCase):
             (
                 lambda: operator_bound(dim=0),
                 "Tensor.positive() takes no keyword arguments",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+
+
+class TopLevelPositiveTests(unittest.TestCase):
+    def positive_calls(self, source):
+        return (
+            ("positional", torch.positive(source)),
+            ("input", torch.positive(input=source)),
+            ("x", torch.positive(x=source)),
+            ("a", torch.positive(a=source)),
+            ("x1", torch.positive(x1=source)),
+        )
+
+    def assert_identity_calls(self, source):
+        detached = source.detach()
+        metadata = (
+            source.shape,
+            source.stride(),
+            source.storage_offset(),
+            source.dtype,
+            source.device,
+            source.layout,
+            source.requires_grad,
+            source.is_leaf,
+            source.data_ptr(),
+        )
+        bits = np.asarray(detached).reshape(-1).view(np.uint32).copy()
+
+        for form, result in self.positive_calls(source):
+            with self.subTest(form=form):
+                self.assertIs(result, source)
+                self.assertTrue(result.is_set_to(detached))
+                self.assertEqual(
+                    (
+                        result.shape,
+                        result.stride(),
+                        result.storage_offset(),
+                        result.dtype,
+                        result.device,
+                        result.layout,
+                        result.requires_grad,
+                        result.is_leaf,
+                        result.data_ptr(),
+                    ),
+                    metadata,
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(result.detach()).reshape(-1).view(np.uint32), bits
+                )
+
+    def test_all_call_forms_are_exact_identities_for_supported_layouts(self):
+        base = torch.tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist())
+        strided = base.transpose(0, 2)
+        offset = strided[1]
+        empty = torch.zeros((2, 0, 3)).transpose(0, 2)[1]
+        special_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        special = torch.tensor(memoryview(special_bits.view(np.float32)))
+
+        for case, source in (
+            ("scalar", torch.tensor(-0.0)),
+            ("empty", empty),
+            ("offset", offset),
+            ("strided", strided),
+            ("special values", special),
+        ):
+            with self.subTest(case=case):
+                self.assert_identity_calls(source)
+
+    def test_all_call_forms_preserve_leaf_and_non_leaf_autograd_state(self):
+        leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        non_leaf = (leaf * 3.0).transpose(0, 1)[1]
+
+        for case, source in (("leaf", leaf), ("non-leaf", non_leaf)):
+            with self.subTest(case=case):
+                self.assert_identity_calls(source)
+
+        torch.positive(a=non_leaf).sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[0.0, 3.0, 0.0], [0.0, 3.0, 0.0]])
+        gradient = leaf.grad
+        for _, result in self.positive_calls(leaf):
+            self.assertIs(result.grad, gradient)
+
+    def test_callable_metadata_documentation_and_exports_match_pytorch(self):
+        function = torch.positive
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "positive")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.positive")
+        self.assertEqual(function.__module__, "torch")
+        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method positive of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.positive, function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)), function
+                )
+
+        self.assertEqual(torch.__all__.count("positive"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["positive"], function)
+
+    def test_binding_and_tensor_type_error_precedence_matches_pytorch_2_13(self):
+        tensor = torch.tensor([1.0])
+        cases = (
+            (
+                lambda: torch.positive(),
+                'positive() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.positive(tensor, tensor),
+                "positive() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.positive(tensor, input=tensor),
+                "positive() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.positive(tensor, extra=True, input=tensor),
+                "positive() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.positive(tensor, input=tensor, extra=True),
+                "positive() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.positive(extra=tensor),
+                'positive() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.positive(1, extra=True),
+                "positive(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.positive(input=[]),
+                "positive(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.positive(a=1),
+                "positive(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.positive(x=[]),
+                "positive(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.positive(a=tensor, x=tensor),
+                "positive() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.positive(x=tensor, a=tensor),
+                "positive() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.positive(input=tensor, a=tensor),
+                "positive() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.positive(input=tensor, x1=tensor),
+                "positive() got an unexpected keyword argument 'x1'",
+            ),
+            (
+                lambda: torch.positive(x=tensor, x1=tensor),
+                "positive() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.positive(x1=tensor, x=tensor),
+                "positive() got an unexpected keyword argument 'x1'",
             ),
         )
         for call, message in cases:
