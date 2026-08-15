@@ -5,6 +5,7 @@ import unittest
 
 import numpy as np
 import torch_rs as torch
+from tests.signature_utils import assert_no_argument_signature
 
 try:
     import torch as reference_torch
@@ -84,13 +85,19 @@ class TensorIsSignedReferenceTests(unittest.TestCase):
         actual_bound = actual_tensor.is_signed
         expected_bound = expected_tensor.is_signed
 
-        for actual, expected, expected_type in (
-            (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
-            (actual_bound, expected_bound, types.BuiltinMethodType),
+        for actual, expected, expected_type, expected_signature in (
+            (
+                actual_descriptor,
+                expected_descriptor,
+                types.MethodDescriptorType,
+                "(self, /)",
+            ),
+            (actual_bound, expected_bound, types.BuiltinMethodType, "()"),
             (
                 torch.is_signed,
                 reference_torch.is_signed,
                 types.BuiltinFunctionType,
+                None,
             ),
         ):
             self.assertIs(type(actual), expected_type)
@@ -98,10 +105,14 @@ class TensorIsSignedReferenceTests(unittest.TestCase):
             self.assertEqual(actual.__name__, expected.__name__)
             self.assertEqual(actual.__text_signature__, expected.__text_signature__)
             self.assertEqual(actual.__doc__, expected.__doc__)
-            with self.assertRaises(ValueError):
-                inspect.signature(actual)
-            with self.assertRaises(ValueError):
-                inspect.signature(expected)
+            if expected_signature is None:
+                with self.assertRaises(ValueError):
+                    inspect.signature(actual)
+                with self.assertRaises(ValueError):
+                    inspect.signature(expected)
+            else:
+                assert_no_argument_signature(self, actual, expected_signature)
+                assert_no_argument_signature(self, expected, expected_signature)
 
         self.assertEqual(
             actual_descriptor.__objclass__.__name__,

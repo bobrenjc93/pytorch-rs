@@ -6,6 +6,7 @@ import unittest
 
 import numpy as np
 import torch_rs as torch
+from tests.signature_utils import assert_no_argument_signature
 
 
 METHOD_DOC = (
@@ -109,9 +110,11 @@ class TensorIsFloatingPointTests(unittest.TestCase):
         for callable_object in (descriptor, bound, function):
             self.assertTrue(callable(callable_object))
             self.assertEqual(callable_object.__name__, "is_floating_point")
-            self.assertIsNone(callable_object.__text_signature__)
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
+        assert_no_argument_signature(self, descriptor, "(self, /)")
+        assert_no_argument_signature(self, bound, "()")
+        self.assertIsNone(function.__text_signature__)
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
 
         self.assertEqual(descriptor.__doc__, METHOD_DOC)
         self.assertEqual(bound.__doc__, METHOD_DOC)

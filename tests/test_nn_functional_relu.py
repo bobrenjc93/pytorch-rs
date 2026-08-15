@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import sys
 import types
 import unittest
 
@@ -14,6 +15,13 @@ FUNCTION_DOC = """relu(input, inplace=False) -> Tensor
     Applies the rectified linear unit function element-wise. See
     :class:`~torch.nn.ReLU` for more details.
     """
+
+if sys.version_info >= (3, 13):
+    FUNCTION_DOC = (
+        "relu(input, inplace=False) -> Tensor\n\n"
+        "Applies the rectified linear unit function element-wise. See\n"
+        ":class:`~torch.nn.ReLU` for more details.\n"
+    )
 
 
 class FunctionalReluTests(unittest.TestCase):

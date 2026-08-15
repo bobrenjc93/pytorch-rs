@@ -175,10 +175,6 @@ class ZerosReferenceTests(unittest.TestCase):
                 lambda module: module.zeros(IndexDimension(2**63), unexpected=True),
             ),
             (
-                "negative before device resolution",
-                lambda module: module.zeros(-1, device="cuda"),
-            ),
-            (
                 "boolean type before requires_grad",
                 lambda module: module.zeros(True, requires_grad=1),
             ),
@@ -194,6 +190,20 @@ class ZerosReferenceTests(unittest.TestCase):
                     actual_message.replace("torch.device or str", "torch.device"),
                     expected_message,
                 )
+
+    @unittest.skipUnless(
+        reference_torch is not None and reference_torch.cuda.is_available(),
+        "requires a CUDA-capable PyTorch runtime",
+    )
+    def test_negative_size_is_validated_before_cuda_device_resolution(self):
+        actual_type, actual_message = self.capture_error(
+            lambda: torch.zeros(-1, device="cuda")
+        )
+        expected_type, expected_message = self.capture_error(
+            lambda: reference_torch.zeros(-1, device="cuda")
+        )
+        self.assertIs(actual_type, expected_type)
+        self.assertEqual(actual_message, expected_message)
 
 
 if __name__ == "__main__":
