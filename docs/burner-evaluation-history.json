@@ -2209,6 +2209,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 63
       }
+    },
+    {
+      "key": "pr:149",
+      "recordedAt": "2026-08-15T21:18:35.653Z",
+      "label": "PR #149",
+      "kind": "leaf",
+      "prNumber": 149,
+      "title": "Expose Tensor.adjoint through the existing mH engine",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 65,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 44,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 64
+      }
     }
   ]
 }
