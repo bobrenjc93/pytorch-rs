@@ -302,6 +302,12 @@ impl PyDevice {
     }
 }
 
+fn device_ordinal(device: Device) -> PyResult<i64> {
+    device
+        .index()
+        .map_or(Ok(-1), |index| i64::try_from(index).map_err(Into::into))
+}
+
 // Internal descriptor owner matching PyTorch's native tensor base class.
 #[pyclass(
     name = "TensorBase",
@@ -523,11 +529,7 @@ impl PyTensorBase {
     #[pyo3(text_signature = None)]
     fn get_device(slf: &Bound<'_, Self>) -> PyResult<i64> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        tensor
-            .inner
-            .device()
-            .index()
-            .map_or(Ok(-1), |index| i64::try_from(index).map_err(Into::into))
+        device_ordinal(tensor.inner.device())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -806,9 +808,9 @@ impl PyNoGrad {
     }
 }
 
-// PyTorch exposes tensor factories as built-in static methods owned by this
-// internal type. Keeping the owner private while exporting its bound method
-// preserves scalar_tensor's public callable metadata.
+// PyTorch exposes selected top-level tensor functions as built-in static
+// methods owned by this internal type. Keeping the owner private while
+// exporting its bound methods preserves their public callable metadata.
 #[pyclass(
     name = "_VariableFunctionsClass",
     module = "torch_rs._C",
@@ -819,6 +821,18 @@ struct PyVariableFunctionsClass;
 
 #[pymethods]
 impl PyVariableFunctionsClass {
+    #[staticmethod]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn get_device(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<i64> {
+        let input = bind_legacy_single_tensor_argument("get_device", args, kwargs)?;
+        let tensor = input
+            .value
+            .cast::<PyTensor>()
+            .expect("the get_device input type was checked while binding")
+            .try_borrow()?;
+        device_ordinal(tensor.inner.device())
+    }
+
     #[staticmethod]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn scalar_tensor(
@@ -6633,6 +6647,9 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module
         .getattr("__all__")?
         .call_method1("remove", ("_VariableFunctionsClass",))?;
+    let get_device = variable_functions.getattr("get_device")?;
+    get_device.setattr("__module__", "torch")?;
+    module.add("get_device", get_device)?;
     let scalar_tensor = variable_functions.getattr("scalar_tensor")?;
     scalar_tensor.setattr("__module__", "torch")?;
     module.add("scalar_tensor", scalar_tensor)?;
