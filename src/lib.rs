@@ -15,6 +15,8 @@ mod memory_format;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_dtype;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_layout;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_variable_functions;
