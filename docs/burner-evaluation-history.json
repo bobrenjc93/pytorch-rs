@@ -2145,6 +2145,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 62
       }
+    },
+    {
+      "key": "pr:143",
+      "recordedAt": "2026-08-15T16:46:44.658Z",
+      "label": "PR #143",
+      "kind": "leaf",
+      "prNumber": 143,
+      "title": "Salvage the Python 3.14 CI lane on Linux",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 43.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 62
+      }
     }
   ]
 }
