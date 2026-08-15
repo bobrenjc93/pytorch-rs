@@ -30,6 +30,7 @@ static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static TORCH_FUNCTION_DESCRIPTOR_CALLER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -96,6 +97,11 @@ def _make_no_grad(context_base):
     no_grad.__qualname__ = "no_grad"
     return no_grad
 "#;
+
+const TORCH_FUNCTION_DESCRIPTOR_CALLER_SOURCE: &CStr = cr"
+def _call_descriptor(function, args):
+    return function(*args)
+";
 
 const IS_TENSOR_SOURCE: &CStr = cr#"
 import copy as _copy
@@ -570,13 +576,17 @@ impl PyTensorBase {
     #[allow(clippy::doc_markdown)]
     #[doc = "\nAccessing this property is equivalent to calling :func:`adjoint`.\n"]
     #[getter(mH)]
-    fn conjugate_matrix_transpose(slf: &Bound<'_, Self>) -> PyResult<Py<PyTensor>> {
+    fn conjugate_matrix_transpose(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
         let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_mh_mode(slf.py(), tensor)? {
+            return Ok(result);
+        }
+
         let rank = tensor.try_borrow()?.inner.shape().len();
         match rank {
             0 => {
                 warn_once(slf.py(), &MH_SCALAR_WARNING_EMITTED, MH_SCALAR_WARNING)?;
-                Ok(tensor.clone().unbind())
+                Ok(tensor.clone().unbind().into_any())
             }
             1 => Err(PyRuntimeError::new_err(
                 "tensor.mH is only supported on matrices or batches of matrices. Got 1-D tensor.",
@@ -589,7 +599,7 @@ impl PyTensorBase {
                     .inner
                     .matrix_transpose()
                     .map_err(|error| transpose_error(&error))?;
-                Py::new(slf.py(), PyTensor::new(inner))
+                Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
             }
         }
     }
@@ -987,13 +997,17 @@ impl ActiveTorchFunctionMode {
     fn get(&self) -> Option<&Py<PyAny>> {
         self.mode.as_ref()
     }
+
+    fn restore(&mut self) {
+        if let Some(mode) = self.mode.take() {
+            TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow_mut().push(mode));
+        }
+    }
 }
 
 impl Drop for ActiveTorchFunctionMode {
     fn drop(&mut self) {
-        if let Some(mode) = self.mode.take() {
-            TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow_mut().push(mode));
-        }
+        self.restore();
     }
 }
 
@@ -1120,6 +1134,51 @@ fn call_torch_function_handler(
 
 fn is_not_implemented(py: Python<'_>, result: &Py<PyAny>) -> bool {
     result.as_ptr() == py.NotImplemented().as_ptr()
+}
+
+fn torch_function_descriptor_caller(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+    TORCH_FUNCTION_DESCRIPTOR_CALLER.get_or_try_init(py, || {
+        let helpers = PyModule::from_code(
+            py,
+            TORCH_FUNCTION_DESCRIPTOR_CALLER_SOURCE,
+            c"torch_rs/_torch_function.py",
+            c"torch_rs._torch_function",
+        )?;
+        Ok(helpers.getattr("_call_descriptor")?.unbind())
+    })
+}
+
+fn dispatch_mh_mode(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Option<Py<PyAny>>> {
+    if TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty()) {
+        return Ok(None);
+    }
+
+    let descriptor = py.get_type::<PyTensorBase>().getattr("mH")?;
+    let function = descriptor.getattr("__get__")?.unbind();
+    let types = PyTuple::new(py, [tensor.get_type().into_any()])?;
+    let args = PyTuple::new(py, [tensor.clone().into_any()])?;
+
+    let mut active_mode = ActiveTorchFunctionMode::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, &args, None)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+
+    // TensorBase's fallback retries the descriptor after restoring the active
+    // mode. That intentionally re-enters a declining top mode, matching
+    // PyTorch's recursion behavior for a mode returning NotImplemented. A mode
+    // that wants to reach the next mode instead calls `func(*args)` itself
+    // while the current mode is disabled.
+    active_mode.restore();
+    // Keep the retry in a Python frame so configured `sys.setrecursionlimit`
+    // values and mode side effects match TensorBase's recursive fallback.
+    let caller = torch_function_descriptor_caller(py)?;
+    Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
 }
 
 fn torch_function_dispatch_error(

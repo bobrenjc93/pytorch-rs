@@ -109,6 +109,126 @@ class TensorConjugateTransposeReferenceTests(unittest.TestCase):
             self.descriptor_contract(reference_torch),
         )
 
+    def mode_dispatch_observation(self, module_name):
+        source = r'''
+import importlib
+import inspect
+import json
+import sys
+import warnings
+
+module = importlib.import_module(MODULE)
+descriptor = inspect.getattr_static(module.Tensor, "mH")
+matrix = module.tensor(
+    [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=module.float32
+)
+marker = object()
+
+class RecordingMode(module.overrides.TorchFunctionMode):
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls.append((func, types, args, kwargs))
+        return self.result
+
+recording = RecordingMode(marker)
+with recording:
+    intercepted = matrix.mH
+function, dispatch_types, args, kwargs = recording.calls[0]
+
+scalar = module.tensor(2.5, dtype=module.float32, requires_grad=True)
+scalar_marker = object()
+with warnings.catch_warnings(record=True) as scalar_warnings:
+    warnings.simplefilter("always")
+    with RecordingMode(scalar_marker):
+        scalar_intercepted = scalar.mH
+
+order = []
+class ForwardingMode(module.overrides.TorchFunctionMode):
+    def __init__(self, label):
+        self.label = label
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        order.append(self.label)
+        return func(*args, **(kwargs or {}))
+
+with ForwardingMode("lower"):
+    with ForwardingMode("upper"):
+        forwarded = matrix.mH
+
+sys.setrecursionlimit(80)
+
+class DecliningMode(module.overrides.TorchFunctionMode):
+    def __init__(self):
+        self.calls = 0
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls += 1
+        return NotImplemented
+
+lower = RecordingMode(object())
+upper = DecliningMode()
+try:
+    with lower:
+        with upper:
+            matrix.mH
+except Exception as error:
+    nested_error = [type(error).__name__, str(error)]
+else:
+    nested_error = None
+
+scalar_declining = DecliningMode()
+with warnings.catch_warnings(record=True) as declining_warnings:
+    warnings.simplefilter("always")
+    try:
+        with scalar_declining:
+            scalar.mH
+    except Exception as error:
+        scalar_declining_error = [type(error).__name__, str(error)]
+    else:
+        scalar_declining_error = None
+
+print(json.dumps({
+    "intercepted": intercepted is marker,
+    "function_type": type(function).__name__,
+    "function_name": function.__name__,
+    "function_qualname": function.__qualname__,
+    "function_self": function.__self__ is descriptor,
+    "function_equals_descriptor_get": function == descriptor.__get__,
+    "types": len(dispatch_types) == 1 and dispatch_types[0] is module.Tensor,
+    "args": len(args) == 1 and args[0] is matrix,
+    "kwargs_is_none": kwargs is None,
+    "scalar_intercepted": scalar_intercepted is scalar_marker,
+    "scalar_warning_count": len(scalar_warnings),
+    "forwarding_order": order,
+    "forwarded_shape": list(forwarded.shape),
+    "forwarded_stride": list(forwarded.stride()),
+    "forwarded_values": forwarded.tolist(),
+    "nested_error": nested_error,
+    "upper_calls": upper.calls,
+    "lower_skipped": len(lower.calls) == 0,
+    "scalar_declining_error": scalar_declining_error,
+    "scalar_declining_calls": scalar_declining.calls,
+    "scalar_declining_warning_count": len(declining_warnings),
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_observation("torch_rs"),
+            self.mode_dispatch_observation("torch"),
+        )
+
     def test_scalar_warning_vector_error_and_extreme_metadata_match_pytorch_2_13(self):
         script = r'''
 import importlib, json, sys, warnings

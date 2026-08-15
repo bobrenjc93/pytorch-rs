@@ -40,6 +40,19 @@ class TensorConjugateTransposeTests(unittest.TestCase):
 
     def test_00_scalar_warning_is_once_only_and_points_to_the_caller(self):
         scalar = torch.tensor(2.5, requires_grad=True)
+        marker = object()
+
+        class InterceptingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return marker
+
+        with warnings.catch_warnings(record=True) as intercepted_warnings:
+            warnings.simplefilter("always")
+            with InterceptingMode():
+                intercepted = scalar.mH
+        self.assertIs(intercepted, marker)
+        self.assertEqual(intercepted_warnings, [])
+
         metadata = (
             scalar.shape,
             scalar.stride(),
@@ -204,6 +217,81 @@ class TensorConjugateTransposeTests(unittest.TestCase):
                     str(raised.exception),
                     "attribute 'mH' of 'torch._C.TensorBase' objects is not writable",
                 )
+
+    def test_torch_function_modes_receive_descriptor_get_and_forward(self):
+        tensor = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        descriptor = inspect.getattr_static(torch.Tensor, "mH")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            result = tensor.mH
+        self.assertIs(result, marker)
+        self.assertEqual(len(mode.calls), 1)
+        function, types, args, kwargs = mode.calls[0]
+        self.assertEqual(function, descriptor.__get__)
+        self.assertIs(function.__self__, descriptor)
+        self.assertEqual(function.__name__, "__get__")
+        self.assertEqual(function.__qualname__, "getset_descriptor.__get__")
+        self.assertEqual(types, (torch.Tensor,))
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], tensor)
+        self.assertIsNone(kwargs)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor.mH
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertTrue(forwarded.is_set_to(tensor.transpose(-2, -1)))
+
+    def test_not_implemented_reenters_the_declining_top_mode(self):
+        tensor = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = 0
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls += 1
+                return NotImplemented
+
+        class AcceptingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = 0
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls += 1
+                return object()
+
+        lower = AcceptingMode()
+        upper = DecliningMode()
+        with self.assertRaisesRegex(
+            RecursionError, r"^maximum recursion depth exceeded$"
+        ):
+            with lower:
+                with upper:
+                    tensor.mH
+        self.assertGreater(upper.calls, 1)
+        self.assertEqual(lower.calls, 0)
+        self.assertTrue(tensor.mH.is_set_to(tensor.transpose(-2, -1)))
 
 
 if __name__ == "__main__":
