@@ -5,6 +5,7 @@
 //! core. Burner grows the supported surface monotonically while correctness,
 //! benchmark integrity, and existing performance remain merge gates.
 
+mod device;
 mod dtype;
 #[cfg(feature = "python-bindings")]
 mod python;
@@ -15,7 +16,8 @@ mod tensor;
 #[cfg(feature = "python-bindings")]
 pub(crate) use tensor::{enter_no_grad, exit_no_grad};
 
+pub use device::Device;
 pub use dtype::DType;
 pub use tensor::{
-    Device, LogicalValues, MemoryFormat, NoGradGuard, Tensor, TensorError, is_grad_enabled, no_grad,
+    LogicalValues, MemoryFormat, NoGradGuard, Tensor, TensorError, is_grad_enabled, no_grad,
 };
