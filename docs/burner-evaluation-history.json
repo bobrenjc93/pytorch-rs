@@ -2177,6 +2177,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 62
       }
+    },
+    {
+      "key": "pr:147",
+      "recordedAt": "2026-08-15T19:27:29.455Z",
+      "label": "PR #147",
+      "kind": "leaf",
+      "prNumber": 147,
+      "title": "Accept one positional integer size in torch.ones",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 43.9,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 62
+      }
     }
   ]
 }
