@@ -103,16 +103,26 @@ class TensorIsConjTests(unittest.TestCase):
         self.assertEqual(bound.__qualname__, "Tensor.is_conj")
         self.assertEqual(descriptor.__doc__, METHOD_DOC)
         self.assertEqual(bound.__doc__, METHOD_DOC)
-        self.assertIsNone(descriptor.__text_signature__)
-        self.assertIsNone(bound.__text_signature__)
+        for callable_object, expected_signature in (
+            (descriptor, "(self, /)"),
+            (bound, "()"),
+        ):
+            if sys.version_info >= (3, 13):
+                self.assertEqual(
+                    callable_object.__text_signature__, "($self, /)"
+                )
+                self.assertEqual(
+                    str(inspect.signature(callable_object)), expected_signature
+                )
+            else:
+                self.assertIsNone(callable_object.__text_signature__)
+                with self.assertRaises(ValueError):
+                    inspect.signature(callable_object)
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
         self.assertFalse(hasattr(descriptor, "__module__"))
         self.assertIsNone(bound.__module__)
         self.assertIs(descriptor(tensor), False)
-        for callable_object in (descriptor, bound):
-            with self.assertRaises(ValueError):
-                inspect.signature(callable_object)
 
     def test_invalid_calls_match_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
