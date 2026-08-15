@@ -1,4 +1,6 @@
 import inspect
+import pickle
+import re
 import types
 import unittest
 
@@ -25,6 +27,45 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             expected_call()
         self.assertEqual(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
+    def top_level_callable_contract(self, module):
+        function = module.positive
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.positive is function,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature_error": signature_error,
+            "all_count": module.__all__.count("positive"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "owner_not_top_level": not hasattr(module, "_VariableFunctionsClass"),
+            "wildcard_identity": wildcard_namespace["positive"] is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
 
     def make_identity_cases(self, module):
         base = module.tensor(
@@ -142,6 +183,117 @@ class TensorPositiveReferenceTests(unittest.TestCase):
         self.assertEqual(outcomes[0][:-1], outcomes[1][:-1])
         np.testing.assert_array_equal(outcomes[0][-1], outcomes[1][-1])
 
+    def test_top_level_call_forms_preserve_identity_bits_layout_and_storage(self):
+        actual_cases = self.make_identity_cases(torch)
+        expected_cases = self.make_identity_cases(reference_torch)
+
+        for case, (actual, expected) in enumerate(
+            zip(actual_cases, expected_cases, strict=True)
+        ):
+            actual_detached = actual.detach()
+            expected_detached = expected.detach()
+            actual_metadata = (
+                actual.shape,
+                actual.stride(),
+                actual.storage_offset(),
+                actual.dtype,
+                actual.device,
+                actual.layout,
+                actual.requires_grad,
+                actual.is_leaf,
+                actual.data_ptr(),
+            )
+            expected_metadata = (
+                tuple(expected.shape),
+                expected.stride(),
+                expected.storage_offset(),
+                expected.dtype,
+                expected.device,
+                expected.layout,
+                expected.requires_grad,
+                expected.is_leaf,
+                expected.data_ptr(),
+            )
+            for keyword in (None, "input", "x", "a"):
+                with self.subTest(case=case, keyword=keyword):
+                    if keyword is None:
+                        actual_result = torch.positive(actual)
+                        expected_result = reference_torch.positive(expected)
+                    else:
+                        actual_result = torch.positive(**{keyword: actual})
+                        expected_result = reference_torch.positive(**{keyword: expected})
+
+                    self.assertIs(actual_result, actual)
+                    self.assertIs(expected_result, expected)
+                    self.assertEqual(
+                        (
+                            actual_result.shape,
+                            actual_result.stride(),
+                            actual_result.storage_offset(),
+                            actual_result.dtype,
+                            actual_result.device,
+                            actual_result.layout,
+                            actual_result.requires_grad,
+                            actual_result.is_leaf,
+                            actual_result.data_ptr(),
+                        ),
+                        actual_metadata,
+                    )
+                    self.assertEqual(
+                        (
+                            tuple(expected_result.shape),
+                            expected_result.stride(),
+                            expected_result.storage_offset(),
+                            expected_result.dtype,
+                            expected_result.device,
+                            expected_result.layout,
+                            expected_result.requires_grad,
+                            expected_result.is_leaf,
+                            expected_result.data_ptr(),
+                        ),
+                        expected_metadata,
+                    )
+                    self.assertTrue(actual_result.is_set_to(actual_detached))
+                    self.assertTrue(expected_result.is_set_to(expected_detached))
+                    np.testing.assert_array_equal(
+                        np.asarray(actual_result.detach()).reshape(-1).view(np.uint32),
+                        expected_result.detach().numpy().reshape(-1).view(np.uint32),
+                    )
+
+    def test_top_level_call_forms_preserve_leaf_and_non_leaf_autograd(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            non_leaf = (leaf * 3.0).transpose(0, 1)[1]
+            identities = []
+            for source in (leaf, non_leaf):
+                for keyword in (None, "input", "x", "a"):
+                    result = (
+                        module.positive(source)
+                        if keyword is None
+                        else module.positive(**{keyword: source})
+                    )
+                    identities.append(
+                        (
+                            result is source,
+                            result.requires_grad,
+                            result.is_leaf,
+                            tuple(result.shape),
+                            result.stride(),
+                            result.storage_offset(),
+                            result.data_ptr() == source.data_ptr(),
+                        )
+                    )
+            module.positive(a=non_leaf).sum().backward()
+            outcomes.append((identities, np.asarray(leaf.grad).copy()))
+
+        self.assertEqual(outcomes[0][0], outcomes[1][0])
+        np.testing.assert_array_equal(outcomes[0][1], outcomes[1][1])
+
     def test_descriptor_documentation_and_signature_match_pytorch_2_13(self):
         actual_tensor = torch.tensor([1.0])
         expected_tensor = reference_torch.tensor([1.0], dtype=reference_torch.float32)
@@ -197,6 +349,10 @@ class TensorPositiveReferenceTests(unittest.TestCase):
         )
         self.assertIs(actual_descriptor(actual_tensor), actual_tensor)
         self.assertIs(expected_descriptor(expected_tensor), expected_tensor)
+        self.assertEqual(
+            self.top_level_callable_contract(torch),
+            self.top_level_callable_contract(reference_torch),
+        )
 
     def test_invalid_call_errors_match_pytorch_2_13(self):
         actual = torch.tensor([1.0])
@@ -233,6 +389,62 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             (
                 lambda: actual_operator_bound(unexpected=True),
                 lambda: expected_operator_bound(unexpected=True),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
+    def test_top_level_binding_error_precedence_matches_pytorch_2_13(self):
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0], dtype=reference_torch.float32)
+        cases = (
+            (lambda: torch.positive(), lambda: reference_torch.positive()),
+            (
+                lambda: torch.positive(actual, actual),
+                lambda: reference_torch.positive(expected, expected),
+            ),
+            (
+                lambda: torch.positive(actual, input=actual),
+                lambda: reference_torch.positive(expected, input=expected),
+            ),
+            (
+                lambda: torch.positive(actual, extra=True, input=actual),
+                lambda: reference_torch.positive(
+                    expected, extra=True, input=expected
+                ),
+            ),
+            (
+                lambda: torch.positive(actual, input=actual, extra=True),
+                lambda: reference_torch.positive(
+                    expected, input=expected, extra=True
+                ),
+            ),
+            (
+                lambda: torch.positive(extra=actual),
+                lambda: reference_torch.positive(extra=expected),
+            ),
+            (
+                lambda: torch.positive(1, extra=True),
+                lambda: reference_torch.positive(1, extra=True),
+            ),
+            (
+                lambda: torch.positive(input=[]),
+                lambda: reference_torch.positive(input=[]),
+            ),
+            (lambda: torch.positive(a=1), lambda: reference_torch.positive(a=1)),
+            (lambda: torch.positive(x=[]), lambda: reference_torch.positive(x=[])),
+            (
+                lambda: torch.positive(a=actual, x=actual),
+                lambda: reference_torch.positive(a=expected, x=expected),
+            ),
+            (
+                lambda: torch.positive(x=actual, a=actual),
+                lambda: reference_torch.positive(x=expected, a=expected),
+            ),
+            (
+                lambda: torch.positive(input=actual, a=actual),
+                lambda: reference_torch.positive(input=expected, a=expected),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):

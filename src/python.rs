@@ -855,6 +855,24 @@ impl PyVariableFunctionsClass {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n"]
+    #[staticmethod]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn positive(
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyTensor>> {
+        let input = bind_legacy_single_tensor_argument("positive", args, kwargs)?;
+        Ok(input
+            .value
+            .cast::<PyTensor>()
+            .expect("the positive input type was checked while binding")
+            .clone()
+            .unbind())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n"]
     #[staticmethod]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
@@ -6910,15 +6928,11 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module
         .getattr("__all__")?
         .call_method1("remove", ("_VariableFunctionsClass",))?;
-    let get_device = variable_functions.getattr("get_device")?;
-    get_device.setattr("__module__", "torch")?;
-    module.add("get_device", get_device)?;
-    let scalar_tensor = variable_functions.getattr("scalar_tensor")?;
-    scalar_tensor.setattr("__module__", "torch")?;
-    module.add("scalar_tensor", scalar_tensor)?;
-    let permute = variable_functions.getattr("permute")?;
-    permute.setattr("__module__", "torch")?;
-    module.add("permute", permute)?;
+    for name in ["get_device", "scalar_tensor", "positive", "permute"] {
+        let function = variable_functions.getattr(name)?;
+        function.setattr("__module__", "torch")?;
+        module.add(name, function)?;
+    }
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
     module.add_function(wrap_pyfunction!(relu, module)?)?;
