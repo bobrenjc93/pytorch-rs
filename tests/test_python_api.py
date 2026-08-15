@@ -11,7 +11,11 @@ from decimal import Decimal
 
 import numpy as np
 import torch_rs as torch
-from tests.signature_utils import assert_no_argument_signature
+
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
 
 
 class PythonApiBaselineTests(unittest.TestCase):
@@ -146,7 +150,11 @@ class PythonApiBaselineTests(unittest.TestCase):
             ),
             (
                 lambda: scalar.neg(dim=0),
-                "TensorBase.neg() takes no keyword arguments",
+                (
+                    "Tensor.neg() takes no keyword arguments"
+                    if sys.version_info < (3, 11)
+                    else "TensorBase.neg() takes no keyword arguments"
+                ),
             ),
             (
                 lambda: descriptor(scalar, 1),

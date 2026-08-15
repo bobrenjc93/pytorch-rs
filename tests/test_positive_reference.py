@@ -6,7 +6,11 @@ import unittest
 
 import numpy as np
 import torch_rs as torch
-from tests.signature_utils import assert_no_argument_signature
+
+if __package__:
+    from .signature_utils import assert_no_argument_signature
+else:
+    from signature_utils import assert_no_argument_signature
 
 try:
     import torch as reference_torch
