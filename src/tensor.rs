@@ -11,6 +11,12 @@ use crate::storage::Storage;
 use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
+// Two four-row tiles amortize the finite-value scan. Four-column alignment
+// avoids the vector-tail regression seen for wider misaligned output rows.
+const CONTIGUOUS_MATMUL_ROW_TILE: usize = 4;
+const CONTIGUOUS_MATMUL_MIN_ROWS: usize = 2 * CONTIGUOUS_MATMUL_ROW_TILE;
+const CONTIGUOUS_MATMUL_MIN_OUTPUT_ELEMENTS: usize = 4_096;
+const CONTIGUOUS_MATMUL_COLUMN_ALIGNMENT: usize = 4;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -2003,6 +2009,9 @@ impl Tensor {
     ///
     /// Returns an error unless both tensors are matrices with compatible inner
     /// dimensions.
+    // Keep the existing serial loop inline so fallback NaN payload behavior
+    // remains unchanged in optimized builds.
+    #[allow(clippy::too_many_lines)]
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
         if self.shape.len() != 2 || other.shape.len() != 2 {
             return Err(TensorError::MatmulRequiresMatrices {
@@ -2028,14 +2037,30 @@ impl Tensor {
             (self.contiguous_slice(), other.contiguous_slice())
         {
             if output_elements != 0 && inner != 0 {
-                for (left_row, output_row) in left_data
-                    .chunks_exact(inner)
-                    .zip(output.chunks_exact_mut(columns))
+                if rows >= CONTIGUOUS_MATMUL_MIN_ROWS
+                    && output_elements >= CONTIGUOUS_MATMUL_MIN_OUTPUT_ELEMENTS
+                    && (columns < CONTIGUOUS_MATMUL_COLUMN_ALIGNMENT
+                        || columns.is_multiple_of(CONTIGUOUS_MATMUL_COLUMN_ALIGNMENT))
+                    && contiguous_matmul_values_are_block_safe(left_data, right_data)
                 {
-                    for (&left, right_row) in left_row.iter().zip(right_data.chunks_exact(columns))
+                    accumulate_contiguous_matmul_row_tiles_4(
+                        left_data,
+                        right_data,
+                        &mut output,
+                        inner,
+                        columns,
+                    );
+                } else {
+                    for (left_row, output_row) in left_data
+                        .chunks_exact(inner)
+                        .zip(output.chunks_exact_mut(columns))
                     {
-                        for (output_value, &right) in output_row.iter_mut().zip(right_row) {
-                            *output_value += left * right;
+                        for (&left, right_row) in
+                            left_row.iter().zip(right_data.chunks_exact(columns))
+                        {
+                            for (output_value, &right) in output_row.iter_mut().zip(right_row) {
+                                *output_value += left * right;
+                            }
                         }
                     }
                 }
@@ -3150,6 +3175,82 @@ fn validate_view_bounds(
     Ok(())
 }
 
+fn accumulate_contiguous_matmul_rows(
+    left_data: &[f32],
+    right_data: &[f32],
+    output: &mut [f32],
+    inner: usize,
+    columns: usize,
+) {
+    debug_assert_ne!(inner, 0);
+    debug_assert_ne!(columns, 0);
+    for (left_row, output_row) in left_data
+        .chunks_exact(inner)
+        .zip(output.chunks_exact_mut(columns))
+    {
+        for (&left, right_row) in left_row.iter().zip(right_data.chunks_exact(columns)) {
+            for (output_value, &right) in output_row.iter_mut().zip(right_row) {
+                *output_value += left * right;
+            }
+        }
+    }
+}
+
+fn contiguous_matmul_values_are_block_safe(left_data: &[f32], right_data: &[f32]) -> bool {
+    values_are_finite(left_data) && values_are_finite(right_data)
+}
+
+fn values_are_finite(values: &[f32]) -> bool {
+    // Do not short-circuit: optimized builds can vectorize the full scan,
+    // which keeps its cost small relative to the gated matrix workload.
+    let mut all_finite = true;
+    for &value in values {
+        all_finite &= value.is_finite();
+    }
+    all_finite
+}
+
+fn accumulate_contiguous_matmul_row_tiles_4(
+    left_data: &[f32],
+    right_data: &[f32],
+    output: &mut [f32],
+    inner: usize,
+    columns: usize,
+) {
+    let rows = left_data.len() / inner;
+    let blocked_rows = rows / CONTIGUOUS_MATMUL_ROW_TILE * CONTIGUOUS_MATMUL_ROW_TILE;
+    let (blocked_left, remaining_left) = left_data.split_at(blocked_rows * inner);
+    let (blocked_output, remaining_output) = output.split_at_mut(blocked_rows * columns);
+    for (left_rows, output_rows) in blocked_left
+        .chunks_exact(CONTIGUOUS_MATMUL_ROW_TILE * inner)
+        .zip(blocked_output.chunks_exact_mut(CONTIGUOUS_MATMUL_ROW_TILE * columns))
+    {
+        let (output_row_0, output_rows) = output_rows.split_at_mut(columns);
+        let (output_row_1, output_rows) = output_rows.split_at_mut(columns);
+        let (output_row_2, output_row_3) = output_rows.split_at_mut(columns);
+        // Depth remains the outer accumulation loop for every result element.
+        for (depth, right_row) in right_data.chunks_exact(columns).enumerate() {
+            let left_0 = left_rows[depth];
+            let left_1 = left_rows[inner + depth];
+            let left_2 = left_rows[2 * inner + depth];
+            let left_3 = left_rows[3 * inner + depth];
+            for ((((output_0, output_1), output_2), output_3), &right) in output_row_0
+                .iter_mut()
+                .zip(output_row_1.iter_mut())
+                .zip(output_row_2.iter_mut())
+                .zip(output_row_3.iter_mut())
+                .zip(right_row)
+            {
+                *output_0 += left_0 * right;
+                *output_1 += left_1 * right;
+                *output_2 += left_2 * right;
+                *output_3 += left_3 * right;
+            }
+        }
+    }
+    accumulate_contiguous_matmul_rows(remaining_left, right_data, remaining_output, inner, columns);
+}
+
 fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<usize, TensorError> {
     let row_offset = row
         .checked_mul(tensor.strides[0])
@@ -3638,7 +3739,9 @@ mod tests {
     use crate::storage::Storage;
 
     use super::{
-        DType, Device, F32_SIGN_MASK, SavedTensor, Tensor, TensorError, try_result_vector,
+        DType, Device, F32_SIGN_MASK, SavedTensor, Tensor, TensorError,
+        accumulate_contiguous_matmul_rows, contiguous_matmul_values_are_block_safe,
+        try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -3757,6 +3860,79 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    #[test]
+    fn large_contiguous_matmul_preserves_serial_bits_across_row_tiles() {
+        const BITS: [u32; 14] = [
+            0x0000_0000,
+            0x8000_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x3f00_0000,
+            0xbf00_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x0080_0000,
+            0x8080_0000,
+            0x4049_0fdb,
+            0xc049_0fdb,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let rows = 65;
+        let inner = 17;
+
+        for columns in [64, 65] {
+            let left = Tensor::from_vec(
+                (0..rows * inner)
+                    .map(|index| f32::from_bits(BITS[(index * 5 + index / 7) % BITS.len()]))
+                    .collect(),
+                [rows, inner],
+            )
+            .unwrap();
+            let right = Tensor::from_vec(
+                (0..inner * columns)
+                    .map(|index| f32::from_bits(BITS[(index * 3 + index / 11 + 1) % BITS.len()]))
+                    .collect(),
+                [inner, columns],
+            )
+            .unwrap();
+            let mut expected = vec![0.0; rows * columns];
+            accumulate_contiguous_matmul_rows(
+                left.as_slice(),
+                right.as_slice(),
+                &mut expected,
+                inner,
+                columns,
+            );
+            let actual = left.matmul(&right).unwrap();
+
+            for (index, (&actual, &expected)) in actual.as_slice().iter().zip(&expected).enumerate()
+            {
+                assert_eq!(
+                    actual.to_bits(),
+                    expected.to_bits(),
+                    "column count {columns}, output index {index}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn contiguous_matmul_blocks_only_finite_inputs() {
+        assert!(contiguous_matmul_values_are_block_safe(
+            &[0.0, -0.0, 1.0, -2.0],
+            &[3.0, -4.0],
+        ));
+        assert!(!contiguous_matmul_values_are_block_safe(
+            &[f32::NAN],
+            &[1.0],
+        ));
+        assert!(!contiguous_matmul_values_are_block_safe(
+            &[1.0],
+            &[f32::INFINITY],
+        ));
     }
 
     #[test]
