@@ -248,6 +248,7 @@ class TopLevelPositiveTests(unittest.TestCase):
             ("input", torch.positive(input=source)),
             ("x", torch.positive(x=source)),
             ("a", torch.positive(a=source)),
+            ("x1", torch.positive(x1=source)),
         )
 
     def assert_identity_calls(self, source):
@@ -419,6 +420,18 @@ class TopLevelPositiveTests(unittest.TestCase):
             (
                 lambda: torch.positive(input=tensor, a=tensor),
                 "positive() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.positive(input=tensor, x1=tensor),
+                "positive() got an unexpected keyword argument 'x1'",
+            ),
+            (
+                lambda: torch.positive(x=tensor, x1=tensor),
+                "positive() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.positive(x1=tensor, x=tensor),
+                "positive() got an unexpected keyword argument 'x1'",
             ),
         )
         for call, message in cases:

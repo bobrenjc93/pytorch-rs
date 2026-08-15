@@ -1,5 +1,7 @@
 import pickle
 import re
+import subprocess
+import sys
 import unittest
 
 import torch_rs as torch
@@ -30,6 +32,7 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
             ),
             ("x", lambda: torch.positive(x=value), (), {"x": value}),
             ("a", lambda: torch.positive(a=value), (), {"a": value}),
+            ("x1", lambda: torch.positive(x1=value), (), {"x1": value}),
         )
 
         for form, call, expected_args, expected_kwargs in calls:
@@ -75,6 +78,18 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
                 lambda: torch.positive(x=value, a=value),
                 "positive() got an unexpected keyword argument 'x'",
             ),
+            (
+                lambda: torch.positive(input=value, x1=value),
+                "positive() got an unexpected keyword argument 'x1'",
+            ),
+            (
+                lambda: torch.positive(x=value, x1=value),
+                "positive() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.positive(x1=value, x=value),
+                "positive() got an unexpected keyword argument 'x1'",
+            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
@@ -82,6 +97,78 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
                 self.assertEqual(override_type.calls, [])
+
+    def test_instance_class_and_stateful_descriptor_overrides(self):
+        marker = object()
+        instance_calls = []
+
+        class InstanceAssigned:
+            pass
+
+        instance = InstanceAssigned()
+
+        def instance_handler(func, types, args=(), kwargs=None):
+            instance_calls.append((func, types, args, kwargs))
+            return marker
+
+        instance.__torch_function__ = instance_handler
+        self.assertIs(torch.positive(x1=instance), marker)
+        self.assertEqual(
+            instance_calls,
+            [
+                (
+                    torch.positive,
+                    (InstanceAssigned,),
+                    (),
+                    {"x1": instance},
+                )
+            ],
+        )
+
+        class_calls = []
+
+        class ClassObject:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                class_calls.append((func, types, args, kwargs))
+                return marker
+
+        self.assertIs(torch.positive(ClassObject), marker)
+        self.assertEqual(
+            class_calls,
+            [(torch.positive, (ClassObject,), (ClassObject,), None)],
+        )
+
+        descriptor_calls = []
+
+        class StatefulDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                resolution = self.lookups
+
+                def handler(func, types, args=(), kwargs=None):
+                    descriptor_calls.append((func, types, args, kwargs))
+                    return resolution
+
+                if resolution > 2:
+                    raise AttributeError("descriptor was resolved more than twice")
+                return handler
+
+        descriptor = StatefulDescriptor()
+
+        class DescriptorOverride:
+            __torch_function__ = descriptor
+
+        value = DescriptorOverride()
+        self.assertEqual(torch.positive(value), 2)
+        self.assertEqual(descriptor.lookups, 2)
+        self.assertEqual(
+            descriptor_calls,
+            [(torch.positive, (DescriptorOverride,), (value,), None)],
+        )
 
     def test_torch_function_modes_receive_calls_and_forward_to_lower_modes(self):
         tensor = torch.tensor([1.0])
@@ -105,6 +192,7 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
             ),
             ("x", lambda: torch.positive(x=tensor), (), {"x": tensor}),
             ("a", lambda: torch.positive(a=tensor), (), {"a": tensor}),
+            ("x1", lambda: torch.positive(x1=tensor), (), {"x1": tensor}),
         )
         for form, call, expected_args, expected_kwargs in calls:
             with self.subTest(form=form):
@@ -238,6 +326,47 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
                     action()
                 self.assertIs(owner.positive, function)
                 self.assertIs(pickle.loads(pickle.dumps(function)), function)
+
+    def test_module_reinitialization_reuses_the_callable_owner(self):
+        source = r"""
+import importlib
+import pickle
+import sys
+
+first = importlib.import_module("torch_rs")
+first_function = first.positive
+first_owner = first._C._VariableFunctionsClass
+for name in tuple(sys.modules):
+    if name == "torch_rs" or name.startswith("torch_rs."):
+        del sys.modules[name]
+
+second = importlib.import_module("torch_rs")
+assert second.positive is first_function
+assert second._C._VariableFunctionsClass is first_owner
+
+class Override:
+    calls = []
+
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        cls.calls.append(func)
+        return "override"
+
+assert second.positive(Override()) == "override"
+assert Override.calls == [second.positive]
+assert pickle.loads(pickle.dumps(Override.calls[0])) is second.positive
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import pickle
 import re
 import unittest
+import warnings
 
 import torch_rs as torch
 
@@ -80,7 +81,7 @@ class TopLevelPositiveOverrideReferenceTests(unittest.TestCase):
         )
 
     def test_object_and_mode_dispatch_match_pytorch_2_13(self):
-        for keyword in (None, "input", "x", "a"):
+        for keyword in (None, "input", "x", "a", "x1"):
             with self.subTest(dispatch="object", keyword=keyword):
                 self.assertEqual(
                     self.override_observation(torch, keyword),
@@ -91,6 +92,92 @@ class TopLevelPositiveOverrideReferenceTests(unittest.TestCase):
                     self.mode_observation(torch, keyword),
                     self.mode_observation(reference_torch, keyword),
                 )
+
+    def special_override_observation(self, module):
+        marker = object()
+        instance_calls = []
+
+        class InstanceAssigned:
+            pass
+
+        instance = InstanceAssigned()
+
+        def instance_handler(func, types, args=(), kwargs=None):
+            instance_calls.append((func, types, args, kwargs))
+            return marker
+
+        instance.__torch_function__ = instance_handler
+        instance_result = module.positive(x1=instance)
+
+        class_calls = []
+
+        class ClassObject:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                class_calls.append((func, types, args, kwargs))
+                return marker
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            class_result = module.positive(ClassObject)
+
+        descriptor_calls = []
+
+        class StatefulDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                resolution = self.lookups
+
+                def handler(func, types, args=(), kwargs=None):
+                    descriptor_calls.append((func, types, args, kwargs))
+                    return resolution
+
+                if resolution > 2:
+                    raise AttributeError("descriptor was resolved more than twice")
+                return handler
+
+        descriptor = StatefulDescriptor()
+
+        class DescriptorOverride:
+            __torch_function__ = descriptor
+
+        descriptor_value = DescriptorOverride()
+        descriptor_result = module.positive(descriptor_value)
+        return (
+            instance_result is marker,
+            instance_calls
+            == [
+                (
+                    module.positive,
+                    (InstanceAssigned,),
+                    (),
+                    {"x1": instance},
+                )
+            ],
+            class_result is marker,
+            class_calls
+            == [(module.positive, (ClassObject,), (ClassObject,), None)],
+            descriptor_result,
+            descriptor.lookups,
+            descriptor_calls
+            == [
+                (
+                    module.positive,
+                    (DescriptorOverride,),
+                    (descriptor_value,),
+                    None,
+                )
+            ],
+        )
+
+    def test_instance_class_and_descriptor_overrides_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.special_override_observation(torch),
+            self.special_override_observation(reference_torch),
+        )
 
     def test_override_binding_precedence_matches_pytorch_2_13(self):
         class Override:
@@ -128,6 +215,26 @@ class TopLevelPositiveOverrideReferenceTests(unittest.TestCase):
             (
                 lambda: torch.positive(x=actual, a=actual),
                 lambda: reference_torch.positive(x=expected, a=expected),
+            ),
+            (
+                lambda: torch.positive(input=actual, x1=actual),
+                lambda: reference_torch.positive(input=expected, x1=expected),
+            ),
+            (
+                lambda: torch.positive(x=actual, x1=actual),
+                lambda: reference_torch.positive(x=expected, x1=expected),
+            ),
+            (
+                lambda: torch.positive(x1=actual, x=actual),
+                lambda: reference_torch.positive(x1=expected, x=expected),
+            ),
+            (
+                lambda: torch.positive(x=1, x1=actual),
+                lambda: reference_torch.positive(x=1, x1=expected),
+            ),
+            (
+                lambda: torch.positive(x1=1, a=actual),
+                lambda: reference_torch.positive(x1=1, a=expected),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):

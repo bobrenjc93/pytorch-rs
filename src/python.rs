@@ -13,7 +13,7 @@ use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyComplex, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView,
-    PyModule, PySequence, PyString, PyTuple,
+    PyModule, PySequence, PyString, PyTuple, PyType,
 };
 
 use crate::{
@@ -29,7 +29,7 @@ static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
-static POSITIVE_FUNCTION: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -914,6 +914,16 @@ struct ParsedCallArgument<'py> {
     position: Option<usize>,
 }
 
+struct ResolvedTorchFunctionOverride<'py> {
+    handler: Bound<'py, PyAny>,
+    dispatch_type: Bound<'py, PyAny>,
+}
+
+enum BoundTensorOrTorchFunction<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Override(ResolvedTorchFunctionOverride<'py>),
+}
+
 struct ActiveTorchFunctionMode {
     mode: Option<Py<PyAny>>,
 }
@@ -965,27 +975,39 @@ fn _get_function_stack_at(py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
     })
 }
 
-fn has_torch_function_override(value: &Bound<'_, PyAny>) -> PyResult<bool> {
-    if value.cast::<PyTensor>().is_ok() {
-        return Ok(false);
+fn resolve_torch_function_override<'py>(
+    value: &Bound<'py, PyAny>,
+) -> PyResult<Option<ResolvedTorchFunctionOverride<'py>>> {
+    // Match PyTorch's two-stage special-method resolution: first test the
+    // input object itself, then retain the resolved callable used for dispatch.
+    // This includes instance-assigned handlers and avoids a later stateful
+    // descriptor lookup changing the selected path.
+    if !value.hasattr("__torch_function__")? {
+        return Ok(None);
     }
-    value.get_type().hasattr("__torch_function__")
+    let handler = value.getattr("__torch_function__")?;
+    let dispatch_type = if value.cast::<PyType>().is_ok() {
+        value.clone()
+    } else {
+        value.get_type().into_any()
+    };
+    Ok(Some(ResolvedTorchFunctionOverride {
+        handler,
+        dispatch_type,
+    }))
 }
 
 fn call_torch_function_handler(
     py: Python<'_>,
-    receiver: &Bound<'_, PyAny>,
+    handler: &Bound<'_, PyAny>,
     function: &Py<PyAny>,
     types: &Bound<'_, PyTuple>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let kwargs = kwargs.map_or_else(|| py.None(), |kwargs| kwargs.clone().into_any().unbind());
-    Ok(receiver
-        .call_method1(
-            "__torch_function__",
-            (function.clone_ref(py), types.clone(), args.clone(), kwargs),
-        )?
+    Ok(handler
+        .call1((function.clone_ref(py), types.clone(), args.clone(), kwargs))?
         .unbind())
 }
 
@@ -1019,53 +1041,58 @@ fn torch_function_dispatch_error(
 
 fn dispatch_positive(
     py: Python<'_>,
-    input: &ParsedCallArgument<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let function = POSITIVE_FUNCTION.get(py).ok_or_else(|| {
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
         PyRuntimeError::new_err("torch.positive was called before module initialization completed")
     })?;
-    let override_type = has_torch_function_override(&input.value)?
-        .then(|| input.value.get_type().into_any().unbind());
-    let types = override_type.as_ref().map_or_else(
-        || Ok(PyTuple::empty(py)),
-        |override_type| PyTuple::new(py, [override_type.clone_ref(py)]),
-    )?;
+    let function = variable_functions.bind(py).getattr("positive")?.unbind();
+    let types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(resolved) => {
+            PyTuple::new(py, [resolved.dispatch_type.clone()])?
+        }
+    };
 
     // PyTorch disables the top mode for the complete dispatch attempt. A mode
     // can explicitly call `func(*args, **kwargs)` to reach the next mode.
     let active_mode = ActiveTorchFunctionMode::pop();
     if let Some(mode) = active_mode.get() {
-        let result =
-            call_torch_function_handler(py, mode.bind(py), function, &types, args, kwargs)?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
         if !is_not_implemented(py, &result) {
             return Ok(result);
         }
     }
 
-    if override_type.is_some() {
-        let result = call_torch_function_handler(py, &input.value, function, &types, args, kwargs)?;
-        if !is_not_implemented(py, &result) {
-            return Ok(result);
+    match input {
+        BoundTensorOrTorchFunction::Override(resolved) => {
+            let result = call_torch_function_handler(
+                py,
+                &resolved.handler,
+                &function,
+                &types,
+                args,
+                kwargs,
+            )?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                active_mode.get(),
+                Some(resolved.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(tensor) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(py, active_mode.get(), None)?);
+            }
+            Ok(tensor.clone().unbind().into_any())
         }
     }
-
-    if active_mode.get().is_some() || override_type.is_some() {
-        return Err(torch_function_dispatch_error(
-            py,
-            active_mode.get(),
-            override_type.as_ref(),
-        )?);
-    }
-
-    Ok(input
-        .value
-        .cast::<PyTensor>()
-        .expect("the positive input type was checked while binding")
-        .clone()
-        .unbind()
-        .into_any())
 }
 
 struct ScalarTensorCallArguments<'py> {
@@ -5037,23 +5064,41 @@ fn bind_legacy_single_tensor_argument<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<ParsedCallArgument<'py>> {
-    bind_legacy_single_argument(function, positional, keywords, false)
+    let selection = select_legacy_single_argument(function, positional, keywords)?;
+    if selection.input.value.cast::<PyTensor>().is_err() {
+        return Err(legacy_single_tensor_type_error(function, &selection.input)?);
+    }
+    validate_legacy_single_keywords(function, &selection, keywords)?;
+    Ok(selection.input)
 }
 
 fn bind_legacy_single_tensor_or_override_argument<'py>(
     function: &str,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<ParsedCallArgument<'py>> {
-    bind_legacy_single_argument(function, positional, keywords, true)
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    let selection = select_legacy_single_argument(function, positional, keywords)?;
+    let bound = if let Ok(tensor) = selection.input.value.cast::<PyTensor>() {
+        BoundTensorOrTorchFunction::Tensor(tensor.clone())
+    } else if let Some(resolved) = resolve_torch_function_override(&selection.input.value)? {
+        BoundTensorOrTorchFunction::Override(resolved)
+    } else {
+        return Err(legacy_single_tensor_type_error(function, &selection.input)?);
+    };
+    validate_legacy_single_keywords(function, &selection, keywords)?;
+    Ok(bound)
 }
 
-fn bind_legacy_single_argument<'py>(
+struct LegacySingleArgumentSelection<'py> {
+    input: ParsedCallArgument<'py>,
+    keyword_alias: Option<&'static str>,
+}
+
+fn select_legacy_single_argument<'py>(
     function: &str,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-    allow_torch_function_override: bool,
-) -> PyResult<ParsedCallArgument<'py>> {
+) -> PyResult<LegacySingleArgumentSelection<'py>> {
     if positional.len() > 1 {
         return Err(PyTypeError::new_err(format!(
             "{function}() takes 1 positional argument but {} were given",
@@ -5061,7 +5106,7 @@ fn bind_legacy_single_argument<'py>(
         )));
     }
 
-    // PyTorch's legacy parser resolves `input`, then `x`, then `a` for type checking.
+    // PyTorch's legacy parser resolves `input`, `x`, `a`, then `x1` for type checking.
     let (keyword_input, keyword_alias) = match keywords {
         Some(values) => {
             if let Some(input) = values.get_item("input")? {
@@ -5070,6 +5115,8 @@ fn bind_legacy_single_argument<'py>(
                 (Some(input), Some("x"))
             } else if let Some(input) = values.get_item("a")? {
                 (Some(input), Some("a"))
+            } else if let Some(input) = values.get_item("x1")? {
+                (Some(input), Some("x1"))
             } else {
                 (None, None)
             }
@@ -5093,24 +5140,22 @@ fn bind_legacy_single_argument<'py>(
             position: Some(1),
         }
     };
-    let is_tensor = input.value.cast::<PyTensor>().is_ok();
-    let has_override =
-        allow_torch_function_override && !is_tensor && has_torch_function_override(&input.value)?;
-    if !is_tensor && !has_override {
-        let position = input
-            .position
-            .map_or_else(String::new, |position| format!(" (position {position})"));
-        let input_type = transpose_type_name(&input.value)?;
-        return Err(PyTypeError::new_err(format!(
-            "{function}(): argument 'input'{position} must be Tensor, not {input_type}"
-        )));
-    }
+    Ok(LegacySingleArgumentSelection {
+        input,
+        keyword_alias,
+    })
+}
 
+fn validate_legacy_single_keywords(
+    function: &str,
+    selection: &LegacySingleArgumentSelection<'_>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
     if let Some(keywords) = keywords {
         // The legacy aliases are accepted only as the sole keyword. Mixed calls
         // validate their original keyword order and report an alias as unexpected.
-        let sole_alias = if positional.is_empty() && keywords.len() == 1 {
-            keyword_alias
+        let sole_alias = if selection.input.position.is_none() && keywords.len() == 1 {
+            selection.keyword_alias
         } else {
             None
         };
@@ -5120,7 +5165,7 @@ fn bind_legacy_single_argument<'py>(
                 continue;
             }
             if key == "input" {
-                if !positional.is_empty() {
+                if selection.input.position.is_some() {
                     return Err(PyTypeError::new_err(format!(
                         "{function}() got multiple values for argument 'input'"
                     )));
@@ -5132,8 +5177,20 @@ fn bind_legacy_single_argument<'py>(
             )));
         }
     }
+    Ok(())
+}
 
-    Ok(input)
+fn legacy_single_tensor_type_error(
+    function: &str,
+    input: &ParsedCallArgument<'_>,
+) -> PyResult<PyErr> {
+    let position = input
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let input_type = transpose_type_name(&input.value)?;
+    Ok(PyTypeError::new_err(format!(
+        "{function}(): argument 'input'{position} must be Tensor, not {input_type}"
+    )))
 }
 
 fn bind_tensor_arguments<'py, const N: usize>(
@@ -7041,7 +7098,8 @@ fn add_torch_function_stack_api(module: &Bound<'_, PyModule>) -> PyResult<()> {
 
 fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
-    let variable_functions = create_variable_functions_class(py)?;
+    let variable_functions =
+        VARIABLE_FUNCTIONS_CLASS.get_or_try_init(py, || create_variable_functions_class(py))?;
     module.add("_VariableFunctionsClass", variable_functions.clone_ref(py))?;
     module
         .getattr("__all__")?
@@ -7050,9 +7108,6 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
     for name in ["get_device", "scalar_tensor", "positive", "permute"] {
         let function = variable_functions.getattr(name)?;
         function.setattr("__module__", "torch")?;
-        if name == "positive" {
-            let _ = POSITIVE_FUNCTION.set(py, function.clone().unbind());
-        }
         module.add(name, function)?;
     }
     Ok(())

@@ -214,7 +214,7 @@ class TensorPositiveReferenceTests(unittest.TestCase):
                 expected.is_leaf,
                 expected.data_ptr(),
             )
-            for keyword in (None, "input", "x", "a"):
+            for keyword in (None, "input", "x", "a", "x1"):
                 with self.subTest(case=case, keyword=keyword):
                     if keyword is None:
                         actual_result = torch.positive(actual)
@@ -271,7 +271,7 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             non_leaf = (leaf * 3.0).transpose(0, 1)[1]
             identities = []
             for source in (leaf, non_leaf):
-                for keyword in (None, "input", "x", "a"):
+                for keyword in (None, "input", "x", "a", "x1"):
                     result = (
                         module.positive(source)
                         if keyword is None
@@ -435,6 +435,10 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             (lambda: torch.positive(a=1), lambda: reference_torch.positive(a=1)),
             (lambda: torch.positive(x=[]), lambda: reference_torch.positive(x=[])),
             (
+                lambda: torch.positive(x1=None),
+                lambda: reference_torch.positive(x1=None),
+            ),
+            (
                 lambda: torch.positive(a=actual, x=actual),
                 lambda: reference_torch.positive(a=expected, x=expected),
             ),
@@ -445,6 +449,26 @@ class TensorPositiveReferenceTests(unittest.TestCase):
             (
                 lambda: torch.positive(input=actual, a=actual),
                 lambda: reference_torch.positive(input=expected, a=expected),
+            ),
+            (
+                lambda: torch.positive(input=actual, x1=actual),
+                lambda: reference_torch.positive(input=expected, x1=expected),
+            ),
+            (
+                lambda: torch.positive(x=actual, x1=actual),
+                lambda: reference_torch.positive(x=expected, x1=expected),
+            ),
+            (
+                lambda: torch.positive(x1=actual, x=actual),
+                lambda: reference_torch.positive(x1=expected, x=expected),
+            ),
+            (
+                lambda: torch.positive(x1=actual, x=1),
+                lambda: reference_torch.positive(x1=expected, x=1),
+            ),
+            (
+                lambda: torch.positive(x1=1, a=actual),
+                lambda: reference_torch.positive(x1=1, a=expected),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
