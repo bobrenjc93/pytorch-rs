@@ -94,7 +94,17 @@ def _make_no_grad(context_base):
         def __call__(self, function):
             return _decorate_no_grad(type(self), function)
 
-    no_grad.__module__ = "torch_rs"
+        def __reduce__(self):
+            from torch_rs.autograd.grad_mode import _reduce_no_grad
+
+            return _reduce_no_grad(self, 0)
+
+        def __reduce_ex__(self, protocol):
+            from torch_rs.autograd.grad_mode import _reduce_no_grad
+
+            return _reduce_no_grad(self, protocol)
+
+    no_grad.__module__ = "torch_rs.autograd.grad_mode"
     no_grad.__qualname__ = "no_grad"
     return no_grad
 "#;
