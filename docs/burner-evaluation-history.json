@@ -1841,6 +1841,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 59
       }
+    },
+    {
+      "key": "pr:123",
+      "recordedAt": "2026-08-15T00:16:28.625Z",
+      "label": "PR #123",
+      "kind": "leaf",
+      "prNumber": 123,
+      "title": "Make CPU device objects pickle-compatible",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 62.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 41.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 59
+      }
     }
   ]
 }

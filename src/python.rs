@@ -284,6 +284,13 @@ impl PyDevice {
     fn __str__(&self) -> &'static str {
         self.r#type()
     }
+
+    fn __reduce__<'py>(
+        slf: &Bound<'py, Self>,
+        py: Python<'py>,
+    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyTuple>)> {
+        Ok((slf.getattr("__class__")?, PyTuple::new(py, ["cpu"])?))
+    }
 }
 
 // Internal descriptor owner matching PyTorch's native tensor base class.
