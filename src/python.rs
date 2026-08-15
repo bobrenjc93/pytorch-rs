@@ -5114,10 +5114,11 @@ fn validate_permute_sequence_first(
     let Some(first) = first else {
         return Ok(());
     };
-    if PyModule::import(first.py(), "operator")?
-        .getattr("index")?
-        .call1((&first,))
-        .is_ok()
+    if !first.is_instance_of::<PyBool>()
+        && PyModule::import(first.py(), "operator")?
+            .getattr("index")?
+            .call1((&first,))
+            .is_ok()
     {
         return Ok(());
     }

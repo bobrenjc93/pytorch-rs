@@ -146,6 +146,16 @@ class TensorPermuteReferenceTests(unittest.TestCase):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual = torch.zeros((2, 3, 4))
         expected = reference_torch.zeros((2, 3, 4))
+        for actual_result, expected_result in (
+            (actual.permute([0, True, 2]), expected.permute([0, True, 2])),
+            (
+                actual.permute(dims=(0, True, 2)),
+                expected.permute(dims=(0, True, 2)),
+            ),
+        ):
+            self.assertEqual(actual_result.shape, expected_result.shape)
+            self.assertEqual(actual_result.stride(), expected_result.stride())
+
         cases = (
             (lambda: actual.permute(), lambda: expected.permute()),
             (
@@ -188,6 +198,22 @@ class TensorPermuteReferenceTests(unittest.TestCase):
             (
                 lambda: actual.permute([0, np.bool_(True), 2]),
                 lambda: expected.permute([0, np.bool_(True), 2]),
+            ),
+            (
+                lambda: actual.permute([True, 0, 2]),
+                lambda: expected.permute([True, 0, 2]),
+            ),
+            (
+                lambda: actual.permute((True, 0, 2)),
+                lambda: expected.permute((True, 0, 2)),
+            ),
+            (
+                lambda: actual.permute(dims=[True, 0, 2]),
+                lambda: expected.permute(dims=[True, 0, 2]),
+            ),
+            (
+                lambda: actual.permute(dims=(True, 0, 2)),
+                lambda: expected.permute(dims=(True, 0, 2)),
             ),
             (
                 lambda: actual.permute([1.5, 0, 2]),

@@ -220,6 +220,35 @@ class TensorPermuteTests(unittest.TestCase):
             (4, 2, 3),
         )
         self.assertEqual(tensor.permute([0, True, 2]).shape, (2, 3, 4))
+        self.assertEqual(tensor.permute(dims=(0, True, 2)).shape, (2, 3, 4))
+
+        for dimensions, message in (
+            (
+                [True, 0, 2],
+                "permute(): argument 'dims' (position 1) must be tuple of ints, "
+                "but found element of type bool at pos 0",
+            ),
+            (
+                (True, 0, 2),
+                "permute(): argument 'dims' (position 1) must be tuple of ints, "
+                "but found element of type bool at pos 0",
+            ),
+        ):
+            with self.subTest(form="positional", dimensions=dimensions):
+                self.assert_error(
+                    TypeError,
+                    message,
+                    lambda dimensions=dimensions: tensor.permute(dimensions),
+                )
+
+        for dimensions, outer_type in (([True, 0, 2], "list"), ((True, 0, 2), "tuple")):
+            with self.subTest(form="keyword", dimensions=dimensions):
+                self.assert_error(
+                    TypeError,
+                    "permute(): argument 'dims' must be tuple of ints, not "
+                    f"{outer_type}",
+                    lambda dimensions=dimensions: tensor.permute(dims=dimensions),
+                )
 
         self.assert_error(
             TypeError,
