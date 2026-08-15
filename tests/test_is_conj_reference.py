@@ -113,6 +113,12 @@ class TensorIsConjReferenceTests(unittest.TestCase):
             return type(error).__name__, str(error)
         self.fail("Tensor.is_conj unexpectedly accepted the invalid call")
 
+    def signature_outcome(self, callable_object):
+        try:
+            return "signature", inspect.signature(callable_object)
+        except Exception as error:
+            return "error", type(error)
+
     def callable_contract(self, module):
         tensor = module.tensor([1.0])
         descriptor = inspect.getattr_static(module.Tensor, "is_conj")
@@ -129,14 +135,6 @@ class TensorIsConjReferenceTests(unittest.TestCase):
             lambda: descriptor(1),
             lambda: descriptor(self=tensor),
         )
-        signature_errors = []
-        for callable_object in (descriptor, bound):
-            try:
-                inspect.signature(callable_object)
-            except Exception as error:
-                signature_errors.append(type(error).__name__)
-            else:
-                self.fail("Tensor.is_conj unexpectedly exposed a signature")
         return {
             "descriptor_type": type(descriptor).__name__,
             "bound_type": type(bound).__name__,
@@ -154,7 +152,10 @@ class TensorIsConjReferenceTests(unittest.TestCase):
             "descriptor_has_module": hasattr(descriptor, "__module__"),
             "bound_module": bound.__module__,
             "descriptor_result": descriptor(tensor),
-            "signature_errors": tuple(signature_errors),
+            "signatures": tuple(
+                self.signature_outcome(callable_object)
+                for callable_object in (descriptor, bound)
+            ),
             "call_errors": tuple(self.error(call) for call in calls),
             "types_match": (
                 type(descriptor) is types.MethodDescriptorType,
