@@ -34,6 +34,7 @@ static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
@@ -149,6 +150,8 @@ const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This fu
 #[cfg(target_os = "macos")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4374.)";
 #[cfg(target_os = "macos")]
+const MH_SCALAR_WARNING: &CStr = c"Tensor.mH is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4383.)";
+#[cfg(target_os = "macos")]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/utils/python_arg_parser.cpp:359.)";
 
 #[cfg(target_os = "linux")]
@@ -160,6 +163,8 @@ const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This fu
 #[cfg(target_os = "linux")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4373.)";
 #[cfg(target_os = "linux")]
+const MH_SCALAR_WARNING: &CStr = c"Tensor.mH is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4382.)";
+#[cfg(target_os = "linux")]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/python_arg_parser.cpp:359.)";
 
 #[cfg(target_os = "windows")]
@@ -170,6 +175,8 @@ const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension o
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4322.)";
 #[cfg(target_os = "windows")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4374.)";
+#[cfg(target_os = "windows")]
+const MH_SCALAR_WARNING: &CStr = c"Tensor.mH is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4383.)";
 #[cfg(target_os = "windows")]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\utils\\python_arg_parser.cpp:359.)";
 
@@ -183,6 +190,9 @@ const T_SCALAR_WARNING: &CStr =
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const MT_SCALAR_WARNING: &CStr =
     c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases.";
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+const MH_SCALAR_WARNING: &CStr =
+    c"Tensor.mH is deprecated on 0-D tensors. Consider using x.conj().";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod.";
 
@@ -554,6 +564,34 @@ impl PyTensorBase {
     fn itemsize(slf: &Bound<'_, Self>) -> PyResult<usize> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         Ok(tensor.inner.dtype().element_size())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nAccessing this property is equivalent to calling :func:`adjoint`.\n"]
+    #[getter(mH)]
+    fn conjugate_matrix_transpose(slf: &Bound<'_, Self>) -> PyResult<Py<PyTensor>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        let rank = tensor.try_borrow()?.inner.shape().len();
+        match rank {
+            0 => {
+                warn_once(slf.py(), &MH_SCALAR_WARNING_EMITTED, MH_SCALAR_WARNING)?;
+                Ok(tensor.clone().unbind())
+            }
+            1 => Err(PyRuntimeError::new_err(
+                "tensor.mH is only supported on matrices or batches of matrices. Got 1-D tensor.",
+            )),
+            _ => {
+                // Float32 is real-valued, so conjugation is an identity and mH
+                // is exactly the existing checked final-two-axis transpose view.
+                let inner = tensor
+                    .try_borrow()?
+                    .inner
+                    .matrix_transpose()
+                    .map_err(|error| transpose_error(&error))?;
+                Py::new(slf.py(), PyTensor::new(inner))
+            }
+        }
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
