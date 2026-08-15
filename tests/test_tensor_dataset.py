@@ -160,8 +160,12 @@ class TensorDatasetTests(unittest.TestCase):
         self.assertEqual(Dataset.__module__, "torch_rs.utils.data.dataset")
         self.assertEqual(TensorDataset.__module__, "torch_rs.utils.data.dataset")
 
-        self.assertEqual(data_module.__all__, ["Dataset", "TensorDataset"])
-        self.assertEqual(dataset_module.__all__, ["Dataset", "TensorDataset"])
+        self.assertEqual(
+            data_module.__all__, ["Dataset", "Subset", "TensorDataset"]
+        )
+        self.assertEqual(
+            dataset_module.__all__, ["Dataset", "TensorDataset", "Subset"]
+        )
         self.assertFalse(hasattr(data_module, "DataLoader"))
         self.assertNotIn("utils", torch.__all__)
         wildcard_namespace = {}

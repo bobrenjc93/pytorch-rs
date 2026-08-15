@@ -1,9 +1,10 @@
+from collections.abc import Sequence
 from typing import Generic, TypeVar
 
 from torch_rs import Tensor
 
 
-__all__ = ["Dataset", "TensorDataset"]
+__all__ = ["Dataset", "TensorDataset", "Subset"]
 
 _T_co = TypeVar("_T_co", covariant=True)
 
@@ -63,3 +64,68 @@ class TensorDataset(Dataset[tuple[Tensor, ...]]):
 
     def __len__(self) -> int:
         return _leading_size(self.tensors[0])
+
+
+class Subset(Dataset[_T_co]):
+    r"""
+    Subset of a dataset at specified indices.
+
+    .. note::
+        When subclassing `Subset` and overriding `__getitem__`, you **must** also
+        override `__getitems__` to ensure `DataLoader` works correctly with your
+        custom logic. If you override only `__getitem__`, a `NotImplementedError`
+        will be raised when using `DataLoader`.
+
+        A simple implementation of `__getitems__` can delegate to `__getitem__`:
+
+        .. code-block:: python
+
+            def __getitems__(self, indices):
+                return [self.__getitem__(idx) for idx in indices]
+
+        For better performance, consider implementing batch-aware logic in
+        `__getitems__` instead of calling `__getitem__` multiple times.
+
+    Args:
+        dataset (Dataset): The whole Dataset
+        indices (sequence): Indices in the whole set selected for subset
+    """
+
+    dataset: Dataset[_T_co]
+    indices: Sequence[int]
+
+    def __init__(self, dataset: Dataset[_T_co], indices: Sequence[int]) -> None:
+        self.dataset = dataset
+        self.indices = indices
+
+        # Check if __getitem__ is overridden but __getitems__ is not
+        if (
+            type(self).__getitem__ is not Subset.__getitem__
+            and type(self).__getitems__ is Subset.__getitems__
+        ):
+            raise NotImplementedError(
+                f"{type(self).__name__} overrides __getitem__ but not __getitems__. "
+                "When subclassing Subset and overriding __getitem__, you must also override "
+                "__getitems__ to ensure DataLoader works correctly with your custom logic. "
+                "A simple implementation:\n\n"
+                "def __getitems__(self, indices):\n"
+                "    return [self.__getitem__(idx) for idx in indices]"
+            )
+
+    def __getitem__(self, idx):
+        if isinstance(idx, list):
+            return self.dataset[[self.indices[i] for i in idx]]
+        return self.dataset[self.indices[idx]]
+
+    def __getitems__(self, indices: list[int]) -> list[_T_co]:
+        # add batched sampling support when parent dataset supports it.
+        # see torch.utils.data._utils.fetch._MapDatasetFetcher
+        if callable(getattr(self.dataset, "__getitems__", None)):
+            return self.dataset.__getitems__(  # type: ignore[attr-defined]
+                [self.indices[idx] for idx in indices]
+            )
+        else:
+            return [self.dataset[self.indices[idx]] for idx in indices]
+
+    def __len__(self) -> int:
+        return len(self.indices)
