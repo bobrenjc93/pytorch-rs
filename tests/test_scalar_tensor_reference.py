@@ -1,4 +1,5 @@
 import inspect
+import pickle
 import re
 import types
 import unittest
@@ -283,13 +284,20 @@ class ScalarTensorReferenceTests(unittest.TestCase):
             "module": function.__module__,
             "owner_name": owner.__name__,
             "owner_qualname": owner.__qualname__,
-            "owner_module": owner.__module__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.scalar_tensor is function,
             "doc": function.__doc__,
             "text_signature": function.__text_signature__,
             "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
             "signature_error": signature_error,
             "all_count": module.__all__.count("scalar_tensor"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
             "wildcard_identity": wildcard_namespace["scalar_tensor"] is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
         }
 
     def test_callable_metadata_and_exports_match_pytorch_2_13(self):

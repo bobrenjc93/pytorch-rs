@@ -1,4 +1,5 @@
 import inspect
+import pickle
 import re
 import types
 import unittest
@@ -283,11 +284,20 @@ class ScalarTensorTests(unittest.TestCase):
         owner = function.__reduce__()[1][0]
         self.assertEqual(owner.__name__, "_VariableFunctionsClass")
         self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
-        self.assertEqual(owner.__module__, "torch._C")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.scalar_tensor, function)
         with self.assertRaises(ValueError):
             inspect.signature(function)
 
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                restored = pickle.loads(pickle.dumps(function, protocol=protocol))
+                self.assertIs(restored, function)
+
         self.assertEqual(torch.__all__.count("scalar_tensor"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
         wildcard_namespace = {}
         exec("from torch_rs import *", wildcard_namespace)
         self.assertIs(wildcard_namespace["scalar_tensor"], function)

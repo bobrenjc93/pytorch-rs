@@ -811,7 +811,7 @@ impl PyNoGrad {
 // preserves scalar_tensor's public callable metadata.
 #[pyclass(
     name = "_VariableFunctionsClass",
-    module = "torch._C",
+    module = "torch_rs._C",
     frozen,
     skip_from_py_object
 )]
@@ -6628,9 +6628,12 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(is_grad_enabled, module)?)?;
     module.add_function(wrap_pyfunction!(get_default_dtype, module)?)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
-    let scalar_tensor = py
-        .get_type::<PyVariableFunctionsClass>()
-        .getattr("scalar_tensor")?;
+    let variable_functions = py.get_type::<PyVariableFunctionsClass>();
+    module.add("_VariableFunctionsClass", variable_functions.clone())?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_VariableFunctionsClass",))?;
+    let scalar_tensor = variable_functions.getattr("scalar_tensor")?;
     scalar_tensor.setattr("__module__", "torch")?;
     module.add("scalar_tensor", scalar_tensor)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;

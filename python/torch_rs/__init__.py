@@ -6,6 +6,12 @@ import sys as _sys
 from . import torch_rs as _native
 from .torch_rs import *
 
+# PyTorch's built-in variable functions reduce through owners in ``torch._C``.
+# Expose the native extension under the equivalent package-local name so those
+# owners remain importable without creating or modifying a top-level ``torch``.
+_C = _native
+_sys.modules[f"{__name__}._C"] = _C
+
 # PyTorch's memory-format reducers use dotted public names such as
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
 # from this package without adding ``torch`` to wildcard imports.
