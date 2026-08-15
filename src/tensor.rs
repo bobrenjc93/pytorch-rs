@@ -999,9 +999,11 @@ impl Tensor {
     /// Swaps the final two dimensions without copying storage.
     ///
     /// This is the shared primitive for `PyTorch`'s `mT` property and, for the
-    /// currently supported real-valued `float32` dtype, its `mH` property.
-    /// Scalars are identity aliases, vectors are rejected, and tensors of rank
-    /// two or greater use the same checked path as `transpose(-2, -1)`.
+    /// currently supported real-valued `float32` dtype, its `H` and `mH`
+    /// properties. The Python `H` descriptor separately limits inputs to
+    /// matrices. Scalars are identity aliases, vectors are rejected, and
+    /// tensors of rank two or greater use the same checked path as
+    /// `transpose(-2, -1)`.
     ///
     /// # Errors
     ///

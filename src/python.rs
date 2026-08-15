@@ -34,6 +34,7 @@ static TORCH_FUNCTION_DESCRIPTOR_CALLER: PyOnceLock<Py<PyAny>> = PyOnceLock::new
 static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static H_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -165,6 +166,8 @@ const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension o
 #[cfg(target_os = "macos")]
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4322.)";
 #[cfg(target_os = "macos")]
+const H_SCALAR_WARNING: &CStr = c"Tensor.H is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4336.)";
+#[cfg(target_os = "macos")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4374.)";
 #[cfg(target_os = "macos")]
 const MH_SCALAR_WARNING: &CStr = c"Tensor.mH is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4383.)";
@@ -179,6 +182,8 @@ const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_g
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4314.)";
 #[cfg(target_os = "linux")]
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4321.)";
+#[cfg(target_os = "linux")]
+const H_SCALAR_WARNING: &CStr = c"Tensor.H is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4335.)";
 #[cfg(target_os = "linux")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4373.)";
 #[cfg(target_os = "linux")]
@@ -195,6 +200,8 @@ const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension o
 #[cfg(target_os = "windows")]
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4322.)";
 #[cfg(target_os = "windows")]
+const H_SCALAR_WARNING: &CStr = c"Tensor.H is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4336.)";
+#[cfg(target_os = "windows")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4374.)";
 #[cfg(target_os = "windows")]
 const MH_SCALAR_WARNING: &CStr = c"Tensor.mH is deprecated on 0-D tensors. Consider using x.conj(). (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4383.)";
@@ -210,6 +217,8 @@ const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension o
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const T_SCALAR_WARNING: &CStr =
     c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases.";
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+const H_SCALAR_WARNING: &CStr = c"Tensor.H is deprecated on 0-D tensors. Consider using x.conj().";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const MT_SCALAR_WARNING: &CStr =
     c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases.";
@@ -590,6 +599,34 @@ impl PyTensorBase {
     fn itemsize(slf: &Bound<'_, Self>) -> PyResult<usize> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         Ok(tensor.inner.dtype().element_size())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nReturns a view of a matrix (2-D tensor) conjugated and transposed.\n\n``x.H`` is equivalent to ``x.transpose(0, 1).conj()`` for complex matrices and\n``x.transpose(0, 1)`` for real matrices.\n\n.. seealso::\n\n        :attr:`~.Tensor.mH`: An attribute that also works on batches of matrices.\n"]
+    #[getter(H)]
+    fn conjugate_transpose(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("H"))?
+        {
+            return Ok(result);
+        }
+
+        let rank = tensor.try_borrow()?.inner.shape().len();
+        if rank > 2 {
+            return Err(PyRuntimeError::new_err(format!(
+                "tensor.H is only supported on matrices (2-D tensors). Got {rank}-D tensor. For batches of matrices, consider using tensor.mH"
+            )));
+        }
+
+        matrix_adjoint(
+            slf.py(),
+            tensor,
+            &H_SCALAR_WARNING_EMITTED,
+            H_SCALAR_WARNING,
+            "tensor.H is only supported on matrices (2-D tensors). Got 1-D tensor.",
+        )
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1037,9 +1074,9 @@ fn matrix_adjoint(
         }
         1 => Err(PyRuntimeError::new_err(vector_error)),
         _ => {
-            // Float32 is real-valued, so conjugation is an identity. Both the
-            // mH property and adjoint() therefore share this exact checked
-            // final-two-axis transpose view and its autograd history.
+            // Float32 is real-valued, so conjugation is an identity. H, mH,
+            // and adjoint() therefore share this exact checked final-two-axis
+            // transpose view and its autograd history.
             let inner = tensor
                 .try_borrow()?
                 .inner
