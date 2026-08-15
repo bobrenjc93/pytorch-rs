@@ -841,6 +841,36 @@ impl PyVariableFunctionsClass {
     ) -> PyResult<PyTensor> {
         scalar_tensor_impl(args, kwargs)
     }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n"]
+    #[staticmethod]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn permute(
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        let ([input, dimensions], keyword_error) = bind_top_level_permute_arguments(args, kwargs)?;
+        let input = parse_tensor_argument("permute", "input", &input)?;
+        let Some(dimension_arguments) = permute_sequence_arguments(&dimensions.value) else {
+            return Err(permute_argument_type_error(
+                &dimensions.value,
+                dimensions.position,
+            )?);
+        };
+        validate_permute_sequence_first(
+            &dimension_arguments,
+            &dimensions.value,
+            dimensions.position,
+        )?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        let dimensions = parse_permute_dimension_arguments(dimension_arguments)?;
+        let tensor = input.try_borrow()?;
+        permute_tensor(&tensor.inner, dimensions).map(PyTensor::new)
+    }
 }
 
 enum ParsedFillValue {
@@ -4982,6 +5012,94 @@ fn bind_is_same_size_arguments<'py>(
     Ok(([input, other], keyword_error))
 }
 
+fn bind_top_level_permute_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<([ParsedCallArgument<'py>; 2], Option<PyErr>)> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "permute() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_argument = |names: &[&str]| -> PyResult<Option<Bound<'py, PyAny>>> {
+        let Some(keywords) = keywords else {
+            return Ok(None);
+        };
+        for name in names {
+            if let Some(value) = keywords.get_item(*name)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
+    };
+
+    let input = if positional.is_empty() {
+        keyword_argument(&["input", "x", "a", "x1"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let dimensions = if positional.len() < 2 {
+        keyword_argument(&["dims"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "permute() missing 2 required positional argument: \"input\", \"dims\"",
+        ));
+    };
+    let Some(dimensions) = dimensions else {
+        parse_tensor_argument("permute", "input", &input)?;
+        return Err(PyTypeError::new_err(
+            "permute() missing 1 required positional arguments: \"dims\"",
+        ));
+    };
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        let keyword_arguments =
+            usize::from(input.position.is_none()) + usize::from(dimensions.position.is_none());
+        if keywords.len() > keyword_arguments {
+            for key in keywords.keys() {
+                let key = key.extract::<String>()?;
+                let position = match key.as_str() {
+                    "input" => 0,
+                    "dims" => 1,
+                    _ => {
+                        keyword_error = Some(PyTypeError::new_err(format!(
+                            "permute() got an unexpected keyword argument '{key}'"
+                        )));
+                        break;
+                    }
+                };
+                if position < positional.len() {
+                    keyword_error = Some(PyTypeError::new_err(format!(
+                        "permute() got multiple values for argument '{key}'"
+                    )));
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(([input, dimensions], keyword_error))
+}
+
 fn parse_tensor_argument<'a, 'py>(
     function: &str,
     argument: &str,
@@ -5437,6 +5555,12 @@ fn bind_permute_dimensions(
         PermuteDimensionArguments::Variadic(positional.clone())
     };
 
+    parse_permute_dimension_arguments(arguments)
+}
+
+fn parse_permute_dimension_arguments(
+    arguments: PermuteDimensionArguments<'_>,
+) -> PyResult<Vec<i64>> {
     match arguments {
         PermuteDimensionArguments::List(dimensions) => {
             parse_permute_dimensions(dimensions.len(), dimensions.iter())
@@ -6653,6 +6777,9 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let scalar_tensor = variable_functions.getattr("scalar_tensor")?;
     scalar_tensor.setattr("__module__", "torch")?;
     module.add("scalar_tensor", scalar_tensor)?;
+    let permute = variable_functions.getattr("permute")?;
+    permute.setattr("__module__", "torch")?;
+    module.add("permute", permute)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
     module.add_function(wrap_pyfunction!(relu, module)?)?;
