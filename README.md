@@ -83,7 +83,6 @@ cargo test --all-targets
 cargo test --doc
 uv venv --clear --python 3.12
 uv sync --locked --no-install-project
-uv pip install --python .venv/bin/python 'maturin>=1.14,<2'
 PYO3_PYTHON="$PWD/.venv/bin/python" cargo clippy --all-targets --features python-bindings -- -D warnings
 PYO3_PYTHON="$PWD/.venv/bin/python" cargo test --all-targets --features python-bindings
 env -u CONDA_PREFIX VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" .venv/bin/maturin develop --release --uv
@@ -97,12 +96,15 @@ run:
 ./scripts/test-python-exact-head.sh
 ```
 
-This recreates `.venv` with Python 3.12, installs the locked reference group,
-clears inherited environment and import markers, force-installs the new wheel,
-and verifies its native-extension provenance before checking for PyTorch 2.13.0
-and running the full unittest suite. It preserves `CUDA_VISIBLE_DEVICES`, so the
-existing hardware-aware tests use available CUDA hardware and skip their CUDA
-cases when PyTorch reports none.
+This exports the exact `HEAD` commit to a temporary directory under `target/`,
+creates a Python 3.12 environment there, and installs the locked development and
+reference dependencies. It clears inherited environment, import, and Python
+optimization markers; builds with the locked Maturin and Cargo dependencies;
+force-installs the new wheel; and verifies its native-extension provenance
+before checking for PyTorch 2.13.0 and running the full unittest suite. Dirty
+worktree files are therefore excluded. The command preserves
+`CUDA_VISIBLE_DEVICES`, so the existing hardware-aware tests use available CUDA
+hardware and skip their CUDA cases when PyTorch reports none.
 
 The checked-in tests are only the public floor. Burner also uses independent generated workloads and side-by-side `torch_rs`/`torch` differential runs.
 
