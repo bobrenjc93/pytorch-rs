@@ -20,6 +20,7 @@ mod python_layout;
 mod python_variable_functions;
 mod storage;
 mod tensor;
+mod tensor_error;
 
 #[cfg(feature = "python-bindings")]
 pub(crate) use grad_mode::{enter_no_grad, exit_no_grad};
@@ -28,4 +29,5 @@ pub use device::Device;
 pub use dtype::DType;
 pub use grad_mode::{NoGradGuard, is_grad_enabled, no_grad};
 pub use memory_format::MemoryFormat;
-pub use tensor::{LogicalValues, Tensor, TensorError};
+pub use tensor::{LogicalValues, Tensor};
+pub use tensor_error::TensorError;
