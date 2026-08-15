@@ -30,10 +30,12 @@ static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static PYTHON_METHOD_TYPE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
     static TORCH_FUNCTION_MODE_STACK: RefCell<Vec<Py<PyAny>>> = const { RefCell::new(Vec::new()) };
@@ -147,6 +149,8 @@ const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension o
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4322.)";
 #[cfg(target_os = "macos")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4374.)";
+#[cfg(target_os = "macos")]
+const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/utils/python_arg_parser.cpp:359.)";
 
 #[cfg(target_os = "linux")]
 const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)";
@@ -156,6 +160,8 @@ const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension o
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4321.)";
 #[cfg(target_os = "linux")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4373.)";
+#[cfg(target_os = "linux")]
+const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/python_arg_parser.cpp:359.)";
 
 #[cfg(target_os = "windows")]
 const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\autograd\\generated\\python_variable_methods.cpp:823.)";
@@ -165,6 +171,8 @@ const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension o
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4322.)";
 #[cfg(target_os = "windows")]
 const MT_SCALAR_WARNING: &CStr = c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4374.)";
+#[cfg(target_os = "windows")]
+const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\utils\\python_arg_parser.cpp:359.)";
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first.";
@@ -176,6 +184,8 @@ const T_SCALAR_WARNING: &CStr =
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const MT_SCALAR_WARNING: &CStr =
     c"Tensor.mT is deprecated on 0-D tensors. This function is the identity in these cases.";
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod.";
 
 /// Python scalar-type descriptor backed by a native [`DType`].
 #[pyclass(name = "dtype", module = "torch_rs", frozen, skip_from_py_object)]
@@ -914,14 +924,14 @@ struct ParsedCallArgument<'py> {
     position: Option<usize>,
 }
 
-struct ResolvedTorchFunctionOverride<'py> {
-    handler: Bound<'py, PyAny>,
+struct ProbedTorchFunctionOverride<'py> {
+    receiver: Bound<'py, PyAny>,
     dispatch_type: Bound<'py, PyAny>,
 }
 
 enum BoundTensorOrTorchFunction<'py> {
     Tensor(Bound<'py, PyTensor>),
-    Override(ResolvedTorchFunctionOverride<'py>),
+    Override(ProbedTorchFunctionOverride<'py>),
 }
 
 struct ActiveTorchFunctionMode {
@@ -975,26 +985,76 @@ fn _get_function_stack_at(py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
     })
 }
 
-fn resolve_torch_function_override<'py>(
+#[allow(
+    unsafe_code,
+    reason = "PyTorch binding parity requires CPython's exception-suppressing legacy attribute probe"
+)]
+fn probe_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
-) -> PyResult<Option<ResolvedTorchFunctionOverride<'py>>> {
-    // Match PyTorch's two-stage special-method resolution: first test the
-    // input object itself, then retain the resolved callable used for dispatch.
-    // This includes instance-assigned handlers and avoids a later stateful
-    // descriptor lookup changing the selected path.
-    if !value.hasattr("__torch_function__")? {
-        return Ok(None);
+) -> Option<ProbedTorchFunctionOverride<'py>> {
+    // PyTorch's argument parser uses the legacy, exception-suppressing
+    // PyObject_HasAttr API here. The actual callable is deliberately resolved
+    // only after the active mode has declined the operation.
+    // SAFETY: `value` is live for this call and the attribute name is a static,
+    // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
+    let has_override =
+        unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
+    if !has_override {
+        return None;
     }
-    let handler = value.getattr("__torch_function__")?;
     let dispatch_type = if value.cast::<PyType>().is_ok() {
         value.clone()
     } else {
         value.get_type().into_any()
     };
-    Ok(Some(ResolvedTorchFunctionOverride {
-        handler,
+    Some(ProbedTorchFunctionOverride {
+        receiver: value.clone(),
         dispatch_type,
-    }))
+    })
+}
+
+fn is_python_method_bound_to(
+    py: Python<'_>,
+    handler: &Bound<'_, PyAny>,
+    receiver: &Bound<'_, PyAny>,
+) -> PyResult<bool> {
+    let method_type = PYTHON_METHOD_TYPE.get_or_try_init(py, || -> PyResult<Py<PyAny>> {
+        Ok(PyModule::import(py, "types")?
+            .getattr("MethodType")?
+            .unbind())
+    })?;
+    if !handler.is_instance(method_type.bind(py))? {
+        return Ok(false);
+    }
+    Ok(handler.getattr("__self__")?.is(receiver))
+}
+
+fn resolve_torch_function_override<'py>(
+    py: Python<'py>,
+    probed: &ProbedTorchFunctionOverride<'py>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let handler = probed.receiver.getattr("__torch_function__")?;
+    if is_python_method_bound_to(py, &handler, &probed.receiver)? {
+        warn_once(
+            py,
+            &TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED,
+            TORCH_FUNCTION_PLAIN_METHOD_WARNING,
+        )?;
+    }
+    Ok(handler)
+}
+
+fn resolve_torch_function_mode_handler<'py>(
+    py: Python<'py>,
+    mode: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let handler = mode.getattr("__torch_function__")?;
+    if !is_python_method_bound_to(py, &handler, mode)? {
+        return Err(PyRuntimeError::new_err(
+            "Defining your mode's `__torch_function__` as a classmethod is not supported, please make it a plain method",
+        ));
+    }
+    Ok(handler)
 }
 
 fn call_torch_function_handler(
@@ -1060,7 +1120,7 @@ fn dispatch_positive(
     // can explicitly call `func(*args, **kwargs)` to reach the next mode.
     let active_mode = ActiveTorchFunctionMode::pop();
     if let Some(mode) = active_mode.get() {
-        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let handler = resolve_torch_function_mode_handler(py, mode.bind(py))?;
         let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
         if !is_not_implemented(py, &result) {
             return Ok(result);
@@ -1068,22 +1128,17 @@ fn dispatch_positive(
     }
 
     match input {
-        BoundTensorOrTorchFunction::Override(resolved) => {
-            let result = call_torch_function_handler(
-                py,
-                &resolved.handler,
-                &function,
-                &types,
-                args,
-                kwargs,
-            )?;
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
             if !is_not_implemented(py, &result) {
                 return Ok(result);
             }
             Err(torch_function_dispatch_error(
                 py,
                 active_mode.get(),
-                Some(resolved.dispatch_type.as_unbound()),
+                Some(probed.dispatch_type.as_unbound()),
             )?)
         }
         BoundTensorOrTorchFunction::Tensor(tensor) => {
@@ -5080,8 +5135,8 @@ fn bind_legacy_single_tensor_or_override_argument<'py>(
     let selection = select_legacy_single_argument(function, positional, keywords)?;
     let bound = if let Ok(tensor) = selection.input.value.cast::<PyTensor>() {
         BoundTensorOrTorchFunction::Tensor(tensor.clone())
-    } else if let Some(resolved) = resolve_torch_function_override(&selection.input.value)? {
-        BoundTensorOrTorchFunction::Override(resolved)
+    } else if let Some(probed) = probe_torch_function_override(&selection.input.value) {
+        BoundTensorOrTorchFunction::Override(probed)
     } else {
         return Err(legacy_single_tensor_type_error(function, &selection.input)?);
     };

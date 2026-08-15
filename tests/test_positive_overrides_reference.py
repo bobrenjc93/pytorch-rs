@@ -1,7 +1,9 @@
+import json
 import pickle
 import re
+import subprocess
+import sys
 import unittest
-import warnings
 
 import torch_rs as torch
 
@@ -112,14 +114,12 @@ class TopLevelPositiveOverrideReferenceTests(unittest.TestCase):
         class_calls = []
 
         class ClassObject:
-            @classmethod
-            def __torch_function__(cls, func, types, args=(), kwargs=None):
+            @staticmethod
+            def __torch_function__(func, types, args=(), kwargs=None):
                 class_calls.append((func, types, args, kwargs))
                 return marker
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            class_result = module.positive(ClassObject)
+        class_result = module.positive(ClassObject)
 
         descriptor_calls = []
 
@@ -318,6 +318,221 @@ class TopLevelPositiveOverrideReferenceTests(unittest.TestCase):
             return result is marker, calls
 
         self.assertEqual(observation(torch), observation(reference_torch))
+
+    def late_resolution_observation(self, module):
+        marker = object()
+        events = []
+
+        class StatefulDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                events.append(("lookup", self.lookups))
+                if self.lookups > 1:
+                    raise RuntimeError("late override resolution must not run")
+                return lambda func, types, args=(), kwargs=None: "override"
+
+        descriptor = StatefulDescriptor()
+
+        class Override:
+            __torch_function__ = descriptor
+
+        value = Override()
+
+        class AcceptingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        "mode",
+                        types == (Override,),
+                        args == (value,),
+                        kwargs is None,
+                    )
+                )
+                return marker
+
+        with AcceptingMode():
+            accepting_result = module.positive(value)
+
+        calls = []
+
+        class MutableOverride:
+            pass
+
+        mutable = MutableOverride()
+
+        def original_handler(func, types, args=(), kwargs=None):
+            calls.append("original")
+            return "original"
+
+        def replacement_handler(func, types, args=(), kwargs=None):
+            calls.append("replacement")
+            return marker
+
+        mutable.__torch_function__ = original_handler
+
+        class MutatingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append("mode")
+                mutable.__torch_function__ = replacement_handler
+                return NotImplemented
+
+        with MutatingMode():
+            mutating_result = module.positive(mutable)
+
+        return (
+            accepting_result is marker,
+            descriptor.lookups,
+            events,
+            mutating_result is marker,
+            calls,
+        )
+
+    def test_mode_order_and_late_override_resolution_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.late_resolution_observation(torch),
+            self.late_resolution_observation(reference_torch),
+        )
+
+    def mode_handler_form_observation(self, module):
+        tensor = module.tensor([1.0])
+        calls = []
+
+        class ClassMethodMode(module.overrides.TorchFunctionMode):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                calls.append("classmethod")
+                return object()
+
+        class StaticMethodMode(module.overrides.TorchFunctionMode):
+            @staticmethod
+            def __torch_function__(func, types, args=(), kwargs=None):
+                calls.append("staticmethod")
+                return object()
+
+        class InstanceAssignedMode(module.overrides.TorchFunctionMode):
+            pass
+
+        instance_assigned = InstanceAssignedMode()
+
+        def instance_handler(func, types, args=(), kwargs=None):
+            calls.append("instance")
+            return object()
+
+        instance_assigned.__torch_function__ = instance_handler
+        errors = []
+        for mode in (ClassMethodMode(), StaticMethodMode(), instance_assigned):
+            try:
+                with mode:
+                    module.positive(tensor)
+            except Exception as error:
+                errors.append((type(error).__name__, str(error)))
+            else:
+                errors.append(None)
+
+        class LateFailureDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                if self.lookups > 1:
+                    raise RuntimeError("late override failure")
+                return lambda func, types, args=(), kwargs=None: object()
+
+        descriptor = LateFailureDescriptor()
+
+        class Override:
+            __torch_function__ = descriptor
+
+        try:
+            with ClassMethodMode():
+                module.positive(Override())
+        except Exception as error:
+            precedence_error = (type(error).__name__, str(error))
+        else:
+            precedence_error = None
+        return errors, calls, precedence_error, descriptor.lookups
+
+    def test_mode_handler_form_validation_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_handler_form_observation(torch),
+            self.mode_handler_form_observation(reference_torch),
+        )
+
+    def warning_observation(self, module_name, scenario):
+        source = r'''
+import importlib
+import json
+import sys
+import warnings
+
+module = importlib.import_module(sys.argv[1])
+scenario = sys.argv[2]
+results = []
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    if scenario == "plain":
+        class ModernOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return "modern"
+
+        class PlainOverride:
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return "plain"
+
+        class AcceptingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return "mode"
+
+        results.append(module.positive(ModernOverride()))
+        with AcceptingMode():
+            results.append(module.positive(PlainOverride()))
+        results.append(module.positive(PlainOverride()))
+        results.append(module.positive(PlainOverride()))
+    elif scenario == "class-object":
+        class ClassObject:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return "class-object"
+
+        results.append(module.positive(ClassObject))
+        results.append(module.positive(ClassObject))
+    else:
+        raise AssertionError(scenario)
+
+print(json.dumps({
+    "results": results,
+    "warnings": [
+        [warning.category.__name__, str(warning.message)]
+        for warning in caught
+    ],
+}))
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", source, module_name, scenario],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        return json.loads(completed.stdout)
+
+    def test_plain_method_override_warnings_match_pytorch_2_13(self):
+        for scenario in ("plain", "class-object"):
+            with self.subTest(scenario=scenario):
+                actual = self.warning_observation("torch_rs", scenario)
+                expected = self.warning_observation("torch", scenario)
+                self.assertEqual(actual, expected)
+                self.assertEqual(len(expected["warnings"]), 1)
 
     def test_not_implemented_error_matches_pytorch_2_13(self):
         class Override:

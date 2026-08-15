@@ -128,8 +128,8 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
         class_calls = []
 
         class ClassObject:
-            @classmethod
-            def __torch_function__(cls, func, types, args=(), kwargs=None):
+            @staticmethod
+            def __torch_function__(func, types, args=(), kwargs=None):
                 class_calls.append((func, types, args, kwargs))
                 return marker
 
@@ -277,6 +277,176 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
         self.assertEqual(len(mode.calls), 1)
         self.assertEqual(len(override_type.calls), 1)
         self.assertEqual(mode.calls[0][1], (override_type,))
+
+    def test_mode_dispatch_precedes_late_override_resolution(self):
+        marker = object()
+        events = []
+
+        class StatefulDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                events.append(("lookup", self.lookups))
+                if self.lookups > 1:
+                    raise RuntimeError("late override resolution must not run")
+
+                def handler(func, types, args=(), kwargs=None):
+                    raise AssertionError("the accepting mode must handle the call")
+
+                return handler
+
+        descriptor = StatefulDescriptor()
+
+        class Override:
+            __torch_function__ = descriptor
+
+        value = Override()
+
+        class AcceptingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(("mode", types, args, kwargs))
+                return marker
+
+        with AcceptingMode():
+            self.assertIs(torch.positive(value), marker)
+        self.assertEqual(descriptor.lookups, 1)
+        self.assertEqual(events[0], ("lookup", 1))
+        self.assertEqual(events[1][0], "mode")
+
+        calls = []
+
+        class MutableOverride:
+            pass
+
+        mutable = MutableOverride()
+
+        def original_handler(func, types, args=(), kwargs=None):
+            calls.append("original")
+            return "original"
+
+        def replacement_handler(func, types, args=(), kwargs=None):
+            calls.append("replacement")
+            return marker
+
+        mutable.__torch_function__ = original_handler
+
+        class MutatingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append("mode")
+                mutable.__torch_function__ = replacement_handler
+                return NotImplemented
+
+        with MutatingMode():
+            self.assertIs(torch.positive(mutable), marker)
+        self.assertEqual(calls, ["mode", "replacement"])
+
+    def test_mode_handler_form_validation_matches_pytorch(self):
+        tensor = torch.tensor([1.0])
+        message = (
+            "Defining your mode's `__torch_function__` as a classmethod is "
+            "not supported, please make it a plain method"
+        )
+        calls = []
+
+        class ClassMethodMode(torch.overrides.TorchFunctionMode):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                calls.append("classmethod")
+                return object()
+
+        class StaticMethodMode(torch.overrides.TorchFunctionMode):
+            @staticmethod
+            def __torch_function__(func, types, args=(), kwargs=None):
+                calls.append("staticmethod")
+                return object()
+
+        class InstanceAssignedMode(torch.overrides.TorchFunctionMode):
+            pass
+
+        instance_assigned = InstanceAssignedMode()
+
+        def instance_handler(func, types, args=(), kwargs=None):
+            calls.append("instance")
+            return object()
+
+        instance_assigned.__torch_function__ = instance_handler
+        for mode in (ClassMethodMode(), StaticMethodMode(), instance_assigned):
+            with self.subTest(mode=type(mode).__name__):
+                with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
+                    with mode:
+                        torch.positive(tensor)
+        self.assertEqual(calls, [])
+
+        class LateFailureDescriptor:
+            def __init__(self):
+                self.lookups = 0
+
+            def __get__(self, instance, owner):
+                self.lookups += 1
+                if self.lookups > 1:
+                    raise RuntimeError("late override failure")
+                return lambda func, types, args=(), kwargs=None: object()
+
+        descriptor = LateFailureDescriptor()
+
+        class Override:
+            __torch_function__ = descriptor
+
+        with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
+            with ClassMethodMode():
+                torch.positive(Override())
+        self.assertEqual(descriptor.lookups, 1)
+
+    def test_plain_method_override_warning_is_once_only(self):
+        source = r'''
+import warnings
+
+import torch_rs as torch
+
+
+class ModernOverride:
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        return "modern"
+
+
+class PlainOverride:
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        return "plain"
+
+
+class AcceptingMode(torch.overrides.TorchFunctionMode):
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        return "mode"
+
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    assert torch.positive(ModernOverride()) == "modern"
+    with AcceptingMode():
+        assert torch.positive(PlainOverride()) == "mode"
+    assert torch.positive(PlainOverride()) == "plain"
+    assert torch.positive(PlainOverride()) == "plain"
+
+assert len(caught) == 1
+assert caught[0].category is UserWarning
+assert str(caught[0].message).startswith(
+    "Defining your `__torch_function__` as a plain method is deprecated "
+)
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_not_implemented_error_and_mode_cleanup_match_pytorch(self):
         class DecliningOverride:
