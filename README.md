@@ -90,6 +90,20 @@ env -u CONDA_PREFIX VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python"
 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
 ```
 
+To validate the Python package from one freshly built, exact-HEAD release wheel,
+run:
+
+```bash
+./scripts/test-python-exact-head.sh
+```
+
+This recreates `.venv` with Python 3.12, installs the locked reference group,
+clears inherited environment and import markers, force-installs the new wheel,
+and verifies its native-extension provenance before checking for PyTorch 2.13.0
+and running the full unittest suite. It preserves `CUDA_VISIBLE_DEVICES`, so the
+existing hardware-aware tests use available CUDA hardware and skip their CUDA
+cases when PyTorch reports none.
+
 The checked-in tests are only the public floor. Burner also uses independent generated workloads and side-by-side `torch_rs`/`torch` differential runs.
 
 ## License
