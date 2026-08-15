@@ -22,6 +22,39 @@ class ListDataset(Dataset):
 
 
 class ConcatDatasetTests(unittest.TestCase):
+    def test_dataset_addition_creates_and_chains_concat_datasets(self):
+        left = TensorDataset(torch.tensor([[1.0], [2.0]]))
+        right = Subset(TensorDataset(torch.tensor([[3.0], [4.0], [5.0]])), [2, 0])
+        tail = ListDataset(["tail"])
+
+        direct = left + right
+        self.assertIs(type(direct), ConcatDataset)
+        self.assertEqual(direct.datasets, [left, right])
+        self.assertIs(direct.datasets[0], left)
+        self.assertIs(direct.datasets[1], right)
+        self.assertEqual(direct.cumulative_sizes, [2, 4])
+        self.assertEqual(
+            [direct[index][0].item() for index in range(4)], [1, 2, 5, 3]
+        )
+
+        chained = direct + tail
+        self.assertIs(type(chained), ConcatDataset)
+        self.assertEqual(chained.datasets, [direct, tail])
+        self.assertIs(chained.datasets[0], direct)
+        self.assertIs(chained.datasets[1], tail)
+        self.assertEqual(chained.cumulative_sizes, [4, 5])
+        self.assertEqual(chained[0][0].item(), 1)
+        self.assertEqual(chained[-2][0].item(), 3)
+        self.assertEqual(chained[-1], "tail")
+        self.assertIs(type(chained.datasets[0]), ConcatDataset)
+
+        for owner in (right, tail):
+            with self.subTest(owner=type(owner).__name__):
+                combined = owner + left
+                self.assertIs(type(combined), ConcatDataset)
+                self.assertIs(combined.datasets[0], owner)
+                self.assertIs(combined.datasets[1], left)
+
     def test_construction_materializes_iterable_and_computes_cumulative_sizes(self):
         children = [
             ListDataset([]),
@@ -224,6 +257,15 @@ class ConcatDatasetTests(unittest.TestCase):
         self.assertEqual(str(inspect.signature(ConcatDataset.cumsum)), "(sequence)")
         self.assertEqual(str(inspect.signature(ConcatDataset.__getitem__)), "(self, idx)")
         self.assertEqual(str(inspect.signature(ConcatDataset.__len__)), "(self) -> int")
+        self.assertEqual(
+            str(inspect.signature(Dataset.__add__)),
+            "(self, other: 'Dataset[_T_co]') -> 'ConcatDataset[_T_co]'",
+        )
+        self.assertEqual(
+            Dataset.__add__.__annotations__,
+            {"other": "Dataset[_T_co]", "return": "ConcatDataset[_T_co]"},
+        )
+        self.assertIsNone(Dataset.__add__.__doc__)
         self.assertIn(
             "Dataset as a concatenation of multiple datasets", ConcatDataset.__doc__
         )

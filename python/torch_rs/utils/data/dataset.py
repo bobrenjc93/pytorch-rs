@@ -34,6 +34,9 @@ class Dataset(Generic[_T_co]):
     def __getitem__(self, index) -> _T_co:
         raise NotImplementedError("Subclasses of Dataset should implement __getitem__.")
 
+    def __add__(self, other: "Dataset[_T_co]") -> "ConcatDataset[_T_co]":
+        return ConcatDataset([self, other])
+
 
 def _leading_size(tensor):
     if isinstance(tensor, Tensor):

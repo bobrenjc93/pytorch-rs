@@ -71,6 +71,106 @@ class ConcatDatasetReferenceTests(unittest.TestCase):
         dataset = module.utils.data.ConcatDataset(child_iterable())
         return dataset, children, yielded, direct_source, subset_source
 
+    def make_list_dataset(self, module, values):
+        class ListDataset(module.utils.data.Dataset):
+            def __getitem__(self, index):
+                return values[index]
+
+            def __len__(self):
+                return len(values)
+
+        return ListDataset()
+
+    def test_direct_and_chained_dataset_addition_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual_left = torch.utils.data.TensorDataset(
+            torch.tensor([[1.0], [2.0]])
+        )
+        expected_left = reference_torch.utils.data.TensorDataset(
+            reference_torch.tensor([[1.0], [2.0]])
+        )
+        actual_right = torch.utils.data.Subset(
+            torch.utils.data.TensorDataset(torch.tensor([[3.0], [4.0], [5.0]])),
+            [2, 0],
+        )
+        expected_right = reference_torch.utils.data.Subset(
+            reference_torch.utils.data.TensorDataset(
+                reference_torch.tensor([[3.0], [4.0], [5.0]])
+            ),
+            [2, 0],
+        )
+        actual_tail = self.make_list_dataset(torch, ["tail"])
+        expected_tail = self.make_list_dataset(reference_torch, ["tail"])
+
+        actual_direct = actual_left + actual_right
+        expected_direct = expected_left + expected_right
+        self.assertEqual(
+            type(actual_direct).__name__, type(expected_direct).__name__
+        )
+        self.assertIs(actual_direct.datasets[0], actual_left)
+        self.assertIs(actual_direct.datasets[1], actual_right)
+        self.assertIs(expected_direct.datasets[0], expected_left)
+        self.assertIs(expected_direct.datasets[1], expected_right)
+        self.assertEqual(
+            actual_direct.cumulative_sizes, expected_direct.cumulative_sizes
+        )
+        for index in (0, 1, 2, 3, -1, -4):
+            with self.subTest(stage="direct", index=index):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_direct[index][0]),
+                    expected_direct[index][0].cpu().numpy(),
+                )
+
+        actual_chained = actual_direct + actual_tail
+        expected_chained = expected_direct + expected_tail
+        self.assertEqual(
+            type(actual_chained).__name__, type(expected_chained).__name__
+        )
+        self.assertIs(actual_chained.datasets[0], actual_direct)
+        self.assertIs(actual_chained.datasets[1], actual_tail)
+        self.assertIs(expected_chained.datasets[0], expected_direct)
+        self.assertIs(expected_chained.datasets[1], expected_tail)
+        self.assertEqual(
+            actual_chained.cumulative_sizes, expected_chained.cumulative_sizes
+        )
+        for index in (0, 1, 2, 3, -2, -5):
+            with self.subTest(stage="chained", index=index):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_chained[index][0]),
+                    expected_chained[index][0].cpu().numpy(),
+                )
+        self.assertEqual(actual_chained[-1], expected_chained[-1])
+        self.assertEqual(
+            type(actual_chained.datasets[0]).__name__,
+            type(expected_chained.datasets[0]).__name__,
+        )
+
+        for actual_owner, expected_owner in (
+            (actual_right, expected_right),
+            (actual_tail, expected_tail),
+        ):
+            actual_combined = actual_owner + actual_left
+            expected_combined = expected_owner + expected_left
+            self.assertEqual(
+                actual_combined.cumulative_sizes,
+                expected_combined.cumulative_sizes,
+            )
+            self.assertIs(actual_combined.datasets[0], actual_owner)
+            self.assertIs(expected_combined.datasets[0], expected_owner)
+
+        error_pairs = (
+            (lambda: actual_left + 3, lambda: expected_left + 3),
+            (lambda: 3 + actual_left, lambda: 3 + expected_left),
+            (lambda: actual_left.__add__(), lambda: expected_left.__add__()),
+            (
+                lambda: actual_left.__add__(actual_right, actual_tail),
+                lambda: expected_left.__add__(expected_right, expected_tail),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(error_pairs):
+            with self.subTest(stage="errors", case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
     def test_construction_indexing_views_and_autograd_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         (
@@ -243,6 +343,20 @@ class ConcatDatasetReferenceTests(unittest.TestCase):
         )
         self.assertTrue(issubclass(actual, actual_data.Dataset))
         self.assertTrue(issubclass(expected, expected_data.Dataset))
+
+        self.assertEqual(
+            str(inspect.signature(actual_data.Dataset.__add__)).replace(
+                "torch_rs", "torch"
+            ),
+            str(inspect.signature(expected_data.Dataset.__add__)),
+        )
+        self.assertEqual(
+            actual_data.Dataset.__add__.__annotations__,
+            expected_data.Dataset.__add__.__annotations__,
+        )
+        self.assertEqual(
+            actual_data.Dataset.__add__.__doc__, expected_data.Dataset.__add__.__doc__
+        )
 
         for actual_method, expected_method in (
             (actual.__init__, expected.__init__),
