@@ -11,14 +11,30 @@ cd "$repository_root"
 # explicitly where needed.
 unset \
     CONDA_PREFIX \
-    GIT_DIR \
-    GIT_INDEX_FILE \
-    GIT_WORK_TREE \
+    CARGO_BUILD_RUSTC \
+    CARGO_BUILD_RUSTC_WRAPPER \
+    CARGO_BUILD_RUSTFLAGS \
+    CARGO_BUILD_TARGET \
+    CARGO_ENCODED_RUSTFLAGS \
+    RUSTC \
+    RUSTC_WORKSPACE_WRAPPER \
+    RUSTC_WRAPPER \
+    RUSTDOC \
+    RUSTDOCFLAGS \
+    RUSTFLAGS \
+    RUSTUP_TOOLCHAIN \
+    TAR_OPTIONS \
     VIRTUAL_ENV \
-    PYTHONHOME \
-    PYTHONOPTIMIZE \
-    PYTHONPATH \
     PYO3_PYTHON
+
+# Git and Python both expose behavior-changing settings through prefixed
+# environment variables. Clear them before selecting the exact inputs below.
+for environment_name in "${!GIT_@}" "${!PYTHON@}"; do
+    unset "$environment_name"
+done
+export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_NO_REPLACE_OBJECTS=1
 
 # uv exposes most command-line settings through UV_* environment variables.
 # Clear all of them before setting the few paths controlled by this command.
@@ -29,6 +45,9 @@ done
 mkdir -p "$repository_root/target"
 run_directory="$(mktemp -d "$repository_root/target/exact-head-run.XXXXXX")"
 checkout="$run_directory/checkout"
+bare_repository="$run_directory/repository.git"
+head_tree_manifest="$run_directory/head-tree"
+extracted_tree_manifest="$run_directory/extracted-tree"
 virtualenv="$checkout/.venv"
 python="$virtualenv/bin/python"
 maturin="$virtualenv/bin/maturin"
@@ -61,8 +80,80 @@ done
 
 mkdir -p "$checkout" "$wheel_directory"
 head_commit="$(git -C "$repository_root" rev-parse --verify 'HEAD^{commit}')"
-git -C "$repository_root" archive --format=tar "$head_commit" | tar -x -C "$checkout"
+git -c core.attributesFile=/dev/null clone \
+    --bare \
+    --no-hardlinks \
+    --no-tags \
+    "$repository_root" \
+    "$bare_repository"
+git --git-dir="$bare_repository" cat-file -e "$head_commit^{commit}"
+git --git-dir="$bare_repository" ls-tree -rz --full-tree "$head_commit" \
+    > "$head_tree_manifest"
+git -c core.attributesFile=/dev/null --git-dir="$bare_repository" \
+    archive --format=tar "$head_commit" | tar -x -C "$checkout"
+
+expected_file_count=0
+while IFS= read -r -d '' tree_entry; do
+    metadata="${tree_entry%%$'\t'*}"
+    relative_path="${tree_entry#*$'\t'}"
+    read -r expected_mode expected_type expected_object <<< "$metadata"
+    destination="$checkout/$relative_path"
+    expected_file_count=$((expected_file_count + 1))
+
+    case "$expected_mode:$expected_type" in
+        100644:blob|100755:blob)
+            if [[ ! -f "$destination" || -L "$destination" ]]; then
+                echo "exact-HEAD export is missing regular file: $relative_path" >&2
+                exit 1
+            fi
+            if [[ "$expected_mode" == 100755 && ! -x "$destination" ]]; then
+                echo "exact-HEAD export lost executable mode: $relative_path" >&2
+                exit 1
+            fi
+            if [[ "$expected_mode" == 100644 && -x "$destination" ]]; then
+                echo "exact-HEAD export added executable mode: $relative_path" >&2
+                exit 1
+            fi
+            actual_object="$(
+                git --git-dir="$bare_repository" hash-object \
+                    --no-filters -- "$destination"
+            )"
+            ;;
+        120000:blob)
+            if [[ ! -L "$destination" ]]; then
+                echo "exact-HEAD export is missing symbolic link: $relative_path" >&2
+                exit 1
+            fi
+            actual_object="$(
+                printf '%s' "$(readlink "$destination")" |
+                    git --git-dir="$bare_repository" hash-object --stdin
+            )"
+            ;;
+        *)
+            echo "unsupported exact-HEAD tree entry: $tree_entry" >&2
+            exit 1
+            ;;
+    esac
+
+    if [[ "$actual_object" != "$expected_object" ]]; then
+        echo "exact-HEAD export content mismatch: $relative_path" >&2
+        exit 1
+    fi
+done < "$head_tree_manifest"
+
+find "$checkout" -mindepth 1 ! -type d -print0 > "$extracted_tree_manifest"
+actual_file_count=0
+while IFS= read -r -d '' _; do
+    actual_file_count=$((actual_file_count + 1))
+done < "$extracted_tree_manifest"
+if [[ "$actual_file_count" -ne "$expected_file_count" ]]; then
+    echo \
+        "exact-HEAD export file count mismatch: expected $expected_file_count, got $actual_file_count" \
+        >&2
+    exit 1
+fi
 echo "testing exact HEAD $head_commit"
+echo "verified $expected_file_count exact-HEAD files"
 
 export CARGO_HOME="$run_directory/cargo-home"
 export CARGO_TARGET_DIR="$run_directory/cargo-target"
@@ -79,6 +170,31 @@ uv --no-config sync \
     --no-install-project \
     --group dev \
     --group reference
+
+toolchain_channel="$("$python" - <<'PY'
+import re
+import tomllib
+
+
+with open("rust-toolchain.toml", "rb") as toolchain_file:
+    channel = tomllib.load(toolchain_file)["toolchain"]["channel"]
+if not isinstance(channel, str) or re.fullmatch(r"\d+\.\d+\.\d+", channel) is None:
+    raise SystemExit(f"expected a pinned Rust release channel, got {channel!r}")
+print(channel)
+PY
+)"
+export RUSTUP_TOOLCHAIN="$toolchain_channel"
+rustc_version="$(rustc --version)"
+cargo_version="$(cargo --version)"
+if [[ "${rustc_version#rustc }" != "$toolchain_channel "* ]]; then
+    echo "expected rustc $toolchain_channel, got $rustc_version" >&2
+    exit 1
+fi
+if [[ "${cargo_version#cargo }" != "$toolchain_channel "* ]]; then
+    echo "expected cargo $toolchain_channel, got $cargo_version" >&2
+    exit 1
+fi
+echo "verified Rust toolchain: $rustc_version; $cargo_version"
 
 TMPDIR="$run_directory" \
 VIRTUAL_ENV="$virtualenv" \
@@ -107,6 +223,10 @@ if sys.version_info[:2] != (3, 12):
     raise SystemExit(f"expected Python 3.12, got {sys.version}")
 if sys.flags.optimize != 0:
     raise SystemExit(f"expected Python optimization level 0, got {sys.flags.optimize}")
+if sys.flags.dev_mode:
+    raise SystemExit("expected Python development mode to be disabled")
+if sys.warnoptions:
+    raise SystemExit(f"expected default Python warning policy, got {sys.warnoptions!r}")
 
 import torch
 

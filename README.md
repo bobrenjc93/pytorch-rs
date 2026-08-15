@@ -106,7 +106,10 @@ worktree files are therefore excluded. To keep every artifact inside the
 worktree without inheriting Cargo settings, the command uses a fresh Cargo home
 and rejects `.cargo/config` files above the archived checkout. It also ignores
 external uv configuration and explicitly installs both locked dependency
-groups. The command preserves `CUDA_VISIBLE_DEVICES`, so the existing
+groups. Git and tar settings are cleared, and every extracted file is checked
+against `HEAD` before testing. The committed Rust channel is explicitly selected
+and verified, while ambient Python runtime settings, including warning policy,
+are cleared. The command preserves `CUDA_VISIBLE_DEVICES`, so the existing
 hardware-aware tests use available CUDA hardware and skip their CUDA cases when
 PyTorch reports none.
 
