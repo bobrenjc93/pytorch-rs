@@ -2097,6 +2097,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 61
       }
+    },
+    {
+      "key": "pr:139",
+      "recordedAt": "2026-08-15T14:07:12.672Z",
+      "label": "PR #139",
+      "kind": "leaf",
+      "prNumber": 139,
+      "title": "Restore Tensor.is_conj Python 3.14 signature parity",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 64.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 43.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 61
+      }
     }
   ]
 }
