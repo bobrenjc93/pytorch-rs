@@ -2945,6 +2945,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:197",
+      "recordedAt": "2026-08-16T23:53:43.773Z",
+      "label": "PR #197",
+      "kind": "leaf",
+      "prNumber": 197,
+      "title": "Re-run dimension-zero Tensor.unbind after daemon recovery",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 69.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 50,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }
