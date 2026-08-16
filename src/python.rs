@@ -502,10 +502,17 @@ impl PyTensorBase {
     #[allow(clippy::doc_markdown)]
     #[doc = "\nReturns a new tensor containing real values of the :attr:`self` tensor for a complex-valued input tensor.\nThe returned tensor and :attr:`self` share the same underlying storage.\n\nReturns :attr:`self` if :attr:`self` is a real-valued tensor.\n\nExample::\n\n    >>> x=torch.randn(4, dtype=torch.cfloat)\n    >>> x\n    tensor([(0.3100+0.3553j), (-0.5445-0.7896j), (-1.6492-0.0633j), (-0.0638-0.8119j)])\n    >>> x.real\n    tensor([ 0.3100, -0.5445, -1.6492, -0.0638])\n\n"]
     #[getter]
-    fn real(slf: &Bound<'_, Self>) -> PyResult<Py<PyTensor>> {
+    fn real(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("real"))?
+        {
+            return Ok(result);
+        }
+
         // Float32 is the only supported dtype, so every Tensor is already real.
         // Preserve the wrapper itself without inspecting storage or autograd state.
-        Ok(slf.as_any().cast::<PyTensor>()?.clone().unbind())
+        Ok(tensor.clone().unbind().into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
