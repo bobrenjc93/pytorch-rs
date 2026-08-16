@@ -31,6 +31,8 @@ fn native_metadata_describes_all_supported_storage_shapes() {
     ] {
         assert_eq!(tensor.dtype(), DType::Float32);
         assert_eq!(tensor.element_size(), tensor.dtype().element_size());
+        assert_eq!(tensor.dense_dim(), tensor.shape().len());
+        assert_eq!(tensor.sparse_dim(), 0);
         assert_eq!(tensor.device(), Device::Cpu);
         assert_eq!(tensor.device().index(), None);
         assert!(tensor.is_cpu());
@@ -65,6 +67,8 @@ fn native_metadata_survives_views_kernels_and_reductions() {
     for output in outputs {
         assert_eq!(output.dtype(), source.dtype());
         assert_eq!(output.element_size(), source.element_size());
+        assert_eq!(output.dense_dim(), output.shape().len());
+        assert_eq!(output.sparse_dim(), 0);
         assert_eq!(output.device(), source.device());
         assert!(output.is_cpu());
         assert!(!output.is_cuda());
