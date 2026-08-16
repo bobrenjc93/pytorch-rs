@@ -2529,6 +2529,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 67
       }
+    },
+    {
+      "key": "pr:169",
+      "recordedAt": "2026-08-16T08:02:26.074Z",
+      "label": "PR #169",
+      "kind": "leaf",
+      "prNumber": 169,
+      "title": "Expose float32 dtype.to_real identity",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 67.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 46.3,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 67
+      }
     }
   ]
 }

@@ -42,6 +42,11 @@ impl PyDType {
         self.inner.is_signed()
     }
 
+    #[pyo3(text_signature = None)]
+    fn to_real(&self, py: Python<'_>) -> PyResult<Py<PyDType>> {
+        Ok(dtype_object(py, self.inner.to_real())?.clone_ref(py))
+    }
+
     fn __repr__(&self) -> &'static str {
         match self.inner {
             DType::Float32 => "torch.float32",
