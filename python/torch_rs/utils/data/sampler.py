@@ -1,10 +1,10 @@
 # mypy: allow-untyped-defs
 import itertools
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sized
 from typing import Generic, TypeVar
 
 
-__all__ = ["BatchSampler", "Sampler"]
+__all__ = ["BatchSampler", "Sampler", "SequentialSampler"]
 
 
 _T_co = TypeVar("_T_co", covariant=True)
@@ -77,6 +77,25 @@ class Sampler(Generic[_T_co]):
     #   + raise a `TypeError` instead, which is what Python uses when users call
     #     a method that is not defined on an object.
     #     (@ssnl verifies that this works on at least Python 3.7.)
+
+
+class SequentialSampler(Sampler[int]):
+    r"""Samples elements sequentially, always in the same order.
+
+    Args:
+        data_source (Sized): data source to sample from. Must implement __len__.
+    """
+
+    data_source: Sized
+
+    def __init__(self, data_source: Sized) -> None:
+        self.data_source = data_source
+
+    def __iter__(self) -> Iterator[int]:
+        return iter(range(len(self.data_source)))
+
+    def __len__(self) -> int:
+        return len(self.data_source)
 
 
 class BatchSampler(Sampler[list[int]]):

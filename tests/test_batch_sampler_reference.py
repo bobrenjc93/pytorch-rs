@@ -205,6 +205,7 @@ class BatchSamplerReferenceTests(unittest.TestCase):
                     "ConcatDataset",
                     "Dataset",
                     "Sampler",
+                    "SequentialSampler",
                     "StackDataset",
                     "Subset",
                     "TensorDataset",
@@ -216,14 +217,13 @@ class BatchSamplerReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_module.__all__
-                if name in {"BatchSampler", "Sampler"}
+                if name in {"BatchSampler", "Sampler", "SequentialSampler"}
             ],
         )
 
         for name in (
             "DataLoader",
             "RandomSampler",
-            "SequentialSampler",
             "SubsetRandomSampler",
             "WeightedRandomSampler",
         ):
