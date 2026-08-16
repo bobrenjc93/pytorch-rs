@@ -25,6 +25,8 @@ mod python_layout;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_memory_format;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_no_argument_builtins;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_variable_functions;
 mod storage;
 mod tensor;
