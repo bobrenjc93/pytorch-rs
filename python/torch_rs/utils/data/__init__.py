@@ -7,12 +7,14 @@ from .dataset import (
     Subset,
     TensorDataset,
 )
+from .datapipes.datapipe import DataChunk
 from .sampler import BatchSampler, Sampler, SequentialSampler
 
 __all__ = [
     "BatchSampler",
     "ChainDataset",
     "ConcatDataset",
+    "DataChunk",
     "Dataset",
     "IterableDataset",
     "Sampler",
