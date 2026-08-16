@@ -442,7 +442,14 @@ impl PyTensorBase {
     ) -> PyResult<Py<PyAny>> {
         let dimension = bind_size_dimension(args, kwargs)?;
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) = dispatch_tensorbase_size_mode(slf.py(), tensor, args, kwargs)? {
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "size",
+            "torch.Tensor.size",
+            args,
+            kwargs,
+        )? {
             return Ok(result);
         }
 
@@ -711,6 +718,38 @@ impl PyTensorBase {
         let dimensions = bind_permute_dimensions(args, kwargs)?;
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         permute_tensor(&tensor.inner, dimensions).map(PyTensor::new)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nmovedim(source, destination) -> Tensor\n\nSee :func:`torch.movedim`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn movedim(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let [source, destination] = bind_movedim_arguments(args, kwargs)?;
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "movedim",
+            "torch.Tensor.movedim",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        let [source, destination] = parse_dimension_swap_dimensions(
+            "movedim",
+            ["source", "destination"],
+            &source,
+            &destination,
+        )?;
+        let inner = movedim_tensor(&tensor.try_borrow()?.inner, source, destination)?;
+        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1210,9 +1249,11 @@ fn dispatch_tensorbase_mode(
     Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
 }
 
-fn dispatch_tensorbase_size_mode(
+fn dispatch_tensorbase_method_mode(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
+    method: &'static str,
+    qualified_method: &'static str,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Option<Py<PyAny>>> {
@@ -1220,18 +1261,20 @@ fn dispatch_tensorbase_size_mode(
         return Ok(None);
     }
 
-    let function = py.get_type::<PyTensorBase>().getattr("size")?.unbind();
-    // `dim` is metadata rather than an overloaded tensor operand, so PyTorch
-    // supplies no dispatch types even though the receiver remains in args.
+    let function = py.get_type::<PyTensorBase>().getattr(method)?.unbind();
+    // Dimension arguments are metadata rather than overloaded tensor
+    // operands, so PyTorch supplies no dispatch types even though the receiver
+    // remains in args.
     let types = PyTuple::empty(py);
-    let argument_count = args
-        .len()
-        .checked_add(1)
-        .ok_or_else(|| PyMemoryError::new_err("size dispatch argument count overflowed"))?;
+    let argument_count = args.len().checked_add(1).ok_or_else(|| {
+        PyMemoryError::new_err(format!("{method} dispatch argument count overflowed"))
+    })?;
     let mut call_arguments = Vec::new();
     call_arguments
         .try_reserve_exact(argument_count)
-        .map_err(|_| PyMemoryError::new_err("unable to allocate size dispatch arguments"))?;
+        .map_err(|_| {
+            PyMemoryError::new_err(format!("unable to allocate {method} dispatch arguments"))
+        })?;
     call_arguments.push(tensor.clone().into_any());
     call_arguments.extend(args.iter());
     let call_args = PyTuple::new(py, call_arguments)?;
@@ -1251,7 +1294,7 @@ fn dispatch_tensorbase_size_mode(
 
     Err(torch_function_dispatch_error(
         py,
-        "torch.Tensor.size",
+        qualified_method,
         Some(mode),
         None,
     )?)
@@ -3905,8 +3948,8 @@ fn is_dimension_swap_integer(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
     }
 
     if let Ok(numpy) = PyModule::import(dimension.py(), "numpy") {
-        let numpy_integer = numpy.getattr("integer")?;
-        if dimension.is_instance(&numpy_integer)? {
+        let numpy_integer = numpy.getattr("integer")?.cast_into::<PyType>()?;
+        if dimension.get_type().is_subclass(numpy_integer.as_any())? {
             return Ok(true);
         }
     }
@@ -4598,10 +4641,10 @@ const PYTORCH_UNORDERED_BUCKET_COUNTS: &[u64] = &[
     18_446_744_073_709_551_557,
 ];
 
-fn pytorch_unordered_keyword_order(
-    keywords: Vec<(String, String)>,
+fn pytorch_unordered_keyword_order<T>(
+    keywords: Vec<(String, T)>,
     allocation: &PythonAllocationFallback<'_>,
-) -> PyResult<Vec<(String, String)>> {
+) -> PyResult<Vec<(String, T)>> {
     if cfg!(target_os = "windows") {
         pytorch_msvc_keyword_order(keywords, allocation)
     } else if cfg!(target_os = "macos") {
@@ -4611,10 +4654,10 @@ fn pytorch_unordered_keyword_order(
     }
 }
 
-fn pytorch_msvc_keyword_order(
-    keywords: Vec<(String, String)>,
+fn pytorch_msvc_keyword_order<T>(
+    keywords: Vec<(String, T)>,
     allocation: &PythonAllocationFallback<'_>,
-) -> PyResult<Vec<(String, String)>> {
+) -> PyResult<Vec<(String, T)>> {
     // MSVC's unordered map stores elements in a linked list, appending new
     // buckets and inserting collisions at the front of an existing bucket.
     let capacity = keywords.len();
@@ -4647,7 +4690,7 @@ fn pytorch_msvc_keyword_order(
             UnorderedKeywordNode {
                 hash: msvc_string_hash(&key),
                 key,
-                value,
+                value: Some(value),
                 previous: None,
                 next: None,
             },
@@ -4666,10 +4709,10 @@ fn pytorch_msvc_keyword_order(
     take_unordered_keywords(nodes, head, capacity, allocation)
 }
 
-fn pytorch_libstdcxx_keyword_order(
-    keywords: Vec<(String, String)>,
+fn pytorch_libstdcxx_keyword_order<T>(
+    keywords: Vec<(String, T)>,
     allocation: &PythonAllocationFallback<'_>,
-) -> PyResult<Vec<(String, String)>> {
+) -> PyResult<Vec<(String, T)>> {
     // PyTorch 2.13's overload formatter copies keyword arguments into
     // libstdc++'s `std::unordered_map`. Reproduce its MurmurHash64A buckets,
     // prime rehash policy, and bucket-local insertion order.
@@ -4704,7 +4747,7 @@ fn pytorch_libstdcxx_keyword_order(
             UnorderedKeywordNode {
                 hash: pytorch_string_hash(&key),
                 key,
-                value,
+                value: Some(value),
                 previous: None,
                 next: None,
             },
@@ -4716,10 +4759,10 @@ fn pytorch_libstdcxx_keyword_order(
     take_unordered_keywords(nodes, head, capacity, allocation)
 }
 
-fn pytorch_libcxx_keyword_order(
-    keywords: Vec<(String, String)>,
+fn pytorch_libcxx_keyword_order<T>(
+    keywords: Vec<(String, T)>,
     allocation: &PythonAllocationFallback<'_>,
-) -> PyResult<Vec<(String, String)>> {
+) -> PyResult<Vec<(String, T)>> {
     // The macOS build of PyTorch uses libc++, whose default unordered map
     // starts with two buckets and then follows its prime rehash policy.
     let capacity = keywords.len();
@@ -4753,7 +4796,7 @@ fn pytorch_libcxx_keyword_order(
             UnorderedKeywordNode {
                 hash: libcxx_string_hash(&key),
                 key,
-                value,
+                value: Some(value),
                 previous: None,
                 next: None,
             },
@@ -4765,12 +4808,12 @@ fn pytorch_libcxx_keyword_order(
     take_unordered_keywords(nodes, head, capacity, allocation)
 }
 
-fn take_unordered_keywords(
-    mut nodes: Vec<UnorderedKeywordNode>,
+fn take_unordered_keywords<T>(
+    mut nodes: Vec<UnorderedKeywordNode<T>>,
     head: Option<usize>,
     capacity: usize,
     allocation: &PythonAllocationFallback<'_>,
-) -> PyResult<Vec<(String, String)>> {
+) -> PyResult<Vec<(String, T)>> {
     let mut ordered = try_size_vector_with(capacity, allocation)?;
     let mut current = head;
     while let Some(index) = current {
@@ -4780,7 +4823,9 @@ fn take_unordered_keywords(
             &mut ordered,
             (
                 std::mem::take(&mut node.key),
-                std::mem::take(&mut node.value),
+                node.value
+                    .take()
+                    .expect("an unordered keyword value is taken exactly once"),
             ),
             allocation,
         )?;
@@ -4788,10 +4833,10 @@ fn take_unordered_keywords(
     Ok(ordered)
 }
 
-struct UnorderedKeywordNode {
+struct UnorderedKeywordNode<T> {
     hash: u64,
     key: String,
-    value: String,
+    value: Option<T>,
     previous: Option<usize>,
     next: Option<usize>,
 }
@@ -4805,8 +4850,8 @@ fn empty_keyword_buckets(
     Ok(buckets)
 }
 
-fn rehash_unordered_keywords(
-    nodes: &mut [UnorderedKeywordNode],
+fn rehash_unordered_keywords<T>(
+    nodes: &mut [UnorderedKeywordNode<T>],
     buckets: &mut [Option<usize>],
     bucket_count: usize,
     old_head: Option<usize>,
@@ -4822,8 +4867,8 @@ fn rehash_unordered_keywords(
     head
 }
 
-fn rehash_libcxx_unordered_keywords(
-    nodes: &mut [UnorderedKeywordNode],
+fn rehash_libcxx_unordered_keywords<T>(
+    nodes: &mut [UnorderedKeywordNode<T>],
     buckets: &mut [Option<usize>],
     bucket_count: usize,
     mut head: Option<usize>,
@@ -4865,8 +4910,8 @@ fn rehash_libcxx_unordered_keywords(
     head
 }
 
-fn rehash_msvc_unordered_keywords(
-    nodes: &mut [UnorderedKeywordNode],
+fn rehash_msvc_unordered_keywords<T>(
+    nodes: &mut [UnorderedKeywordNode<T>],
     buckets: &mut [Option<usize>],
     bucket_count: usize,
     mut head: Option<usize>,
@@ -4914,8 +4959,8 @@ fn rehash_msvc_unordered_keywords(
     (head, tail)
 }
 
-fn link_unordered_keyword(
-    nodes: &mut [UnorderedKeywordNode],
+fn link_unordered_keyword<T>(
+    nodes: &mut [UnorderedKeywordNode<T>],
     buckets: &mut [Option<usize>],
     bucket_count: usize,
     head: &mut Option<usize>,
@@ -4942,8 +4987,8 @@ fn link_unordered_keyword(
     buckets[bucket] = Some(index);
 }
 
-fn link_msvc_unordered_keyword(
-    nodes: &mut [UnorderedKeywordNode],
+fn link_msvc_unordered_keyword<T>(
+    nodes: &mut [UnorderedKeywordNode<T>],
     buckets: &mut [Option<usize>],
     bucket_count: usize,
     head: &mut Option<usize>,
@@ -6274,6 +6319,251 @@ fn multiply_invalid_keyword_mismatch(
     Ok(mismatch)
 }
 
+fn bind_movedim_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<[ParsedCallArgument<'py>; 2]> {
+    let argument_count = positional
+        .len()
+        .checked_add(keywords.map_or(0, PyDictMethods::len))
+        .ok_or_else(|| PyMemoryError::new_err("movedim argument count overflowed"))?;
+    if positional.len() > 2 || argument_count != 2 {
+        return Err(movedim_binding_error(positional, keywords)?);
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 2] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    if let Some(keywords) = keywords {
+        for (index, name) in [(0, c"source"), (1, c"destination")] {
+            let Some(value) = legacy_dict_get_item_string(keywords, name) else {
+                continue;
+            };
+            if arguments[index].is_some() {
+                return Err(movedim_binding_error(positional, Some(keywords))?);
+            }
+            arguments[index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    let [Some(source), Some(destination)] = arguments else {
+        return Err(movedim_binding_error(positional, keywords)?);
+    };
+    let arguments = [source, destination];
+    if !is_dimension_swap_integer(&arguments[0].value)?
+        || !is_dimension_swap_integer(&arguments[1].value)?
+    {
+        return Err(movedim_binding_error(positional, keywords)?);
+    }
+    Ok(arguments)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyTorch's generated parser uses exception-suppressing legacy dictionary lookup"
+)]
+fn legacy_dict_get_item_string<'py>(
+    dictionary: &Bound<'py, PyDict>,
+    name: &CStr,
+) -> Option<Bound<'py, PyAny>> {
+    // SAFETY: dictionary is a live exact dict, name is NUL-terminated, and
+    // PyDict_GetItemString returns a borrowed value kept alive by dictionary.
+    let value = unsafe { ffi::PyDict_GetItemString(dictionary.as_ptr(), name.as_ptr()) };
+    if value.is_null() {
+        // Legacy lookup suppresses comparison and hashing exceptions. Clear
+        // defensively so a hostile str subclass cannot leak an error state.
+        // SAFETY: the GIL is held and clearing no pending exception is valid.
+        unsafe { ffi::PyErr_Clear() };
+        return None;
+    }
+    // SAFETY: value is a live borrowed reference owned by dictionary for the
+    // lifetime of this Bound handle and the attached interpreter.
+    Some(unsafe { Bound::<PyAny>::from_borrowed_ptr(dictionary.py(), value) })
+}
+
+fn movedim_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let allocation = PythonAllocationFallback::new(positional.py());
+    let summary = call_type_summary_with(
+        positional,
+        keywords,
+        CallKeywordOrder::PyTorchUnorderedMap,
+        &allocation,
+    )?;
+    let argument_count = positional
+        .len()
+        .checked_add(keywords.map_or(0, PyDictMethods::len))
+        .ok_or_else(|| allocation.error())?;
+
+    let (integer_mismatch, sequence_mismatch) = if argument_count == 2 {
+        let (arguments, incorrect_keywords) =
+            movedim_error_arguments(positional, keywords, &allocation)?;
+        if incorrect_keywords.is_empty() {
+            if let [Some(source), Some(destination)] = arguments {
+                let arguments = [source, destination];
+                (
+                    movedim_invalid_type_mismatch(&arguments, false, &allocation)?,
+                    movedim_invalid_type_mismatch(&arguments, true, &allocation)?,
+                )
+            } else {
+                (String::new(), String::new())
+            }
+        } else {
+            (
+                movedim_invalid_keyword_mismatch(&incorrect_keywords, &allocation)?,
+                movedim_invalid_keyword_mismatch(&incorrect_keywords, &allocation)?,
+            )
+        }
+    } else {
+        (String::new(), String::new())
+    };
+
+    let mut message = try_string_from_str_with(
+        "movedim() received an invalid combination of arguments - got (",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &summary, &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "), but expected one of:\n * (int source, int destination)",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &integer_mismatch, &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "\n * (tuple of ints source, tuple of ints destination)",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &sequence_mismatch, &allocation)?;
+    try_push_string_with(&mut message, "\n", &allocation)?;
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    let py = positional.py();
+    let message = PyString::from_bytes(py, message.as_bytes()).map_err(|_| allocation.error())?;
+    let exception = py
+        .get_type::<PyTypeError>()
+        .call1((message,))
+        .map_err(|_| allocation.error())?;
+    Ok(PyErr::from_value(exception))
+}
+
+fn movedim_error_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<([Option<ParsedCallArgument<'py>>; 2], Vec<String>)> {
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 2] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().take(2).enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    let keyword_count = keywords.map_or(0, PyDictMethods::len);
+    let mut incorrect = try_size_vector_with(keyword_count, allocation)?;
+    if let Some(keywords) = keywords {
+        for (key, value) in movedim_ordered_keywords(keywords, allocation)? {
+            let index = match key.as_str() {
+                "source" => Some(0),
+                "destination" => Some(1),
+                _ => None,
+            };
+            if let Some(index) = index
+                && arguments[index].is_none()
+            {
+                arguments[index] = Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                });
+            } else {
+                try_push_size_with(&mut incorrect, key, allocation)?;
+            }
+        }
+    }
+    Ok((arguments, incorrect))
+}
+
+fn movedim_ordered_keywords<'py>(
+    keywords: &Bound<'py, PyDict>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<Vec<(String, Bound<'py, PyAny>)>> {
+    let mut entries = try_size_vector_with(keywords.len(), allocation)?;
+    for (key, value) in keywords {
+        let key = pytorch_keyword_name(&key)?;
+        try_push_size_with(
+            &mut entries,
+            (try_string_from_str_with(key, allocation)?, value),
+            allocation,
+        )?;
+    }
+    pytorch_unordered_keyword_order(entries, allocation)
+}
+
+fn movedim_invalid_type_mismatch(
+    arguments: &[ParsedCallArgument<'_>; 2],
+    sequence_overload: bool,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let names = ["source", "destination"];
+    let mut mismatch = try_string_from_str_with(
+        "\n      didn't match because some of the arguments have invalid types: (",
+        allocation,
+    )?;
+    for (index, (name, argument)) in names.into_iter().zip(arguments).enumerate() {
+        if index != 0 {
+            try_push_string_with(&mut mismatch, ", ", allocation)?;
+        }
+        let actual = transpose_type_name_with(&argument.value, allocation)?;
+        let detail = call_argument_type_description_with(&argument.value, allocation)?;
+        let invalid = sequence_overload || actual != "int";
+        if invalid {
+            try_push_string_with(&mut mismatch, "!", allocation)?;
+        }
+        if argument.position.is_none() {
+            try_push_string_with(&mut mismatch, name, allocation)?;
+            try_push_string_with(&mut mismatch, "=", allocation)?;
+        }
+        try_push_string_with(&mut mismatch, &detail, allocation)?;
+        if invalid {
+            try_push_string_with(&mut mismatch, "!", allocation)?;
+        }
+    }
+    if arguments[0].position.is_none() {
+        try_push_string_with(&mut mismatch, ", ", allocation)?;
+    }
+    try_push_string_with(&mut mismatch, ")", allocation)?;
+    Ok(mismatch)
+}
+
+fn movedim_invalid_keyword_mismatch(
+    keywords: &[String],
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let mut mismatch = try_string_from_str_with(
+        "\n      didn't match because some of the keywords were incorrect: ",
+        allocation,
+    )?;
+    for (index, keyword) in keywords.iter().enumerate() {
+        if index != 0 {
+            try_push_string_with(&mut mismatch, ", ", allocation)?;
+        }
+        try_push_string_with(&mut mismatch, keyword, allocation)?;
+    }
+    Ok(mismatch)
+}
+
 fn bind_dimension_swap_arguments<'py, const N: usize>(
     operation: &str,
     positional: &Bound<'py, PyTuple>,
@@ -6598,6 +6888,48 @@ fn permute_tensor(input: &CoreTensor, dimensions: Vec<i64>) -> PyResult<CoreTens
     input
         .permute_axes(normalized)
         .map_err(|error| permute_error(&error))
+}
+
+fn movedim_tensor(input: &CoreTensor, source: i64, destination: i64) -> PyResult<CoreTensor> {
+    let rank = input.shape().len();
+    let source = normalize_movedim_dimension(source, rank)?;
+    let destination = normalize_movedim_dimension(destination, rank)?;
+    let mut dimensions = try_size_vector(rank)?;
+    for axis in 0..rank {
+        if axis != source {
+            let axis = i64::try_from(axis)
+                .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+            try_push_size(&mut dimensions, axis)?;
+        }
+    }
+    if rank != 0 {
+        let source = i64::try_from(source)
+            .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+        dimensions.insert(destination, source);
+    }
+    permute_tensor(input, dimensions)
+}
+
+fn normalize_movedim_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
+    let effective_rank = rank.max(1);
+    let signed_rank = i64::try_from(effective_rank)
+        .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    if dimension < -signed_rank || dimension >= signed_rank {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension out of range (expected to be in range of [{}, {}], but got {dimension})",
+            -signed_rank,
+            signed_rank - 1
+        )));
+    }
+    if rank == 0 {
+        return Ok(0);
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + signed_rank
+    } else {
+        dimension
+    })
+    .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds usize"))
 }
 
 fn validate_dimension_swap_argument_prefix<const N: usize>(

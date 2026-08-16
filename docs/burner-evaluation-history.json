@@ -2593,6 +2593,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 67.5
       }
+    },
+    {
+      "key": "pr:173",
+      "recordedAt": "2026-08-16T10:18:04.335Z",
+      "label": "PR #173",
+      "kind": "leaf",
+      "prNumber": 173,
+      "title": "Add only the integer Tensor.movedim overload",
+      "scores": {
+        "eval_7af648fb": 99.2,
+        "eval_8417a4a8": 67.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 46.8,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68
+      }
     }
   ]
 }
