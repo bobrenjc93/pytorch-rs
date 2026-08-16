@@ -133,6 +133,50 @@ class TensorRetainsGradTests(unittest.TestCase):
                     "is not writable",
                 )
 
+    def test_torch_function_modes_receive_descriptor_get_and_forward(self):
+        tensor = torch.tensor([1.0], requires_grad=True) * 2.0
+        descriptor = inspect.getattr_static(torch.Tensor, "retains_grad")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            result = tensor.retains_grad
+        self.assertIs(result, marker)
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertEqual(function, descriptor.__get__)
+        self.assertIs(function.__self__, descriptor)
+        self.assertEqual(function.__name__, "__get__")
+        self.assertEqual(function.__qualname__, "getset_descriptor.__get__")
+        self.assertEqual(dispatch_types, (torch.Tensor,))
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], tensor)
+        self.assertIsNone(kwargs)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor.retains_grad
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertIs(forwarded, False)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -342,9 +342,21 @@ impl PyTensorBase {
     #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if this Tensor is non-leaf and its :attr:`grad` is enabled to be\npopulated during :func:`backward`, ``False`` otherwise.\n"]
     #[getter]
-    fn retains_grad(slf: &Bound<'_, Self>) -> PyResult<bool> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        Ok(tensor.inner.retains_grad())
+    fn retains_grad(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_mode(
+            slf.py(),
+            tensor,
+            TensorBaseModeTarget::GetSet("retains_grad"),
+        )? {
+            return Ok(result);
+        }
+
+        tensor
+            .try_borrow()?
+            .inner
+            .retains_grad()
+            .into_py_any(slf.py())
     }
 
     #[pyo3(text_signature = None)]
