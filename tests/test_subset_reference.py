@@ -191,6 +191,7 @@ class SubsetReferenceTests(unittest.TestCase):
         supported = {
             "ConcatDataset",
             "Dataset",
+            "Sampler",
             "StackDataset",
             "Subset",
             "TensorDataset",
