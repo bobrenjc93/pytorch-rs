@@ -2913,6 +2913,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:195",
+      "recordedAt": "2026-08-16T22:07:58.628Z",
+      "label": "PR #195",
+      "kind": "leaf",
+      "prNumber": 195,
+      "title": "Expose top-level torch.resolve_conj identity",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 69.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 49.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }
