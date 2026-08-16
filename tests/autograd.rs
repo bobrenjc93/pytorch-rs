@@ -1036,6 +1036,54 @@ fn retains_grad_is_false_for_every_supported_autograd_state() {
 }
 
 #[test]
+fn output_number_is_zero_for_every_supported_single_output_autograd_state() {
+    let ordinary = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+    let ordinary_operation = ordinary.mul_scalar(2.0).unwrap();
+    let ordinary_view = ordinary.transpose(0, 1).unwrap();
+
+    let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let operation = leaf.mul_scalar(2.0).unwrap();
+    let view = operation.transpose(0, 1).unwrap();
+    let detached_operation = operation.detach().unwrap();
+    let detached_view = view.detach().unwrap();
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_operation = empty.mul_scalar(2.0).unwrap();
+
+    let (no_grad_operation, no_grad_leaf_view, no_grad_non_leaf_view) = {
+        let _guard = no_grad();
+        (
+            leaf.mul_scalar(3.0).unwrap(),
+            leaf.transpose(0, 1).unwrap(),
+            operation.transpose(0, 1).unwrap(),
+        )
+    };
+
+    operation.sum().backward().unwrap();
+    let live_gradient = leaf.grad().unwrap().unwrap();
+
+    for tensor in [
+        &ordinary,
+        &ordinary_operation,
+        &ordinary_view,
+        &leaf,
+        &operation,
+        &view,
+        &detached_operation,
+        &detached_view,
+        &empty,
+        &empty_operation,
+        &no_grad_operation,
+        &no_grad_leaf_view,
+        &no_grad_non_leaf_view,
+        &live_gradient,
+    ] {
+        assert_eq!(tensor.output_nr(), 0);
+    }
+}
+
+#[test]
 fn multiply_backward_preserves_first_negative_zero_contribution() {
     let left = Tensor::from_vec(vec![2.0], [1])
         .unwrap()
