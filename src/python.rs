@@ -180,6 +180,13 @@ struct PyTensorBase;
 impl PyTensorBase {
     #[getter]
     fn layout(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("layout"))?
+        {
+            return Ok(result);
+        }
+
         Ok(strided_object(slf.py())?.clone_ref(slf.py()))
     }
 

@@ -267,6 +267,63 @@ class TensorLayoutReferenceTests(unittest.TestCase):
             self.descriptor_contract(reference_torch),
         )
 
+    def mode_dispatch_contract(self, module):
+        tensor = module.tensor([1.0])
+        descriptor = inspect.getattr_static(module.Tensor, "layout")
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        recording = RecordingMode()
+        with recording:
+            intercepted = tensor.layout
+        function, dispatch_types, args, kwargs = recording.calls[0]
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor.layout
+
+        return {
+            "intercepted": intercepted is marker,
+            "call_count": len(recording.calls),
+            "function_type": type(function).__name__,
+            "function_name": function.__name__,
+            "function_qualname": function.__qualname__,
+            "function_self": function.__self__ is descriptor,
+            "function_equals_descriptor_get": function == descriptor.__get__,
+            "types": dispatch_types == (module.Tensor,),
+            "args": len(args) == 1 and args[0] is tensor,
+            "kwargs_is_none": kwargs is None,
+            "forwarding_order": order,
+            "forwarded_is_strided": forwarded is module.strided,
+            "forwarded_type": type(forwarded).__name__,
+            "stack_depth": len(
+                module.overrides._get_current_function_mode_stack()
+            ),
+        }
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_contract(torch),
+            self.mode_dispatch_contract(reference_torch),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
