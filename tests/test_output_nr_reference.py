@@ -1,4 +1,5 @@
 import inspect
+import struct
 import types
 import unittest
 
@@ -123,6 +124,15 @@ class TensorOutputNumberReferenceTests(unittest.TestCase):
         new_results = (middle.detach(), middle.transpose(0, 0), middle[0])
         rows[1].sum().backward()
 
+        signed_source = module.tensor([[1.0], [-0.0]], requires_grad=True)
+        signed_rows = tuple(signed_source)
+        (signed_rows[0] * signed_rows[1]).sum().backward()
+        signed_gradient_bits = tuple(
+            struct.unpack(">I", struct.pack(">f", value))[0]
+            for row in signed_source.grad.tolist()
+            for value in row
+        )
+
         ordinary = module.tensor([[1.0], [2.0], [3.0]])
         ordinary_output_numbers = tuple(row.output_nr for row in ordinary)
 
@@ -154,6 +164,7 @@ class TensorOutputNumberReferenceTests(unittest.TestCase):
                 result.output_nr for result in new_results
             ),
             "gradient": source.grad.tolist(),
+            "signed_gradient_bits": signed_gradient_bits,
             "ordinary_output_numbers": ordinary_output_numbers,
             "no_grad_rows": tuple(
                 (row.output_nr, row.requires_grad, row.is_leaf)
@@ -171,6 +182,54 @@ class TensorOutputNumberReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.iteration_contract(torch),
             self.iteration_contract(reference_torch),
+        )
+
+    def iteration_mode_contract(self, module):
+        source = module.tensor([[1.0], [2.0]])
+
+        class ReplacingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                if func.__name__ == "unbind":
+                    return ("replacement-a", "replacement-b")
+                return func(*args, **(kwargs or {}))
+
+        mode = ReplacingMode()
+        with mode:
+            result = tuple(iter(source))
+
+        dim_function, dim_types, dim_args, dim_kwargs = mode.calls[0]
+        unbind_function, unbind_types, unbind_args, unbind_kwargs = mode.calls[1]
+        return {
+            "result": result,
+            "call_count": len(mode.calls),
+            "names": tuple(call[0].__name__ for call in mode.calls),
+            "function_types": tuple(type(call[0]).__name__ for call in mode.calls),
+            "qualnames": tuple(call[0].__qualname__ for call in mode.calls),
+            "owner_names": tuple(call[0].__objclass__.__name__ for call in mode.calls),
+            "owner_modules": tuple(
+                call[0].__objclass__.__module__ for call in mode.calls
+            ),
+            "dim_types": dim_types == (module.Tensor,),
+            "dim_args": dim_args == (source,),
+            "dim_kwargs_none": dim_kwargs is None,
+            "unbind_types": unbind_types == (),
+            "unbind_args": len(unbind_args) == 2
+            and unbind_args[0] is source
+            and unbind_args[1] == 0,
+            "unbind_kwargs_none": unbind_kwargs is None,
+            "stack_depth": len(
+                module.overrides._get_current_function_mode_stack()
+            ),
+        }
+
+    def test_iteration_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.iteration_mode_contract(torch),
+            self.iteration_mode_contract(reference_torch),
         )
 
     def test_reference_multi_output_nodes_expose_the_unsupported_nonzero_state(self):

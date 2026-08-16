@@ -1,4 +1,5 @@
 import inspect
+import struct
 import types
 import unittest
 
@@ -105,6 +106,16 @@ class TensorOutputNumberTests(unittest.TestCase):
             [[0.0, 0.0], [1.0, 1.0], [0.0, 0.0]],
         )
 
+        signed_source = torch.tensor([[1.0], [-0.0]], requires_grad=True)
+        signed_rows = tuple(signed_source)
+        (signed_rows[0] * signed_rows[1]).sum().backward()
+        gradient_bits = tuple(
+            struct.unpack(">I", struct.pack(">f", value))[0]
+            for row in signed_source.grad.tolist()
+            for value in row
+        )
+        self.assertEqual(gradient_bits, (0x80000000, 0x3F800000))
+
         ordinary = torch.tensor([[1.0], [2.0], [3.0]])
         self.assertEqual(tuple(row.output_nr for row in ordinary), (0, 0, 0))
 
@@ -125,6 +136,43 @@ class TensorOutputNumberTests(unittest.TestCase):
         with self.assertRaises(TypeError) as raised:
             iter(torch.tensor(1.0))
         self.assertEqual(str(raised.exception), "iteration over a 0-d tensor")
+
+    def test_iteration_routes_dim_and_unbind_through_torch_function_mode(self):
+        source = torch.tensor([[1.0], [2.0]])
+
+        class ReplacingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                if func.__name__ == "unbind":
+                    return ("replacement-a", "replacement-b")
+                return func(*args, **(kwargs or {}))
+
+        mode = ReplacingMode()
+        with mode:
+            result = tuple(iter(source))
+
+        self.assertEqual(result, ("replacement-a", "replacement-b"))
+        self.assertEqual([call[0].__name__ for call in mode.calls], ["dim", "unbind"])
+        for function, _, _, _ in mode.calls:
+            self.assertIs(type(function), types.MethodDescriptorType)
+            self.assertEqual(function.__objclass__.__name__, "TensorBase")
+            self.assertEqual(function.__objclass__.__module__, "torch._C")
+
+        dim_function, dim_types, dim_args, dim_kwargs = mode.calls[0]
+        self.assertEqual(dim_function.__qualname__, "TensorBase.dim")
+        self.assertEqual(dim_types, (torch.Tensor,))
+        self.assertEqual(dim_args, (source,))
+        self.assertIsNone(dim_kwargs)
+
+        unbind_function, unbind_types, unbind_args, unbind_kwargs = mode.calls[1]
+        self.assertEqual(unbind_function.__qualname__, "TensorBase.unbind")
+        self.assertEqual(unbind_types, ())
+        self.assertEqual(unbind_args, (source, 0))
+        self.assertIsNone(unbind_kwargs)
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
 
     def test_tensorbase_descriptor_is_undocumented_and_read_only(self):
         tensor = torch.tensor([1.0])

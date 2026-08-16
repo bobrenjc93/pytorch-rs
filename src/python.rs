@@ -31,6 +31,7 @@ use crate::{
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static TORCH_FUNCTION_DESCRIPTOR_CALLER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+static ITERATION_UNBIND_DESCRIPTOR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static H_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -212,6 +213,36 @@ impl PyTensorBase {
         }
 
         tensor.try_borrow()?.inner.output_nr().into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\ndim() -> int\n\nReturns the number of dimensions of :attr:`self` tensor.\n"]
+    #[pyo3(text_signature = None)]
+    fn dim(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::Method("dim"))?
+        {
+            return Ok(result);
+        }
+
+        tensor
+            .try_borrow()?
+            .inner
+            .shape()
+            .len()
+            .into_py_any(slf.py())
+    }
+
+    // Iteration calls this cached descriptor so modes observe TensorBase.unbind,
+    // but module initialization removes the attribute from the public type.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nunbind(dim=0) -> seq\n\nSee :func:`torch.unbind`\n"]
+    #[pyo3(signature = (dim=0), text_signature = None)]
+    fn unbind(slf: &Bound<'_, Self>, dim: i64) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        dispatch_iteration_unbind(slf.py(), tensor, dim)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1393,6 +1424,62 @@ fn dispatch_tensorbase_mode(
     Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
 }
 
+fn iteration_unbind_descriptor(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
+    ITERATION_UNBIND_DESCRIPTOR.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err("tensor iteration was called before unbind initialization")
+    })
+}
+
+fn dispatch_iteration_unbind(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    dim: i64,
+) -> PyResult<Py<PyAny>> {
+    if !TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty()) {
+        let function = iteration_unbind_descriptor(py)?.clone_ref(py);
+        let types = PyTuple::empty(py);
+        let args = PyTuple::new(
+            py,
+            [tensor.clone().unbind().into_any(), dim.into_py_any(py)?],
+        )?;
+        let active_mode = ActiveTorchFunctionMode::pop();
+        let Some(mode) = active_mode.get() else {
+            return iteration_unbind(py, tensor, dim);
+        };
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, &args, None)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+        return Err(torch_function_dispatch_error(
+            py,
+            "torch.Tensor.unbind",
+            Some(mode),
+            None,
+        )?);
+    }
+
+    iteration_unbind(py, tensor, dim)
+}
+
+fn iteration_unbind(py: Python<'_>, tensor: &Bound<'_, PyTensor>, dim: i64) -> PyResult<Py<PyAny>> {
+    let axis = normalize_dimension(dim, tensor.try_borrow()?.inner.shape().len())?;
+    if axis != 0 {
+        return Err(PyRuntimeError::new_err(
+            "tensor iteration only supports unbind dimension 0",
+        ));
+    }
+    let outputs = tensor
+        .try_borrow()?
+        .inner
+        .unbind_first_dimension()
+        .map_err(|error| tensor_error(&error))?;
+    Ok(PyTuple::new(py, outputs.into_iter().map(PyTensor::new))?
+        .into_any()
+        .unbind())
+}
+
 fn dispatch_tensorbase_method_mode(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
@@ -2171,15 +2258,18 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
-    fn __iter__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        if self.inner.shape().is_empty() {
+    fn __iter__(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let py = slf.py();
+        let dimension = py
+            .get_type::<PyTensorBase>()
+            .getattr("dim")?
+            .call1((slf.clone(),))?;
+        if dimension.eq(0_usize)? {
             return Err(PyTypeError::new_err("iteration over a 0-d tensor"));
         }
-        let outputs = self
-            .inner
-            .unbind_first_dimension()
-            .map_err(|error| tensor_error(&error))?;
-        let outputs = PyTuple::new(py, outputs.into_iter().map(Self::new))?;
+        let outputs = iteration_unbind_descriptor(py)?
+            .bind(py)
+            .call1((slf.clone(), 0_i64))?;
         Ok(outputs.call_method0("__iter__")?.unbind())
     }
 
@@ -2229,12 +2319,6 @@ impl PyTensor {
             ));
         }
         self.numpy_array_copy(py, dtype)
-    }
-
-    /// Returns the number of dimensions of the tensor.
-    #[pyo3(text_signature = None)]
-    fn dim(&self) -> usize {
-        self.inner.shape().len()
     }
 
     /// Alias for [`Tensor.dim()`](https://pytorch.org/docs/stable/generated/torch.Tensor.dim.html).
@@ -8136,6 +8220,12 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();
     let tensor_base = py.get_type::<PyTensorBase>();
+    ITERATION_UNBIND_DESCRIPTOR.get_or_try_init(py, || -> PyResult<Py<PyAny>> {
+        Ok(tensor_base.getattr("unbind")?.unbind())
+    })?;
+    if tensor_base.hasattr("unbind")? {
+        tensor_base.delattr("unbind")?;
+    }
     // PyTorch installs Tensor.__pos__ as the TensorBase.positive descriptor
     // itself. Besides preserving its public metadata and call diagnostics,
     // assigning the descriptor activates the unary-positive numeric slot.

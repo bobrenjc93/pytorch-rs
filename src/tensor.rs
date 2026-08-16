@@ -37,6 +37,7 @@ struct SavedTensor {
     strides: Vec<usize>,
     offset: usize,
     elements: usize,
+    output_nr: usize,
     autograd: Option<Arc<AutogradMeta>>,
 }
 
@@ -67,6 +68,11 @@ enum GradFn {
     Transform {
         input: SavedTensor,
         mapping: TransformMapping,
+    },
+    Unbind {
+        input: SavedTensor,
+        output_count: usize,
+        output_elements: usize,
     },
 }
 
@@ -102,7 +108,8 @@ impl GradFn {
             | Self::Relu { input }
             | Self::Sin { input }
             | Self::Sum { input }
-            | Self::Transform { input, .. } => input.take_parent(pending),
+            | Self::Transform { input, .. }
+            | Self::Unbind { input, .. } => input.take_parent(pending),
         }
     }
 
@@ -125,7 +132,10 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
+            Self::Negate { .. }
+            | Self::Sum { .. }
+            | Self::Transform { .. }
+            | Self::Unbind { .. } => {}
         }
         Ok(())
     }
@@ -139,7 +149,10 @@ impl GradFn {
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
             Self::Relu { input } | Self::Sin { input } => input.storage = None,
-            Self::Negate { .. } | Self::Sum { .. } | Self::Transform { .. } => {}
+            Self::Negate { .. }
+            | Self::Sum { .. }
+            | Self::Transform { .. }
+            | Self::Unbind { .. } => {}
         }
         Ok(())
     }
@@ -784,7 +797,7 @@ impl Tensor {
             .autograd
             .as_ref()
             .ok_or(TensorError::DoesNotRequireGrad)?;
-        run_backward(meta)
+        run_backward(meta, self.output_nr)
     }
 
     fn records_grad(&self) -> bool {
@@ -1614,10 +1627,10 @@ impl Tensor {
     }
 
     fn index_dimensions(&self, indices: &[i64]) -> Result<Self, TensorError> {
-        self.index_dimensions_with_output_nr(indices, 0)
+        self.index_dimensions_impl(indices, true)
     }
 
-    #[cfg(any(feature = "python-bindings", test))]
+    #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
     pub(crate) fn unbind_first_dimension(&self) -> Result<Vec<Self>, TensorError> {
         let Some(&output_count) = self.shape.first() else {
             return Err(TensorError::InvalidScalarIndex);
@@ -1626,15 +1639,31 @@ impl Tensor {
         for output_nr in 0..output_count {
             let index =
                 i64::try_from(output_nr).map_err(|_| TensorError::IndexCalculationOverflow)?;
-            outputs.push(self.index_dimensions_with_output_nr(&[index], output_nr)?);
+            outputs.push(self.index_dimensions_impl(&[index], false)?);
+        }
+        if self.records_grad() && !outputs.is_empty() {
+            let output_elements = outputs[0].elements;
+            let autograd = Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::Unbind {
+                        input: SavedTensor::try_from_tensor(self, false)?,
+                        output_count,
+                        output_elements,
+                    })),
+                },
+            });
+            for (output_nr, output) in outputs.iter_mut().enumerate() {
+                output.autograd = Some(Arc::clone(&autograd));
+                output.output_nr = output_nr;
+            }
         }
         Ok(outputs)
     }
 
-    fn index_dimensions_with_output_nr(
+    fn index_dimensions_impl(
         &self,
         indices: &[i64],
-        output_nr: usize,
+        record_history: bool,
     ) -> Result<Self, TensorError> {
         if indices.len() > self.shape.len() {
             return Err(TensorError::TooManyIndices {
@@ -1661,7 +1690,7 @@ impl Tensor {
             view_requires_grad: self.requires_grad(),
             autograd: None,
         };
-        if self.records_grad() {
+        if record_history && self.records_grad() {
             let mut logical_prefix = 0_usize;
             for (dimension, index) in indices.iter().copied().enumerate() {
                 let size = self.shape[dimension];
@@ -1685,7 +1714,6 @@ impl Tensor {
                 .checked_mul(elements)
                 .ok_or(TensorError::IndexCalculationOverflow)?;
             self.record_transform(&mut output, TransformMapping::Index { input_start })?;
-            output.output_nr = output_nr;
         }
         Ok(output)
     }
@@ -2455,6 +2483,7 @@ impl SavedTensor {
             strides: tensor.strides.clone(),
             offset: tensor.offset,
             elements: tensor.elements,
+            output_nr: tensor.output_nr,
             autograd: tensor.autograd.as_ref().map(Arc::clone),
         }
     }
@@ -2472,6 +2501,7 @@ impl SavedTensor {
             strides: try_clone_result_shape(&tensor.strides, tensor.elements)?,
             offset: tensor.offset,
             elements: tensor.elements,
+            output_nr: tensor.output_nr,
             autograd: tensor.autograd.as_ref().map(Arc::clone),
         })
     }
@@ -2527,8 +2557,10 @@ impl SavedTensor {
 }
 
 type Topology = Vec<(Arc<AutogradMeta>, Option<GradFn>)>;
+type GradientKey = (usize, usize);
+type Gradients = HashMap<GradientKey, Vec<f32>>;
 
-fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
+fn run_backward(root: &Arc<AutogradMeta>, root_output_nr: usize) -> Result<(), TensorError> {
     // Saved values form a transaction: a traversal must either consume all of
     // them and commit its leaf gradients, or consume none. Serializing the
     // complete operation prevents concurrent roots which share intermediates
@@ -2539,16 +2571,29 @@ fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
     let topology = collect_topology(root)?;
 
     let mut gradients = HashMap::new();
-    gradients.insert(autograd_id(root), vec![1.0]);
+    gradients.insert(gradient_key(root, root_output_nr), vec![1.0]);
     let mut leaf_gradients = Vec::new();
 
     for (meta, grad_fn) in topology.iter().rev() {
-        let Some(upstream) = gradients.remove(&autograd_id(meta)) else {
-            continue;
-        };
         match grad_fn {
-            None => leaf_gradients.push((Arc::clone(meta), upstream)),
-            Some(grad_fn) => apply_grad_fn(grad_fn, &upstream, &mut gradients)?,
+            None => {
+                if let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) {
+                    leaf_gradients.push((Arc::clone(meta), upstream));
+                }
+            }
+            Some(GradFn::Unbind {
+                input,
+                output_count,
+                output_elements,
+            }) => {
+                apply_unbind_grad_fn(meta, input, *output_count, *output_elements, &mut gradients)?;
+            }
+            Some(grad_fn) => {
+                let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) else {
+                    continue;
+                };
+                apply_grad_fn(grad_fn, &upstream, &mut gradients)?;
+            }
         }
     }
 
@@ -2576,7 +2621,7 @@ fn run_backward(root: &Arc<AutogradMeta>) -> Result<(), TensorError> {
 
 enum TopologyFrame {
     Enter(Arc<AutogradMeta>),
-    Exit(Arc<AutogradMeta>, Option<GradFn>),
+    Exit(Arc<AutogradMeta>, Box<Option<GradFn>>),
 }
 
 fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
@@ -2585,7 +2630,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
     let mut stack = vec![TopologyFrame::Enter(Arc::clone(root))];
     while let Some(frame) = stack.pop() {
         match frame {
-            TopologyFrame::Exit(meta, grad_fn) => topology.push((meta, grad_fn)),
+            TopologyFrame::Exit(meta, grad_fn) => topology.push((meta, *grad_fn)),
             TopologyFrame::Enter(meta) => {
                 if !seen.insert(autograd_id(&meta)) {
                     continue;
@@ -2602,7 +2647,10 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         Some(grad_fn)
                     }
                 };
-                stack.push(TopologyFrame::Exit(Arc::clone(&meta), grad_fn.clone()));
+                stack.push(TopologyFrame::Exit(
+                    Arc::clone(&meta),
+                    Box::new(grad_fn.clone()),
+                ));
                 if let Some(grad_fn) = &grad_fn {
                     match grad_fn {
                         GradFn::Multiply { left, right, .. } => {
@@ -2614,7 +2662,8 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         | GradFn::Relu { input }
                         | GradFn::Sin { input }
                         | GradFn::Sum { input }
-                        | GradFn::Transform { input, .. } => {
+                        | GradFn::Transform { input, .. }
+                        | GradFn::Unbind { input, .. } => {
                             push_saved_parent(&mut stack, input);
                         }
                     }
@@ -2634,13 +2683,13 @@ fn push_saved_parent(stack: &mut Vec<TopologyFrame>, tensor: &SavedTensor) {
 fn apply_grad_fn(
     grad_fn: &GradFn,
     upstream: &[f32],
-    gradients: &mut HashMap<usize, Vec<f32>>,
+    gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     match grad_fn {
         GradFn::Sum { input } => {
             if let Some(meta) = &input.autograd {
                 let gradient = filled_storage(input.elements, upstream[0])?;
-                add_gradient(gradients, meta, gradient);
+                add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
         GradFn::MultiplyScalar { input, scalar } => {
@@ -2648,7 +2697,7 @@ fn apply_grad_fn(
                 let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
                 gradient.extend(upstream.iter().map(|value| value * scalar));
-                add_gradient(gradients, meta, gradient);
+                add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
         GradFn::Negate { input } => {
@@ -2656,7 +2705,7 @@ fn apply_grad_fn(
                 debug_assert_eq!(input.elements, upstream.len());
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
                 gradient.extend(upstream.iter().copied().map(negate_value));
-                add_gradient(gradients, meta, gradient);
+                add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
         GradFn::Relu { input } => apply_relu_grad_fn(input, upstream, gradients)?,
@@ -2722,18 +2771,55 @@ fn apply_grad_fn(
                 }
             }
             if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
-                add_gradient(gradients, meta, gradient.values);
+                add_gradient(gradients, meta, left.output_nr, gradient.values);
             }
             if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
-                add_gradient(gradients, meta, gradient.values);
+                add_gradient(gradients, meta, right.output_nr, gradient.values);
             }
         }
         GradFn::Transform { input, mapping } => {
             if let Some(meta) = &input.autograd {
                 let gradient = transform_backward(input, mapping, upstream)?;
-                add_gradient(gradients, meta, gradient);
+                add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
+        GradFn::Unbind { .. } => unreachable!(),
+    }
+    Ok(())
+}
+
+fn apply_unbind_grad_fn(
+    node: &Arc<AutogradMeta>,
+    input: &SavedTensor,
+    output_count: usize,
+    output_elements: usize,
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    let mut assembled = None;
+    for output_nr in 0..output_count {
+        let Some(output_gradient) = gradients.remove(&gradient_key(node, output_nr)) else {
+            continue;
+        };
+        if output_gradient.len() != output_elements {
+            return Err(TensorError::IndexCalculationOverflow);
+        }
+        let gradient = match &mut assembled {
+            Some(gradient) => gradient,
+            None => assembled.insert(filled_storage(input.elements, 0.0)?),
+        };
+        let start = output_nr
+            .checked_mul(output_elements)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        let end = start
+            .checked_add(output_elements)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        gradient
+            .get_mut(start..end)
+            .ok_or(TensorError::IndexCalculationOverflow)?
+            .copy_from_slice(&output_gradient);
+    }
+    if let (Some(meta), Some(gradient)) = (&input.autograd, assembled) {
+        add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
 }
@@ -2741,7 +2827,7 @@ fn apply_grad_fn(
 fn apply_relu_grad_fn(
     input: &SavedTensor,
     upstream: &[f32],
-    gradients: &mut HashMap<usize, Vec<f32>>,
+    gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     let Some(meta) = &input.autograd else {
         return Ok(());
@@ -2762,14 +2848,14 @@ fn apply_relu_grad_fn(
             }),
         );
     }
-    add_gradient(gradients, meta, gradient);
+    add_gradient(gradients, meta, input.output_nr, gradient);
     Ok(())
 }
 
 fn apply_sin_grad_fn(
     input: &SavedTensor,
     upstream: &[f32],
-    gradients: &mut HashMap<usize, Vec<f32>>,
+    gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     let Some(meta) = &input.autograd else {
         return Ok(());
@@ -2782,7 +2868,7 @@ fn apply_sin_grad_fn(
             .enumerate()
             .map(|(index, value)| value * input.value_at_linear_index(index).cos()),
     );
-    add_gradient(gradients, meta, gradient);
+    add_gradient(gradients, meta, input.output_nr, gradient);
     Ok(())
 }
 
@@ -2866,12 +2952,13 @@ fn transform_backward(
 }
 
 fn add_gradient(
-    gradients: &mut HashMap<usize, Vec<f32>>,
+    gradients: &mut Gradients,
     meta: &Arc<AutogradMeta>,
+    output_nr: usize,
     contribution: Vec<f32>,
 ) {
     gradients
-        .entry(autograd_id(meta))
+        .entry(gradient_key(meta, output_nr))
         .and_modify(|gradient| {
             debug_assert_eq!(gradient.len(), contribution.len());
             for (value, contribution) in gradient.iter_mut().zip(&contribution) {
@@ -2907,6 +2994,10 @@ fn accumulate_leaf_gradient(meta: &AutogradMeta, contribution: Vec<f32>) {
 
 fn autograd_id(meta: &Arc<AutogradMeta>) -> usize {
     Arc::as_ptr(meta) as usize
+}
+
+fn gradient_key(meta: &Arc<AutogradMeta>, output_nr: usize) -> GradientKey {
+    (autograd_id(meta), output_nr)
 }
 
 #[derive(Clone, Copy)]
@@ -3771,6 +3862,10 @@ mod tests {
             outputs.iter().map(Tensor::output_nr).collect::<Vec<_>>(),
             [0, 1, 2]
         );
+        assert!(Arc::ptr_eq(
+            outputs[0].autograd.as_ref().unwrap(),
+            outputs[1].autograd.as_ref().unwrap()
+        ));
         for (index, output) in outputs.iter().enumerate() {
             assert!(output.shares_storage_with(&source));
             assert_eq!(output.shape(), [2]);
@@ -3816,6 +3911,20 @@ mod tests {
             Tensor::zeros([]).unwrap().unbind_first_dimension(),
             Err(TensorError::InvalidScalarIndex)
         );
+
+        let signed_source = Tensor::from_vec(vec![1.0, -0.0], [2, 1])
+            .unwrap()
+            .with_requires_grad(true);
+        let signed_outputs = signed_source.unbind_first_dimension().unwrap();
+        signed_outputs[0]
+            .mul(&signed_outputs[1])
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        let gradient = signed_source.grad().unwrap().unwrap();
+        assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
+        assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
     }
 
     #[test]
