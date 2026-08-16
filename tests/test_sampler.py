@@ -108,12 +108,16 @@ class SamplerTests(unittest.TestCase):
                 "ConcatDataset",
                 "Dataset",
                 "Sampler",
+                "SequentialSampler",
                 "StackDataset",
                 "Subset",
                 "TensorDataset",
             ],
         )
-        self.assertEqual(sampler_module.__all__, ["BatchSampler", "Sampler"])
+        self.assertEqual(
+            sampler_module.__all__,
+            ["BatchSampler", "Sampler", "SequentialSampler"],
+        )
 
         data_namespace = {}
         sampler_namespace = {}
@@ -127,7 +131,6 @@ class SamplerTests(unittest.TestCase):
         unsupported = (
             "DataLoader",
             "RandomSampler",
-            "SequentialSampler",
             "SubsetRandomSampler",
             "WeightedRandomSampler",
         )

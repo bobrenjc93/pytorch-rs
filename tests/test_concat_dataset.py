@@ -227,6 +227,7 @@ class ConcatDatasetTests(unittest.TestCase):
                 "ConcatDataset",
                 "Dataset",
                 "Sampler",
+                "SequentialSampler",
                 "StackDataset",
                 "Subset",
                 "TensorDataset",
