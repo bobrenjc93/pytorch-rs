@@ -22,14 +22,11 @@ use crate::{
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, dtype_object},
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
+    python_memory_format::{PyMemoryFormat, memory_format_object},
     python_variable_functions::create_variable_functions_class,
 };
 
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
-static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
-static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
-static CHANNELS_LAST: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
-static CHANNELS_LAST_3D: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static TORCH_FUNCTION_DESCRIPTOR_CALLER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -231,40 +228,6 @@ const ADJOINT_SCALAR_WARNING: &CStr =
     c"adjoint() is deprecated on 0-D tensors. Consider using x.conj().";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod.";
-
-/// Python memory-format descriptor backed by a native [`MemoryFormat`].
-#[pyclass(
-    name = "memory_format",
-    module = "torch_rs",
-    frozen,
-    eq,
-    hash,
-    skip_from_py_object
-)]
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct PyMemoryFormat {
-    inner: MemoryFormat,
-}
-
-#[pymethods]
-impl PyMemoryFormat {
-    fn __repr__(&self) -> String {
-        format!("torch.{}", self.inner)
-    }
-
-    fn __str__(&self) -> String {
-        self.__repr__()
-    }
-
-    fn __reduce__(&self) -> &'static str {
-        match self.inner {
-            MemoryFormat::Preserve => "torch.preserve_format",
-            MemoryFormat::Contiguous => "torch.contiguous_format",
-            MemoryFormat::ChannelsLast => "torch.channels_last",
-            MemoryFormat::ChannelsLast3d => "torch.channels_last_3d",
-        }
-    }
-}
 
 fn device_ordinal(device: Device) -> PyResult<i64> {
     device
@@ -3132,26 +3095,6 @@ fn strided_object(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
     Ok(&layout_objects(py)?.strided)
 }
 
-fn memory_format_object(
-    py: Python<'_>,
-    memory_format: MemoryFormat,
-) -> PyResult<&'static Py<PyMemoryFormat>> {
-    let object = match memory_format {
-        MemoryFormat::Preserve => &PRESERVE_FORMAT,
-        MemoryFormat::Contiguous => &CONTIGUOUS_FORMAT,
-        MemoryFormat::ChannelsLast => &CHANNELS_LAST,
-        MemoryFormat::ChannelsLast3d => &CHANNELS_LAST_3D,
-    };
-    object.get_or_try_init(py, || {
-        Py::new(
-            py,
-            PyMemoryFormat {
-                inner: memory_format,
-            },
-        )
-    })
-}
-
 fn warn_once(py: Python<'_>, emitted: &AtomicBool, message: &CStr) -> PyResult<()> {
     if emitted.swap(true, Ordering::Relaxed) {
         return Ok(());
@@ -3167,7 +3110,7 @@ fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResu
         return Ok(MemoryFormat::Preserve);
     }
     if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
-        return Ok(memory_format.try_borrow()?.inner);
+        return Ok(memory_format.try_borrow()?.inner());
     }
 
     let type_name = memory_format.get_type().name()?;
@@ -3178,7 +3121,7 @@ fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResu
 
 fn parse_is_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryFormat> {
     if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
-        return Ok(memory_format.try_borrow()?.inner);
+        return Ok(memory_format.try_borrow()?.inner());
     }
 
     let type_name = memory_format.get_type().name()?;
@@ -3189,7 +3132,7 @@ fn parse_is_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResu
 
 fn parse_contiguous_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryFormat> {
     if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
-        return Ok(memory_format.try_borrow()?.inner);
+        return Ok(memory_format.try_borrow()?.inner());
     }
 
     let type_name = memory_format.get_type().name()?;
@@ -3203,7 +3146,7 @@ fn parse_float_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<Memor
         return Ok(MemoryFormat::Preserve);
     }
     if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
-        return Ok(memory_format.try_borrow()?.inner);
+        return Ok(memory_format.try_borrow()?.inner());
     }
 
     let type_name = memory_format.get_type().name()?;
@@ -3217,7 +3160,7 @@ fn parse_cpu_memory_format(memory_format: &Bound<'_, PyAny>) -> PyResult<MemoryF
         return Ok(MemoryFormat::Preserve);
     }
     if let Ok(memory_format) = memory_format.cast::<PyMemoryFormat>() {
-        return Ok(memory_format.try_borrow()?.inner);
+        return Ok(memory_format.try_borrow()?.inner());
     }
 
     let type_name = memory_format.get_type().name()?;
