@@ -570,6 +570,15 @@ impl Tensor {
         self.dtype().is_signed()
     }
 
+    /// Reports whether this tensor uses page-locked host memory.
+    ///
+    /// Every currently supported tensor uses ordinary pageable CPU storage,
+    /// so this metadata query does not inspect the backing storage.
+    #[must_use]
+    pub const fn is_pinned(&self) -> bool {
+        false
+    }
+
     /// Reports whether this tensor's device is the CPU.
     #[must_use]
     pub fn is_cpu(&self) -> bool {

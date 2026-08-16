@@ -622,6 +622,60 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nReturns true if this tensor resides in pinned memory.\nBy default, the device pinned memory on will be the current :ref:`accelerator<accelerators>`.\n"]
+    // PyTorch retains a variadic native descriptor for its deprecated device
+    // argument. Match that descriptor metadata while exposing only the stable
+    // no-argument query supported by this pageable CPU storage model.
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn is_pinned(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        if args.len() > 1 {
+            return Err(PyTypeError::new_err(format!(
+                "is_pinned() takes from 0 to 1 positional arguments but {} were given",
+                args.len()
+            )));
+        }
+        if let Some(kwargs) = kwargs {
+            for (key, _) in kwargs {
+                let key = key.extract::<String>()?;
+                if key != "device" {
+                    return Err(PyTypeError::new_err(format!(
+                        "is_pinned() got an unexpected keyword argument '{key}'"
+                    )));
+                }
+            }
+        }
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(
+                "is_pinned() takes 0 positional arguments but 1 was given",
+            ));
+        }
+        if kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
+            return Err(PyTypeError::new_err(
+                "is_pinned() got an unexpected keyword argument 'device'",
+            ));
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "is_pinned",
+            "torch.Tensor.is_pinned",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        tensor.try_borrow()?.inner.is_pinned().into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nis_complex() -> bool\n\nReturns True if the data type of :attr:`self` is a complex data type.\n"]
     #[pyo3(text_signature = None)]
     fn is_complex(slf: &Bound<'_, Self>) -> PyResult<bool> {
