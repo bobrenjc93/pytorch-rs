@@ -704,11 +704,18 @@ impl PyTensorBase {
     // derives `($self, /)` from that descriptor shape, while older runtimes
     // leave `__text_signature__` unset; PyTorch follows the same split.
     #[pyo3(text_signature = None)]
-    fn is_neg(_slf: &Bound<'_, Self>) -> bool {
+    fn is_neg(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::Method("is_neg"))?
+        {
+            return Ok(result);
+        }
+
         // Lazy negative views are unsupported, and eager negation does not set
         // the negative bit. Every reachable Tensor can therefore report a
         // clear bit without borrowing storage or touching its autograd graph.
-        false
+        false.into_py_any(slf.py())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
