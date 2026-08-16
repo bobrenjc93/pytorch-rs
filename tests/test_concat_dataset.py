@@ -224,8 +224,10 @@ class ConcatDatasetTests(unittest.TestCase):
             data_module.__all__,
             [
                 "BatchSampler",
+                "ChainDataset",
                 "ConcatDataset",
                 "Dataset",
+                "IterableDataset",
                 "Sampler",
                 "SequentialSampler",
                 "StackDataset",
@@ -235,9 +237,17 @@ class ConcatDatasetTests(unittest.TestCase):
         )
         self.assertEqual(
             dataset_module.__all__,
-            ["Dataset", "TensorDataset", "StackDataset", "ConcatDataset", "Subset"],
+            [
+                "Dataset",
+                "IterableDataset",
+                "TensorDataset",
+                "StackDataset",
+                "ConcatDataset",
+                "ChainDataset",
+                "Subset",
+            ],
         )
-        for unsupported in ("DataLoader", "IterableDataset"):
+        for unsupported in ("DataLoader",):
             self.assertFalse(hasattr(data_module, unsupported))
             self.assertFalse(hasattr(dataset_module, unsupported))
 
@@ -245,7 +255,6 @@ class ConcatDatasetTests(unittest.TestCase):
         exec("from torch_rs.utils.data import *", wildcard_namespace)
         self.assertIs(wildcard_namespace["ConcatDataset"], ConcatDataset)
         self.assertNotIn("DataLoader", wildcard_namespace)
-        self.assertNotIn("IterableDataset", wildcard_namespace)
 
         signature = inspect.signature(ConcatDataset)
         self.assertEqual(tuple(signature.parameters), ("datasets",))

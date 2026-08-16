@@ -2849,6 +2849,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 69.6
       }
+    },
+    {
+      "key": "pr:191",
+      "recordedAt": "2026-08-16T19:53:08.460Z",
+      "label": "PR #191",
+      "kind": "leaf",
+      "prNumber": 191,
+      "title": "Add IterableDataset and lazy ChainDataset only",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 69.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 49.3,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 69.6
+      }
     }
   ]
 }

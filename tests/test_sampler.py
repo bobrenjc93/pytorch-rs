@@ -105,8 +105,10 @@ class SamplerTests(unittest.TestCase):
             data_module.__all__,
             [
                 "BatchSampler",
+                "ChainDataset",
                 "ConcatDataset",
                 "Dataset",
+                "IterableDataset",
                 "Sampler",
                 "SequentialSampler",
                 "StackDataset",

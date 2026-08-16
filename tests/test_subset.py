@@ -164,8 +164,10 @@ class SubsetTests(unittest.TestCase):
             data_module.__all__,
             [
                 "BatchSampler",
+                "ChainDataset",
                 "ConcatDataset",
                 "Dataset",
+                "IterableDataset",
                 "Sampler",
                 "SequentialSampler",
                 "StackDataset",
@@ -175,7 +177,15 @@ class SubsetTests(unittest.TestCase):
         )
         self.assertEqual(
             dataset_module.__all__,
-            ["Dataset", "TensorDataset", "StackDataset", "ConcatDataset", "Subset"],
+            [
+                "Dataset",
+                "IterableDataset",
+                "TensorDataset",
+                "StackDataset",
+                "ConcatDataset",
+                "ChainDataset",
+                "Subset",
+            ],
         )
 
         wildcard_namespace = {}

@@ -190,8 +190,10 @@ class SubsetReferenceTests(unittest.TestCase):
         expected = expected_data.Subset
         supported = {
             "BatchSampler",
+            "ChainDataset",
             "ConcatDataset",
             "Dataset",
+            "IterableDataset",
             "Sampler",
             "SequentialSampler",
             "StackDataset",
