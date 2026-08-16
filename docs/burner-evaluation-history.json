@@ -2641,6 +2641,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68.5
       }
+    },
+    {
+      "key": "pr:176",
+      "recordedAt": "2026-08-16T11:50:44.155Z",
+      "label": "PR #176",
+      "kind": "leaf",
+      "prNumber": 176,
+      "title": "Make Tensor.is_cpu honor TorchFunctionMode",
+      "scores": {
+        "eval_7af648fb": 99.3,
+        "eval_8417a4a8": 67.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 47.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }
