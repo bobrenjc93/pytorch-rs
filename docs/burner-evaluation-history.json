@@ -2305,6 +2305,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 65
       }
+    },
+    {
+      "key": "pr:155",
+      "recordedAt": "2026-08-16T00:56:11.650Z",
+      "label": "PR #155",
+      "kind": "leaf",
+      "prNumber": 155,
+      "title": "Expose the named Tensor.matmul method",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 65.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 45,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 65
+      }
     }
   ]
 }
