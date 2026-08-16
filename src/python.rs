@@ -276,6 +276,18 @@ impl PyTensorBase {
         Ok(tensor.inner.is_quantized())
     }
 
+    #[getter]
+    fn is_mkldnn(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("is_mkldnn"))?
+        {
+            return Ok(result);
+        }
+
+        tensor.try_borrow()?.inner.is_mkldnn().into_py_any(slf.py())
+    }
+
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor uses sparse COO storage layout, ``False`` otherwise.\n"]

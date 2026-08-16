@@ -2513,6 +2513,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 67
       }
+    },
+    {
+      "key": "pr:168",
+      "recordedAt": "2026-08-16T07:35:08.521Z",
+      "label": "PR #168",
+      "kind": "leaf",
+      "prNumber": 168,
+      "title": "Expose read-only Tensor.is_mkldnn metadata",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 67.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 46.2,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 67
+      }
     }
   ]
 }
