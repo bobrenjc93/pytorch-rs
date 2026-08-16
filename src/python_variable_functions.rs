@@ -14,7 +14,8 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     adjoint_variable_function, get_device_variable_function, matmul_variable_function,
-    permute_variable_function, positive_variable_function, scalar_tensor_variable_function,
+    movedim_variable_function, permute_variable_function, positive_variable_function,
+    scalar_tensor_variable_function,
 };
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
@@ -44,6 +45,50 @@ Example::
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
 
 const PERMUTE_DOC: &std::ffi::CStr = c"\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n";
+
+const MOVEDIM_DOC: &std::ffi::CStr = cr"
+movedim(input, source, destination) -> Tensor
+
+Moves the dimension(s) of :attr:`input` at the position(s) in :attr:`source`
+to the position(s) in :attr:`destination`.
+
+Other dimensions of :attr:`input` that are not explicitly moved remain in
+their original order and appear at the positions not specified in :attr:`destination`.
+
+Args:
+    input (Tensor): the input tensor.
+    source (int or tuple of ints): Original positions of the dims to move. These must be unique.
+    destination (int or tuple of ints): Destination positions for each of the original dims. These must also be unique.
+
+Examples::
+
+    >>> t = torch.randn(3,2,1)
+    >>> t
+    tensor([[[-0.3362],
+            [-0.8437]],
+
+            [[-0.9627],
+            [ 0.1727]],
+
+            [[ 0.5173],
+            [-0.1398]]])
+    >>> torch.movedim(t, 1, 0).shape
+    torch.Size([2, 3, 1])
+    >>> torch.movedim(t, 1, 0)
+    tensor([[[-0.3362],
+            [-0.9627],
+            [ 0.5173]],
+
+            [[-0.8437],
+            [ 0.1727],
+            [-0.1398]]])
+    >>> torch.movedim(t, (1, 2), (0, 1)).shape
+    torch.Size([2, 1, 3])
+    >>> torch.movedim(t, (1, 2), (0, 1))
+    tensor([[[-0.3362, -0.9627,  0.5173]],
+
+            [[-0.8437,  0.1727, -0.1398]]])
+";
 
 const MATMUL_DOC: &std::ffi::CStr = cr"
 matmul(input, other, *, out=None) -> Tensor
@@ -173,6 +218,7 @@ variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_funct
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
+variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
 
 /// Creates the immutable owner for exported `_VariableFunctionsClass` methods.
@@ -235,6 +281,16 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
                 permute_callback
             ),
             PERMUTE_DOC,
+        )
+        .flags(ffi::METH_STATIC)
+        .into_raw(),
+        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
+            c"movedim",
+            pyo3::impl_::trampoline::get_trampoline_function!(
+                cfunction_with_keywords,
+                movedim_callback
+            ),
+            MOVEDIM_DOC,
         )
         .flags(ffi::METH_STATIC)
         .into_raw(),

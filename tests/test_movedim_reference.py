@@ -1,4 +1,5 @@
 import inspect
+import pickle
 import re
 import sys
 import types
@@ -549,6 +550,402 @@ class TensorMovedimReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.mode_contract(torch),
             self.mode_contract(reference_torch),
+        )
+
+    def test_top_level_integer_views_and_autograd_match_pytorch_2_13(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        actual_base = torch.tensor(values.tolist())
+        expected_base = reference_torch.tensor(values)
+        sources = (
+            (
+                "scalar",
+                torch.tensor(2.5),
+                reference_torch.tensor(2.5),
+                0,
+                -1,
+            ),
+            (
+                "empty",
+                torch.zeros((2, 0, 3)),
+                reference_torch.zeros((2, 0, 3)),
+                -1,
+                0,
+            ),
+            (
+                "offset",
+                actual_base.transpose(0, 2)[1],
+                expected_base.transpose(0, 2)[1],
+                -1,
+                0,
+            ),
+            (
+                "noncontiguous",
+                actual_base.transpose(0, 2),
+                expected_base.transpose(0, 2),
+                0,
+                2,
+            ),
+        )
+        for case, actual_source, expected_source, source, destination in sources:
+            for style in range(4):
+                if style == 0:
+                    actual = torch.movedim(actual_source, source, destination)
+                    expected = reference_torch.movedim(
+                        expected_source, source, destination
+                    )
+                elif style == 1:
+                    actual = torch.movedim(
+                        actual_source,
+                        source=source,
+                        destination=destination,
+                    )
+                    expected = reference_torch.movedim(
+                        expected_source,
+                        source=source,
+                        destination=destination,
+                    )
+                elif style == 2:
+                    actual = torch.movedim(
+                        input=actual_source,
+                        source=source,
+                        destination=destination,
+                    )
+                    expected = reference_torch.movedim(
+                        input=expected_source,
+                        source=source,
+                        destination=destination,
+                    )
+                else:
+                    actual = torch.movedim(
+                        destination=destination,
+                        input=actual_source,
+                        source=source,
+                    )
+                    expected = reference_torch.movedim(
+                        destination=destination,
+                        input=expected_source,
+                        source=source,
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    actual_source=actual_source,
+                    expected_source=expected_source,
+                    case=f"top-level-{case}-{style}",
+                )
+
+        weights = np.linspace(-2.0, 3.0, num=24, dtype=np.float32).reshape(
+            4, 2, 3
+        )
+        actual_leaf = torch.tensor(values.tolist(), requires_grad=True)
+        expected_leaf = reference_torch.tensor(values, requires_grad=True)
+        actual = torch.movedim(actual_leaf, -1, 0)
+        expected = reference_torch.movedim(expected_leaf, -1, 0)
+        self.assert_matches(
+            actual,
+            expected,
+            actual_source=actual_leaf,
+            expected_source=expected_leaf,
+            case="top-level-autograd",
+        )
+        (actual * torch.tensor(weights.tolist())).sum().backward()
+        (expected * reference_torch.tensor(weights)).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad), expected_leaf.grad.detach().cpu().numpy()
+        )
+
+        actual_empty = torch.zeros((2, 0, 3), requires_grad=True)
+        expected_empty = reference_torch.zeros((2, 0, 3), requires_grad=True)
+        torch.movedim(actual_empty, 0, -1).sum().backward()
+        reference_torch.movedim(expected_empty, 0, -1).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_empty.grad),
+            expected_empty.grad.detach().cpu().numpy(),
+        )
+
+        with torch.no_grad():
+            actual_untracked = torch.movedim(
+                input=actual_leaf, source=0, destination=1
+            )
+        with reference_torch.no_grad():
+            expected_untracked = reference_torch.movedim(
+                input=expected_leaf, source=0, destination=1
+            )
+        self.assertEqual(
+            (actual_untracked.requires_grad, actual_untracked.is_leaf),
+            (expected_untracked.requires_grad, expected_untracked.is_leaf),
+        )
+
+    def test_top_level_integer_binding_and_errors_match_pytorch_2_13(self):
+        class IntegerSubclass(int):
+            pass
+
+        class CustomIndex:
+            def __index__(self):
+                return 0
+
+        actual = torch.zeros((2, 3, 4))
+        expected = reference_torch.zeros((2, 3, 4))
+        for alias in ("input", "x", "a", "x1"):
+            actual_result = torch.movedim(
+                **{alias: actual, "source": np.int64(0), "destination": -1}
+            )
+            expected_result = reference_torch.movedim(
+                **{
+                    alias: expected,
+                    "source": np.int64(0),
+                    "destination": -1,
+                }
+            )
+            self.assert_matches(
+                actual_result,
+                expected_result,
+                actual_source=actual,
+                expected_source=expected,
+                case=f"top-level-alias-{alias}",
+            )
+
+        actual_integer = torch.movedim(
+            actual, IntegerSubclass(0), np.uint64(2)
+        )
+        expected_integer = reference_torch.movedim(
+            expected, IntegerSubclass(0), np.uint64(2)
+        )
+        self.assert_matches(
+            actual_integer,
+            expected_integer,
+            actual_source=actual,
+            expected_source=expected,
+            case="top-level-integer-subclasses",
+        )
+
+        cases = (
+            (lambda: torch.movedim(), lambda: reference_torch.movedim()),
+            (lambda: torch.movedim(actual), lambda: reference_torch.movedim(expected)),
+            (
+                lambda: torch.movedim(actual, 0),
+                lambda: reference_torch.movedim(expected, 0),
+            ),
+            (
+                lambda: torch.movedim(actual, 0, 1, 2),
+                lambda: reference_torch.movedim(expected, 0, 1, 2),
+            ),
+            (
+                lambda: torch.movedim(source=0, destination=1),
+                lambda: reference_torch.movedim(source=0, destination=1),
+            ),
+            (
+                lambda: torch.movedim(actual, destination=1),
+                lambda: reference_torch.movedim(expected, destination=1),
+            ),
+            (
+                lambda: torch.movedim(actual, 0, source=1),
+                lambda: reference_torch.movedim(expected, 0, source=1),
+            ),
+            (
+                lambda: torch.movedim(actual, 0, 1, extra=True),
+                lambda: reference_torch.movedim(expected, 0, 1, extra=True),
+            ),
+            (lambda: torch.movedim(1, 0, 1), lambda: reference_torch.movedim(1, 0, 1)),
+            (
+                lambda: torch.movedim(actual, True, 0),
+                lambda: reference_torch.movedim(expected, True, 0),
+            ),
+            (
+                lambda: torch.movedim(actual, CustomIndex(), 0),
+                lambda: reference_torch.movedim(expected, CustomIndex(), 0),
+            ),
+            (
+                lambda: torch.movedim(actual, 1.5, 0),
+                lambda: reference_torch.movedim(expected, 1.5, 0),
+            ),
+            (
+                lambda: torch.movedim(actual, 0, "1"),
+                lambda: reference_torch.movedim(expected, 0, "1"),
+            ),
+            (
+                lambda: torch.movedim(actual, 2**100, 0),
+                lambda: reference_torch.movedim(expected, 2**100, 0),
+            ),
+            (
+                lambda: torch.movedim(actual, 0, np.uint64(2**63)),
+                lambda: reference_torch.movedim(
+                    expected, 0, np.uint64(2**63)
+                ),
+            ),
+            (
+                lambda: torch.movedim(actual, 3, 0),
+                lambda: reference_torch.movedim(expected, 3, 0),
+            ),
+            (
+                lambda: torch.movedim(actual, 0, -4),
+                lambda: reference_torch.movedim(expected, 0, -4),
+            ),
+            (
+                lambda: torch.movedim(actual, 0, **{"bad\0tail": 1}),
+                lambda: reference_torch.movedim(
+                    expected, 0, **{"bad\0tail": 1}
+                ),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
+    def top_level_callable_contract(self, module):
+        function = module.movedim
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.movedim is function,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature_error": signature_error,
+            "all_count": module.__all__.count("movedim"),
+            "has_moveaxis": hasattr(module, "moveaxis"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "owner_not_top_level": not hasattr(module, "_VariableFunctionsClass"),
+            "wildcard_identity": wildcard_namespace["movedim"] is function,
+            "wildcard_has_moveaxis": "moveaxis" in wildcard_namespace,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
+
+    def test_top_level_callable_contract_matches_pytorch_2_13(self):
+        actual = self.top_level_callable_contract(torch)
+        expected = self.top_level_callable_contract(reference_torch)
+        self.assertFalse(actual.pop("has_moveaxis"))
+        self.assertTrue(expected.pop("has_moveaxis"))
+        self.assertFalse(actual.pop("wildcard_has_moveaxis"))
+        self.assertTrue(expected.pop("wildcard_has_moveaxis"))
+        self.assertEqual(actual, expected)
+
+    def top_level_mode_contract(self, module):
+        tensor = module.zeros((2, 3, 4), dtype=module.float32)
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        positional = RecordingMode(marker)
+        with positional:
+            positional_result = module.movedim(tensor, 0, -1)
+        positional_call = positional.calls[0]
+
+        keyword = RecordingMode(marker)
+        with keyword:
+            keyword_result = module.movedim(
+                destination=-1, input=tensor, source=0
+            )
+        keyword_call = keyword.calls[0]
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = module.movedim(
+                    tensor, source=0, destination=-1
+                )
+
+        invalid = RecordingMode(marker)
+        try:
+            with invalid:
+                module.movedim(tensor, True, 0)
+        except Exception as raised:
+            invalid_error = type(raised).__name__, str(raised)
+        else:
+            invalid_error = None
+
+        deferred = RecordingMode(marker)
+        with deferred:
+            deferred_result = module.movedim(tensor, 2**100, -4)
+
+        declining = RecordingMode(NotImplemented)
+        lower = RecordingMode(marker)
+        try:
+            with lower:
+                with declining:
+                    module.movedim(tensor, 0, 1)
+        except Exception as raised:
+            declining_error = (
+                type(raised).__name__,
+                re.sub(r"0x[0-9a-f]+", "0xADDR", str(raised)),
+            )
+        else:
+            declining_error = None
+
+        positional_function, positional_types, positional_args, positional_kwargs = (
+            positional_call
+        )
+        keyword_function, keyword_types, keyword_args, keyword_kwargs = keyword_call
+        return {
+            "positional_intercepted": positional_result is marker,
+            "positional_function": positional_function is module.movedim,
+            "positional_types": positional_types,
+            "positional_receiver": positional_args[0] is tensor,
+            "positional_metadata": positional_args[1:],
+            "positional_kwargs": positional_kwargs,
+            "keyword_intercepted": keyword_result is marker,
+            "keyword_function": keyword_function is module.movedim,
+            "keyword_types": keyword_types,
+            "keyword_args": keyword_args,
+            "keyword_keys": tuple(keyword_kwargs),
+            "keyword_receiver": keyword_kwargs["input"] is tensor,
+            "keyword_source": keyword_kwargs["source"],
+            "keyword_destination": keyword_kwargs["destination"],
+            "forwarding_order": order,
+            "forwarded_shape": tuple(forwarded.shape),
+            "forwarded_stride": forwarded.stride(),
+            "forwarded_alias": forwarded.data_ptr() == tensor.data_ptr(),
+            "invalid_error": invalid_error,
+            "invalid_calls": len(invalid.calls),
+            "deferred_intercepted": deferred_result is marker,
+            "deferred_calls": len(deferred.calls),
+            "declining_error": declining_error,
+            "declining_calls": len(declining.calls),
+            "lower_calls": len(lower.calls),
+        }
+
+    def test_top_level_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.top_level_mode_contract(torch),
+            self.top_level_mode_contract(reference_torch),
         )
 
 
