@@ -207,6 +207,14 @@ class TensorMovedimReferenceTests(unittest.TestCase):
             def __index__(self):
                 raise OverflowError("user overflow")
 
+        class SpoofedInteger:
+            @property
+            def __class__(self):
+                return np.int64
+
+            def __index__(self):
+                raise AssertionError("spoofed integers must not be converted")
+
         actual = torch.zeros((2, 3, 4))
         expected = reference_torch.zeros((2, 3, 4))
         accepted = (
@@ -260,10 +268,22 @@ class TensorMovedimReferenceTests(unittest.TestCase):
                 lambda: actual.movedim(2**100, UserOverflow(0)),
                 lambda: expected.movedim(2**100, UserOverflow(0)),
             ),
+            (
+                lambda: actual.movedim(SpoofedInteger(), 2),
+                lambda: expected.movedim(SpoofedInteger(), 2),
+            ),
+            (
+                lambda: actual.movedim(0, SpoofedInteger()),
+                lambda: expected.movedim(0, SpoofedInteger()),
+            ),
             (lambda: actual.movedim(3, 0), lambda: expected.movedim(3, 0)),
             (lambda: actual.movedim(-4, 0), lambda: expected.movedim(-4, 0)),
             (lambda: actual.movedim(0, 3), lambda: expected.movedim(0, 3)),
             (lambda: actual.movedim(0, -4), lambda: expected.movedim(0, -4)),
+            (
+                lambda: actual.movedim(0, **{"bad\0tail": 1}),
+                lambda: expected.movedim(0, **{"bad\0tail": 1}),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(error_case=case):
@@ -306,6 +326,74 @@ class TensorMovedimReferenceTests(unittest.TestCase):
         self.assert_matches(actual, expected, case="stateful-conversion")
         self.assertEqual(actual_state["calls"], expected_state["calls"])
         self.assertEqual(actual_state["calls"], ["destination", "source"])
+
+    def keyword_subclass_contract(self, module):
+        tensor = module.zeros((2, 3, 4), dtype=module.float32)
+
+        class PlainKeyword(str):
+            pass
+
+        class TrueKeyword(str):
+            def __eq__(self, other):
+                return True
+
+            __hash__ = str.__hash__
+
+        class FalseKeyword(str):
+            def __eq__(self, other):
+                return False
+
+            __hash__ = str.__hash__
+
+        class RaisingKeyword(str):
+            def __eq__(self, other):
+                raise RuntimeError("keyword equality failure")
+
+            __hash__ = str.__hash__
+
+        class MismatchedHashKeyword(str):
+            def __eq__(self, other):
+                return True
+
+            def __hash__(self):
+                return 0
+
+        def outcome(call):
+            try:
+                result = call()
+            except Exception as error:
+                return type(error).__name__, str(error)
+            return "ok", tuple(result.shape), result.stride()
+
+        return tuple(
+            outcome(call)
+            for call in (
+                lambda: tensor.movedim(
+                    **{PlainKeyword("source"): 0, "destination": 1}
+                ),
+                lambda: tensor.movedim(
+                    **{TrueKeyword("source"): 0, "destination": 1}
+                ),
+                lambda: tensor.movedim(
+                    **{FalseKeyword("source"): 0, "destination": 1}
+                ),
+                lambda: tensor.movedim(
+                    **{RaisingKeyword("source"): 0, "destination": 1}
+                ),
+                lambda: tensor.movedim(
+                    **{MismatchedHashKeyword("source"): 0, "destination": 1}
+                ),
+                lambda: tensor.movedim(
+                    **{FalseKeyword("unknown"): 0, "other": 1}
+                ),
+            )
+        )
+
+    def test_keyword_subclass_binding_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.keyword_subclass_contract(torch),
+            self.keyword_subclass_contract(reference_torch),
+        )
 
     def callable_contract(self, module):
         tensor = module.zeros((2, 3, 4), dtype=module.float32)

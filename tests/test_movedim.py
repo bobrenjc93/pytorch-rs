@@ -1,7 +1,9 @@
 import enum
 import inspect
 import re
+import subprocess
 import sys
+import textwrap
 import types
 import unittest
 
@@ -333,6 +335,138 @@ class TensorMovedimTests(unittest.TestCase):
                 with self.assertRaises(TypeError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), expected)
+
+        with self.assertRaises(TypeError) as raised:
+            tensor.movedim(0, **{"bad\0tail": 1})
+        self.assertEqual(
+            str(raised.exception),
+            "movedim() received an invalid combination of arguments - got (int, bad",
+        )
+
+    def test_keyword_subclasses_cannot_panic_or_misbind(self):
+        tensor = torch.zeros((2, 3, 4))
+
+        class PlainKeyword(str):
+            pass
+
+        class TrueKeyword(str):
+            def __eq__(self, other):
+                return True
+
+            __hash__ = str.__hash__
+
+        class FalseKeyword(str):
+            def __eq__(self, other):
+                return False
+
+            __hash__ = str.__hash__
+
+        class RaisingKeyword(str):
+            def __eq__(self, other):
+                raise RuntimeError("keyword equality failure")
+
+            __hash__ = str.__hash__
+
+        class MismatchedHashKeyword(str):
+            def __eq__(self, other):
+                return True
+
+            def __hash__(self):
+                return 0
+
+        for keyword_type in (PlainKeyword, TrueKeyword):
+            with self.subTest(keyword_type=keyword_type.__name__, outcome="accepted"):
+                moved = tensor.movedim(
+                    **{keyword_type("source"): 0, "destination": 1}
+                )
+                self.assertEqual(moved.shape, (3, 2, 4))
+                self.assertEqual(moved.stride(), (4, 12, 1))
+
+        for keyword_type in (
+            FalseKeyword,
+            RaisingKeyword,
+            MismatchedHashKeyword,
+        ):
+            with self.subTest(keyword_type=keyword_type.__name__, outcome="rejected"):
+                with self.assertRaises(TypeError) as raised:
+                    tensor.movedim(
+                        **{keyword_type("source"): 0, "destination": 1}
+                    )
+                self.assertIn(
+                    "movedim() received an invalid combination of arguments",
+                    str(raised.exception),
+                )
+
+        with self.assertRaises(TypeError):
+            tensor.movedim(**{FalseKeyword("unknown"): 0, "other": 1})
+
+    def test_spoofed_numpy_integer_class_is_rejected_without_indexing(self):
+        tensor = torch.zeros((2, 3, 4))
+        calls = []
+
+        class SpoofedInteger:
+            @property
+            def __class__(self):
+                return np.int64
+
+            def __index__(self):
+                calls.append("index")
+                return 0
+
+        for source, destination in (
+            (SpoofedInteger(), 2),
+            (0, SpoofedInteger()),
+        ):
+            with self.subTest(source=type(source).__name__, destination=type(destination).__name__):
+                with self.assertRaises(TypeError):
+                    tensor.movedim(source, destination)
+        self.assertEqual(calls, [])
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_keyword_error_returns_bad_alloc_instead_of_aborting(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+
+            import torch_rs as torch
+
+            tensor = torch.zeros((2, 3, 4))
+            keywords = {
+                "a" * (1024 * 1024): 0,
+                "b" * (1024 * 1024): 1,
+            }
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 4 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            try:
+                tensor.movedim(**keywords)
+            except RuntimeError as error:
+                assert str(error) == "std::bad_alloc", repr(error)
+            else:
+                raise AssertionError("the constrained call unexpectedly succeeded")
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode == 77:
+            self.skipTest("process hard address-space limit is too low")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_sequence_and_top_level_overloads_remain_out_of_scope(self):
         tensor = torch.zeros((2, 3, 4))
