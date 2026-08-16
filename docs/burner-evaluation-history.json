@@ -2753,6 +2753,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68.5
       }
+    },
+    {
+      "key": "pr:184",
+      "recordedAt": "2026-08-16T15:29:23.445Z",
+      "label": "PR #184",
+      "kind": "leaf",
+      "prNumber": 184,
+      "title": "Expose Tensor.dense_dim and Tensor.sparse_dim metadata",
+      "scores": {
+        "eval_7af648fb": 99.7,
+        "eval_8417a4a8": 68.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 48.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }
