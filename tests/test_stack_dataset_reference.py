@@ -317,6 +317,7 @@ class StackDatasetReferenceTests(unittest.TestCase):
         actual = actual_data.StackDataset
         expected = expected_data.StackDataset
         supported = {
+            "BatchSampler",
             "ConcatDataset",
             "Dataset",
             "Sampler",
