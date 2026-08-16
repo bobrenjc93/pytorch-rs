@@ -354,6 +354,7 @@ class ChainDatasetReferenceTests(unittest.TestCase):
             "BatchSampler",
             "ChainDataset",
             "ConcatDataset",
+            "DataChunk",
             "Dataset",
             "IterableDataset",
             "Sampler",
