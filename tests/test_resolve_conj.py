@@ -1,4 +1,6 @@
 import inspect
+import pickle
+import re
 import sys
 import types
 import unittest
@@ -13,6 +15,25 @@ else:
 
 
 METHOD_DOC = "\nresolve_conj() -> Tensor\n\nSee :func:`torch.resolve_conj`\n"
+FUNCTION_DOC = (
+    "\nresolve_conj(input) -> Tensor\n\n"
+    "Returns a new tensor with materialized conjugation if :attr:`input`'s "
+    "conjugate bit is set to `True`,\n"
+    "else returns :attr:`input`. The output tensor will always have its conjugate "
+    "bit set to `False`.\n\n"
+    "Args:\n"
+    "    input (Tensor): the input tensor.\n\n"
+    "Example::\n\n"
+    "    >>> x = torch.tensor([-1 + 1j, -2 + 2j, 3 - 3j])\n"
+    "    >>> y = x.conj()\n"
+    "    >>> y.is_conj()\n"
+    "    True\n"
+    "    >>> z = y.resolve_conj()\n"
+    "    >>> z\n"
+    "    tensor([-1 - 1j, -2 - 2j, 3 + 3j])\n"
+    "    >>> z.is_conj()\n"
+    "    False\n"
+)
 
 
 class TensorResolveConjTests(unittest.TestCase):
@@ -72,6 +93,15 @@ class TensorResolveConjTests(unittest.TestCase):
             return None
         return np.asarray(tensor.detach()).reshape(-1).view(np.uint32).copy()
 
+    def top_level_calls(self, tensor):
+        return (
+            ("positional", torch.resolve_conj(tensor)),
+            ("input", torch.resolve_conj(input=tensor)),
+            ("x", torch.resolve_conj(x=tensor)),
+            ("a", torch.resolve_conj(a=tensor)),
+            ("x1", torch.resolve_conj(x1=tensor)),
+        )
+
     def test_clear_conjugate_bit_resolves_to_exact_receiver_without_changes(self):
         leaf, tracked, cases = self.tensor_cases()
         for case, tensor in cases:
@@ -115,6 +145,57 @@ class TensorResolveConjTests(unittest.TestCase):
         gradient = leaf.grad
         self.assertIs(leaf.resolve_conj(), leaf)
         self.assertIs(leaf.grad, gradient)
+
+    def test_top_level_clear_conjugate_bit_is_the_same_exact_identity(self):
+        leaf, tracked, cases = self.tensor_cases()
+        for case, tensor in cases:
+            metadata = (
+                tensor.shape,
+                tensor.stride(),
+                tensor.storage_offset(),
+                tensor.data_ptr(),
+                tensor.dtype,
+                tensor.device,
+                tensor.layout,
+                tensor.requires_grad,
+                tensor.is_leaf,
+            )
+            bits = self.value_bits(tensor)
+
+            for form, result in self.top_level_calls(tensor):
+                with self.subTest(
+                    case=case,
+                    form=form,
+                    shape=tensor.shape,
+                    stride=tensor.stride(),
+                ):
+                    self.assertIs(result, tensor)
+                    self.assertIs(result.is_conj(), False)
+                    self.assertEqual(
+                        (
+                            result.shape,
+                            result.stride(),
+                            result.storage_offset(),
+                            result.data_ptr(),
+                            result.dtype,
+                            result.device,
+                            result.layout,
+                            result.requires_grad,
+                            result.is_leaf,
+                        ),
+                        metadata,
+                    )
+                    if bits is not None:
+                        np.testing.assert_array_equal(self.value_bits(result), bits)
+
+        torch.resolve_conj(a=tracked).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad), np.full((2, 2), 2.0, dtype=np.float32)
+        )
+        gradient = leaf.grad
+        for _, result in self.top_level_calls(leaf):
+            self.assertIs(result, leaf)
+            self.assertIs(result.grad, gradient)
 
     def test_descriptor_documentation_and_signature_match_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
@@ -266,8 +347,194 @@ class TensorResolveConjTests(unittest.TestCase):
         self.assertEqual(lower.calls, 0)
         self.assertIs(tensor.resolve_conj(), tensor)
 
-    def test_scope_remains_method_only_without_complex_dtypes(self):
-        self.assertFalse(hasattr(torch, "resolve_conj"))
+    def test_top_level_callable_metadata_documentation_and_exports(self):
+        function = torch.resolve_conj
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "resolve_conj")
+        self.assertEqual(
+            function.__qualname__, "_VariableFunctionsClass.resolve_conj"
+        )
+        self.assertEqual(function.__module__, "torch")
+        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method resolve_conj of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.resolve_conj, function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)), function
+                )
+
+        self.assertEqual(torch.__all__.count("resolve_conj"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["resolve_conj"], function)
+
+    def test_top_level_binding_and_type_error_precedence(self):
+        tensor = torch.tensor([1.0])
+        cases = (
+            (
+                lambda: torch.resolve_conj(),
+                'resolve_conj() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.resolve_conj(tensor, tensor),
+                "resolve_conj() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.resolve_conj(tensor, input=tensor),
+                "resolve_conj() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.resolve_conj(tensor, extra=True, input=tensor),
+                "resolve_conj() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.resolve_conj(tensor, input=tensor, extra=True),
+                "resolve_conj() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.resolve_conj(extra=tensor),
+                'resolve_conj() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.resolve_conj(1, extra=True),
+                "resolve_conj(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.resolve_conj(input=[]),
+                "resolve_conj(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.resolve_conj(a=1),
+                "resolve_conj(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.resolve_conj(x=[]),
+                "resolve_conj(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.resolve_conj(x1=None),
+                "resolve_conj(): argument 'input' must be Tensor, not NoneType",
+            ),
+            (
+                lambda: torch.resolve_conj(a=tensor, x=tensor),
+                "resolve_conj() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.resolve_conj(x=tensor, a=tensor),
+                "resolve_conj() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.resolve_conj(input=tensor, x1=tensor),
+                "resolve_conj() got an unexpected keyword argument 'x1'",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+
+    def test_top_level_torch_function_modes_and_overrides(self):
+        tensor = torch.tensor([1.0])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            (None, lambda: torch.resolve_conj(tensor)),
+            ("input", lambda: torch.resolve_conj(input=tensor)),
+            ("x", lambda: torch.resolve_conj(x=tensor)),
+            ("a", lambda: torch.resolve_conj(a=tensor)),
+            ("x1", lambda: torch.resolve_conj(x1=tensor)),
+        )
+        for keyword, call in calls:
+            mode = RecordingMode()
+            with mode:
+                result = call()
+            self.assertIs(result, marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, torch.resolve_conj)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (tensor,) if keyword is None else ())
+            self.assertEqual(
+                kwargs, None if keyword is None else {keyword: tensor}
+            )
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = torch.resolve_conj(a=tensor)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertIs(forwarded, tensor)
+
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        value = Override()
+        self.assertIs(torch.resolve_conj(x=value), marker)
+        function, dispatch_types, args, kwargs = override_calls[0]
+        self.assertIs(function, torch.resolve_conj)
+        self.assertEqual(dispatch_types, (Override,))
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs, {"x": value})
+
+    def test_top_level_declining_mode_reports_variable_function_error(self):
+        tensor = torch.tensor([1.0])
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        mode = DecliningMode()
+        message = (
+            "Multiple dispatch failed for 'torch.resolve_conj'; all "
+            "__torch_function__ handlers returned NotImplemented:\n\n"
+            f"  - mode object {mode!r}\n\n"
+            "For more information, try re-running with "
+            "TORCH_LOGS=not_implemented"
+        )
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+            with mode:
+                torch.resolve_conj(tensor)
+        self.assertIs(torch.resolve_conj(tensor), tensor)
+
+    def test_top_level_scope_does_not_add_complex_dtypes(self):
+        self.assertTrue(hasattr(torch, "resolve_conj"))
         for name in (
             "complex32",
             "complex64",

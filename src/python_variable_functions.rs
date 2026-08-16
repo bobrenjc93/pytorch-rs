@@ -15,7 +15,7 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 use crate::python::{
     adjoint_variable_function, get_device_variable_function, matmul_variable_function,
     movedim_variable_function, permute_variable_function, positive_variable_function,
-    scalar_tensor_variable_function,
+    resolve_conj_variable_function, scalar_tensor_variable_function,
 };
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
@@ -43,6 +43,8 @@ Example::
 ";
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
+
+const RESOLVE_CONJ_DOC: &std::ffi::CStr = c"\nresolve_conj(input) -> Tensor\n\nReturns a new tensor with materialized conjugation if :attr:`input`'s conjugate bit is set to `True`,\nelse returns :attr:`input`. The output tensor will always have its conjugate bit set to `False`.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> x = torch.tensor([-1 + 1j, -2 + 2j, 3 - 3j])\n    >>> y = x.conj()\n    >>> y.is_conj()\n    True\n    >>> z = y.resolve_conj()\n    >>> z\n    tensor([-1 - 1j, -2 - 2j, 3 + 3j])\n    >>> z.is_conj()\n    False\n";
 
 const PERMUTE_DOC: &std::ffi::CStr = c"\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n";
 
@@ -217,9 +219,22 @@ variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
+variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
+
+macro_rules! variable_function_method {
+    ($name:expr, $callback:ident, $doc:expr) => {
+        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
+            $name,
+            pyo3::impl_::trampoline::get_trampoline_function!(cfunction_with_keywords, $callback),
+            $doc,
+        )
+        .flags(ffi::METH_STATIC)
+        .into_raw()
+    };
+}
 
 /// Creates the immutable owner for exported `_VariableFunctionsClass` methods.
 ///
@@ -234,76 +249,14 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
     // CPython descriptors retain pointers to their method definitions. Leak
     // this tiny table deliberately so it remains valid for the type lifetime.
     let methods = Box::leak(Box::new([
-        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
-            c"get_device",
-            pyo3::impl_::trampoline::get_trampoline_function!(
-                cfunction_with_keywords,
-                get_device_callback
-            ),
-            c"",
-        )
-        .flags(ffi::METH_STATIC)
-        .into_raw(),
-        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
-            c"scalar_tensor",
-            pyo3::impl_::trampoline::get_trampoline_function!(
-                cfunction_with_keywords,
-                scalar_tensor_callback
-            ),
-            c"",
-        )
-        .flags(ffi::METH_STATIC)
-        .into_raw(),
-        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
-            c"adjoint",
-            pyo3::impl_::trampoline::get_trampoline_function!(
-                cfunction_with_keywords,
-                adjoint_callback
-            ),
-            ADJOINT_DOC,
-        )
-        .flags(ffi::METH_STATIC)
-        .into_raw(),
-        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
-            c"positive",
-            pyo3::impl_::trampoline::get_trampoline_function!(
-                cfunction_with_keywords,
-                positive_callback
-            ),
-            POSITIVE_DOC,
-        )
-        .flags(ffi::METH_STATIC)
-        .into_raw(),
-        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
-            c"permute",
-            pyo3::impl_::trampoline::get_trampoline_function!(
-                cfunction_with_keywords,
-                permute_callback
-            ),
-            PERMUTE_DOC,
-        )
-        .flags(ffi::METH_STATIC)
-        .into_raw(),
-        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
-            c"movedim",
-            pyo3::impl_::trampoline::get_trampoline_function!(
-                cfunction_with_keywords,
-                movedim_callback
-            ),
-            MOVEDIM_DOC,
-        )
-        .flags(ffi::METH_STATIC)
-        .into_raw(),
-        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
-            c"matmul",
-            pyo3::impl_::trampoline::get_trampoline_function!(
-                cfunction_with_keywords,
-                matmul_callback
-            ),
-            MATMUL_DOC,
-        )
-        .flags(ffi::METH_STATIC)
-        .into_raw(),
+        variable_function_method!(c"get_device", get_device_callback, c""),
+        variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
+        variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
+        variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
+        variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
+        variable_function_method!(c"permute", permute_callback, PERMUTE_DOC),
+        variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
+        variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
         ffi::PyMethodDef::zeroed(),
     ]));
     let mut slots = [
