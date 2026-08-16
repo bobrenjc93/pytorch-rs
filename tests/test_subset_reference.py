@@ -188,24 +188,23 @@ class SubsetReferenceTests(unittest.TestCase):
         expected_module = importlib.import_module("torch.utils.data.dataset")
         actual = actual_data.Subset
         expected = expected_data.Subset
+        supported = {
+            "ConcatDataset",
+            "Dataset",
+            "StackDataset",
+            "Subset",
+            "TensorDataset",
+        }
 
         self.assertIs(actual, actual_module.Subset)
         self.assertIs(expected, expected_module.Subset)
         self.assertEqual(
             actual_data.__all__,
-            [
-                name
-                for name in expected_data.__all__
-                if name in {"ConcatDataset", "Dataset", "Subset", "TensorDataset"}
-            ],
+            [name for name in expected_data.__all__ if name in supported],
         )
         self.assertEqual(
             actual_module.__all__,
-            [
-                name
-                for name in expected_module.__all__
-                if name in {"ConcatDataset", "Dataset", "Subset", "TensorDataset"}
-            ],
+            [name for name in expected_module.__all__ if name in supported],
         )
         self.assertEqual(
             actual.__module__.replace("torch_rs", "torch"), expected.__module__

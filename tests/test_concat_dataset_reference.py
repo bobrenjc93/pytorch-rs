@@ -311,7 +311,13 @@ class ConcatDatasetReferenceTests(unittest.TestCase):
         expected_module = importlib.import_module("torch.utils.data.dataset")
         actual = actual_data.ConcatDataset
         expected = expected_data.ConcatDataset
-        supported = {"ConcatDataset", "Dataset", "Subset", "TensorDataset"}
+        supported = {
+            "ConcatDataset",
+            "Dataset",
+            "StackDataset",
+            "Subset",
+            "TensorDataset",
+        }
 
         self.assertIs(actual, actual_module.ConcatDataset)
         self.assertIs(expected, expected_module.ConcatDataset)

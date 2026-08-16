@@ -7,9 +7,12 @@ from typing_extensions import deprecated
 from torch_rs import Tensor
 
 
-__all__ = ["Dataset", "TensorDataset", "ConcatDataset", "Subset"]
+__all__ = ["Dataset", "TensorDataset", "StackDataset", "ConcatDataset", "Subset"]
 
 _T_co = TypeVar("_T_co", covariant=True)
+_T_dict = dict[str, _T_co]
+_T_tuple = tuple[_T_co, ...]
+_T_stack = TypeVar("_T_stack", _T_tuple, _T_dict)
 
 
 class Dataset(Generic[_T_co]):
@@ -70,6 +73,56 @@ class TensorDataset(Dataset[tuple[Tensor, ...]]):
 
     def __len__(self) -> int:
         return _leading_size(self.tensors[0])
+
+
+class StackDataset(Dataset[_T_stack]):
+    r"""Dataset as a stacking of multiple datasets.
+
+    This class is useful to assemble different parts of complex input data, given as datasets.
+
+    Example:
+        >>> # xdoctest: +SKIP
+        >>> images = ImageDataset()
+        >>> texts = TextDataset()
+        >>> tuple_stack = StackDataset(images, texts)
+        >>> tuple_stack[0] == (images[0], texts[0])
+        >>> dict_stack = StackDataset(image=images, text=texts)
+        >>> dict_stack[0] == {"image": images[0], "text": texts[0]}
+
+    Args:
+        *args (Dataset): Datasets for stacking returned as tuple.
+        **kwargs (Dataset): Datasets for stacking returned as dict.
+    """
+
+    datasets: tuple | dict
+
+    def __init__(self, *args: Dataset[_T_co], **kwargs: Dataset[_T_co]) -> None:
+        if args:
+            if kwargs:
+                raise ValueError(
+                    "Supported either ``tuple``- (via ``args``) or"
+                    "``dict``- (via ``kwargs``) like input/output, but both types are given."
+                )
+            self._length = len(args[0])
+            if any(self._length != len(dataset) for dataset in args):
+                raise ValueError("Size mismatch between datasets")
+            self.datasets = args
+        elif kwargs:
+            tmp = list(kwargs.values())
+            self._length = len(tmp[0])
+            if any(self._length != len(dataset) for dataset in tmp):
+                raise ValueError("Size mismatch between datasets")
+            self.datasets = kwargs
+        else:
+            raise ValueError("At least one dataset should be passed")
+
+    def __getitem__(self, index):
+        if isinstance(self.datasets, dict):
+            return {k: dataset[index] for k, dataset in self.datasets.items()}
+        return tuple(dataset[index] for dataset in self.datasets)
+
+    def __len__(self) -> int:
+        return self._length
 
 
 class ConcatDataset(Dataset[_T_co]):

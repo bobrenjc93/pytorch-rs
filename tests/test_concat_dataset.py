@@ -222,11 +222,11 @@ class ConcatDatasetTests(unittest.TestCase):
         self.assertEqual(ConcatDataset.__module__, "torch_rs.utils.data.dataset")
         self.assertEqual(
             data_module.__all__,
-            ["ConcatDataset", "Dataset", "Subset", "TensorDataset"],
+            ["ConcatDataset", "Dataset", "StackDataset", "Subset", "TensorDataset"],
         )
         self.assertEqual(
             dataset_module.__all__,
-            ["Dataset", "TensorDataset", "ConcatDataset", "Subset"],
+            ["Dataset", "TensorDataset", "StackDataset", "ConcatDataset", "Subset"],
         )
         for unsupported in ("DataLoader", "IterableDataset"):
             self.assertFalse(hasattr(data_module, unsupported))
