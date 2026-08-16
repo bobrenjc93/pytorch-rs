@@ -9,6 +9,34 @@ import torch_rs as torch
 from torch_rs.utils.data import Dataset, StackDataset, TensorDataset
 
 
+class RecordingDataset(Dataset):
+    def __init__(self, prefix):
+        self.prefix = prefix
+        self.calls = []
+
+    def __getitem__(self, index):
+        self.calls.append(index)
+        return f"{self.prefix}-item-{index}"
+
+    def __len__(self):
+        return 3
+
+
+class BatchedRecordingDataset(RecordingDataset):
+    def __getitems__(self, indices):
+        self.calls.append(("batch", indices))
+        return [f"{self.prefix}-batch-{index}" for index in indices]
+
+
+class NonCallableBatchedDataset(RecordingDataset):
+    __getitems__ = None
+
+
+class MismatchedBatchedDataset(RecordingDataset):
+    def __getitems__(self, indices):
+        return [f"{self.prefix}-batch-{index}" for index in indices[:-1]]
+
+
 class StackDatasetTests(unittest.TestCase):
     def test_positional_and_keyword_datasets_return_matching_containers(self):
         features = TensorDataset(torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]))
@@ -85,6 +113,125 @@ class StackDatasetTests(unittest.TestCase):
             [[0.0, 0.0, 0.0], [2.0, 3.0, 5.0], [0.0, 0.0, 0.0]],
         )
 
+    def test_getitems_preserves_containers_views_and_autograd_lineage(self):
+        indices = [2, 0, 2, -1]
+        normalized_indices = [2, 0, 2, 2]
+
+        for keyword in (False, True):
+            with self.subTest(keyword=keyword):
+                feature_source = torch.tensor(
+                    [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
+                    requires_grad=True,
+                )
+                target_source = torch.tensor([10.0, 20.0, 30.0])
+                features = TensorDataset(feature_source)
+                targets = TensorDataset(target_source)
+                if keyword:
+                    dataset = StackDataset(feature=features, target=targets)
+                else:
+                    dataset = StackDataset(features, targets)
+
+                self.assertEqual(dataset.__getitems__([]), [])
+                batch = dataset.__getitems__(indices)
+                self.assertIs(type(batch), list)
+                self.assertEqual(len(batch), len(indices))
+
+                selected_features = []
+                for sample, normalized in zip(
+                    batch, normalized_indices, strict=True
+                ):
+                    self.assertIs(type(sample), dict if keyword else tuple)
+                    if keyword:
+                        self.assertEqual(list(sample), ["feature", "target"])
+                        feature = sample["feature"][0]
+                        target = sample["target"][0]
+                    else:
+                        self.assertEqual(len(sample), 2)
+                        feature = sample[0][0]
+                        target = sample[1][0]
+
+                    self.assertEqual(feature.shape, (2,))
+                    self.assertEqual(feature.stride(), (1,))
+                    self.assertEqual(feature.storage_offset(), normalized * 2)
+                    self.assertEqual(target.shape, ())
+                    self.assertEqual(target.storage_offset(), normalized)
+                    self.assertTrue(feature.requires_grad)
+                    self.assertFalse(feature.is_leaf)
+                    self.assertEqual(
+                        feature.data_ptr() - feature_source.data_ptr(),
+                        feature.storage_offset() * feature_source.element_size(),
+                    )
+                    self.assertEqual(
+                        target.data_ptr() - target_source.data_ptr(),
+                        target.storage_offset() * target_source.element_size(),
+                    )
+                    selected_features.append(feature)
+
+                (selected_features[-1] * torch.tensor([2.0, 3.0])).sum().backward()
+                np.testing.assert_array_equal(
+                    np.asarray(feature_source.grad),
+                    [[0.0, 0.0], [0.0, 0.0], [2.0, 3.0]],
+                )
+
+    def test_getitems_delegates_batches_and_falls_back_to_indexing(self):
+        indices = [2, 0, 2, -1]
+
+        for keyword in (False, True):
+            with self.subTest(keyword=keyword):
+                delegated = BatchedRecordingDataset("delegated")
+                fallback = RecordingDataset("fallback")
+                noncallable = NonCallableBatchedDataset("noncallable")
+                if keyword:
+                    dataset = StackDataset(
+                        delegated=delegated,
+                        fallback=fallback,
+                        noncallable=noncallable,
+                    )
+                    expected = [
+                        {
+                            "delegated": f"delegated-batch-{index}",
+                            "fallback": f"fallback-item-{index}",
+                            "noncallable": f"noncallable-item-{index}",
+                        }
+                        for index in indices
+                    ]
+                else:
+                    dataset = StackDataset(delegated, fallback, noncallable)
+                    expected = [
+                        (
+                            f"delegated-batch-{index}",
+                            f"fallback-item-{index}",
+                            f"noncallable-item-{index}",
+                        )
+                        for index in indices
+                    ]
+
+                self.assertEqual(dataset.__getitems__(indices), expected)
+                self.assertEqual(delegated.calls, [("batch", indices)])
+                self.assertEqual(fallback.calls, indices)
+                self.assertEqual(noncallable.calls, indices)
+
+                empty_indices = []
+                self.assertEqual(dataset.__getitems__(empty_indices), [])
+                self.assertEqual(
+                    delegated.calls,
+                    [("batch", indices), ("batch", empty_indices)],
+                )
+                self.assertEqual(fallback.calls, indices)
+                self.assertEqual(noncallable.calls, indices)
+
+    def test_getitems_rejects_mismatched_nested_batch_lengths(self):
+        for dataset in (
+            StackDataset(MismatchedBatchedDataset("child")),
+            StackDataset(child=MismatchedBatchedDataset("child")),
+        ):
+            with self.subTest(container=type(dataset.datasets).__name__):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"^Nested dataset's output size mismatch\. Expected 3, got 2$",
+                ):
+                    dataset.__getitems__([2, 0, -1])
+
     def test_empty_mixed_and_length_mismatch_validation(self):
         first_empty = TensorDataset(torch.zeros((0, 2)))
         second_empty = TensorDataset(torch.zeros((0,)))
@@ -159,8 +306,14 @@ class StackDatasetTests(unittest.TestCase):
         self.assertEqual(
             str(inspect.signature(StackDataset.__getitem__)), "(self, index)"
         )
+        self.assertEqual(StackDataset.__getitems__.__annotations__, {"indices": list})
+        self.assertEqual(
+            str(inspect.signature(StackDataset.__getitems__)),
+            "(self, indices: list)",
+        )
         self.assertEqual(str(inspect.signature(StackDataset.__len__)), "(self) -> int")
-        self.assertNotIn("__getitems__", StackDataset.__dict__)
+        self.assertIn("__getitems__", StackDataset.__dict__)
+        self.assertIsNone(StackDataset.__getitems__.__doc__)
         self.assertIn(
             "Dataset as a stacking of multiple datasets.", StackDataset.__doc__
         )
@@ -185,6 +338,17 @@ class StackDatasetTests(unittest.TestCase):
             r"^StackDataset.__getitem__\(\) takes 2 positional arguments but 3 were given$",
         ):
             dataset.__getitem__(0, 1)
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^StackDataset.__getitems__\(\) missing 1 required positional argument: "
+            "'indices'$",
+        ):
+            dataset.__getitems__()
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^StackDataset.__getitems__\(\) takes 2 positional arguments but 3 were given$",
+        ):
+            dataset.__getitems__([], [])
         with self.assertRaisesRegex(
             TypeError,
             r"^StackDataset.__len__\(\) takes 1 positional argument but 2 were given$",
