@@ -2,6 +2,7 @@ import pickle
 import re
 import subprocess
 import sys
+import threading
 import unittest
 
 import torch_rs as torch
@@ -253,6 +254,96 @@ class TopLevelPositiveOverrideTests(unittest.TestCase):
                 self.assertIs(torch.positive(tensor), tensor)
         self.assertEqual(order, ["upper", "lower"])
         self.assertIs(torch.positive(tensor), tensor)
+
+    def test_mode_stack_helpers_preserve_nesting_and_private_errors(self):
+        private_names = {
+            "_get_function_stack_at",
+            "_len_torch_function_stack",
+            "_pop_torch_function_stack",
+            "_push_on_torch_function_stack",
+        }
+        self.assertTrue(private_names.isdisjoint(torch._C.__all__))
+        self.assertTrue(all(hasattr(torch._C, name) for name in private_names))
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+        self.assertIsNone(torch.overrides._get_current_function_mode())
+
+        lower = torch.overrides.TorchFunctionMode()
+        upper = torch.overrides.TorchFunctionMode()
+        with lower:
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [lower]
+            )
+            self.assertIs(torch.overrides._get_current_function_mode(), lower)
+            with upper:
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(),
+                    [lower, upper],
+                )
+                self.assertIs(torch.overrides._get_current_function_mode(), upper)
+            self.assertIs(torch.overrides._get_current_function_mode(), lower)
+
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+        with self.assertRaisesRegex(
+            RuntimeError, "^trying to pop from empty mode stack$"
+        ):
+            torch.overrides._pop_mode()
+        with self.assertRaisesRegex(
+            RuntimeError, "^Tried to get stack at idx that's too big$"
+        ):
+            torch._C._get_function_stack_at(0)
+
+    def test_mode_stack_and_dispatch_are_thread_local(self):
+        tensor = torch.tensor([1.0])
+
+        class Mode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return self.label
+
+        main_mode = Mode("main")
+        worker_mode = Mode("worker")
+        observed = {}
+        failures = []
+
+        def worker():
+            try:
+                observed["initial_stack"] = (
+                    torch.overrides._get_current_function_mode_stack()
+                )
+                observed["initial_dispatch"] = torch.positive(tensor) is tensor
+                with worker_mode:
+                    observed["worker_stack"] = (
+                        torch.overrides._get_current_function_mode_stack()
+                    )
+                    observed["worker_dispatch"] = torch.positive(tensor)
+                observed["final_stack"] = (
+                    torch.overrides._get_current_function_mode_stack()
+                )
+                observed["final_dispatch"] = torch.positive(tensor) is tensor
+            except BaseException as error:
+                failures.append(error)
+
+        with main_mode:
+            thread = threading.Thread(target=worker)
+            thread.start()
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+            if failures:
+                raise failures[0]
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [main_mode]
+            )
+            self.assertEqual(torch.positive(tensor), "main")
+
+        self.assertEqual(observed["initial_stack"], [])
+        self.assertTrue(observed["initial_dispatch"])
+        self.assertEqual(observed["worker_stack"], [worker_mode])
+        self.assertEqual(observed["worker_dispatch"], "worker")
+        self.assertEqual(observed["final_stack"], [])
+        self.assertTrue(observed["final_dispatch"])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
     def test_binding_errors_are_resolved_before_mode_dispatch(self):
         tensor = torch.tensor([1.0])

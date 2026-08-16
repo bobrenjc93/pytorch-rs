@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,6 +24,7 @@ use crate::{
     python_memory_format::{PyMemoryFormat, memory_format_object},
     python_no_argument_builtins::add_no_argument_builtins,
     python_scalar_conversions::register_scalar_conversions,
+    python_torch_function_mode as torch_function_mode_stack,
     python_variable_functions::create_variable_functions_class,
 };
 
@@ -39,10 +39,6 @@ static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
-
-thread_local! {
-    static TORCH_FUNCTION_MODE_STACK: RefCell<Vec<Py<PyAny>>> = const { RefCell::new(Vec::new()) };
-}
 
 const TORCH_FUNCTION_DESCRIPTOR_CALLER_SOURCE: &CStr = cr"
 def _call_descriptor(function, args):
@@ -1218,61 +1214,6 @@ enum TensorBaseModeTarget {
     GetSet(&'static str),
 }
 
-struct ActiveTorchFunctionMode {
-    mode: Option<Py<PyAny>>,
-}
-
-impl ActiveTorchFunctionMode {
-    fn pop() -> Self {
-        let mode = TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow_mut().pop());
-        Self { mode }
-    }
-
-    fn get(&self) -> Option<&Py<PyAny>> {
-        self.mode.as_ref()
-    }
-
-    fn restore(&mut self) {
-        if let Some(mode) = self.mode.take() {
-            TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow_mut().push(mode));
-        }
-    }
-}
-
-impl Drop for ActiveTorchFunctionMode {
-    fn drop(&mut self) {
-        self.restore();
-    }
-}
-
-#[pyfunction]
-fn _push_on_torch_function_stack(mode: Py<PyAny>) {
-    TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow_mut().push(mode));
-}
-
-#[pyfunction]
-fn _pop_torch_function_stack() -> PyResult<Py<PyAny>> {
-    TORCH_FUNCTION_MODE_STACK
-        .with(|stack| stack.borrow_mut().pop())
-        .ok_or_else(|| PyRuntimeError::new_err("trying to pop from empty mode stack"))
-}
-
-#[pyfunction]
-fn _len_torch_function_stack() -> usize {
-    TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().len())
-}
-
-#[pyfunction]
-fn _get_function_stack_at(py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
-    TORCH_FUNCTION_MODE_STACK.with(|stack| {
-        stack
-            .borrow()
-            .get(index)
-            .map(|mode| mode.clone_ref(py))
-            .ok_or_else(|| PyRuntimeError::new_err("Tried to get stack at idx that's too big"))
-    })
-}
-
 #[allow(
     unsafe_code,
     reason = "PyTorch binding parity requires CPython's exception-suppressing legacy attribute probe"
@@ -1387,7 +1328,7 @@ fn dispatch_tensorbase_mode(
     tensor: &Bound<'_, PyTensor>,
     target: TensorBaseModeTarget,
 ) -> PyResult<Option<Py<PyAny>>> {
-    if TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty()) {
+    if torch_function_mode_stack::is_empty() {
         return Ok(None);
     }
 
@@ -1401,7 +1342,7 @@ fn dispatch_tensorbase_mode(
     let types = PyTuple::new(py, [tensor.get_type().into_any()])?;
     let args = PyTuple::new(py, [tensor.clone().into_any()])?;
 
-    let mut active_mode = ActiveTorchFunctionMode::pop();
+    let mut active_mode = torch_function_mode_stack::pop();
     let Some(mode) = active_mode.get() else {
         return Ok(None);
     };
@@ -1435,14 +1376,14 @@ fn dispatch_iteration_unbind(
     tensor: &Bound<'_, PyTensor>,
     dim: i64,
 ) -> PyResult<Py<PyAny>> {
-    if !TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty()) {
+    if !torch_function_mode_stack::is_empty() {
         let function = iteration_unbind_descriptor(py)?.clone_ref(py);
         let types = PyTuple::empty(py);
         let args = PyTuple::new(
             py,
             [tensor.clone().unbind().into_any(), dim.into_py_any(py)?],
         )?;
-        let active_mode = ActiveTorchFunctionMode::pop();
+        let active_mode = torch_function_mode_stack::pop();
         let Some(mode) = active_mode.get() else {
             return iteration_unbind(py, tensor, dim);
         };
@@ -1488,7 +1429,7 @@ fn dispatch_tensorbase_method_mode(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Option<Py<PyAny>>> {
-    if TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty()) {
+    if torch_function_mode_stack::is_empty() {
         return Ok(None);
     }
 
@@ -1512,7 +1453,7 @@ fn dispatch_tensorbase_method_mode(
 
     // Disable the top mode for the complete attempt so explicit forwarding
     // through the TensorBase descriptor reaches the next mode.
-    let active_mode = ActiveTorchFunctionMode::pop();
+    let active_mode = torch_function_mode_stack::pop();
     let Some(mode) = active_mode.get() else {
         return Ok(None);
     };
@@ -1603,7 +1544,7 @@ fn dispatch_positive(
 
     // PyTorch disables the top mode for the complete dispatch attempt. A mode
     // can explicitly call `func(*args, **kwargs)` to reach the next mode.
-    let active_mode = ActiveTorchFunctionMode::pop();
+    let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
         let handler = mode.bind(py).getattr("__torch_function__")?;
@@ -1661,7 +1602,7 @@ fn dispatch_adjoint(
 
     // PyTorch disables the top mode for the complete dispatch attempt. A mode
     // can explicitly call `func(*args, **kwargs)` to reach the next mode.
-    let active_mode = ActiveTorchFunctionMode::pop();
+    let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
         let handler = mode.bind(py).getattr("__torch_function__")?;
@@ -1713,7 +1654,7 @@ fn dispatch_matmul(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty())
+    if torch_function_mode_stack::is_empty()
         && let BoundTensorOrTorchFunction::Tensor(other) = other
     {
         let other = other.try_borrow()?;
@@ -1742,7 +1683,7 @@ fn dispatch_matmul(
 
     // Disable the top mode for the complete attempt so forwarding through the
     // TensorBase descriptor reaches the next mode, just as top-level dispatch does.
-    let active_mode = ActiveTorchFunctionMode::pop();
+    let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
         let handler = mode.bind(py).getattr("__torch_function__")?;
@@ -1830,7 +1771,7 @@ fn dispatch_top_level_matmul(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let overrides = ordered_matmul_overrides(input, other)?;
-    if TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty()) && overrides.is_empty() {
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
         let (BoundTensorOrTorchFunction::Tensor(input), BoundTensorOrTorchFunction::Tensor(other)) =
             (input, other)
         else {
@@ -1852,7 +1793,7 @@ fn dispatch_top_level_matmul(
 
     // Disable the top mode for the complete dispatch attempt. A mode can call
     // the public function explicitly to forward to the next mode.
-    let active_mode = ActiveTorchFunctionMode::pop();
+    let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
         let handler = mode.bind(py).getattr("__torch_function__")?;
@@ -8176,20 +8117,6 @@ fn permute_error(error: &TensorError) -> PyErr {
     }
 }
 
-fn add_torch_function_stack_api(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    for function in [
-        wrap_pyfunction!(_push_on_torch_function_stack, module)?,
-        wrap_pyfunction!(_pop_torch_function_stack, module)?,
-        wrap_pyfunction!(_len_torch_function_stack, module)?,
-        wrap_pyfunction!(_get_function_stack_at, module)?,
-    ] {
-        let name = function.getattr("__name__")?;
-        module.add_function(function.clone())?;
-        module.getattr("__all__")?.call_method1("remove", (name,))?;
-    }
-    Ok(())
-}
-
 fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     let variable_functions =
@@ -8251,7 +8178,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
-    add_torch_function_stack_api(module)?;
+    torch_function_mode_stack::add_torch_function_mode_stack(module)?;
     add_variable_functions(module)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
