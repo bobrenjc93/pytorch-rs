@@ -728,6 +728,27 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nmatmul(tensor2) -> Tensor\n\nSee :func:`torch.matmul`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn matmul(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyTensor> {
+        let (arguments, keyword_error) = bind_tensor_arguments("matmul", args, kwargs, ["other"])?;
+        let other = parse_tensor_argument("matmul", "other", &arguments[0])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        let other = other.try_borrow()?;
+        slf.as_any()
+            .cast::<PyTensor>()?
+            .try_borrow()?
+            .matrix_multiply(&other)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\npermute(*dims) -> Tensor\n\nReturns a view of the tensor with its dimensions permuted.\n\nArgs:\n    dims (torch.Size, int..., tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> x.permute(2, 0, 1).size()\n    torch.Size([5, 2, 3])\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn permute(
@@ -1951,10 +1972,7 @@ impl PyTensor {
     }
 
     fn __matmul__(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .matmul(&other.inner)
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+        self.matrix_multiply(other)
     }
 
     fn __bool__(&self) -> PyResult<bool> {
@@ -1983,6 +2001,13 @@ impl PyTensor {
 }
 
 impl PyTensor {
+    fn matrix_multiply(&self, other: &Self) -> PyResult<Self> {
+        self.inner
+            .matmul(&other.inner)
+            .map(Self::new)
+            .map_err(|error| tensor_error(&error))
+    }
+
     fn negated(&self) -> PyResult<Self> {
         self.inner
             .negate()
