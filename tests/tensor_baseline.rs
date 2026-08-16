@@ -40,6 +40,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
         assert!(!tensor.is_quantized());
         assert!(!tensor.is_sparse());
         assert!(!tensor.is_sparse_csr());
+        assert!(!tensor.retains_grad());
         assert!(tensor.is_signed());
     }
 }
@@ -70,6 +71,7 @@ fn native_metadata_survives_views_kernels_and_reductions() {
         assert!(!output.is_quantized());
         assert!(!output.is_sparse());
         assert!(!output.is_sparse_csr());
+        assert!(!output.retains_grad());
         assert!(output.is_signed());
     }
 }

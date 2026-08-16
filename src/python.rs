@@ -338,6 +338,15 @@ impl PyTensorBase {
         Ok(strided_object(slf.py())?.clone_ref(slf.py()))
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nIs ``True`` if this Tensor is non-leaf and its :attr:`grad` is enabled to be\npopulated during :func:`backward`, ``False`` otherwise.\n"]
+    #[getter]
+    fn retains_grad(slf: &Bound<'_, Self>) -> PyResult<bool> {
+        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+        Ok(tensor.inner.retains_grad())
+    }
+
     #[pyo3(text_signature = None)]
     fn int_scalar<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyInt>> {
         let value = slf
