@@ -565,6 +565,30 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nresolve_conj() -> Tensor\n\nSee :func:`torch.resolve_conj`\n"]
+    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
+    // derives `($self, /)` from that descriptor shape, while older runtimes
+    // leave `__text_signature__` unset; PyTorch follows the same split.
+    #[pyo3(text_signature = None)]
+    fn resolve_conj(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_mode(
+            slf.py(),
+            tensor,
+            TensorBaseModeTarget::Method("resolve_conj"),
+        )? {
+            return Ok(result);
+        }
+
+        // Complex storage and conjugate views are unsupported, so is_conj()
+        // is false for every reachable Tensor. Resolving that clear bit is the
+        // exact receiver and requires no storage borrow, metadata rewrite, or
+        // autograd operation.
+        Ok(tensor.clone().unbind().into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nis_inference() -> bool\n\nSee :func:`torch.is_inference`\n"]
     // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
     // derives `($self, /)` from that descriptor shape, while older runtimes
