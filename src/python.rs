@@ -12,8 +12,8 @@ use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAny, PyBool, PyBytes, PyCFunction, PyComplex, PyDict, PyFloat, PyInt, PyList, PyMapping,
-    PyMemoryView, PyModule, PySequence, PyString, PyTuple, PyType,
+    PyAny, PyBool, PyBytes, PyComplex, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView,
+    PyModule, PySequence, PyString, PyTuple, PyType,
 };
 
 use crate::{
@@ -24,6 +24,7 @@ use crate::{
     python_grad_mode::add_no_grad,
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_memory_format::{PyMemoryFormat, memory_format_object},
+    python_no_argument_builtins::add_no_argument_builtins,
     python_variable_functions::create_variable_functions_class,
 };
 
@@ -2431,143 +2432,6 @@ impl BinaryOperation {
             (Self::Divide, true) => tensor.scalar_div(scalar),
         }
     }
-}
-
-// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-#[allow(clippy::doc_markdown)]
-#[doc = "\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n"]
-fn is_grad_enabled(
-    args: &Bound<'_, PyTuple>,
-    kwargs: Option<&Bound<'_, PyDict>>,
-) -> PyResult<bool> {
-    if kwargs.is_some_and(|values| !values.is_empty()) {
-        return Err(PyTypeError::new_err(
-            "torch.is_grad_enabled() takes no keyword arguments",
-        ));
-    }
-    if !args.is_empty() {
-        return Err(PyTypeError::new_err(format!(
-            "torch.is_grad_enabled() takes no arguments ({} given)",
-            args.len()
-        )));
-    }
-    Ok(core_is_grad_enabled())
-}
-
-// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-#[allow(clippy::doc_markdown)]
-#[cfg_attr(
-    not(doc),
-    doc = "\nget_default_dtype() -> torch.dtype\n\nGet the current default floating point :class:`torch.dtype`.\n\nExample::\n\n    >>> torch.get_default_dtype()  # initial default for floating point is torch.float32\n    torch.float32\n    >>> torch.set_default_dtype(torch.float64)\n    >>> torch.get_default_dtype()  # default is now changed to torch.float64\n    torch.float64\n\n"
-)]
-#[cfg_attr(doc, doc = "Get the current default floating-point dtype.")]
-fn get_default_dtype(
-    py: Python<'_>,
-    args: &Bound<'_, PyTuple>,
-    kwargs: Option<&Bound<'_, PyDict>>,
-) -> PyResult<Py<PyDType>> {
-    if kwargs.is_some_and(|values| !values.is_empty()) {
-        return Err(PyTypeError::new_err(
-            "torch.get_default_dtype() takes no keyword arguments",
-        ));
-    }
-    if !args.is_empty() {
-        return Err(PyTypeError::new_err(format!(
-            "torch.get_default_dtype() takes no arguments ({} given)",
-            args.len()
-        )));
-    }
-    Ok(dtype_object(py, DType::Float32)?.clone_ref(py))
-}
-
-const IS_GRAD_ENABLED_DOC: &CStr =
-    c"\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n";
-const IS_GRAD_ENABLED_SIGNATURE_DOC: &CStr = c"is_grad_enabled($self, /)\n--\n\n\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n";
-const GET_DEFAULT_DTYPE_DOC: &CStr = c"\nget_default_dtype() -> torch.dtype\n\nGet the current default floating point :class:`torch.dtype`.\n\nExample::\n\n    >>> torch.get_default_dtype()  # initial default for floating point is torch.float32\n    torch.float32\n    >>> torch.set_default_dtype(torch.float64)\n    >>> torch.get_default_dtype()  # default is now changed to torch.float64\n    torch.float64\n\n";
-const GET_DEFAULT_DTYPE_SIGNATURE_DOC: &CStr = c"get_default_dtype($self, /)\n--\n\n\nget_default_dtype() -> torch.dtype\n\nGet the current default floating point :class:`torch.dtype`.\n\nExample::\n\n    >>> torch.get_default_dtype()  # initial default for floating point is torch.float32\n    torch.float32\n    >>> torch.set_default_dtype(torch.float64)\n    >>> torch.get_default_dtype()  # default is now changed to torch.float64\n    torch.float64\n\n";
-
-#[allow(
-    unsafe_code,
-    reason = "CPython passes borrowed tuple and dictionary pointers to C function callbacks"
-)]
-unsafe fn no_argument_builtin_arguments(
-    py: Python<'_>,
-    args: *mut ffi::PyObject,
-    kwargs: *mut ffi::PyObject,
-) -> PyResult<(Bound<'_, PyTuple>, Option<Bound<'_, PyDict>>)> {
-    // SAFETY: the C callback contract supplies a live positional tuple.
-    let args = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, args) }.cast_into::<PyTuple>()?;
-    // SAFETY: the keyword pointer is either null or a live dictionary for the
-    // duration of the callback.
-    let kwargs = unsafe { Bound::<PyAny>::from_borrowed_ptr_or_opt(py, kwargs) }
-        .map(Bound::cast_into::<PyDict>)
-        .transpose()?;
-    Ok((args, kwargs))
-}
-
-#[allow(
-    unsafe_code,
-    reason = "the callback is entered through PyO3's panic-safe C trampoline"
-)]
-unsafe fn is_grad_enabled_callback(
-    py: Python<'_>,
-    _module: *mut ffi::PyObject,
-    args: *mut ffi::PyObject,
-    kwargs: *mut ffi::PyObject,
-) -> PyResult<*mut ffi::PyObject> {
-    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
-    is_grad_enabled(&args, kwargs.as_ref())?
-        .into_py_any(py)
-        .map(Py::into_ptr)
-}
-
-#[allow(
-    unsafe_code,
-    reason = "the callback is entered through PyO3's panic-safe C trampoline"
-)]
-unsafe fn get_default_dtype_callback(
-    py: Python<'_>,
-    _module: *mut ffi::PyObject,
-    args: *mut ffi::PyObject,
-    kwargs: *mut ffi::PyObject,
-) -> PyResult<*mut ffi::PyObject> {
-    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
-    get_default_dtype(py, &args, kwargs.as_ref()).map(Py::into_ptr)
-}
-
-fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    let py = module.py();
-    let (is_grad_enabled_doc, get_default_dtype_doc) = if py.version_info() >= (3, 13) {
-        (
-            IS_GRAD_ENABLED_SIGNATURE_DOC,
-            GET_DEFAULT_DTYPE_SIGNATURE_DOC,
-        )
-    } else {
-        (IS_GRAD_ENABLED_DOC, GET_DEFAULT_DTYPE_DOC)
-    };
-    module.add_function(PyCFunction::new_with_keywords(
-        py,
-        pyo3::impl_::trampoline::get_trampoline_function!(
-            cfunction_with_keywords,
-            is_grad_enabled_callback
-        ),
-        c"is_grad_enabled",
-        is_grad_enabled_doc,
-        Some(module),
-    )?)?;
-    module.add_function(PyCFunction::new_with_keywords(
-        py,
-        pyo3::impl_::trampoline::get_trampoline_function!(
-            cfunction_with_keywords,
-            get_default_dtype_callback
-        ),
-        c"get_default_dtype",
-        get_default_dtype_doc,
-        Some(module),
-    )?)?;
-    Ok(())
 }
 
 #[pyfunction(
