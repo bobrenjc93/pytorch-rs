@@ -650,6 +650,16 @@ impl Tensor {
         false
     }
 
+    /// Returns this tensor's output index within its producing autograd node.
+    ///
+    /// Every operation exposed by the native engine produces exactly one
+    /// tensor, so every reachable tensor is output zero. Multi-output autograd
+    /// nodes are not represented yet.
+    #[must_use]
+    pub const fn output_nr(&self) -> usize {
+        0
+    }
+
     /// Marks an owned tensor as a gradient-accumulating leaf, or detaches it
     /// when `requires_grad` is false.
     ///
