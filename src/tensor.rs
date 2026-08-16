@@ -595,6 +595,15 @@ impl Tensor {
         )
     }
 
+    /// Returns whether this tensor was created under inference mode.
+    ///
+    /// The native engine does not expose inference mode, so every reachable
+    /// tensor has ordinary autograd metadata and reports `false`.
+    #[must_use]
+    pub const fn is_inference(&self) -> bool {
+        false
+    }
+
     /// Returns whether gradients are retained for this non-leaf tensor.
     ///
     /// The native engine does not expose `retain_grad`, so every reachable

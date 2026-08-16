@@ -564,6 +564,27 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nis_inference() -> bool\n\nSee :func:`torch.is_inference`\n"]
+    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
+    // derives `($self, /)` from that descriptor shape, while older runtimes
+    // leave `__text_signature__` unset; PyTorch follows the same split.
+    #[pyo3(text_signature = None)]
+    fn is_inference(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_mode(
+            slf.py(),
+            tensor,
+            TensorBaseModeTarget::Method("is_inference"),
+        )? {
+            return Ok(result);
+        }
+
+        let result = tensor.try_borrow()?.inner.is_inference();
+        result.into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nis_neg() -> bool\n\nReturns True if the negative bit of :attr:`self` is set to true.\n"]
     // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
     // derives `($self, /)` from that descriptor shape, while older runtimes
