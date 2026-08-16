@@ -2673,6 +2673,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68.5
       }
+    },
+    {
+      "key": "pr:178",
+      "recordedAt": "2026-08-16T12:38:51.703Z",
+      "label": "PR #178",
+      "kind": "leaf",
+      "prNumber": 178,
+      "title": "Add torch.utils.data.BatchSampler only",
+      "scores": {
+        "eval_7af648fb": 99.3,
+        "eval_8417a4a8": 68,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 47.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }
