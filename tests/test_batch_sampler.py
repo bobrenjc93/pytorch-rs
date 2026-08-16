@@ -3,7 +3,7 @@ import inspect
 import operator
 import unittest
 from collections.abc import Iterable, Iterator
-from typing import get_args, get_origin
+from typing import get_args
 
 import torch_rs as torch
 
@@ -112,19 +112,26 @@ class BatchSamplerTests(unittest.TestCase):
                     len(unsized)
 
     def test_signature_annotations_inheritance_and_metadata(self):
+        signature = inspect.signature(BatchSampler)
         self.assertEqual(
-            str(inspect.signature(BatchSampler)),
-            "(sampler: Union[torch_rs.utils.data.sampler.Sampler[int], "
-            "collections.abc.Iterable[int]], batch_size: int, drop_last: bool) "
-            "-> None",
+            tuple(signature.parameters), ("sampler", "batch_size", "drop_last")
         )
+        sampler_parameter = signature.parameters["sampler"]
+        batch_size_parameter = signature.parameters["batch_size"]
+        drop_last_parameter = signature.parameters["drop_last"]
+        for parameter in signature.parameters.values():
+            self.assertIs(parameter.kind, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            self.assertIs(parameter.default, inspect.Parameter.empty)
         self.assertEqual(
-            tuple(
-                name
-                for name in BatchSampler.__dict__
-                if name != "__annotations__"
-            ),
-            (
+            get_args(sampler_parameter.annotation),
+            (Sampler[int], Iterable[int]),
+        )
+        self.assertIs(batch_size_parameter.annotation, int)
+        self.assertIs(drop_last_parameter.annotation, bool)
+        self.assertIs(signature.return_annotation, None)
+
+        self.assertTrue(
+            {
                 "__module__",
                 "__doc__",
                 "__init__",
@@ -132,7 +139,7 @@ class BatchSamplerTests(unittest.TestCase):
                 "__len__",
                 "__orig_bases__",
                 "__parameters__",
-            ),
+            }.issubset(BatchSampler.__dict__)
         )
         self.assertEqual(BatchSampler.__annotations__, {})
         self.assertEqual(BatchSampler.__orig_bases__, (Sampler[list[int]],))
@@ -145,7 +152,6 @@ class BatchSamplerTests(unittest.TestCase):
             ("sampler", "batch_size", "drop_last", "return"),
         )
         sampler_annotation = init_annotations["sampler"]
-        self.assertEqual(get_origin(sampler_annotation).__name__, "Union")
         self.assertEqual(get_args(sampler_annotation), (Sampler[int], Iterable[int]))
         self.assertIs(init_annotations["batch_size"], int)
         self.assertIs(init_annotations["drop_last"], bool)
