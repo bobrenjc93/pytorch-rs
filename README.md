@@ -94,9 +94,13 @@ uv venv --clear --python 3.12
 uv sync --locked --no-install-project
 PYO3_PYTHON="$PWD/.venv/bin/python" cargo clippy --all-targets --features python-bindings -- -D warnings
 PYO3_PYTHON="$PWD/.venv/bin/python" cargo test --all-targets --features python-bindings
-env -u CONDA_PREFIX VIRTUAL_ENV="$PWD/.venv" PYO3_PYTHON="$PWD/.venv/bin/python" .venv/bin/maturin develop --release --uv
-.venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+./scripts/test-python.sh
 ```
+
+The developer Python test command builds a release wheel from the current
+worktree, force-installs it into `.venv`, verifies the installed native
+extension's provenance, and then runs the full unittest suite. If the suite
+fails, it reports the resolved interpreter, package, and extension paths.
 
 To validate the Python package from one freshly built, exact-HEAD release wheel,
 run:
