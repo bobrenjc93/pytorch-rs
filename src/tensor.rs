@@ -595,6 +595,16 @@ impl Tensor {
         )
     }
 
+    /// Returns whether gradients are retained for this non-leaf tensor.
+    ///
+    /// The native engine does not expose `retain_grad`, so every reachable
+    /// tensor reports `false`. Leaf tensors can still have a live gradient
+    /// through [`Self::grad`] without retaining non-leaf gradients.
+    #[must_use]
+    pub const fn retains_grad(&self) -> bool {
+        false
+    }
+
     /// Marks an owned tensor as a gradient-accumulating leaf, or detaches it
     /// when `requires_grad` is false.
     ///
