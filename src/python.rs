@@ -734,17 +734,14 @@ impl PyTensorBase {
         slf: &Bound<'_, Self>,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyTensor> {
+    ) -> PyResult<Py<PyAny>> {
         let (arguments, keyword_error) = bind_tensor_arguments("matmul", args, kwargs, ["other"])?;
-        let other = parse_tensor_argument("matmul", "other", &arguments[0])?;
+        let other = parse_tensor_or_torch_function_argument("matmul", "other", &arguments[0])?;
         if let Some(keyword_error) = keyword_error {
             return Err(keyword_error);
         }
-        let other = other.try_borrow()?;
-        slf.as_any()
-            .cast::<PyTensor>()?
-            .try_borrow()?
-            .matrix_multiply(&other)
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        dispatch_matmul(slf.py(), tensor, &other, args, kwargs)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1276,6 +1273,7 @@ fn dispatch_tensorbase_mode(
 
 fn torch_function_dispatch_error(
     py: Python<'_>,
+    function: &str,
     mode: Option<&Py<PyAny>>,
     override_type: Option<&Py<PyAny>>,
 ) -> PyResult<PyErr> {
@@ -1293,7 +1291,7 @@ fn torch_function_dispatch_error(
         ));
     }
     Ok(PyTypeError::new_err(format!(
-        "Multiple dispatch failed for 'torch.positive'; all __torch_function__ handlers returned NotImplemented:\n\n{}\n\nFor more information, try re-running with TORCH_LOGS=not_implemented",
+        "Multiple dispatch failed for '{function}'; all __torch_function__ handlers returned NotImplemented:\n\n{}\n\nFor more information, try re-running with TORCH_LOGS=not_implemented",
         handlers.join("\n")
     )))
 }
@@ -1337,15 +1335,99 @@ fn dispatch_positive(
             }
             Err(torch_function_dispatch_error(
                 py,
+                "torch.positive",
                 active_mode.get(),
                 Some(probed.dispatch_type.as_unbound()),
             )?)
         }
         BoundTensorOrTorchFunction::Tensor(tensor) => {
             if active_mode.get().is_some() {
-                return Err(torch_function_dispatch_error(py, active_mode.get(), None)?);
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.positive",
+                    active_mode.get(),
+                    None,
+                )?);
             }
             Ok(tensor.clone().unbind().into_any())
+        }
+    }
+}
+
+fn dispatch_matmul(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    other: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty())
+        && let BoundTensorOrTorchFunction::Tensor(other) = other
+    {
+        let other = other.try_borrow()?;
+        let result = tensor.try_borrow()?.matrix_multiply(&other)?;
+        return Ok(Py::new(py, result)?.into_any());
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("matmul")?.unbind();
+    let types = match other {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+    };
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("matmul dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate matmul dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    // Disable the top mode for the complete attempt so forwarding through the
+    // TensorBase descriptor reaches the next mode, just as top-level dispatch does.
+    let active_mode = ActiveTorchFunctionMode::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match other {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.Tensor.matmul",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(other) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.Tensor.matmul",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            let other = other.try_borrow()?;
+            let result = tensor.try_borrow()?.matrix_multiply(&other)?;
+            Ok(Py::new(py, result)?.into_any())
         }
     }
 }
@@ -5802,6 +5884,21 @@ fn parse_tensor_argument<'a, 'py>(
         )));
     };
     Ok(tensor)
+}
+
+fn parse_tensor_or_torch_function_argument<'py>(
+    function: &str,
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if let Ok(tensor) = value.value.cast::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(tensor.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    parse_tensor_argument(function, argument, value)
+        .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
 }
 
 fn bind_multiplication_argument<'py>(

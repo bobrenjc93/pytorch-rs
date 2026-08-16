@@ -74,6 +74,122 @@ class TensorMatmulTests(unittest.TestCase):
                 left.matmul(other=right), expected, case=(case, "keyword")
             )
 
+    def test_torch_function_modes_receive_original_calls_and_can_forward(self):
+        left = torch.tensor([[1.0]])
+        right = torch.tensor([[2.0]])
+        descriptor = inspect.getattr_static(torch.Tensor, "matmul")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            ("positional", lambda: left.matmul(right), True),
+            ("keyword", lambda: left.matmul(other=right), False),
+        )
+        for case, call, positional in calls:
+            mode = RecordingMode()
+            with mode:
+                self.assertIs(call(), marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            with self.subTest(case=case):
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, ())
+                self.assertIs(args[0], left)
+                if positional:
+                    self.assertEqual(len(args), 2)
+                    self.assertIs(args[1], right)
+                    self.assertIsNone(kwargs)
+                else:
+                    self.assertEqual(len(args), 1)
+                    self.assertEqual(tuple(kwargs), ("other",))
+                    self.assertIs(kwargs["other"], right)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        expected = left @ right
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                actual = left.matmul(other=right)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assert_delegates_to_operator(actual, expected, case="forwarded modes")
+
+        mode = RecordingMode()
+        with mode:
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^matmul\(\): argument 'other' \(position 1\) must be Tensor, not list$",
+            ):
+                left.matmul([])
+        self.assertEqual(mode.calls, [])
+
+    def test_other_torch_function_override_dispatches_after_declining_mode(self):
+        left = torch.tensor([[1.0]])
+        descriptor = inspect.getattr_static(torch.Tensor, "matmul")
+        marker = object()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            ("positional", lambda value: left.matmul(value), True),
+            ("keyword", lambda value: left.matmul(other=value), False),
+        )
+        for case, call, positional in calls:
+            value = Override()
+            Override.calls.clear()
+            self.assertIs(call(value), marker)
+            self.assertEqual(len(Override.calls), 1)
+            function, dispatch_types, args, kwargs = Override.calls[0]
+            with self.subTest(case=case):
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertIs(args[0], left)
+                if positional:
+                    self.assertEqual(len(args), 2)
+                    self.assertIs(args[1], value)
+                    self.assertIsNone(kwargs)
+                else:
+                    self.assertEqual(len(args), 1)
+                    self.assertEqual(tuple(kwargs), ("other",))
+                    self.assertIs(kwargs["other"], value)
+
+        mode_calls = []
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_calls.append((func, types, args, kwargs))
+                return NotImplemented
+
+        value = Override()
+        Override.calls.clear()
+        with DecliningMode():
+            self.assertIs(left.matmul(value), marker)
+        self.assertEqual(len(mode_calls), 1)
+        self.assertEqual(len(Override.calls), 1)
+        self.assertIs(mode_calls[0][0], descriptor)
+        self.assertEqual(mode_calls[0][1], (Override,))
+        self.assertIs(Override.calls[0][0], descriptor)
+
     def test_existing_operator_autograd_behavior_is_preserved(self):
         method_left = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
         method_right = torch.tensor([[5.0, 6.0], [7.0, 8.0]], requires_grad=True)

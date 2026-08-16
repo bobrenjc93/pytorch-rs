@@ -124,6 +124,136 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                 case=(case, "keyword"),
             )
 
+    def torch_function_dispatch_observation(self, module):
+        left = module.tensor([[1.0]])
+        right = module.tensor([[2.0]])
+        descriptor = inspect.getattr_static(module.Tensor, "matmul")
+        marker = object()
+        mode_observations = []
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        for keyword in (False, True):
+            mode = RecordingMode()
+            with mode:
+                result = (
+                    left.matmul(other=right) if keyword else left.matmul(right)
+                )
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            mode_observations.append(
+                (
+                    result is marker,
+                    function is descriptor,
+                    dispatch_types == (),
+                    args[0] is left,
+                    len(args),
+                    len(args) == 2 and args[1] is right,
+                    kwargs is None,
+                    kwargs is not None
+                    and tuple(kwargs) == ("other",)
+                    and kwargs["other"] is right,
+                )
+            )
+
+        override_observations = []
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        for keyword in (False, True):
+            value = Override()
+            Override.calls.clear()
+            result = (
+                left.matmul(other=value) if keyword else left.matmul(value)
+            )
+            function, dispatch_types, args, kwargs = Override.calls[0]
+            override_observations.append(
+                (
+                    result is marker,
+                    function is descriptor,
+                    dispatch_types == (Override,),
+                    args[0] is left,
+                    len(args),
+                    len(args) == 2 and args[1] is value,
+                    kwargs is None,
+                    kwargs is not None
+                    and tuple(kwargs) == ("other",)
+                    and kwargs["other"] is value,
+                )
+            )
+
+        events = []
+
+        class FallbackOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        "override",
+                        func is descriptor,
+                        types == (FallbackOverride,),
+                        args[0] is left,
+                        len(args) == 2 and isinstance(args[1], FallbackOverride),
+                        kwargs is None,
+                    )
+                )
+                return marker
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        "mode",
+                        func is descriptor,
+                        types == (FallbackOverride,),
+                        args[0] is left,
+                        len(args) == 2 and isinstance(args[1], FallbackOverride),
+                        kwargs is None,
+                    )
+                )
+                return NotImplemented
+
+        with DecliningMode():
+            fallback_result = left.matmul(FallbackOverride())
+
+        invalid_mode = RecordingMode()
+        try:
+            with invalid_mode:
+                left.matmul([])
+        except Exception as error:
+            invalid_observation = (
+                type(error).__name__,
+                str(error),
+                len(invalid_mode.calls),
+            )
+        else:
+            invalid_observation = None
+
+        return (
+            mode_observations,
+            override_observations,
+            fallback_result is marker,
+            events,
+            invalid_observation,
+        )
+
+    def test_torch_function_mode_and_operand_dispatch_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.torch_function_dispatch_observation(torch),
+            self.torch_function_dispatch_observation(reference_torch),
+        )
+
     def test_rank_two_shape_errors_match_pytorch_2_13(self):
         for left_shape, right_shape in (
             ((2, 3), (4, 2)),
