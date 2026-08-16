@@ -13,9 +13,33 @@ use pyo3::types::{PyDict, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    get_device_variable_function, matmul_variable_function, permute_variable_function,
-    positive_variable_function, scalar_tensor_variable_function,
+    adjoint_variable_function, get_device_variable_function, matmul_variable_function,
+    permute_variable_function, positive_variable_function, scalar_tensor_variable_function,
 };
+
+const ADJOINT_DOC: &std::ffi::CStr = cr"
+adjoint(input: Tensor) -> Tensor
+Returns a view of the tensor conjugated and with the last two dimensions transposed.
+
+``x.adjoint()`` is equivalent to ``x.transpose(-2, -1).conj()`` for complex tensors and
+to ``x.transpose(-2, -1)`` for real tensors.
+
+Args:
+    {input}
+
+Example::
+
+    >>> x = torch.arange(4, dtype=torch.float)
+    >>> A = torch.complex(x, x).reshape(2, 2)
+    >>> A
+    tensor([[0.+0.j, 1.+1.j],
+            [2.+2.j, 3.+3.j]])
+    >>> A.adjoint()
+    tensor([[0.-0.j, 2.-2.j],
+            [1.-1.j, 3.-3.j]])
+    >>> (A.adjoint() == A.mH).all()
+    tensor(True)
+";
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
 
@@ -146,6 +170,7 @@ macro_rules! variable_function_callback {
 
 variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
+variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
@@ -180,6 +205,16 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
                 scalar_tensor_callback
             ),
             c"",
+        )
+        .flags(ffi::METH_STATIC)
+        .into_raw(),
+        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
+            c"adjoint",
+            pyo3::impl_::trampoline::get_trampoline_function!(
+                cfunction_with_keywords,
+                adjoint_callback
+            ),
+            ADJOINT_DOC,
         )
         .flags(ffi::METH_STATIC)
         .into_raw(),

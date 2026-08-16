@@ -1,5 +1,7 @@
 import inspect
 import json
+import pickle
+import re
 import subprocess
 import sys
 import types
@@ -34,8 +36,7 @@ class TensorAdjointReferenceTests(unittest.TestCase):
             module.zeros((3, 0, 2), dtype=module.float32).transpose(0, 2)[1],
         )
 
-    def view_contract(self, tensor):
-        result = tensor.adjoint()
+    def result_contract(self, tensor, result):
         restored = result.adjoint()
         return {
             "identity": result is tensor,
@@ -54,6 +55,17 @@ class TensorAdjointReferenceTests(unittest.TestCase):
             "restored_metadata": restored.is_set_to(tensor),
         }
 
+    def view_contract(self, tensor):
+        return self.result_contract(tensor, tensor.adjoint())
+
+    def top_level_view_contract(self, module, tensor, keyword):
+        result = (
+            module.adjoint(tensor)
+            if keyword is None
+            else module.adjoint(**{keyword: tensor})
+        )
+        return self.result_contract(tensor, result)
+
     def test_matrix_batched_empty_offset_and_strided_views_match_pytorch_2_13(self):
         actual_cases = self.tensor_cases(torch)
         expected_cases = self.tensor_cases(reference_torch)
@@ -63,12 +75,69 @@ class TensorAdjointReferenceTests(unittest.TestCase):
             with self.subTest(case=case, shape=actual.shape, stride=actual.stride()):
                 self.assertEqual(self.view_contract(actual), self.view_contract(expected))
 
+    def test_top_level_call_forms_match_pytorch_2_13(self):
+        actual_cases = self.tensor_cases(torch)
+        expected_cases = self.tensor_cases(reference_torch)
+        for case, (actual, expected) in enumerate(
+            zip(actual_cases, expected_cases, strict=True)
+        ):
+            for keyword in (None, "input", "x", "a", "x1"):
+                with self.subTest(
+                    case=case,
+                    keyword=keyword,
+                    shape=actual.shape,
+                    stride=actual.stride(),
+                ):
+                    self.assertEqual(
+                        self.top_level_view_contract(torch, actual, keyword),
+                        self.top_level_view_contract(reference_torch, expected, keyword),
+                    )
+
     def error(self, action):
         try:
             action()
         except Exception as error:
             return type(error).__name__, str(error)
         self.fail("Tensor.adjoint unexpectedly accepted the operation")
+
+    def top_level_callable_contract(self, module):
+        function = module.adjoint
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.adjoint is function,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature_error": signature_error,
+            "all_count": module.__all__.count("adjoint"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "owner_not_top_level": not hasattr(module, "_VariableFunctionsClass"),
+            "wildcard_identity": wildcard_namespace["adjoint"] is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
 
     def descriptor_contract(self, module):
         descriptor = inspect.getattr_static(module.Tensor, "adjoint")
@@ -118,6 +187,85 @@ class TensorAdjointReferenceTests(unittest.TestCase):
             self.descriptor_contract(torch),
             self.descriptor_contract(reference_torch),
         )
+        self.assertEqual(
+            self.top_level_callable_contract(torch),
+            self.top_level_callable_contract(reference_torch),
+        )
+
+    def top_level_dispatch_observation(self, module, keyword):
+        tensor = module.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=module.float32
+        )
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            result = (
+                module.adjoint(tensor)
+                if keyword is None
+                else module.adjoint(**{keyword: tensor})
+            )
+        function, dispatch_types, args, kwargs = mode.calls[0]
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = module.adjoint(a=tensor)
+
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        value = Override()
+        override_result = module.adjoint(x=value)
+        override_function, override_types, override_args, override_kwargs = (
+            override_calls[0]
+        )
+        return {
+            "intercepted": result is marker,
+            "function": function is module.adjoint,
+            "types": dispatch_types,
+            "args": args == ((tensor,) if keyword is None else ()),
+            "kwargs": kwargs is None
+            if keyword is None
+            else kwargs == {keyword: tensor},
+            "forwarding_order": order,
+            "forwarded": self.result_contract(tensor, forwarded),
+            "override_result": override_result is marker,
+            "override_function": override_function is module.adjoint,
+            "override_types": override_types == (Override,),
+            "override_args": override_args == (),
+            "override_kwargs": override_kwargs == {"x": value},
+        }
+
+    def test_top_level_torch_function_dispatch_matches_pytorch_2_13(self):
+        for keyword in (None, "input", "x", "a", "x1"):
+            with self.subTest(keyword=keyword):
+                self.assertEqual(
+                    self.top_level_dispatch_observation(torch, keyword),
+                    self.top_level_dispatch_observation(reference_torch, keyword),
+                )
 
     def mode_dispatch_observation(self, module_name):
         source = r'''
@@ -237,6 +385,80 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
+    def test_top_level_binding_error_precedence_matches_pytorch_2_13(self):
+        actual = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        expected = reference_torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=reference_torch.float32
+        )
+        cases = (
+            (lambda: torch.adjoint(), lambda: reference_torch.adjoint()),
+            (
+                lambda: torch.adjoint(actual, actual),
+                lambda: reference_torch.adjoint(expected, expected),
+            ),
+            (
+                lambda: torch.adjoint(actual, input=actual),
+                lambda: reference_torch.adjoint(expected, input=expected),
+            ),
+            (
+                lambda: torch.adjoint(actual, extra=True, input=actual),
+                lambda: reference_torch.adjoint(
+                    expected, extra=True, input=expected
+                ),
+            ),
+            (
+                lambda: torch.adjoint(actual, input=actual, extra=True),
+                lambda: reference_torch.adjoint(
+                    expected, input=expected, extra=True
+                ),
+            ),
+            (
+                lambda: torch.adjoint(extra=actual),
+                lambda: reference_torch.adjoint(extra=expected),
+            ),
+            (
+                lambda: torch.adjoint(1, extra=True),
+                lambda: reference_torch.adjoint(1, extra=True),
+            ),
+            (
+                lambda: torch.adjoint(input=[]),
+                lambda: reference_torch.adjoint(input=[]),
+            ),
+            (lambda: torch.adjoint(a=1), lambda: reference_torch.adjoint(a=1)),
+            (lambda: torch.adjoint(x=[]), lambda: reference_torch.adjoint(x=[])),
+            (
+                lambda: torch.adjoint(x1=None),
+                lambda: reference_torch.adjoint(x1=None),
+            ),
+            (
+                lambda: torch.adjoint(a=actual, x=actual),
+                lambda: reference_torch.adjoint(a=expected, x=expected),
+            ),
+            (
+                lambda: torch.adjoint(x=actual, a=actual),
+                lambda: reference_torch.adjoint(x=expected, a=expected),
+            ),
+            (
+                lambda: torch.adjoint(input=actual, a=actual),
+                lambda: reference_torch.adjoint(input=expected, a=expected),
+            ),
+            (
+                lambda: torch.adjoint(input=actual, x1=actual),
+                lambda: reference_torch.adjoint(input=expected, x1=expected),
+            ),
+            (
+                lambda: torch.adjoint(x=actual, x1=actual),
+                lambda: reference_torch.adjoint(x=expected, x1=expected),
+            ),
+            (
+                lambda: torch.adjoint(x1=actual, x=actual),
+                lambda: reference_torch.adjoint(x1=expected, x=expected),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assertEqual(self.error(actual_call), self.error(expected_call))
+
     def test_scalar_warning_vector_error_and_extreme_metadata_match_pytorch_2_13(self):
         script = r'''
 import importlib, json, sys, warnings
@@ -245,28 +467,36 @@ outputs = []
 scalar = torch.tensor(2.5, dtype=torch.float32, requires_grad=True)
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
-    first = scalar.adjoint()
+    first = torch.adjoint(scalar)
     second = scalar.adjoint()
+    aliases = (
+        torch.adjoint(input=scalar),
+        torch.adjoint(x=scalar),
+        torch.adjoint(a=scalar),
+        torch.adjoint(x1=scalar),
+    )
 outputs.append({
     "count": len(caught),
     "category": caught[0].category.__name__,
     "message": str(caught[0].message),
     "filename": caught[0].filename,
     "lineno": caught[0].lineno,
-    "identity": first is scalar and second is scalar,
+    "identity": first is scalar and second is scalar and all(
+        result is scalar for result in aliases
+    ),
     "requires_grad": first.requires_grad,
     "is_leaf": first.is_leaf,
 })
 try:
-    torch.zeros((3,), dtype=torch.float32).adjoint()
+    torch.adjoint(torch.zeros((3,), dtype=torch.float32))
 except Exception as error:
     outputs.append({"error": type(error).__name__, "message": str(error)})
 try:
-    torch.zeros((sys.maxsize, 0, sys.maxsize), dtype=torch.float32).adjoint()
+    torch.adjoint(input=torch.zeros((sys.maxsize, 0, sys.maxsize), dtype=torch.float32))
 except Exception as error:
     outputs.append({"error": type(error).__name__, "message": str(error)})
 offset = torch.zeros((sys.maxsize, 0, 1), dtype=torch.float32)[sys.maxsize - 1]
-result = offset.adjoint()
+result = torch.adjoint(a=offset)
 outputs.append({
     "shape": list(result.shape),
     "stride": list(result.stride()),
@@ -297,7 +527,7 @@ print(json.dumps(outputs))
         weights = module.tensor(
             [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=module.float32
         )
-        view = leaf.adjoint()
+        view = module.adjoint(leaf)
         view_contract = (
             view.requires_grad,
             view.is_leaf,
@@ -311,7 +541,7 @@ print(json.dumps(outputs))
         (view * weights).sum().backward()
 
         empty = module.zeros((2, 0, 3), dtype=module.float32, requires_grad=True)
-        empty_view = empty.adjoint()
+        empty_view = module.adjoint(x=empty)
         empty_view.sum().backward()
 
         no_grad_source = module.tensor(
@@ -320,7 +550,7 @@ print(json.dumps(outputs))
             requires_grad=True,
         )
         with module.no_grad():
-            no_grad_view = no_grad_source.adjoint()
+            no_grad_view = module.adjoint(input=no_grad_source)
         no_grad_contract = (
             no_grad_view.requires_grad,
             no_grad_view.is_leaf,
