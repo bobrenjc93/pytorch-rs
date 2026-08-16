@@ -442,7 +442,14 @@ impl PyTensorBase {
     ) -> PyResult<Py<PyAny>> {
         let dimension = bind_size_dimension(args, kwargs)?;
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) = dispatch_tensorbase_size_mode(slf.py(), tensor, args, kwargs)? {
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "size",
+            "torch.Tensor.size",
+            args,
+            kwargs,
+        )? {
             return Ok(result);
         }
 
@@ -711,6 +718,38 @@ impl PyTensorBase {
         let dimensions = bind_permute_dimensions(args, kwargs)?;
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         permute_tensor(&tensor.inner, dimensions).map(PyTensor::new)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nmovedim(source, destination) -> Tensor\n\nSee :func:`torch.movedim`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn movedim(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let [source, destination] = bind_movedim_arguments(args, kwargs)?;
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "movedim",
+            "torch.Tensor.movedim",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        let [source, destination] = parse_dimension_swap_dimensions(
+            "movedim",
+            ["source", "destination"],
+            &source,
+            &destination,
+        )?;
+        let inner = movedim_tensor(&tensor.try_borrow()?.inner, source, destination)?;
+        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1210,9 +1249,11 @@ fn dispatch_tensorbase_mode(
     Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
 }
 
-fn dispatch_tensorbase_size_mode(
+fn dispatch_tensorbase_method_mode(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
+    method: &'static str,
+    qualified_method: &'static str,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Option<Py<PyAny>>> {
@@ -1220,18 +1261,20 @@ fn dispatch_tensorbase_size_mode(
         return Ok(None);
     }
 
-    let function = py.get_type::<PyTensorBase>().getattr("size")?.unbind();
-    // `dim` is metadata rather than an overloaded tensor operand, so PyTorch
-    // supplies no dispatch types even though the receiver remains in args.
+    let function = py.get_type::<PyTensorBase>().getattr(method)?.unbind();
+    // Dimension arguments are metadata rather than overloaded tensor
+    // operands, so PyTorch supplies no dispatch types even though the receiver
+    // remains in args.
     let types = PyTuple::empty(py);
-    let argument_count = args
-        .len()
-        .checked_add(1)
-        .ok_or_else(|| PyMemoryError::new_err("size dispatch argument count overflowed"))?;
+    let argument_count = args.len().checked_add(1).ok_or_else(|| {
+        PyMemoryError::new_err(format!("{method} dispatch argument count overflowed"))
+    })?;
     let mut call_arguments = Vec::new();
     call_arguments
         .try_reserve_exact(argument_count)
-        .map_err(|_| PyMemoryError::new_err("unable to allocate size dispatch arguments"))?;
+        .map_err(|_| {
+            PyMemoryError::new_err(format!("unable to allocate {method} dispatch arguments"))
+        })?;
     call_arguments.push(tensor.clone().into_any());
     call_arguments.extend(args.iter());
     let call_args = PyTuple::new(py, call_arguments)?;
@@ -1251,7 +1294,7 @@ fn dispatch_tensorbase_size_mode(
 
     Err(torch_function_dispatch_error(
         py,
-        "torch.Tensor.size",
+        qualified_method,
         Some(mode),
         None,
     )?)
@@ -6274,6 +6317,184 @@ fn multiply_invalid_keyword_mismatch(
     Ok(mismatch)
 }
 
+fn bind_movedim_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<[ParsedCallArgument<'py>; 2]> {
+    let argument_count = positional
+        .len()
+        .checked_add(keywords.map_or(0, PyDictMethods::len))
+        .ok_or_else(|| PyMemoryError::new_err("movedim argument count overflowed"))?;
+    if positional.len() > 2 || argument_count != 2 {
+        return Err(movedim_binding_error(positional, keywords)?);
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 2] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = pytorch_keyword_name(&key)?;
+            let index = match key {
+                "source" => 0,
+                "destination" => 1,
+                _ => return Err(movedim_binding_error(positional, Some(keywords))?),
+            };
+            if arguments[index].is_some() {
+                return Err(movedim_binding_error(positional, Some(keywords))?);
+            }
+            arguments[index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    let arguments = arguments.map(|argument| {
+        argument.expect("two valid movedim arguments fill both declared positions")
+    });
+    if !is_dimension_swap_integer(&arguments[0].value)?
+        || !is_dimension_swap_integer(&arguments[1].value)?
+    {
+        return Err(movedim_binding_error(positional, keywords)?);
+    }
+    Ok(arguments)
+}
+
+fn movedim_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    let argument_count = positional
+        .len()
+        .checked_add(keywords.map_or(0, PyDictMethods::len))
+        .ok_or_else(|| PyMemoryError::new_err("movedim argument count overflowed"))?;
+
+    let (integer_mismatch, sequence_mismatch) = if argument_count == 2 {
+        let (arguments, incorrect_keywords) = movedim_error_arguments(positional, keywords)?;
+        if incorrect_keywords.is_empty() {
+            if let [Some(source), Some(destination)] = arguments {
+                let arguments = [source, destination];
+                (
+                    movedim_invalid_type_mismatch(&arguments, false)?,
+                    movedim_invalid_type_mismatch(&arguments, true)?,
+                )
+            } else {
+                (String::new(), String::new())
+            }
+        } else {
+            let mismatch = format!(
+                "\n      didn't match because some of the keywords were incorrect: {}",
+                incorrect_keywords.join(", ")
+            );
+            (mismatch.clone(), mismatch)
+        }
+    } else {
+        (String::new(), String::new())
+    };
+
+    Ok(PyTypeError::new_err(format!(
+        "movedim() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (int source, int destination){integer_mismatch}\n * (tuple of ints source, tuple of ints destination){sequence_mismatch}\n"
+    )))
+}
+
+fn movedim_error_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<([Option<ParsedCallArgument<'py>>; 2], Vec<String>)> {
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 2] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().take(2).enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    let keyword_count = keywords.map_or(0, PyDictMethods::len);
+    let mut incorrect = try_size_vector(keyword_count)?;
+    if let Some(keywords) = keywords {
+        for key in movedim_ordered_keyword_names(keywords)? {
+            let value = keywords
+                .get_item(key.as_str())?
+                .expect("an ordered movedim keyword remains in the source dictionary");
+            let index = match key.as_str() {
+                "source" => Some(0),
+                "destination" => Some(1),
+                _ => None,
+            };
+            if let Some(index) = index
+                && arguments[index].is_none()
+            {
+                arguments[index] = Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                });
+            } else {
+                try_push_size(&mut incorrect, key)?;
+            }
+        }
+    }
+    Ok((arguments, incorrect))
+}
+
+fn movedim_ordered_keyword_names(keywords: &Bound<'_, PyDict>) -> PyResult<Vec<String>> {
+    let allocation = PythonAllocationFallback::new(keywords.py());
+    let mut entries = try_size_vector_with(keywords.len(), &allocation)?;
+    for (key, _) in keywords {
+        let key = pytorch_keyword_name(&key)?;
+        try_push_size_with(
+            &mut entries,
+            (try_string_from_str_with(key, &allocation)?, String::new()),
+            &allocation,
+        )?;
+    }
+    Ok(pytorch_unordered_keyword_order(entries, &allocation)?
+        .into_iter()
+        .map(|(key, _)| key)
+        .collect())
+}
+
+fn movedim_invalid_type_mismatch(
+    arguments: &[ParsedCallArgument<'_>; 2],
+    sequence_overload: bool,
+) -> PyResult<String> {
+    let names = ["source", "destination"];
+    let mut details = try_size_vector(arguments.len())?;
+    for (name, argument) in names.into_iter().zip(arguments) {
+        let actual = transpose_type_name(&argument.value)?;
+        let detail = call_argument_type_description(&argument.value)?;
+        let detail = if argument.position.is_none() {
+            format!("{name}={detail}")
+        } else {
+            detail
+        };
+        let invalid = sequence_overload || actual != "int";
+        try_push_size(
+            &mut details,
+            if invalid {
+                format!("!{detail}!")
+            } else {
+                detail
+            },
+        )?;
+    }
+    let trailing = if arguments[0].position.is_none() {
+        ", "
+    } else {
+        ""
+    };
+    Ok(format!(
+        "\n      didn't match because some of the arguments have invalid types: ({}{trailing})",
+        details.join(", ")
+    ))
+}
+
 fn bind_dimension_swap_arguments<'py, const N: usize>(
     operation: &str,
     positional: &Bound<'py, PyTuple>,
@@ -6598,6 +6819,48 @@ fn permute_tensor(input: &CoreTensor, dimensions: Vec<i64>) -> PyResult<CoreTens
     input
         .permute_axes(normalized)
         .map_err(|error| permute_error(&error))
+}
+
+fn movedim_tensor(input: &CoreTensor, source: i64, destination: i64) -> PyResult<CoreTensor> {
+    let rank = input.shape().len();
+    let source = normalize_movedim_dimension(source, rank)?;
+    let destination = normalize_movedim_dimension(destination, rank)?;
+    let mut dimensions = try_size_vector(rank)?;
+    for axis in 0..rank {
+        if axis != source {
+            let axis = i64::try_from(axis)
+                .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+            try_push_size(&mut dimensions, axis)?;
+        }
+    }
+    if rank != 0 {
+        let source = i64::try_from(source)
+            .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+        dimensions.insert(destination, source);
+    }
+    permute_tensor(input, dimensions)
+}
+
+fn normalize_movedim_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
+    let effective_rank = rank.max(1);
+    let signed_rank = i64::try_from(effective_rank)
+        .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    if dimension < -signed_rank || dimension >= signed_rank {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension out of range (expected to be in range of [{}, {}], but got {dimension})",
+            -signed_rank,
+            signed_rank - 1
+        )));
+    }
+    if rank == 0 {
+        return Ok(0);
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + signed_rank
+    } else {
+        dimension
+    })
+    .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds usize"))
 }
 
 fn validate_dimension_swap_argument_prefix<const N: usize>(

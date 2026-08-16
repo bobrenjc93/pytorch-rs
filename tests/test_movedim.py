@@ -1,0 +1,504 @@
+import enum
+import inspect
+import re
+import sys
+import types
+import unittest
+
+import numpy as np
+import torch_rs as torch
+
+
+METHOD_DOC = (
+    "\nmovedim(source, destination) -> Tensor\n\n"
+    "See :func:`torch.movedim`\n"
+)
+OVERLOADS = (
+    "but expected one of:\n"
+    " * (int source, int destination)\n"
+    " * (tuple of ints source, tuple of ints destination)\n"
+)
+
+
+class Dimension(enum.IntEnum):
+    FIRST = 0
+    LAST = -1
+
+
+class IntegerSubclass(int):
+    pass
+
+
+class CustomIndex:
+    def __init__(self):
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        return 0
+
+
+class TensorMovedimTests(unittest.TestCase):
+    def assert_values(self, tensor, expected):
+        np.testing.assert_array_equal(np.asarray(tensor), np.asarray(expected))
+
+    def test_integer_axes_move_through_shared_storage_permutations(self):
+        values = np.arange(120, dtype=np.float32).reshape(2, 3, 4, 5)
+        tensor = torch.tensor(values.tolist())
+        original_metadata = (
+            tuple(tensor.shape),
+            tensor.stride(),
+            tensor.storage_offset(),
+            tensor.data_ptr(),
+        )
+
+        case = 0
+        for source_axis in range(values.ndim):
+            for destination_axis in range(values.ndim):
+                source = source_axis if case % 2 == 0 else source_axis - values.ndim
+                destination = (
+                    destination_axis
+                    if case % 3 == 0
+                    else destination_axis - values.ndim
+                )
+                if case % 3 == 0:
+                    moved = tensor.movedim(source, destination)
+                elif case % 3 == 1:
+                    moved = tensor.movedim(
+                        source=source, destination=destination
+                    )
+                else:
+                    moved = tensor.movedim(
+                        destination=destination, source=source
+                    )
+
+                order = [axis for axis in range(values.ndim) if axis != source_axis]
+                order.insert(destination_axis, source_axis)
+                with self.subTest(source=source, destination=destination):
+                    self.assertEqual(
+                        moved.shape,
+                        np.moveaxis(values, source_axis, destination_axis).shape,
+                    )
+                    self.assertEqual(
+                        moved.stride(),
+                        tuple(tensor.stride()[axis] for axis in order),
+                    )
+                    self.assertEqual(
+                        moved.storage_offset(), tensor.storage_offset()
+                    )
+                    self.assertEqual(moved.data_ptr(), tensor.data_ptr())
+                    self.assertIs(moved.dtype, torch.float32)
+                    self.assertEqual(moved.device, torch.device("cpu"))
+                    self.assert_values(
+                        moved,
+                        np.moveaxis(values, source_axis, destination_axis),
+                    )
+                case += 1
+
+        self.assertEqual(
+            (
+                tuple(tensor.shape),
+                tensor.stride(),
+                tensor.storage_offset(),
+                tensor.data_ptr(),
+            ),
+            original_metadata,
+        )
+
+    def test_scalar_empty_offset_and_strided_views_preserve_metadata(self):
+        scalar = torch.tensor(2.5)
+        for source in (0, -1):
+            for destination in (0, -1):
+                with self.subTest(kind="scalar", source=source, destination=destination):
+                    moved = scalar.movedim(source, destination)
+                    self.assertIsNot(moved, scalar)
+                    self.assertEqual(moved.shape, ())
+                    self.assertEqual(moved.stride(), ())
+                    self.assertEqual(moved.storage_offset(), 0)
+                    self.assertEqual(moved.data_ptr(), scalar.data_ptr())
+                    self.assertEqual(moved.item(), 2.5)
+
+        empty = torch.zeros((2, 0, 3))
+        moved_empty = empty.movedim(source=-1, destination=0)
+        self.assertEqual(moved_empty.shape, (3, 2, 0))
+        self.assertEqual(
+            moved_empty.stride(),
+            (empty.stride()[2], empty.stride()[0], empty.stride()[1]),
+        )
+        self.assertEqual(moved_empty.storage_offset(), empty.storage_offset())
+        self.assertEqual(moved_empty.data_ptr(), empty.data_ptr())
+        self.assertEqual(moved_empty.numel(), 0)
+
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        base = torch.tensor(values.tolist())
+        source = base.transpose(0, 2)[1]
+        self.assertGreater(source.storage_offset(), 0)
+        self.assertFalse(source.is_contiguous())
+        moved = source.movedim(-1, 0)
+        self.assertEqual(moved.shape, (2, 3))
+        self.assertEqual(
+            moved.stride(), (source.stride()[1], source.stride()[0])
+        )
+        self.assertEqual(moved.storage_offset(), source.storage_offset())
+        self.assertEqual(moved.data_ptr(), source.data_ptr())
+        self.assert_values(moved, np.moveaxis(values.transpose(2, 1, 0)[1], -1, 0))
+
+    def test_extreme_empty_metadata_uses_permutation_overflow_checks(self):
+        tensor = torch.zeros((sys.maxsize, 0, 2, 2))
+        moved = tensor.movedim(0, 2)
+        order = (1, 2, 0, 3)
+        self.assertEqual(moved.shape, (0, 2, sys.maxsize, 2))
+        self.assertEqual(
+            moved.stride(), tuple(tensor.stride()[axis] for axis in order)
+        )
+        self.assertEqual(moved.data_ptr(), tensor.data_ptr())
+
+        with self.assertRaises(RuntimeError) as raised:
+            tensor.movedim(source=1, destination=3)
+        self.assertEqual(
+            str(raised.exception), "numel: integer multiplication overflow"
+        )
+
+    def test_autograd_empty_backward_and_no_grad_match_view_policy(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        weights = np.linspace(-2.0, 3.0, num=24, dtype=np.float32).reshape(4, 2, 3)
+        leaf = torch.tensor(values.tolist(), requires_grad=True)
+        moved = leaf.movedim(-1, 0)
+
+        self.assertTrue(moved.requires_grad)
+        self.assertFalse(moved.is_leaf)
+        self.assertEqual(moved.data_ptr(), leaf.data_ptr())
+        (moved * torch.tensor(weights.tolist())).sum().backward()
+        self.assert_values(leaf.grad, np.moveaxis(weights, 0, -1))
+
+        identity_leaf = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+        )
+        identity = identity_leaf.movedim(1, 1)
+        identity_weights = np.array([[2.0, 3.0], [5.0, 7.0]], dtype=np.float32)
+        (identity * torch.tensor(identity_weights.tolist())).sum().backward()
+        self.assert_values(identity_leaf.grad, identity_weights)
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        empty.movedim(0, -1).sum().backward()
+        self.assert_values(empty.grad, np.zeros((2, 0, 3), dtype=np.float32))
+
+        with torch.no_grad():
+            untracked = leaf.movedim(source=0, destination=1)
+        self.assertTrue(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
+        self.assertEqual(untracked.data_ptr(), leaf.data_ptr())
+        self.assertEqual(untracked.shape, (3, 2, 4))
+        self.assertEqual(untracked.stride(), (4, 12, 1))
+
+    def test_python_and_numpy_integer_scalars_and_conversion_order(self):
+        tensor = torch.zeros((2, 3, 4))
+        cases = (
+            (0, 2, (3, 4, 2)),
+            (IntegerSubclass(1), IntegerSubclass(0), (3, 2, 4)),
+            (Dimension.FIRST, Dimension.LAST, (3, 4, 2)),
+            (np.int8(-1), np.int32(0), (4, 2, 3)),
+            (np.uint64(2), np.int64(1), (2, 4, 3)),
+        )
+        for source, destination, shape in cases:
+            with self.subTest(source=repr(source), destination=repr(destination)):
+                self.assertEqual(tensor.movedim(source, destination).shape, shape)
+
+        state = {"destination_converted": False, "calls": []}
+
+        class StatefulInteger(np.int64):
+            def __new__(cls, role):
+                value = np.int64.__new__(cls, 0)
+                value.role = role
+                return value
+
+            def __index__(self):
+                state["calls"].append(self.role)
+                if self.role == "destination":
+                    state["destination_converted"] = True
+                    return 1
+                return 0 if state["destination_converted"] else 2
+
+        moved = tensor.movedim(
+            StatefulInteger("source"), StatefulInteger("destination")
+        )
+        self.assertEqual(state["calls"], ["destination", "source"])
+        self.assertEqual(moved.shape, (3, 2, 4))
+        self.assertEqual(moved.stride(), (4, 12, 1))
+
+    def test_integer_binding_overflow_and_dimension_errors(self):
+        tensor = torch.zeros((2, 3, 4))
+        custom = CustomIndex()
+        invalid_types = (
+            (True, 0, "bool", "int"),
+            (np.bool_(False), 0, "numpy.bool", "int"),
+            (custom, 0, "CustomIndex", "int"),
+            (1.5, 0, "float", "int"),
+            (0, "1", "int", "str"),
+        )
+        for source, destination, source_type, destination_type in invalid_types:
+            with self.subTest(source=repr(source), destination=repr(destination)):
+                with self.assertRaises(TypeError) as raised:
+                    tensor.movedim(source, destination)
+                self.assertEqual(
+                    str(raised.exception),
+                    "movedim() received an invalid combination of arguments - got "
+                    f"({source_type}, {destination_type}), but expected one of:\n"
+                    " * (int source, int destination)\n"
+                    "      didn't match because some of the arguments have invalid "
+                    f"types: ({'!' if source_type != 'int' else ''}{source_type}"
+                    f"{'!' if source_type != 'int' else ''}, "
+                    f"{'!' if destination_type != 'int' else ''}{destination_type}"
+                    f"{'!' if destination_type != 'int' else ''})\n"
+                    " * (tuple of ints source, tuple of ints destination)\n"
+                    "      didn't match because some of the arguments have invalid "
+                    f"types: (!{source_type}!, !{destination_type}!)\n",
+                )
+        self.assertEqual(custom.calls, 0)
+
+        for value in (2**63, -(2**63) - 1, np.uint64(2**63)):
+            for source_first in (False, True):
+                with self.subTest(value=repr(value), source_first=source_first):
+                    with self.assertRaises(ValueError) as raised:
+                        if source_first:
+                            tensor.movedim(value, 0)
+                        else:
+                            tensor.movedim(0, value)
+                    self.assertEqual(
+                        str(raised.exception), "Overflow when unpacking long long"
+                    )
+
+        for source, destination, invalid in (
+            (3, 0, 3),
+            (-4, 0, -4),
+            (0, 3, 3),
+            (0, -4, -4),
+        ):
+            with self.subTest(source=source, destination=destination):
+                with self.assertRaises(IndexError) as raised:
+                    tensor.movedim(source, destination)
+                self.assertEqual(
+                    str(raised.exception),
+                    "Dimension out of range (expected to be in range of "
+                    f"[-3, 2], but got {invalid})",
+                )
+
+        scalar = torch.tensor(1.0)
+        with self.assertRaisesRegex(
+            IndexError,
+            r"^Dimension out of range \(expected to be in range of "
+            r"\[-1, 0\], but got -2\)$",
+        ):
+            scalar.movedim(-2, 0)
+
+    def test_binding_errors_match_the_integer_overload_shape(self):
+        tensor = torch.zeros((2, 3, 4))
+        cases = (
+            (
+                lambda: tensor.movedim(),
+                f"movedim() received an invalid combination of arguments - got (), {OVERLOADS}",
+            ),
+            (
+                lambda: tensor.movedim(0),
+                "movedim() received an invalid combination of arguments - got "
+                f"(int), {OVERLOADS}",
+            ),
+            (
+                lambda: tensor.movedim(0, 1, 2),
+                "movedim() received an invalid combination of arguments - got "
+                f"(int, int, int), {OVERLOADS}",
+            ),
+            (
+                lambda: tensor.movedim(source=0),
+                "movedim() received an invalid combination of arguments - got "
+                f"(source=int, ), {OVERLOADS}",
+            ),
+            (
+                lambda: tensor.movedim(0, source=1),
+                "movedim() received an invalid combination of arguments - got "
+                "(int, source=int), but expected one of:\n"
+                " * (int source, int destination)\n"
+                "      didn't match because some of the keywords were incorrect: source\n"
+                " * (tuple of ints source, tuple of ints destination)\n"
+                "      didn't match because some of the keywords were incorrect: source\n",
+            ),
+            (
+                lambda: tensor.movedim(0, 1, extra=True),
+                "movedim() received an invalid combination of arguments - got "
+                f"(int, int, extra=bool), {OVERLOADS}",
+            ),
+        )
+        for call, expected in cases:
+            with self.subTest(expected=expected):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), expected)
+
+    def test_sequence_and_top_level_overloads_remain_out_of_scope(self):
+        tensor = torch.zeros((2, 3, 4))
+        self.assertFalse(hasattr(torch, "movedim"))
+        self.assertNotIn("movedim", torch.__all__)
+        for source, destination in (
+            ((0, 2), (2, 0)),
+            ([0, 2], [2, 0]),
+            ((), ()),
+        ):
+            with self.subTest(source=source, destination=destination):
+                with self.assertRaises(TypeError):
+                    tensor.movedim(source, destination)
+
+    def test_tensorbase_descriptor_metadata_and_unbound_behavior(self):
+        tensor = torch.zeros((2, 3, 4))
+        descriptor = inspect.getattr_static(torch.Tensor, "movedim")
+        bound = tensor.movedim
+
+        self.assertIs(type(descriptor), types.MethodDescriptorType)
+        self.assertIs(type(bound), types.BuiltinMethodType)
+        self.assertEqual(descriptor.__name__, "movedim")
+        self.assertEqual(descriptor.__qualname__, "TensorBase.movedim")
+        self.assertEqual(bound.__name__, "movedim")
+        self.assertEqual(bound.__qualname__, "Tensor.movedim")
+        self.assertEqual(descriptor.__doc__, METHOD_DOC)
+        self.assertEqual(bound.__doc__, METHOD_DOC)
+        self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
+        self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
+        self.assertFalse(hasattr(descriptor, "__module__"))
+        self.assertIsNone(bound.__module__)
+        self.assertIsNone(descriptor.__text_signature__)
+        self.assertIsNone(bound.__text_signature__)
+        self.assertEqual(
+            repr(descriptor),
+            "<method 'movedim' of 'torch._C.TensorBase' objects>",
+        )
+        self.assertIs(torch.Tensor.movedim, descriptor)
+        self.assertIs(descriptor.__get__(None, torch.Tensor), descriptor)
+        for callable_object in (descriptor, bound):
+            with self.assertRaises(ValueError):
+                inspect.signature(callable_object)
+
+        result = descriptor(tensor, 0, -1)
+        self.assertEqual(result.shape, (3, 4, 2))
+        self.assertEqual(result.data_ptr(), tensor.data_ptr())
+        cases = (
+            (
+                lambda: descriptor(),
+                "unbound method TensorBase.movedim() needs an argument",
+            ),
+            (
+                lambda: descriptor(1, 0, 1),
+                "descriptor 'movedim' for 'torch._C.TensorBase' objects "
+                "doesn't apply to a 'int' object",
+            ),
+            (
+                lambda: descriptor(self=tensor, source=0, destination=1),
+                "unbound method TensorBase.movedim() needs an argument",
+            ),
+        )
+        for call, expected in cases:
+            with self.subTest(expected=expected):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), expected)
+
+    def test_torch_function_modes_receive_original_calls_and_forward(self):
+        tensor = torch.zeros((2, 3, 4))
+        descriptor = inspect.getattr_static(torch.Tensor, "movedim")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        positional = RecordingMode(marker)
+        with positional:
+            result = tensor.movedim(0, -1)
+        self.assertIs(result, marker)
+        function, dispatch_types, args, kwargs = positional.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), 3)
+        self.assertIs(args[0], tensor)
+        self.assertEqual(args[1:], (0, -1))
+        self.assertIsNone(kwargs)
+
+        keyword = RecordingMode(marker)
+        with keyword:
+            result = tensor.movedim(destination=-1, source=0)
+        self.assertIs(result, marker)
+        function, dispatch_types, args, kwargs = keyword.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(args, (tensor,))
+        self.assertEqual(kwargs, {"destination": -1, "source": 0})
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor.movedim(source=0, destination=-1)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertEqual(forwarded.shape, (3, 4, 2))
+        self.assertEqual(forwarded.data_ptr(), tensor.data_ptr())
+
+    def test_mode_dispatch_follows_binding_and_precedes_conversion(self):
+        tensor = torch.zeros((2, 3, 4))
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        for source, destination in ((2**100, 0), (3, -4)):
+            mode = RecordingMode(marker)
+            with mode:
+                result = tensor.movedim(source, destination)
+            self.assertIs(result, marker)
+            self.assertEqual(len(mode.calls), 1)
+
+        for source, destination in ((True, 0), (1.5, 0), (0, CustomIndex())):
+            mode = RecordingMode(marker)
+            with self.assertRaises(TypeError):
+                with mode:
+                    tensor.movedim(source, destination)
+            self.assertEqual(mode.calls, [])
+
+        declining = RecordingMode(NotImplemented)
+        lower = RecordingMode(marker)
+        with self.assertRaises(TypeError) as raised:
+            with lower:
+                with declining:
+                    tensor.movedim(0, 1)
+        self.assertRegex(
+            str(raised.exception),
+            re.compile(
+                r"^Multiple dispatch failed for 'torch\.Tensor\.movedim'; all "
+                r"__torch_function__ handlers returned NotImplemented:\n\n"
+                r"  - mode object <.*RecordingMode object at 0x[0-9a-f]+>\n\n"
+                r"For more information, try re-running with "
+                r"TORCH_LOGS=not_implemented$"
+            ),
+        )
+        self.assertEqual(len(declining.calls), 1)
+        self.assertEqual(lower.calls, [])
+
+
+if __name__ == "__main__":
+    unittest.main()
