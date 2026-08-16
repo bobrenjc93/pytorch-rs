@@ -48,6 +48,7 @@ class SamplerReferenceTests(unittest.TestCase):
             "ConcatDataset",
             "Dataset",
             "Sampler",
+            "SequentialSampler",
             "StackDataset",
             "Subset",
             "TensorDataset",
@@ -64,14 +65,13 @@ class SamplerReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_module.__all__
-                if name in {"BatchSampler", "Sampler"}
+                if name in {"BatchSampler", "Sampler", "SequentialSampler"}
             ],
         )
 
         unsupported = (
             "DataLoader",
             "RandomSampler",
-            "SequentialSampler",
             "SubsetRandomSampler",
             "WeightedRandomSampler",
         )

@@ -2721,6 +2721,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68.5
       }
+    },
+    {
+      "key": "pr:182",
+      "recordedAt": "2026-08-16T14:17:13.779Z",
+      "label": "PR #182",
+      "kind": "leaf",
+      "prNumber": 182,
+      "title": "Re-add SequentialSampler with Python 3.14-stable parity tests",
+      "scores": {
+        "eval_7af648fb": 99.5,
+        "eval_8417a4a8": 68.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 47.8,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }
