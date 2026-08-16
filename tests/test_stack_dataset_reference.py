@@ -74,6 +74,42 @@ class StackDatasetReferenceTests(unittest.TestCase):
             expected = reference_torch.utils.data.StackDataset(*expected_children)
         return actual, expected, actual_sources, expected_sources
 
+    def recording_dataset(self, base, prefix, batched):
+        class RecordingDataset(base):
+            def __init__(self):
+                self.calls = []
+
+            def __getitem__(self, index):
+                self.calls.append(index)
+                return f"{prefix}-item-{index}"
+
+            def __len__(self):
+                return 3
+
+        if batched is True:
+
+            def getitems(self, indices):
+                self.calls.append(("batch", indices))
+                return [f"{prefix}-batch-{index}" for index in indices]
+
+            RecordingDataset.__getitems__ = getitems
+        elif batched is None:
+            RecordingDataset.__getitems__ = None
+        return RecordingDataset()
+
+    def mismatched_dataset(self, base):
+        class MismatchedDataset(base):
+            def __getitem__(self, index):
+                return index
+
+            def __getitems__(self, indices):
+                return indices[:-1]
+
+            def __len__(self):
+                return 3
+
+        return MismatchedDataset()
+
     def test_positional_and_keyword_integer_indexing_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         for keyword in (False, True):
@@ -131,6 +167,101 @@ class StackDatasetReferenceTests(unittest.TestCase):
         np.testing.assert_array_equal(
             np.asarray(actual_leaf.grad), expected_leaf.grad.detach().cpu().numpy()
         )
+
+        indices = [2, 0, 2, -1]
+        actual_batch = actual.__getitems__(indices)
+        expected_batch = expected.__getitems__(indices)
+        self.assertIs(type(actual_batch), type(expected_batch))
+        self.assertEqual(len(actual_batch), len(expected_batch))
+        for actual_sample, expected_sample in zip(
+            actual_batch, expected_batch, strict=True
+        ):
+            self.assertIs(type(actual_sample), type(expected_sample))
+            self.assert_tensor_matches(
+                actual_sample[0][0], expected_sample[0][0], actual_leaf, expected_leaf
+            )
+
+        (actual_batch[-1][0][0] * torch.tensor([7.0, 11.0, 13.0])).sum().backward()
+        (
+            expected_batch[-1][0][0]
+            * reference_torch.tensor([7.0, 11.0, 13.0])
+        ).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(actual_leaf.grad), expected_leaf.grad.detach().cpu().numpy()
+        )
+
+    def test_getitems_containers_delegation_and_fallback_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        indices = [2, 0, 2, -1]
+
+        for keyword in (False, True):
+            actual_children = tuple(
+                self.recording_dataset(torch.utils.data.Dataset, prefix, batched)
+                for prefix, batched in (
+                    ("delegated", True),
+                    ("fallback", False),
+                    ("noncallable", None),
+                )
+            )
+            expected_children = tuple(
+                self.recording_dataset(
+                    reference_torch.utils.data.Dataset, prefix, batched
+                )
+                for prefix, batched in (
+                    ("delegated", True),
+                    ("fallback", False),
+                    ("noncallable", None),
+                )
+            )
+            if keyword:
+                keys = ("delegated", "fallback", "noncallable")
+                actual = torch.utils.data.StackDataset(
+                    **dict(zip(keys, actual_children, strict=True))
+                )
+                expected = reference_torch.utils.data.StackDataset(
+                    **dict(zip(keys, expected_children, strict=True))
+                )
+            else:
+                actual = torch.utils.data.StackDataset(*actual_children)
+                expected = reference_torch.utils.data.StackDataset(*expected_children)
+
+            with self.subTest(keyword=keyword):
+                self.assertEqual(
+                    actual.__getitems__(indices), expected.__getitems__(indices)
+                )
+                for actual_child, expected_child in zip(
+                    actual_children, expected_children, strict=True
+                ):
+                    self.assertEqual(actual_child.calls, expected_child.calls)
+
+                empty_indices = []
+                self.assertEqual(
+                    actual.__getitems__(empty_indices),
+                    expected.__getitems__(empty_indices),
+                )
+                for actual_child, expected_child in zip(
+                    actual_children, expected_children, strict=True
+                ):
+                    self.assertEqual(actual_child.calls, expected_child.calls)
+
+        for keyword in (False, True):
+            actual_child = self.mismatched_dataset(torch.utils.data.Dataset)
+            expected_child = self.mismatched_dataset(
+                reference_torch.utils.data.Dataset
+            )
+            if keyword:
+                actual = torch.utils.data.StackDataset(child=actual_child)
+                expected = reference_torch.utils.data.StackDataset(
+                    child=expected_child
+                )
+            else:
+                actual = torch.utils.data.StackDataset(actual_child)
+                expected = reference_torch.utils.data.StackDataset(expected_child)
+            with self.subTest(keyword=keyword, mismatch=True):
+                self.assert_error_matches(
+                    lambda: actual.__getitems__([2, 0, -1]),
+                    lambda: expected.__getitems__([2, 0, -1]),
+                )
 
     def test_empty_mixed_and_length_validation_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
@@ -223,12 +354,13 @@ class StackDatasetReferenceTests(unittest.TestCase):
         )
         self.assertTrue(issubclass(actual, torch.utils.data.Dataset))
         self.assertTrue(issubclass(expected, reference_torch.utils.data.Dataset))
-        self.assertNotIn("__getitems__", actual.__dict__)
+        self.assertIn("__getitems__", actual.__dict__)
         self.assertIn("__getitems__", expected.__dict__)
 
         method_pairs = (
             (actual.__init__, expected.__init__),
             (actual.__getitem__, expected.__getitem__),
+            (actual.__getitems__, expected.__getitems__),
             (actual.__len__, expected.__len__),
         )
         for actual_method, expected_method in method_pairs:
@@ -237,6 +369,10 @@ class StackDatasetReferenceTests(unittest.TestCase):
                 str(inspect.signature(expected_method)),
             )
             self.assertEqual(actual_method.__doc__, expected_method.__doc__)
+            self.assertEqual(
+                str(actual_method.__annotations__).replace("torch_rs", "torch"),
+                str(expected_method.__annotations__),
+            )
 
         actual_dataset = actual([10])
         expected_dataset = expected([10])
@@ -248,6 +384,14 @@ class StackDatasetReferenceTests(unittest.TestCase):
             (
                 lambda: actual_dataset.__getitem__(0, 1),
                 lambda: expected_dataset.__getitem__(0, 1),
+            ),
+            (
+                lambda: actual_dataset.__getitems__(),
+                lambda: expected_dataset.__getitems__(),
+            ),
+            (
+                lambda: actual_dataset.__getitems__([], []),
+                lambda: expected_dataset.__getitems__([], []),
             ),
             (
                 lambda: actual_dataset.__len__(1),
