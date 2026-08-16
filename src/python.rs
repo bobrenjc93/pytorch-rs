@@ -2270,7 +2270,7 @@ impl PyTensor {
         let outputs = iteration_unbind_descriptor(py)?
             .bind(py)
             .call1((slf.clone(), 0_i64))?;
-        Ok(outputs.call_method0("__iter__")?.unbind())
+        Ok(outputs.try_iter()?.into_any().unbind())
     }
 
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {

@@ -174,6 +174,36 @@ class TensorOutputNumberTests(unittest.TestCase):
         self.assertIsNone(unbind_kwargs)
         self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
 
+    def test_mode_replaced_unbind_uses_python_iterator_protocol(self):
+        source = torch.tensor([[1.0], [2.0]])
+
+        class GetItemOnly:
+            def __init__(self):
+                self.values = ("replacement-a", "replacement-b")
+
+            def __getitem__(self, index):
+                return self.values[index]
+
+        class ReplacingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, replacement):
+                self.replacement = replacement
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                if func.__name__ == "unbind":
+                    return self.replacement
+                return func(*args, **(kwargs or {}))
+
+        with ReplacingMode(GetItemOnly()):
+            iterator = iter(source)
+        self.assertEqual(type(iterator).__name__, "iterator")
+        self.assertEqual(tuple(iterator), ("replacement-a", "replacement-b"))
+
+        with self.assertRaises(TypeError) as raised:
+            with ReplacingMode(object()):
+                iter(source)
+        self.assertEqual(str(raised.exception), "'object' object is not iterable")
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
+
     def test_tensorbase_descriptor_is_undocumented_and_read_only(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "output_nr")

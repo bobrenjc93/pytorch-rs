@@ -232,6 +232,51 @@ class TensorOutputNumberReferenceTests(unittest.TestCase):
             self.iteration_mode_contract(reference_torch),
         )
 
+    def iteration_replacement_protocol_contract(self, module):
+        source = module.tensor([[1.0], [2.0]])
+
+        class GetItemOnly:
+            def __init__(self):
+                self.values = ("replacement-a", "replacement-b")
+
+            def __getitem__(self, index):
+                return self.values[index]
+
+        class ReplacingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, replacement):
+                self.replacement = replacement
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                if func.__name__ == "unbind":
+                    return self.replacement
+                return func(*args, **(kwargs or {}))
+
+        with ReplacingMode(GetItemOnly()):
+            iterator = iter(source)
+        sequence_result = type(iterator).__name__, tuple(iterator)
+
+        try:
+            with ReplacingMode(object()):
+                iter(source)
+        except Exception as error:
+            non_iterable_error = type(error).__name__, str(error)
+        else:
+            self.fail(f"{module.__name__} accepted a non-iterable replacement")
+
+        return {
+            "sequence_result": sequence_result,
+            "non_iterable_error": non_iterable_error,
+            "stack_depth": len(
+                module.overrides._get_current_function_mode_stack()
+            ),
+        }
+
+    def test_iteration_replacement_protocol_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.iteration_replacement_protocol_contract(torch),
+            self.iteration_replacement_protocol_contract(reference_torch),
+        )
+
     def test_reference_multi_output_nodes_expose_the_unsupported_nonzero_state(self):
         self.assertFalse(hasattr(torch.Tensor, "unbind"))
         self.assertFalse(hasattr(torch.Tensor, "chunk"))
