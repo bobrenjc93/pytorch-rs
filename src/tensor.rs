@@ -501,6 +501,24 @@ impl Tensor {
         self.dtype().element_size()
     }
 
+    /// Returns the number of dense dimensions in this tensor.
+    ///
+    /// Every currently supported tensor uses the canonical strided layout, so
+    /// all dimensions are dense and this is exactly the tensor rank.
+    #[must_use]
+    pub fn dense_dim(&self) -> usize {
+        self.shape.len()
+    }
+
+    /// Returns the number of sparse dimensions in this tensor.
+    ///
+    /// Every currently supported tensor uses the canonical strided layout, so
+    /// no dimensions are sparse.
+    #[must_use]
+    pub const fn sparse_dim(&self) -> usize {
+        0
+    }
+
     /// Reports whether the tensor's native scalar type is floating point.
     #[must_use]
     pub fn is_floating_point(&self) -> bool {

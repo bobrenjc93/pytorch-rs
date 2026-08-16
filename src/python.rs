@@ -276,6 +276,46 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\ndense_dim() -> int\n\nReturn the number of dense dimensions in a :ref:`sparse tensor <sparse-docs>` :attr:`self`.\n\n.. note::\n  Returns ``len(self.shape)`` if :attr:`self` is not a sparse tensor.\n\nSee also :meth:`Tensor.sparse_dim` and :ref:`hybrid tensors <sparse-hybrid-coo-docs>`.\n"]
+    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
+    // derives `($self, /)` from that descriptor shape, while older runtimes
+    // leave `__text_signature__` unset; PyTorch follows the same split.
+    #[pyo3(text_signature = None)]
+    fn dense_dim(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::Method("dense_dim"))?
+        {
+            return Ok(result);
+        }
+
+        tensor.try_borrow()?.inner.dense_dim().into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nsparse_dim() -> int\n\nReturn the number of sparse dimensions in a :ref:`sparse tensor <sparse-docs>` :attr:`self`.\n\n.. note::\n  Returns ``0`` if :attr:`self` is not a sparse tensor.\n\nSee also :meth:`Tensor.dense_dim` and :ref:`hybrid tensors <sparse-hybrid-coo-docs>`.\n"]
+    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
+    // derives `($self, /)` from that descriptor shape, while older runtimes
+    // leave `__text_signature__` unset; PyTorch follows the same split.
+    #[pyo3(text_signature = None)]
+    fn sparse_dim(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::Method("sparse_dim"))?
+        {
+            return Ok(result);
+        }
+
+        tensor
+            .try_borrow()?
+            .inner
+            .sparse_dim()
+            .into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nto_dense(dtype=None, *, masked_grad=True) -> Tensor\n\nCreates a strided copy of :attr:`self` if :attr:`self` is not a strided tensor, otherwise returns :attr:`self`.\n\nKeyword args:\n    {dtype}\n    masked_grad (bool, optional): If set to ``True`` (default) and\n      :attr:`self` has a sparse layout then the backward of\n      :meth:`to_dense` returns ``grad.sparse_mask(self)``.\n\nExample::\n\n    >>> s = torch.sparse_coo_tensor(\n    ...        torch.tensor([[1, 1],\n    ...                      [0, 2]]),\n    ...        torch.tensor([9, 10]),\n    ...        size=(3, 3))\n    >>> s.to_dense()\n    tensor([[ 0,  0,  0],\n            [ 9,  0, 10],\n            [ 0,  0,  0]])\n"]
     // Keep the variadic descriptor shape used by PyTorch even though only the
     // empty call is supported. A METH_NOARGS descriptor gains a synthesized
