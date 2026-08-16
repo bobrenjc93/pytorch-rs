@@ -13,13 +13,98 @@ use pyo3::types::{PyDict, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    get_device_variable_function, permute_variable_function, positive_variable_function,
-    scalar_tensor_variable_function,
+    get_device_variable_function, matmul_variable_function, permute_variable_function,
+    positive_variable_function, scalar_tensor_variable_function,
 };
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
 
 const PERMUTE_DOC: &std::ffi::CStr = c"\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n";
+
+const MATMUL_DOC: &std::ffi::CStr = cr"
+matmul(input, other, *, out=None) -> Tensor
+
+Matrix product of two tensors.
+
+The behavior depends on the dimensionality of the tensors as follows:
+
+- If both tensors are 1-dimensional, the dot product (scalar) is returned.
+- If both arguments are 2-dimensional, the matrix-matrix product is returned.
+- If the first argument is 1-dimensional and the second argument is 2-dimensional,
+  a 1 is prepended to its dimension for the purpose of the matrix multiply.
+  After the matrix multiply, the prepended dimension is removed.
+- If the first argument is 2-dimensional and the second argument is 1-dimensional,
+  the matrix-vector product is returned.
+- If both arguments are at least 1-dimensional and at least one argument is
+  N-dimensional (where N > 2), then a batched matrix multiply is returned.  If the first
+  argument is 1-dimensional, a 1 is prepended to its dimension for the purpose of the
+  batched matrix multiply and removed after.  If the second argument is 1-dimensional, a
+  1 is appended to its dimension for the purpose of the batched matrix multiply and removed after.
+
+  The first N-2 dimensions of each argument, the batch dimensions, are
+  :ref:`broadcast <broadcasting-semantics>` (and thus must be broadcastable).
+  The last 2, the matrix dimensions, are handled as in the matrix-matrix product.
+
+  For example, if :attr:`input` is a
+  :math:`(j \times 1 \times n \times m)` tensor and :attr:`other` is a :math:`(k \times m \times p)`
+  tensor, the batch dimensions are :math:`(j \times 1)` and :math:`(k)`,
+  and the matrix dimensions are :math:`(n \times m)` and :math:`(m \times p)`.
+  :attr:`out` will be a :math:`(j \times k \times n \times p)` tensor.
+
+This operation has support for arguments with :ref:`sparse layouts<sparse-docs>`. In particular the
+matrix-matrix (both arguments 2-dimensional) supports sparse arguments with the same restrictions
+as :func:`torch.mm`
+
+
+.. warning::
+    Sparse support is a beta feature and some layout(s)/dtype/device combinations may not be supported,
+    or may not have autograd support. If you notice missing functionality please
+    open a feature request.
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+On certain ROCm devices, when using float16 inputs this module will use :ref:`different precision<fp16_on_mi200>` for backward.
+
+.. note::
+
+    The 1-dimensional dot product version of this function does not support an :attr:`out` parameter.
+
+Arguments:
+    input (Tensor): the first tensor to be multiplied
+    other (Tensor): the second tensor to be multiplied
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> # vector x vector
+    >>> tensor1 = torch.randn(3)
+    >>> tensor2 = torch.randn(3)
+    >>> torch.matmul(tensor1, tensor2).size()
+    torch.Size([])
+    >>> # matrix x vector
+    >>> tensor1 = torch.randn(3, 4)
+    >>> tensor2 = torch.randn(4)
+    >>> torch.matmul(tensor1, tensor2).size()
+    torch.Size([3])
+    >>> # batched matrix x broadcasted vector
+    >>> tensor1 = torch.randn(10, 3, 4)
+    >>> tensor2 = torch.randn(4)
+    >>> torch.matmul(tensor1, tensor2).size()
+    torch.Size([10, 3])
+    >>> # batched matrix x batched matrix
+    >>> tensor1 = torch.randn(10, 3, 4)
+    >>> tensor2 = torch.randn(10, 4, 5)
+    >>> torch.matmul(tensor1, tensor2).size()
+    torch.Size([10, 3, 5])
+    >>> # batched matrix x broadcasted matrix
+    >>> tensor1 = torch.randn(10, 3, 4)
+    >>> tensor2 = torch.randn(4, 5)
+    >>> torch.matmul(tensor1, tensor2).size()
+    torch.Size([10, 3, 5])
+
+";
 
 #[allow(
     unsafe_code,
@@ -63,6 +148,7 @@ variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
+variable_function_callback!(matmul_callback, matmul_variable_function);
 
 /// Creates the immutable owner for exported `_VariableFunctionsClass` methods.
 ///
@@ -114,6 +200,16 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
                 permute_callback
             ),
             PERMUTE_DOC,
+        )
+        .flags(ffi::METH_STATIC)
+        .into_raw(),
+        pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
+            c"matmul",
+            pyo3::impl_::trampoline::get_trampoline_function!(
+                cfunction_with_keywords,
+                matmul_callback
+            ),
+            MATMUL_DOC,
         )
         .flags(ffi::METH_STATIC)
         .into_raw(),

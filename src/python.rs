@@ -1014,6 +1014,21 @@ pub(crate) fn permute_variable_function(
     .unbind())
 }
 
+pub(crate) fn matmul_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([input, other], keyword_error) =
+        bind_legacy_binary_arguments("matmul", args, kwargs, true)?;
+    let input = parse_tensor_or_torch_function_argument("matmul", "input", &input)?;
+    let other = parse_tensor_or_torch_function_argument("matmul", "other", &other)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    dispatch_top_level_matmul(py, &input, &other, args, kwargs)
+}
+
 enum ParsedFillValue {
     Float(f64),
     SignedInteger(i64),
@@ -1043,6 +1058,7 @@ struct ParsedCallArgument<'py> {
     position: Option<usize>,
 }
 
+#[derive(Clone)]
 struct ProbedTorchFunctionOverride<'py> {
     receiver: Bound<'py, PyAny>,
     dispatch_type: Bound<'py, PyAny>,
@@ -1317,6 +1333,34 @@ fn torch_function_dispatch_error(
     )))
 }
 
+fn torch_function_dispatch_error_for_overrides(
+    py: Python<'_>,
+    function: &str,
+    mode: Option<&Py<PyAny>>,
+    overrides: &[ProbedTorchFunctionOverride<'_>],
+) -> PyResult<PyErr> {
+    let mut handlers = Vec::new();
+    handlers
+        .try_reserve_exact(overrides.len() + usize::from(mode.is_some()))
+        .map_err(|_| PyMemoryError::new_err("unable to allocate torch-function diagnostics"))?;
+    if let Some(mode) = mode {
+        handlers.push(format!(
+            "  - mode object {}",
+            mode.bind(py).repr()?.to_str()?
+        ));
+    }
+    for probed in overrides {
+        handlers.push(format!(
+            "  - tensor subclass {}",
+            probed.dispatch_type.repr()?.to_str()?
+        ));
+    }
+    Ok(PyTypeError::new_err(format!(
+        "Multiple dispatch failed for '{function}'; all __torch_function__ handlers returned NotImplemented:\n\n{}\n\nFor more information, try re-running with TORCH_LOGS=not_implemented",
+        handlers.join("\n")
+    )))
+}
+
 fn dispatch_positive(
     py: Python<'_>,
     input: &BoundTensorOrTorchFunction<'_>,
@@ -1451,6 +1495,100 @@ fn dispatch_matmul(
             Ok(Py::new(py, result)?.into_any())
         }
     }
+}
+
+fn ordered_matmul_overrides<'py>(
+    input: &BoundTensorOrTorchFunction<'py>,
+    other: &BoundTensorOrTorchFunction<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(2)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate matmul dispatch operands"))?;
+
+    if let BoundTensorOrTorchFunction::Override(probed) = input {
+        overrides.push(probed.clone());
+    }
+    if let BoundTensorOrTorchFunction::Override(probed) = other {
+        let Some(first) = overrides.first() else {
+            overrides.push(probed.clone());
+            return Ok(overrides);
+        };
+        if first.dispatch_type.is(&probed.dispatch_type) {
+            return Ok(overrides);
+        }
+
+        let first_type = first
+            .dispatch_type
+            .cast::<PyType>()
+            .expect("a torch-function dispatch type is a Python type");
+        let other_type = probed
+            .dispatch_type
+            .cast::<PyType>()
+            .expect("a torch-function dispatch type is a Python type");
+        if other_type.is_subclass(first_type.as_any())? {
+            overrides.insert(0, probed.clone());
+        } else {
+            overrides.push(probed.clone());
+        }
+    }
+    Ok(overrides)
+}
+
+fn dispatch_top_level_matmul(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    other: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_matmul_overrides(input, other)?;
+    if TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty()) && overrides.is_empty() {
+        let (BoundTensorOrTorchFunction::Tensor(input), BoundTensorOrTorchFunction::Tensor(other)) =
+            (input, other)
+        else {
+            unreachable!("matmul overrides were collected before the native fast path")
+        };
+        let other = other.try_borrow()?;
+        let result = input.try_borrow()?.matrix_multiply(&other)?;
+        return Ok(Py::new(py, result)?.into_any());
+    }
+
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err("torch.matmul was called before module initialization completed")
+    })?;
+    let function = variable_functions.bind(py).getattr("matmul")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Disable the top mode for the complete dispatch attempt. A mode can call
+    // the public function explicitly to forward to the next mode.
+    let active_mode = ActiveTorchFunctionMode::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.matmul",
+        active_mode.get(),
+        &overrides,
+    )?)
 }
 
 struct ScalarTensorCallArguments<'py> {
@@ -2541,7 +2679,8 @@ fn relu(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
 fn is_same_size(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
-    let ([input, other], keyword_error) = bind_is_same_size_arguments(args, kwargs)?;
+    let ([input, other], keyword_error) =
+        bind_legacy_binary_arguments("is_same_size", args, kwargs, false)?;
     let input = parse_tensor_argument("is_same_size", "input", &input)?;
     let other = parse_tensor_argument("is_same_size", "other", &other)?;
     if let Some(keyword_error) = keyword_error {
@@ -5714,13 +5853,15 @@ fn bind_tensor_arguments<'py, const N: usize>(
     ))
 }
 
-fn bind_is_same_size_arguments<'py>(
+fn bind_legacy_binary_arguments<'py>(
+    function: &str,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
+    allow_torch_function: bool,
 ) -> PyResult<([ParsedCallArgument<'py>; 2], Option<PyErr>)> {
     if positional.len() > 2 {
         return Err(PyTypeError::new_err(format!(
-            "is_same_size() takes 2 positional arguments but {} were given",
+            "{function}() takes 2 positional arguments but {} were given",
             positional.len()
         )));
     }
@@ -5761,15 +5902,19 @@ fn bind_is_same_size_arguments<'py>(
     };
 
     let Some(input) = input else {
-        return Err(PyTypeError::new_err(
-            "is_same_size() missing 2 required positional argument: \"input\", \"other\"",
-        ));
+        return Err(PyTypeError::new_err(format!(
+            "{function}() missing 2 required positional argument: \"input\", \"other\""
+        )));
     };
     let Some(other) = other else {
-        parse_tensor_argument("is_same_size", "input", &input)?;
-        return Err(PyTypeError::new_err(
-            "is_same_size() missing 1 required positional arguments: \"other\"",
-        ));
+        if allow_torch_function {
+            parse_tensor_or_torch_function_argument(function, "input", &input)?;
+        } else {
+            parse_tensor_argument(function, "input", &input)?;
+        }
+        return Err(PyTypeError::new_err(format!(
+            "{function}() missing 1 required positional arguments: \"other\""
+        )));
     };
 
     let mut keyword_error = None;
@@ -5784,14 +5929,14 @@ fn bind_is_same_size_arguments<'py>(
                     "other" => 1,
                     _ => {
                         keyword_error = Some(PyTypeError::new_err(format!(
-                            "is_same_size() got an unexpected keyword argument '{key}'"
+                            "{function}() got an unexpected keyword argument '{key}'"
                         )));
                         break;
                     }
                 };
                 if position < positional.len() {
                     keyword_error = Some(PyTypeError::new_err(format!(
-                        "is_same_size() got multiple values for argument '{key}'"
+                        "{function}() got multiple values for argument '{key}'"
                     )));
                     break;
                 }
@@ -7581,7 +7726,13 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         .getattr("__all__")?
         .call_method1("remove", ("_VariableFunctionsClass",))?;
     let variable_functions = variable_functions.bind(py);
-    for name in ["get_device", "scalar_tensor", "positive", "permute"] {
+    for name in [
+        "get_device",
+        "scalar_tensor",
+        "positive",
+        "permute",
+        "matmul",
+    ] {
         let function = variable_functions.getattr(name)?;
         function.setattr("__module__", "torch")?;
         module.add(name, function)?;
