@@ -155,7 +155,11 @@ class TensorIsInferenceTests(unittest.TestCase):
             ),
             (
                 lambda: tensor.is_inference(input=tensor),
-                "TensorBase.is_inference() takes no keyword arguments",
+                (
+                    "Tensor.is_inference() takes no keyword arguments"
+                    if sys.version_info < (3, 11)
+                    else "TensorBase.is_inference() takes no keyword arguments"
+                ),
             ),
             (
                 lambda: bound(unexpected=True),
