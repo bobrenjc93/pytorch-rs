@@ -276,6 +276,31 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nto_dense(dtype=None, *, masked_grad=True) -> Tensor\n\nCreates a strided copy of :attr:`self` if :attr:`self` is not a strided tensor, otherwise returns :attr:`self`.\n\nKeyword args:\n    {dtype}\n    masked_grad (bool, optional): If set to ``True`` (default) and\n      :attr:`self` has a sparse layout then the backward of\n      :meth:`to_dense` returns ``grad.sparse_mask(self)``.\n\nExample::\n\n    >>> s = torch.sparse_coo_tensor(\n    ...        torch.tensor([[1, 1],\n    ...                      [0, 2]]),\n    ...        torch.tensor([9, 10]),\n    ...        size=(3, 3))\n    >>> s.to_dense()\n    tensor([[ 0,  0,  0],\n            [ 9,  0, 10],\n            [ 0,  0,  0]])\n"]
+    #[pyo3(text_signature = None)]
+    fn to_dense(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        let args = PyTuple::empty(slf.py());
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "to_dense",
+            "torch.Tensor.to_dense",
+            &args,
+            None,
+        )? {
+            return Ok(result);
+        }
+
+        // Strided CPU storage is the only supported layout. The no-argument
+        // dense conversion is therefore the exact receiver, without a storage
+        // borrow, metadata rewrite, copy, or autograd operation. Sparse storage
+        // and the dtype and masked_grad overloads remain outside this surface.
+        Ok(tensor.clone().unbind().into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nfloat(memory_format=torch.preserve_format) -> Tensor\n\n``self.float()`` is equivalent to ``self.to(torch.float32)``. See :func:`to`.\n\nArgs:\n    memory_format (:class:`torch.memory_format`, optional): the desired memory format of\n        returned Tensor. Default: ``torch.preserve_format``.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn float(
@@ -1247,9 +1272,9 @@ fn dispatch_tensorbase_method_mode(
     }
 
     let function = py.get_type::<PyTensorBase>().getattr(method)?.unbind();
-    // Dimension arguments are metadata rather than overloaded tensor
-    // operands, so PyTorch supplies no dispatch types even though the receiver
-    // remains in args.
+    // Parsed method arguments are metadata or options rather than overloaded
+    // tensor operands, so PyTorch supplies no dispatch types even though the
+    // receiver remains in args.
     let types = PyTuple::empty(py);
     let argument_count = args.len().checked_add(1).ok_or_else(|| {
         PyMemoryError::new_err(format!("{method} dispatch argument count overflowed"))
