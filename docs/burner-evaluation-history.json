@@ -2353,6 +2353,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 65
       }
+    },
+    {
+      "key": "pr:158",
+      "recordedAt": "2026-08-16T02:41:57.415Z",
+      "label": "PR #158",
+      "kind": "leaf",
+      "prNumber": 158,
+      "title": "Add integer-indexed torch.utils.data.StackDataset",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 66.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 45.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 65
+      }
     }
   ]
 }
