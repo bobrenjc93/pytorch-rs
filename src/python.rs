@@ -519,6 +519,27 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nsize(dim=None) -> torch.Size or int\n\nReturns the size of the :attr:`self` tensor. If ``dim`` is not specified,\nthe returned value is a :class:`torch.Size`, a subclass of :class:`tuple`.\nIf ``dim`` is specified, returns an int holding the size of that dimension.\n\nArgs:\n  dim (int, optional): The dimension for which to retrieve the size.\n\nExample::\n\n    >>> t = torch.empty(3, 4, 5)\n    >>> t.size()\n    torch.Size([3, 4, 5])\n    >>> t.size(dim=1)\n    4\n\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn size(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let dimension = bind_size_dimension(args, kwargs)?;
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_size_mode(slf.py(), tensor, args, kwargs)? {
+            return Ok(result);
+        }
+
+        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+        let tensor = tensor.try_borrow()?;
+        let axis = normalize_dimension(dimension, tensor.inner.shape().len())?;
+        tensor.inner.shape()[axis].into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nAlias for :meth:`~Tensor.element_size()`\n"]
     #[getter]
     fn itemsize(slf: &Bound<'_, Self>) -> PyResult<usize> {
@@ -1286,6 +1307,53 @@ fn dispatch_tensorbase_mode(
     // values and mode side effects match TensorBase's recursive fallback.
     let caller = torch_function_descriptor_caller(py)?;
     Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
+}
+
+fn dispatch_tensorbase_size_mode(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if TORCH_FUNCTION_MODE_STACK.with(|stack| stack.borrow().is_empty()) {
+        return Ok(None);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("size")?.unbind();
+    // `dim` is metadata rather than an overloaded tensor operand, so PyTorch
+    // supplies no dispatch types even though the receiver remains in args.
+    let types = PyTuple::empty(py);
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("size dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate size dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    // Disable the top mode for the complete attempt so explicit forwarding
+    // through the TensorBase descriptor reaches the next mode.
+    let active_mode = ActiveTorchFunctionMode::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        "torch.Tensor.size",
+        Some(mode),
+        None,
+    )?)
 }
 
 fn torch_function_dispatch_error(
@@ -4000,6 +4068,91 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     Err(PyTypeError::new_err(format!(
         "stride(): argument 'dim' must be int, not {type_name}"
     )))
+}
+
+fn bind_size_dimension<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ParsedCallArgument<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "size() takes from 0 to 1 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let dimension = if positional.is_empty() {
+        if let Some(keywords) = keywords {
+            keywords.get_item("dim")?.map(|value| ParsedCallArgument {
+                value,
+                position: None,
+            })
+        } else {
+            None
+        }
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+
+    // PyTorch validates the recognized argument type before diagnosing extra
+    // keywords, but treats None as the optional no-argument overload until
+    // binding has otherwise completed. This implementation rejects that
+    // overload only after reproducing the shared binding precedence.
+    if let Some(dimension) = &dimension
+        && !dimension.value.is_none()
+    {
+        validate_size_dimension(dimension)?;
+    }
+
+    if let Some(keywords) = keywords {
+        let bound_keyword_count = usize::from(positional.is_empty() && dimension.is_some());
+        if keywords.len() > bound_keyword_count {
+            for key in keywords.keys() {
+                let key = key.extract::<String>()?;
+                if key != "dim" {
+                    return Err(PyTypeError::new_err(format!(
+                        "size() got an unexpected keyword argument '{key}'"
+                    )));
+                }
+                if !positional.is_empty() {
+                    return Err(PyTypeError::new_err(
+                        "size() got multiple values for argument 'dim'",
+                    ));
+                }
+            }
+        }
+    }
+
+    let Some(dimension) = dimension else {
+        return Err(PyTypeError::new_err(
+            "size() missing 1 required positional arguments: \"dim\"",
+        ));
+    };
+    if dimension.value.is_none() {
+        return Err(size_dimension_type_error(&dimension, "NoneType"));
+    }
+    Ok(dimension)
+}
+
+fn validate_size_dimension(dimension: &ParsedCallArgument<'_>) -> PyResult<()> {
+    if is_dimension_swap_integer(&dimension.value)? {
+        return Ok(());
+    }
+
+    let actual = transpose_type_name(&dimension.value)?;
+    Err(size_dimension_type_error(dimension, &actual))
+}
+
+fn size_dimension_type_error(dimension: &ParsedCallArgument<'_>, actual: &str) -> PyErr {
+    let position = dimension
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    PyTypeError::new_err(format!(
+        "size(): argument 'dim'{position} must be int, not {actual}"
+    ))
 }
 
 fn is_dimension_swap_integer(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
