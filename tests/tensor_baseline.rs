@@ -13,6 +13,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
     assert!(!DType::Float32.is_complex());
     assert!(!DType::Float32.is_quantized());
     assert!(DType::Float32.is_signed());
+    assert_eq!(DType::Float32.to_real(), DType::Float32);
     assert_eq!(Device::Cpu.to_string(), "cpu");
     assert_eq!(Device::Cpu.index(), None);
     assert!(Device::Cpu.is_cpu());

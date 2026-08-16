@@ -49,6 +49,14 @@ impl DType {
             Self::Float32 => true,
         }
     }
+
+    /// Returns the corresponding real-valued scalar type.
+    #[must_use]
+    pub const fn to_real(self) -> Self {
+        match self {
+            Self::Float32 => Self::Float32,
+        }
+    }
 }
 
 impl Display for DType {
