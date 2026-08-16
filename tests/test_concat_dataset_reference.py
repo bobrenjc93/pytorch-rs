@@ -312,6 +312,7 @@ class ConcatDatasetReferenceTests(unittest.TestCase):
         actual = actual_data.ConcatDataset
         expected = expected_data.ConcatDataset
         supported = {
+            "BatchSampler",
             "ConcatDataset",
             "Dataset",
             "Sampler",

@@ -44,6 +44,7 @@ class SamplerReferenceTests(unittest.TestCase):
         actual_module = importlib.import_module("torch_rs.utils.data.sampler")
         expected_module = importlib.import_module("torch.utils.data.sampler")
         supported_data = {
+            "BatchSampler",
             "ConcatDataset",
             "Dataset",
             "Sampler",
@@ -60,11 +61,14 @@ class SamplerReferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             actual_module.__all__,
-            [name for name in expected_module.__all__ if name == "Sampler"],
+            [
+                name
+                for name in expected_module.__all__
+                if name in {"BatchSampler", "Sampler"}
+            ],
         )
 
         unsupported = (
-            "BatchSampler",
             "DataLoader",
             "RandomSampler",
             "SequentialSampler",

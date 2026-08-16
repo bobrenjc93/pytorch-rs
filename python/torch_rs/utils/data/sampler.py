@@ -1,9 +1,10 @@
 # mypy: allow-untyped-defs
-from collections.abc import Iterator
+import itertools
+from collections.abc import Iterable, Iterator
 from typing import Generic, TypeVar
 
 
-__all__ = ["Sampler"]
+__all__ = ["BatchSampler", "Sampler"]
 
 
 _T_co = TypeVar("_T_co", covariant=True)
@@ -76,3 +77,74 @@ class Sampler(Generic[_T_co]):
     #   + raise a `TypeError` instead, which is what Python uses when users call
     #     a method that is not defined on an object.
     #     (@ssnl verifies that this works on at least Python 3.7.)
+
+
+class BatchSampler(Sampler[list[int]]):
+    r"""Wraps another sampler to yield a mini-batch of indices.
+
+    Args:
+        sampler (Sampler or Iterable): Base sampler. Can be any iterable object
+        batch_size (int): Size of mini-batch.
+        drop_last (bool): If ``True``, the sampler will drop the last batch if
+            its size would be less than ``batch_size``
+
+    Example:
+        >>> list(
+        ...     BatchSampler(
+        ...         SequentialSampler(range(10)), batch_size=3, drop_last=False
+        ...     )
+        ... )
+        [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]]
+        >>> list(
+        ...     BatchSampler(SequentialSampler(range(10)), batch_size=3, drop_last=True)
+        ... )
+        [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+    """
+
+    def __init__(
+        self,
+        sampler: Sampler[int] | Iterable[int],
+        batch_size: int,
+        drop_last: bool,
+    ) -> None:
+        # Since collections.abc.Iterable does not check for `__getitem__`, which
+        # is one way for an object to be an iterable, we don't do an `isinstance`
+        # check here.
+        if (
+            not isinstance(batch_size, int)
+            or isinstance(batch_size, bool)
+            or batch_size <= 0
+        ):
+            raise ValueError(
+                f"batch_size should be a positive integer value, but got batch_size={batch_size}"
+            )
+        if not isinstance(drop_last, bool):
+            raise ValueError(
+                f"drop_last should be a boolean value, but got drop_last={drop_last}"
+            )
+        self.sampler = sampler
+        self.batch_size = batch_size
+        self.drop_last = drop_last
+
+    def __iter__(self) -> Iterator[list[int]]:
+        sampler_iter = iter(self.sampler)
+        if self.drop_last:
+            # Create multiple references to the same iterator
+            args = [sampler_iter] * self.batch_size
+            for batch_droplast in zip(*args, strict=False):
+                yield [*batch_droplast]
+        else:
+            batch = [*itertools.islice(sampler_iter, self.batch_size)]
+            while batch:
+                yield batch
+                batch = [*itertools.islice(sampler_iter, self.batch_size)]
+
+    def __len__(self) -> int:
+        # Can only be called if self.sampler has __len__ implemented
+        # We cannot enforce this condition, so we turn off typechecking for the
+        # implementation below.
+        # Somewhat related: see NOTE [ Lack of Default `__len__` in Python Abstract Base Classes ]
+        if self.drop_last:
+            return len(self.sampler) // self.batch_size  # type: ignore[arg-type]
+        else:
+            return (len(self.sampler) + self.batch_size - 1) // self.batch_size  # type: ignore[arg-type]

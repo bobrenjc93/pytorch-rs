@@ -7,7 +7,7 @@ from typing import Generic, get_args, get_origin
 
 import torch_rs as torch
 
-from torch_rs.utils.data import Sampler
+from torch_rs.utils.data import BatchSampler, Sampler
 
 
 class IterOnlySampler(Sampler[int]):
@@ -104,6 +104,7 @@ class SamplerTests(unittest.TestCase):
         self.assertEqual(
             data_module.__all__,
             [
+                "BatchSampler",
                 "ConcatDataset",
                 "Dataset",
                 "Sampler",
@@ -112,17 +113,18 @@ class SamplerTests(unittest.TestCase):
                 "TensorDataset",
             ],
         )
-        self.assertEqual(sampler_module.__all__, ["Sampler"])
+        self.assertEqual(sampler_module.__all__, ["BatchSampler", "Sampler"])
 
         data_namespace = {}
         sampler_namespace = {}
         exec("from torch_rs.utils.data import *", data_namespace)
         exec("from torch_rs.utils.data.sampler import *", sampler_namespace)
+        self.assertIs(data_namespace["BatchSampler"], BatchSampler)
+        self.assertIs(sampler_namespace["BatchSampler"], BatchSampler)
         self.assertIs(data_namespace["Sampler"], Sampler)
         self.assertIs(sampler_namespace["Sampler"], Sampler)
 
         unsupported = (
-            "BatchSampler",
             "DataLoader",
             "RandomSampler",
             "SequentialSampler",

@@ -163,6 +163,7 @@ class SubsetTests(unittest.TestCase):
         self.assertEqual(
             data_module.__all__,
             [
+                "BatchSampler",
                 "ConcatDataset",
                 "Dataset",
                 "Sampler",
