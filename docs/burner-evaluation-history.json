@@ -2337,6 +2337,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 65
       }
+    },
+    {
+      "key": "pr:157",
+      "recordedAt": "2026-08-16T02:13:31.117Z",
+      "label": "PR #157",
+      "kind": "leaf",
+      "prNumber": 157,
+      "title": "Expose top-level torch.matmul only",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 66.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 45.2,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 65
+      }
     }
   ]
 }

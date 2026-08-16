@@ -42,6 +42,11 @@ __doc__ = _native.__doc__
 # list also keeps reloading safe: the native wildcard import must only name
 # attributes that the extension itself owns.
 __all__ = [*_native.__all__, "e", "pi", "nan", "inf"]
+# PyTorch lists ``matmul`` once among its hand-written package exports and once
+# among generated variable functions. Preserve that observable duplicate while
+# the native module continues to own the callable itself.
+if "matmul" in _native.__all__:
+    __all__.insert(0, "matmul")
 
 from . import autograd as autograd
 from . import nn as nn
