@@ -24,6 +24,7 @@ use crate::{
     python_memory_format::{PyMemoryFormat, memory_format_object},
     python_no_argument_builtins::add_no_argument_builtins,
     python_scalar_conversions::register_scalar_conversions,
+    python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_torch_function_mode as torch_function_mode_stack,
     python_variable_functions::create_variable_functions_class,
 };
@@ -8049,72 +8050,6 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
         )?);
     }
     Ok(PyList::new(py, items)?.into_any().unbind())
-}
-
-pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
-    match error {
-        TensorError::ShapeDataMismatch { .. }
-        | TensorError::ShapeMismatch { .. }
-        | TensorError::MatmulRequiresMatrices { .. }
-        | TensorError::MatmulInnerDimensionMismatch { .. }
-        | TensorError::ItemRequiresOneElement { .. }
-        | TensorError::InvalidStorageOffset { .. }
-        | TensorError::IndexCalculationOverflow
-        | TensorError::ReshapeMultipleInferredDimensions
-        | TensorError::ReshapeInvalidDimension { .. }
-        | TensorError::ReshapeAmbiguousZeroElements { .. }
-        | TensorError::ReshapeElementCountMismatch { .. }
-        | TensorError::StrideCalculationOverflow
-        | TensorError::StorageCapacityOverflow { .. }
-        | TensorError::AllocationFailed { .. }
-        | TensorError::UnsupportedMemoryFormat { .. }
-        | TensorError::ContiguousPreserveFormatUnsupported
-        | TensorError::ContiguousMemoryFormatRankMismatch { .. }
-        | TensorError::PermutationRankMismatch { .. }
-        | TensorError::PermutationDimensionOutOfRange { .. }
-        | TensorError::DuplicatePermutationDimension { .. }
-        | TensorError::MatrixTransposeRequiresMatrix { .. }
-        | TensorError::DuplicateDimension { .. }
-        | TensorError::SqueezeDimensionsRankLimit
-        | TensorError::FlattenStartAfterEnd
-        | TensorError::FlattenNonConcreteInteger
-        | TensorError::ElementCountOverflow
-        | TensorError::BackwardRequiresScalar { .. }
-        | TensorError::DoesNotRequireGrad
-        | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),
-        TensorError::InvalidScalarIndex
-        | TensorError::TooManyIndices { .. }
-        | TensorError::IndexOutOfBounds { .. }
-        | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
-    }
-}
-
-fn item_error(error: &TensorError) -> PyErr {
-    if let TensorError::ItemRequiresOneElement { elements } = error {
-        PyRuntimeError::new_err(format!(
-            "a Tensor with {elements} elements cannot be converted to Scalar"
-        ))
-    } else {
-        tensor_error(error)
-    }
-}
-
-fn transpose_error(error: &TensorError) -> PyErr {
-    if matches!(error, TensorError::ElementCountOverflow) {
-        PyRuntimeError::new_err("numel: integer multiplication overflow")
-    } else {
-        tensor_error(error)
-    }
-}
-
-fn permute_error(error: &TensorError) -> PyErr {
-    if matches!(error, TensorError::PermutationRankMismatch { .. }) {
-        PyRuntimeError::new_err(format!("permute(sparse_coo): {error}"))
-    } else if matches!(error, TensorError::ElementCountOverflow) {
-        PyRuntimeError::new_err("numel: integer multiplication overflow")
-    } else {
-        tensor_error(error)
-    }
 }
 
 fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {

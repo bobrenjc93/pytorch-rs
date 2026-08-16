@@ -9,7 +9,8 @@ use pyo3::types::{PyInt, PyType};
 
 use crate::{
     TensorError, is_grad_enabled as core_is_grad_enabled,
-    python::{PyTensor, PyTensorBase, tensor_error, warn_once},
+    python::{PyTensor, PyTensorBase, warn_once},
+    python_tensor_errors::tensor_error,
 };
 
 static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
