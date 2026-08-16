@@ -2625,6 +2625,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68
       }
+    },
+    {
+      "key": "pr:175",
+      "recordedAt": "2026-08-16T11:16:10.240Z",
+      "label": "PR #175",
+      "kind": "leaf",
+      "prNumber": 175,
+      "title": "Isolate Python scalar-conversion descriptors",
+      "scores": {
+        "eval_7af648fb": 99.2,
+        "eval_8417a4a8": 67.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 47,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }

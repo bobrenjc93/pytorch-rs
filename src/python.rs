@@ -18,20 +18,19 @@ use pyo3::types::{
 
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
-    is_grad_enabled as core_is_grad_enabled,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, dtype_object},
     python_grad_mode::add_no_grad,
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_memory_format::{PyMemoryFormat, memory_format_object},
     python_no_argument_builtins::add_no_argument_builtins,
+    python_scalar_conversions::register_scalar_conversions,
     python_variable_functions::create_variable_functions_class,
 };
 
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static TORCH_FUNCTION_DESCRIPTOR_CALLER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static H_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -90,8 +89,6 @@ is_tensor.__module__ = "torch_rs"
 "#;
 
 #[cfg(target_os = "macos")]
-const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:823.)";
-#[cfg(target_os = "macos")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4317.)";
 #[cfg(target_os = "macos")]
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4322.)";
@@ -106,8 +103,6 @@ const ADJOINT_SCALAR_WARNING: &CStr = c"adjoint() is deprecated on 0-D tensors. 
 #[cfg(target_os = "macos")]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/utils/python_arg_parser.cpp:359.)";
 
-#[cfg(target_os = "linux")]
-const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)";
 #[cfg(target_os = "linux")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4314.)";
 #[cfg(target_os = "linux")]
@@ -124,8 +119,6 @@ const ADJOINT_SCALAR_WARNING: &CStr = c"adjoint() is deprecated on 0-D tensors. 
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/utils/python_arg_parser.cpp:359.)";
 
 #[cfg(target_os = "windows")]
-const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\autograd\\generated\\python_variable_methods.cpp:823.)";
-#[cfg(target_os = "windows")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4317.)";
 #[cfg(target_os = "windows")]
 const T_SCALAR_WARNING: &CStr = c"Tensor.T is deprecated on 0-D tensors. This function is the identity in these cases. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\aten\\src\\ATen\\native\\TensorShape.cpp:4322.)";
@@ -140,8 +133,6 @@ const ADJOINT_SCALAR_WARNING: &CStr = c"adjoint() is deprecated on 0-D tensors. 
 #[cfg(target_os = "windows")]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\utils\\python_arg_parser.cpp:359.)";
 
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first.";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor.";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -174,7 +165,7 @@ fn device_ordinal(device: Device) -> PyResult<i64> {
     subclass,
     skip_from_py_object
 )]
-struct PyTensorBase;
+pub(crate) struct PyTensorBase;
 
 #[pymethods]
 impl PyTensorBase {
@@ -209,43 +200,6 @@ impl PyTensorBase {
             .inner
             .retains_grad()
             .into_py_any(slf.py())
-    }
-
-    #[pyo3(text_signature = None)]
-    fn int_scalar<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyInt>> {
-        let value = slf
-            .as_any()
-            .cast::<PyTensor>()?
-            .try_borrow()?
-            .inner
-            .item()
-            .map_err(|error| scalar_conversion_error(&error))?;
-
-        // CPython's float-to-int conversion truncates toward zero, produces a
-        // PyLong of any required size, and supplies the canonical infinity and
-        // NaN errors. Float32 values are represented exactly as Python floats.
-        slf.py()
-            .get_type::<PyInt>()
-            .call1((f64::from(value),))?
-            .cast_into::<PyInt>()
-            .map_err(Into::into)
-    }
-
-    #[pyo3(text_signature = None)]
-    fn float_scalar(slf: &Bound<'_, Self>) -> PyResult<f64> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        if core_is_grad_enabled() && tensor.inner.requires_grad() {
-            warn_once(
-                slf.py(),
-                &FLOAT_REQUIRES_GRAD_WARNING_EMITTED,
-                FLOAT_REQUIRES_GRAD_WARNING,
-            )?;
-        }
-        tensor
-            .inner
-            .item()
-            .map(f64::from)
-            .map_err(|error| scalar_conversion_error(&error))
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -813,39 +767,6 @@ impl PyTensorBase {
     }
 }
 
-// PyTorch publishes __int__ and __float__ as METH_NOARGS methods on TensorBase
-// instead of the slot wrappers CPython normally exposes for extension types.
-// Register the same method shapes, then let module initialization connect them
-// to the numeric slots.
-pyo3::inventory::submit! {
-    type Inventory = <PyTensorBase as pyo3::impl_::pyclass::PyClassImpl>::Inventory;
-    Inventory::new(pyo3::impl_::pyclass::PyClassItems {
-        methods: &[
-            pyo3::impl_::pymethods::PyMethodDefType::Method(
-                pyo3::impl_::pymethods::PyMethodDef::noargs(
-                    c"__int__",
-                    pyo3::impl_::trampoline::get_trampoline_function!(
-                        noargs,
-                        PyTensorBase::__pymethod_int_scalar__
-                    ),
-                    c"",
-                ),
-            ),
-            pyo3::impl_::pymethods::PyMethodDefType::Method(
-                pyo3::impl_::pymethods::PyMethodDef::noargs(
-                    c"__float__",
-                    pyo3::impl_::trampoline::get_trampoline_function!(
-                        noargs,
-                        PyTensorBase::__pymethod_float_scalar__
-                    ),
-                    c"",
-                ),
-            ),
-        ],
-        slots: &[],
-    })
-}
-
 /// Python-facing tensor backed by the native Rust tensor core.
 #[pyclass(
     name = "Tensor",
@@ -853,7 +774,7 @@ pyo3::inventory::submit! {
     extends = PyTensorBase,
     skip_from_py_object
 )]
-struct PyTensor {
+pub(crate) struct PyTensor {
     inner: CoreTensor,
     grad_cache: PyOnceLock<Py<PyTensor>>,
 }
@@ -883,6 +804,10 @@ impl PyTensor {
             inner,
             grad_cache: PyOnceLock::new(),
         }
+    }
+
+    pub(crate) const fn inner(&self) -> &CoreTensor {
+        &self.inner
     }
 }
 
@@ -2939,7 +2864,7 @@ fn strided_object(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
     Ok(&layout_objects(py)?.strided)
 }
 
-fn warn_once(py: Python<'_>, emitted: &AtomicBool, message: &CStr) -> PyResult<()> {
+pub(crate) fn warn_once(py: Python<'_>, emitted: &AtomicBool, message: &CStr) -> PyResult<()> {
     if emitted.swap(true, Ordering::Relaxed) {
         return Ok(());
     }
@@ -7870,7 +7795,7 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
     Ok(PyList::new(py, items)?.into_any().unbind())
 }
 
-fn tensor_error(error: &TensorError) -> PyErr {
+pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
     match error {
         TensorError::ShapeDataMismatch { .. }
         | TensorError::ShapeMismatch { .. }
@@ -7913,14 +7838,6 @@ fn item_error(error: &TensorError) -> PyErr {
         PyRuntimeError::new_err(format!(
             "a Tensor with {elements} elements cannot be converted to Scalar"
         ))
-    } else {
-        tensor_error(error)
-    }
-}
-
-fn scalar_conversion_error(error: &TensorError) -> PyErr {
-    if matches!(error, TensorError::ItemRequiresOneElement { .. }) {
-        PyValueError::new_err("only one element tensors can be converted to Python scalars")
     } else {
         tensor_error(error)
     }
@@ -7993,16 +7910,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // assigning the descriptor activates the unary-positive numeric slot.
     let positive_descriptor = tensor_base.getattr("positive")?;
     tensor_type.setattr("__pos__", positive_descriptor)?;
-    let int_descriptor = tensor_base.getattr("__int__")?;
-    tensor_base.setattr("__int__", int_descriptor)?;
-    let float_descriptor = tensor_base.getattr("__float__")?;
-    tensor_base.setattr("__float__", float_descriptor)?;
-    if tensor_base.hasattr("int_scalar")? {
-        tensor_base.delattr("int_scalar")?;
-    }
-    if tensor_base.hasattr("float_scalar")? {
-        tensor_base.delattr("float_scalar")?;
-    }
+    register_scalar_conversions(&tensor_base)?;
     module.add_class::<PyDType>()?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
