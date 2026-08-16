@@ -519,6 +519,15 @@ impl Tensor {
         self.dtype().is_quantized()
     }
 
+    /// Reports whether the tensor uses oneDNN (MKLDNN) storage.
+    ///
+    /// Every currently supported tensor uses the canonical strided layout, so
+    /// this metadata query does not inspect the backing storage.
+    #[must_use]
+    pub const fn is_mkldnn(&self) -> bool {
+        false
+    }
+
     /// Reports whether the tensor uses sparse COO storage.
     ///
     /// Every currently supported tensor uses the canonical strided layout, so
