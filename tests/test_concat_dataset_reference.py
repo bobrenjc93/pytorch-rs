@@ -313,8 +313,10 @@ class ConcatDatasetReferenceTests(unittest.TestCase):
         expected = expected_data.ConcatDataset
         supported = {
             "BatchSampler",
+            "ChainDataset",
             "ConcatDataset",
             "Dataset",
+            "IterableDataset",
             "Sampler",
             "SequentialSampler",
             "StackDataset",
@@ -332,7 +334,7 @@ class ConcatDatasetReferenceTests(unittest.TestCase):
             actual_module.__all__,
             [name for name in expected_module.__all__ if name in supported],
         )
-        for unsupported in ("DataLoader", "IterableDataset"):
+        for unsupported in ("DataLoader",):
             self.assertFalse(hasattr(actual_data, unsupported))
             self.assertFalse(hasattr(actual_module, unsupported))
 

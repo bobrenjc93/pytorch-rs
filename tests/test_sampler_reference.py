@@ -45,8 +45,10 @@ class SamplerReferenceTests(unittest.TestCase):
         expected_module = importlib.import_module("torch.utils.data.sampler")
         supported_data = {
             "BatchSampler",
+            "ChainDataset",
             "ConcatDataset",
             "Dataset",
+            "IterableDataset",
             "Sampler",
             "SequentialSampler",
             "StackDataset",

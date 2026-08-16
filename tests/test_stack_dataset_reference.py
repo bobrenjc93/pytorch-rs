@@ -318,8 +318,10 @@ class StackDatasetReferenceTests(unittest.TestCase):
         expected = expected_data.StackDataset
         supported = {
             "BatchSampler",
+            "ChainDataset",
             "ConcatDataset",
             "Dataset",
+            "IterableDataset",
             "Sampler",
             "SequentialSampler",
             "StackDataset",

@@ -202,8 +202,10 @@ class BatchSamplerReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "BatchSampler",
+                    "ChainDataset",
                     "ConcatDataset",
                     "Dataset",
+                    "IterableDataset",
                     "Sampler",
                     "SequentialSampler",
                     "StackDataset",
