@@ -2449,6 +2449,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 66
       }
+    },
+    {
+      "key": "pr:164",
+      "recordedAt": "2026-08-16T05:43:14.432Z",
+      "label": "PR #164",
+      "kind": "leaf",
+      "prNumber": 164,
+      "title": "Expose torch.get_default_device for the CPU default",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 66.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 46,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 66
+      }
     }
   ]
 }
