@@ -2785,6 +2785,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68.5
       }
+    },
+    {
+      "key": "pr:186",
+      "recordedAt": "2026-08-16T16:27:38.495Z",
+      "label": "PR #186",
+      "kind": "leaf",
+      "prNumber": 186,
+      "title": "Make Tensor.is_cuda honor TorchFunctionMode",
+      "scores": {
+        "eval_7af648fb": 99.9,
+        "eval_8417a4a8": 68.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 48.3,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }
