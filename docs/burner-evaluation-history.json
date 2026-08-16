@@ -2657,6 +2657,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68.5
       }
+    },
+    {
+      "key": "pr:177",
+      "recordedAt": "2026-08-16T12:05:21.333Z",
+      "label": "PR #177",
+      "kind": "leaf",
+      "prNumber": 177,
+      "title": "Expose Tensor.resolve_neg for ordinary tensors",
+      "scores": {
+        "eval_7af648fb": 99.3,
+        "eval_8417a4a8": 67.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 47.2,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }
