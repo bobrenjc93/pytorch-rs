@@ -32,7 +32,6 @@ use crate::{
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static TORCH_FUNCTION_DESCRIPTOR_CALLER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-static ITERATION_UNBIND_DESCRIPTOR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static H_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -232,14 +231,32 @@ impl PyTensorBase {
             .into_py_any(slf.py())
     }
 
-    // Iteration calls this cached descriptor so modes observe TensorBase.unbind,
-    // but module initialization removes the attribute from the public type.
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nunbind(dim=0) -> seq\n\nSee :func:`torch.unbind`\n"]
-    #[pyo3(signature = (dim=0), text_signature = None)]
-    fn unbind(slf: &Bound<'_, Self>, dim: i64) -> PyResult<Py<PyAny>> {
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn unbind(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let dimension = bind_unbind_dimension(args, kwargs)?;
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        dispatch_iteration_unbind(slf.py(), tensor, dim)
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "unbind",
+            "torch.Tensor.unbind",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        let dimension = dimension.map_or(Ok(0), |dimension| {
+            extract_dimension_swap_dimension(&dimension.value)
+        })?;
+        unbind_first_dimension(slf.py(), tensor, dimension)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1384,50 +1401,15 @@ fn dispatch_tensorbase_mode(
     Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
 }
 
-fn iteration_unbind_descriptor(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
-    ITERATION_UNBIND_DESCRIPTOR.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err("tensor iteration was called before unbind initialization")
-    })
-}
-
-fn dispatch_iteration_unbind(
+fn unbind_first_dimension(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
-    dim: i64,
+    dimension: i64,
 ) -> PyResult<Py<PyAny>> {
-    if !torch_function_mode_stack::is_empty() {
-        let function = iteration_unbind_descriptor(py)?.clone_ref(py);
-        let types = PyTuple::empty(py);
-        let args = PyTuple::new(
-            py,
-            [tensor.clone().unbind().into_any(), dim.into_py_any(py)?],
-        )?;
-        let active_mode = torch_function_mode_stack::pop();
-        let Some(mode) = active_mode.get() else {
-            return iteration_unbind(py, tensor, dim);
-        };
-        validate_torch_function_mode_handler(mode.bind(py))?;
-        let handler = mode.bind(py).getattr("__torch_function__")?;
-        let result = call_torch_function_handler(py, &handler, &function, &types, &args, None)?;
-        if !is_not_implemented(py, &result) {
-            return Ok(result);
-        }
-        return Err(torch_function_dispatch_error(
-            py,
-            "torch.Tensor.unbind",
-            Some(mode),
-            None,
-        )?);
-    }
-
-    iteration_unbind(py, tensor, dim)
-}
-
-fn iteration_unbind(py: Python<'_>, tensor: &Bound<'_, PyTensor>, dim: i64) -> PyResult<Py<PyAny>> {
-    let axis = normalize_dimension(dim, tensor.try_borrow()?.inner.shape().len())?;
+    let axis = normalize_unbind_dimension(dimension, tensor.try_borrow()?.inner.shape().len())?;
     if axis != 0 {
         return Err(PyRuntimeError::new_err(
-            "tensor iteration only supports unbind dimension 0",
+            "Tensor.unbind only supports dimension 0",
         ));
     }
     let outputs = tensor
@@ -2374,8 +2356,9 @@ impl PyTensor {
         if dimension.eq(0_usize)? {
             return Err(PyTypeError::new_err("iteration over a 0-d tensor"));
         }
-        let outputs = iteration_unbind_descriptor(py)?
-            .bind(py)
+        let outputs = py
+            .get_type::<PyTensorBase>()
+            .getattr("unbind")?
             .call1((slf.clone(), 0_i64))?;
         Ok(outputs.try_iter()?.into_any().unbind())
     }
@@ -4202,6 +4185,59 @@ fn parse_stride_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     Err(PyTypeError::new_err(format!(
         "stride(): argument 'dim' must be int, not {type_name}"
     )))
+}
+
+fn bind_unbind_dimension<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Option<ParsedCallArgument<'py>>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "unbind() takes from 0 to 1 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let dimension = if positional.is_empty() {
+        if let Some(keywords) = keywords {
+            keywords.get_item("dim")?.map(|value| ParsedCallArgument {
+                value,
+                position: None,
+            })
+        } else {
+            None
+        }
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+
+    // PyTorch validates the recognized argument type before diagnosing extra
+    // or duplicate keywords. Integer conversion remains deferred until after
+    // TorchFunctionMode dispatch so a mode can observe the original object.
+    if let Some(dimension) = &dimension {
+        validate_dimension_swap_dimension("unbind", "dim", dimension.position, &dimension.value)?;
+    }
+
+    if let Some(keywords) = keywords {
+        for key in keywords.keys() {
+            let key = key.extract::<String>()?;
+            if key != "dim" {
+                return Err(PyTypeError::new_err(format!(
+                    "unbind() got an unexpected keyword argument '{key}'"
+                )));
+            }
+            if !positional.is_empty() {
+                return Err(PyTypeError::new_err(
+                    "unbind() got multiple values for argument 'dim'",
+                ));
+            }
+        }
+    }
+
+    Ok(dimension)
 }
 
 fn bind_size_dimension<'py>(
@@ -7609,6 +7645,20 @@ fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
     .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))
 }
 
+fn normalize_unbind_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
+    if rank != 0 {
+        return normalize_dimension(dimension, rank);
+    }
+    if !(-1..=0).contains(&dimension) {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension out of range (expected to be in range of [-1, 0], but got {dimension})"
+        )));
+    }
+    Err(PyIndexError::new_err(
+        "Dimension specified as 0 but tensor has no dimensions",
+    ))
+}
+
 fn parse_reshape_shape(
     shape_dimensions: &Bound<'_, PyTuple>,
     keyword_shape: Option<&Bound<'_, PyAny>>,
@@ -8359,12 +8409,6 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();
     let tensor_base = py.get_type::<PyTensorBase>();
-    ITERATION_UNBIND_DESCRIPTOR.get_or_try_init(py, || -> PyResult<Py<PyAny>> {
-        Ok(tensor_base.getattr("unbind")?.unbind())
-    })?;
-    if tensor_base.hasattr("unbind")? {
-        tensor_base.delattr("unbind")?;
-    }
     // PyTorch installs Tensor.__pos__ as the TensorBase.positive descriptor
     // itself. Besides preserving its public metadata and call diagnostics,
     // assigning the descriptor activates the unary-positive numeric slot.
