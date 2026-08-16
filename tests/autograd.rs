@@ -1036,7 +1036,7 @@ fn retains_grad_is_false_for_every_supported_autograd_state() {
 }
 
 #[test]
-fn output_number_is_zero_for_every_supported_autograd_state() {
+fn output_number_is_zero_for_every_supported_single_output_autograd_state() {
     let ordinary = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
     let ordinary_operation = ordinary.mul_scalar(2.0).unwrap();
     let ordinary_view = ordinary.transpose(0, 1).unwrap();

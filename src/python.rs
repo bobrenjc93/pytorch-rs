@@ -2171,6 +2171,18 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
+    fn __iter__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        if self.inner.shape().is_empty() {
+            return Err(PyTypeError::new_err("iteration over a 0-d tensor"));
+        }
+        let outputs = self
+            .inner
+            .unbind_first_dimension()
+            .map_err(|error| tensor_error(&error))?;
+        let outputs = PyTuple::new(py, outputs.into_iter().map(Self::new))?;
+        Ok(outputs.call_method0("__iter__")?.unbind())
+    }
+
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
         let inner = if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() > self.inner.shape().len() {

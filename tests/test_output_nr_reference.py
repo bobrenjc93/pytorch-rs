@@ -79,7 +79,7 @@ class TensorOutputNumberReferenceTests(unittest.TestCase):
             ),
         }
 
-    def test_zero_matches_pytorch_2_13_for_every_supported_state(self):
+    def test_zero_matches_pytorch_2_13_for_supported_single_output_states(self):
         actual_cases = self.tensor_cases(torch)
         expected_cases = self.tensor_cases(reference_torch)
         for case, (actual, expected) in enumerate(
@@ -91,6 +91,87 @@ class TensorOutputNumberReferenceTests(unittest.TestCase):
                 self.assertEqual(actual_contract["value"], 0)
                 self.assertEqual(expected_contract["value"], 0)
                 self.assertEqual(actual_contract, expected_contract)
+
+    def iteration_contract(self, module):
+        source = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], requires_grad=True
+        )
+        iterator = iter(source)
+        iterator_type = type(iterator).__name__
+        iterator_is_self = iter(iterator) is iterator
+        length_hint_before = iterator.__length_hint__()
+        rows = tuple(iterator)
+        length_hint_after = iterator.__length_hint__()
+        indexed = tuple(source[index] for index in range(len(source)))
+
+        row_metadata = tuple(
+            (
+                row.output_nr,
+                row.requires_grad,
+                row.is_leaf,
+                tuple(row.shape),
+                row.stride(),
+                row.storage_offset(),
+                row.data_ptr() == direct.data_ptr(),
+                row.tolist(),
+            )
+            for row, direct in zip(rows, indexed, strict=True)
+        )
+        direct_output_numbers = tuple(row.output_nr for row in indexed)
+        middle = rows[1]
+        identity_results = (+middle, middle.real, middle.contiguous())
+        new_results = (middle.detach(), middle.transpose(0, 0), middle[0])
+        rows[1].sum().backward()
+
+        ordinary = module.tensor([[1.0], [2.0], [3.0]])
+        ordinary_output_numbers = tuple(row.output_nr for row in ordinary)
+
+        no_grad_source = module.tensor(
+            [[1.0], [2.0], [3.0]], requires_grad=True
+        )
+        with module.no_grad():
+            no_grad_rows = tuple(no_grad_source)
+
+        empty_rows = tuple(module.zeros((2, 0), requires_grad=True))
+        empty_outer = tuple(module.zeros((0, 2), requires_grad=True))
+        try:
+            iter(module.tensor(1.0))
+        except Exception as error:
+            scalar_error = type(error).__name__, str(error)
+        else:
+            self.fail(f"{module.__name__} allowed scalar tensor iteration")
+
+        return {
+            "iterator_type": iterator_type,
+            "iterator_is_self": iterator_is_self,
+            "length_hints": (length_hint_before, length_hint_after),
+            "rows": row_metadata,
+            "direct_output_numbers": direct_output_numbers,
+            "identity_results": tuple(
+                (result is middle, result.output_nr) for result in identity_results
+            ),
+            "new_result_output_numbers": tuple(
+                result.output_nr for result in new_results
+            ),
+            "gradient": source.grad.tolist(),
+            "ordinary_output_numbers": ordinary_output_numbers,
+            "no_grad_rows": tuple(
+                (row.output_nr, row.requires_grad, row.is_leaf)
+                for row in no_grad_rows
+            ),
+            "empty_rows": tuple(
+                (row.output_nr, row.numel(), tuple(row.shape))
+                for row in empty_rows
+            ),
+            "empty_outer": empty_outer,
+            "scalar_error": scalar_error,
+        }
+
+    def test_iteration_output_numbers_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.iteration_contract(torch),
+            self.iteration_contract(reference_torch),
+        )
 
     def test_reference_multi_output_nodes_expose_the_unsupported_nonzero_state(self):
         self.assertFalse(hasattr(torch.Tensor, "unbind"))

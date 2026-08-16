@@ -45,7 +45,7 @@ class TensorOutputNumberTests(unittest.TestCase):
             ("live leaf gradient", leaf.grad),
         )
 
-    def test_every_supported_tensor_state_reports_output_zero(self):
+    def test_every_supported_single_output_tensor_state_reports_zero(self):
         for case, tensor in self.tensor_cases():
             with self.subTest(case=case):
                 metadata = (
@@ -76,6 +76,55 @@ class TensorOutputNumberTests(unittest.TestCase):
                     ),
                     metadata,
                 )
+
+    def test_iteration_uses_multi_output_numbers_while_indexing_stays_zero(self):
+        source = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], requires_grad=True
+        )
+        iterator = iter(source)
+
+        self.assertEqual(type(iterator).__name__, "tuple_iterator")
+        self.assertIs(iter(iterator), iterator)
+        self.assertEqual(iterator.__length_hint__(), 3)
+        rows = tuple(iterator)
+        self.assertEqual(tuple(row.output_nr for row in rows), (0, 1, 2))
+        self.assertEqual(iterator.__length_hint__(), 0)
+
+        indexed = tuple(source[index] for index in range(len(source)))
+        self.assertEqual(tuple(row.output_nr for row in indexed), (0, 0, 0))
+        for row, direct in zip(rows, indexed, strict=True):
+            self.assertEqual(row.shape, direct.shape)
+            self.assertEqual(row.stride(), direct.stride())
+            self.assertEqual(row.storage_offset(), direct.storage_offset())
+            self.assertEqual(row.data_ptr(), direct.data_ptr())
+            self.assertEqual(row.tolist(), direct.tolist())
+
+        rows[1].sum().backward()
+        self.assertEqual(
+            source.grad.tolist(),
+            [[0.0, 0.0], [1.0, 1.0], [0.0, 0.0]],
+        )
+
+        ordinary = torch.tensor([[1.0], [2.0], [3.0]])
+        self.assertEqual(tuple(row.output_nr for row in ordinary), (0, 0, 0))
+
+        no_grad_source = torch.tensor(
+            [[1.0], [2.0], [3.0]], requires_grad=True
+        )
+        with torch.no_grad():
+            no_grad_rows = tuple(no_grad_source)
+        self.assertEqual(tuple(row.output_nr for row in no_grad_rows), (0, 0, 0))
+        self.assertTrue(all(row.requires_grad for row in no_grad_rows))
+        self.assertTrue(all(row.is_leaf for row in no_grad_rows))
+
+        empty_rows = tuple(torch.zeros((2, 0), requires_grad=True))
+        self.assertEqual(tuple(row.output_nr for row in empty_rows), (0, 1))
+        self.assertEqual(tuple(row.numel() for row in empty_rows), (0, 0))
+        self.assertEqual(tuple(torch.zeros((0, 2), requires_grad=True)), ())
+
+        with self.assertRaises(TypeError) as raised:
+            iter(torch.tensor(1.0))
+        self.assertEqual(str(raised.exception), "iteration over a 0-d tensor")
 
     def test_tensorbase_descriptor_is_undocumented_and_read_only(self):
         tensor = torch.tensor([1.0])

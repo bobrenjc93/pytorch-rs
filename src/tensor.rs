@@ -186,6 +186,7 @@ pub struct Tensor {
     strides: Vec<usize>,
     offset: usize,
     elements: usize,
+    output_nr: usize,
     view_requires_grad: bool,
     autograd: Option<Arc<AutogradMeta>>,
 }
@@ -413,6 +414,7 @@ impl Tensor {
             strides,
             offset: 0,
             elements,
+            output_nr: 0,
             view_requires_grad: false,
             autograd: None,
         }
@@ -652,12 +654,10 @@ impl Tensor {
 
     /// Returns this tensor's output index within its producing autograd node.
     ///
-    /// Every operation exposed by the native engine produces exactly one
-    /// tensor, so every reachable tensor is output zero. Multi-output autograd
-    /// nodes are not represented yet.
+    /// Tensors without a recorded producing operation report output zero.
     #[must_use]
     pub const fn output_nr(&self) -> usize {
-        0
+        self.output_nr
     }
 
     /// Marks an owned tensor as a gradient-accumulating leaf, or detaches it
@@ -670,6 +670,7 @@ impl Tensor {
     pub fn with_requires_grad(mut self, requires_grad: bool) -> Self {
         if !requires_grad {
             self.autograd = None;
+            self.output_nr = 0;
             self.view_requires_grad = false;
         } else if self.autograd.is_none() {
             self.autograd = Some(Arc::new(AutogradMeta {
@@ -680,6 +681,7 @@ impl Tensor {
                     grad: Mutex::new(None),
                 },
             }));
+            self.output_nr = 0;
             self.view_requires_grad = false;
         }
         self
@@ -742,6 +744,7 @@ impl Tensor {
             strides,
             offset: 0,
             elements,
+            output_nr: 0,
             view_requires_grad: false,
             autograd: None,
         }))
@@ -1006,6 +1009,7 @@ impl Tensor {
             strides,
             offset: self.offset,
             elements: self.elements,
+            output_nr: 0,
             view_requires_grad: self.requires_grad(),
             autograd: None,
         };
@@ -1155,6 +1159,7 @@ impl Tensor {
             strides,
             offset: self.offset,
             elements: self.elements,
+            output_nr: 0,
             view_requires_grad: false,
             autograd: None,
         };
@@ -1405,6 +1410,7 @@ impl Tensor {
                 strides: try_clone_result_shape(&self.strides, self.elements)?,
                 offset: self.offset,
                 elements: self.elements,
+                output_nr: 0,
                 view_requires_grad: false,
                 autograd: None,
             };
@@ -1440,6 +1446,7 @@ impl Tensor {
             strides: try_clone_result_shape(&self.strides, self.elements)?,
             offset: self.offset,
             elements: self.elements,
+            output_nr: 0,
             view_requires_grad: false,
             autograd: None,
         })
@@ -1607,6 +1614,28 @@ impl Tensor {
     }
 
     fn index_dimensions(&self, indices: &[i64]) -> Result<Self, TensorError> {
+        self.index_dimensions_with_output_nr(indices, 0)
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn unbind_first_dimension(&self) -> Result<Vec<Self>, TensorError> {
+        let Some(&output_count) = self.shape.first() else {
+            return Err(TensorError::InvalidScalarIndex);
+        };
+        let mut outputs = try_result_vector(output_count, self.elements)?;
+        for output_nr in 0..output_count {
+            let index =
+                i64::try_from(output_nr).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            outputs.push(self.index_dimensions_with_output_nr(&[index], output_nr)?);
+        }
+        Ok(outputs)
+    }
+
+    fn index_dimensions_with_output_nr(
+        &self,
+        indices: &[i64],
+        output_nr: usize,
+    ) -> Result<Self, TensorError> {
         if indices.len() > self.shape.len() {
             return Err(TensorError::TooManyIndices {
                 dimensions: self.shape.len(),
@@ -1628,6 +1657,7 @@ impl Tensor {
             strides,
             offset,
             elements,
+            output_nr: 0,
             view_requires_grad: self.requires_grad(),
             autograd: None,
         };
@@ -1655,6 +1685,7 @@ impl Tensor {
                 .checked_mul(elements)
                 .ok_or(TensorError::IndexCalculationOverflow)?;
             self.record_transform(&mut output, TransformMapping::Index { input_start })?;
+            output.output_nr = output_nr;
         }
         Ok(output)
     }
@@ -1802,6 +1833,7 @@ impl Tensor {
                     strides,
                     offset: self.offset,
                     elements: self.elements,
+                    output_nr: 0,
                     view_requires_grad: false,
                     autograd: None,
                 },
@@ -1819,6 +1851,7 @@ impl Tensor {
                     strides,
                     offset: self.offset,
                     elements: self.elements,
+                    output_nr: 0,
                     view_requires_grad: false,
                     autograd: None,
                 },
@@ -1835,6 +1868,7 @@ impl Tensor {
                 strides,
                 offset: 0,
                 elements: self.elements,
+                output_nr: 0,
                 view_requires_grad: false,
                 autograd: None,
             },
@@ -3719,9 +3753,69 @@ mod tests {
             strides: tensor.strides.clone(),
             offset: tensor.offset,
             elements: tensor.elements,
+            output_nr: 0,
             view_requires_grad: false,
             autograd: None,
         }
+    }
+
+    #[test]
+    fn first_dimension_unbind_tracks_output_numbers_only_with_autograd_history() {
+        let source = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [3, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let outputs = source.unbind_first_dimension().unwrap();
+
+        assert_eq!(outputs.len(), 3);
+        assert_eq!(
+            outputs.iter().map(Tensor::output_nr).collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+        for (index, output) in outputs.iter().enumerate() {
+            assert!(output.shares_storage_with(&source));
+            assert_eq!(output.shape(), [2]);
+            assert_eq!(output.stride(), [1]);
+            assert_eq!(output.storage_offset(), index * 2);
+            assert_eq!(
+                source
+                    .index_integer(i64::try_from(index).unwrap())
+                    .unwrap()
+                    .output_nr(),
+                0
+            );
+        }
+
+        outputs[1].sum().backward().unwrap();
+        assert_eq!(
+            source.grad().unwrap().unwrap().as_slice(),
+            [0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
+        );
+
+        let no_grad_outputs = {
+            let _guard = crate::no_grad();
+            source.unbind_first_dimension().unwrap()
+        };
+        assert!(no_grad_outputs.iter().all(|output| output.output_nr() == 0));
+
+        let ordinary = Tensor::zeros([3, 2]).unwrap();
+        assert!(
+            ordinary
+                .unbind_first_dimension()
+                .unwrap()
+                .iter()
+                .all(|output| output.output_nr() == 0)
+        );
+        assert!(
+            Tensor::zeros([0, 2])
+                .unwrap()
+                .unbind_first_dimension()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            Tensor::zeros([]).unwrap().unbind_first_dimension(),
+            Err(TensorError::InvalidScalarIndex)
+        );
     }
 
     #[test]
@@ -4166,6 +4260,7 @@ mod tests {
             strides: vec![2, 1],
             offset: 0,
             elements: 4,
+            output_nr: 0,
             view_requires_grad: false,
             autograd: None,
         };
@@ -4368,6 +4463,7 @@ mod tests {
             strides: vec![1],
             offset: 0,
             elements,
+            output_nr: 0,
             view_requires_grad: false,
             autograd: None,
         };
