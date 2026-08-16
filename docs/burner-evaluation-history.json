@@ -2705,6 +2705,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68.5
       }
+    },
+    {
+      "key": "pr:181",
+      "recordedAt": "2026-08-16T13:49:51.419Z",
+      "label": "PR #181",
+      "kind": "leaf",
+      "prNumber": 181,
+      "title": "Expose Tensor.resolve_conj for ordinary tensors",
+      "scores": {
+        "eval_7af648fb": 99.5,
+        "eval_8417a4a8": 68.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 47.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }
