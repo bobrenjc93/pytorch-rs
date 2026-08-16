@@ -19,11 +19,11 @@ use pyo3::types::{
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, enter_no_grad, exit_no_grad,
     is_grad_enabled as core_is_grad_enabled,
+    python_dtype::{PyDType, dtype_object},
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_variable_functions::create_variable_functions_class,
 };
 
-static FLOAT32: PyOnceLock<Py<PyDType>> = PyOnceLock::new();
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
 static PRESERVE_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
 static CONTIGUOUS_FORMAT: PyOnceLock<Py<PyMemoryFormat>> = PyOnceLock::new();
@@ -230,52 +230,6 @@ const ADJOINT_SCALAR_WARNING: &CStr =
     c"adjoint() is deprecated on 0-D tensors. Consider using x.conj().";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod.";
-
-/// Python scalar-type descriptor backed by a native [`DType`].
-#[pyclass(name = "dtype", module = "torch_rs", frozen, skip_from_py_object)]
-#[derive(Clone)]
-struct PyDType {
-    inner: DType,
-}
-
-#[pymethods]
-impl PyDType {
-    #[getter]
-    fn itemsize(&self) -> usize {
-        self.inner.element_size()
-    }
-
-    #[getter]
-    fn is_floating_point(&self) -> bool {
-        self.inner.is_floating_point()
-    }
-
-    #[getter]
-    fn is_complex(&self) -> bool {
-        self.inner.is_complex()
-    }
-
-    #[getter]
-    fn is_signed(&self) -> bool {
-        self.inner.is_signed()
-    }
-
-    fn __repr__(&self) -> &'static str {
-        match self.inner {
-            DType::Float32 => "torch.float32",
-        }
-    }
-
-    fn __str__(&self) -> &'static str {
-        self.__repr__()
-    }
-
-    fn __reduce__(&self) -> &'static str {
-        match self.inner {
-            DType::Float32 => "float32",
-        }
-    }
-}
 
 /// Python memory-format descriptor backed by a native [`MemoryFormat`].
 #[pyclass(
@@ -1485,9 +1439,7 @@ impl PyTensor {
 
     #[getter]
     fn dtype(&self, py: Python<'_>) -> PyResult<Py<PyDType>> {
-        match self.inner.dtype() {
-            DType::Float32 => Ok(float32_object(py)?.clone_ref(py)),
-        }
+        Ok(dtype_object(py, self.inner.dtype())?.clone_ref(py))
     }
 
     #[getter]
@@ -2256,7 +2208,7 @@ fn get_default_dtype(
             args.len()
         )));
     }
-    Ok(float32_object(py)?.clone_ref(py))
+    Ok(dtype_object(py, DType::Float32)?.clone_ref(py))
 }
 
 const IS_GRAD_ENABLED_DOC: &CStr =
@@ -2793,17 +2745,6 @@ fn full(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
     CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
-}
-
-fn float32_object(py: Python<'_>) -> PyResult<&'static Py<PyDType>> {
-    FLOAT32.get_or_try_init(py, || {
-        Py::new(
-            py,
-            PyDType {
-                inner: DType::Float32,
-            },
-        )
-    })
 }
 
 fn layout_objects(py: Python<'_>) -> PyResult<&'static PyLayoutObjects> {
@@ -3645,7 +3586,7 @@ fn parse_dtype(function: &str, dtype: Option<&Bound<'_, PyAny>>) -> PyResult<DTy
         return Ok(DType::Float32);
     };
     if let Ok(dtype) = dtype.cast::<PyDType>() {
-        return Ok(dtype.try_borrow()?.inner);
+        return Ok(dtype.try_borrow()?.inner());
     }
 
     let type_name = dtype.get_type().name()?;
@@ -7554,7 +7495,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(ones, module)?)?;
     module.add_function(wrap_pyfunction!(eye, module)?)?;
     module.add_function(wrap_pyfunction!(full, module)?)?;
-    let float32 = float32_object(py)?;
+    let float32 = dtype_object(py, DType::Float32)?;
     module.add("float32", float32.clone_ref(py))?;
     module.add("float", float32.clone_ref(py))?;
     module.add("layout", layout_objects(py)?.layout.clone_ref(py))?;
