@@ -2545,6 +2545,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 67
       }
+    },
+    {
+      "key": "pr:170",
+      "recordedAt": "2026-08-16T08:29:18.062Z",
+      "label": "PR #170",
+      "kind": "leaf",
+      "prNumber": 170,
+      "title": "Make Tensor.is_conj honor TorchFunctionMode",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 67.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 46.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 67
+      }
     }
   ]
 }
