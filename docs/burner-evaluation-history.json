@@ -2737,6 +2737,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68.5
       }
+    },
+    {
+      "key": "pr:183",
+      "recordedAt": "2026-08-16T15:00:07.964Z",
+      "label": "PR #183",
+      "kind": "leaf",
+      "prNumber": 183,
+      "title": "Expose no-argument Tensor.to_dense identity",
+      "scores": {
+        "eval_7af648fb": 99.6,
+        "eval_8417a4a8": 68.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 47.9,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }
