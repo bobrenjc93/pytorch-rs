@@ -2417,6 +2417,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 66
       }
+    },
+    {
+      "key": "pr:162",
+      "recordedAt": "2026-08-16T04:52:58.559Z",
+      "label": "PR #162",
+      "kind": "leaf",
+      "prNumber": 162,
+      "title": "Expose only the integer-returning Tensor.size(dim) overload",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 66.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 45.8,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 66
+      }
     }
   ]
 }
