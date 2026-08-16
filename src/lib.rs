@@ -29,6 +29,8 @@ mod python_no_argument_builtins;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_scalar_conversions;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_torch_function_mode;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_variable_functions;
 mod storage;
 mod tensor;
