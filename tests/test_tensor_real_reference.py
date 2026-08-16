@@ -1,4 +1,7 @@
 import inspect
+import json
+import subprocess
+import sys
 import types
 import unittest
 
@@ -177,6 +180,99 @@ class TensorRealReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.descriptor_contract(torch),
             self.descriptor_contract(reference_torch),
+        )
+
+    def mode_dispatch_observation(self, module_name):
+        source = r'''
+import importlib
+import inspect
+import json
+import sys
+
+module = importlib.import_module(MODULE)
+tensor = module.tensor([1.0], dtype=module.float32)
+descriptor = inspect.getattr_static(module.Tensor, "real")
+marker = object()
+
+class RecordingMode(module.overrides.TorchFunctionMode):
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls.append((func, types, args, kwargs))
+        return self.result
+
+recording = RecordingMode(marker)
+with recording:
+    intercepted = tensor.real
+function, dispatch_types, args, kwargs = recording.calls[0]
+
+order = []
+class ForwardingMode(module.overrides.TorchFunctionMode):
+    def __init__(self, label):
+        self.label = label
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        order.append(self.label)
+        return func(*args, **(kwargs or {}))
+
+with ForwardingMode("lower"):
+    with ForwardingMode("upper"):
+        forwarded = tensor.real
+
+sys.setrecursionlimit(80)
+class DecliningMode(module.overrides.TorchFunctionMode):
+    def __init__(self):
+        self.calls = 0
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls += 1
+        return NotImplemented
+
+lower = RecordingMode(marker)
+upper = DecliningMode()
+try:
+    with lower:
+        with upper:
+            tensor.real
+except Exception as error:
+    declining_error = [type(error).__name__, str(error)]
+else:
+    declining_error = None
+
+print(json.dumps({
+    "intercepted": intercepted is marker,
+    "call_count": len(recording.calls),
+    "function_type": type(function).__name__,
+    "function_name": function.__name__,
+    "function_qualname": function.__qualname__,
+    "function_self": function.__self__ is descriptor,
+    "function_equals_descriptor_get": function == descriptor.__get__,
+    "types": dispatch_types == (module.Tensor,),
+    "args": len(args) == 1 and args[0] is tensor,
+    "kwargs_is_none": kwargs is None,
+    "forwarding_order": order,
+    "forwarded_identity": forwarded is tensor,
+    "declining_error": declining_error,
+    "declining_calls": upper.calls,
+    "lower_skipped": len(lower.calls) == 0,
+    "ordinary_identity": tensor.real is tensor,
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_observation("torch_rs"),
+            self.mode_dispatch_observation("torch"),
         )
 
 

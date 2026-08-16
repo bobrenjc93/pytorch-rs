@@ -2689,6 +2689,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68.5
       }
+    },
+    {
+      "key": "pr:180",
+      "recordedAt": "2026-08-16T13:18:55.259Z",
+      "label": "PR #180",
+      "kind": "leaf",
+      "prNumber": 180,
+      "title": "Make Tensor.real honor TorchFunctionMode",
+      "scores": {
+        "eval_7af648fb": 99.4,
+        "eval_8417a4a8": 68.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 47.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68.5
+      }
     }
   ]
 }
