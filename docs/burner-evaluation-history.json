@@ -2577,6 +2577,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 67.5
       }
+    },
+    {
+      "key": "pr:172",
+      "recordedAt": "2026-08-16T09:19:43.779Z",
+      "label": "PR #172",
+      "kind": "leaf",
+      "prNumber": 172,
+      "title": "Make Tensor.layout honor TorchFunctionMode",
+      "scores": {
+        "eval_7af648fb": 99.2,
+        "eval_8417a4a8": 67.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 46.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 67.5
+      }
     }
   ]
 }
