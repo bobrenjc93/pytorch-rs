@@ -2401,6 +2401,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 65
       }
+    },
+    {
+      "key": "pr:161",
+      "recordedAt": "2026-08-16T04:18:42.076Z",
+      "label": "PR #161",
+      "kind": "leaf",
+      "prNumber": 161,
+      "title": "Isolate the Python device wrapper in one binding module",
+      "scores": {
+        "eval_7af648fb": 99,
+        "eval_8417a4a8": 66.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 45.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 66
+      }
     }
   ]
 }
