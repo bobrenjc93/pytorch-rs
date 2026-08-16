@@ -1,3 +1,3 @@
-from .dataset import ConcatDataset, Dataset, Subset, TensorDataset
+from .dataset import ConcatDataset, Dataset, StackDataset, Subset, TensorDataset
 
-__all__ = ["ConcatDataset", "Dataset", "Subset", "TensorDataset"]
+__all__ = ["ConcatDataset", "Dataset", "StackDataset", "Subset", "TensorDataset"]

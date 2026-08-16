@@ -162,11 +162,11 @@ class TensorDatasetTests(unittest.TestCase):
 
         self.assertEqual(
             data_module.__all__,
-            ["ConcatDataset", "Dataset", "Subset", "TensorDataset"],
+            ["ConcatDataset", "Dataset", "StackDataset", "Subset", "TensorDataset"],
         )
         self.assertEqual(
             dataset_module.__all__,
-            ["Dataset", "TensorDataset", "ConcatDataset", "Subset"],
+            ["Dataset", "TensorDataset", "StackDataset", "ConcatDataset", "Subset"],
         )
         self.assertFalse(hasattr(data_module, "DataLoader"))
         self.assertNotIn("utils", torch.__all__)
