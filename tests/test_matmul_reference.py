@@ -123,6 +123,11 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                 expected_left.matmul(other=expected_right),
                 case=(case, "keyword"),
             )
+            self.assert_matches(
+                actual_left.matmul(x2=actual_right),
+                expected_left.matmul(x2=expected_right),
+                case=(case, "x2 alias"),
+            )
 
     def torch_function_dispatch_observation(self, module):
         left = module.tensor([[1.0]])
@@ -139,11 +144,13 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                 self.calls.append((func, types, args, kwargs))
                 return marker
 
-        for keyword in (False, True):
+        for keyword in (None, "other", "x2"):
             mode = RecordingMode()
             with mode:
                 result = (
-                    left.matmul(other=right) if keyword else left.matmul(right)
+                    left.matmul(right)
+                    if keyword is None
+                    else left.matmul(**{keyword: right})
                 )
             function, dispatch_types, args, kwargs = mode.calls[0]
             mode_observations.append(
@@ -156,8 +163,8 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                     len(args) == 2 and args[1] is right,
                     kwargs is None,
                     kwargs is not None
-                    and tuple(kwargs) == ("other",)
-                    and kwargs["other"] is right,
+                    and tuple(kwargs) == (keyword,)
+                    and kwargs[keyword] is right,
                 )
             )
 
@@ -171,11 +178,13 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                 cls.calls.append((func, types, args, kwargs))
                 return marker
 
-        for keyword in (False, True):
+        for keyword in (None, "other", "x2"):
             value = Override()
             Override.calls.clear()
             result = (
-                left.matmul(other=value) if keyword else left.matmul(value)
+                left.matmul(value)
+                if keyword is None
+                else left.matmul(**{keyword: value})
             )
             function, dispatch_types, args, kwargs = Override.calls[0]
             override_observations.append(
@@ -188,8 +197,8 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                     len(args) == 2 and args[1] is value,
                     kwargs is None,
                     kwargs is not None
-                    and tuple(kwargs) == ("other",)
-                    and kwargs["other"] is value,
+                    and tuple(kwargs) == (keyword,)
+                    and kwargs[keyword] is value,
                 )
             )
 
@@ -204,8 +213,9 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                         func is descriptor,
                         types == (FallbackOverride,),
                         args[0] is left,
-                        len(args) == 2 and isinstance(args[1], FallbackOverride),
-                        kwargs is None,
+                        len(args) == 1,
+                        tuple(kwargs) == ("x2",),
+                        isinstance(kwargs["x2"], FallbackOverride),
                     )
                 )
                 return marker
@@ -218,34 +228,43 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                         func is descriptor,
                         types == (FallbackOverride,),
                         args[0] is left,
-                        len(args) == 2 and isinstance(args[1], FallbackOverride),
-                        kwargs is None,
+                        len(args) == 1,
+                        tuple(kwargs) == ("x2",),
+                        isinstance(kwargs["x2"], FallbackOverride),
                     )
                 )
                 return NotImplemented
 
         with DecliningMode():
-            fallback_result = left.matmul(FallbackOverride())
+            fallback_result = left.matmul(x2=FallbackOverride())
 
-        invalid_mode = RecordingMode()
-        try:
-            with invalid_mode:
-                left.matmul([])
-        except Exception as error:
-            invalid_observation = (
-                type(error).__name__,
-                str(error),
-                len(invalid_mode.calls),
-            )
-        else:
-            invalid_observation = None
+        invalid_observations = []
+        for call in (
+            lambda: left.matmul([]),
+            lambda: left.matmul(x2=[]),
+            lambda: left.matmul(x2=right, wat=right),
+        ):
+            invalid_mode = RecordingMode()
+            try:
+                with invalid_mode:
+                    call()
+            except Exception as error:
+                invalid_observations.append(
+                    (
+                        type(error).__name__,
+                        str(error),
+                        len(invalid_mode.calls),
+                    )
+                )
+            else:
+                invalid_observations.append(None)
 
         return (
             mode_observations,
             override_observations,
             fallback_result is marker,
             events,
-            invalid_observation,
+            invalid_observations,
         )
 
     def test_torch_function_mode_and_operand_dispatch_match_pytorch_2_13(self):
@@ -271,6 +290,10 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                 (
                     lambda: actual_left.matmul(other=actual_right),
                     lambda: expected_left.matmul(other=expected_right),
+                ),
+                (
+                    lambda: actual_left.matmul(x2=actual_right),
+                    lambda: expected_left.matmul(x2=expected_right),
                 ),
             ):
                 with self.subTest(left=left_shape, right=right_shape):
@@ -318,6 +341,11 @@ class TensorMatmulReferenceTests(unittest.TestCase):
             expected_descriptor(expected, other=expected),
             case="unbound keyword",
         )
+        self.assert_matches(
+            actual_descriptor(actual, x2=actual),
+            expected_descriptor(expected, x2=expected),
+            case="unbound x2 alias",
+        )
 
         cases = (
             (lambda: actual_descriptor(), lambda: expected_descriptor()),
@@ -344,6 +372,43 @@ class TensorMatmulReferenceTests(unittest.TestCase):
             (
                 lambda: actual.matmul([], out=actual),
                 lambda: expected.matmul([], out=expected),
+            ),
+            (lambda: actual.matmul(x2=[]), lambda: expected.matmul(x2=[])),
+            (
+                lambda: actual.matmul(actual, x2=actual),
+                lambda: expected.matmul(expected, x2=expected),
+            ),
+            (
+                lambda: actual.matmul(x2=actual, wat=actual),
+                lambda: expected.matmul(x2=expected, wat=expected),
+            ),
+            (
+                lambda: actual.matmul(**{"wat": actual, "x2": actual}),
+                lambda: expected.matmul(**{"wat": expected, "x2": expected}),
+            ),
+            (
+                lambda: actual.matmul(x2=actual, other=[]),
+                lambda: expected.matmul(x2=expected, other=[]),
+            ),
+            (
+                lambda: actual.matmul(x2=[], other=actual),
+                lambda: expected.matmul(x2=[], other=expected),
+            ),
+            (
+                lambda: actual.matmul(
+                    actual, **{"x2": actual, "other": actual}
+                ),
+                lambda: expected.matmul(
+                    expected, **{"x2": expected, "other": expected}
+                ),
+            ),
+            (
+                lambda: actual.matmul(
+                    actual, **{"other": actual, "x2": actual}
+                ),
+                lambda: expected.matmul(
+                    expected, **{"other": expected, "x2": expected}
+                ),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):

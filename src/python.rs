@@ -735,8 +735,8 @@ impl PyTensorBase {
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
-        let (arguments, keyword_error) = bind_tensor_arguments("matmul", args, kwargs, ["other"])?;
-        let other = parse_tensor_or_torch_function_argument("matmul", "other", &arguments[0])?;
+        let (argument, keyword_error) = bind_matmul_argument(args, kwargs)?;
+        let other = parse_tensor_or_torch_function_argument("matmul", "other", &argument)?;
         if let Some(keyword_error) = keyword_error {
             return Err(keyword_error);
         }
@@ -5901,6 +5901,26 @@ fn parse_tensor_or_torch_function_argument<'py>(
         .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
 }
 
+fn bind_matmul_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
+    if positional.is_empty()
+        && let Some(keywords) = keywords
+        && keywords.len() == 1
+        && let Some(other) = keywords.get_item("x2")?
+    {
+        return Ok((
+            ParsedCallArgument {
+                value: other,
+                position: None,
+            },
+            None,
+        ));
+    }
+    bind_other_argument_with_x2_fallback("matmul", positional, keywords)
+}
+
 fn bind_multiplication_argument<'py>(
     operation: MultiplicationMethod,
     positional: &Bound<'py, PyTuple>,
@@ -5946,7 +5966,14 @@ fn bind_multiplication_argument<'py>(
         return Err(multiply_binding_error(positional, keywords)?);
     }
 
-    let function = operation.name();
+    bind_other_argument_with_x2_fallback(operation.name(), positional, keywords)
+}
+
+fn bind_other_argument_with_x2_fallback<'py>(
+    function: &str,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
     if positional.len() > 1 {
         return Err(PyTypeError::new_err(format!(
             "{function}() takes 1 positional argument but {} were given",

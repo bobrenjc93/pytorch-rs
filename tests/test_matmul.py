@@ -73,6 +73,9 @@ class TensorMatmulTests(unittest.TestCase):
             self.assert_delegates_to_operator(
                 left.matmul(other=right), expected, case=(case, "keyword")
             )
+            self.assert_delegates_to_operator(
+                left.matmul(x2=right), expected, case=(case, "x2 alias")
+            )
 
     def test_torch_function_modes_receive_original_calls_and_can_forward(self):
         left = torch.tensor([[1.0]])
@@ -89,10 +92,11 @@ class TensorMatmulTests(unittest.TestCase):
                 return marker
 
         calls = (
-            ("positional", lambda: left.matmul(right), True),
-            ("keyword", lambda: left.matmul(other=right), False),
+            ("positional", lambda: left.matmul(right), None),
+            ("other keyword", lambda: left.matmul(other=right), "other"),
+            ("x2 keyword", lambda: left.matmul(x2=right), "x2"),
         )
-        for case, call, positional in calls:
+        for case, call, keyword in calls:
             mode = RecordingMode()
             with mode:
                 self.assertIs(call(), marker)
@@ -102,14 +106,14 @@ class TensorMatmulTests(unittest.TestCase):
                 self.assertIs(function, descriptor)
                 self.assertEqual(dispatch_types, ())
                 self.assertIs(args[0], left)
-                if positional:
+                if keyword is None:
                     self.assertEqual(len(args), 2)
                     self.assertIs(args[1], right)
                     self.assertIsNone(kwargs)
                 else:
                     self.assertEqual(len(args), 1)
-                    self.assertEqual(tuple(kwargs), ("other",))
-                    self.assertIs(kwargs["other"], right)
+                    self.assertEqual(tuple(kwargs), (keyword,))
+                    self.assertIs(kwargs[keyword], right)
 
         order = []
 
@@ -128,14 +132,26 @@ class TensorMatmulTests(unittest.TestCase):
         self.assertEqual(order, ["upper", "lower"])
         self.assert_delegates_to_operator(actual, expected, case="forwarded modes")
 
-        mode = RecordingMode()
-        with mode:
-            with self.assertRaisesRegex(
-                TypeError,
-                r"^matmul\(\): argument 'other' \(position 1\) must be Tensor, not list$",
-            ):
-                left.matmul([])
-        self.assertEqual(mode.calls, [])
+        invalid_calls = (
+            (
+                lambda: left.matmul([]),
+                "matmul(): argument 'other' (position 1) must be Tensor, not list",
+            ),
+            (
+                lambda: left.matmul(x2=[]),
+                "matmul(): argument 'other' must be Tensor, not list",
+            ),
+            (
+                lambda: left.matmul(x2=right, wat=right),
+                "matmul() got an unexpected keyword argument 'x2'",
+            ),
+        )
+        for call, message in invalid_calls:
+            mode = RecordingMode()
+            with mode:
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+            self.assertEqual(mode.calls, [])
 
     def test_other_torch_function_override_dispatches_after_declining_mode(self):
         left = torch.tensor([[1.0]])
@@ -151,10 +167,11 @@ class TensorMatmulTests(unittest.TestCase):
                 return marker
 
         calls = (
-            ("positional", lambda value: left.matmul(value), True),
-            ("keyword", lambda value: left.matmul(other=value), False),
+            ("positional", lambda value: left.matmul(value), None),
+            ("other keyword", lambda value: left.matmul(other=value), "other"),
+            ("x2 keyword", lambda value: left.matmul(x2=value), "x2"),
         )
-        for case, call, positional in calls:
+        for case, call, keyword in calls:
             value = Override()
             Override.calls.clear()
             self.assertIs(call(value), marker)
@@ -164,14 +181,14 @@ class TensorMatmulTests(unittest.TestCase):
                 self.assertIs(function, descriptor)
                 self.assertEqual(dispatch_types, (Override,))
                 self.assertIs(args[0], left)
-                if positional:
+                if keyword is None:
                     self.assertEqual(len(args), 2)
                     self.assertIs(args[1], value)
                     self.assertIsNone(kwargs)
                 else:
                     self.assertEqual(len(args), 1)
-                    self.assertEqual(tuple(kwargs), ("other",))
-                    self.assertIs(kwargs["other"], value)
+                    self.assertEqual(tuple(kwargs), (keyword,))
+                    self.assertIs(kwargs[keyword], value)
 
         mode_calls = []
 
@@ -183,12 +200,16 @@ class TensorMatmulTests(unittest.TestCase):
         value = Override()
         Override.calls.clear()
         with DecliningMode():
-            self.assertIs(left.matmul(value), marker)
+            self.assertIs(left.matmul(x2=value), marker)
         self.assertEqual(len(mode_calls), 1)
         self.assertEqual(len(Override.calls), 1)
         self.assertIs(mode_calls[0][0], descriptor)
         self.assertEqual(mode_calls[0][1], (Override,))
+        self.assertEqual(len(mode_calls[0][2]), 1)
+        self.assertIs(mode_calls[0][3]["x2"], value)
         self.assertIs(Override.calls[0][0], descriptor)
+        self.assertEqual(len(Override.calls[0][2]), 1)
+        self.assertIs(Override.calls[0][3]["x2"], value)
 
     def test_existing_operator_autograd_behavior_is_preserved(self):
         method_left = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
@@ -229,6 +250,7 @@ class TensorMatmulTests(unittest.TestCase):
             for call in (
                 lambda left=left, right=right: left.matmul(right),
                 lambda left=left, right=right: left.matmul(other=right),
+                lambda left=left, right=right: left.matmul(x2=right),
                 lambda left=left, right=right: left @ right,
             ):
                 with self.subTest(left=left_shape, right=right_shape):
@@ -274,6 +296,9 @@ class TensorMatmulTests(unittest.TestCase):
         self.assert_delegates_to_operator(
             descriptor(tensor, other=tensor), tensor @ tensor, case="unbound keyword"
         )
+        self.assert_delegates_to_operator(
+            descriptor(tensor, x2=tensor), tensor @ tensor, case="unbound x2 alias"
+        )
 
         cases = (
             (lambda: tensor.matmul(), 'matmul() missing 1 required positional arguments: "other"'),
@@ -304,6 +329,30 @@ class TensorMatmulTests(unittest.TestCase):
             (
                 lambda: tensor.matmul([], out=tensor),
                 "matmul(): argument 'other' (position 1) must be Tensor, not list",
+            ),
+            (
+                lambda: tensor.matmul(x2=[]),
+                "matmul(): argument 'other' must be Tensor, not list",
+            ),
+            (
+                lambda: tensor.matmul(tensor, x2=tensor),
+                "matmul() got an unexpected keyword argument 'x2'",
+            ),
+            (
+                lambda: tensor.matmul(x2=tensor, wat=tensor),
+                "matmul() got an unexpected keyword argument 'x2'",
+            ),
+            (
+                lambda: tensor.matmul(**{"wat": tensor, "x2": tensor}),
+                "matmul() got an unexpected keyword argument 'wat'",
+            ),
+            (
+                lambda: tensor.matmul(x2=tensor, other=[]),
+                "matmul(): argument 'other' must be Tensor, not list",
+            ),
+            (
+                lambda: tensor.matmul(x2=[], other=tensor),
+                "matmul() got an unexpected keyword argument 'x2'",
             ),
         )
         for call, message in cases:
