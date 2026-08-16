@@ -93,6 +93,25 @@ class SetDefaultDTypeTests(unittest.TestCase):
         self.assertIs(torch.float, canonical)
         self.assertIs(torch.get_default_dtype(), canonical)
 
+    def test_rebinding_public_getter_does_not_change_validation(self):
+        canonical = torch.float32
+        original_get_default_dtype = torch.get_default_dtype
+        marker = object()
+        torch.get_default_dtype = lambda: marker
+        try:
+            with self.assertRaises(TypeError) as raised:
+                torch.set_default_dtype(marker)
+            self.assertEqual(
+                str(raised.exception),
+                "invalid dtype object: only floating-point types are supported as the "
+                "default type",
+            )
+            self.assertIsNone(torch.set_default_dtype(canonical))
+        finally:
+            torch.get_default_dtype = original_get_default_dtype
+
+        self.assert_default_factories_are_canonical()
+
     def test_callable_metadata_matches_pytorch_2_13(self):
         function = torch.set_default_dtype
         self.assertIs(type(function), types.FunctionType)
@@ -122,6 +141,8 @@ class SetDefaultDTypeTests(unittest.TestCase):
         self.assertIsNone(signature.return_annotation)
 
         self.assertTrue(hasattr(torch, "set_default_dtype"))
+        self.assertTrue(hasattr(torch._C, "_set_default_dtype"))
+        self.assertFalse(hasattr(torch, "_set_default_dtype"))
         self.assertNotIn("set_default_dtype", torch.__all__)
         self.assertEqual(torch.__all__.count("set_default_dtype"), 0)
 

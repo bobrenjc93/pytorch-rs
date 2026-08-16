@@ -18,7 +18,7 @@ use pyo3::types::{
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
-    python_dtype::{PyDType, dtype_object},
+    python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
     python_grad_mode::add_no_grad,
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_memory_format::{PyMemoryFormat, memory_format_object},
@@ -8160,6 +8160,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     tensor_type.setattr("__pos__", positive_descriptor)?;
     register_scalar_conversions(&tensor_base)?;
     module.add_class::<PyDType>()?;
+    add_default_dtype_validator(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     add_no_grad(module)?;

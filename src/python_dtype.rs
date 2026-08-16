@@ -1,7 +1,9 @@
 //! Python bindings for native scalar types.
 
+use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
+use pyo3::types::{PyAny, PyModule};
 
 use crate::DType;
 
@@ -69,4 +71,25 @@ pub(crate) fn dtype_object(py: Python<'_>, dtype: DType) -> PyResult<&'static Py
     match dtype {
         DType::Float32 => FLOAT32.get_or_try_init(py, || Py::new(py, PyDType { inner: dtype })),
     }
+}
+
+#[pyfunction(signature = (d, /))]
+fn _set_default_dtype(d: &Bound<'_, PyAny>) -> PyResult<()> {
+    if let Ok(dtype) = d.cast::<PyDType>()
+        && dtype.try_borrow()?.inner() == DType::Float32
+    {
+        return Ok(());
+    }
+
+    Err(PyTypeError::new_err(
+        "invalid dtype object: only floating-point types are supported as the default type",
+    ))
+}
+
+pub(crate) fn add_default_dtype_validator(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(_set_default_dtype, module)?)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_set_default_dtype",))?;
+    Ok(())
 }

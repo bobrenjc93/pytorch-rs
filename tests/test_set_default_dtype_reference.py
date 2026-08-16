@@ -61,6 +61,35 @@ class SetDefaultDTypeReferenceTests(unittest.TestCase):
                     self.default_dtype_outcome(reference_torch, expected_dtype),
                 )
 
+    def rebound_getter_outcome(self, module):
+        canonical = module.float32
+        original_get_default_dtype = module.get_default_dtype
+        marker = object()
+        module.get_default_dtype = lambda: marker
+        try:
+            try:
+                module.set_default_dtype(marker)
+            except Exception as error:
+                invalid_outcome = (type(error).__name__, str(error))
+            else:
+                invalid_outcome = None
+            valid_outcome = module.set_default_dtype(canonical)
+        finally:
+            module.get_default_dtype = original_get_default_dtype
+
+        return (
+            invalid_outcome,
+            valid_outcome is None,
+            module.get_default_dtype() is canonical,
+            module.tensor(1.25).dtype is canonical,
+        )
+
+    def test_rebinding_public_getter_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.rebound_getter_outcome(torch),
+            self.rebound_getter_outcome(reference_torch),
+        )
+
     def test_callable_metadata_matches_pytorch_2_13(self):
         actual = torch.set_default_dtype
         expected = reference_torch.set_default_dtype

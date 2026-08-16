@@ -74,10 +74,7 @@ def set_default_dtype(d: "torch.dtype", /) -> None:
         torch.complex32
 
     """
-    if d is not get_default_dtype():
-        raise TypeError(
-            "invalid dtype object: only floating-point types are supported as the default type"
-        )
+    _C._set_default_dtype(d)
 
 
 # PyTorch exposes ``strided`` as an attribute without including it in
