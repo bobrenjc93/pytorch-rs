@@ -18,6 +18,12 @@ _sys.modules[f"{__name__}._C"] = _C
 # from this package without adding ``torch`` to wildcard imports.
 torch = _sys.modules[__name__]
 
+
+def get_default_device() -> "torch.device":
+    r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
+    return torch.device("cpu")
+
+
 # PyTorch exposes ``strided`` as an attribute without including it in
 # ``torch.__all__``. Bind it explicitly instead of widening wildcard imports.
 strided = _native.strided
@@ -41,7 +47,7 @@ __doc__ = _native.__doc__
 # numeric constants live on ``torch`` rather than ``torch._C``.  A separate
 # list also keeps reloading safe: the native wildcard import must only name
 # attributes that the extension itself owns.
-__all__ = [*_native.__all__, "e", "pi", "nan", "inf"]
+__all__ = [*_native.__all__, "get_default_device", "e", "pi", "nan", "inf"]
 # PyTorch lists ``matmul`` once among its hand-written package exports and once
 # among generated variable functions. Preserve that observable duplicate while
 # the native module continues to own the callable itself.
