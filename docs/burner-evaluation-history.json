@@ -2881,6 +2881,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 69.6
       }
+    },
+    {
+      "key": "pr:193",
+      "recordedAt": "2026-08-16T20:58:35.364Z",
+      "label": "PR #193",
+      "kind": "leaf",
+      "prNumber": 193,
+      "title": "Isolate Python TensorError translation",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 69.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 49.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }
