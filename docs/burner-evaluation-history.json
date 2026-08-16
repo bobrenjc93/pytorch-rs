@@ -2609,6 +2609,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 68
       }
+    },
+    {
+      "key": "pr:174",
+      "recordedAt": "2026-08-16T10:45:49.847Z",
+      "label": "PR #174",
+      "kind": "leaf",
+      "prNumber": 174,
+      "title": "Add the torch.utils.data.Sampler base class",
+      "scores": {
+        "eval_7af648fb": 99.2,
+        "eval_8417a4a8": 67.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 47,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 68
+      }
     }
   ]
 }
