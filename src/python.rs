@@ -19,6 +19,7 @@ use pyo3::types::{
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, enter_no_grad, exit_no_grad,
     is_grad_enabled as core_is_grad_enabled,
+    python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, dtype_object},
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_variable_functions::create_variable_functions_class,
@@ -262,57 +263,6 @@ impl PyMemoryFormat {
             MemoryFormat::ChannelsLast => "torch.channels_last",
             MemoryFormat::ChannelsLast3d => "torch.channels_last_3d",
         }
-    }
-}
-
-/// Python device descriptor backed by a native [`Device`].
-#[pyclass(
-    name = "device",
-    module = "torch_rs",
-    frozen,
-    eq,
-    hash,
-    skip_from_py_object
-)]
-#[derive(Clone, PartialEq, Eq, Hash)]
-struct PyDevice {
-    inner: Device,
-}
-
-#[pymethods]
-impl PyDevice {
-    #[new]
-    fn new(r#type: &Bound<'_, PyAny>) -> PyResult<Self> {
-        parse_device_value("device", r#type).map(|inner| Self { inner })
-    }
-
-    #[getter]
-    fn r#type(&self) -> &'static str {
-        match self.inner {
-            Device::Cpu => "cpu",
-        }
-    }
-
-    #[getter]
-    fn index(&self) -> Option<usize> {
-        self.inner.index()
-    }
-
-    fn __repr__(&self) -> &'static str {
-        match self.inner {
-            Device::Cpu => "device(type='cpu')",
-        }
-    }
-
-    fn __str__(&self) -> &'static str {
-        self.r#type()
-    }
-
-    fn __reduce__<'py>(
-        slf: &Bound<'py, Self>,
-        py: Python<'py>,
-    ) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyTuple>)> {
-        Ok((slf.getattr("__class__")?, PyTuple::new(py, ["cpu"])?))
     }
 }
 
@@ -1800,9 +1750,7 @@ impl PyTensor {
 
     #[getter]
     fn device(&self) -> PyDevice {
-        PyDevice {
-            inner: self.inner.device(),
-        }
+        PyDevice::from_device(self.inner.device())
     }
 
     #[getter]
@@ -3493,7 +3441,7 @@ fn parse_scalar_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Dev
         return Ok(Device::Cpu);
     };
     if let Ok(device) = device.cast::<PyDevice>() {
-        return Ok(device.try_borrow()?.inner);
+        return Ok(device.try_borrow()?.inner());
     }
     let specification = device.cast::<PyString>()?.to_str()?;
     if specification.is_empty() {
@@ -3974,36 +3922,6 @@ fn validate_device_argument_type(
     }
     let error = device_argument_type_error(function, device)?;
     Err(error)
-}
-
-fn parse_device_value(function: &str, device: &Bound<'_, PyAny>) -> PyResult<Device> {
-    if let Ok(device) = device.cast::<PyDevice>() {
-        return Ok(device.try_borrow()?.inner);
-    }
-    if let Ok(device) = device.cast::<PyString>() {
-        let specification = device.to_str()?;
-        if specification == "cpu" {
-            return Ok(Device::Cpu);
-        }
-        return Err(PyRuntimeError::new_err(format!(
-            "{function}(): device '{specification}' is not supported; only 'cpu' is implemented"
-        )));
-    }
-
-    let error = device_argument_type_error(function, device)?;
-    Err(error)
-}
-
-fn device_argument_type_error(function: &str, device: &Bound<'_, PyAny>) -> PyResult<PyErr> {
-    let argument = if function == "device" {
-        "type"
-    } else {
-        "device"
-    };
-    let type_name = device.get_type().name()?;
-    Ok(PyTypeError::new_err(format!(
-        "{function}(): argument '{argument}' must be torch.device or str, not {type_name}"
-    )))
 }
 
 fn parse_eye_dimension(argument: &str, dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
