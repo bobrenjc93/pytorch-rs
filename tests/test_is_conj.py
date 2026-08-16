@@ -177,6 +177,78 @@ class TensorIsConjTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), message)
 
+    def test_torch_function_modes_receive_method_descriptor_and_forward(self):
+        tensor = torch.tensor([1.0])
+        descriptor = inspect.getattr_static(torch.Tensor, "is_conj")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            result = tensor.is_conj()
+        self.assertIs(result, marker)
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(dispatch_types, (torch.Tensor,))
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], tensor)
+        self.assertIsNone(kwargs)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor.is_conj()
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertIs(forwarded, False)
+
+    def test_not_implemented_reenters_the_declining_top_mode(self):
+        tensor = torch.tensor([1.0])
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = 0
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls += 1
+                return NotImplemented
+
+        class AcceptingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = 0
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls += 1
+                return object()
+
+        lower = AcceptingMode()
+        upper = DecliningMode()
+        with self.assertRaisesRegex(
+            RecursionError, r"^maximum recursion depth exceeded$"
+        ):
+            with lower:
+                with upper:
+                    tensor.is_conj()
+        self.assertGreater(upper.calls, 1)
+        self.assertEqual(lower.calls, 0)
+        self.assertIs(tensor.is_conj(), False)
+
 
 if __name__ == "__main__":
     unittest.main()

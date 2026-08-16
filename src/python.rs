@@ -567,11 +567,18 @@ impl PyTensorBase {
     // derives `($self, /)` from that descriptor shape, while older runtimes
     // leave `__text_signature__` unset; PyTorch follows the same split.
     #[pyo3(text_signature = None)]
-    fn is_conj(_slf: &Bound<'_, Self>) -> bool {
+    fn is_conj(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::Method("is_conj"))?
+        {
+            return Ok(result);
+        }
+
         // Complex storage and conjugate views are unsupported. Every current
         // Tensor therefore has a clear conjugate bit, which can be reported
         // without borrowing storage or touching its autograd graph.
-        false
+        false.into_py_any(slf.py())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
