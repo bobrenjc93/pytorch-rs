@@ -150,6 +150,12 @@ class TensorToDenseTests(unittest.TestCase):
         self.assertEqual(bound.__qualname__, "Tensor.to_dense")
         self.assertEqual(descriptor.__doc__, METHOD_DOC)
         self.assertEqual(bound.__doc__, METHOD_DOC)
+        self.assertIsNone(descriptor.__text_signature__)
+        self.assertIsNone(bound.__text_signature__)
+        with self.assertRaises(ValueError):
+            inspect.signature(descriptor)
+        with self.assertRaises(ValueError):
+            inspect.signature(bound)
         self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
         self.assertFalse(hasattr(descriptor, "__module__"))

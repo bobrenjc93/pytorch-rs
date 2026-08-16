@@ -141,6 +141,13 @@ class TensorToDenseReferenceTests(unittest.TestCase):
         tensor = module.tensor([1.0], dtype=module.float32)
         descriptor = inspect.getattr_static(module.Tensor, "to_dense")
         bound = tensor.to_dense
+
+        def signature_outcome(callable_object):
+            try:
+                return "signature", str(inspect.signature(callable_object))
+            except Exception as error:
+                return "error", type(error).__name__
+
         return {
             "descriptor_type": type(descriptor).__name__,
             "bound_type": type(bound).__name__,
@@ -151,6 +158,12 @@ class TensorToDenseReferenceTests(unittest.TestCase):
             "bound_qualname": bound.__qualname__,
             "doc": descriptor.__doc__,
             "bound_doc": bound.__doc__,
+            "descriptor_text_signature": descriptor.__text_signature__,
+            "bound_text_signature": bound.__text_signature__,
+            "signatures": (
+                signature_outcome(descriptor),
+                signature_outcome(bound),
+            ),
             "owner_name": descriptor.__objclass__.__name__,
             "owner_module": descriptor.__objclass__.__module__,
             "descriptor_has_module": hasattr(descriptor, "__module__"),
