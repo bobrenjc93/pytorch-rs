@@ -55,7 +55,10 @@ uv pip install \
 
 "$python" "$provenance_check"
 
-if "$python" -m unittest discover -s tests -p 'test_*.py'; then
+# PyTorch formats argument-parser errors differently when stderr is a terminal.
+# Keep differential error strings stable while preserving the unittest status
+# through Bash's pipefail setting.
+if "$python" -u -m unittest discover -s tests -p 'test_*.py' 2>&1 | cat; then
     :
 else
     status=$?
