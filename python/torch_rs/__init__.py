@@ -108,8 +108,10 @@ if "matmul" in _native.__all__:
     __all__.insert(0, "matmul")
 
 from . import autograd as autograd
+from . import functional as functional
 from . import nn as nn
 from . import overrides as overrides
 from . import utils as utils
+from .functional import broadcast_shapes as broadcast_shapes
 
 del _copyreg, _native, _sys
