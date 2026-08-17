@@ -256,7 +256,7 @@ impl PyTensorBase {
         let dimension = dimension.map_or(Ok(0), |dimension| {
             extract_dimension_swap_dimension(&dimension.value)
         })?;
-        unbind_first_dimension(slf.py(), tensor, dimension)
+        unbind_first_dimension(slf.py(), tensor, dimension, "Tensor.unbind")
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1127,6 +1127,15 @@ pub(crate) fn resolve_conj_variable_function(
     dispatch_resolve_conj(py, &input, args, kwargs)
 }
 
+pub(crate) fn unbind_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, dimension) = bind_top_level_unbind_arguments(args, kwargs)?;
+    dispatch_top_level_unbind(py, &input, dimension.as_ref(), args, kwargs)
+}
+
 pub(crate) fn permute_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1452,12 +1461,13 @@ fn unbind_first_dimension(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
     dimension: i64,
+    operation: &str,
 ) -> PyResult<Py<PyAny>> {
     let axis = normalize_unbind_dimension(dimension, tensor.try_borrow()?.inner.shape().len())?;
     if axis != 0 {
-        return Err(PyRuntimeError::new_err(
-            "Tensor.unbind only supports dimension 0",
-        ));
+        return Err(PyRuntimeError::new_err(format!(
+            "{operation} only supports dimension 0"
+        )));
     }
     let outputs = tensor
         .try_borrow()?
@@ -1467,6 +1477,78 @@ fn unbind_first_dimension(
     Ok(PyTuple::new(py, outputs.into_iter().map(PyTensor::new))?
         .into_any()
         .unbind())
+}
+
+fn dispatch_top_level_unbind(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    dimension: Option<&ParsedCallArgument<'_>>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty()
+        && let BoundTensorOrTorchFunction::Tensor(tensor) = input
+    {
+        let dimension = dimension.map_or(Ok(0), |dimension| {
+            extract_dimension_swap_dimension(&dimension.value)
+        })?;
+        return unbind_first_dimension(py, tensor, dimension, "torch.unbind");
+    }
+
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err("torch.unbind was called before module initialization completed")
+    })?;
+    let function = variable_functions.bind(py).getattr("unbind")?.unbind();
+    let types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+    };
+
+    // Integer conversion and dimension range checks remain deferred until
+    // every active torch-function handler has had an opportunity to replace
+    // the valid generated call.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.unbind",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(tensor) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.unbind",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            let dimension = dimension.map_or(Ok(0), |dimension| {
+                extract_dimension_swap_dimension(&dimension.value)
+            })?;
+            unbind_first_dimension(py, tensor, dimension, "torch.unbind")
+        }
+    }
 }
 
 fn dispatch_tensorbase_method_mode(
@@ -4358,6 +4440,96 @@ fn bind_unbind_dimension<'py>(
     }
 
     Ok(dimension)
+}
+
+fn bind_top_level_unbind_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(
+    BoundTensorOrTorchFunction<'py>,
+    Option<ParsedCallArgument<'py>>,
+)> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "unbind() takes from 1 to 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_argument = |names: &[&str]| -> PyResult<Option<Bound<'py, PyAny>>> {
+        let Some(keywords) = keywords else {
+            return Ok(None);
+        };
+        for name in names {
+            if let Some(value) = keywords.get_item(*name)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
+    };
+
+    let input = if positional.is_empty() {
+        keyword_argument(&["input", "x", "a", "x1"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let dimension = if positional.len() < 2 {
+        keyword_argument(&["dim"])?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "unbind() missing 1 required positional arguments: \"input\"",
+        ));
+    };
+    let bound_input = parse_tensor_or_torch_function_argument("unbind", "input", &input)?;
+    if let Some(dimension) = &dimension {
+        validate_dimension_swap_dimension("unbind", "dim", dimension.position, &dimension.value)?;
+    }
+
+    if let Some(keywords) = keywords {
+        let bound_keyword_count = usize::from(input.position.is_none())
+            + usize::from(
+                dimension
+                    .as_ref()
+                    .is_some_and(|dimension| dimension.position.is_none()),
+            );
+        if keywords.len() > bound_keyword_count {
+            for key in keywords.keys() {
+                let key = key.extract::<String>()?;
+                let position = match key.as_str() {
+                    "input" => 0,
+                    "dim" => 1,
+                    _ => {
+                        return Err(PyTypeError::new_err(format!(
+                            "unbind() got an unexpected keyword argument '{key}'"
+                        )));
+                    }
+                };
+                if position < positional.len() {
+                    return Err(PyTypeError::new_err(format!(
+                        "unbind() got multiple values for argument '{key}'"
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok((bound_input, dimension))
 }
 
 fn bind_size_dimension<'py>(
@@ -8557,6 +8729,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "positive",
         "is_conj",
         "resolve_conj",
+        "unbind",
         "permute",
         "movedim",
         "moveaxis",
