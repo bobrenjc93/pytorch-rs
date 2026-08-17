@@ -1,48 +1,127 @@
 //! Stable-ABI construction for the immutable `torch.Size` tuple subtype.
 
-use std::ffi::{CStr, c_int, c_void};
+use std::ffi::{CStr, c_char, c_void};
+use std::fmt::Write as _;
 
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{
-    PyAttributeError, PyModuleNotFoundError, PyRuntimeError, PyTypeError, PyValueError,
-};
+use pyo3::exceptions::{PyMemoryError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{PyAny, PyBool, PyDict, PyInt, PyModule, PyString, PyTuple, PyType};
+use pyo3::types::{PyAny, PyBool, PyDict, PyInt, PyString, PyTuple, PyType};
 
 static SIZE_TYPE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 const NUMEL_DOC: &CStr = c"\nnumel() -> int\n\nReturns the number of elements a :class:`torch.Tensor` with the given size would contain.\n";
 
-fn numpy_instance(py: Python<'_>, value: &Bound<'_, PyAny>, type_name: &str) -> PyResult<bool> {
-    let numpy = match PyModule::import(py, "numpy") {
-        Ok(numpy) => numpy,
-        Err(error) if error.is_instance_of::<PyModuleNotFoundError>(py) => return Ok(false),
-        Err(error) => return Err(error),
-    };
-    let numpy_type = numpy.getattr(type_name)?;
-    let Ok(numpy_type) = numpy_type.cast::<PyType>() else {
-        return Ok(false);
-    };
-    value.is_instance(numpy_type)
+#[repr(C)]
+struct PyTypeObjectNamePrefix {
+    _ob_base: ffi::PyVarObject,
+    tp_name: *const c_char,
 }
 
-fn python_type_name(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<String> {
+#[allow(
+    unsafe_code,
+    reason = "CPython exposes tp_name only as a type-object field before Python 3.13"
+)]
+fn type_object_name<'a>(value_type: &'a Bound<'_, PyType>) -> PyResult<&'a CStr> {
+    let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
+    // SAFETY: every classic CPython type object starts with PyVarObject and
+    // tp_name. The attached interpreter keeps the live type object stable
+    // while the non-overridable C name is inspected.
+    let name = unsafe { (*prefix).tp_name };
+    if name.is_null() {
+        return Err(PyRuntimeError::new_err("Python type has no tp_name"));
+    }
+    // SAFETY: CPython requires tp_name to remain a NUL-terminated string for
+    // the lifetime of the type object.
+    Ok(unsafe { CStr::from_ptr(name) })
+}
+
+fn python_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     let value_type = value.get_type();
-    let name = value_type.name()?.to_string();
-    let module = value_type.getattr("__module__")?.extract::<String>()?;
-    let genuine_numpy_type = module == "numpy"
-        && (numpy_instance(py, value, "generic")? || numpy_instance(py, value, "ndarray")?);
-    Ok(if genuine_numpy_type {
-        format!("numpy.{name}")
-    } else {
-        name
-    })
+    let name = type_object_name(&value_type)?
+        .to_str()
+        .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))?;
+    let mut output = String::new();
+    output
+        .try_reserve_exact(name.len())
+        .map_err(|_| PyMemoryError::new_err("unable to allocate Python type name"))?;
+    output.push_str(name);
+    Ok(output)
 }
 
-fn is_numpy_integer(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
-    numpy_instance(py, value, "integer")
+fn dimension_type_error(value: &Bound<'_, PyAny>, position: usize) -> PyResult<PyErr> {
+    const PREFIX: &str = "torch.Size() takes an iterable of 'int' (item ";
+    const INFIX: &str = " is '";
+    const SUFFIX: &str = "')";
+
+    let name = python_type_name(value)?;
+    let capacity = PREFIX
+        .len()
+        .checked_add(usize::BITS as usize)
+        .and_then(|length| length.checked_add(INFIX.len()))
+        .and_then(|length| length.checked_add(name.len()))
+        .and_then(|length| length.checked_add(SUFFIX.len()))
+        .ok_or_else(|| PyMemoryError::new_err("torch.Size type error is too large"))?;
+    let mut message = String::new();
+    message
+        .try_reserve_exact(capacity)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate torch.Size type error"))?;
+    message.push_str(PREFIX);
+    write!(message, "{position}")
+        .map_err(|_| PyRuntimeError::new_err("unable to format torch.Size item position"))?;
+    message.push_str(INFIX);
+    message.push_str(&name);
+    message.push_str(SUFFIX);
+    Ok(PyTypeError::new_err(message))
+}
+
+fn concatenation_type_error(value: &Bound<'_, PyAny>) -> PyResult<PyErr> {
+    const PREFIX: &str = "can only concatenate tuple (not ";
+    const SUFFIX: &str = ") to torch.Size";
+
+    let name = python_type_name(value)?;
+    let capacity = PREFIX
+        .len()
+        .checked_add(name.len())
+        .and_then(|length| length.checked_add(SUFFIX.len()))
+        .ok_or_else(|| PyMemoryError::new_err("torch.Size concatenation error is too large"))?;
+    let mut message = String::new();
+    message
+        .try_reserve_exact(capacity)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate torch.Size concatenation error"))?;
+    message.push_str(PREFIX);
+    message.push_str(&name);
+    message.push_str(SUFFIX);
+    Ok(PyTypeError::new_err(message))
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyType_GetFlags reads immutable flags from a live type through the stable ABI"
+)]
+fn is_native_immutable_type(value_type: &Bound<'_, PyType>) -> bool {
+    // SAFETY: value_type is a live Python type object for the duration of the call.
+    let flags = unsafe { ffi::PyType_GetFlags(value_type.as_type_ptr()) };
+    flags & ffi::Py_TPFLAGS_IMMUTABLETYPE != 0 && flags & ffi::Py_TPFLAGS_HEAPTYPE == 0
+}
+
+fn has_numpy_integer_ancestry(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    // Calling type's base descriptor bypasses any metaclass override of
+    // __getattribute__, and __mro__ itself is immutable.
+    let mro = py
+        .get_type::<PyType>()
+        .getattr("__getattribute__")?
+        .call1((value.get_type(), "__mro__"))?
+        .cast_into::<PyTuple>()?;
+    for base in mro.iter() {
+        let base = base.cast_into::<PyType>()?;
+        if is_native_immutable_type(&base) && type_object_name(&base)? == c"numpy.integer" {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[allow(
@@ -59,27 +138,21 @@ fn number_index<'py>(py: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<Bou
     }
 }
 
-fn preserves_integral_identity(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
-    if value.is_instance_of::<PyInt>() && !value.is_instance_of::<PyBool>() {
-        return Ok(true);
-    }
-    is_numpy_integer(py, value)
-}
-
 fn normalized_dimension(
     py: Python<'_>,
     value: &Bound<'_, PyAny>,
     position: usize,
 ) -> PyResult<Py<PyAny>> {
-    let Ok(integer) = number_index(py, value) else {
-        return Err(PyTypeError::new_err(format!(
-            "torch.Size() takes an iterable of 'int' (item {position} is '{}')",
-            python_type_name(py, value)?
-        )));
-    };
-    if preserves_integral_identity(py, value)? {
+    if value.is_instance_of::<PyInt>() && !value.is_instance_of::<PyBool>() {
         return Ok(value.clone().unbind());
     }
+    if has_numpy_integer_ancestry(py, value)? {
+        number_index(py, value)?;
+        return Ok(value.clone().unbind());
+    }
+    let Ok(integer) = number_index(py, value) else {
+        return Err(dimension_type_error(value, position)?);
+    };
     Ok(integer.into_any().unbind())
 }
 
@@ -116,7 +189,10 @@ fn size_new(
         .get_type::<PyTuple>()
         .call(args, kwargs)?
         .cast_into::<PyTuple>()?;
-    let mut normalized = Vec::with_capacity(values.len());
+    let mut normalized = Vec::new();
+    normalized
+        .try_reserve_exact(values.len())
+        .map_err(|_| PyMemoryError::new_err("unable to allocate torch.Size dimensions"))?;
     for position in 0..values.len() {
         normalized.push(normalized_dimension(
             py,
@@ -162,13 +238,32 @@ fn tuple_new_for_subtype(
 }
 
 fn size_repr(py: Python<'_>, value: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> {
-    let mut representation = String::from("torch.Size([");
+    let mut representation = String::new();
+    representation
+        .try_reserve_exact("torch.Size([".len())
+        .map_err(|_| PyMemoryError::new_err("unable to allocate torch.Size representation"))?;
+    representation.push_str("torch.Size([");
     for position in 0..value.len() {
+        let dimension = unpack_long_long(py, &value.get_item(position)?)?;
+        let mut magnitude = dimension.unsigned_abs();
+        let mut dimension_length = 1 + usize::from(dimension.is_negative());
+        while magnitude >= 10 {
+            magnitude /= 10;
+            dimension_length += 1;
+        }
+        let separator_length = if position == 0 { 0 } else { ", ".len() };
+        representation
+            .try_reserve(separator_length + dimension_length)
+            .map_err(|_| PyMemoryError::new_err("unable to allocate torch.Size representation"))?;
         if position != 0 {
             representation.push_str(", ");
         }
-        representation.push_str(&unpack_long_long(py, &value.get_item(position)?)?.to_string());
+        write!(representation, "{dimension}")
+            .map_err(|_| PyRuntimeError::new_err("unable to format torch.Size dimension"))?;
     }
+    representation
+        .try_reserve("])".len())
+        .map_err(|_| PyMemoryError::new_err("unable to allocate torch.Size representation"))?;
     representation.push_str("])");
     Ok(PyString::new(py, &representation).into_any().unbind())
 }
@@ -179,10 +274,7 @@ fn size_concat(
     right: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     if right.cast::<PyTuple>().is_err() {
-        return Err(PyTypeError::new_err(format!(
-            "can only concatenate tuple (not {}) to torch.Size",
-            python_type_name(py, right)?
-        )));
+        return Err(concatenation_type_error(right)?);
     }
     let concatenated = py
         .get_type::<PyTuple>()
@@ -346,38 +438,6 @@ unsafe fn size_reduce_callback(
 
 #[allow(
     unsafe_code,
-    reason = "CPython supplies borrowed instance and attribute pointers to the trampoline"
-)]
-unsafe fn size_setattr_callback(
-    py: Python<'_>,
-    _value: *mut ffi::PyObject,
-    name: *mut ffi::PyObject,
-    _assigned: *mut ffi::PyObject,
-) -> PyResult<c_int> {
-    // SAFETY: the attribute-name pointer is live for the duration of the callback.
-    let name = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, name) }.extract::<String>()?;
-    Err(PyAttributeError::new_err(format!(
-        "'torch.Size' object has no attribute '{name}'"
-    )))
-}
-
-#[allow(
-    unsafe_code,
-    reason = "CPython supplies borrowed item-assignment pointers to the trampoline"
-)]
-unsafe fn size_setitem_callback(
-    _py: Python<'_>,
-    _value: *mut ffi::PyObject,
-    _key: *mut ffi::PyObject,
-    _assigned: *mut ffi::PyObject,
-) -> PyResult<c_int> {
-    Err(PyTypeError::new_err(
-        "'torch.Size' object does not support item assignment",
-    ))
-}
-
-#[allow(
-    unsafe_code,
     reason = "PyType_FromSpecWithBases requires an audited stable-ABI raw-pointer call"
 )]
 fn create_size_type(py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -431,20 +491,6 @@ fn create_size_type(py: Python<'_>) -> PyResult<Py<PyAny>> {
             pfunc: pyo3::impl_::trampoline::get_trampoline_function!(
                 binaryfunc,
                 size_subscript_callback
-            ) as *mut c_void,
-        },
-        ffi::PyType_Slot {
-            slot: ffi::Py_tp_setattro,
-            pfunc: pyo3::impl_::trampoline::get_trampoline_function!(
-                setattrofunc,
-                size_setattr_callback
-            ) as *mut c_void,
-        },
-        ffi::PyType_Slot {
-            slot: ffi::Py_mp_ass_subscript,
-            pfunc: pyo3::impl_::trampoline::get_trampoline_function!(
-                setattrofunc,
-                size_setitem_callback
             ) as *mut c_void,
         },
         ffi::PyType_Slot {

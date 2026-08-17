@@ -1,5 +1,6 @@
 import copy
 import inspect
+import operator
 import pickle
 import unittest
 
@@ -121,6 +122,71 @@ class SizeValueReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.construction_contract(torch),
             self.construction_contract(reference_torch),
+        )
+
+    def numpy_index_override_contract(self, module):
+        calls = []
+
+        class RaisingNumpyInteger(np.int64):
+            def __index__(self):
+                calls.append("raising")
+                raise RuntimeError("NumPy integer index override")
+
+        class InvalidNumpyInteger(np.int64):
+            def __index__(self):
+                calls.append("invalid")
+                return object()
+
+        results = tuple(
+            self.outcome(lambda value=value: module.Size([value]))
+            for value in (RaisingNumpyInteger(3), InvalidNumpyInteger(4))
+        )
+        return results, calls
+
+    def test_numpy_integer_index_overrides_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.numpy_index_override_contract(torch),
+            self.numpy_index_override_contract(reference_torch),
+        )
+
+    def type_name_contract(self, module):
+        metadata_reads = []
+
+        class MetadataTrap(type):
+            def __getattribute__(cls, name):
+                if name in {"__name__", "__module__"}:
+                    metadata_reads.append(name)
+                    raise RuntimeError(f"read forbidden metadata {name}")
+                return super().__getattribute__(name)
+
+        class Trapped(metaclass=MetadataTrap):
+            pass
+
+        class NoneModule:
+            pass
+
+        NoneModule.__module__ = None
+        values = (
+            Trapped(),
+            NoneModule(),
+            np.matrix([[1]]),
+            np.dtype("int64"),
+            np.array([1]),
+        )
+        construction = tuple(
+            self.outcome(lambda value=value: module.Size([value]))
+            for value in values
+        )
+        concatenation = tuple(
+            self.outcome(lambda value=value: module.Size([1]) + value)
+            for value in values
+        )
+        return construction, concatenation, metadata_reads
+
+    def test_non_overridable_type_names_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.type_name_contract(torch),
+            self.type_name_contract(reference_torch),
         )
 
     def operation_contract(self, module):
@@ -341,6 +407,41 @@ class SizeValueReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.immutability_contract(torch),
             self.immutability_contract(reference_torch),
+        )
+
+    def mutation_contract(self, module):
+        value = module.Size([1, 2])
+
+        def normalized_outcome(action):
+            outcome = self.outcome(action)
+            if outcome[0] != "error":
+                return outcome
+            return (
+                outcome[0],
+                outcome[1],
+                outcome[2].replace("torch_rs.Size", "torch.Size"),
+            )
+
+        operations = (
+            lambda: operator.setitem(value, 0, 3),
+            lambda: operator.delitem(value, 0),
+            lambda: object.__setattr__(value, "extra", 1),
+            lambda: object.__delattr__(value, "extra"),
+            lambda: object.__setattr__(value, "__class__", tuple),
+            lambda: object.__delattr__(value, "__class__"),
+            lambda: setattr(value, "extra", 1),
+            lambda: delattr(value, "extra"),
+        )
+        return (
+            hasattr(value, "__setitem__"),
+            hasattr(value, "__delitem__"),
+            tuple(normalized_outcome(operation) for operation in operations),
+        )
+
+    def test_mutation_protocol_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mutation_contract(torch),
+            self.mutation_contract(reference_torch),
         )
 
 

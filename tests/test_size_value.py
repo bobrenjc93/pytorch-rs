@@ -5,6 +5,7 @@ import operator
 import pickle
 import subprocess
 import sys
+import textwrap
 import unittest
 
 import numpy as np
@@ -73,14 +74,18 @@ class SizeValueTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), message)
 
-        with self.assertRaisesRegex(
-            AttributeError, "^'torch.Size' object has no attribute 'extra'$"
-        ):
+        with self.assertRaises(AttributeError) as raised:
             empty.extra = 1
-        with self.assertRaisesRegex(
-            TypeError, "^'torch.Size' object does not support item assignment$"
-        ):
+        self.assertEqual(
+            str(raised.exception).replace("torch_rs.Size", "torch.Size"),
+            "'torch.Size' object has no attribute 'extra'",
+        )
+        with self.assertRaises(TypeError) as raised:
             operator.setitem(original, 0, 3)
+        self.assertEqual(
+            str(raised.exception).replace("torch_rs.Size", "torch.Size"),
+            "'torch.Size' object does not support item assignment",
+        )
         with self.assertRaisesRegex(
             TypeError, "^type 'torch_rs.Size' is not an acceptable base type$"
         ):
@@ -192,6 +197,153 @@ assert torch.Size([True, 2]) == (1, 2)
             0,
             msg=completed.stdout + completed.stderr,
         )
+
+    def test_numpy_globals_do_not_control_dimension_validation(self):
+        original_integer = np.integer
+
+        class MutableIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return 7
+
+        try:
+            np.integer = int
+            boolean_size = torch.Size([True])
+            self.assertIs(type(boolean_size[0]), int)
+
+            np.integer = MutableIndex
+            custom = MutableIndex()
+            custom_size = torch.Size([custom])
+            self.assertEqual(custom_size, (7,))
+            self.assertIs(type(custom_size[0]), int)
+            self.assertIsNot(custom_size[0], custom)
+            self.assertEqual(custom.calls, 1)
+        finally:
+            np.integer = original_integer
+
+        spoofed_type = type(
+            "numpy.integer",
+            (object,),
+            {"__index__": lambda self: 9},
+        )
+        spoofed = spoofed_type()
+        spoofed_size = torch.Size([spoofed])
+        self.assertEqual(spoofed_size, (9,))
+        self.assertIs(type(spoofed_size[0]), int)
+        self.assertIsNot(spoofed_size[0], spoofed)
+        invalid_spoofed_type = type(
+            "numpy.integer",
+            (object,),
+            {"__index__": lambda self: object()},
+        )
+        with self.assertRaises(TypeError):
+            torch.Size([invalid_spoofed_type()])
+
+        script = """
+import sys
+
+class BrokenNumpyImport:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "numpy" or fullname.startswith("numpy."):
+            raise RuntimeError("NumPy import was attempted")
+        return None
+
+sys.meta_path.insert(0, BrokenNumpyImport())
+import torch_rs as torch
+
+value = torch.Size([True, False])
+assert value == (1, 0)
+assert type(value[0]) is int
+assert type(value[1]) is int
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_size_allocation_failures_raise_memory_error(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+            import sys
+
+            import torch_rs as torch
+
+            mode = sys.argv[1]
+            if mode == "construct":
+                source = (1,) * 4_000_000
+            else:
+                value = torch.Size((-(2**63),) * 1_000_000)
+
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 12 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            try:
+                if mode == "construct":
+                    torch.Size(source)
+                else:
+                    repr(value)
+            except MemoryError:
+                pass
+            else:
+                raise AssertionError(f"constrained {mode} unexpectedly succeeded")
+            """
+        )
+        for mode in ("construct", "repr"):
+            with self.subTest(mode=mode):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, mode],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=60,
+                )
+                if completed.returncode == 77:
+                    self.skipTest("process hard address-space limit is too low")
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=(
+                        f"stdout:\n{completed.stdout}\n"
+                        f"stderr:\n{completed.stderr}"
+                    ),
+                )
+
+    def test_tuple_mutation_protocol_is_not_extended(self):
+        value = torch.Size([1, 2])
+        self.assertFalse(hasattr(value, "__setitem__"))
+        self.assertFalse(hasattr(value, "__delitem__"))
+
+        operations = (
+            (operator.setitem, (value, 0, 3), TypeError),
+            (operator.delitem, (value, 0), TypeError),
+            (object.__setattr__, (value, "extra", 1), AttributeError),
+            (object.__delattr__, (value, "extra"), AttributeError),
+            (object.__setattr__, (value, "__class__", tuple), TypeError),
+            (object.__delattr__, (value, "__class__"), TypeError),
+        )
+        for operation, arguments, error_type in operations:
+            with self.subTest(operation=operation, arguments=arguments[1:]):
+                with self.assertRaises(error_type):
+                    operation(*arguments)
 
     def test_slicing_concatenation_and_repetition_preserve_size(self):
         value = torch.Size([1, 2, 3])
