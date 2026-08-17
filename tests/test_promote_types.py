@@ -54,6 +54,38 @@ class PromoteTypesTests(unittest.TestCase):
                     with self.subTest(type1=type1, type2=type2, form=form):
                         self.assertIs(call(), torch.float32)
 
+        class AlwaysEqualKeyword(str):
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                return True
+
+        type2 = AlwaysEqualKeyword("type2")
+        self.assertIs(
+            torch.promote_types(
+                torch.float32, **{type2: torch.float32}
+            ),
+            torch.float32,
+        )
+        self.assert_error(
+            TypeError,
+            "promote_types() got multiple values for argument 'unexpected'",
+            lambda: torch.promote_types(
+                torch.float32,
+                torch.float32,
+                **{AlwaysEqualKeyword("unexpected"): torch.float32},
+            ),
+        )
+        self.assert_error(
+            TypeError,
+            "invalid keyword arguments",
+            lambda: torch.promote_types(
+                type1=torch.float32,
+                type2=torch.float32,
+                **{AlwaysEqualKeyword("unexpected"): torch.float32},
+            ),
+        )
+
     def test_torch_function_modes_receive_original_calls_and_can_forward(self):
         marker = object()
 

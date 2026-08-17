@@ -74,6 +74,87 @@ class PromoteTypesReferenceTests(unittest.TestCase):
                     self.assertIs(actual_call(), torch.float32)
                     self.assertIs(expected_call(), reference_torch.float32)
 
+    def test_hash_aware_string_subclass_keywords_match_pytorch_2_13(self):
+        class AlwaysEqualKeyword(str):
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                return True
+
+        actual_type2 = AlwaysEqualKeyword("type2")
+        expected_type2 = AlwaysEqualKeyword("type2")
+        self.assertIs(
+            torch.promote_types(
+                torch.float32, **{actual_type2: torch.float32}
+            ),
+            torch.float32,
+        )
+        self.assertIs(
+            reference_torch.promote_types(
+                reference_torch.float32,
+                **{expected_type2: reference_torch.float32},
+            ),
+            reference_torch.float32,
+        )
+
+        self.assert_error_matches(
+            lambda: torch.promote_types(
+                torch.float32,
+                torch.float32,
+                **{AlwaysEqualKeyword("unexpected"): torch.float32},
+            ),
+            lambda: reference_torch.promote_types(
+                reference_torch.float32,
+                reference_torch.float32,
+                **{AlwaysEqualKeyword("unexpected"): reference_torch.float32},
+            ),
+        )
+        self.assert_error_matches(
+            lambda: torch.promote_types(
+                type1=torch.float32,
+                type2=torch.float32,
+                **{AlwaysEqualKeyword("unexpected"): torch.float32},
+            ),
+            lambda: reference_torch.promote_types(
+                type1=reference_torch.float32,
+                type2=reference_torch.float32,
+                **{AlwaysEqualKeyword("unexpected"): reference_torch.float32},
+            ),
+        )
+
+        def mode_observation(module):
+            key = AlwaysEqualKeyword("type2")
+            marker = object()
+
+            class Mode(module.overrides.TorchFunctionMode):
+                def __init__(self):
+                    self.calls = []
+
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    self.calls.append((func, types, args, kwargs))
+                    return marker
+
+            mode = Mode()
+            with mode:
+                result = module.promote_types(
+                    module.float32, **{key: module.float32}
+                )
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            received_key = next(iter(kwargs))
+            return (
+                result is marker,
+                function is module.promote_types,
+                dispatch_types,
+                args == (module.float32,),
+                received_key is key,
+                kwargs[received_key] is module.float32,
+            )
+
+        self.assertEqual(
+            mode_observation(torch),
+            mode_observation(reference_torch),
+        )
+
     def mode_observation(self, module):
         marker = object()
 
