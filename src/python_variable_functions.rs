@@ -9,7 +9,8 @@
 use std::ffi::c_void;
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{PyDict, PyModule, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
@@ -20,6 +21,28 @@ use crate::python::{
     resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
     select_variable_function, unbind_variable_function,
 };
+
+static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+
+const VARIABLE_FUNCTION_NAMES: [&str; 17] = [
+    "get_device",
+    "scalar_tensor",
+    "adjoint",
+    "positive",
+    "is_conj",
+    "is_inference",
+    "resolve_conj",
+    "resolve_neg",
+    "unbind",
+    "select",
+    "permute",
+    "movedim",
+    "moveaxis",
+    "matmul",
+    "mul",
+    "multiply",
+    "promote_types",
+];
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
 adjoint(input: Tensor) -> Tensor
@@ -365,16 +388,11 @@ macro_rules! variable_function_method {
     };
 }
 
-/// Creates the immutable owner for exported `_VariableFunctionsClass` methods.
-///
-/// # Errors
-///
-/// Returns a Python exception if the stable-ABI type constructor fails.
 #[allow(
     unsafe_code,
     reason = "PyType_FromSpec requires an audited raw type specification"
 )]
-pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
+fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
     // CPython descriptors retain pointers to their method definitions. Leak
     // this tiny table deliberately so it remains valid for the type lifetime.
     let methods = Box::leak(Box::new([
@@ -424,4 +442,41 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
         Bound::<PyAny>::from_owned_ptr_or_err(py, ffi::PyType_FromSpec(&raw mut specification))?
     };
     Ok(owner.unbind())
+}
+
+/// Adds the immutable `_VariableFunctionsClass` owner and its public callables.
+///
+/// # Errors
+///
+/// Returns a Python exception if owner construction or module registration fails.
+pub(crate) fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
+    let variable_functions =
+        VARIABLE_FUNCTIONS_CLASS.get_or_try_init(py, || create_variable_functions_class(py))?;
+    module.add("_VariableFunctionsClass", variable_functions.clone_ref(py))?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_VariableFunctionsClass",))?;
+    let variable_functions = variable_functions.bind(py);
+    for name in VARIABLE_FUNCTION_NAMES {
+        let function = variable_functions.getattr(name)?;
+        function.setattr("__module__", "torch")?;
+        module.add(name, function)?;
+    }
+    Ok(())
+}
+
+/// Returns the registered top-level callable used for `__torch_function__` dispatch.
+///
+/// # Errors
+///
+/// Returns the operation's initialization error before the owner is registered,
+/// or the Python attribute error raised by a failed callable lookup.
+pub(crate) fn variable_function(py: Python<'_>, name: &str) -> PyResult<Py<PyAny>> {
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err(format!(
+            "torch.{name} was called before module initialization completed"
+        ))
+    })?;
+    Ok(variable_functions.bind(py).getattr(name)?.unbind())
 }
