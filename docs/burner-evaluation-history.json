@@ -3041,6 +3041,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:204",
+      "recordedAt": "2026-08-17T04:50:49.734Z",
+      "label": "PR #204",
+      "kind": "leaf",
+      "prNumber": 204,
+      "title": "Expose top-level torch.resolve_neg identity",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 70.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 50.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }
