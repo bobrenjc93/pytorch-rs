@@ -174,6 +174,7 @@ class SubsetTests(unittest.TestCase):
                 "StackDataset",
                 "Subset",
                 "TensorDataset",
+                "get_worker_info",
             ],
         )
         self.assertEqual(

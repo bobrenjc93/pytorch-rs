@@ -55,6 +55,7 @@ class SamplerReferenceTests(unittest.TestCase):
             "StackDataset",
             "Subset",
             "TensorDataset",
+            "get_worker_info",
         }
 
         self.assertIs(actual_data.Sampler, actual_module.Sampler)

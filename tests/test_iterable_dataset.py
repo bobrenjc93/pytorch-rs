@@ -133,6 +133,7 @@ class IterableDatasetTests(unittest.TestCase):
                 "StackDataset",
                 "Subset",
                 "TensorDataset",
+                "get_worker_info",
             ],
         )
         self.assertEqual(
@@ -156,7 +157,6 @@ class IterableDatasetTests(unittest.TestCase):
             "DataLoader",
             "RandomSampler",
             "default_collate",
-            "get_worker_info",
         ):
             with self.subTest(unsupported=unsupported):
                 self.assertFalse(hasattr(data_module, unsupported))

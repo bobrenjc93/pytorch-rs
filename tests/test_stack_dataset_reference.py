@@ -328,6 +328,7 @@ class StackDatasetReferenceTests(unittest.TestCase):
             "StackDataset",
             "Subset",
             "TensorDataset",
+            "get_worker_info",
         }
 
         self.assertIs(actual, actual_module.StackDataset)
