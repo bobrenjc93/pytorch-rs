@@ -267,6 +267,11 @@ fn size_new(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    let kwargs = if py.version_info() < (3, 11) {
+        None
+    } else {
+        kwargs
+    };
     let values = py
         .get_type::<PyTuple>()
         .call(args, kwargs)?

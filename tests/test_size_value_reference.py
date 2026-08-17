@@ -109,6 +109,8 @@ class SizeValueReferenceTests(unittest.TestCase):
             lambda: module.Size([2**63]),
             lambda: module.Size([-(2**63) - 1]),
             lambda: module.Size(iterable=()),
+            lambda: module.Size(ignored=(1, 2)),
+            lambda: module.Size([1, 2], ignored=()),
             lambda: module.Size((), ()),
         )
         results = tuple(self.outcome(constructor) for constructor in constructors)

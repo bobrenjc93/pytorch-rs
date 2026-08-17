@@ -60,26 +60,34 @@ class SizeValueTests(unittest.TestCase):
         self.assertIsNot(clone, original)
         self.assertEqual(clone, original)
 
-        for call, message in (
-            (
-                lambda: torch.Size(iterable=()),
+        if sys.version_info[:2] == (3, 10):
+            self.assertEqual(torch.Size(iterable=(1, 2)), ())
+            self.assertEqual(torch.Size([1, 2], ignored=()), (1, 2))
+        else:
+            with self.assertRaises(TypeError) as raised:
+                torch.Size(iterable=())
+            self.assertEqual(
+                str(raised.exception),
                 "tuple() takes no keyword arguments",
-            ),
-            (
-                lambda: torch.Size((), ()),
-                "tuple expected at most 1 argument, got 2",
-            ),
-        ):
-            with self.subTest(message=message):
-                with self.assertRaises(TypeError) as raised:
-                    call()
-                self.assertEqual(str(raised.exception), message)
+            )
+
+        with self.assertRaises(TypeError) as raised:
+            torch.Size((), ())
+        self.assertEqual(
+            str(raised.exception),
+            "tuple expected at most 1 argument, got 2",
+        )
 
         with self.assertRaises(AttributeError) as raised:
             empty.extra = 1
+        expected_attribute_error = "'torch.Size' object has no attribute 'extra'"
+        if sys.version_info >= (3, 14):
+            expected_attribute_error += (
+                " and no __dict__ for setting new attributes"
+            )
         self.assertEqual(
             str(raised.exception).replace("torch_rs.Size", "torch.Size"),
-            "'torch.Size' object has no attribute 'extra'",
+            expected_attribute_error,
         )
         with self.assertRaises(TypeError) as raised:
             operator.setitem(original, 0, 3)
