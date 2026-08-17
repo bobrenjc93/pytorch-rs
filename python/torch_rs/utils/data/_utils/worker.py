@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+from typing import Protocol as _Protocol
+
+
+class WorkerInfo(_Protocol):
+    """Annotation-only worker information type.
+
+    ``torch_rs`` does not implement worker execution or create instances of
+    this protocol. The private binding exists so the public function's PyTorch-
+    compatible return annotation can be evaluated at runtime.
+    """
+
 
 def get_worker_info() -> WorkerInfo | None:
     r"""Returns the information about the current

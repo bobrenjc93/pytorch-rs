@@ -4,6 +4,7 @@ import inspect
 import pickle
 import threading
 import types
+import typing
 import unittest
 
 import torch_rs as torch
@@ -43,8 +44,8 @@ class GetWorkerInfoTests(unittest.TestCase):
         worker_module = importlib.import_module(
             "torch_rs.utils.data._utils.worker"
         )
+        worker_info_type = worker_module.WorkerInfo
         self.assertNotIn("_worker_info", worker_module.__dict__)
-        self.assertNotIn("WorkerInfo", worker_module.__dict__)
 
         for _ in range(3):
             self.assertIsNone(get_worker_info())
@@ -77,7 +78,7 @@ class GetWorkerInfoTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(results, [(None, None)] * worker_count)
         self.assertNotIn("_worker_info", worker_module.__dict__)
-        self.assertNotIn("WorkerInfo", worker_module.__dict__)
+        self.assertIs(worker_module.WorkerInfo, worker_info_type)
 
     def test_signature_annotations_documentation_and_metadata(self):
         function = get_worker_info
@@ -87,11 +88,27 @@ class GetWorkerInfoTests(unittest.TestCase):
         self.assertEqual(function.__module__, "torch_rs.utils.data._utils.worker")
         self.assertEqual(function.__name__, "get_worker_info")
         self.assertEqual(function.__qualname__, "get_worker_info")
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__),
+            inspect.cleandoc(FUNCTION_DOC),
+        )
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
+
+        worker_module = importlib.import_module(
+            "torch_rs.utils.data._utils.worker"
+        )
+        expected_annotations = {"return": worker_module.WorkerInfo | None}
+        self.assertEqual(
+            typing.get_type_hints(function),
+            expected_annotations,
+        )
+        self.assertEqual(
+            inspect.get_annotations(function, eval_str=True),
+            expected_annotations,
+        )
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
         cases = (
@@ -138,7 +155,9 @@ class GetWorkerInfoTests(unittest.TestCase):
 
         self.assertFalse(hasattr(data_module, "DataLoader"))
         self.assertFalse(hasattr(data_module, "WorkerInfo"))
-        self.assertFalse(hasattr(worker_module, "WorkerInfo"))
+        self.assertTrue(hasattr(worker_module, "WorkerInfo"))
+        with self.assertRaises(TypeError):
+            worker_module.WorkerInfo()
         self.assertFalse(hasattr(worker_module, "_worker_info"))
 
     def test_pickle_and_copy_preserve_the_global_function(self):

@@ -5,6 +5,7 @@ import pickle
 import pickletools
 import threading
 import types
+import typing
 import unittest
 
 import torch_rs as torch
@@ -86,7 +87,7 @@ class GetWorkerInfoReferenceTests(unittest.TestCase):
             "torch_rs.utils.data._utils.worker"
         )
         self.assertNotIn("_worker_info", actual_worker.__dict__)
-        self.assertNotIn("WorkerInfo", actual_worker.__dict__)
+        self.assertIn("WorkerInfo", actual_worker.__dict__)
 
     def test_signature_annotations_documentation_and_metadata_match(self):
         actual = torch.utils.data.get_worker_info
@@ -110,6 +111,20 @@ class GetWorkerInfoReferenceTests(unittest.TestCase):
         self.assertEqual(
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
+        )
+
+        actual_type_hints = typing.get_type_hints(actual)
+        expected_type_hints = typing.get_type_hints(expected)
+        self.assertEqual(
+            str(actual_type_hints).replace("torch_rs", "torch"),
+            str(expected_type_hints),
+        )
+
+        actual_annotations = inspect.get_annotations(actual, eval_str=True)
+        expected_annotations = inspect.get_annotations(expected, eval_str=True)
+        self.assertEqual(
+            str(actual_annotations).replace("torch_rs", "torch"),
+            str(expected_annotations),
         )
 
     def test_argument_errors_match_pytorch_2_13(self):
@@ -177,7 +192,9 @@ class GetWorkerInfoReferenceTests(unittest.TestCase):
             hasattr(actual_data, "WorkerInfo"),
             hasattr(expected_data, "WorkerInfo"),
         )
-        self.assertFalse(hasattr(actual_worker, "WorkerInfo"))
+        self.assertTrue(hasattr(actual_worker, "WorkerInfo"))
+        with self.assertRaises(TypeError):
+            actual_worker.WorkerInfo()
 
     def test_pickle_and_copy_behavior_matches_pytorch_2_13(self):
         actual = torch.utils.data.get_worker_info
