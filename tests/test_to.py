@@ -234,6 +234,37 @@ class TensorToTests(unittest.TestCase):
                     descriptor,
                 )
 
+    def test_rebinding_public_tensor_does_not_affect_descriptor_reducers(self):
+        source = r'''
+import copy
+import inspect
+import pickle
+
+import torch_rs
+
+tensor_to = inspect.getattr_static(torch_rs.Tensor, "to")
+restore_tensor_to = torch_rs._restore_tensor_to_descriptor
+torch_rs.Tensor = int
+
+assert restore_tensor_to() is tensor_to
+for descriptor in (str.upper, tensor_to):
+    assert copy.copy(descriptor) is descriptor
+    assert copy.deepcopy(descriptor) is descriptor
+    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+        assert pickle.loads(pickle.dumps(descriptor, protocol=protocol)) is descriptor
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
     def test_import_preserves_a_preexisting_method_descriptor_reducer(self):
         source = r'''
 import copyreg

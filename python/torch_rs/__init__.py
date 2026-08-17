@@ -9,11 +9,15 @@ from . import torch_rs as _native
 from .torch_rs import *
 
 
-def _restore_tensor_to_descriptor():
-    return Tensor.to
+# Keep serialization independent of later rebinding of the public Tensor name.
+_tensor_to_descriptor = _native.Tensor.to
 
 
-_method_descriptor_type = type(Tensor.to)
+def _restore_tensor_to_descriptor(_descriptor=_tensor_to_descriptor):
+    return _descriptor
+
+
+_method_descriptor_type = type(_tensor_to_descriptor)
 _registered_method_descriptor_reducer = _copyreg.dispatch_table.get(
     _method_descriptor_type
 )
@@ -40,10 +44,13 @@ else:
 
 
 def _reduce_method_descriptor(
-    descriptor, _previous_reducer=_previous_method_descriptor_reducer
+    descriptor,
+    _previous_reducer=_previous_method_descriptor_reducer,
+    _tensor_to_descriptor=_tensor_to_descriptor,
+    _restore_descriptor=_restore_tensor_to_descriptor,
 ):
-    if descriptor is Tensor.to:
-        return _restore_tensor_to_descriptor, ()
+    if descriptor is _tensor_to_descriptor:
+        return _restore_descriptor, ()
     if _previous_reducer is not None:
         return _previous_reducer(descriptor)
     return descriptor.__reduce__()
@@ -177,5 +184,6 @@ del (
     _registered_method_descriptor_reducer,
     _registered_method_descriptor_reducer_owner,
     _sys,
+    _tensor_to_descriptor,
     _weakref,
 )
