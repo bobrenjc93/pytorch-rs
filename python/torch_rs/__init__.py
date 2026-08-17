@@ -2,6 +2,7 @@
 
 import copyreg as _copyreg
 import sys as _sys
+import weakref as _weakref
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
@@ -16,10 +17,18 @@ _method_descriptor_type = type(Tensor.to)
 _registered_method_descriptor_reducer = _copyreg.dispatch_table.get(
     _method_descriptor_type
 )
-if getattr(
+_registered_method_descriptor_reducer_owner = getattr(
     _registered_method_descriptor_reducer,
-    "_torch_rs_tensor_to_descriptor_reducer",
-    False,
+    "_torch_rs_method_descriptor_reducer_owner",
+    None,
+)
+if (
+    isinstance(
+        _registered_method_descriptor_reducer_owner,
+        _weakref.ReferenceType,
+    )
+    and _registered_method_descriptor_reducer_owner()
+    is _registered_method_descriptor_reducer
 ):
     _previous_method_descriptor_reducer = getattr(
         _registered_method_descriptor_reducer,
@@ -44,9 +53,12 @@ def _reduce_method_descriptor(
 # this package intentionally does not replace the top-level ``torch`` module.
 # Give the newly exposed descriptor an importable package-local pickle path
 # while delegating every other method descriptor to the reducer that was active
-# before importing torch-rs. Mark the wrapper with that external predecessor so
-# module reinitialization replaces, rather than chains, torch-rs registrations.
-_reduce_method_descriptor._torch_rs_tensor_to_descriptor_reducer = True
+# before importing torch-rs. A weak self-reference proves exact ownership even
+# when functools.wraps copies these attributes; the external predecessor lets
+# module reinitialization replace, rather than chain, torch-rs registrations.
+_reduce_method_descriptor._torch_rs_method_descriptor_reducer_owner = (
+    _weakref.ref(_reduce_method_descriptor)
+)
 _reduce_method_descriptor._torch_rs_previous_method_descriptor_reducer = (
     _previous_method_descriptor_reducer
 )
@@ -163,5 +175,7 @@ del (
     _native,
     _previous_method_descriptor_reducer,
     _registered_method_descriptor_reducer,
+    _registered_method_descriptor_reducer_owner,
     _sys,
+    _weakref,
 )

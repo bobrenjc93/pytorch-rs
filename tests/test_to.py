@@ -308,7 +308,7 @@ import torch_rs
 discarded_reducers = []
 for _ in range(100):
     reducer = copyreg.dispatch_table[method_descriptor_type]
-    assert reducer._torch_rs_tensor_to_descriptor_reducer is True
+    assert reducer._torch_rs_method_descriptor_reducer_owner() is reducer
     assert (
         reducer._torch_rs_previous_method_descriptor_reducer
         is external_reducer
@@ -333,7 +333,7 @@ gc.collect()
 assert all(reference() is None for reference in discarded_modules)
 
 reducer = copyreg.dispatch_table[method_descriptor_type]
-assert reducer._torch_rs_tensor_to_descriptor_reducer is True
+assert reducer._torch_rs_method_descriptor_reducer_owner() is reducer
 assert reducer._torch_rs_previous_method_descriptor_reducer is external_reducer
 
 original_recursion_limit = sys.getrecursionlimit()
@@ -345,6 +345,65 @@ try:
     )
 finally:
     sys.setrecursionlimit(original_recursion_limit)
+
+tensor_to = inspect.getattr_static(torch_rs.Tensor, "to")
+assert pickle.loads(pickle.dumps(tensor_to, protocol=5)) is tensor_to
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
+    def test_reload_preserves_a_wrapped_external_descriptor_reducer(self):
+        source = r'''
+import copyreg
+import functools
+import importlib
+import inspect
+import pickle
+
+method_descriptor_type = type(str.upper)
+
+
+def rebuild(name):
+    return "wrapped external reducer", name
+
+
+import torch_rs
+
+torch_rs_reducer = copyreg.dispatch_table[method_descriptor_type]
+
+
+@functools.wraps(torch_rs_reducer)
+def wrapped_external_reducer(descriptor):
+    return rebuild, (descriptor.__name__,)
+
+
+assert (
+    wrapped_external_reducer._torch_rs_method_descriptor_reducer_owner()
+    is torch_rs_reducer
+)
+copyreg.pickle(method_descriptor_type, wrapped_external_reducer)
+
+torch_rs = importlib.reload(torch_rs)
+
+reducer = copyreg.dispatch_table[method_descriptor_type]
+assert reducer._torch_rs_method_descriptor_reducer_owner() is reducer
+assert (
+    reducer._torch_rs_previous_method_descriptor_reducer
+    is wrapped_external_reducer
+)
+assert pickle.loads(pickle.dumps(str.upper, protocol=5)) == (
+    "wrapped external reducer",
+    "upper",
+)
 
 tensor_to = inspect.getattr_static(torch_rs.Tensor, "to")
 assert pickle.loads(pickle.dumps(tensor_to, protocol=5)) is tensor_to
