@@ -24,6 +24,7 @@ use crate::{
     python_memory_format::{PyMemoryFormat, memory_format_object},
     python_no_argument_builtins::add_no_argument_builtins,
     python_scalar_conversions::register_scalar_conversions,
+    python_size::size_type_object,
     python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_torch_function_mode as torch_function_mode_stack,
     python_variable_functions::create_variable_functions_class,
@@ -9238,6 +9239,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
+    module.add("Size", size_type_object(py)?.clone_ref(py))?;
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();
     let tensor_base = py.get_type::<PyTensorBase>();

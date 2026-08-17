@@ -1,7 +1,9 @@
 import copy
+import importlib
 import inspect
 import operator
 import pickle
+import sys
 import unittest
 
 import numpy as np
@@ -10,6 +12,11 @@ import torch_rs as torch
 
 class IntegerSubclass(int):
     pass
+
+
+class NumpyIntegerSubclass(np.int64):
+    def marker(self):
+        return "numpy integer subclass"
 
 
 class CustomIndex:
@@ -70,7 +77,7 @@ class SizeValueTests(unittest.TestCase):
         ):
             operator.setitem(original, 0, 3)
         with self.assertRaisesRegex(
-            TypeError, "^type 'Size' is not an acceptable base type$"
+            TypeError, "^type 'torch_rs.Size' is not an acceptable base type$"
         ):
             type("SizeSubclass", (torch.Size,), {})
 
@@ -78,18 +85,28 @@ class SizeValueTests(unittest.TestCase):
         custom = CustomIndex(7)
         integer_subclass = IntegerSubclass(3)
         numpy_integer = np.int64(4)
+        numpy_integer_subclass = NumpyIntegerSubclass(5)
         value = torch.Size(
-            [True, False, integer_subclass, numpy_integer, custom]
+            [
+                True,
+                False,
+                integer_subclass,
+                numpy_integer,
+                numpy_integer_subclass,
+                custom,
+            ]
         )
 
-        self.assertEqual(value, (1, 0, 3, 4, 7))
+        self.assertEqual(value, (1, 0, 3, 4, 5, 7))
         self.assertIs(type(value[0]), int)
         self.assertIs(type(value[1]), int)
         self.assertIs(value[2], integer_subclass)
         self.assertIs(value[3], numpy_integer)
-        self.assertIs(type(value[4]), int)
+        self.assertIs(value[4], numpy_integer_subclass)
+        self.assertEqual(value[4].marker(), "numpy integer subclass")
+        self.assertIs(type(value[5]), int)
         self.assertEqual(custom.calls, 1)
-        self.assertEqual(repr(value), "torch.Size([1, 0, 3, 4, 7])")
+        self.assertEqual(repr(value), "torch.Size([1, 0, 3, 4, 5, 7])")
 
         boundaries = torch.Size([-(2**63), 0, 2**63 - 1])
         self.assertEqual(
@@ -177,6 +194,86 @@ class SizeValueTests(unittest.TestCase):
             "can't multiply sequence by non-int of type 'float'",
         )
 
+    def test_binary_operators_preserve_reflected_dispatch(self):
+        value = torch.Size([1, 2, 3])
+        np.testing.assert_array_equal(value + np.array([4]), [5, 6, 7])
+        np.testing.assert_array_equal(
+            value * np.array([2, 3, 4]), [2, 6, 12]
+        )
+        np.testing.assert_array_equal(
+            np.array([2, 3, 4]) * value, [2, 6, 12]
+        )
+        self.assertIs(type(value * np.int64(2)), torch.Size)
+        self.assertEqual(value * np.int64(2), value * 2)
+        self.assertIs(type(np.int64(2) * value), torch.Size)
+        self.assertEqual(np.int64(2) * value, value * 2)
+
+        class ReflectedAdd:
+            def __init__(self, result):
+                self.result = result
+                self.calls = 0
+
+            def __radd__(self, other):
+                self.calls += 1
+                return self.result
+
+        add_marker = object()
+        reflected_add = ReflectedAdd(add_marker)
+        self.assertIs(value + reflected_add, add_marker)
+        self.assertEqual(reflected_add.calls, 1)
+
+        declining_add = ReflectedAdd(NotImplemented)
+        with self.assertRaises(TypeError) as raised:
+            value + declining_add
+        self.assertEqual(
+            str(raised.exception),
+            "can only concatenate tuple (not ReflectedAdd) to torch.Size",
+        )
+        self.assertEqual(declining_add.calls, 1)
+
+        class ReflectedMultiply:
+            def __init__(self, result):
+                self.result = result
+                self.reflected_calls = 0
+                self.index_calls = 0
+
+            def __rmul__(self, other):
+                self.reflected_calls += 1
+                return self.result
+
+            def __index__(self):
+                self.index_calls += 1
+                return 2
+
+        multiply_marker = object()
+        reflected_multiply = ReflectedMultiply(multiply_marker)
+        self.assertIs(value * reflected_multiply, multiply_marker)
+        self.assertEqual(reflected_multiply.reflected_calls, 1)
+        self.assertEqual(reflected_multiply.index_calls, 0)
+
+        declining_multiply = ReflectedMultiply(NotImplemented)
+        self.assertEqual(value * declining_multiply, value * 2)
+        self.assertEqual(declining_multiply.reflected_calls, 1)
+        self.assertEqual(declining_multiply.index_calls, 1)
+
+        class LeftMultiply:
+            def __init__(self):
+                self.multiply_calls = 0
+                self.index_calls = 0
+
+            def __mul__(self, other):
+                self.multiply_calls += 1
+                return NotImplemented
+
+            def __index__(self):
+                self.index_calls += 1
+                return 2
+
+        left_multiply = LeftMultiply()
+        self.assertEqual(left_multiply * value, value * 2)
+        self.assertEqual(left_multiply.multiply_calls, 1)
+        self.assertEqual(left_multiply.index_calls, 1)
+
     def test_numel_equality_hashing_and_signed_overflow_match_tuple_contract(self):
         cases = (
             (torch.Size(), 1),
@@ -227,6 +324,51 @@ class SizeValueTests(unittest.TestCase):
                     self.assertIsNot(restored, original)
                     self.assertIs(type(restored), torch.Size)
                     self.assertEqual(restored, original)
+
+    def test_public_type_is_immutable_and_stable_across_reinitialization(self):
+        original_type = torch.Size
+        original = torch.Size([1, 2, 3])
+        original_attributes = {
+            name: getattr(original_type, name)
+            for name in ("__new__", "__repr__", "numel")
+        }
+        for name in original_attributes:
+            for operation in (
+                lambda name=name: setattr(original_type, name, None),
+                lambda name=name: type.__setattr__(
+                    original_type, name, None
+                ),
+                lambda name=name: delattr(original_type, name),
+                lambda name=name: type.__delattr__(original_type, name),
+            ):
+                with self.subTest(name=name, operation=operation):
+                    with self.assertRaises(TypeError) as raised:
+                        operation()
+                    self.assertEqual(
+                        str(raised.exception),
+                        f"cannot set '{name}' attribute of immutable type "
+                        "'torch_rs.Size'",
+                    )
+            self.assertIs(getattr(original_type, name), original_attributes[name])
+
+        saved_modules = {
+            name: module
+            for name, module in tuple(sys.modules.items())
+            if name == "torch_rs" or name.startswith("torch_rs.")
+        }
+        try:
+            for name in saved_modules:
+                sys.modules.pop(name, None)
+            reinitialized = importlib.import_module("torch_rs")
+            self.assertIs(reinitialized.Size, original_type)
+            restored = pickle.loads(pickle.dumps(original))
+            self.assertIs(type(restored), original_type)
+            self.assertEqual(restored, original)
+        finally:
+            for name in tuple(sys.modules):
+                if name == "torch_rs" or name.startswith("torch_rs."):
+                    sys.modules.pop(name, None)
+            sys.modules.update(saved_modules)
 
     def test_tensor_metadata_return_types_remain_unchanged(self):
         tensor = torch.zeros((2, 3))
