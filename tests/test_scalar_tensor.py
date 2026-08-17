@@ -93,6 +93,7 @@ class ScalarTensorTests(unittest.TestCase):
             {"device": "cpu:0"},
             {"device": "cpu:1"},
             {"device": torch.device("cpu")},
+            {"device": torch.device("cpu", 2)},
             {"pin_memory": None},
             {"pin_memory": False},
             {"requires_grad": None},

@@ -3089,6 +3089,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:207",
+      "recordedAt": "2026-08-17T07:04:29.357Z",
+      "label": "PR #207",
+      "kind": "leaf",
+      "prNumber": 207,
+      "title": "Support indexed CPU torch.device descriptors",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 70.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 51.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }

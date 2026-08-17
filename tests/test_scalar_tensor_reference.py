@@ -117,6 +117,10 @@ class ScalarTensorReferenceTests(unittest.TestCase):
                 {"device": torch.device("cpu")},
                 {"device": reference_torch.device("cpu")},
             ),
+            (
+                {"device": torch.device("cpu", 2)},
+                {"device": reference_torch.device("cpu", 2)},
+            ),
             ({"pin_memory": None}, {"pin_memory": None}),
             ({"pin_memory": False}, {"pin_memory": False}),
             ({"requires_grad": None}, {"requires_grad": None}),
