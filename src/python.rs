@@ -1265,14 +1265,33 @@ pub(crate) fn matmul_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let ([input, other], keyword_error) =
-        bind_legacy_binary_arguments("matmul", args, kwargs, true)?;
+    let ([input, other], keyword_error) = bind_legacy_binary_arguments(
+        "matmul",
+        args,
+        kwargs,
+        LegacyBinaryInputKind::TensorOrTorchFunction,
+    )?;
     let input = parse_tensor_or_torch_function_argument("matmul", "input", &input)?;
     let other = parse_tensor_or_torch_function_argument("matmul", "other", &other)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
+}
+
+pub(crate) fn mul_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([input, other], keyword_error) =
+        bind_legacy_binary_arguments("mul", args, kwargs, LegacyBinaryInputKind::MulOperand)?;
+    let input = parse_mul_operand("input", &input)?;
+    let other = parse_mul_operand("other", &other)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    dispatch_top_level_mul(py, &input, &other, args, kwargs)
 }
 
 enum ParsedFillValue {
@@ -1312,6 +1331,12 @@ struct ProbedTorchFunctionOverride<'py> {
 
 enum BoundTensorOrTorchFunction<'py> {
     Tensor(Bound<'py, PyTensor>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundMulOperand<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Scalar(Bound<'py, PyAny>),
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
@@ -2218,19 +2243,20 @@ fn dispatch_matmul(
     }
 }
 
-fn ordered_matmul_overrides<'py>(
-    input: &BoundTensorOrTorchFunction<'py>,
-    other: &BoundTensorOrTorchFunction<'py>,
+fn ordered_binary_overrides<'py>(
+    first: Option<&ProbedTorchFunctionOverride<'py>>,
+    second: Option<&ProbedTorchFunctionOverride<'py>>,
+    allocation_error: &'static str,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
     let mut overrides = Vec::new();
     overrides
         .try_reserve_exact(2)
-        .map_err(|_| PyMemoryError::new_err("unable to allocate matmul dispatch operands"))?;
+        .map_err(|_| PyMemoryError::new_err(allocation_error))?;
 
-    if let BoundTensorOrTorchFunction::Override(probed) = input {
+    if let Some(probed) = first {
         overrides.push(probed.clone());
     }
-    if let BoundTensorOrTorchFunction::Override(probed) = other {
+    if let Some(probed) = second {
         let Some(first) = overrides.first() else {
             overrides.push(probed.clone());
             return Ok(overrides);
@@ -2254,6 +2280,36 @@ fn ordered_matmul_overrides<'py>(
         }
     }
     Ok(overrides)
+}
+
+fn ordered_matmul_overrides<'py>(
+    input: &BoundTensorOrTorchFunction<'py>,
+    other: &BoundTensorOrTorchFunction<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match input {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let other = match other {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
+}
+
+fn ordered_mul_overrides<'py>(
+    input: &BoundMulOperand<'py>,
+    other: &BoundMulOperand<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match input {
+        BoundMulOperand::Override(probed) => Some(probed),
+        BoundMulOperand::Tensor(_) | BoundMulOperand::Scalar(_) => None,
+    };
+    let other = match other {
+        BoundMulOperand::Override(probed) => Some(probed),
+        BoundMulOperand::Tensor(_) | BoundMulOperand::Scalar(_) => None,
+    };
+    ordered_binary_overrides(input, other, "unable to allocate mul dispatch operands")
 }
 
 fn dispatch_top_level_matmul(
@@ -2310,6 +2366,105 @@ fn dispatch_top_level_matmul(
         active_mode.get(),
         &overrides,
     )?)
+}
+
+fn dispatch_top_level_mul(
+    py: Python<'_>,
+    input: &BoundMulOperand<'_>,
+    other: &BoundMulOperand<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_mul_overrides(input, other)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_mul(py, input, other);
+    }
+
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err("torch.mul was called before module initialization completed")
+    })?;
+    let function = variable_functions.bind(py).getattr("mul")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Disable the top mode for the complete dispatch attempt. A mode can call
+    // the public function explicitly to forward to the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.mul",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_mul(
+    py: Python<'_>,
+    input: &BoundMulOperand<'_>,
+    other: &BoundMulOperand<'_>,
+) -> PyResult<Py<PyAny>> {
+    let result = match (input, other) {
+        (BoundMulOperand::Tensor(input), BoundMulOperand::Tensor(other)) => {
+            let other = other.try_borrow()?;
+            BinaryOperation::Multiply.apply_tensors(&input.try_borrow()?.inner, &other.inner)
+        }
+        (BoundMulOperand::Tensor(tensor), BoundMulOperand::Scalar(scalar))
+        | (BoundMulOperand::Scalar(scalar), BoundMulOperand::Tensor(tensor)) => {
+            let scalar = parse_top_level_mul_scalar(scalar)?;
+            BinaryOperation::Multiply.apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
+        }
+        (BoundMulOperand::Scalar(_), BoundMulOperand::Scalar(_)) => {
+            return Err(PyTypeError::new_err(
+                "mul(): scalar-scalar multiplication is not supported; at least one operand must be Tensor",
+            ));
+        }
+        (BoundMulOperand::Override(_), _) | (_, BoundMulOperand::Override(_)) => {
+            unreachable!("mul overrides were dispatched before the native path")
+        }
+    };
+    Ok(Py::new(
+        py,
+        PyTensor::new(result.map_err(|error| tensor_error(&error))?),
+    )?
+    .into_any())
+}
+
+fn parse_top_level_mul_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
+    match parse_arithmetic_scalar(value) {
+        Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned)) => {
+            Err(PyTypeError::new_err("an integer is required"))
+        }
+        Ok(Some(scalar)) => Ok(scalar.into_f32()),
+        Ok(None) => unreachable!("top-level mul scalar types were checked while binding"),
+        Err(_) if value.is_instance_of::<PyInt>() => {
+            let message = if python_integer_is_negative(value)? {
+                "can't convert negative int to unsigned"
+            } else {
+                "int too big to convert"
+            };
+            Err(PyOverflowError::new_err(message))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 struct ScalarTensorCallArguments<'py> {
@@ -3272,7 +3427,7 @@ fn relu(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
 fn is_same_size(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<bool> {
     let ([input, other], keyword_error) =
-        bind_legacy_binary_arguments("is_same_size", args, kwargs, false)?;
+        bind_legacy_binary_arguments("is_same_size", args, kwargs, LegacyBinaryInputKind::Tensor)?;
     let input = parse_tensor_argument("is_same_size", "input", &input)?;
     let other = parse_tensor_argument("is_same_size", "other", &other)?;
     if let Some(keyword_error) = keyword_error {
@@ -6766,11 +6921,18 @@ fn bind_tensor_arguments<'py, const N: usize>(
     ))
 }
 
+#[derive(Clone, Copy)]
+enum LegacyBinaryInputKind {
+    Tensor,
+    TensorOrTorchFunction,
+    MulOperand,
+}
+
 fn bind_legacy_binary_arguments<'py>(
     function: &str,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-    allow_torch_function: bool,
+    input_kind: LegacyBinaryInputKind,
 ) -> PyResult<([ParsedCallArgument<'py>; 2], Option<PyErr>)> {
     if positional.len() > 2 {
         return Err(PyTypeError::new_err(format!(
@@ -6820,10 +6982,16 @@ fn bind_legacy_binary_arguments<'py>(
         )));
     };
     let Some(other) = other else {
-        if allow_torch_function {
-            parse_tensor_or_torch_function_argument(function, "input", &input)?;
-        } else {
-            parse_tensor_argument(function, "input", &input)?;
+        match input_kind {
+            LegacyBinaryInputKind::Tensor => {
+                parse_tensor_argument(function, "input", &input)?;
+            }
+            LegacyBinaryInputKind::TensorOrTorchFunction => {
+                parse_tensor_or_torch_function_argument(function, "input", &input)?;
+            }
+            LegacyBinaryInputKind::MulOperand => {
+                parse_mul_operand("input", &input)?;
+            }
         }
         return Err(PyTypeError::new_err(format!(
             "{function}() missing 1 required positional arguments: \"other\""
@@ -6978,6 +7146,45 @@ fn parse_tensor_or_torch_function_argument<'py>(
     }
     parse_tensor_argument(function, argument, value)
         .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
+}
+
+fn is_real_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_exact_instance_of::<PyBool>()
+        || value.is_instance_of::<PyInt>()
+        || value.is_instance_of::<PyFloat>()
+    {
+        return Ok(true);
+    }
+
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(false);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !value.is_instance(&generic)? {
+        return Ok(false);
+    }
+
+    Ok(value.is_instance(&numpy.getattr("bool_")?)?
+        || value.is_instance(&numpy.getattr("integer")?)?
+        || value.is_instance(&numpy.getattr("floating")?)?)
+}
+
+fn parse_mul_operand<'py>(
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundMulOperand<'py>> {
+    if let Ok(tensor) = value.value.cast::<PyTensor>() {
+        return Ok(BoundMulOperand::Tensor(tensor.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundMulOperand::Override(probed));
+    }
+    if is_real_arithmetic_scalar(&value.value)? {
+        return Ok(BoundMulOperand::Scalar(value.value.clone()));
+    }
+
+    parse_tensor_argument("mul", argument, value)?;
+    unreachable!("unsupported mul operands were rejected by parse_tensor_argument")
 }
 
 fn bind_matmul_argument<'py>(
@@ -9019,6 +9226,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "movedim",
         "moveaxis",
         "matmul",
+        "mul",
     ] {
         let function = variable_functions.getattr(name)?;
         function.setattr("__module__", "torch")?;
