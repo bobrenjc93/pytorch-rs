@@ -441,6 +441,69 @@ print(json.dumps({
             self.descriptor_mode_boundary_observation("torch"),
         )
 
+    def legacy_tight_headroom_observation(self, module_name):
+        source = r'''
+import importlib
+import json
+import sys
+
+module = importlib.import_module(MODULE)
+tensor = module.tensor([1.0], dtype=module.float32)
+sys.setrecursionlimit(80)
+
+class DecliningMode(module.overrides.TorchFunctionMode):
+    def __init__(self):
+        self.calls = 0
+
+    def __torch_function__(self, func, types, args=()):
+        self.calls += 1
+        return NotImplemented
+
+def call_from_wrappers(remaining):
+    if remaining:
+        return call_from_wrappers(remaining - 1)
+    return tensor.const_data_ptr()
+
+mode = DecliningMode()
+try:
+    with mode:
+        call_from_wrappers(71)
+except Exception as error:
+    outcome = [type(error).__name__, str(error)]
+else:
+    outcome = None
+
+print(json.dumps({
+    "calls": mode.calls,
+    "outcome": outcome,
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    @unittest.skipUnless(
+        sys.version_info < (3, 12),
+        "legacy CPython mode recursion accounting only applies before 3.12",
+    )
+    def test_legacy_tight_headroom_redispatch_matches_pytorch_2_13(self):
+        actual = self.legacy_tight_headroom_observation("torch_rs")
+        expected = self.legacy_tight_headroom_observation("torch")
+        self.assertEqual(actual, expected)
+        self.assertEqual(actual["calls"], 2)
+        self.assertEqual(
+            actual["outcome"],
+            [
+                "RecursionError",
+                "maximum recursion depth exceeded in __subclasscheck__",
+            ],
+        )
+
     def handler_recursion_error_observation(self, module_name):
         source = r'''
 import importlib
