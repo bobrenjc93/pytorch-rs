@@ -87,6 +87,10 @@ class PromoteTypesReferenceTests(unittest.TestCase):
             def __eq__(self, other):
                 raise RuntimeError("later keyword equality should not run")
 
+        class MismatchedHashKeyword(str):
+            def __hash__(self):
+                return 1
+
         actual_type2 = AlwaysEqualKeyword("type2")
         expected_type2 = AlwaysEqualKeyword("type2")
         self.assertIs(
@@ -140,6 +144,22 @@ class PromoteTypesReferenceTests(unittest.TestCase):
                 **{
                     AlwaysEqualKeyword("type2"): reference_torch.float32,
                     RaisingKeyword("type1"): reference_torch.float32,
+                },
+            ),
+        )
+        self.assert_error_matches(
+            lambda: torch.promote_types(
+                torch.float32,
+                **{
+                    MismatchedHashKeyword("type2"): torch.float32,
+                    AlwaysEqualKeyword("type2"): torch.float32,
+                },
+            ),
+            lambda: reference_torch.promote_types(
+                reference_torch.float32,
+                **{
+                    MismatchedHashKeyword("type2"): reference_torch.float32,
+                    AlwaysEqualKeyword("type2"): reference_torch.float32,
                 },
             ),
         )
@@ -223,6 +243,40 @@ class PromoteTypesReferenceTests(unittest.TestCase):
                 expected = observation(reference_torch, positional)
                 self.assertEqual(actual, expected)
                 self.assertEqual(actual[1], ())
+
+    def test_dtype_validation_one_shot_probe_matches_pytorch_2_13(self):
+        def observation(module):
+            events = []
+
+            class StatefulOperand:
+                def __init__(self):
+                    self.lookups = 0
+
+                def __getattribute__(self, name):
+                    if name == "__torch_function__":
+                        lookups = object.__getattribute__(self, "lookups") + 1
+                        object.__setattr__(self, "lookups", lookups)
+                        events.append(("lookup", lookups))
+                        if lookups == 1:
+                            raise AttributeError("transient probe failure")
+
+                        def handler(func, types, args=(), kwargs=None):
+                            events.append(("dispatch",))
+                            return module.float32
+
+                        return handler
+                    return object.__getattribute__(self, name)
+
+            operand = StatefulOperand()
+            try:
+                result = module.promote_types(operand, module.float32)
+            except Exception as error:
+                outcome = (type(error).__name__, str(error))
+            else:
+                outcome = ("result", result is module.float32)
+            return outcome, tuple(events), operand.lookups
+
+        self.assertEqual(observation(torch), observation(reference_torch))
 
     def operand_override_observation(self, module):
         marker = object()

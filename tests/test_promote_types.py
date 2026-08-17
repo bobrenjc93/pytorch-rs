@@ -111,6 +111,61 @@ class PromoteTypesTests(unittest.TestCase):
             ),
         )
 
+    def test_duplicate_subclassed_keywords_defer_generic_validation(self):
+        class MismatchedHashKeyword(str):
+            def __hash__(self):
+                return 1
+
+        class AlwaysEqualKeyword(str):
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                return True
+
+        self.assert_error(
+            TypeError,
+            "promote_types() got multiple values for argument 'type2'",
+            lambda: torch.promote_types(
+                torch.float32,
+                **{
+                    MismatchedHashKeyword("type2"): torch.float32,
+                    AlwaysEqualKeyword("type2"): torch.float32,
+                },
+            ),
+        )
+
+    def test_dtype_validation_uses_one_shot_torch_function_probe(self):
+        events = []
+
+        class StatefulOperand:
+            def __init__(self):
+                self.lookups = 0
+
+            def __getattribute__(self, name):
+                if name == "__torch_function__":
+                    lookups = object.__getattribute__(self, "lookups") + 1
+                    object.__setattr__(self, "lookups", lookups)
+                    events.append(("lookup", lookups))
+                    if lookups == 1:
+                        raise AttributeError("transient probe failure")
+
+                    def handler(func, types, args=(), kwargs=None):
+                        events.append(("dispatch",))
+                        return torch.float32
+
+                    return handler
+                return object.__getattribute__(self, name)
+
+        operand = StatefulOperand()
+        self.assert_error(
+            TypeError,
+            "promote_types(): argument 'type1' (position 1) must be "
+            "torch.dtype, not StatefulOperand",
+            lambda: torch.promote_types(operand, torch.float32),
+        )
+        self.assertEqual(events, [("lookup", 1)])
+        self.assertEqual(operand.lookups, 1)
+
     def test_operand_validation_precedes_later_keyword_lookup(self):
         cases = (
             ("positional", True),

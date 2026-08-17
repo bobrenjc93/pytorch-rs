@@ -1449,15 +1449,37 @@ fn probe_torch_function_override<'py>(
     if !has_override {
         return None;
     }
+    Some(probed_torch_function_override(value))
+}
+
+#[allow(
+    unsafe_code,
+    reason = "promote_types dtype parity requires CPython's one-shot exception-suppressing attribute probe"
+)]
+fn probe_promote_types_torch_function_override<'py>(
+    value: &Bound<'py, PyAny>,
+) -> Option<ProbedTorchFunctionOverride<'py>> {
+    // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
+    // __torch_function__ lookup through a tensor-type fallback.
+    // SAFETY: `value` is live for this call and the attribute name is a static,
+    // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
+    let has_override =
+        unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
+    has_override.then(|| probed_torch_function_override(value))
+}
+
+fn probed_torch_function_override<'py>(
+    value: &Bound<'py, PyAny>,
+) -> ProbedTorchFunctionOverride<'py> {
     let dispatch_type = if value.cast::<PyType>().is_ok() {
         value.clone()
     } else {
         value.get_type().into_any()
     };
-    Some(ProbedTorchFunctionOverride {
+    ProbedTorchFunctionOverride {
         receiver: value.clone(),
         dispatch_type,
-    })
+    }
 }
 
 #[allow(
@@ -7401,6 +7423,7 @@ fn validate_promote_types_keywords(
         return Ok(());
     }
 
+    let mut invalid_keyword_arguments = false;
     for key in keywords.keys().iter() {
         let matched_position = if key.eq("type1")? {
             Some(0)
@@ -7417,21 +7440,30 @@ fn validate_promote_types_keywords(
             continue;
         }
 
+        if matched_position.is_some_and(|position| position >= positional_count) {
+            // PyTorch defers this generic overload mismatch while it checks
+            // later original keys for a positional duplicate or a more
+            // specific unexpected-key error.
+            invalid_keyword_arguments = true;
+            continue;
+        }
+
         let key = key.extract::<String>()?;
-        let mut message = if matched_position.is_some_and(|position| position < positional_count) {
-            format!("promote_types() got multiple values for argument '{key}'")
-        } else if matched_position.is_some() {
-            "invalid keyword arguments".to_owned()
-        } else {
-            format!("promote_types() got an unexpected keyword argument '{key}'")
-        };
+        let mut message = matched_position.map_or_else(
+            || format!("promote_types() got an unexpected keyword argument '{key}'"),
+            |_| format!("promote_types() got multiple values for argument '{key}'"),
+        );
         if let Some(nul) = message.find('\0') {
             message.truncate(nul);
         }
         return Err(PyTypeError::new_err(message));
     }
 
-    Ok(())
+    if invalid_keyword_arguments {
+        Err(PyTypeError::new_err("invalid keyword arguments"))
+    } else {
+        Ok(())
+    }
 }
 
 fn parse_promote_types_operand<'py>(
@@ -7441,7 +7473,7 @@ fn parse_promote_types_operand<'py>(
     if let Ok(dtype) = argument.value.cast::<PyDType>() {
         return Ok(BoundPromoteTypesOperand::DType(dtype.try_borrow()?.inner()));
     }
-    if let Some(probed) = probe_torch_function_override(&argument.value) {
+    if let Some(probed) = probe_promote_types_torch_function_override(&argument.value) {
         return Ok(BoundPromoteTypesOperand::Override(probed));
     }
 
