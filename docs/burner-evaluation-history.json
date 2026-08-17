@@ -3169,6 +3169,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:212",
+      "recordedAt": "2026-08-17T14:23:33.276Z",
+      "label": "PR #212",
+      "kind": "leaf",
+      "prNumber": 212,
+      "title": "Expose top-level torch.is_inference",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 71.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 52.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }
