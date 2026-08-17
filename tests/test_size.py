@@ -196,9 +196,9 @@ class TensorSizeTests(unittest.TestCase):
                         "Overflow when unpacking long long",
                     )
 
-    def test_no_argument_overload_stays_out_of_scope(self):
+    def test_standalone_size_does_not_add_the_no_argument_tensor_overload(self):
         tensor = torch.zeros((2, 3))
-        self.assertFalse(hasattr(torch, "Size"))
+        self.assertTrue(hasattr(torch, "Size"))
         with self.assertRaises(TypeError) as raised:
             tensor.size()
         self.assertEqual(
