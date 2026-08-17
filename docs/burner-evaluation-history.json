@@ -3201,6 +3201,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:215",
+      "recordedAt": "2026-08-17T16:46:46.574Z",
+      "label": "PR #215",
+      "kind": "leaf",
+      "prNumber": 215,
+      "title": "Expose main-process get_worker_info",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 71.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 53.3,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }

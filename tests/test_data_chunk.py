@@ -159,6 +159,7 @@ class DataChunkTests(unittest.TestCase):
                 "StackDataset",
                 "Subset",
                 "TensorDataset",
+                "get_worker_info",
             ],
         )
 

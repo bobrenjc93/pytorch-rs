@@ -1,3 +1,4 @@
+from ._utils.worker import get_worker_info
 from .dataset import (
     ChainDataset,
     ConcatDataset,
@@ -22,4 +23,5 @@ __all__ = [
     "StackDataset",
     "Subset",
     "TensorDataset",
+    "get_worker_info",
 ]

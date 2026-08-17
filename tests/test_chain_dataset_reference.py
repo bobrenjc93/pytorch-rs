@@ -362,6 +362,7 @@ class ChainDatasetReferenceTests(unittest.TestCase):
             "StackDataset",
             "Subset",
             "TensorDataset",
+            "get_worker_info",
         }
 
         self.assertIs(actual_data.ChainDataset, actual_module.ChainDataset)
