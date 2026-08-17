@@ -286,6 +286,106 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
+    def descriptor_mode_boundary_observation(self, module_name):
+        source = r'''
+import importlib
+import json
+import sys
+
+module = importlib.import_module(MODULE)
+tensor = module.tensor([1.0], dtype=module.float32)
+sys.setrecursionlimit(80)
+
+def make_mode(target_resolution):
+    marker = object()
+    calls = []
+
+    class CallableHandler:
+        def __init__(self, receiver, resolution):
+            self.__self__ = receiver
+            self.resolution = resolution
+
+        def __call__(self, func, types, args=(), kwargs=None):
+            calls.append(self.resolution)
+            if self.resolution == target_resolution:
+                return marker
+            return NotImplemented
+
+    class StatefulModeDescriptor:
+        def __init__(self):
+            self.lookups = 0
+
+        def __get__(self, instance, owner):
+            self.lookups += 1
+            return CallableHandler(instance, self.lookups)
+
+    descriptor = StatefulModeDescriptor()
+
+    class Mode(module.overrides.TorchFunctionMode):
+        __torch_function__ = descriptor
+
+    return marker, calls, descriptor, Mode
+
+direct_marker, direct_calls, direct_descriptor, DirectMode = make_mode(76)
+try:
+    with DirectMode():
+        direct_result = tensor.const_data_ptr()
+except Exception as error:
+    direct_outcome = ["error", type(error).__name__, str(error)]
+else:
+    direct_outcome = ["result", direct_result is direct_marker]
+
+def observe(wrapper_depth, target_resolution):
+    marker, calls, descriptor, Mode = make_mode(target_resolution)
+
+    def invoke(remaining):
+        if remaining:
+            return invoke(remaining - 1)
+        return tensor.const_data_ptr()
+
+    try:
+        with Mode():
+            result = invoke(wrapper_depth)
+    except Exception as error:
+        outcome = ["error", type(error).__name__, str(error)]
+    else:
+        outcome = ["result", result is marker]
+    return [
+        wrapper_depth,
+        target_resolution,
+        descriptor.lookups,
+        calls,
+        outcome,
+    ]
+
+print(json.dumps({
+    "direct": [direct_descriptor.lookups, direct_calls, direct_outcome],
+    "nested": [
+        observe(wrapper_depth, target_resolution)
+        for wrapper_depth in range(5)
+        for target_resolution in range(68, 81)
+    ],
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    @unittest.skipUnless(
+        sys.version_info < (3, 12),
+        "legacy CPython mode recursion accounting only applies before 3.12",
+    )
+    def test_legacy_descriptor_mode_boundary_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.descriptor_mode_boundary_observation("torch_rs"),
+            self.descriptor_mode_boundary_observation("torch"),
+        )
+
     def handler_recursion_error_observation(self, module_name):
         source = r'''
 import importlib
