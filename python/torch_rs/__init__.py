@@ -5,6 +5,16 @@ import sys as _sys
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
+from ._size import Size as Size
+
+# ``torch.Size`` is a tuple subtype, which cannot be represented as a PyO3
+# class under the package's stable ABI build. Publish the Python implementation
+# through the native-module alias as well so ``torch._C.Size`` keeps the same
+# identity as the top-level type.
+_native.Size = Size
+if "Size" not in _native.__all__:
+    _native.__all__.append("Size")
+
 from .torch_rs import *
 
 # PyTorch's built-in variable functions reduce through owners in ``torch._C``.
