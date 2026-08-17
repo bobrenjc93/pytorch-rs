@@ -1631,7 +1631,6 @@ fn call_torch_function_mode_handler(
     types: &Bound<'_, PyTuple>,
     args: &Bound<'_, PyTuple>,
 ) -> PyResult<Py<PyAny>> {
-    let kwargs = py.None();
     // PyTorch invokes a mode through PyObject_CallMethod after separately
     // validating one descriptor resolution. Keeping the second resolution and
     // invocation in the same CPython operation is observable at the recursion
@@ -1640,11 +1639,10 @@ fn call_torch_function_mode_handler(
         ffi::PyObject_CallMethod(
             mode.as_ptr(),
             c"__torch_function__".as_ptr(),
-            c"OOOO".as_ptr(),
+            c"OOO".as_ptr(),
             function.as_ptr(),
             types.as_ptr(),
             args.as_ptr(),
-            kwargs.as_ptr(),
         )
     };
     if result.is_null() {

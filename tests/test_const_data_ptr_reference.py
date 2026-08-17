@@ -286,6 +286,61 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
+    def tensorbase_mode_arity_observation(self, module_name):
+        source = r'''
+import importlib
+import json
+
+module = importlib.import_module(MODULE)
+tensor = module.tensor([1.0], dtype=module.float32)
+marker = object()
+calls = []
+
+class ThreeArgumentMode(module.overrides.TorchFunctionMode):
+    def __torch_function__(self, func, types, args=()):
+        calls.append({
+            "function_name": func.__name__,
+            "function_qualname": func.__qualname__,
+            "types_match": types == (module.Tensor,),
+            "args_match": len(args) == 1 and args[0] is tensor,
+        })
+        return marker
+
+outcomes = []
+for operation in (
+    lambda: tensor.const_data_ptr(),
+    lambda: tensor.dim(),
+    lambda: tensor.shape,
+    lambda: tensor.is_conj(),
+):
+    try:
+        with ThreeArgumentMode():
+            result = operation()
+    except Exception as error:
+        outcomes.append(["error", type(error).__name__, str(error)])
+    else:
+        outcomes.append(["result", result is marker])
+
+print(json.dumps({
+    "outcomes": outcomes,
+    "calls": calls,
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_tensorbase_mode_three_argument_handler_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.tensorbase_mode_arity_observation("torch_rs"),
+            self.tensorbase_mode_arity_observation("torch"),
+        )
+
     def descriptor_mode_boundary_observation(self, module_name):
         source = r'''
 import importlib
