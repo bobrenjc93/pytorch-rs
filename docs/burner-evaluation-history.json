@@ -3249,6 +3249,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 71
       }
+    },
+    {
+      "key": "pr:220",
+      "recordedAt": "2026-08-17T19:19:03.249Z",
+      "label": "PR #220",
+      "kind": "leaf",
+      "prNumber": 220,
+      "title": "Re-land torch.nn.init.calculate_gain on current main",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 71.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 54,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 71
+      }
     }
   ]
 }
