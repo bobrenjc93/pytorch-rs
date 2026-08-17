@@ -3281,6 +3281,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 71
       }
+    },
+    {
+      "key": "pr:222",
+      "recordedAt": "2026-08-17T20:20:59.520Z",
+      "label": "PR #222",
+      "kind": "leaf",
+      "prNumber": 222,
+      "title": "Fix Python 3.14 parity for torch.broadcast_shapes",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 71.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 54.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 71
+      }
     }
   ]
 }
