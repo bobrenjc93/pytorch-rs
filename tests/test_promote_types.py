@@ -111,6 +111,53 @@ class PromoteTypesTests(unittest.TestCase):
             ),
         )
 
+    def test_operand_validation_precedes_later_keyword_lookup(self):
+        cases = (
+            ("positional", True),
+            ("keyword", False),
+        )
+        for form, positional in cases:
+            events = []
+
+            class Operand:
+                pass
+
+            class MutatingKeyword(str):
+                __hash__ = str.__hash__
+
+                def __eq__(self, other):
+                    events.append("keyword equality")
+
+                    @classmethod
+                    def override(cls, func, types, args=(), kwargs=None):
+                        events.append("override dispatch")
+                        return torch.float32
+
+                    Operand.__torch_function__ = override
+                    return super().__eq__(other)
+
+            operand = Operand()
+            key = MutatingKeyword("type2")
+            if positional:
+                call = lambda: torch.promote_types(
+                    operand, **{key: torch.float32}
+                )
+                position = " (position 1)"
+            else:
+                call = lambda: torch.promote_types(
+                    type1=operand, **{key: torch.float32}
+                )
+                position = ""
+
+            with self.subTest(form=form):
+                self.assert_error(
+                    TypeError,
+                    "promote_types(): argument 'type1'"
+                    f"{position} must be torch.dtype, not Operand",
+                    call,
+                )
+                self.assertEqual(events, [])
+
     def test_torch_function_modes_receive_original_calls_and_can_forward(self):
         marker = object()
 

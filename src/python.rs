@@ -1314,8 +1314,6 @@ pub(crate) fn promote_types_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let ([type1, type2], consumed_keywords) = bind_promote_types_arguments(args, kwargs)?;
-    let type1 = parse_promote_types_operand("type1", &type1)?;
-    let type2 = parse_promote_types_operand("type2", &type2)?;
     validate_promote_types_keywords(args.len(), kwargs, &consumed_keywords)?;
     dispatch_promote_types(py, &type1, &type2, args, kwargs)
 }
@@ -7291,7 +7289,7 @@ fn bind_promote_types_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<(
-    [ParsedCallArgument<'py>; 2],
+    [BoundPromoteTypesOperand<'py>; 2],
     Vec<ConsumedPromoteTypesKeyword<'py>>,
 )> {
     const NAMES: [&str; 2] = ["type1", "type2"];
@@ -7303,25 +7301,27 @@ fn bind_promote_types_arguments<'py>(
         )));
     }
 
-    let mut arguments: [Option<ParsedCallArgument<'py>>; 2] = std::array::from_fn(|_| None);
-    for (index, value) in positional.iter().enumerate() {
-        arguments[index] = Some(ParsedCallArgument {
-            value,
-            position: Some(index + 1),
-        });
-    }
-
     // Keep the original kwargs intact for mode dispatch. Popping from a
     // shallow copy uses the dictionary's stored hashes and identifies the
     // exact string-subclass entry consumed by each canonical parameter.
     let remaining_keywords = keywords.map(PyDictMethods::copy).transpose()?;
     let mut consumed_keywords = Vec::new();
-    if let Some(remaining_keywords) = remaining_keywords.as_ref() {
-        let sentinel = PyDict::new(positional.py()).into_any();
-        for (index, name) in NAMES.iter().copied().enumerate().skip(positional.len()) {
+    let sentinel = PyDict::new(positional.py()).into_any();
+    let mut operands: [Option<BoundPromoteTypesOperand<'py>>; 2] = std::array::from_fn(|_| None);
+
+    // PyTorch binds and validates each schema slot before looking up the next
+    // keyword. In particular, a type2 key must not run Python equality code
+    // before type1 has been accepted as a dtype or torch-function override.
+    for (index, name) in NAMES.iter().copied().enumerate() {
+        let argument = if index < positional.len() {
+            Some(ParsedCallArgument {
+                value: positional.get_item(index)?,
+                position: Some(index + 1),
+            })
+        } else if let Some(remaining_keywords) = remaining_keywords.as_ref() {
             let keys_before = remaining_keywords.keys();
             // PyTorch's generated argument parser suppresses lookup failures
-            // here; declared-type and leftover-key validation happen later.
+            // here; a miss is reported as the complete remaining schema suffix.
             let value = pop_promote_types_keyword(remaining_keywords, name, &sentinel)
                 .ok()
                 .flatten();
@@ -7339,46 +7339,42 @@ fn bind_promote_types_arguments<'py>(
                     key,
                     position: index,
                 });
-                arguments[index] = Some(ParsedCallArgument {
+                Some(ParsedCallArgument {
                     value,
                     position: None,
-                });
+                })
+            } else {
+                None
             }
-        }
-    }
-
-    if let Some(first_missing) = arguments.iter().position(Option::is_none) {
-        // As in PyTorch's generated parser, a supplied prefix is type-checked
-        // before a missing suffix is reported. Later keywords are not examined
-        // when the first required argument is absent.
-        for (name, argument) in NAMES.iter().zip(arguments.iter()).take(first_missing) {
-            parse_promote_types_operand(
-                name,
-                argument
-                    .as_ref()
-                    .expect("arguments preceding the first gap are present"),
-            )?;
-        }
-        let missing = &NAMES[first_missing..];
-        let quoted_names = missing
-            .iter()
-            .map(|name| format!("\"{name}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let argument = if missing.len() == 1 {
-            "arguments"
         } else {
-            "argument"
+            None
         };
-        return Err(PyTypeError::new_err(format!(
-            "promote_types() missing {} required positional {argument}: {quoted_names}",
-            missing.len()
-        )));
+
+        let Some(argument) = argument else {
+            // PyTorch reports the complete remaining schema suffix even when
+            // a later argument in that suffix was supplied by keyword.
+            let missing = &NAMES[index..];
+            let quoted_names = missing
+                .iter()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let argument = if missing.len() == 1 {
+                "arguments"
+            } else {
+                "argument"
+            };
+            return Err(PyTypeError::new_err(format!(
+                "promote_types() missing {} required positional {argument}: {quoted_names}",
+                missing.len()
+            )));
+        };
+        operands[index] = Some(parse_promote_types_operand(name, &argument)?);
     }
 
     Ok((
-        arguments.map(|argument| {
-            argument.expect("all required promote_types arguments were bound above")
+        operands.map(|operand| {
+            operand.expect("all required promote_types operands were bound and parsed above")
         }),
         consumed_keywords,
     ))

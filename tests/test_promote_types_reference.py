@@ -177,6 +177,53 @@ class PromoteTypesReferenceTests(unittest.TestCase):
             mode_observation(reference_torch),
         )
 
+    def test_operand_validation_precedes_later_keyword_lookup_in_pytorch_2_13(
+        self,
+    ):
+        def observation(module, positional):
+            events = []
+
+            class Operand:
+                pass
+
+            class MutatingKeyword(str):
+                __hash__ = str.__hash__
+
+                def __eq__(self, other):
+                    events.append("keyword equality")
+
+                    @classmethod
+                    def override(cls, func, types, args=(), kwargs=None):
+                        events.append("override dispatch")
+                        return module.float32
+
+                    Operand.__torch_function__ = override
+                    return super().__eq__(other)
+
+            operand = Operand()
+            key = MutatingKeyword("type2")
+            try:
+                if positional:
+                    result = module.promote_types(
+                        operand, **{key: module.float32}
+                    )
+                else:
+                    result = module.promote_types(
+                        type1=operand, **{key: module.float32}
+                    )
+            except Exception as error:
+                outcome = (type(error).__name__, str(error))
+            else:
+                outcome = ("result", result is module.float32)
+            return outcome, tuple(events)
+
+        for form, positional in (("positional", True), ("keyword", False)):
+            with self.subTest(form=form):
+                actual = observation(torch, positional)
+                expected = observation(reference_torch, positional)
+                self.assertEqual(actual, expected)
+                self.assertEqual(actual[1], ())
+
     def operand_override_observation(self, module):
         marker = object()
 
