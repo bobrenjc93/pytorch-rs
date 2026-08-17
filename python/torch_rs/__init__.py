@@ -12,17 +12,28 @@ def _restore_tensor_to_descriptor():
     return Tensor.to
 
 
-def _reduce_method_descriptor(descriptor):
+_method_descriptor_type = type(Tensor.to)
+_previous_method_descriptor_reducer = _copyreg.dispatch_table.get(
+    _method_descriptor_type
+)
+
+
+def _reduce_method_descriptor(
+    descriptor, _previous_reducer=_previous_method_descriptor_reducer
+):
     if descriptor is Tensor.to:
         return _restore_tensor_to_descriptor, ()
+    if _previous_reducer is not None:
+        return _previous_reducer(descriptor)
     return descriptor.__reduce__()
 
 
 # TensorBase must retain PyTorch's public ``torch._C`` ownership metadata, but
 # this package intentionally does not replace the top-level ``torch`` module.
 # Give the newly exposed descriptor an importable package-local pickle path
-# while leaving every other built-in method descriptor's reducer unchanged.
-_copyreg.pickle(type(Tensor.to), _reduce_method_descriptor)
+# while delegating every other method descriptor to the reducer that was active
+# before importing torch-rs.
+_copyreg.pickle(_method_descriptor_type, _reduce_method_descriptor)
 
 # PyTorch's built-in variable functions reduce through owners in ``torch._C``.
 # Expose the native extension under the equivalent package-local name so those
@@ -129,4 +140,10 @@ from . import nn as nn
 from . import overrides as overrides
 from . import utils as utils
 
-del _copyreg, _native, _sys
+del (
+    _copyreg,
+    _method_descriptor_type,
+    _native,
+    _previous_method_descriptor_reducer,
+    _sys,
+)

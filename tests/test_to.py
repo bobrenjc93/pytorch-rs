@@ -2,6 +2,8 @@ import copy
 import inspect
 import pickle
 import re
+import subprocess
+import sys
 import types
 import unittest
 
@@ -231,6 +233,52 @@ class TensorToTests(unittest.TestCase):
                     pickle.loads(pickle.dumps(descriptor, protocol=protocol)),
                     descriptor,
                 )
+
+    def test_import_preserves_a_preexisting_method_descriptor_reducer(self):
+        source = r'''
+import copyreg
+import inspect
+import pickle
+
+method_descriptor_type = type(str.upper)
+calls = []
+
+
+def rebuild(name):
+    return "previous reducer", name
+
+
+def previous_reducer(descriptor):
+    calls.append(descriptor)
+    return rebuild, (descriptor.__name__,)
+
+
+copyreg.pickle(method_descriptor_type, previous_reducer)
+
+import torch_rs
+
+assert copyreg.dispatch_table[method_descriptor_type] is not previous_reducer
+assert pickle.loads(pickle.dumps(str.upper, protocol=5)) == (
+    "previous reducer",
+    "upper",
+)
+assert calls == [str.upper]
+
+tensor_to = inspect.getattr_static(torch_rs.Tensor, "to")
+assert pickle.loads(pickle.dumps(tensor_to, protocol=5)) is tensor_to
+assert calls == [str.upper]
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_unbound_no_argument_errors_match_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
