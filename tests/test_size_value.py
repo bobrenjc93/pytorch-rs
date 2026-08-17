@@ -7,6 +7,7 @@ import subprocess
 import sys
 import textwrap
 import unittest
+import warnings
 
 import numpy as np
 import torch_rs as torch
@@ -125,7 +126,6 @@ class SizeValueTests(unittest.TestCase):
         )
 
         invalid = (
-            (np.bool_(True), "numpy.bool"),
             (1.5, "float"),
             ("1", "str"),
             (None, "NoneType"),
@@ -141,6 +141,19 @@ class SizeValueTests(unittest.TestCase):
                     "torch.Size() takes an iterable of 'int' "
                     f"(item 1 is '{type_name}')",
                 )
+
+        numpy_boolean = np.bool_(True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            try:
+                indexed_boolean = operator.index(numpy_boolean)
+            except TypeError:
+                with self.assertRaises(TypeError):
+                    torch.Size([numpy_boolean])
+            else:
+                normalized_boolean = torch.Size([numpy_boolean])
+                self.assertEqual(normalized_boolean, (indexed_boolean,))
+                self.assertIs(type(normalized_boolean[0]), int)
 
         for item in (2**63, -(2**63) - 1, 2**100, np.uint64(2**63)):
             with self.subTest(item=repr(item)):
@@ -271,6 +284,25 @@ assert type(value[1]) is int
             msg=completed.stdout + completed.stderr,
         )
 
+    def test_numpy_integer_indexing_is_deferred_until_numeric_use(self):
+        calls = []
+
+        class DeferredIndex(np.int64):
+            def __index__(self):
+                calls.append("index")
+                raise RuntimeError("deferred NumPy index")
+
+        dimension = DeferredIndex(7)
+        value = torch.Size([dimension])
+        self.assertIs(value[0], dimension)
+        self.assertEqual(calls, [])
+
+        for operation in (lambda: repr(value), value.numel):
+            with self.subTest(operation=operation):
+                with self.assertRaisesRegex(RuntimeError, "^deferred NumPy index$"):
+                    operation()
+        self.assertEqual(calls, ["index", "index"])
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
     def test_large_size_allocation_failures_raise_memory_error(self):
         script = textwrap.dedent(
@@ -282,7 +314,7 @@ assert type(value[1]) is int
             import torch_rs as torch
 
             mode = sys.argv[1]
-            if mode == "construct":
+            if mode in {"reserve", "tuple"}:
                 source = (1,) * 4_000_000
             else:
                 value = torch.Size((-(2**63),) * 1_000_000)
@@ -290,24 +322,34 @@ assert type(value[1]) is int
             with open("/proc/self/statm", encoding="ascii") as statm:
                 virtual_pages = int(statm.read().split()[0])
             current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
-            limit = current_virtual_size + 12 * 1024 * 1024
+            allowance = {
+                "reserve": 12,
+                "tuple": 40,
+                "repr_reserve": 12,
+                "unicode": 40,
+            }[mode]
+            limit = current_virtual_size + allowance * 1024 * 1024
             _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
             if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
                 raise SystemExit(77)
             resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
 
             try:
-                if mode == "construct":
+                if mode in {"reserve", "tuple"}:
                     torch.Size(source)
                 else:
                     repr(value)
-            except MemoryError:
-                pass
+            except MemoryError as error:
+                message = str(error)
+                if mode == "tuple":
+                    assert message != "unable to allocate torch.Size dimensions", message
+                if mode == "unicode":
+                    assert message != "unable to allocate torch.Size representation", message
             else:
                 raise AssertionError(f"constrained {mode} unexpectedly succeeded")
             """
         )
-        for mode in ("construct", "repr"):
+        for mode in ("reserve", "tuple", "repr_reserve", "unicode"):
             with self.subTest(mode=mode):
                 completed = subprocess.run(
                     [sys.executable, "-c", script, mode],

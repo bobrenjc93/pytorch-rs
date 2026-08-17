@@ -137,11 +137,27 @@ class SizeValueReferenceTests(unittest.TestCase):
                 calls.append("invalid")
                 return object()
 
-        results = tuple(
-            self.outcome(lambda value=value: module.Size([value]))
-            for value in (RaisingNumpyInteger(3), InvalidNumpyInteger(4))
-        )
-        return results, calls
+        results = []
+        for value in (RaisingNumpyInteger(3), InvalidNumpyInteger(4)):
+            try:
+                size = module.Size([value])
+            except Exception as error:
+                construction = "error", type(error).__name__, str(error)
+                later_operations = None
+            else:
+                construction = (
+                    "return",
+                    type(size) is module.Size,
+                    len(size),
+                    size[0] is value,
+                    tuple(calls),
+                )
+                later_operations = (
+                    self.scalar_outcome(lambda: repr(size)),
+                    self.scalar_outcome(size.numel),
+                )
+            results.append((construction, later_operations))
+        return tuple(results), calls
 
     def test_numpy_integer_index_overrides_match_pytorch_2_13(self):
         self.assertEqual(
@@ -187,6 +203,32 @@ class SizeValueReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.type_name_contract(torch),
             self.type_name_contract(reference_torch),
+        )
+
+    def native_type_name_contract(self, module):
+        values = (
+            module.tensor([1.0]),
+            module.float32,
+            module.device("cpu"),
+            module.preserve_format,
+            module.strided,
+            module.Size([1]),
+        )
+        return (
+            tuple(
+                self.outcome(lambda value=value: module.Size([value]))
+                for value in values
+            ),
+            tuple(
+                self.outcome(lambda value=value: module.Size([1]) + value)
+                for value in values
+            ),
+        )
+
+    def test_native_type_names_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.native_type_name_contract(torch),
+            self.native_type_name_contract(reference_torch),
         )
 
     def operation_contract(self, module):

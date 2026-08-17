@@ -10,6 +10,8 @@ use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAny, PyBool, PyDict, PyInt, PyString, PyTuple, PyType};
 
+use crate::python::native_pytorch_type_name;
+
 static SIZE_TYPE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 const NUMEL_DOC: &CStr = c"\nnumel() -> int\n\nReturns the number of elements a :class:`torch.Tensor` with the given size would contain.\n";
@@ -40,9 +42,27 @@ fn type_object_name<'a>(value_type: &'a Bound<'_, PyType>) -> PyResult<&'a CStr>
 
 fn python_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     let value_type = value.get_type();
-    let name = type_object_name(&value_type)?
-        .to_str()
-        .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))?;
+    let native_name = native_pytorch_type_name(value);
+    let cpython_name = type_object_name(&value_type)?;
+    let name = native_name
+        .or_else(|| {
+            if !is_immutable_type(&value_type) {
+                return None;
+            }
+            match cpython_name.to_bytes() {
+                b"torch_rs.layout" => Some("torch.layout"),
+                b"torch_rs.Size" => Some("torch.Size"),
+                _ => None,
+            }
+        })
+        .map_or_else(
+            || {
+                cpython_name
+                    .to_str()
+                    .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))
+            },
+            Ok,
+        )?;
     let mut output = String::new();
     output
         .try_reserve_exact(name.len())
@@ -107,6 +127,15 @@ fn is_native_immutable_type(value_type: &Bound<'_, PyType>) -> bool {
     flags & ffi::Py_TPFLAGS_IMMUTABLETYPE != 0 && flags & ffi::Py_TPFLAGS_HEAPTYPE == 0
 }
 
+#[allow(
+    unsafe_code,
+    reason = "PyType_GetFlags reads immutable flags from a live type through the stable ABI"
+)]
+fn is_immutable_type(value_type: &Bound<'_, PyType>) -> bool {
+    // SAFETY: value_type is a live Python type object for the duration of the call.
+    (unsafe { ffi::PyType_GetFlags(value_type.as_type_ptr()) }) & ffi::Py_TPFLAGS_IMMUTABLETYPE != 0
+}
+
 fn has_numpy_integer_ancestry(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
     // Calling type's base descriptor bypasses any metaclass override of
     // __getattribute__, and __mro__ itself is immutable.
@@ -138,6 +167,40 @@ fn number_index<'py>(py: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<Bou
     }
 }
 
+#[allow(
+    unsafe_code,
+    reason = "PyTuple_New and PyTuple_SetItem provide fallible tuple construction through the stable ABI"
+)]
+fn fallible_tuple_from_iter(
+    py: Python<'_>,
+    values: impl ExactSizeIterator<Item = Py<PyAny>>,
+) -> PyResult<Bound<'_, PyTuple>> {
+    let length = ffi::Py_ssize_t::try_from(values.len())
+        .map_err(|_| PyMemoryError::new_err("torch.Size tuple is too large"))?;
+    // SAFETY: PyTuple_New returns a new reference or sets a Python exception.
+    let tuple = unsafe {
+        Bound::<PyAny>::from_owned_ptr_or_err(py, ffi::PyTuple_New(length))?
+            .cast_into::<PyTuple>()?
+    };
+    let mut position = 0;
+    for value in values {
+        // SAFETY: tuple is a new, uniquely owned tuple and position remains in
+        // the exact-size iterator's declared range. PyTuple_SetItem steals the
+        // value reference even when it reports an error.
+        let status = unsafe { ffi::PyTuple_SetItem(tuple.as_ptr(), position, value.into_ptr()) };
+        if status == -1 {
+            return Err(PyErr::fetch(py));
+        }
+        position += 1;
+    }
+    if position != length {
+        return Err(PyRuntimeError::new_err(
+            "torch.Size tuple iterator changed length during construction",
+        ));
+    }
+    Ok(tuple)
+}
+
 fn normalized_dimension(
     py: Python<'_>,
     value: &Bound<'_, PyAny>,
@@ -147,7 +210,6 @@ fn normalized_dimension(
         return Ok(value.clone().unbind());
     }
     if has_numpy_integer_ancestry(py, value)? {
-        number_index(py, value)?;
         return Ok(value.clone().unbind());
     }
     let Ok(integer) = number_index(py, value) else {
@@ -200,7 +262,7 @@ fn size_new(
             position,
         )?);
     }
-    let normalized = PyTuple::new(py, normalized)?;
+    let normalized = fallible_tuple_from_iter(py, normalized.into_iter())?;
     tuple_new_for_subtype(py, subtype, &normalized)
 }
 
@@ -224,7 +286,8 @@ fn tuple_new_for_subtype(
             ));
         }
         let tuple_new: ffi::newfunc = std::mem::transmute(slot);
-        let arguments = PyTuple::new(py, [values])?;
+        let arguments =
+            fallible_tuple_from_iter(py, [values.clone().into_any().unbind()].into_iter())?;
         Bound::<PyAny>::from_owned_ptr_or_err(
             py,
             tuple_new(
@@ -265,7 +328,9 @@ fn size_repr(py: Python<'_>, value: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>> 
         .try_reserve("])".len())
         .map_err(|_| PyMemoryError::new_err("unable to allocate torch.Size representation"))?;
     representation.push_str("])");
-    Ok(PyString::new(py, &representation).into_any().unbind())
+    Ok(PyString::from_bytes(py, representation.as_bytes())?
+        .into_any()
+        .unbind())
 }
 
 fn size_concat(
@@ -332,9 +397,16 @@ fn size_numel(py: Python<'_>, value: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>>
 
 fn size_reduce(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let dimensions = tuple_from_value(py, value)?;
-    let arguments = PyTuple::new(py, [dimensions.into_any()])?;
-    PyTuple::new(py, [value.get_type().into_any(), arguments.into_any()])
-        .map(|reduction| reduction.into_any().unbind())
+    let arguments = fallible_tuple_from_iter(py, [dimensions.into_any().unbind()].into_iter())?;
+    fallible_tuple_from_iter(
+        py,
+        [
+            value.get_type().into_any().unbind(),
+            arguments.into_any().unbind(),
+        ]
+        .into_iter(),
+    )
+    .map(|reduction| reduction.into_any().unbind())
 }
 
 #[allow(
@@ -511,7 +583,10 @@ fn create_size_type(py: Python<'_>) -> PyResult<Py<PyAny>> {
         flags,
         slots: slots.as_mut_ptr(),
     };
-    let bases = PyTuple::new(py, [py.get_type::<PyTuple>()])?;
+    let bases = fallible_tuple_from_iter(
+        py,
+        [py.get_type::<PyTuple>().into_any().unbind()].into_iter(),
+    )?;
 
     // SAFETY: the terminated slot table remains live for the call, the method
     // table is leaked for the type lifetime, every callback uses the matching

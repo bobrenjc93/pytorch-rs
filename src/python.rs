@@ -8335,7 +8335,7 @@ fn cpython_type_name_with(
     try_string_from_str_with(name, allocation)
 }
 
-fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'static str> {
+pub(crate) fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'static str> {
     if value.is_exact_instance_of::<PyTensor>() {
         Some("Tensor")
     } else if value.is_exact_instance_of::<PyDType>() {
