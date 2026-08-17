@@ -430,12 +430,12 @@ class TopLevelMulTests(unittest.TestCase):
         self.assertEqual(torch.__all__.count("mul"), 1)
         self.assertNotIn("_VariableFunctionsClass", torch.__all__)
         self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
-        self.assertFalse(hasattr(torch, "multiply"))
-        self.assertNotIn("multiply", torch.__all__)
+        self.assertIsNot(torch.multiply, function)
+        self.assertEqual(torch.__all__.count("multiply"), 1)
         wildcard_namespace = {}
         exec("from torch_rs import *", wildcard_namespace)
         self.assertIs(wildcard_namespace["mul"], function)
-        self.assertNotIn("multiply", wildcard_namespace)
+        self.assertIs(wildcard_namespace["multiply"], torch.multiply)
 
 
 if __name__ == "__main__":
