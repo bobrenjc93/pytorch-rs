@@ -1314,15 +1314,10 @@ pub(crate) fn promote_types_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let ([type1, type2], remaining_keywords) = bind_promote_types_arguments(args, kwargs)?;
-    let promoted = parse_promote_types_dtype("type1", &type1)?;
-    let other = parse_promote_types_dtype("type2", &type2)?;
+    let type1 = parse_promote_types_operand("type1", &type1)?;
+    let type2 = parse_promote_types_operand("type2", &type2)?;
     validate_promote_types_keywords(args.len(), remaining_keywords.as_ref())?;
-
-    // Float32 is the complete supported dtype set, so two validated dtype
-    // arguments are necessarily identical. Preserve that narrow boundary
-    // instead of introducing a promotion table before another dtype exists.
-    debug_assert_eq!(promoted, other);
-    dispatch_promote_types(py, promoted, args, kwargs)
+    dispatch_promote_types(py, &type1, &type2, args, kwargs)
 }
 
 fn multiplication_variable_function(
@@ -1388,6 +1383,11 @@ enum BoundTensorOrTorchFunction<'py> {
 enum BoundMulOperand<'py> {
     Tensor(Bound<'py, PyTensor>),
     Scalar(Bound<'py, PyAny>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundPromoteTypesOperand<'py> {
+    DType(DType),
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
@@ -1511,10 +1511,17 @@ fn call_torch_function_handler(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let kwargs = kwargs.map_or_else(|| py.None(), |kwargs| kwargs.clone().into_any().unbind());
-    Ok(handler
-        .call1((function.clone_ref(py), types.clone(), args.clone(), kwargs))?
-        .unbind())
+    let result = if let Some(kwargs) = kwargs {
+        handler.call1((
+            function.clone_ref(py),
+            types.clone(),
+            args.clone(),
+            kwargs.clone(),
+        ))?
+    } else {
+        handler.call1((function.clone_ref(py), types.clone(), args.clone()))?
+    };
+    Ok(result.unbind())
 }
 
 fn is_not_implemented(py: Python<'_>, result: &Py<PyAny>) -> bool {
@@ -1882,12 +1889,14 @@ fn torch_function_dispatch_error_for_overrides(
 
 fn dispatch_promote_types(
     py: Python<'_>,
-    promoted: DType,
+    type1: &BoundPromoteTypesOperand<'_>,
+    type2: &BoundPromoteTypesOperand<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if torch_function_mode_stack::is_empty() {
-        return Ok(dtype_object(py, promoted)?.clone_ref(py).into_any());
+    let overrides = ordered_promote_types_overrides(type1, type2)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_promote_types(py, type1, type2);
     }
 
     let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
@@ -1899,28 +1908,63 @@ fn dispatch_promote_types(
         .bind(py)
         .getattr("promote_types")?
         .unbind();
-    let types = PyTuple::empty(py);
+    let dispatch_types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
 
     // Generated variable functions validate their schema before dispatch and
     // disable the top mode for the complete attempt. Explicit forwarding from
-    // a mode therefore reaches the next mode, then the native singleton path.
+    // a mode therefore reaches the next mode, operand overrides, then the
+    // native singleton path.
     let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
         let handler = mode.bind(py).getattr("__torch_function__")?;
-        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &dispatch_types, args, kwargs)?;
         if !is_not_implemented(py, &result) {
             return Ok(result);
         }
-        return Err(torch_function_dispatch_error(
-            py,
-            "torch.promote_types",
-            Some(mode),
-            None,
-        )?);
     }
 
-    Ok(dtype_object(py, promoted)?.clone_ref(py).into_any())
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &dispatch_types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_promote_types(py, type1, type2);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.promote_types",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_promote_types(
+    py: Python<'_>,
+    type1: &BoundPromoteTypesOperand<'_>,
+    type2: &BoundPromoteTypesOperand<'_>,
+) -> PyResult<Py<PyAny>> {
+    let (BoundPromoteTypesOperand::DType(type1), BoundPromoteTypesOperand::DType(type2)) =
+        (type1, type2)
+    else {
+        unreachable!("promote_types overrides were dispatched before the native path")
+    };
+
+    // Float32 is the complete supported dtype set, so two validated dtype
+    // arguments are necessarily identical. Preserve that narrow boundary
+    // instead of introducing a promotion table before another dtype exists.
+    debug_assert_eq!(type1, type2);
+    Ok(dtype_object(py, *type1)?.clone_ref(py).into_any())
 }
 
 fn dispatch_positive(
@@ -2461,6 +2505,25 @@ fn ordered_matmul_overrides<'py>(
         BoundTensorOrTorchFunction::Tensor(_) => None,
     };
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
+}
+
+fn ordered_promote_types_overrides<'py>(
+    type1: &BoundPromoteTypesOperand<'py>,
+    type2: &BoundPromoteTypesOperand<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let type1 = match type1 {
+        BoundPromoteTypesOperand::Override(probed) => Some(probed),
+        BoundPromoteTypesOperand::DType(_) => None,
+    };
+    let type2 = match type2 {
+        BoundPromoteTypesOperand::Override(probed) => Some(probed),
+        BoundPromoteTypesOperand::DType(_) => None,
+    };
+    ordered_binary_overrides(
+        type1,
+        type2,
+        "unable to allocate promote_types dispatch operands",
+    )
 }
 
 fn ordered_multiplication_overrides<'py>(
@@ -7266,7 +7329,7 @@ fn bind_promote_types_arguments<'py>(
         // before a missing suffix is reported. Later keywords are not examined
         // when the first required argument is absent.
         for (name, argument) in NAMES.iter().zip(arguments.iter()).take(first_missing) {
-            parse_promote_types_dtype(
+            parse_promote_types_operand(
                 name,
                 argument
                     .as_ref()
@@ -7339,9 +7402,15 @@ fn validate_promote_types_keywords(
     Err(PyTypeError::new_err(message))
 }
 
-fn parse_promote_types_dtype(name: &str, argument: &ParsedCallArgument<'_>) -> PyResult<DType> {
+fn parse_promote_types_operand<'py>(
+    name: &str,
+    argument: &ParsedCallArgument<'py>,
+) -> PyResult<BoundPromoteTypesOperand<'py>> {
     if let Ok(dtype) = argument.value.cast::<PyDType>() {
-        return Ok(dtype.try_borrow()?.inner());
+        return Ok(BoundPromoteTypesOperand::DType(dtype.try_borrow()?.inner()));
+    }
+    if let Some(probed) = probe_torch_function_override(&argument.value) {
+        return Ok(BoundPromoteTypesOperand::Override(probed));
     }
 
     let position = argument

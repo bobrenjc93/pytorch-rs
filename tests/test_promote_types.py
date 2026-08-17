@@ -164,6 +164,194 @@ class PromoteTypesTests(unittest.TestCase):
             self.assertEqual(tuple(kwargs), ("type2", "type1"))
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
+    def test_operand_torch_function_overrides_receive_all_call_forms(self):
+        marker = object()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        forms = (
+            (
+                "first positional",
+                lambda value: torch.promote_types(value, torch.float32),
+                ("override", "dtype"),
+                None,
+            ),
+            (
+                "second positional",
+                lambda value: torch.promote_types(torch.float32, value),
+                ("dtype", "override"),
+                None,
+            ),
+            (
+                "first keyword",
+                lambda value: torch.promote_types(
+                    type1=value, type2=torch.float32
+                ),
+                (),
+                (("type1", "override"), ("type2", "dtype")),
+            ),
+            (
+                "second keyword",
+                lambda value: torch.promote_types(
+                    type1=torch.float32, type2=value
+                ),
+                (),
+                (("type1", "dtype"), ("type2", "override")),
+            ),
+            (
+                "mixed",
+                lambda value: torch.promote_types(torch.float32, type2=value),
+                ("dtype",),
+                (("type2", "override"),),
+            ),
+            (
+                "reversed keywords",
+                lambda value: torch.promote_types(
+                    type2=value, type1=torch.float32
+                ),
+                (),
+                (("type2", "override"), ("type1", "dtype")),
+            ),
+        )
+        for case, call, expected_args, expected_kwargs in forms:
+            value = Override()
+            Override.calls = []
+            self.assertIs(call(value), marker)
+            self.assertEqual(len(Override.calls), 1)
+            function, dispatch_types, args, kwargs = Override.calls[0]
+            observed_args = tuple(
+                "override" if argument is value else "dtype" for argument in args
+            )
+            observed_kwargs = (
+                None
+                if kwargs is None
+                else tuple(
+                    (
+                        key,
+                        "override" if argument is value else "dtype",
+                    )
+                    for key, argument in kwargs.items()
+                )
+            )
+            with self.subTest(case=case):
+                self.assertIs(function, torch.promote_types)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertEqual(observed_args, expected_args)
+                self.assertEqual(observed_kwargs, expected_kwargs)
+
+    def test_override_order_mode_fallthrough_and_decline_errors(self):
+        marker = object()
+        events = []
+
+        class Left:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("left", func, types, args, kwargs))
+                return NotImplemented
+
+        class Right:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("right", func, types, args, kwargs))
+                return marker
+
+        self.assertIs(torch.promote_types(Left(), Right()), marker)
+        self.assertEqual([event[0] for event in events], ["left", "right"])
+        for _, function, dispatch_types, args, kwargs in events:
+            self.assertIs(function, torch.promote_types)
+            self.assertEqual(dispatch_types, (Left, Right))
+            self.assertIsInstance(args[0], Left)
+            self.assertIsInstance(args[1], Right)
+            self.assertIsNone(kwargs)
+
+        events.clear()
+
+        class Base:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("base", types))
+                return marker
+
+        class Derived(Base):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("derived", types))
+                return marker
+
+        self.assertIs(torch.promote_types(Base(), Derived()), marker)
+        self.assertEqual(events, [("derived", (Derived, Base))])
+
+        events.clear()
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("override", types, args, kwargs))
+                return marker
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(("mode", types, args, kwargs))
+                return NotImplemented
+
+        value = Override()
+        with DecliningMode():
+            self.assertIs(torch.promote_types(value, torch.float32), marker)
+        self.assertEqual([event[0] for event in events], ["mode", "override"])
+        for _, dispatch_types, args, kwargs in events:
+            self.assertEqual(dispatch_types, (Override,))
+            self.assertIs(args[0], value)
+            self.assertIs(args[1], torch.float32)
+            self.assertIsNone(kwargs)
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaises(TypeError) as raised:
+            torch.promote_types(DecliningOverride(), torch.float32)
+        self.assertEqual(
+            str(raised.exception),
+            "Multiple dispatch failed for 'torch.promote_types'; all "
+            "__torch_function__ handlers returned NotImplemented:\n\n"
+            f"  - tensor subclass <class '{DecliningOverride.__module__}."
+            f"{DecliningOverride.__qualname__}'>\n\n"
+            "For more information, try re-running with "
+            "TORCH_LOGS=not_implemented",
+        )
+
+    def test_torch_function_handler_arity_preserves_absent_and_empty_kwargs(self):
+        marker = object()
+
+        class StrictMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=()):
+                return marker
+
+        with StrictMode():
+            self.assertIs(
+                torch.promote_types(torch.float32, torch.float32), marker
+            )
+        with StrictMode():
+            with self.assertRaises(TypeError):
+                torch.promote_types(torch.float32, torch.float32, **{})
+
+        class StrictOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=()):
+                return marker
+
+        value = StrictOverride()
+        self.assertIs(torch.promote_types(value, torch.float32), marker)
+        with self.assertRaises(TypeError):
+            torch.promote_types(value, torch.float32, **{})
+
     def test_modes_run_after_validation_and_match_decline_errors(self):
         class RecordingMode(torch.overrides.TorchFunctionMode):
             def __init__(self):

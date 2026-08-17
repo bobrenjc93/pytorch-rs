@@ -155,6 +155,263 @@ class PromoteTypesReferenceTests(unittest.TestCase):
             mode_observation(reference_torch),
         )
 
+    def operand_override_observation(self, module):
+        marker = object()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        forms = (
+            lambda value: module.promote_types(value, module.float32),
+            lambda value: module.promote_types(module.float32, value),
+            lambda value: module.promote_types(
+                type1=value, type2=module.float32
+            ),
+            lambda value: module.promote_types(
+                type1=module.float32, type2=value
+            ),
+            lambda value: module.promote_types(module.float32, type2=value),
+            lambda value: module.promote_types(
+                type2=value, type1=module.float32
+            ),
+        )
+        calls = []
+        for call in forms:
+            value = Override()
+            Override.calls = []
+            result = call(value)
+            function, dispatch_types, args, kwargs = Override.calls[0]
+            calls.append(
+                (
+                    result is marker,
+                    len(Override.calls),
+                    function is module.promote_types,
+                    tuple(dispatch_type.__name__ for dispatch_type in dispatch_types),
+                    tuple(
+                        "override" if argument is value else "dtype"
+                        for argument in args
+                    ),
+                    None
+                    if kwargs is None
+                    else tuple(
+                        (
+                            key,
+                            "override" if argument is value else "dtype",
+                        )
+                        for key, argument in kwargs.items()
+                    ),
+                )
+            )
+
+        events = []
+
+        class Left:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("left", types))
+                return NotImplemented
+
+        class Right:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("right", types))
+                return marker
+
+        distinct_result = module.promote_types(Left(), Right())
+        distinct = (
+            distinct_result is marker,
+            tuple(
+                (
+                    label,
+                    tuple(dispatch_type.__name__ for dispatch_type in dispatch_types),
+                )
+                for label, dispatch_types in events
+            ),
+        )
+
+        events.clear()
+
+        class Same:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(tuple(
+                    dispatch_type.__name__ for dispatch_type in types
+                ))
+                return marker
+
+        same_result = module.promote_types(Same(), Same())
+        same = (same_result is marker, tuple(events))
+
+        events.clear()
+
+        class Base:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("base", types))
+                return marker
+
+        class Derived(Base):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("derived", types))
+                return marker
+
+        subclass_result = module.promote_types(Base(), Derived())
+        subclass = (
+            subclass_result is marker,
+            tuple(
+                (
+                    label,
+                    tuple(dispatch_type.__name__ for dispatch_type in dispatch_types),
+                )
+                for label, dispatch_types in events
+            ),
+        )
+
+        events.clear()
+
+        class FallingOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("override", types, kwargs))
+                return marker
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(("mode", types, kwargs))
+                return NotImplemented
+
+        with DecliningMode():
+            fallthrough_result = module.promote_types(
+                FallingOverride(), module.float32
+            )
+        fallthrough = (
+            fallthrough_result is marker,
+            tuple(
+                (
+                    label,
+                    tuple(dispatch_type.__name__ for dispatch_type in dispatch_types),
+                    kwargs,
+                )
+                for label, dispatch_types, kwargs in events
+            ),
+        )
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        try:
+            module.promote_types(DecliningOverride(), module.float32)
+        except Exception as error:
+            decline = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            decline = None
+
+        mode = DecliningMode()
+        try:
+            with mode:
+                module.promote_types(DecliningOverride(), module.float32)
+        except Exception as error:
+            mode_decline = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            mode_decline = None
+
+        return {
+            "calls": tuple(calls),
+            "distinct": distinct,
+            "same": same,
+            "subclass": subclass,
+            "fallthrough": fallthrough,
+            "decline": decline,
+            "mode_decline": mode_decline,
+            "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+        }
+
+    def test_operand_torch_function_overrides_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.operand_override_observation(torch),
+            self.operand_override_observation(reference_torch),
+        )
+
+    def handler_arity_observation(self, module):
+        marker = object()
+
+        class StrictMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=()):
+                return marker
+
+        def observe_mode(call):
+            try:
+                with StrictMode():
+                    result = call()
+            except Exception as error:
+                return (type(error).__name__, str(error))
+            return ("result", result is marker)
+
+        mode = (
+            observe_mode(
+                lambda: module.promote_types(module.float32, module.float32)
+            ),
+            observe_mode(
+                lambda: module.promote_types(
+                    module.float32, module.float32, **{}
+                )
+            ),
+            observe_mode(
+                lambda: module.promote_types(
+                    type1=module.float32, type2=module.float32
+                )
+            ),
+        )
+
+        class StrictOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=()):
+                return marker
+
+        value = StrictOverride()
+
+        def observe_override(call):
+            try:
+                result = call()
+            except Exception as error:
+                return (type(error).__name__, str(error))
+            return ("result", result is marker)
+
+        override = (
+            observe_override(
+                lambda: module.promote_types(value, module.float32)
+            ),
+            observe_override(
+                lambda: module.promote_types(value, module.float32, **{})
+            ),
+            observe_override(
+                lambda: module.promote_types(
+                    type1=value, type2=module.float32
+                )
+            ),
+        )
+        return {"mode": mode, "override": override}
+
+    def test_handler_arity_matches_absent_and_empty_kwargs_in_pytorch_2_13(self):
+        self.assertEqual(
+            self.handler_arity_observation(torch),
+            self.handler_arity_observation(reference_torch),
+        )
+
     def mode_observation(self, module):
         marker = object()
 
@@ -286,6 +543,14 @@ class PromoteTypesReferenceTests(unittest.TestCase):
             def __hash__(self):
                 return 1
 
+        class ValidationOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                raise AssertionError("invalid calls must not dispatch")
+
+        actual_override = ValidationOverride()
+        expected_override = ValidationOverride()
+
         cases = (
             (
                 lambda: torch.promote_types(),
@@ -316,6 +581,38 @@ class PromoteTypesReferenceTests(unittest.TestCase):
             (
                 lambda: torch.promote_types(actual, None),
                 lambda: reference_torch.promote_types(expected, None),
+            ),
+            (
+                lambda: torch.promote_types(actual_override, 1),
+                lambda: reference_torch.promote_types(expected_override, 1),
+            ),
+            (
+                lambda: torch.promote_types(1, actual_override),
+                lambda: reference_torch.promote_types(1, expected_override),
+            ),
+            (
+                lambda: torch.promote_types(actual_override),
+                lambda: reference_torch.promote_types(expected_override),
+            ),
+            (
+                lambda: torch.promote_types(type2=actual_override),
+                lambda: reference_torch.promote_types(type2=expected_override),
+            ),
+            (
+                lambda: torch.promote_types(
+                    actual_override, actual, extra=True
+                ),
+                lambda: reference_torch.promote_types(
+                    expected_override, expected, extra=True
+                ),
+            ),
+            (
+                lambda: torch.promote_types(
+                    actual_override, type1=actual, type2=actual
+                ),
+                lambda: reference_torch.promote_types(
+                    expected_override, type1=expected, type2=expected
+                ),
             ),
             (
                 lambda: torch.promote_types(type1=1, type2=actual),
