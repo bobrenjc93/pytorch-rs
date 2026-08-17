@@ -167,6 +167,25 @@ pub(crate) struct PyTensorBase;
 
 #[pymethods]
 impl PyTensorBase {
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nshape() -> torch.Size\n\nReturns the size of the :attr:`self` tensor. Alias for :attr:`size`.\n\nSee also :meth:`Tensor.size`.\n\nExample::\n\n    >>> t = torch.empty(3, 4, 5)\n    >>> t.size()\n    torch.Size([3, 4, 5])\n    >>> t.shape\n    torch.Size([3, 4, 5])\n\n"]
+    #[getter]
+    fn shape(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("shape"))?
+        {
+            return Ok(result);
+        }
+
+        let dimensions = {
+            let tensor = tensor.try_borrow()?;
+            PyTuple::new(slf.py(), tensor.inner.shape().iter().copied())?
+        };
+        construct_size(slf.py(), dimensions.as_any())
+    }
+
     #[getter]
     fn layout(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
         let tensor = slf.as_any().cast::<PyTensor>()?;
@@ -2922,11 +2941,6 @@ impl PyTensor {
     #[classattr]
     fn __array_priority__() -> f64 {
         1000.0
-    }
-
-    #[getter]
-    fn shape<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyTuple>> {
-        PyTuple::new(py, self.inner.shape().iter().copied())
     }
 
     /// Alias for [`Tensor.dim()`](https://pytorch.org/docs/stable/generated/torch.Tensor.dim.html).
