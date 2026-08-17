@@ -236,6 +236,20 @@ except Exception as error:
 else:
     declining_error = None
 
+nested_declining = RecordingMode(NotImplemented)
+nested_lower = RecordingMode(marker)
+def call_from_python_wrapper():
+    return tensor.const_data_ptr()
+
+try:
+    with nested_lower:
+        with nested_declining:
+            call_from_python_wrapper()
+except Exception as error:
+    nested_declining_error = [type(error).__name__, str(error)]
+else:
+    nested_declining_error = None
+
 print(json.dumps({
     "intercepted": intercepted is marker,
     "call_count": len(recording.calls),
@@ -252,6 +266,9 @@ print(json.dumps({
     "declining_error": declining_error,
     "declining_calls": len(declining.calls),
     "lower_skipped": len(lower.calls) == 0,
+    "nested_declining_error": nested_declining_error,
+    "nested_declining_calls": len(nested_declining.calls),
+    "nested_lower_skipped": len(nested_lower.calls) == 0,
     "stack_depth": len(module.overrides._get_current_function_mode_stack()),
 }))
 '''

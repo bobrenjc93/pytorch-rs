@@ -1638,15 +1638,15 @@ fn torch_function_descriptor_caller(py: Python<'_>) -> PyResult<&'static Py<PyAn
 
 #[allow(
     unsafe_code,
-    reason = "CPython 3.10 TensorBase parity requires matching PyTorch's recursive subclass-dispatch accounting"
+    reason = "CPython 3.10 and 3.11 TensorBase parity requires matching PyTorch's recursive subclass-dispatch accounting"
 )]
-fn redispatch_const_data_ptr_mode_python_310(
+fn redispatch_const_data_ptr_mode_legacy(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
     initial_redispatch: bool,
 ) -> PyResult<Option<Py<PyAny>>> {
-    // PyTorch's generated Python 3.10 fallback retains two recursion entries
-    // per retry, plus two entries belonging to the initial
+    // PyTorch's generated Python 3.10 and 3.11 fallback retains two recursion
+    // entries per retry, plus two entries belonging to the initial
     // mode-to-Tensor.__torch_function__ transition. The direct Rust redispatch
     // below skips those frames, so account for them explicitly.
     let recursion_entries = if initial_redispatch { 4 } else { 2 };
@@ -1678,14 +1678,33 @@ fn redispatch_const_data_ptr_mode_python_310(
 
 #[allow(
     unsafe_code,
-    reason = "CPython 3.10 TensorBase parity requires probing the recursive subclass-dispatch boundary"
+    reason = "CPython 3.10 and 3.11 TensorBase parity requires probing both recursive dispatch boundaries"
 )]
-fn probe_const_data_ptr_handler_recursion_python_310(py: Python<'_>) -> PyResult<()> {
-    if unsafe { ffi::Py_EnterRecursiveCall(c" in __subclasscheck__".as_ptr()) } != 0 {
+fn probe_const_data_ptr_handler_recursion_legacy(py: Python<'_>) -> PyResult<Option<PyErr>> {
+    let (first_context, second_context) = if py.version_info() < (3, 11) {
+        (c" in __subclasscheck__", c" while calling a Python object")
+    } else {
+        (c" while calling a Python object", c" in __subclasscheck__")
+    };
+    if unsafe { ffi::Py_EnterRecursiveCall(first_context.as_ptr()) } != 0 {
         return Err(PyErr::fetch(py));
     }
-    unsafe { ffi::Py_LeaveRecursiveCall() };
-    Ok(())
+    if unsafe { ffi::Py_EnterRecursiveCall(second_context.as_ptr()) } != 0 {
+        let error = PyErr::fetch(py);
+        unsafe { ffi::Py_LeaveRecursiveCall() };
+        return if py.version_info() < (3, 11) {
+            Err(error)
+        } else {
+            // Python 3.11 invokes the mode handler at this boundary and only
+            // raises the subclass-check error if that handler still declines.
+            Ok(Some(error))
+        };
+    }
+    unsafe {
+        ffi::Py_LeaveRecursiveCall();
+        ffi::Py_LeaveRecursiveCall();
+    }
+    Ok(None)
 }
 
 fn dispatch_tensorbase_mode(
@@ -1700,7 +1719,7 @@ fn dispatch_tensorbase_mode_impl(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
     target: TensorBaseModeTarget,
-    python_310_const_data_ptr_redispatching: bool,
+    legacy_const_data_ptr_redispatching: bool,
 ) -> PyResult<Option<Py<PyAny>>> {
     if torch_function_mode_stack::is_empty() {
         return Ok(None);
@@ -1722,14 +1741,19 @@ fn dispatch_tensorbase_mode_impl(
     };
     validate_torch_function_mode_handler(mode.bind(py))?;
     let handler = mode.bind(py).getattr("__torch_function__")?;
-    if python_310_const_data_ptr_redispatching {
-        // Probe before invoking user code so only a guard failure receives
-        // CPython's subclass-check context; handler exceptions remain opaque.
-        probe_const_data_ptr_handler_recursion_python_310(py)?;
-    }
+    let deferred_recursion_error = if legacy_const_data_ptr_redispatching {
+        // Probe before invoking user code so only guard failures receive
+        // CPython recursion contexts; handler exceptions remain opaque.
+        probe_const_data_ptr_handler_recursion_legacy(py)?
+    } else {
+        None
+    };
     let result = call_torch_function_handler(py, &handler, &function, &types, &args, None)?;
     if !is_not_implemented(py, &result) {
         return Ok(Some(result));
+    }
+    if let Some(error) = deferred_recursion_error {
+        return Err(error);
     }
 
     // TensorBase's fallback retries the descriptor after restoring the active
@@ -1738,13 +1762,13 @@ fn dispatch_tensorbase_mode_impl(
     // that wants to reach the next mode instead calls `func(*args)` itself
     // while the current mode is disabled.
     active_mode.restore();
-    if py.version_info() < (3, 11)
+    if py.version_info() < (3, 12)
         && matches!(target, TensorBaseModeTarget::Method("const_data_ptr"))
     {
-        return redispatch_const_data_ptr_mode_python_310(
+        return redispatch_const_data_ptr_mode_legacy(
             py,
             tensor,
-            !python_310_const_data_ptr_redispatching,
+            !legacy_const_data_ptr_redispatching,
         );
     }
     // Keep the retry in a Python frame so configured `sys.setrecursionlimit`
