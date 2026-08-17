@@ -1,6 +1,7 @@
 """PyTorch-compatible public package backed by the native extension."""
 
 import copyreg as _copyreg
+import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
 import weakref as _weakref
 from math import e, inf, nan, pi
@@ -9,15 +10,10 @@ from . import torch_rs as _native
 from .torch_rs import *
 
 
-# Keep serialization independent of later rebinding of the public Tensor name.
-_tensor_to_descriptor = _native.Tensor.to
-
-
-def _restore_tensor_to_descriptor(_descriptor=_tensor_to_descriptor):
-    return _descriptor
-
-
-_method_descriptor_type = type(_tensor_to_descriptor)
+# The method-descriptor type itself is immutable and independent of any mutable
+# Tensor binding. Recover a previously validated native descriptor across
+# package reloads before consulting the live class attribute.
+_method_descriptor_type = type(str.upper)
 _registered_method_descriptor_reducer = _copyreg.dispatch_table.get(
     _method_descriptor_type
 )
@@ -34,6 +30,49 @@ if (
     and _registered_method_descriptor_reducer_owner()
     is _registered_method_descriptor_reducer
 ):
+    _registered_method_descriptor_reducer_is_torch_rs = True
+else:
+    _registered_method_descriptor_reducer_is_torch_rs = False
+
+
+def _is_tensor_to_descriptor(candidate):
+    return (
+        type(candidate) is _method_descriptor_type
+        and getattr(candidate, "__name__", None) == "to"
+        and getattr(candidate, "__objclass__", None) in _native.Tensor.__mro__
+    )
+
+
+_tensor_to_descriptor = getattr(
+    _native,
+    "_torch_rs_canonical_tensor_to_descriptor",
+    None,
+)
+if (
+    not _is_tensor_to_descriptor(_tensor_to_descriptor)
+    and _registered_method_descriptor_reducer_is_torch_rs
+):
+    _tensor_to_descriptor = getattr(
+        _registered_method_descriptor_reducer,
+        "_torch_rs_tensor_to_descriptor",
+        None,
+    )
+if not _is_tensor_to_descriptor(_tensor_to_descriptor):
+    _tensor_to_descriptor = _native.Tensor.to
+if not _is_tensor_to_descriptor(_tensor_to_descriptor):
+    raise RuntimeError("torch-rs native Tensor.to descriptor is unavailable")
+setattr(
+    _native,
+    "_torch_rs_canonical_tensor_to_descriptor",
+    _tensor_to_descriptor,
+)
+
+
+def _restore_tensor_to_descriptor(_descriptor=_tensor_to_descriptor):
+    return _descriptor
+
+
+if _registered_method_descriptor_reducer_is_torch_rs:
     _previous_method_descriptor_reducer = getattr(
         _registered_method_descriptor_reducer,
         "_torch_rs_previous_method_descriptor_reducer",
@@ -69,7 +108,65 @@ _reduce_method_descriptor._torch_rs_method_descriptor_reducer_owner = (
 _reduce_method_descriptor._torch_rs_previous_method_descriptor_reducer = (
     _previous_method_descriptor_reducer
 )
+_reduce_method_descriptor._torch_rs_tensor_to_descriptor = (
+    _tensor_to_descriptor
+)
 _copyreg.pickle(_method_descriptor_type, _reduce_method_descriptor)
+
+_forking_pickler = _multiprocessing_reduction.ForkingPickler
+_registered_forking_method_descriptor_reducer = (
+    _forking_pickler._extra_reducers.get(_method_descriptor_type)
+)
+_registered_forking_method_descriptor_reducer_owner = getattr(
+    _registered_forking_method_descriptor_reducer,
+    "_torch_rs_method_descriptor_reducer_owner",
+    None,
+)
+if (
+    isinstance(
+        _registered_forking_method_descriptor_reducer_owner,
+        _weakref.ReferenceType,
+    )
+    and _registered_forking_method_descriptor_reducer_owner()
+    is _registered_forking_method_descriptor_reducer
+):
+    _previous_forking_method_descriptor_reducer = getattr(
+        _registered_forking_method_descriptor_reducer,
+        "_torch_rs_previous_method_descriptor_reducer",
+        _registered_forking_method_descriptor_reducer,
+    )
+else:
+    _previous_forking_method_descriptor_reducer = (
+        _registered_forking_method_descriptor_reducer
+    )
+
+
+def _reduce_forking_method_descriptor(
+    descriptor,
+    _previous_reducer=_previous_forking_method_descriptor_reducer,
+    _tensor_to_descriptor=_tensor_to_descriptor,
+    _restore_descriptor=_restore_tensor_to_descriptor,
+):
+    if descriptor is _tensor_to_descriptor:
+        return _restore_descriptor, ()
+    if _previous_reducer is not None:
+        return _previous_reducer(descriptor)
+    return descriptor.__reduce__()
+
+
+_reduce_forking_method_descriptor._torch_rs_method_descriptor_reducer_owner = (
+    _weakref.ref(_reduce_forking_method_descriptor)
+)
+_reduce_forking_method_descriptor._torch_rs_previous_method_descriptor_reducer = (
+    _previous_forking_method_descriptor_reducer
+)
+_reduce_forking_method_descriptor._torch_rs_tensor_to_descriptor = (
+    _tensor_to_descriptor
+)
+_forking_pickler.register(
+    _method_descriptor_type,
+    _reduce_forking_method_descriptor,
+)
 
 # PyTorch's built-in variable functions reduce through owners in ``torch._C``.
 # Expose the native extension under the equivalent package-local name so those
@@ -178,10 +275,17 @@ from . import utils as utils
 
 del (
     _copyreg,
+    _forking_pickler,
+    _is_tensor_to_descriptor,
     _method_descriptor_type,
+    _multiprocessing_reduction,
     _native,
+    _previous_forking_method_descriptor_reducer,
     _previous_method_descriptor_reducer,
+    _registered_forking_method_descriptor_reducer,
+    _registered_forking_method_descriptor_reducer_owner,
     _registered_method_descriptor_reducer,
+    _registered_method_descriptor_reducer_is_torch_rs,
     _registered_method_descriptor_reducer_owner,
     _sys,
     _tensor_to_descriptor,

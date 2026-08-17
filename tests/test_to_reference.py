@@ -1,5 +1,6 @@
 import copy
 import inspect
+import multiprocessing.reduction as multiprocessing_reduction
 import pickle
 import re
 import types
@@ -191,6 +192,25 @@ class TensorToReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.callable_contract(torch),
             self.callable_contract(reference_torch),
+        )
+
+    def multiprocessing_pickle_contract(self, module):
+        descriptor = inspect.getattr_static(module.Tensor, "to")
+        return tuple(
+            pickle.loads(
+                multiprocessing_reduction.ForkingPickler.dumps(
+                    descriptor,
+                    protocol=protocol,
+                )
+            )
+            is descriptor
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+        )
+
+    def test_multiprocessing_pickling_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.multiprocessing_pickle_contract(torch),
+            self.multiprocessing_pickle_contract(reference_torch),
         )
 
     def error_contract(self, module):

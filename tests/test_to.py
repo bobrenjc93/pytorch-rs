@@ -1,5 +1,8 @@
 import copy
+import concurrent.futures
 import inspect
+import multiprocessing
+import multiprocessing.reduction as multiprocessing_reduction
 import pickle
 import re
 import subprocess
@@ -8,6 +11,10 @@ import types
 import unittest
 
 import torch_rs as torch
+
+
+def _is_canonical_tensor_to_descriptor(descriptor):
+    return descriptor is inspect.getattr_static(torch.Tensor, "to")
 
 
 METHOD_DOC = """
@@ -234,6 +241,30 @@ class TensorToTests(unittest.TestCase):
                     descriptor,
                 )
 
+    def test_multiprocessing_pickler_preserves_descriptor_identity(self):
+        descriptor = inspect.getattr_static(torch.Tensor, "to")
+        for candidate in (descriptor, str.upper):
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(candidate=candidate, protocol=protocol):
+                    payload = multiprocessing_reduction.ForkingPickler.dumps(
+                        candidate,
+                        protocol=protocol,
+                    )
+                    self.assertIs(pickle.loads(payload), candidate)
+
+    def test_spawn_process_receives_the_canonical_descriptor(self):
+        descriptor = inspect.getattr_static(torch.Tensor, "to")
+        context = multiprocessing.get_context("spawn")
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=1,
+            mp_context=context,
+        ) as executor:
+            future = executor.submit(
+                _is_canonical_tensor_to_descriptor,
+                descriptor,
+            )
+            self.assertIs(future.result(timeout=30), True)
+
     def test_rebinding_public_tensor_does_not_affect_descriptor_reducers(self):
         source = r'''
 import copy
@@ -252,6 +283,66 @@ for descriptor in (str.upper, tensor_to):
     assert copy.deepcopy(descriptor) is descriptor
     for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
         assert pickle.loads(pickle.dumps(descriptor, protocol=protocol)) is descriptor
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
+    def test_reload_while_tensor_to_is_patched_keeps_canonical_reducers(self):
+        source = r'''
+import copyreg
+import importlib
+import inspect
+import multiprocessing.reduction
+import pickle
+import types
+
+import torch_rs
+
+tensor_type = torch_rs.Tensor
+tensor_to = inspect.getattr_static(tensor_type, "to")
+method_descriptor_type = type(tensor_to)
+function_type = types.FunctionType
+copyreg_function_reducer = copyreg.dispatch_table.get(function_type)
+forking_function_reducer = (
+    multiprocessing.reduction.ForkingPickler._extra_reducers.get(function_type)
+)
+
+tensor_type.to = lambda self: self
+try:
+    torch_rs = importlib.reload(torch_rs)
+finally:
+    tensor_type.to = tensor_to
+
+assert copyreg.dispatch_table.get(function_type) is copyreg_function_reducer
+assert (
+    multiprocessing.reduction.ForkingPickler._extra_reducers.get(function_type)
+    is forking_function_reducer
+)
+
+copyreg_reducer = copyreg.dispatch_table[method_descriptor_type]
+assert copyreg_reducer._torch_rs_tensor_to_descriptor is tensor_to
+forking_reducer = (
+    multiprocessing.reduction.ForkingPickler._extra_reducers[
+        method_descriptor_type
+    ]
+)
+assert forking_reducer._torch_rs_tensor_to_descriptor is tensor_to
+
+assert pickle.loads(pickle.dumps(tensor_to, protocol=5)) is tensor_to
+payload = multiprocessing.reduction.ForkingPickler.dumps(
+    tensor_to,
+    protocol=5,
+)
+assert pickle.loads(payload) is tensor_to
 '''
         completed = subprocess.run(
             [sys.executable, "-c", source],
