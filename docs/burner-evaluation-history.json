@@ -3025,6 +3025,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:202",
+      "recordedAt": "2026-08-17T02:53:07.344Z",
+      "label": "PR #202",
+      "kind": "leaf",
+      "prNumber": 202,
+      "title": "Fast-path contiguous trailing-vector broadcasts",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 70.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 50.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }
