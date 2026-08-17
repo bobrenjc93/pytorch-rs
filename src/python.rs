@@ -947,27 +947,19 @@ impl PyTensorBase {
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
-        let [source, destination] = bind_movedim_arguments(args, kwargs)?;
-        let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) = dispatch_tensorbase_method_mode(
-            slf.py(),
-            tensor,
-            "movedim",
-            "torch.Tensor.movedim",
-            args,
-            kwargs,
-        )? {
-            return Ok(result);
-        }
+        dimension_move_tensor_method(DimensionMoveOperation::Movedim, slf, args, kwargs)
+    }
 
-        let [source, destination] = parse_dimension_swap_dimensions(
-            "movedim",
-            ["source", "destination"],
-            &source,
-            &destination,
-        )?;
-        let inner = movedim_tensor(&tensor.try_borrow()?.inner, source, destination)?;
-        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nmoveaxis(source, destination) -> Tensor\n\nSee :func:`torch.moveaxis`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn moveaxis(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        dimension_move_tensor_method(DimensionMoveOperation::Moveaxis, slf, args, kwargs)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1176,6 +1168,35 @@ pub(crate) fn moveaxis_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     dimension_move_variable_function(DimensionMoveOperation::Moveaxis, py, args, kwargs)
+}
+
+fn dimension_move_tensor_method(
+    operation: DimensionMoveOperation,
+    slf: &Bound<'_, PyTensorBase>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let [source, destination] = bind_movedim_arguments(operation, args, kwargs)?;
+    let tensor = slf.as_any().cast::<PyTensor>()?;
+    if let Some(result) = dispatch_tensorbase_method_mode(
+        slf.py(),
+        tensor,
+        operation.name(),
+        operation.tensor_qualified_name(),
+        args,
+        kwargs,
+    )? {
+        return Ok(result);
+    }
+
+    let [source, destination] = parse_dimension_swap_dimensions(
+        operation.name(),
+        ["source", "destination"],
+        &source,
+        &destination,
+    )?;
+    let inner = movedim_tensor(&tensor.try_borrow()?.inner, source, destination)?;
+    Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
 }
 
 fn dimension_move_variable_function(
@@ -6821,32 +6842,38 @@ impl DimensionMoveOperation {
             Self::Moveaxis => "torch.moveaxis",
         }
     }
+
+    const fn tensor_qualified_name(self) -> &'static str {
+        match self {
+            Self::Movedim => "torch.Tensor.movedim",
+            Self::Moveaxis => "torch.Tensor.moveaxis",
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
 enum MovedimCallKind {
-    TensorMethod,
+    TensorMethod(DimensionMoveOperation),
     VariableFunction(DimensionMoveOperation),
 }
 
 impl MovedimCallKind {
     const fn operation(self) -> DimensionMoveOperation {
         match self {
-            Self::TensorMethod => DimensionMoveOperation::Movedim,
-            Self::VariableFunction(operation) => operation,
+            Self::TensorMethod(operation) | Self::VariableFunction(operation) => operation,
         }
     }
 
     const fn integer_signature(self) -> &'static str {
         match self {
-            Self::TensorMethod => "(int source, int destination)",
+            Self::TensorMethod(_) => "(int source, int destination)",
             Self::VariableFunction(_) => "(Tensor input, int source, int destination)",
         }
     }
 
     const fn sequence_signature(self) -> &'static str {
         match self {
-            Self::TensorMethod => "(tuple of ints source, tuple of ints destination)",
+            Self::TensorMethod(_) => "(tuple of ints source, tuple of ints destination)",
             Self::VariableFunction(_) => {
                 "(Tensor input, tuple of ints source, tuple of ints destination)"
             }
@@ -6855,10 +6882,11 @@ impl MovedimCallKind {
 }
 
 fn bind_movedim_arguments<'py>(
+    operation: DimensionMoveOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<[ParsedCallArgument<'py>; 2]> {
-    let kind = MovedimCallKind::TensorMethod;
+    let kind = MovedimCallKind::TensorMethod(operation);
     let names = ["source", "destination"];
     let arguments = bind_movedim_call_arguments(
         positional,
@@ -6923,7 +6951,7 @@ fn bind_movedim_call_arguments<'py, const N: usize>(
             ))
         })?;
     let error_names = match kind {
-        MovedimCallKind::TensorMethod => &["source", "destination"][..],
+        MovedimCallKind::TensorMethod(_) => &["source", "destination"][..],
         MovedimCallKind::VariableFunction(_) => &["input", "source", "destination"][..],
     };
     if positional.len() > N || argument_count != N {
@@ -7138,7 +7166,7 @@ fn movedim_invalid_type_mismatch(
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<String> {
     let names = match kind {
-        MovedimCallKind::TensorMethod => &["source", "destination"][..],
+        MovedimCallKind::TensorMethod(_) => &["source", "destination"][..],
         MovedimCallKind::VariableFunction(_) => &["input", "source", "destination"][..],
     };
     let mut mismatch = try_string_from_str_with(
