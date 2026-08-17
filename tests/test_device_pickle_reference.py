@@ -36,24 +36,43 @@ class DevicePickleReferenceTests(unittest.TestCase):
         )
 
     def contract(self, module):
-        cpu = module.device("cpu")
-        copies = (copy.copy(cpu), copy.deepcopy(cpu))
-        pickle_results = []
-        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-            restored = pickle.loads(pickle.dumps(cpu, protocol=protocol))
-            pickle_results.append(self.normalized_device(restored, cpu))
+        devices = (
+            module.device("cpu"),
+            module.device("cpu", 0),
+            module.device("cpu:7"),
+            module.device(type="cpu", index=127),
+        )
+        contracts = []
+        for original in devices:
+            copies = (copy.copy(original), copy.deepcopy(original))
+            pickle_results = []
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                restored = pickle.loads(
+                    pickle.dumps(original, protocol=protocol)
+                )
+                pickle_results.append(
+                    self.normalized_device(restored, original)
+                )
 
-        return {
-            "reduce": self.normalized_reduction(module, cpu.__reduce__()),
-            "reduce_ex": tuple(
-                self.normalized_reduction(module, cpu.__reduce_ex__(protocol))
-                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
-            ),
-            "copies": tuple(
-                self.normalized_device(value, cpu) for value in copies
-            ),
-            "pickle_results": tuple(pickle_results),
-        }
+            contracts.append(
+                {
+                    "reduce": self.normalized_reduction(
+                        module, original.__reduce__()
+                    ),
+                    "reduce_ex": tuple(
+                        self.normalized_reduction(
+                            module, original.__reduce_ex__(protocol)
+                        )
+                        for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+                    ),
+                    "copies": tuple(
+                        self.normalized_device(value, original)
+                        for value in copies
+                    ),
+                    "pickle_results": tuple(pickle_results),
+                }
+            )
+        return tuple(contracts)
 
     def test_cpu_device_pickle_and_copy_match_pytorch_2_13(self):
         self.assertEqual(

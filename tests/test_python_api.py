@@ -506,6 +506,7 @@ class PythonApiBaselineTests(unittest.TestCase):
     def test_cpu_device_constructor_value_repr_and_equality(self):
         cpu = torch.device("cpu")
         copied = torch.device(cpu)
+        indexed = torch.device("cpu", 3)
 
         self.assertIsInstance(cpu, torch.device)
         self.assertEqual(cpu, copied)
@@ -516,12 +517,33 @@ class PythonApiBaselineTests(unittest.TestCase):
         self.assertEqual(str(cpu), "cpu")
         self.assertEqual(repr(cpu), "device(type='cpu')")
         self.assertEqual(torch.device(type="cpu"), cpu)
+        self.assertEqual(indexed, torch.device("cpu:3"))
+        self.assertEqual(indexed, torch.device(type="cpu", index=3))
+        self.assertEqual(indexed, torch.device("cpu", index=3))
+        self.assertEqual(indexed, torch.device(device=indexed))
+        self.assertNotEqual(indexed, cpu)
+        self.assertEqual(indexed.type, "cpu")
+        self.assertEqual(indexed.index, 3)
+        self.assertEqual(str(indexed), "cpu:3")
+        self.assertEqual(repr(indexed), "device(type='cpu', index=3)")
 
     def test_device_constructor_rejects_unsupported_values_and_types(self):
-        for specification in ("cuda", "meta", "cpu:0", "CPU", ""):
+        for specification in ("cuda", "meta", "CPU"):
             with self.subTest(specification=specification):
                 with self.assertRaisesRegex(RuntimeError, "only 'cpu' is implemented"):
                     torch.device(specification)
+
+        for specification in ("", "cpu:01", "cpu:-1", "cpu:"):
+            with self.subTest(specification=specification):
+                with self.assertRaises(RuntimeError):
+                    torch.device(specification)
+
+        with self.assertRaisesRegex(RuntimeError, "Device index must not be negative"):
+            torch.device("cpu", -1)
+        for index in (True, 1.5, object()):
+            with self.subTest(index=index):
+                with self.assertRaises(TypeError):
+                    torch.device("cpu", index)
 
         for specification in (object(), 0, b"cpu", torch.float32):
             with self.subTest(specification=specification):
@@ -544,6 +566,9 @@ class PythonApiBaselineTests(unittest.TestCase):
             (torch.float, "cpu"),
             (None, torch.device("cpu")),
             (torch.float32, torch.device("cpu")),
+            (None, "cpu:2"),
+            (torch.float32, torch.device("cpu", 3)),
+            (None, torch.device(type="cpu", index=4)),
         )
 
         for name, create, shape, values in creators:
@@ -610,7 +635,7 @@ class PythonApiBaselineTests(unittest.TestCase):
             2,
             3,
             dtype=torch.float,
-            device=torch.device("cpu"),
+            device=torch.device("cpu", 2),
         )
         self.assertEqual(tensor.tolist(), [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
         self.assertIs(tensor.dtype, torch.float32)
@@ -620,7 +645,7 @@ class PythonApiBaselineTests(unittest.TestCase):
             with self.subTest(argument="dtype", value=dtype):
                 with self.assertRaises(TypeError):
                     torch.eye(1, dtype=dtype)
-        for device in ("cuda", "meta", "mps", "cpu:0"):
+        for device in ("cuda", "meta", "mps", "cpu:01"):
             with self.subTest(argument="device", value=device):
                 with self.assertRaises(RuntimeError):
                     torch.eye(1, device=device)
@@ -761,7 +786,7 @@ class PythonApiBaselineTests(unittest.TestCase):
                     with self.assertRaises(TypeError):
                         create(device=device)
 
-    def test_creation_rejects_every_unimplemented_device(self):
+    def test_creation_rejects_unimplemented_or_invalid_devices(self):
         creators = (
             lambda **kw: torch.tensor(1.0, **kw),
             lambda **kw: torch.zeros((), **kw),
@@ -769,7 +794,7 @@ class PythonApiBaselineTests(unittest.TestCase):
             lambda **kw: torch.full((), 2.0, **kw),
         )
         for create in creators:
-            for device in ("cuda", "meta", "mps", "cpu:0"):
+            for device in ("cuda", "meta", "mps", "cpu:01"):
                 with self.subTest(device=device):
                     with self.assertRaises(RuntimeError):
                         create(device=device)
