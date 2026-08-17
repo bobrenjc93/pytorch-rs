@@ -1158,8 +1158,25 @@ pub(crate) fn movedim_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let (input, [source, destination]) = bind_top_level_movedim_arguments(args, kwargs)?;
-    dispatch_top_level_movedim(py, &input, &source, &destination, args, kwargs)
+    dimension_move_variable_function(DimensionMoveOperation::Movedim, py, args, kwargs)
+}
+
+pub(crate) fn moveaxis_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    dimension_move_variable_function(DimensionMoveOperation::Moveaxis, py, args, kwargs)
+}
+
+fn dimension_move_variable_function(
+    operation: DimensionMoveOperation,
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, [source, destination]) = bind_top_level_movedim_arguments(operation, args, kwargs)?;
+    dispatch_top_level_movedim(operation, py, &input, &source, &destination, args, kwargs)
 }
 
 pub(crate) fn matmul_variable_function(
@@ -1718,6 +1735,7 @@ fn dispatch_adjoint(
 }
 
 fn dispatch_top_level_movedim(
+    operation: DimensionMoveOperation,
     py: Python<'_>,
     input: &BoundTensorOrTorchFunction<'_>,
     source: &ParsedCallArgument<'_>,
@@ -1728,13 +1746,19 @@ fn dispatch_top_level_movedim(
     if torch_function_mode_stack::is_empty()
         && let BoundTensorOrTorchFunction::Tensor(tensor) = input
     {
-        return apply_top_level_movedim(py, tensor, source, destination);
+        return apply_top_level_movedim(operation, py, tensor, source, destination);
     }
 
     let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err("torch.movedim was called before module initialization completed")
+        PyRuntimeError::new_err(format!(
+            "{} was called before module initialization completed",
+            operation.qualified_name()
+        ))
     })?;
-    let function = variable_functions.bind(py).getattr("movedim")?.unbind();
+    let function = variable_functions
+        .bind(py)
+        .getattr(operation.name())?
+        .unbind();
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(probed) => {
@@ -1764,7 +1788,7 @@ fn dispatch_top_level_movedim(
             }
             Err(torch_function_dispatch_error(
                 py,
-                "torch.movedim",
+                operation.qualified_name(),
                 active_mode.get(),
                 Some(probed.dispatch_type.as_unbound()),
             )?)
@@ -1773,24 +1797,29 @@ fn dispatch_top_level_movedim(
             if active_mode.get().is_some() {
                 return Err(torch_function_dispatch_error(
                     py,
-                    "torch.movedim",
+                    operation.qualified_name(),
                     active_mode.get(),
                     None,
                 )?);
             }
-            apply_top_level_movedim(py, tensor, source, destination)
+            apply_top_level_movedim(operation, py, tensor, source, destination)
         }
     }
 }
 
 fn apply_top_level_movedim(
+    operation: DimensionMoveOperation,
     py: Python<'_>,
     input: &Bound<'_, PyTensor>,
     source: &ParsedCallArgument<'_>,
     destination: &ParsedCallArgument<'_>,
 ) -> PyResult<Py<PyAny>> {
-    let [source, destination] =
-        parse_dimension_swap_dimensions("movedim", ["source", "destination"], source, destination)?;
+    let [source, destination] = parse_dimension_swap_dimensions(
+        operation.name(),
+        ["source", "destination"],
+        source,
+        destination,
+    )?;
     let inner = movedim_tensor(&input.try_borrow()?.inner, source, destination)?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
@@ -6703,23 +6732,52 @@ fn multiply_invalid_keyword_mismatch(
 }
 
 #[derive(Clone, Copy)]
+enum DimensionMoveOperation {
+    Movedim,
+    Moveaxis,
+}
+
+impl DimensionMoveOperation {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Movedim => "movedim",
+            Self::Moveaxis => "moveaxis",
+        }
+    }
+
+    const fn qualified_name(self) -> &'static str {
+        match self {
+            Self::Movedim => "torch.movedim",
+            Self::Moveaxis => "torch.moveaxis",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 enum MovedimCallKind {
     TensorMethod,
-    VariableFunction,
+    VariableFunction(DimensionMoveOperation),
 }
 
 impl MovedimCallKind {
+    const fn operation(self) -> DimensionMoveOperation {
+        match self {
+            Self::TensorMethod => DimensionMoveOperation::Movedim,
+            Self::VariableFunction(operation) => operation,
+        }
+    }
+
     const fn integer_signature(self) -> &'static str {
         match self {
             Self::TensorMethod => "(int source, int destination)",
-            Self::VariableFunction => "(Tensor input, int source, int destination)",
+            Self::VariableFunction(_) => "(Tensor input, int source, int destination)",
         }
     }
 
     const fn sequence_signature(self) -> &'static str {
         match self {
             Self::TensorMethod => "(tuple of ints source, tuple of ints destination)",
-            Self::VariableFunction => {
+            Self::VariableFunction(_) => {
                 "(Tensor input, tuple of ints source, tuple of ints destination)"
             }
         }
@@ -6748,13 +6806,14 @@ fn bind_movedim_arguments<'py>(
 }
 
 fn bind_top_level_movedim_arguments<'py>(
+    operation: DimensionMoveOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<(
     BoundTensorOrTorchFunction<'py>,
     [ParsedCallArgument<'py>; 2],
 )> {
-    let kind = MovedimCallKind::VariableFunction;
+    let kind = MovedimCallKind::VariableFunction(operation);
     let names = ["input", "source", "destination"];
     let [input, source, destination] = bind_movedim_call_arguments(
         positional,
@@ -6787,10 +6846,15 @@ fn bind_movedim_call_arguments<'py, const N: usize>(
     let argument_count = positional
         .len()
         .checked_add(keywords.map_or(0, PyDictMethods::len))
-        .ok_or_else(|| PyMemoryError::new_err("movedim argument count overflowed"))?;
+        .ok_or_else(|| {
+            PyMemoryError::new_err(format!(
+                "{} argument count overflowed",
+                kind.operation().name()
+            ))
+        })?;
     let error_names = match kind {
         MovedimCallKind::TensorMethod => &["source", "destination"][..],
-        MovedimCallKind::VariableFunction => &["input", "source", "destination"][..],
+        MovedimCallKind::VariableFunction(_) => &["input", "source", "destination"][..],
     };
     if positional.len() > N || argument_count != N {
         return Err(movedim_binding_error(
@@ -6920,8 +6984,10 @@ fn movedim_binding_error(
         (String::new(), String::new())
     };
 
-    let mut message = try_string_from_str_with(
-        "movedim() received an invalid combination of arguments - got (",
+    let mut message = try_string_from_str_with(kind.operation().name(), &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "() received an invalid combination of arguments - got (",
         &allocation,
     )?;
     try_push_string_with(&mut message, &summary, &allocation)?;
@@ -7003,7 +7069,7 @@ fn movedim_invalid_type_mismatch(
 ) -> PyResult<String> {
     let names = match kind {
         MovedimCallKind::TensorMethod => &["source", "destination"][..],
-        MovedimCallKind::VariableFunction => &["input", "source", "destination"][..],
+        MovedimCallKind::VariableFunction(_) => &["input", "source", "destination"][..],
     };
     let mut mismatch = try_string_from_str_with(
         "\n      didn't match because some of the arguments have invalid types: (",
@@ -7015,7 +7081,7 @@ fn movedim_invalid_type_mismatch(
         }
         let actual = transpose_type_name_with(&argument.value, allocation)?;
         let detail = call_argument_type_description_with(&argument.value, allocation)?;
-        let input = matches!(kind, MovedimCallKind::VariableFunction) && index == 0;
+        let input = matches!(kind, MovedimCallKind::VariableFunction(_)) && index == 0;
         let invalid = if input {
             actual != "Tensor"
         } else {
@@ -8394,6 +8460,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "resolve_conj",
         "permute",
         "movedim",
+        "moveaxis",
         "matmul",
     ] {
         let function = variable_functions.getattr(name)?;

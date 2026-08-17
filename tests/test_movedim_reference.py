@@ -836,10 +836,6 @@ class TensorMovedimReferenceTests(unittest.TestCase):
     def test_top_level_callable_contract_matches_pytorch_2_13(self):
         actual = self.top_level_callable_contract(torch)
         expected = self.top_level_callable_contract(reference_torch)
-        self.assertFalse(actual.pop("has_moveaxis"))
-        self.assertTrue(expected.pop("has_moveaxis"))
-        self.assertFalse(actual.pop("wildcard_has_moveaxis"))
-        self.assertTrue(expected.pop("wildcard_has_moveaxis"))
         self.assertEqual(actual, expected)
 
     def top_level_mode_contract(self, module):

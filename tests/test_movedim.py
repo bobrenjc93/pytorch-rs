@@ -508,11 +508,12 @@ class TensorMovedimTests(unittest.TestCase):
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
 
-    def test_sequence_dimensions_and_moveaxis_remain_out_of_scope(self):
+    def test_sequence_dimensions_and_tensor_moveaxis_remain_out_of_scope(self):
         tensor = torch.zeros((2, 3, 4))
         self.assertTrue(hasattr(torch, "movedim"))
-        self.assertFalse(hasattr(torch, "moveaxis"))
-        self.assertNotIn("moveaxis", torch.__all__)
+        self.assertTrue(hasattr(torch, "moveaxis"))
+        self.assertIn("moveaxis", torch.__all__)
+        self.assertFalse(hasattr(torch.Tensor, "moveaxis"))
         for source, destination in (
             ((0, 2), (2, 0)),
             ([0, 2], [2, 0]),
@@ -523,6 +524,8 @@ class TensorMovedimTests(unittest.TestCase):
                     tensor.movedim(source, destination)
                 with self.assertRaises(TypeError):
                     torch.movedim(tensor, source, destination)
+                with self.assertRaises(TypeError):
+                    torch.moveaxis(tensor, source, destination)
 
     def test_tensorbase_descriptor_metadata_and_unbound_behavior(self):
         tensor = torch.zeros((2, 3, 4))
@@ -1003,14 +1006,14 @@ class TopLevelMovedimTests(unittest.TestCase):
                 )
 
         self.assertEqual(torch.__all__.count("movedim"), 1)
-        self.assertNotIn("moveaxis", torch.__all__)
-        self.assertFalse(hasattr(torch, "moveaxis"))
+        self.assertEqual(torch.__all__.count("moveaxis"), 1)
+        self.assertTrue(hasattr(torch, "moveaxis"))
         self.assertNotIn("_VariableFunctionsClass", torch.__all__)
         self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
         wildcard_namespace = {}
         exec("from torch_rs import *", wildcard_namespace)
         self.assertIs(wildcard_namespace["movedim"], function)
-        self.assertNotIn("moveaxis", wildcard_namespace)
+        self.assertIs(wildcard_namespace["moveaxis"], torch.moveaxis)
 
 
 if __name__ == "__main__":
