@@ -15,9 +15,9 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 use crate::python::{
     adjoint_variable_function, get_device_variable_function, is_conj_variable_function,
     matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
-    mul_variable_function, permute_variable_function, positive_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
-    select_variable_function, unbind_variable_function,
+    mul_variable_function, multiply_variable_function, permute_variable_function,
+    positive_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    scalar_tensor_variable_function, select_variable_function, unbind_variable_function,
 };
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
@@ -88,6 +88,12 @@ Examples::
             [-0.1614, -0.0382,  0.1645, -0.7021],
             [ 0.0360,  0.0085, -0.0367,  0.1567],
             [ 0.4312,  0.1019, -0.4394,  1.8753]])
+";
+
+const MULTIPLY_DOC: &std::ffi::CStr = c"
+multiply(input, other, *, out=None)
+
+Alias for :func:`torch.mul`.
 ";
 
 const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
@@ -311,6 +317,7 @@ variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_funct
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
+variable_function_callback!(multiply_callback, multiply_variable_function);
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
 variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
 variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function);
@@ -351,6 +358,7 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
+        variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
         variable_function_method!(c"resolve_neg", resolve_neg_callback, RESOLVE_NEG_DOC),

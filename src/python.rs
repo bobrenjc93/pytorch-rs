@@ -937,7 +937,7 @@ impl PyTensorBase {
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<PyTensor> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        tensor.multiplication_method(MultiplicationMethod::Multiply, args, kwargs)
+        tensor.multiplication_method(MultiplicationOperation::Multiply, args, kwargs)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1297,14 +1297,35 @@ pub(crate) fn mul_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let ([input, other], keyword_error) =
-        bind_legacy_binary_arguments("mul", args, kwargs, LegacyBinaryInputKind::MulOperand)?;
-    let input = parse_mul_operand("input", &input)?;
-    let other = parse_mul_operand("other", &other)?;
+    multiplication_variable_function(MultiplicationOperation::Mul, py, args, kwargs)
+}
+
+pub(crate) fn multiply_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    multiplication_variable_function(MultiplicationOperation::Multiply, py, args, kwargs)
+}
+
+fn multiplication_variable_function(
+    operation: MultiplicationOperation,
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([input, other], keyword_error) = bind_legacy_binary_arguments(
+        operation.name(),
+        args,
+        kwargs,
+        LegacyBinaryInputKind::Multiplication(operation),
+    )?;
+    let input = parse_top_level_multiplication_operand(operation, "input", &input, args, kwargs)?;
+    let other = parse_top_level_multiplication_operand(operation, "other", &other, args, kwargs)?;
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
-    dispatch_top_level_mul(py, &input, &other, args, kwargs)
+    dispatch_top_level_multiplication(operation, py, &input, &other, args, kwargs)
 }
 
 enum ParsedFillValue {
@@ -2382,7 +2403,8 @@ fn ordered_matmul_overrides<'py>(
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
 }
 
-fn ordered_mul_overrides<'py>(
+fn ordered_multiplication_overrides<'py>(
+    operation: MultiplicationOperation,
     input: &BoundMulOperand<'py>,
     other: &BoundMulOperand<'py>,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
@@ -2394,7 +2416,7 @@ fn ordered_mul_overrides<'py>(
         BoundMulOperand::Override(probed) => Some(probed),
         BoundMulOperand::Tensor(_) | BoundMulOperand::Scalar(_) => None,
     };
-    ordered_binary_overrides(input, other, "unable to allocate mul dispatch operands")
+    ordered_binary_overrides(input, other, operation.dispatch_allocation_error())
 }
 
 fn dispatch_top_level_matmul(
@@ -2453,22 +2475,29 @@ fn dispatch_top_level_matmul(
     )?)
 }
 
-fn dispatch_top_level_mul(
+fn dispatch_top_level_multiplication(
+    operation: MultiplicationOperation,
     py: Python<'_>,
     input: &BoundMulOperand<'_>,
     other: &BoundMulOperand<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let overrides = ordered_mul_overrides(input, other)?;
+    let overrides = ordered_multiplication_overrides(operation, input, other)?;
     if torch_function_mode_stack::is_empty() && overrides.is_empty() {
-        return apply_top_level_mul(py, input, other);
+        return apply_top_level_multiplication(operation, py, input, other);
     }
 
     let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err("torch.mul was called before module initialization completed")
+        PyRuntimeError::new_err(format!(
+            "{} was called before module initialization completed",
+            operation.qualified_name()
+        ))
     })?;
-    let function = variable_functions.bind(py).getattr("mul")?.unbind();
+    let function = variable_functions
+        .bind(py)
+        .getattr(operation.name())?
+        .unbind();
     let types = PyTuple::new(
         py,
         overrides.iter().map(|probed| probed.dispatch_type.clone()),
@@ -2496,13 +2525,14 @@ fn dispatch_top_level_mul(
 
     Err(torch_function_dispatch_error_for_overrides(
         py,
-        "torch.mul",
+        operation.qualified_name(),
         active_mode.get(),
         &overrides,
     )?)
 }
 
-fn apply_top_level_mul(
+fn apply_top_level_multiplication(
+    operation: MultiplicationOperation,
     py: Python<'_>,
     input: &BoundMulOperand<'_>,
     other: &BoundMulOperand<'_>,
@@ -2518,12 +2548,13 @@ fn apply_top_level_mul(
             BinaryOperation::Multiply.apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
         }
         (BoundMulOperand::Scalar(_), BoundMulOperand::Scalar(_)) => {
-            return Err(PyTypeError::new_err(
-                "mul(): scalar-scalar multiplication is not supported; at least one operand must be Tensor",
-            ));
+            return Err(PyTypeError::new_err(format!(
+                "{}(): scalar-scalar multiplication is not supported; at least one operand must be Tensor",
+                operation.name()
+            )));
         }
         (BoundMulOperand::Override(_), _) | (_, BoundMulOperand::Override(_)) => {
-            unreachable!("mul overrides were dispatched before the native path")
+            unreachable!("multiplication overrides were dispatched before the native path")
         }
     };
     Ok(Py::new(
@@ -2621,17 +2652,31 @@ enum BinaryOperation {
     Divide,
 }
 
-#[derive(Clone, Copy)]
-enum MultiplicationMethod {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MultiplicationOperation {
     Mul,
     Multiply,
 }
 
-impl MultiplicationMethod {
+impl MultiplicationOperation {
     const fn name(self) -> &'static str {
         match self {
             Self::Mul => "mul",
             Self::Multiply => "multiply",
+        }
+    }
+
+    const fn qualified_name(self) -> &'static str {
+        match self {
+            Self::Mul => "torch.mul",
+            Self::Multiply => "torch.multiply",
+        }
+    }
+
+    const fn dispatch_allocation_error(self) -> &'static str {
+        match self {
+            Self::Mul => "unable to allocate mul dispatch operands",
+            Self::Multiply => "unable to allocate multiply dispatch operands",
         }
     }
 }
@@ -3162,7 +3207,7 @@ impl PyTensor {
     #[doc = "\nmul(value) -> Tensor\n\nSee :func:`torch.mul`.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn mul(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        self.multiplication_method(MultiplicationMethod::Mul, args, kwargs)
+        self.multiplication_method(MultiplicationOperation::Mul, args, kwargs)
     }
 
     fn __rmul__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -3227,7 +3272,7 @@ impl PyTensor {
 
     fn multiplication_method(
         &self,
-        operation: MultiplicationMethod,
+        operation: MultiplicationOperation,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
@@ -3242,11 +3287,11 @@ impl PyTensor {
             .is_some_and(|result| matches!(result, Ok(None)))
         {
             return match operation {
-                MultiplicationMethod::Mul => {
+                MultiplicationOperation::Mul => {
                     let actual = transpose_type_name(&other.value)?;
                     Err(mul_argument_type_error(other.position, &actual))
                 }
-                MultiplicationMethod::Multiply => Err(multiply_binding_error(args, kwargs)?),
+                MultiplicationOperation::Multiply => Err(multiply_binding_error(args, kwargs)?),
             };
         }
         if let Some(keyword_error) = keyword_error {
@@ -7118,7 +7163,16 @@ fn bind_tensor_arguments<'py, const N: usize>(
 enum LegacyBinaryInputKind {
     Tensor,
     TensorOrTorchFunction,
-    MulOperand,
+    Multiplication(MultiplicationOperation),
+}
+
+impl LegacyBinaryInputKind {
+    const fn uses_multiply_overload_binding(self, argument_count: usize) -> bool {
+        matches!(
+            self,
+            Self::Multiplication(MultiplicationOperation::Multiply)
+        ) && argument_count <= 2
+    }
 }
 
 fn bind_legacy_binary_arguments<'py>(
@@ -7133,6 +7187,10 @@ fn bind_legacy_binary_arguments<'py>(
             positional.len()
         )));
     }
+    let argument_count = positional
+        .len()
+        .saturating_add(keywords.map_or(0, PyDictMethods::len));
+    let multiply_overload_binding = input_kind.uses_multiply_overload_binding(argument_count);
 
     let keyword_argument = |names: &[&str]| -> PyResult<Option<Bound<'py, PyAny>>> {
         let Some(keywords) = keywords else {
@@ -7170,6 +7228,9 @@ fn bind_legacy_binary_arguments<'py>(
     };
 
     let Some(input) = input else {
+        if multiply_overload_binding {
+            return Err(top_level_multiply_binding_error(positional, keywords)?);
+        }
         return Err(PyTypeError::new_err(format!(
             "{function}() missing 2 required positional argument: \"input\", \"other\""
         )));
@@ -7182,8 +7243,13 @@ fn bind_legacy_binary_arguments<'py>(
             LegacyBinaryInputKind::TensorOrTorchFunction => {
                 parse_tensor_or_torch_function_argument(function, "input", &input)?;
             }
-            LegacyBinaryInputKind::MulOperand => {
-                parse_mul_operand("input", &input)?;
+            LegacyBinaryInputKind::Multiplication(operation) => {
+                if multiply_overload_binding {
+                    return Err(top_level_multiply_binding_error(positional, keywords)?);
+                }
+                parse_top_level_multiplication_operand(
+                    operation, "input", &input, positional, keywords,
+                )?;
             }
         }
         return Err(PyTypeError::new_err(format!(
@@ -7362,9 +7428,12 @@ fn is_real_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
         || value.is_instance(&numpy.getattr("floating")?)?)
 }
 
-fn parse_mul_operand<'py>(
+fn parse_top_level_multiplication_operand<'py>(
+    operation: MultiplicationOperation,
     argument: &str,
     value: &ParsedCallArgument<'py>,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<BoundMulOperand<'py>> {
     if let Ok(tensor) = value.value.cast::<PyTensor>() {
         return Ok(BoundMulOperand::Tensor(tensor.clone()));
@@ -7376,8 +7445,15 @@ fn parse_mul_operand<'py>(
         return Ok(BoundMulOperand::Scalar(value.value.clone()));
     }
 
-    parse_tensor_argument("mul", argument, value)?;
-    unreachable!("unsupported mul operands were rejected by parse_tensor_argument")
+    let argument_count = positional
+        .len()
+        .saturating_add(keywords.map_or(0, PyDictMethods::len));
+    if operation == MultiplicationOperation::Multiply && argument_count <= 2 {
+        return Err(top_level_multiply_binding_error(positional, keywords)?);
+    }
+
+    parse_tensor_argument(operation.name(), argument, value)?;
+    unreachable!("unsupported multiplication operands were rejected by parse_tensor_argument")
 }
 
 fn bind_matmul_argument<'py>(
@@ -7401,7 +7477,7 @@ fn bind_matmul_argument<'py>(
 }
 
 fn bind_multiplication_argument<'py>(
-    operation: MultiplicationMethod,
+    operation: MultiplicationOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
@@ -7419,7 +7495,7 @@ fn bind_multiplication_argument<'py>(
         ));
     }
 
-    if matches!(operation, MultiplicationMethod::Multiply) {
+    if matches!(operation, MultiplicationOperation::Multiply) {
         if positional.len() == 1 && keywords.is_none_or(PyDictMethods::is_empty) {
             return Ok((
                 ParsedCallArgument {
@@ -7538,6 +7614,162 @@ fn python_integer_is_negative(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     } else {
         overflow < 0
     })
+}
+
+fn top_level_multiply_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let allocation = PythonAllocationFallback::new(positional.py());
+    let summary = call_type_summary_with(
+        positional,
+        keywords,
+        CallKeywordOrder::PyTorchUnorderedMap,
+        &allocation,
+    )?;
+    let argument_count = positional
+        .len()
+        .saturating_add(keywords.map_or(0, PyDictMethods::len));
+    let mismatch = if argument_count == 2 {
+        top_level_multiply_binding_mismatch(positional, keywords, &allocation)?
+    } else {
+        String::new()
+    };
+
+    let mut message = try_string_from_str_with(
+        "multiply() received an invalid combination of arguments - got (",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &summary, &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "), but expected one of:\n * (Tensor input, Tensor other, *, Tensor out = None)\n * (Tensor input, Number other)",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &mismatch, &allocation)?;
+    try_push_string_with(&mut message, "\n", &allocation)?;
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    let py = positional.py();
+    let message = PyString::from_bytes(py, message.as_bytes()).map_err(|_| allocation.error())?;
+    let exception = py
+        .get_type::<PyTypeError>()
+        .call1((message,))
+        .map_err(|_| allocation.error())?;
+    Ok(PyErr::from_value(exception))
+}
+
+fn top_level_multiply_binding_mismatch(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let keyword_length = keywords.map_or(0, PyDictMethods::len);
+    let mut keyword_names = try_size_vector_with(keyword_length, allocation)?;
+    if let Some(keywords) = keywords {
+        for (key, _) in keywords {
+            let key = pytorch_keyword_name(&key)?;
+            try_push_size_with(
+                &mut keyword_names,
+                (try_string_from_str_with(key, allocation)?, ()),
+                allocation,
+            )?;
+        }
+        keyword_names = pytorch_unordered_keyword_order(keyword_names, allocation)?;
+    }
+
+    let mut incorrect_keywords = try_size_vector_with(keyword_length, allocation)?;
+    for (keyword, ()) in keyword_names {
+        let fills_unbound_schema_position = match keyword.as_str() {
+            "input" => positional.is_empty(),
+            "other" => positional.len() < 2,
+            _ => false,
+        };
+        if !fills_unbound_schema_position {
+            try_push_size_with(&mut incorrect_keywords, keyword, allocation)?;
+        }
+    }
+    if !incorrect_keywords.is_empty() {
+        let mut mismatch = try_string_from_str_with(
+            "\n      didn't match because some of the keywords were incorrect: ",
+            allocation,
+        )?;
+        for (index, keyword) in incorrect_keywords.into_iter().enumerate() {
+            if index != 0 {
+                try_push_string_with(&mut mismatch, ", ", allocation)?;
+            }
+            try_push_string_with(&mut mismatch, &keyword, allocation)?;
+        }
+        return Ok(mismatch);
+    }
+
+    let mut mismatch = try_string_from_str_with(
+        "\n      didn't match because some of the arguments have invalid types: (",
+        allocation,
+    )?;
+    let mut argument_index = 0_usize;
+    for (index, value) in positional.iter().enumerate() {
+        if argument_index != 0 {
+            try_push_string_with(&mut mismatch, ", ", allocation)?;
+        }
+        let expected = if index == 0 { "Tensor" } else { "Number" };
+        push_multiply_mismatched_argument(&mut mismatch, &value, expected, None, allocation)?;
+        argument_index += 1;
+    }
+    if let Some(keywords) = keywords {
+        for (index, (keyword, expected)) in [("input", "Tensor"), ("other", "Number")]
+            .into_iter()
+            .enumerate()
+        {
+            if index < positional.len() {
+                continue;
+            }
+            let Some(value) = keywords.get_item(keyword)? else {
+                continue;
+            };
+            if argument_index != 0 {
+                try_push_string_with(&mut mismatch, ", ", allocation)?;
+            }
+            push_multiply_mismatched_argument(
+                &mut mismatch,
+                &value,
+                expected,
+                Some(keyword),
+                allocation,
+            )?;
+            argument_index += 1;
+        }
+    }
+    if positional.is_empty() && argument_index != 0 {
+        try_push_string_with(&mut mismatch, ", ", allocation)?;
+    }
+    try_push_string_with(&mut mismatch, ")", allocation)?;
+    Ok(mismatch)
+}
+
+fn push_multiply_mismatched_argument(
+    mismatch: &mut String,
+    value: &Bound<'_, PyAny>,
+    expected_type: &str,
+    keyword: Option<&str>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<()> {
+    let actual_type = transpose_type_name_with(value, allocation)?;
+    let detail = call_argument_type_description_with(value, allocation)?;
+    let invalid_type = actual_type != expected_type;
+    if invalid_type {
+        try_push_string_with(mismatch, "!", allocation)?;
+    }
+    if let Some(keyword) = keyword {
+        try_push_string_with(mismatch, keyword, allocation)?;
+        try_push_string_with(mismatch, "=", allocation)?;
+    }
+    try_push_string_with(mismatch, &detail, allocation)?;
+    if invalid_type {
+        try_push_string_with(mismatch, "!", allocation)?;
+    }
+    Ok(())
 }
 
 fn multiply_binding_error(
@@ -9421,6 +9653,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "moveaxis",
         "matmul",
         "mul",
+        "multiply",
     ] {
         let function = variable_functions.getattr(name)?;
         function.setattr("__module__", "torch")?;
