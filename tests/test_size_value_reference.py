@@ -2,6 +2,9 @@ import copy
 import inspect
 import operator
 import pickle
+import subprocess
+import sys
+import textwrap
 import unittest
 
 import numpy as np
@@ -164,6 +167,83 @@ class SizeValueReferenceTests(unittest.TestCase):
             self.numpy_index_override_contract(torch),
             self.numpy_index_override_contract(reference_torch),
         )
+
+    def lifecycle_contract(self, module):
+        released = []
+
+        class LifecycleDimension:
+            def __init__(self, position):
+                self.position = position
+
+            def __index__(self):
+                if self.position == 0:
+                    return 1
+                return len(released)
+
+            def __del__(self):
+                if self.position == 0:
+                    released.append("first")
+
+        def dimensions():
+            yield LifecycleDimension(0)
+            yield LifecycleDimension(1)
+
+        value = module.Size(dimensions())
+        return tuple(value), tuple(released)
+
+    def test_construction_lifecycle_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.lifecycle_contract(torch),
+            self.lifecycle_contract(reference_torch),
+        )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_in_place_construction_memory_matches_pytorch_2_13(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+            import sys
+
+            if sys.argv[1] == "torch_rs":
+                import torch_rs as module
+            else:
+                import torch as module
+
+            source = (1,) * 2_000_000
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 28 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            value = module.Size(source)
+            assert len(value) == 2_000_000
+            assert value[0] == 1 and value[-1] == 1
+            """
+        )
+        for module_name in ("torch_rs", "torch"):
+            with self.subTest(module=module_name):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, module_name],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=60,
+                )
+                if completed.returncode == 77:
+                    self.skipTest("process hard address-space limit is too low")
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=(
+                        f"stdout:\n{completed.stdout}\n"
+                        f"stderr:\n{completed.stderr}"
+                    ),
+                )
 
     def type_name_contract(self, module):
         metadata_reads = []
@@ -357,6 +437,24 @@ class SizeValueReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.numeric_contract(torch),
             self.numeric_contract(reference_torch),
+        )
+
+    def repeated_hash_contract(self, module):
+        calls = []
+
+        class CountingHash(int):
+            def __hash__(self):
+                calls.append("hash")
+                return super().__hash__()
+
+        value = module.Size([CountingHash(3)])
+        hashes = hash(value), hash(value)
+        return hashes, tuple(calls), hashes == (hash((3,)),) * 2
+
+    def test_repeated_hashing_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.repeated_hash_contract(torch),
+            self.repeated_hash_contract(reference_torch),
         )
 
     def pickle_contract(self, module):

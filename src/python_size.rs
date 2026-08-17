@@ -201,6 +201,26 @@ fn fallible_tuple_from_iter(
     Ok(tuple)
 }
 
+#[allow(
+    unsafe_code,
+    reason = "PyTuple_SetItem replaces a uniquely owned Size slot through the stable ABI"
+)]
+fn replace_size_item(
+    py: Python<'_>,
+    value: &Bound<'_, PyTuple>,
+    position: ffi::Py_ssize_t,
+    replacement: Py<PyAny>,
+) -> PyResult<()> {
+    // SAFETY: value is a newly allocated, uniquely owned tuple subtype and
+    // position is within its initialized item range. PyTuple_SetItem steals
+    // the replacement reference even if it reports an error.
+    let status = unsafe { ffi::PyTuple_SetItem(value.as_ptr(), position, replacement.into_ptr()) };
+    if status == -1 {
+        return Err(PyErr::fetch(py));
+    }
+    Ok(())
+}
+
 fn normalized_dimension(
     py: Python<'_>,
     value: &Bound<'_, PyAny>,
@@ -251,19 +271,20 @@ fn size_new(
         .get_type::<PyTuple>()
         .call(args, kwargs)?
         .cast_into::<PyTuple>()?;
-    let mut normalized = Vec::new();
-    normalized
-        .try_reserve_exact(values.len())
-        .map_err(|_| PyMemoryError::new_err("unable to allocate torch.Size dimensions"))?;
-    for position in 0..values.len() {
-        normalized.push(normalized_dimension(
-            py,
-            &values.get_item(position)?,
-            position,
-        )?);
+    let size = tuple_new_for_subtype(py, subtype, &values)?;
+    drop(values);
+
+    let size_tuple = size.bind(py).cast::<PyTuple>()?;
+    for position in 0..size_tuple.len() {
+        let normalized = {
+            let original = size_tuple.get_item(position)?;
+            normalized_dimension(py, &original, position)?
+        };
+        let position = ffi::Py_ssize_t::try_from(position)
+            .map_err(|_| PyMemoryError::new_err("torch.Size position exceeds platform limits"))?;
+        replace_size_item(py, size_tuple, position, normalized)?;
     }
-    let normalized = fallible_tuple_from_iter(py, normalized.into_iter())?;
-    tuple_new_for_subtype(py, subtype, &normalized)
+    Ok(size)
 }
 
 #[allow(
@@ -395,6 +416,54 @@ fn size_numel(py: Python<'_>, value: &Bound<'_, PyTuple>) -> PyResult<Py<PyAny>>
     result.into_py_any(py)
 }
 
+#[cfg(target_pointer_width = "64")]
+const TUPLE_HASH_PRIME_1: ffi::Py_uhash_t = 11_400_714_785_074_694_791;
+#[cfg(target_pointer_width = "64")]
+const TUPLE_HASH_PRIME_2: ffi::Py_uhash_t = 14_029_467_366_897_019_727;
+#[cfg(target_pointer_width = "64")]
+const TUPLE_HASH_PRIME_5: ffi::Py_uhash_t = 2_870_177_450_012_600_261;
+#[cfg(target_pointer_width = "64")]
+const TUPLE_HASH_ROTATION: u32 = 31;
+
+#[cfg(target_pointer_width = "32")]
+const TUPLE_HASH_PRIME_1: ffi::Py_uhash_t = 2_654_435_761;
+#[cfg(target_pointer_width = "32")]
+const TUPLE_HASH_PRIME_2: ffi::Py_uhash_t = 2_246_822_519;
+#[cfg(target_pointer_width = "32")]
+const TUPLE_HASH_PRIME_5: ffi::Py_uhash_t = 3_747_614_393;
+#[cfg(target_pointer_width = "32")]
+const TUPLE_HASH_ROTATION: u32 = 13;
+const TUPLE_HASH_LENGTH_MIX: ffi::Py_uhash_t = 3_527_539;
+
+#[allow(
+    unsafe_code,
+    reason = "PyObject_Hash invokes each live tuple item's hash through the stable ABI"
+)]
+fn size_hash(py: Python<'_>, value: &Bound<'_, PyTuple>) -> PyResult<ffi::Py_hash_t> {
+    let mut accumulator = TUPLE_HASH_PRIME_5;
+    for position in 0..value.len() {
+        let item = value.get_item(position)?;
+        // SAFETY: item is live for the duration of the hash call. A -1 return
+        // indicates that the item hash set a Python exception.
+        let lane = unsafe { ffi::PyObject_Hash(item.as_ptr()) };
+        if lane == -1 {
+            return Err(PyErr::fetch(py));
+        }
+        let lane = ffi::Py_uhash_t::from_ne_bytes(lane.to_ne_bytes());
+        accumulator = accumulator.wrapping_add(lane.wrapping_mul(TUPLE_HASH_PRIME_2));
+        accumulator = accumulator.rotate_left(TUPLE_HASH_ROTATION);
+        accumulator = accumulator.wrapping_mul(TUPLE_HASH_PRIME_1);
+    }
+    accumulator =
+        accumulator.wrapping_add(value.len() ^ (TUPLE_HASH_PRIME_5 ^ TUPLE_HASH_LENGTH_MIX));
+    let result = ffi::Py_hash_t::from_ne_bytes(accumulator.to_ne_bytes());
+    if result == -1 {
+        Ok(1_546_275_796)
+    } else {
+        Ok(result)
+    }
+}
+
 fn size_reduce(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let dimensions = tuple_from_value(py, value)?;
     let arguments = fallible_tuple_from_iter(py, [dimensions.into_any().unbind()].into_iter())?;
@@ -499,6 +568,19 @@ unsafe fn size_numel_callback(
     unsafe_code,
     reason = "CPython supplies a borrowed instance to the panic-safe PyO3 trampoline"
 )]
+unsafe fn size_hash_callback(
+    py: Python<'_>,
+    value: *mut ffi::PyObject,
+) -> PyResult<ffi::Py_hash_t> {
+    // SAFETY: the hash slot supplies a live Size, which is a tuple subtype.
+    let value = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, value) }.cast_into::<PyTuple>()?;
+    size_hash(py, &value)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "CPython supplies a borrowed instance to the panic-safe PyO3 trampoline"
+)]
 unsafe fn size_reduce_callback(
     py: Python<'_>,
     value: *mut ffi::PyObject,
@@ -510,9 +592,22 @@ unsafe fn size_reduce_callback(
 
 #[allow(
     unsafe_code,
-    reason = "PyType_FromSpecWithBases requires an audited stable-ABI raw-pointer call"
+    reason = "PyType_GetSlot and PyType_FromSpecWithBases require audited stable-ABI raw-pointer calls"
 )]
 fn create_size_type(py: Python<'_>) -> PyResult<Py<PyAny>> {
+    // SAFETY: the live built-in tuple type exposes a rich-comparison slot with
+    // the signature required by Py_tp_richcompare.
+    let tuple_richcompare = unsafe {
+        ffi::PyType_GetSlot(
+            py.get_type::<PyTuple>().as_type_ptr(),
+            ffi::Py_tp_richcompare,
+        )
+    };
+    if tuple_richcompare.is_null() {
+        return Err(PyRuntimeError::new_err(
+            "built-in tuple type does not expose rich comparison",
+        ));
+    }
     let methods = Box::leak(Box::new([
         pyo3::impl_::pymethods::PyMethodDef::noargs(
             c"numel",
@@ -564,6 +659,15 @@ fn create_size_type(py: Python<'_>) -> PyResult<Py<PyAny>> {
                 binaryfunc,
                 size_subscript_callback
             ) as *mut c_void,
+        },
+        ffi::PyType_Slot {
+            slot: ffi::Py_tp_hash,
+            pfunc: pyo3::impl_::trampoline::get_trampoline_function!(hashfunc, size_hash_callback)
+                as *mut c_void,
+        },
+        ffi::PyType_Slot {
+            slot: ffi::Py_tp_richcompare,
+            pfunc: tuple_richcompare,
         },
         ffi::PyType_Slot {
             slot: ffi::Py_tp_methods,

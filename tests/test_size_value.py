@@ -303,6 +303,43 @@ assert type(value[1]) is int
                     operation()
         self.assertEqual(calls, ["index", "index"])
 
+    def test_construction_releases_normalized_dimensions_in_order(self):
+        released = []
+
+        class LifecycleDimension:
+            def __init__(self, position):
+                self.position = position
+
+            def __index__(self):
+                if self.position == 0:
+                    return 1
+                return len(released)
+
+            def __del__(self):
+                if self.position == 0:
+                    released.append("first")
+
+        def dimensions():
+            yield LifecycleDimension(0)
+            yield LifecycleDimension(1)
+
+        value = torch.Size(dimensions())
+        self.assertEqual(value, (1, 1))
+        self.assertEqual(released, ["first"])
+
+    def test_hash_recomputes_retained_item_hashes(self):
+        calls = []
+
+        class CountingHash(int):
+            def __hash__(self):
+                calls.append("hash")
+                return super().__hash__()
+
+        value = torch.Size([CountingHash(3)])
+        self.assertEqual(hash(value), hash((3,)))
+        self.assertEqual(hash(value), hash((3,)))
+        self.assertEqual(calls, ["hash", "hash"])
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
     def test_large_size_allocation_failures_raise_memory_error(self):
         script = textwrap.dedent(
@@ -314,8 +351,10 @@ assert type(value[1]) is int
             import torch_rs as torch
 
             mode = sys.argv[1]
-            if mode in {"reserve", "tuple"}:
+            if mode == "construct_oom":
                 source = (1,) * 4_000_000
+            elif mode == "construct_success":
+                source = (1,) * 2_000_000
             else:
                 value = torch.Size((-(2**63),) * 1_000_000)
 
@@ -323,8 +362,8 @@ assert type(value[1]) is int
                 virtual_pages = int(statm.read().split()[0])
             current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
             allowance = {
-                "reserve": 12,
-                "tuple": 40,
+                "construct_oom": 12,
+                "construct_success": 28,
                 "repr_reserve": 12,
                 "unicode": 40,
             }[mode]
@@ -335,21 +374,30 @@ assert type(value[1]) is int
             resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
 
             try:
-                if mode in {"reserve", "tuple"}:
-                    torch.Size(source)
+                if mode in {"construct_oom", "construct_success"}:
+                    result = torch.Size(source)
                 else:
                     repr(value)
             except MemoryError as error:
+                if mode == "construct_success":
+                    raise AssertionError("in-place construction exhausted memory") from error
                 message = str(error)
-                if mode == "tuple":
-                    assert message != "unable to allocate torch.Size dimensions", message
                 if mode == "unicode":
                     assert message != "unable to allocate torch.Size representation", message
             else:
-                raise AssertionError(f"constrained {mode} unexpectedly succeeded")
+                if mode == "construct_success":
+                    assert len(result) == 2_000_000
+                    assert result[0] == 1 and result[-1] == 1
+                else:
+                    raise AssertionError(f"constrained {mode} unexpectedly succeeded")
             """
         )
-        for mode in ("reserve", "tuple", "repr_reserve", "unicode"):
+        for mode in (
+            "construct_oom",
+            "construct_success",
+            "repr_reserve",
+            "unicode",
+        ):
             with self.subTest(mode=mode):
                 completed = subprocess.run(
                     [sys.executable, "-c", script, mode],
