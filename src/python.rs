@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
-    PyValueError,
+    PyIndexError, PyMemoryError, PyOverflowError, PyRecursionError, PyRuntimeError, PyTypeError,
+    PyUserWarning, PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -1636,10 +1636,72 @@ fn torch_function_descriptor_caller(py: Python<'_>) -> PyResult<&'static Py<PyAn
     })
 }
 
+#[allow(
+    unsafe_code,
+    reason = "CPython 3.10 TensorBase parity requires matching PyTorch's recursive subclass-dispatch accounting"
+)]
+fn redispatch_const_data_ptr_mode_python_310(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    initial_redispatch: bool,
+) -> PyResult<Option<Py<PyAny>>> {
+    // PyTorch's generated Python 3.10 fallback retains two recursion entries
+    // per retry, plus two entries belonging to the initial
+    // mode-to-Tensor.__torch_function__ transition. The direct Rust redispatch
+    // below skips those frames, so account for them explicitly.
+    let recursion_entries = if initial_redispatch { 4 } else { 2 };
+    let mut entered = 0;
+    while entered < recursion_entries {
+        if unsafe { ffi::Py_EnterRecursiveCall(c" in __subclasscheck__".as_ptr()) } != 0 {
+            let error = PyErr::fetch(py);
+            for _ in 0..entered {
+                unsafe { ffi::Py_LeaveRecursiveCall() };
+            }
+            return Err(error);
+        }
+        entered += 1;
+    }
+
+    let result = dispatch_tensorbase_mode_impl(
+        py,
+        tensor,
+        TensorBaseModeTarget::Method("const_data_ptr"),
+        true,
+    );
+    for _ in 0..entered {
+        unsafe {
+            ffi::Py_LeaveRecursiveCall();
+        }
+    }
+    if initial_redispatch
+        && let Err(error) = &result
+        && error.is_instance_of::<PyRecursionError>(py)
+        && error.value(py).str()?.to_str()? == "maximum recursion depth exceeded"
+    {
+        // PyTorch's Tensor.__torch_function__ subclass probe supplies this
+        // CPython 3.10 recursion context; the direct Rust retry has no Python
+        // frame from which CPython could otherwise recover it.
+        error.value(py).setattr(
+            "args",
+            ("maximum recursion depth exceeded in __subclasscheck__",),
+        )?;
+    }
+    result
+}
+
 fn dispatch_tensorbase_mode(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
     target: TensorBaseModeTarget,
+) -> PyResult<Option<Py<PyAny>>> {
+    dispatch_tensorbase_mode_impl(py, tensor, target, false)
+}
+
+fn dispatch_tensorbase_mode_impl(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    target: TensorBaseModeTarget,
+    python_310_const_data_ptr_redispatching: bool,
 ) -> PyResult<Option<Py<PyAny>>> {
     if torch_function_mode_stack::is_empty() {
         return Ok(None);
@@ -1672,6 +1734,15 @@ fn dispatch_tensorbase_mode(
     // that wants to reach the next mode instead calls `func(*args)` itself
     // while the current mode is disabled.
     active_mode.restore();
+    if py.version_info() < (3, 11)
+        && matches!(target, TensorBaseModeTarget::Method("const_data_ptr"))
+    {
+        return redispatch_const_data_ptr_mode_python_310(
+            py,
+            tensor,
+            !python_310_const_data_ptr_redispatching,
+        );
+    }
     // Keep the retry in a Python frame so configured `sys.setrecursionlimit`
     // values and mode side effects match TensorBase's recursive fallback.
     let caller = torch_function_descriptor_caller(py)?;
