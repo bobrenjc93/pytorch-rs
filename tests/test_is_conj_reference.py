@@ -1,5 +1,7 @@
 import inspect
 import json
+import pickle
+import re
 import subprocess
 import sys
 import types
@@ -50,7 +52,7 @@ class TensorIsConjReferenceTests(unittest.TestCase):
             tracked,
         )
 
-    def contract(self, tensor):
+    def contract(self, tensor, checker=None):
         metadata = (
             tuple(tensor.shape),
             tuple(tensor.stride()),
@@ -61,7 +63,7 @@ class TensorIsConjReferenceTests(unittest.TestCase):
             tensor.requires_grad,
             tensor.is_leaf,
         )
-        result = tensor.is_conj()
+        result = tensor.is_conj() if checker is None else checker(tensor)
         return {
             "result": result,
             "result_type": type(result).__name__,
@@ -78,6 +80,14 @@ class TensorIsConjReferenceTests(unittest.TestCase):
             ),
         }
 
+    def top_level_contract(self, module, tensor, keyword):
+        return self.contract(
+            tensor,
+            lambda value: module.is_conj(value)
+            if keyword is None
+            else module.is_conj(**{keyword: value}),
+        )
+
     def test_supported_real_tensors_match_pytorch_2_13(self):
         actual_leaf, actual_tracked, actual_cases = self.tensor_cases(torch)
         expected_leaf, expected_tracked, expected_cases = self.tensor_cases(
@@ -89,6 +99,32 @@ class TensorIsConjReferenceTests(unittest.TestCase):
             with self.subTest(case=case, shape=actual.shape):
                 self.assertEqual(self.contract(actual), self.contract(expected))
 
+        actual_tracked.sum().backward()
+        expected_tracked.sum().backward()
+        self.assertEqual(actual_leaf.grad.tolist(), expected_leaf.grad.tolist())
+
+    def test_top_level_supported_real_tensor_forms_match_pytorch_2_13(self):
+        actual_leaf, actual_tracked, actual_cases = self.tensor_cases(torch)
+        expected_leaf, expected_tracked, expected_cases = self.tensor_cases(
+            reference_torch
+        )
+        for case, (actual, expected) in enumerate(
+            zip(actual_cases, expected_cases, strict=True)
+        ):
+            for keyword in (None, "input", "x", "a", "x1"):
+                with self.subTest(
+                    case=case,
+                    keyword=keyword,
+                    shape=actual.shape,
+                    stride=actual.stride(),
+                ):
+                    self.assertEqual(
+                        self.top_level_contract(torch, actual, keyword),
+                        self.top_level_contract(reference_torch, expected, keyword),
+                    )
+
+        self.assertIs(torch.is_conj(actual_tracked), False)
+        self.assertIs(reference_torch.is_conj(expected_tracked), False)
         actual_tracked.sum().backward()
         expected_tracked.sum().backward()
         self.assertEqual(actual_leaf.grad.tolist(), expected_leaf.grad.tolist())
@@ -107,13 +143,16 @@ class TensorIsConjReferenceTests(unittest.TestCase):
             source.untyped_storage().data_ptr(),
         )
         self.assertIs(conjugate_view.is_conj(), True)
+        self.assertIs(reference_torch.is_conj(source), False)
+        self.assertIs(reference_torch.is_conj(conjugate_view), True)
+        self.assertFalse(hasattr(torch, "complex64"))
 
     def error(self, action):
         try:
             action()
         except Exception as error:
             return type(error).__name__, str(error)
-        self.fail("Tensor.is_conj unexpectedly accepted the invalid call")
+        self.fail("is_conj unexpectedly accepted the invalid call")
 
     def signature_outcome(self, callable_object):
         try:
@@ -165,11 +204,128 @@ class TensorIsConjReferenceTests(unittest.TestCase):
             ),
         }
 
+    def top_level_callable_contract(self, module):
+        function = module.is_conj
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.is_conj is function,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "repr": re.sub(r"0x[0-9a-f]+", "0x...", repr(function)),
+            "signature_error": signature_error,
+            "all_count": module.__all__.count("is_conj"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "owner_not_top_level": not hasattr(module, "_VariableFunctionsClass"),
+            "wildcard_identity": wildcard_namespace["is_conj"] is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
+
     def test_callable_metadata_and_errors_match_pytorch_2_13(self):
         self.assertEqual(
             self.callable_contract(torch),
             self.callable_contract(reference_torch),
         )
+        self.assertEqual(
+            self.top_level_callable_contract(torch),
+            self.top_level_callable_contract(reference_torch),
+        )
+
+    def test_top_level_binding_error_precedence_matches_pytorch_2_13(self):
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0], dtype=reference_torch.float32)
+        cases = (
+            (lambda: torch.is_conj(), lambda: reference_torch.is_conj()),
+            (
+                lambda: torch.is_conj(actual, actual),
+                lambda: reference_torch.is_conj(expected, expected),
+            ),
+            (
+                lambda: torch.is_conj(actual, input=actual),
+                lambda: reference_torch.is_conj(expected, input=expected),
+            ),
+            (
+                lambda: torch.is_conj(actual, extra=True, input=actual),
+                lambda: reference_torch.is_conj(
+                    expected, extra=True, input=expected
+                ),
+            ),
+            (
+                lambda: torch.is_conj(actual, input=actual, extra=True),
+                lambda: reference_torch.is_conj(
+                    expected, input=expected, extra=True
+                ),
+            ),
+            (
+                lambda: torch.is_conj(extra=actual),
+                lambda: reference_torch.is_conj(extra=expected),
+            ),
+            (
+                lambda: torch.is_conj(1, extra=True),
+                lambda: reference_torch.is_conj(1, extra=True),
+            ),
+            (
+                lambda: torch.is_conj(input=[]),
+                lambda: reference_torch.is_conj(input=[]),
+            ),
+            (
+                lambda: torch.is_conj(a=1),
+                lambda: reference_torch.is_conj(a=1),
+            ),
+            (
+                lambda: torch.is_conj(x=[]),
+                lambda: reference_torch.is_conj(x=[]),
+            ),
+            (
+                lambda: torch.is_conj(x1=None),
+                lambda: reference_torch.is_conj(x1=None),
+            ),
+            (
+                lambda: torch.is_conj(a=actual, x=actual),
+                lambda: reference_torch.is_conj(a=expected, x=expected),
+            ),
+            (
+                lambda: torch.is_conj(x=actual, a=actual),
+                lambda: reference_torch.is_conj(x=expected, a=expected),
+            ),
+            (
+                lambda: torch.is_conj(input=actual, x1=actual),
+                lambda: reference_torch.is_conj(input=expected, x1=expected),
+            ),
+            (
+                lambda: torch.is_conj(x=actual, x1=actual),
+                lambda: reference_torch.is_conj(x=expected, x1=expected),
+            ),
+            (
+                lambda: torch.is_conj(x1=actual, x=actual),
+                lambda: reference_torch.is_conj(x1=expected, x=expected),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assertEqual(self.error(actual_call), self.error(expected_call))
 
     def mode_dispatch_observation(self, module_name):
         source = r'''
@@ -262,6 +418,158 @@ print(json.dumps({
             self.mode_dispatch_observation("torch_rs"),
             self.mode_dispatch_observation("torch"),
         )
+
+    def top_level_dispatch_observation(self, module, keyword):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            intercepted = (
+                module.is_conj(tensor)
+                if keyword is None
+                else module.is_conj(**{keyword: tensor})
+            )
+        function, dispatch_types, args, kwargs = mode.calls[0]
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = module.is_conj(a=tensor)
+
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        value = Override()
+        override_result = module.is_conj(x=value)
+        override_function, override_types, override_args, override_kwargs = (
+            override_calls[0]
+        )
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        declining_mode = DecliningMode()
+        try:
+            with declining_mode:
+                module.is_conj(tensor)
+        except Exception as error:
+            declining_mode_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            declining_mode_error = None
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        try:
+            module.is_conj(DecliningOverride())
+        except Exception as error:
+            declining_override_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+            )
+        else:
+            declining_override_error = None
+
+        fallback_calls = []
+
+        class FallbackMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                fallback_calls.append(("mode", func, types, args, kwargs))
+                return NotImplemented
+
+        class FallbackOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                fallback_calls.append(("override", func, types, args, kwargs))
+                return marker
+
+        fallback_value = FallbackOverride()
+        with FallbackMode():
+            fallback_result = module.is_conj(input=fallback_value)
+
+        return {
+            "intercepted": intercepted is marker,
+            "call_count": len(mode.calls),
+            "function_type": type(function).__name__,
+            "function_name": function.__name__,
+            "function_qualname": function.__qualname__,
+            "function_identity": function is module.is_conj,
+            "types_empty": dispatch_types == (),
+            "args_original": (len(args) == 1 and args[0] is tensor)
+            if keyword is None
+            else args == (),
+            "kwargs_original": kwargs is None
+            if keyword is None
+            else len(kwargs) == 1 and kwargs.get(keyword) is tensor,
+            "forwarding_order": order,
+            "forwarded": forwarded,
+            "forwarded_type": type(forwarded).__name__,
+            "override_result": override_result is marker,
+            "override_function": override_function is module.is_conj,
+            "override_types": override_types == (Override,),
+            "override_args": override_args == (),
+            "override_kwargs": len(override_kwargs) == 1
+            and override_kwargs.get("x") is value,
+            "declining_mode_error": declining_mode_error,
+            "declining_override_error": declining_override_error,
+            "fallback_result": fallback_result is marker,
+            "fallback_order": [call[0] for call in fallback_calls],
+            "fallback_functions": all(
+                call[1] is module.is_conj for call in fallback_calls
+            ),
+            "fallback_types": all(
+                call[2] == (FallbackOverride,) for call in fallback_calls
+            ),
+            "fallback_args": all(call[3] == () for call in fallback_calls),
+            "fallback_kwargs": all(
+                len(call[4]) == 1 and call[4].get("input") is fallback_value
+                for call in fallback_calls
+            ),
+            "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+        }
+
+    def test_top_level_torch_function_dispatch_matches_pytorch_2_13(self):
+        for keyword in (None, "input", "x", "a", "x1"):
+            with self.subTest(keyword=keyword):
+                self.assertEqual(
+                    self.top_level_dispatch_observation(torch, keyword),
+                    self.top_level_dispatch_observation(reference_torch, keyword),
+                )
+
+    def test_scope_adds_top_level_callable_without_complex_support(self):
+        self.assertTrue(hasattr(torch, "is_conj"))
+        self.assertTrue(hasattr(reference_torch, "is_conj"))
+        self.assertFalse(hasattr(torch, "complex64"))
+        self.assertTrue(hasattr(reference_torch, "complex64"))
 
 
 if __name__ == "__main__":

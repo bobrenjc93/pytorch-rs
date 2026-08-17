@@ -1,4 +1,6 @@
 import inspect
+import pickle
+import re
 import sys
 import types
 import unittest
@@ -10,6 +12,13 @@ import torch_rs as torch
 METHOD_DOC = (
     "\nis_conj() -> bool\n\n"
     "Returns True if the conjugate bit of :attr:`self` is set to true.\n"
+)
+FUNCTION_DOC = (
+    "\nis_conj(input) -> (bool)\n\n"
+    "Returns True if the :attr:`input` is a conjugated tensor, i.e. its "
+    "conjugate bit is set to `True`.\n\n"
+    "Args:\n"
+    "    input (Tensor): the input tensor.\n"
 )
 
 
@@ -44,6 +53,15 @@ class TensorIsConjTests(unittest.TestCase):
             ("extreme empty view", extreme_empty),
             ("autograd leaf", leaf),
             ("autograd non-leaf view", tracked),
+        )
+
+    def top_level_calls(self, tensor):
+        return (
+            ("positional", torch.is_conj(tensor)),
+            ("input", torch.is_conj(input=tensor)),
+            ("x", torch.is_conj(x=tensor)),
+            ("a", torch.is_conj(a=tensor)),
+            ("x1", torch.is_conj(x1=tensor)),
         )
 
     def test_supported_tensors_have_a_clear_conjugate_bit_without_mutation(self):
@@ -85,6 +103,49 @@ class TensorIsConjTests(unittest.TestCase):
         )
         self.assertIs(leaf.is_conj(), False)
         self.assertIs(tracked.is_conj(), False)
+
+    def test_top_level_supported_tensors_have_a_clear_bit_without_mutation(self):
+        leaf, tracked, cases = self.tensor_cases()
+        for case, tensor in cases:
+            metadata = (
+                tensor.shape,
+                tensor.stride(),
+                tensor.storage_offset(),
+                tensor.data_ptr(),
+                tensor.dtype,
+                tensor.device,
+                tensor.requires_grad,
+                tensor.is_leaf,
+            )
+            for form, result in self.top_level_calls(tensor):
+                with self.subTest(
+                    case=case,
+                    form=form,
+                    shape=tensor.shape,
+                    stride=tensor.stride(),
+                ):
+                    self.assertIs(type(result), bool)
+                    self.assertIs(result, False)
+                    self.assertEqual(
+                        (
+                            tensor.shape,
+                            tensor.stride(),
+                            tensor.storage_offset(),
+                            tensor.data_ptr(),
+                            tensor.dtype,
+                            tensor.device,
+                            tensor.requires_grad,
+                            tensor.is_leaf,
+                        ),
+                        metadata,
+                    )
+
+        tracked.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad), np.full((2, 2), 2.0, dtype=np.float32)
+        )
+        self.assertIs(torch.is_conj(leaf), False)
+        self.assertIs(torch.is_conj(tracked), False)
 
     def test_tensorbase_descriptor_metadata_matches_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
@@ -248,6 +309,249 @@ class TensorIsConjTests(unittest.TestCase):
         self.assertGreater(upper.calls, 1)
         self.assertEqual(lower.calls, 0)
         self.assertIs(tensor.is_conj(), False)
+
+    def test_top_level_callable_metadata_documentation_and_exports(self):
+        function = torch.is_conj
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "is_conj")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.is_conj")
+        self.assertEqual(function.__module__, "torch")
+        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method is_conj of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.is_conj, function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)),
+                    function,
+                )
+
+        self.assertEqual(torch.__all__.count("is_conj"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["is_conj"], function)
+
+    def test_top_level_binding_and_type_error_precedence(self):
+        tensor = torch.tensor([1.0])
+        cases = (
+            (
+                lambda: torch.is_conj(),
+                'is_conj() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.is_conj(tensor, tensor),
+                "is_conj() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.is_conj(tensor, input=tensor),
+                "is_conj() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.is_conj(tensor, extra=True, input=tensor),
+                "is_conj() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.is_conj(tensor, input=tensor, extra=True),
+                "is_conj() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.is_conj(extra=tensor),
+                'is_conj() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.is_conj(1, extra=True),
+                "is_conj(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_conj(input=[]),
+                "is_conj(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.is_conj(a=1),
+                "is_conj(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_conj(x=[]),
+                "is_conj(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.is_conj(x1=None),
+                "is_conj(): argument 'input' must be Tensor, not NoneType",
+            ),
+            (
+                lambda: torch.is_conj(a=tensor, x=tensor),
+                "is_conj() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.is_conj(x=tensor, a=tensor),
+                "is_conj() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.is_conj(input=tensor, x1=tensor),
+                "is_conj() got an unexpected keyword argument 'x1'",
+            ),
+            (
+                lambda: torch.is_conj(x=tensor, x1=tensor),
+                "is_conj() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.is_conj(x1=tensor, x=tensor),
+                "is_conj() got an unexpected keyword argument 'x1'",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+
+    def test_top_level_torch_function_modes_and_overrides(self):
+        tensor = torch.tensor([1.0])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            (None, lambda: torch.is_conj(tensor)),
+            ("input", lambda: torch.is_conj(input=tensor)),
+            ("x", lambda: torch.is_conj(x=tensor)),
+            ("a", lambda: torch.is_conj(a=tensor)),
+            ("x1", lambda: torch.is_conj(x1=tensor)),
+        )
+        for keyword, call in calls:
+            mode = RecordingMode()
+            with mode:
+                result = call()
+            self.assertIs(result, marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, torch.is_conj)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (tensor,) if keyword is None else ())
+            self.assertEqual(kwargs, None if keyword is None else {keyword: tensor})
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = torch.is_conj(a=tensor)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertIs(forwarded, False)
+
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        value = Override()
+        self.assertIs(torch.is_conj(x=value), marker)
+        function, dispatch_types, args, kwargs = override_calls[0]
+        self.assertIs(function, torch.is_conj)
+        self.assertEqual(dispatch_types, (Override,))
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs, {"x": value})
+
+        fallback_order = []
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                fallback_order.append(("mode", func, types, args, kwargs))
+                return NotImplemented
+
+        class FallbackOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                fallback_order.append(("override", func, types, args, kwargs))
+                return marker
+
+        fallback = FallbackOverride()
+        with DecliningMode():
+            self.assertIs(torch.is_conj(input=fallback), marker)
+        self.assertEqual([entry[0] for entry in fallback_order], ["mode", "override"])
+        for _, function, dispatch_types, args, kwargs in fallback_order:
+            self.assertIs(function, torch.is_conj)
+            self.assertEqual(dispatch_types, (FallbackOverride,))
+            self.assertEqual(args, ())
+            self.assertEqual(kwargs, {"input": fallback})
+
+    def test_top_level_not_implemented_errors_match_variable_dispatch(self):
+        tensor = torch.tensor([1.0])
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        mode = DecliningMode()
+        message = (
+            "Multiple dispatch failed for 'torch.is_conj'; all "
+            "__torch_function__ handlers returned NotImplemented:\n\n"
+            f"  - mode object {mode!r}\n\n"
+            "For more information, try re-running with "
+            "TORCH_LOGS=not_implemented"
+        )
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+            with mode:
+                torch.is_conj(tensor)
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        message = (
+            "Multiple dispatch failed for 'torch.is_conj'; all "
+            "__torch_function__ handlers returned NotImplemented:\n\n"
+            f"  - tensor subclass {DecliningOverride!r}\n\n"
+            "For more information, try re-running with "
+            "TORCH_LOGS=not_implemented"
+        )
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+            torch.is_conj(DecliningOverride())
+
+        self.assertIs(torch.is_conj(tensor), False)
+
+    def test_top_level_scope_does_not_add_complex_dtypes_or_conjugate_views(self):
+        self.assertTrue(hasattr(torch, "is_conj"))
+        for name in (
+            "complex32",
+            "complex64",
+            "complex128",
+            "chalf",
+            "cfloat",
+            "cdouble",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(torch, name))
 
 
 if __name__ == "__main__":

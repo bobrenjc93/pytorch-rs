@@ -2977,6 +2977,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:199",
+      "recordedAt": "2026-08-17T00:57:15.294Z",
+      "label": "PR #199",
+      "kind": "leaf",
+      "prNumber": 199,
+      "title": "Expose top-level torch.is_conj",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 70.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 50.2,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }

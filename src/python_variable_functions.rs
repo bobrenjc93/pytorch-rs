@@ -13,9 +13,10 @@ use pyo3::types::{PyDict, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    adjoint_variable_function, get_device_variable_function, matmul_variable_function,
-    moveaxis_variable_function, movedim_variable_function, permute_variable_function,
-    positive_variable_function, resolve_conj_variable_function, scalar_tensor_variable_function,
+    adjoint_variable_function, get_device_variable_function, is_conj_variable_function,
+    matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
+    permute_variable_function, positive_variable_function, resolve_conj_variable_function,
+    scalar_tensor_variable_function,
 };
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
@@ -43,6 +44,8 @@ Example::
 ";
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
+
+const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
 
 const RESOLVE_CONJ_DOC: &std::ffi::CStr = c"\nresolve_conj(input) -> Tensor\n\nReturns a new tensor with materialized conjugation if :attr:`input`'s conjugate bit is set to `True`,\nelse returns :attr:`input`. The output tensor will always have its conjugate bit set to `False`.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> x = torch.tensor([-1 + 1j, -2 + 2j, 3 - 3j])\n    >>> y = x.conj()\n    >>> y.is_conj()\n    True\n    >>> z = y.resolve_conj()\n    >>> z\n    tensor([-1 - 1j, -2 - 2j, 3 + 3j])\n    >>> z.is_conj()\n    False\n";
 
@@ -256,6 +259,7 @@ variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
+variable_function_callback!(is_conj_callback, is_conj_variable_function);
 variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
@@ -291,6 +295,7 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
+        variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
         variable_function_method!(c"permute", permute_callback, PERMUTE_DOC),
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
