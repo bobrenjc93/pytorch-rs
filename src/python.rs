@@ -290,7 +290,7 @@ impl PyTensorBase {
         // integer dimension. Keep that observable order after mode dispatch.
         let index = extract_select_index(&index.value)?;
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-        select_first_dimension(slf.py(), tensor, dimension, index)
+        select_first_dimension(slf.py(), tensor, dimension, index, "Tensor.select")
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1179,6 +1179,18 @@ pub(crate) fn unbind_variable_function(
     dispatch_top_level_unbind(py, &input, dimension.as_ref(), args, kwargs)
 }
 
+pub(crate) fn select_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, [dimension, index], keyword_error) = bind_top_level_select_arguments(args, kwargs)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    dispatch_top_level_select(py, &input, &dimension, &index, args, kwargs)
+}
+
 pub(crate) fn permute_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1552,6 +1564,7 @@ fn select_first_dimension(
     tensor: &Bound<'_, PyTensor>,
     dimension: i64,
     index: i64,
+    operation: &str,
 ) -> PyResult<Py<PyAny>> {
     let tensor = tensor.try_borrow()?;
     let shape = tensor.inner.shape();
@@ -1562,9 +1575,9 @@ fn select_first_dimension(
     }
     let axis = normalize_dimension(dimension, shape.len())?;
     if axis != 0 {
-        return Err(PyRuntimeError::new_err(
-            "Tensor.select only supports dimension 0",
-        ));
+        return Err(PyRuntimeError::new_err(format!(
+            "{operation} only supports dimension 0"
+        )));
     }
 
     let inner = tensor.inner.index_integer(index).map_err(|error| {
@@ -1650,6 +1663,77 @@ fn dispatch_top_level_unbind(
                 extract_dimension_swap_dimension(&dimension.value)
             })?;
             unbind_first_dimension(py, tensor, dimension, "torch.unbind")
+        }
+    }
+}
+
+fn dispatch_top_level_select(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    dimension: &ParsedCallArgument<'_>,
+    index: &ParsedCallArgument<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty()
+        && let BoundTensorOrTorchFunction::Tensor(tensor) = input
+    {
+        let index = extract_select_index(&index.value)?;
+        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+        return select_first_dimension(py, tensor, dimension, index, "torch.select");
+    }
+
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err("torch.select was called before module initialization completed")
+    })?;
+    let function = variable_functions.bind(py).getattr("select")?.unbind();
+    let types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+    };
+
+    // Concrete integer conversion and tensor bounds checks remain deferred
+    // until every torch-function handler has had an opportunity to replace
+    // the otherwise valid generated call.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.select",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(tensor) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.select",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            let index = extract_select_index(&index.value)?;
+            let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+            select_first_dimension(py, tensor, dimension, index, "torch.select")
         }
     }
 }
@@ -4882,27 +4966,135 @@ fn bind_select_arguments<'py>(
 
     if let Some(first_missing) = arguments.iter().position(Option::is_none) {
         validate_select_argument_prefix(&arguments, first_missing)?;
-        let missing = &NAMES[first_missing..];
-        let quoted_names = missing
-            .iter()
-            .map(|name| format!("\"{name}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let argument = if missing.len() == 1 {
-            "arguments"
-        } else {
-            "argument"
-        };
-        return Err(PyTypeError::new_err(format!(
-            "select() missing {} required positional {argument}: {quoted_names}",
-            missing.len()
-        )));
+        return Err(select_missing_arguments_error(&NAMES[first_missing..]));
     }
 
     validate_select_argument_prefix(&arguments, NAMES.len())?;
     Ok((
         arguments.map(|argument| argument.expect("all required select arguments were bound")),
         keyword_error,
+    ))
+}
+
+fn bind_top_level_select_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(
+    BoundTensorOrTorchFunction<'py>,
+    [ParsedCallArgument<'py>; 2],
+    Option<PyErr>,
+)> {
+    const NAMES: [&str; 3] = ["input", "dim", "index"];
+
+    if positional.len() > NAMES.len() {
+        return Err(PyTypeError::new_err(format!(
+            "select() takes 3 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 3] = std::array::from_fn(|_| None);
+    for (argument_index, value) in positional.iter().enumerate() {
+        arguments[argument_index] = Some(ParsedCallArgument {
+            value,
+            position: Some(argument_index + 1),
+        });
+    }
+
+    if let Some(keywords) = keywords {
+        if arguments[0].is_none() {
+            for name in ["input", "x", "a", "x1"] {
+                if let Some(value) = keywords.get_item(name)? {
+                    arguments[0] = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                    break;
+                }
+            }
+        }
+        for (argument_index, name) in NAMES.iter().enumerate().skip(1) {
+            if arguments[argument_index].is_none()
+                && let Some(value) = keywords.get_item(*name)?
+            {
+                arguments[argument_index] = Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                });
+            }
+        }
+    }
+
+    if let Some(first_missing) = arguments.iter().position(Option::is_none) {
+        if first_missing >= 1 {
+            let input = arguments[0]
+                .as_ref()
+                .expect("the select input preceding a binding gap is present");
+            parse_tensor_or_torch_function_argument("select", "input", input)?;
+        }
+        if first_missing >= 2 {
+            let dimension = arguments[1]
+                .as_ref()
+                .expect("the select dimension preceding a binding gap is present");
+            validate_dimension_swap_dimension(
+                "select",
+                "dim",
+                dimension.position,
+                &dimension.value,
+            )?;
+        }
+
+        return Err(select_missing_arguments_error(&NAMES[first_missing..]));
+    }
+
+    let [input, dimension, index] =
+        arguments.map(|argument| argument.expect("all required select arguments were bound"));
+    let input_was_keyword = input.position.is_none();
+    let input = parse_tensor_or_torch_function_argument("select", "input", &input)?;
+    validate_dimension_swap_dimension("select", "dim", dimension.position, &dimension.value)?;
+    validate_select_index(&index)?;
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        let bound_keyword_count = usize::from(input_was_keyword)
+            + usize::from(dimension.position.is_none())
+            + usize::from(index.position.is_none());
+        if keywords.len() > bound_keyword_count {
+            for key in keywords.keys() {
+                let key = key.extract::<String>()?;
+                let Some(position) = NAMES.iter().position(|name| *name == key) else {
+                    keyword_error = Some(PyTypeError::new_err(format!(
+                        "select() got an unexpected keyword argument '{key}'"
+                    )));
+                    break;
+                };
+                if position < positional.len() {
+                    keyword_error = Some(PyTypeError::new_err(format!(
+                        "select() got multiple values for argument '{key}'"
+                    )));
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok((input, [dimension, index], keyword_error))
+}
+
+fn select_missing_arguments_error(missing: &[&str]) -> PyErr {
+    let quoted_names = missing
+        .iter()
+        .map(|name| format!("\"{name}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let argument = if missing.len() == 1 {
+        "arguments"
+    } else {
+        "argument"
+    };
+    PyTypeError::new_err(format!(
+        "select() missing {} required positional {argument}: {quoted_names}",
+        missing.len()
     ))
 }
 
@@ -9223,6 +9415,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "resolve_conj",
         "resolve_neg",
         "unbind",
+        "select",
         "permute",
         "movedim",
         "moveaxis",
