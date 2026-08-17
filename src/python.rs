@@ -1117,6 +1117,15 @@ pub(crate) fn positive_variable_function(
     dispatch_positive(py, &input, args, kwargs)
 }
 
+pub(crate) fn is_conj_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("is_conj", args, kwargs)?;
+    dispatch_is_conj(py, &input, args, kwargs)
+}
+
 pub(crate) fn resolve_conj_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1666,6 +1675,67 @@ fn dispatch_resolve_conj(
             // storage, metadata, or autograd state. Complex materialization
             // remains bounded by the deliberately unsupported dtype surface.
             Ok(tensor.clone().unbind().into_any())
+        }
+    }
+}
+
+fn dispatch_is_conj(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err("torch.is_conj was called before module initialization completed")
+    })?;
+    let function = variable_functions.bind(py).getattr("is_conj")?.unbind();
+    let types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(resolved) => {
+            PyTuple::new(py, [resolved.dispatch_type.clone()])?
+        }
+    };
+
+    // PyTorch disables the top mode for the complete dispatch attempt. A mode
+    // can explicitly call `func(*args, **kwargs)` to reach the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.is_conj",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(_) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.is_conj",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+
+            // Float32 is the only supported dtype and the native tensor model
+            // has no conjugate views, so every reachable conjugate bit is clear.
+            false.into_py_any(py)
         }
     }
 }
@@ -8457,6 +8527,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "scalar_tensor",
         "adjoint",
         "positive",
+        "is_conj",
         "resolve_conj",
         "permute",
         "movedim",
