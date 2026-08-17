@@ -2993,6 +2993,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:200",
+      "recordedAt": "2026-08-17T01:35:22.602Z",
+      "label": "PR #200",
+      "kind": "leaf",
+      "prNumber": 200,
+      "title": "Expose integer Tensor.moveaxis",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 70.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 50.3,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }
