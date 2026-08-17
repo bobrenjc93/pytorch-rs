@@ -261,6 +261,39 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nselect(dim, index) -> Tensor\n\nSee :func:`torch.select`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn select(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let ([dimension, index], keyword_error) = bind_select_arguments(args, kwargs)?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "select",
+            "torch.Tensor.select",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        // Generated bindings convert the SymInt-like index before the plain
+        // integer dimension. Keep that observable order after mode dispatch.
+        let index = extract_select_index(&index.value)?;
+        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+        select_first_dimension(slf.py(), tensor, dimension, index)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is stored on the CPU, ``False`` otherwise.\n"]
     #[getter]
     fn is_cpu(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -1486,6 +1519,41 @@ fn unbind_first_dimension(
     Ok(PyTuple::new(py, outputs.into_iter().map(PyTensor::new))?
         .into_any()
         .unbind())
+}
+
+fn select_first_dimension(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    dimension: i64,
+    index: i64,
+) -> PyResult<Py<PyAny>> {
+    let tensor = tensor.try_borrow()?;
+    let shape = tensor.inner.shape();
+    if shape.is_empty() {
+        return Err(PyIndexError::new_err(
+            "select() cannot be applied to a 0-dim tensor.",
+        ));
+    }
+    let axis = normalize_dimension(dimension, shape.len())?;
+    if axis != 0 {
+        return Err(PyRuntimeError::new_err(
+            "Tensor.select only supports dimension 0",
+        ));
+    }
+
+    let inner = tensor.inner.index_integer(index).map_err(|error| {
+        if let TensorError::IndexOutOfBounds {
+            index, dimension, ..
+        } = &error
+        {
+            PyIndexError::new_err(format!(
+                "select(): index {index} out of range for tensor of size {shape:?} at dimension {dimension}"
+            ))
+        } else {
+            tensor_error(&error)
+        }
+    })?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
 fn dispatch_top_level_unbind(
@@ -4605,6 +4673,147 @@ fn bind_top_level_unbind_arguments<'py>(
     }
 
     Ok((bound_input, dimension))
+}
+
+fn bind_select_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<([ParsedCallArgument<'py>; 2], Option<PyErr>)> {
+    const NAMES: [&str; 2] = ["dim", "index"];
+
+    if positional.len() > NAMES.len() {
+        return Err(PyTypeError::new_err(format!(
+            "select() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 2] = std::array::from_fn(|_| None);
+    for (argument_index, value) in positional.iter().enumerate() {
+        arguments[argument_index] = Some(ParsedCallArgument {
+            value,
+            position: Some(argument_index + 1),
+        });
+    }
+
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            let Some(argument_index) = NAMES.iter().position(|name| *name == key) else {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "select() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+                continue;
+            };
+            if arguments[argument_index].is_some() {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "select() got multiple values for argument '{}'",
+                        NAMES[argument_index]
+                    ))
+                });
+                continue;
+            }
+            arguments[argument_index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    if let Some(first_missing) = arguments.iter().position(Option::is_none) {
+        validate_select_argument_prefix(&arguments, first_missing)?;
+        let missing = &NAMES[first_missing..];
+        let quoted_names = missing
+            .iter()
+            .map(|name| format!("\"{name}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let argument = if missing.len() == 1 {
+            "arguments"
+        } else {
+            "argument"
+        };
+        return Err(PyTypeError::new_err(format!(
+            "select() missing {} required positional {argument}: {quoted_names}",
+            missing.len()
+        )));
+    }
+
+    validate_select_argument_prefix(&arguments, NAMES.len())?;
+    Ok((
+        arguments.map(|argument| argument.expect("all required select arguments were bound")),
+        keyword_error,
+    ))
+}
+
+fn validate_select_argument_prefix(
+    arguments: &[Option<ParsedCallArgument<'_>>; 2],
+    length: usize,
+) -> PyResult<()> {
+    if length >= 1 {
+        let dimension = arguments[0]
+            .as_ref()
+            .expect("the select dimension preceding a binding gap is present");
+        validate_dimension_swap_dimension("select", "dim", dimension.position, &dimension.value)?;
+    }
+    if length >= 2 {
+        let index = arguments[1]
+            .as_ref()
+            .expect("the select index preceding a binding gap is present");
+        validate_select_index(index)?;
+    }
+    Ok(())
+}
+
+fn validate_select_index(index: &ParsedCallArgument<'_>) -> PyResult<()> {
+    if is_dimension_swap_integer(&index.value)? || probe_select_index(&index.value) {
+        return Ok(());
+    }
+
+    let actual = transpose_type_name(&index.value)?;
+    Err(dimension_swap_argument_type_error(
+        "select",
+        "index",
+        index.position,
+        "int",
+        &actual,
+    ))
+}
+
+fn probe_select_index(index: &Bound<'_, PyAny>) -> bool {
+    if index.is_instance_of::<PyBool>() {
+        return false;
+    }
+    call_python_index(index).is_ok()
+}
+
+fn call_python_index<'py>(index: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+    PyModule::import(index.py(), "operator")?
+        .getattr("index")?
+        .call1((index,))
+}
+
+fn extract_select_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
+    if is_dimension_swap_integer(index)? {
+        return extract_dimension_swap_dimension(index);
+    }
+
+    // SymInt conversion probes an arbitrary __index__ provider once more
+    // before obtaining the concrete value. The first result is intentionally
+    // ignored, so stateful providers observe the same three calls as PyTorch:
+    // binding validation, conversion validation, and extraction.
+    if call_python_index(index).is_err() {
+        let index_type = index.get_type().repr()?.to_str()?.to_owned();
+        return Err(PyRuntimeError::new_err(format!(
+            "Unable to cast Python instance of type {index_type} to C++ type '?' (#define PYBIND11_DETAILED_ERROR_MESSAGES or compile in debug mode for details)"
+        )));
+    }
+    let concrete = call_python_index(index)?;
+    extract_dimension_swap_dimension(&concrete)
 }
 
 fn bind_size_dimension<'py>(
