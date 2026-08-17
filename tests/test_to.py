@@ -280,6 +280,87 @@ assert calls == [str.upper]
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
 
+    def test_reinitialization_does_not_chain_method_descriptor_reducers(self):
+        source = r'''
+import copyreg
+import gc
+import importlib
+import inspect
+import pickle
+import sys
+import weakref
+
+method_descriptor_type = type(str.upper)
+
+
+def rebuild(name):
+    return "external reducer", name
+
+
+def external_reducer(descriptor):
+    return rebuild, (descriptor.__name__,)
+
+
+copyreg.pickle(method_descriptor_type, external_reducer)
+
+import torch_rs
+
+discarded_reducers = []
+for _ in range(100):
+    reducer = copyreg.dispatch_table[method_descriptor_type]
+    assert reducer._torch_rs_tensor_to_descriptor_reducer is True
+    assert (
+        reducer._torch_rs_previous_method_descriptor_reducer
+        is external_reducer
+    )
+    discarded_reducers.append(weakref.ref(reducer))
+    torch_rs = importlib.reload(torch_rs)
+
+del reducer
+gc.collect()
+assert all(reference() is None for reference in discarded_reducers)
+
+discarded_modules = []
+for _ in range(5):
+    discarded_modules.append(weakref.ref(torch_rs))
+    for name in tuple(sys.modules):
+        if name == "torch_rs" or name.startswith("torch_rs."):
+            del sys.modules[name]
+    del torch_rs
+    torch_rs = importlib.import_module("torch_rs")
+
+gc.collect()
+assert all(reference() is None for reference in discarded_modules)
+
+reducer = copyreg.dispatch_table[method_descriptor_type]
+assert reducer._torch_rs_tensor_to_descriptor_reducer is True
+assert reducer._torch_rs_previous_method_descriptor_reducer is external_reducer
+
+original_recursion_limit = sys.getrecursionlimit()
+try:
+    sys.setrecursionlimit(80)
+    assert pickle.loads(pickle.dumps(str.upper, protocol=5)) == (
+        "external reducer",
+        "upper",
+    )
+finally:
+    sys.setrecursionlimit(original_recursion_limit)
+
+tensor_to = inspect.getattr_static(torch_rs.Tensor, "to")
+assert pickle.loads(pickle.dumps(tensor_to, protocol=5)) is tensor_to
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
     def test_unbound_no_argument_errors_match_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "to")

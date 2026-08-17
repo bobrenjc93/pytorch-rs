@@ -13,9 +13,21 @@ def _restore_tensor_to_descriptor():
 
 
 _method_descriptor_type = type(Tensor.to)
-_previous_method_descriptor_reducer = _copyreg.dispatch_table.get(
+_registered_method_descriptor_reducer = _copyreg.dispatch_table.get(
     _method_descriptor_type
 )
+if getattr(
+    _registered_method_descriptor_reducer,
+    "_torch_rs_tensor_to_descriptor_reducer",
+    False,
+):
+    _previous_method_descriptor_reducer = getattr(
+        _registered_method_descriptor_reducer,
+        "_torch_rs_previous_method_descriptor_reducer",
+        _registered_method_descriptor_reducer,
+    )
+else:
+    _previous_method_descriptor_reducer = _registered_method_descriptor_reducer
 
 
 def _reduce_method_descriptor(
@@ -32,7 +44,12 @@ def _reduce_method_descriptor(
 # this package intentionally does not replace the top-level ``torch`` module.
 # Give the newly exposed descriptor an importable package-local pickle path
 # while delegating every other method descriptor to the reducer that was active
-# before importing torch-rs.
+# before importing torch-rs. Mark the wrapper with that external predecessor so
+# module reinitialization replaces, rather than chains, torch-rs registrations.
+_reduce_method_descriptor._torch_rs_tensor_to_descriptor_reducer = True
+_reduce_method_descriptor._torch_rs_previous_method_descriptor_reducer = (
+    _previous_method_descriptor_reducer
+)
 _copyreg.pickle(_method_descriptor_type, _reduce_method_descriptor)
 
 # PyTorch's built-in variable functions reduce through owners in ``torch._C``.
@@ -145,5 +162,6 @@ del (
     _method_descriptor_type,
     _native,
     _previous_method_descriptor_reducer,
+    _registered_method_descriptor_reducer,
     _sys,
 )
