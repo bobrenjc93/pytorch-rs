@@ -1127,6 +1127,15 @@ pub(crate) fn resolve_conj_variable_function(
     dispatch_resolve_conj(py, &input, args, kwargs)
 }
 
+pub(crate) fn resolve_neg_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("resolve_neg", args, kwargs)?;
+    dispatch_resolve_neg(py, &input, args, kwargs)
+}
+
 pub(crate) fn unbind_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1777,6 +1786,72 @@ fn dispatch_resolve_conj(
             // function therefore returns the exact receiver without touching
             // storage, metadata, or autograd state. Complex materialization
             // remains bounded by the deliberately unsupported dtype surface.
+            Ok(tensor.clone().unbind().into_any())
+        }
+    }
+}
+
+fn dispatch_resolve_neg(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err(
+            "torch.resolve_neg was called before module initialization completed",
+        )
+    })?;
+    let function = variable_functions.bind(py).getattr("resolve_neg")?.unbind();
+    let types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(resolved) => {
+            PyTuple::new(py, [resolved.dispatch_type.clone()])?
+        }
+    };
+
+    // PyTorch disables the top mode for the complete dispatch attempt. A mode
+    // can explicitly call `func(*args, **kwargs)` to reach the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.resolve_neg",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(tensor) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.resolve_neg",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+
+            // The native tensor surface has no lazy-negative view, so every
+            // reachable negative bit is clear. The generated function returns
+            // the exact receiver without touching storage, metadata, or
+            // autograd state. Materialization remains bounded by the
+            // deliberately unsupported lazy-negative storage surface.
             Ok(tensor.clone().unbind().into_any())
         }
     }
@@ -8729,6 +8804,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "positive",
         "is_conj",
         "resolve_conj",
+        "resolve_neg",
         "unbind",
         "permute",
         "movedim",
