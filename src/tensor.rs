@@ -561,6 +561,15 @@ impl Tensor {
         false
     }
 
+    /// Reports whether the tensor uses nested tensor storage.
+    ///
+    /// Every currently supported tensor uses the canonical strided layout, so
+    /// this metadata query does not inspect the backing storage.
+    #[must_use]
+    pub const fn is_nested(&self) -> bool {
+        false
+    }
+
     /// Reports whether the tensor uses sparse COO storage.
     ///
     /// Every currently supported tensor uses the canonical strided layout, so
