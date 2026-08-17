@@ -254,7 +254,7 @@ fn tuple_from_value<'py>(
         .cast_into::<PyTuple>()?)
 }
 
-fn construct_size(py: Python<'_>, dimensions: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+pub(crate) fn construct_size(py: Python<'_>, dimensions: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     size_type_object(py)?
         .bind(py)
         .call1((dimensions,))

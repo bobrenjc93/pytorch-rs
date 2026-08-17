@@ -666,17 +666,14 @@ assert type(value[1]) is int
                     sys.modules.pop(name, None)
             sys.modules.update(saved_modules)
 
-    def test_tensor_metadata_return_types_remain_unchanged(self):
+    def test_tensor_size_uses_size_without_changing_other_metadata_types(self):
         tensor = torch.zeros((2, 3))
         self.assertIs(type(tensor.shape), tuple)
         self.assertIs(type(tensor.stride()), tuple)
         self.assertIs(type(tensor.size(0)), int)
-        with self.assertRaises(TypeError) as raised:
-            tensor.size()
-        self.assertEqual(
-            str(raised.exception),
-            'size() missing 1 required positional arguments: "dim"',
-        )
+        for result in (tensor.size(), tensor.size(None), tensor.size(dim=None)):
+            self.assertIs(type(result), torch.Size)
+            self.assertEqual(result, torch.Size([2, 3]))
 
 
 if __name__ == "__main__":
