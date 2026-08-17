@@ -27,11 +27,10 @@ use crate::{
     python_size::{construct_size, size_type_object},
     python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_torch_function_mode as torch_function_mode_stack,
-    python_variable_functions::create_variable_functions_class,
+    python_variable_functions::{add_variable_functions, variable_function},
 };
 
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
-static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static TORCH_FUNCTION_DESCRIPTOR_CALLER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -1720,10 +1719,7 @@ fn dispatch_top_level_unbind(
         return unbind_first_dimension(py, tensor, dimension, "torch.unbind");
     }
 
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err("torch.unbind was called before module initialization completed")
-    })?;
-    let function = variable_functions.bind(py).getattr("unbind")?.unbind();
+    let function = variable_function(py, "unbind")?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(probed) => {
@@ -1792,10 +1788,7 @@ fn dispatch_top_level_select(
         return select_first_dimension(py, tensor, dimension, index, "torch.select");
     }
 
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err("torch.select was called before module initialization completed")
-    })?;
-    let function = variable_functions.bind(py).getattr("select")?.unbind();
+    let function = variable_function(py, "select")?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(probed) => {
@@ -1963,15 +1956,7 @@ fn dispatch_promote_types(
         return apply_promote_types(py, type1, type2);
     }
 
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err(
-            "torch.promote_types was called before module initialization completed",
-        )
-    })?;
-    let function = variable_functions
-        .bind(py)
-        .getattr("promote_types")?
-        .unbind();
+    let function = variable_function(py, "promote_types")?;
     let dispatch_types = PyTuple::new(
         py,
         overrides.iter().map(|probed| probed.dispatch_type.clone()),
@@ -2037,10 +2022,7 @@ fn dispatch_positive(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err("torch.positive was called before module initialization completed")
-    })?;
-    let function = variable_functions.bind(py).getattr("positive")?.unbind();
+    let function = variable_function(py, "positive")?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(resolved) => {
@@ -2095,15 +2077,7 @@ fn dispatch_resolve_conj(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err(
-            "torch.resolve_conj was called before module initialization completed",
-        )
-    })?;
-    let function = variable_functions
-        .bind(py)
-        .getattr("resolve_conj")?
-        .unbind();
+    let function = variable_function(py, "resolve_conj")?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(resolved) => {
@@ -2164,12 +2138,7 @@ fn dispatch_resolve_neg(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err(
-            "torch.resolve_neg was called before module initialization completed",
-        )
-    })?;
-    let function = variable_functions.bind(py).getattr("resolve_neg")?.unbind();
+    let function = variable_function(py, "resolve_neg")?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(resolved) => {
@@ -2230,10 +2199,7 @@ fn dispatch_is_conj(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err("torch.is_conj was called before module initialization completed")
-    })?;
-    let function = variable_functions.bind(py).getattr("is_conj")?.unbind();
+    let function = variable_function(py, "is_conj")?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(resolved) => {
@@ -2291,15 +2257,7 @@ fn dispatch_is_inference(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err(
-            "torch.is_inference was called before module initialization completed",
-        )
-    })?;
-    let function = variable_functions
-        .bind(py)
-        .getattr("is_inference")?
-        .unbind();
+    let function = variable_function(py, "is_inference")?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(resolved) => {
@@ -2358,10 +2316,7 @@ fn dispatch_adjoint(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err("torch.adjoint was called before module initialization completed")
-    })?;
-    let function = variable_functions.bind(py).getattr("adjoint")?.unbind();
+    let function = variable_function(py, "adjoint")?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(resolved) => {
@@ -2431,16 +2386,7 @@ fn dispatch_top_level_movedim(
         return apply_top_level_movedim(operation, py, tensor, source, destination);
     }
 
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err(format!(
-            "{} was called before module initialization completed",
-            operation.qualified_name()
-        ))
-    })?;
-    let function = variable_functions
-        .bind(py)
-        .getattr(operation.name())?
-        .unbind();
+    let function = variable_function(py, operation.name())?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
         BoundTensorOrTorchFunction::Override(probed) => {
@@ -2693,10 +2639,7 @@ fn dispatch_top_level_matmul(
         return Ok(Py::new(py, result)?.into_any());
     }
 
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err("torch.matmul was called before module initialization completed")
-    })?;
-    let function = variable_functions.bind(py).getattr("matmul")?.unbind();
+    let function = variable_function(py, "matmul")?;
     let types = PyTuple::new(
         py,
         overrides.iter().map(|probed| probed.dispatch_type.clone()),
@@ -2743,16 +2686,7 @@ fn dispatch_top_level_multiplication(
         return apply_top_level_multiplication(operation, py, input, other);
     }
 
-    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
-        PyRuntimeError::new_err(format!(
-            "{} was called before module initialization completed",
-            operation.qualified_name()
-        ))
-    })?;
-    let function = variable_functions
-        .bind(py)
-        .getattr(operation.name())?
-        .unbind();
+    let function = variable_function(py, operation.name())?;
     let types = PyTuple::new(
         py,
         overrides.iter().map(|probed| probed.dispatch_type.clone()),
@@ -10050,41 +9984,6 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
         )?);
     }
     Ok(PyList::new(py, items)?.into_any().unbind())
-}
-
-fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    let py = module.py();
-    let variable_functions =
-        VARIABLE_FUNCTIONS_CLASS.get_or_try_init(py, || create_variable_functions_class(py))?;
-    module.add("_VariableFunctionsClass", variable_functions.clone_ref(py))?;
-    module
-        .getattr("__all__")?
-        .call_method1("remove", ("_VariableFunctionsClass",))?;
-    let variable_functions = variable_functions.bind(py);
-    for name in [
-        "get_device",
-        "scalar_tensor",
-        "adjoint",
-        "positive",
-        "is_conj",
-        "is_inference",
-        "resolve_conj",
-        "resolve_neg",
-        "unbind",
-        "select",
-        "permute",
-        "movedim",
-        "moveaxis",
-        "matmul",
-        "mul",
-        "multiply",
-        "promote_types",
-    ] {
-        let function = variable_functions.getattr(name)?;
-        function.setattr("__module__", "torch")?;
-        module.add(name, function)?;
-    }
-    Ok(())
 }
 
 #[pymodule]
