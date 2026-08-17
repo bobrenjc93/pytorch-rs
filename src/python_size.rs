@@ -3,51 +3,67 @@
 use std::ffi::{CStr, c_int, c_void};
 
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyAttributeError, PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{
+    PyAttributeError, PyModuleNotFoundError, PyRuntimeError, PyTypeError, PyValueError,
+};
 use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAny, PyBool, PyDict, PyInt, PyModule, PyString, PyTuple, PyType};
 
 static SIZE_TYPE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
-static OPERATOR_INDEX: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 const NUMEL_DOC: &CStr = c"\nnumel() -> int\n\nReturns the number of elements a :class:`torch.Tensor` with the given size would contain.\n";
 
-fn operator_index(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
-    OPERATOR_INDEX.get_or_try_init(py, || {
-        Ok(PyModule::import(py, "operator")?.getattr("index")?.unbind())
-    })
+fn numpy_instance(py: Python<'_>, value: &Bound<'_, PyAny>, type_name: &str) -> PyResult<bool> {
+    let numpy = match PyModule::import(py, "numpy") {
+        Ok(numpy) => numpy,
+        Err(error) if error.is_instance_of::<PyModuleNotFoundError>(py) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let numpy_type = numpy.getattr(type_name)?;
+    let Ok(numpy_type) = numpy_type.cast::<PyType>() else {
+        return Ok(false);
+    };
+    value.is_instance(numpy_type)
 }
 
-fn python_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+fn python_type_name(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<String> {
     let value_type = value.get_type();
     let name = value_type.name()?.to_string();
     let module = value_type.getattr("__module__")?.extract::<String>()?;
-    Ok(if module == "numpy" {
+    let genuine_numpy_type = module == "numpy"
+        && (numpy_instance(py, value, "generic")? || numpy_instance(py, value, "ndarray")?);
+    Ok(if genuine_numpy_type {
         format!("numpy.{name}")
     } else {
         name
     })
 }
 
-fn has_numpy_integer_ancestry(value: &Bound<'_, PyAny>) -> PyResult<bool> {
-    let value_type = value.get_type();
-    for base in value_type.mro().iter() {
-        let base = base.cast::<PyType>()?;
-        if base.name()? == "integer" && base.getattr("__module__")?.extract::<String>()? == "numpy"
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+fn is_numpy_integer(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    numpy_instance(py, value, "integer")
 }
 
-fn preserves_integral_identity(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+#[allow(
+    unsafe_code,
+    reason = "PyNumber_Index returns a new reference through the stable CPython ABI"
+)]
+fn number_index<'py>(py: Python<'py>, value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyInt>> {
+    // SAFETY: value is live for the call. PyNumber_Index returns a new Python
+    // int reference or sets an exception and returns null.
+    unsafe {
+        Bound::<PyAny>::from_owned_ptr_or_err(py, ffi::PyNumber_Index(value.as_ptr()))?
+            .cast_into::<PyInt>()
+            .map_err(Into::into)
+    }
+}
+
+fn preserves_integral_identity(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
     if value.is_instance_of::<PyInt>() && !value.is_instance_of::<PyBool>() {
         return Ok(true);
     }
-    has_numpy_integer_ancestry(value)
+    is_numpy_integer(py, value)
 }
 
 fn normalized_dimension(
@@ -55,23 +71,20 @@ fn normalized_dimension(
     value: &Bound<'_, PyAny>,
     position: usize,
 ) -> PyResult<Py<PyAny>> {
-    if preserves_integral_identity(value)? {
+    let Ok(integer) = number_index(py, value) else {
+        return Err(PyTypeError::new_err(format!(
+            "torch.Size() takes an iterable of 'int' (item {position} is '{}')",
+            python_type_name(py, value)?
+        )));
+    };
+    if preserves_integral_identity(py, value)? {
         return Ok(value.clone().unbind());
     }
-
-    match operator_index(py)?.bind(py).call1((value,)) {
-        Ok(integer) => Ok(integer.unbind()),
-        Err(_) => Err(PyTypeError::new_err(format!(
-            "torch.Size() takes an iterable of 'int' (item {position} is '{}')",
-            python_type_name(value)?
-        ))),
-    }
+    Ok(integer.into_any().unbind())
 }
 
 fn unpack_long_long(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<i64> {
-    operator_index(py)?
-        .bind(py)
-        .call1((value,))?
+    number_index(py, value)?
         .extract::<i64>()
         .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))
 }
@@ -168,7 +181,7 @@ fn size_concat(
     if right.cast::<PyTuple>().is_err() {
         return Err(PyTypeError::new_err(format!(
             "can only concatenate tuple (not {}) to torch.Size",
-            python_type_name(right)?
+            python_type_name(py, right)?
         )));
     }
     let concatenated = py

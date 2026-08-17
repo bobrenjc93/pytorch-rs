@@ -36,6 +36,10 @@ class BadIndex:
         raise RuntimeError("not an integer")
 
 
+class integer:
+    __module__ = "numpy"
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class SizeValueReferenceTests(unittest.TestCase):
     @classmethod
@@ -97,6 +101,7 @@ class SizeValueReferenceTests(unittest.TestCase):
             lambda: module.Size("12"),
             lambda: module.Size([np.bool_(True)]),
             lambda: module.Size([BadIndex()]),
+            lambda: module.Size([integer()]),
             lambda: module.Size([2**63]),
             lambda: module.Size([-(2**63) - 1]),
             lambda: module.Size(iterable=()),

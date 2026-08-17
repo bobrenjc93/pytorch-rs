@@ -3,6 +3,7 @@ import importlib
 import inspect
 import operator
 import pickle
+import subprocess
 import sys
 import unittest
 
@@ -32,6 +33,10 @@ class CustomIndex:
 class BadIndex:
     def __index__(self):
         raise RuntimeError("not an integer")
+
+
+class integer:
+    __module__ = "numpy"
 
 
 class SizeValueTests(unittest.TestCase):
@@ -120,6 +125,7 @@ class SizeValueTests(unittest.TestCase):
             ("1", "str"),
             (None, "NoneType"),
             (BadIndex(), "BadIndex"),
+            (integer(), "integer"),
         )
         for item, type_name in invalid:
             with self.subTest(item=repr(item)):
@@ -146,6 +152,46 @@ class SizeValueTests(unittest.TestCase):
                         str(raised.exception),
                         "Overflow when unpacking long long",
                     )
+
+    def test_operator_index_patching_cannot_poison_validation(self):
+        script = """
+import operator
+import torch_rs as torch
+
+original_index = operator.index
+operator.index = lambda value: object()
+try:
+    for value in (1.5, object()):
+        try:
+            torch.Size([value])
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("patched operator.index bypassed validation")
+finally:
+    operator.index = original_index
+
+for value in (1.5, object()):
+    try:
+        torch.Size([value])
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("Size validation remained poisoned")
+
+assert torch.Size([True, 2]) == (1, 2)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
 
     def test_slicing_concatenation_and_repetition_preserve_size(self):
         value = torch.Size([1, 2, 3])
