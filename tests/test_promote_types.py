@@ -86,6 +86,31 @@ class PromoteTypesTests(unittest.TestCase):
             ),
         )
 
+    def test_keyword_validation_preserves_original_key_order(self):
+        class AlwaysEqualKeyword(str):
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                return True
+
+        class RaisingKeyword(str):
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                raise RuntimeError("later keyword equality should not run")
+
+        self.assert_error(
+            TypeError,
+            "promote_types() got multiple values for argument 'type2'",
+            lambda: torch.promote_types(
+                torch.float32,
+                **{
+                    AlwaysEqualKeyword("type2"): torch.float32,
+                    RaisingKeyword("type1"): torch.float32,
+                },
+            ),
+        )
+
     def test_torch_function_modes_receive_original_calls_and_can_forward(self):
         marker = object()
 

@@ -1313,10 +1313,10 @@ pub(crate) fn promote_types_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let ([type1, type2], remaining_keywords) = bind_promote_types_arguments(args, kwargs)?;
+    let ([type1, type2], consumed_keywords) = bind_promote_types_arguments(args, kwargs)?;
     let type1 = parse_promote_types_operand("type1", &type1)?;
     let type2 = parse_promote_types_operand("type2", &type2)?;
-    validate_promote_types_keywords(args.len(), remaining_keywords.as_ref())?;
+    validate_promote_types_keywords(args.len(), kwargs, &consumed_keywords)?;
     dispatch_promote_types(py, &type1, &type2, args, kwargs)
 }
 
@@ -1367,6 +1367,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for StrictBool {
 struct ParsedCallArgument<'py> {
     value: Bound<'py, PyAny>,
     position: Option<usize>,
+}
+
+struct ConsumedPromoteTypesKeyword<'py> {
+    key: Bound<'py, PyAny>,
+    position: usize,
 }
 
 #[derive(Clone)]
@@ -7285,7 +7290,10 @@ fn bind_tensor_arguments<'py, const N: usize>(
 fn bind_promote_types_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<([ParsedCallArgument<'py>; 2], Option<Bound<'py, PyDict>>)> {
+) -> PyResult<(
+    [ParsedCallArgument<'py>; 2],
+    Vec<ConsumedPromoteTypesKeyword<'py>>,
+)> {
     const NAMES: [&str; 2] = ["type1", "type2"];
 
     if positional.len() > NAMES.len() {
@@ -7307,15 +7315,30 @@ fn bind_promote_types_arguments<'py>(
     // shallow copy uses the dictionary's stored hashes and identifies the
     // exact string-subclass entry consumed by each canonical parameter.
     let remaining_keywords = keywords.map(PyDictMethods::copy).transpose()?;
+    let mut consumed_keywords = Vec::new();
     if let Some(remaining_keywords) = remaining_keywords.as_ref() {
         let sentinel = PyDict::new(positional.py()).into_any();
         for (index, name) in NAMES.iter().copied().enumerate().skip(positional.len()) {
+            let keys_before = remaining_keywords.keys();
             // PyTorch's generated argument parser suppresses lookup failures
             // here; declared-type and leftover-key validation happen later.
             let value = pop_promote_types_keyword(remaining_keywords, name, &sentinel)
                 .ok()
                 .flatten();
             if let Some(value) = value {
+                let keys_after = remaining_keywords.keys();
+                let key = keys_before
+                    .iter()
+                    .find(|key| !keys_after.iter().any(|remaining| remaining.is(key)))
+                    .ok_or_else(|| {
+                        PyRuntimeError::new_err(
+                            "promote_types() could not identify a consumed keyword",
+                        )
+                    })?;
+                consumed_keywords.push(ConsumedPromoteTypesKeyword {
+                    key,
+                    position: index,
+                });
                 arguments[index] = Some(ParsedCallArgument {
                     value,
                     position: None,
@@ -7357,7 +7380,7 @@ fn bind_promote_types_arguments<'py>(
         arguments.map(|argument| {
             argument.expect("all required promote_types arguments were bound above")
         }),
-        remaining_keywords,
+        consumed_keywords,
     ))
 }
 
@@ -7372,34 +7395,47 @@ fn pop_promote_types_keyword<'py>(
 
 fn validate_promote_types_keywords(
     positional_count: usize,
-    remaining_keywords: Option<&Bound<'_, PyDict>>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    consumed_keywords: &[ConsumedPromoteTypesKeyword<'_>],
 ) -> PyResult<()> {
-    let Some(remaining_keywords) = remaining_keywords else {
+    let Some(keywords) = keywords else {
         return Ok(());
     };
-
-    let Some(key) = remaining_keywords.keys().iter().next() else {
+    if keywords.len() <= consumed_keywords.len() {
         return Ok(());
-    };
-    let matched_position = if key.eq("type1")? {
-        Some(0)
-    } else if key.eq("type2")? {
-        Some(1)
-    } else {
-        None
-    };
-    let key = key.extract::<String>()?;
-    let mut message = if matched_position.is_some_and(|position| position < positional_count) {
-        format!("promote_types() got multiple values for argument '{key}'")
-    } else if matched_position.is_some() {
-        "invalid keyword arguments".to_owned()
-    } else {
-        format!("promote_types() got an unexpected keyword argument '{key}'")
-    };
-    if let Some(nul) = message.find('\0') {
-        message.truncate(nul);
     }
-    Err(PyTypeError::new_err(message))
+
+    for key in keywords.keys().iter() {
+        let matched_position = if key.eq("type1")? {
+            Some(0)
+        } else if key.eq("type2")? {
+            Some(1)
+        } else {
+            None
+        };
+        let consumed_position = consumed_keywords
+            .iter()
+            .find(|consumed| consumed.key.is(&key))
+            .map(|consumed| consumed.position);
+        if matched_position.is_some() && matched_position == consumed_position {
+            continue;
+        }
+
+        let key = key.extract::<String>()?;
+        let mut message = if matched_position.is_some_and(|position| position < positional_count) {
+            format!("promote_types() got multiple values for argument '{key}'")
+        } else if matched_position.is_some() {
+            "invalid keyword arguments".to_owned()
+        } else {
+            format!("promote_types() got an unexpected keyword argument '{key}'")
+        };
+        if let Some(nul) = message.find('\0') {
+            message.truncate(nul);
+        }
+        return Err(PyTypeError::new_err(message));
+    }
+
+    Ok(())
 }
 
 fn parse_promote_types_operand<'py>(

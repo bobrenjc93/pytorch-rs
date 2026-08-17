@@ -81,6 +81,12 @@ class PromoteTypesReferenceTests(unittest.TestCase):
             def __eq__(self, other):
                 return True
 
+        class RaisingKeyword(str):
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                raise RuntimeError("later keyword equality should not run")
+
         actual_type2 = AlwaysEqualKeyword("type2")
         expected_type2 = AlwaysEqualKeyword("type2")
         self.assertIs(
@@ -119,6 +125,22 @@ class PromoteTypesReferenceTests(unittest.TestCase):
                 type1=reference_torch.float32,
                 type2=reference_torch.float32,
                 **{AlwaysEqualKeyword("unexpected"): reference_torch.float32},
+            ),
+        )
+        self.assert_error_matches(
+            lambda: torch.promote_types(
+                torch.float32,
+                **{
+                    AlwaysEqualKeyword("type2"): torch.float32,
+                    RaisingKeyword("type1"): torch.float32,
+                },
+            ),
+            lambda: reference_torch.promote_types(
+                reference_torch.float32,
+                **{
+                    AlwaysEqualKeyword("type2"): reference_torch.float32,
+                    RaisingKeyword("type1"): reference_torch.float32,
+                },
             ),
         )
 
