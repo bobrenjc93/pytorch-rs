@@ -15,8 +15,9 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 use crate::python::{
     adjoint_variable_function, get_device_variable_function, is_conj_variable_function,
     matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
-    permute_variable_function, positive_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, scalar_tensor_variable_function, unbind_variable_function,
+    mul_variable_function, permute_variable_function, positive_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
+    unbind_variable_function,
 };
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
@@ -44,6 +45,50 @@ Example::
 ";
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
+
+const MUL_DOC: &std::ffi::CStr = cr"
+mul(input, other, *, out=None) -> Tensor
+
+Multiplies :attr:`input` by :attr:`other`.
+
+
+.. math::
+    \text{out}_i = \text{input}_i \times \text{other}_i
+
+
+Supports :ref:`broadcasting to a common shape <broadcasting-semantics>`,
+:ref:`type promotion <type-promotion-doc>`, and integer, float, and complex inputs.
+
+Args:
+    input (Tensor): the input tensor.
+    other (Tensor or Number): the tensor or number to multiply input by.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Examples::
+
+    >>> a = torch.randn(3)
+    >>> a
+    tensor([ 0.2015, -0.4255,  2.6087])
+    >>> torch.mul(a, 100)
+    tensor([  20.1494,  -42.5491,  260.8663])
+
+    >>> b = torch.randn(4, 1)
+    >>> b
+    tensor([[ 1.1207],
+            [-0.3137],
+            [ 0.0700],
+            [ 0.8378]])
+    >>> c = torch.randn(1, 4)
+    >>> c
+    tensor([[ 0.5146,  0.1216, -0.5244,  2.2382]])
+    >>> torch.mul(b, c)
+    tensor([[ 0.5767,  0.1363, -0.5877,  2.5083],
+            [-0.1614, -0.0382,  0.1645, -0.7021],
+            [ 0.0360,  0.0085, -0.0367,  0.1567],
+            [ 0.4312,  0.1019, -0.4394,  1.8753]])
+";
 
 const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
 
@@ -263,6 +308,7 @@ variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
+variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
 variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
 variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function);
@@ -301,6 +347,7 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
+        variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
         variable_function_method!(c"resolve_neg", resolve_neg_callback, RESOLVE_NEG_DOC),
