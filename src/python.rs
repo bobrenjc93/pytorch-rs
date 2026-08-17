@@ -1308,6 +1308,16 @@ pub(crate) fn multiply_variable_function(
     multiplication_variable_function(MultiplicationOperation::Multiply, py, args, kwargs)
 }
 
+pub(crate) fn promote_types_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([type1, type2], consumed_keywords) = bind_promote_types_arguments(args, kwargs)?;
+    validate_promote_types_keywords(args.len(), kwargs, &consumed_keywords)?;
+    dispatch_promote_types(py, &type1, &type2, args, kwargs)
+}
+
 fn multiplication_variable_function(
     operation: MultiplicationOperation,
     py: Python<'_>,
@@ -1357,10 +1367,16 @@ struct ParsedCallArgument<'py> {
     position: Option<usize>,
 }
 
+struct ConsumedPromoteTypesKeyword<'py> {
+    key: Bound<'py, PyAny>,
+    position: usize,
+}
+
 #[derive(Clone)]
 struct ProbedTorchFunctionOverride<'py> {
     receiver: Bound<'py, PyAny>,
     dispatch_type: Bound<'py, PyAny>,
+    precedence_type: Bound<'py, PyType>,
 }
 
 enum BoundTensorOrTorchFunction<'py> {
@@ -1371,6 +1387,11 @@ enum BoundTensorOrTorchFunction<'py> {
 enum BoundMulOperand<'py> {
     Tensor(Bound<'py, PyTensor>),
     Scalar(Bound<'py, PyAny>),
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+enum BoundPromoteTypesOperand<'py> {
+    DType(DType),
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
@@ -1429,15 +1450,39 @@ fn probe_torch_function_override<'py>(
     if !has_override {
         return None;
     }
+    Some(probed_torch_function_override(value))
+}
+
+#[allow(
+    unsafe_code,
+    reason = "promote_types dtype parity requires CPython's one-shot exception-suppressing attribute probe"
+)]
+fn probe_promote_types_torch_function_override<'py>(
+    value: &Bound<'py, PyAny>,
+) -> Option<ProbedTorchFunctionOverride<'py>> {
+    // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
+    // __torch_function__ lookup through a tensor-type fallback.
+    // SAFETY: `value` is live for this call and the attribute name is a static,
+    // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
+    let has_override =
+        unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
+    has_override.then(|| probed_torch_function_override(value))
+}
+
+fn probed_torch_function_override<'py>(
+    value: &Bound<'py, PyAny>,
+) -> ProbedTorchFunctionOverride<'py> {
+    let precedence_type = value.get_type();
     let dispatch_type = if value.cast::<PyType>().is_ok() {
         value.clone()
     } else {
-        value.get_type().into_any()
+        precedence_type.clone().into_any()
     };
-    Some(ProbedTorchFunctionOverride {
+    ProbedTorchFunctionOverride {
         receiver: value.clone(),
         dispatch_type,
-    })
+        precedence_type,
+    }
 }
 
 #[allow(
@@ -1494,10 +1539,17 @@ fn call_torch_function_handler(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let kwargs = kwargs.map_or_else(|| py.None(), |kwargs| kwargs.clone().into_any().unbind());
-    Ok(handler
-        .call1((function.clone_ref(py), types.clone(), args.clone(), kwargs))?
-        .unbind())
+    let result = if let Some(kwargs) = kwargs {
+        handler.call1((
+            function.clone_ref(py),
+            types.clone(),
+            args.clone(),
+            kwargs.clone(),
+        ))?
+    } else {
+        handler.call1((function.clone_ref(py), types.clone(), args.clone()))?
+    };
+    Ok(result.unbind())
 }
 
 fn is_not_implemented(py: Python<'_>, result: &Py<PyAny>) -> bool {
@@ -1861,6 +1913,86 @@ fn torch_function_dispatch_error_for_overrides(
         "Multiple dispatch failed for '{function}'; all __torch_function__ handlers returned NotImplemented:\n\n{}\n\nFor more information, try re-running with TORCH_LOGS=not_implemented",
         handlers.join("\n")
     )))
+}
+
+fn dispatch_promote_types(
+    py: Python<'_>,
+    type1: &BoundPromoteTypesOperand<'_>,
+    type2: &BoundPromoteTypesOperand<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_promote_types_overrides(type1, type2)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_promote_types(py, type1, type2);
+    }
+
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err(
+            "torch.promote_types was called before module initialization completed",
+        )
+    })?;
+    let function = variable_functions
+        .bind(py)
+        .getattr("promote_types")?
+        .unbind();
+    let dispatch_types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Generated variable functions validate their schema before dispatch and
+    // disable the top mode for the complete attempt. Explicit forwarding from
+    // a mode therefore reaches the next mode, operand overrides, then the
+    // native singleton path.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &dispatch_types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &dispatch_types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_promote_types(py, type1, type2);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.promote_types",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_promote_types(
+    py: Python<'_>,
+    type1: &BoundPromoteTypesOperand<'_>,
+    type2: &BoundPromoteTypesOperand<'_>,
+) -> PyResult<Py<PyAny>> {
+    let (BoundPromoteTypesOperand::DType(type1), BoundPromoteTypesOperand::DType(type2)) =
+        (type1, type2)
+    else {
+        unreachable!("promote_types overrides were dispatched before the native path")
+    };
+
+    // Float32 is the complete supported dtype set, so two validated dtype
+    // arguments are necessarily identical. Preserve that narrow boundary
+    // instead of introducing a promotion table before another dtype exists.
+    debug_assert_eq!(type1, type2);
+    Ok(dtype_object(py, *type1)?.clone_ref(py).into_any())
 }
 
 fn dispatch_positive(
@@ -2367,7 +2499,12 @@ fn ordered_binary_overrides<'py>(
             overrides.push(probed.clone());
             return Ok(overrides);
         };
-        if first.dispatch_type.is(&probed.dispatch_type) {
+        // PyTorch reports a class-valued operand itself in the dispatch types,
+        // but orders an incoming operand by its runtime type. Its metaclass is
+        // therefore compared with the first reported class, preserving class
+        // argument order and repeated class identities without changing
+        // ordinary instance subclass precedence.
+        if first.dispatch_type.is(probed.precedence_type.as_any()) {
             return Ok(overrides);
         }
 
@@ -2375,11 +2512,7 @@ fn ordered_binary_overrides<'py>(
             .dispatch_type
             .cast::<PyType>()
             .expect("a torch-function dispatch type is a Python type");
-        let other_type = probed
-            .dispatch_type
-            .cast::<PyType>()
-            .expect("a torch-function dispatch type is a Python type");
-        if other_type.is_subclass(first_type.as_any())? {
+        if probed.precedence_type.is_subclass(first_type.as_any())? {
             overrides.insert(0, probed.clone());
         } else {
             overrides.push(probed.clone());
@@ -2401,6 +2534,25 @@ fn ordered_matmul_overrides<'py>(
         BoundTensorOrTorchFunction::Tensor(_) => None,
     };
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
+}
+
+fn ordered_promote_types_overrides<'py>(
+    type1: &BoundPromoteTypesOperand<'py>,
+    type2: &BoundPromoteTypesOperand<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let type1 = match type1 {
+        BoundPromoteTypesOperand::Override(probed) => Some(probed),
+        BoundPromoteTypesOperand::DType(_) => None,
+    };
+    let type2 = match type2 {
+        BoundPromoteTypesOperand::Override(probed) => Some(probed),
+        BoundPromoteTypesOperand::DType(_) => None,
+    };
+    ordered_binary_overrides(
+        type1,
+        type2,
+        "unable to allocate promote_types dispatch operands",
+    )
 }
 
 fn ordered_multiplication_overrides<'py>(
@@ -7159,6 +7311,185 @@ fn bind_tensor_arguments<'py, const N: usize>(
     ))
 }
 
+fn bind_promote_types_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<(
+    [BoundPromoteTypesOperand<'py>; 2],
+    Vec<ConsumedPromoteTypesKeyword<'py>>,
+)> {
+    const NAMES: [&str; 2] = ["type1", "type2"];
+
+    if positional.len() > NAMES.len() {
+        return Err(PyTypeError::new_err(format!(
+            "promote_types() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    // Keep the original kwargs intact for mode dispatch. Popping from a
+    // shallow copy uses the dictionary's stored hashes and identifies the
+    // exact string-subclass entry consumed by each canonical parameter.
+    let remaining_keywords = keywords.map(PyDictMethods::copy).transpose()?;
+    let mut consumed_keywords = Vec::new();
+    let sentinel = PyDict::new(positional.py()).into_any();
+    let mut operands: [Option<BoundPromoteTypesOperand<'py>>; 2] = std::array::from_fn(|_| None);
+
+    // PyTorch binds and validates each schema slot before looking up the next
+    // keyword. In particular, a type2 key must not run Python equality code
+    // before type1 has been accepted as a dtype or torch-function override.
+    for (index, name) in NAMES.iter().copied().enumerate() {
+        let argument = if index < positional.len() {
+            Some(ParsedCallArgument {
+                value: positional.get_item(index)?,
+                position: Some(index + 1),
+            })
+        } else if let Some(remaining_keywords) = remaining_keywords.as_ref() {
+            let keys_before = remaining_keywords.keys();
+            // PyTorch's generated argument parser suppresses lookup failures
+            // here; a miss is reported as the complete remaining schema suffix.
+            let value = pop_promote_types_keyword(remaining_keywords, name, &sentinel)
+                .ok()
+                .flatten();
+            if let Some(value) = value {
+                let keys_after = remaining_keywords.keys();
+                let key = keys_before
+                    .iter()
+                    .find(|key| !keys_after.iter().any(|remaining| remaining.is(key)))
+                    .ok_or_else(|| {
+                        PyRuntimeError::new_err(
+                            "promote_types() could not identify a consumed keyword",
+                        )
+                    })?;
+                consumed_keywords.push(ConsumedPromoteTypesKeyword {
+                    key,
+                    position: index,
+                });
+                Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let Some(argument) = argument else {
+            // PyTorch reports the complete remaining schema suffix even when
+            // a later argument in that suffix was supplied by keyword.
+            let missing = &NAMES[index..];
+            let quoted_names = missing
+                .iter()
+                .map(|name| format!("\"{name}\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let argument = if missing.len() == 1 {
+                "arguments"
+            } else {
+                "argument"
+            };
+            return Err(PyTypeError::new_err(format!(
+                "promote_types() missing {} required positional {argument}: {quoted_names}",
+                missing.len()
+            )));
+        };
+        operands[index] = Some(parse_promote_types_operand(name, &argument)?);
+    }
+
+    Ok((
+        operands.map(|operand| {
+            operand.expect("all required promote_types operands were bound and parsed above")
+        }),
+        consumed_keywords,
+    ))
+}
+
+fn pop_promote_types_keyword<'py>(
+    keywords: &Bound<'py, PyDict>,
+    name: &str,
+    sentinel: &Bound<'py, PyAny>,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    let value = keywords.call_method1("pop", (name, sentinel))?;
+    Ok((!value.is(sentinel)).then_some(value))
+}
+
+fn validate_promote_types_keywords(
+    positional_count: usize,
+    keywords: Option<&Bound<'_, PyDict>>,
+    consumed_keywords: &[ConsumedPromoteTypesKeyword<'_>],
+) -> PyResult<()> {
+    let Some(keywords) = keywords else {
+        return Ok(());
+    };
+    if keywords.len() <= consumed_keywords.len() {
+        return Ok(());
+    }
+
+    let mut invalid_keyword_arguments = false;
+    for key in keywords.keys().iter() {
+        let matched_position = if key.eq("type1")? {
+            Some(0)
+        } else if key.eq("type2")? {
+            Some(1)
+        } else {
+            None
+        };
+        let consumed_position = consumed_keywords
+            .iter()
+            .find(|consumed| consumed.key.is(&key))
+            .map(|consumed| consumed.position);
+        if matched_position.is_some() && matched_position == consumed_position {
+            continue;
+        }
+
+        if matched_position.is_some_and(|position| position >= positional_count) {
+            // PyTorch defers this generic overload mismatch while it checks
+            // later original keys for a positional duplicate or a more
+            // specific unexpected-key error.
+            invalid_keyword_arguments = true;
+            continue;
+        }
+
+        let key = key.extract::<String>()?;
+        let mut message = matched_position.map_or_else(
+            || format!("promote_types() got an unexpected keyword argument '{key}'"),
+            |_| format!("promote_types() got multiple values for argument '{key}'"),
+        );
+        if let Some(nul) = message.find('\0') {
+            message.truncate(nul);
+        }
+        return Err(PyTypeError::new_err(message));
+    }
+
+    if invalid_keyword_arguments {
+        Err(PyTypeError::new_err("invalid keyword arguments"))
+    } else {
+        Ok(())
+    }
+}
+
+fn parse_promote_types_operand<'py>(
+    name: &str,
+    argument: &ParsedCallArgument<'py>,
+) -> PyResult<BoundPromoteTypesOperand<'py>> {
+    if let Ok(dtype) = argument.value.cast::<PyDType>() {
+        return Ok(BoundPromoteTypesOperand::DType(dtype.try_borrow()?.inner()));
+    }
+    if let Some(probed) = probe_promote_types_torch_function_override(&argument.value) {
+        return Ok(BoundPromoteTypesOperand::Override(probed));
+    }
+
+    let position = argument
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = transpose_type_name(&argument.value)?;
+    Err(PyTypeError::new_err(format!(
+        "promote_types(): argument '{name}'{position} must be torch.dtype, not {actual}"
+    )))
+}
+
 #[derive(Clone, Copy)]
 enum LegacyBinaryInputKind {
     Tensor,
@@ -9654,6 +9985,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "matmul",
         "mul",
         "multiply",
+        "promote_types",
     ] {
         let function = variable_functions.getattr(name)?;
         function.setattr("__module__", "torch")?;

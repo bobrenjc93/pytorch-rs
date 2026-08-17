@@ -3153,6 +3153,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:211",
+      "recordedAt": "2026-08-17T13:52:00.666Z",
+      "label": "PR #211",
+      "kind": "leaf",
+      "prNumber": 211,
+      "title": "Add float32-only torch.promote_types",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 71.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 52.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }
