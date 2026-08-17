@@ -81,7 +81,7 @@ class SizeValueTests(unittest.TestCase):
         with self.assertRaises(AttributeError) as raised:
             empty.extra = 1
         expected_attribute_error = "'torch.Size' object has no attribute 'extra'"
-        if sys.version_info >= (3, 14):
+        if sys.version_info >= (3, 13):
             expected_attribute_error += (
                 " and no __dict__ for setting new attributes"
             )
