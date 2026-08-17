@@ -3,6 +3,7 @@ import pickle
 import re
 import types
 import unittest
+import warnings
 
 import torch_rs as torch
 
@@ -468,6 +469,82 @@ class PromoteTypesReferenceTests(unittest.TestCase):
             self.operand_override_observation(torch),
             self.operand_override_observation(reference_torch),
         )
+
+    def test_class_valued_override_ordering_matches_pytorch_2_13(self):
+        def observation(module):
+            events = []
+            base_marker = object()
+            derived_marker = object()
+
+            class Base:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    events.append(
+                        ("base", tuple(dispatch_type.__name__ for dispatch_type in types))
+                    )
+                    return base_marker
+
+            class Derived(Base):
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    events.append(
+                        (
+                            "derived",
+                            tuple(dispatch_type.__name__ for dispatch_type in types),
+                        )
+                    )
+                    return derived_marker
+
+            cases = (
+                ("class pair", (Base, Derived), "base"),
+                ("instance then class", (Base(), Derived), "base"),
+                ("class then instance", (Base, Derived()), "derived"),
+            )
+            ordering = []
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                for label, operands, expected_result in cases:
+                    events.clear()
+                    result = module.promote_types(*operands)
+                    ordering.append(
+                        (
+                            label,
+                            result is base_marker,
+                            result is derived_marker,
+                            expected_result,
+                            tuple(events),
+                        )
+                    )
+
+            events.clear()
+
+            class Repeated:
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    events.append(
+                        tuple(dispatch_type.__name__ for dispatch_type in types)
+                    )
+                    return NotImplemented
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                try:
+                    module.promote_types(Repeated, Repeated)
+                except Exception as error:
+                    repeated_error = (
+                        type(error).__name__,
+                        str(error).count("tensor subclass"),
+                    )
+                else:
+                    repeated_error = None
+
+            return {
+                "ordering": tuple(ordering),
+                "repeated_calls": tuple(events),
+                "repeated_error": repeated_error,
+            }
+
+        self.assertEqual(observation(torch), observation(reference_torch))
 
     def handler_arity_observation(self, module):
         marker = object()

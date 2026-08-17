@@ -4,6 +4,7 @@ import pickle
 import re
 import types
 import unittest
+import warnings
 
 import torch_rs as torch
 
@@ -413,6 +414,49 @@ class PromoteTypesTests(unittest.TestCase):
 
         self.assertIs(torch.promote_types(Base(), Derived()), marker)
         self.assertEqual(events, [("derived", (Derived, Base))])
+
+        events.clear()
+
+        base_marker = object()
+        derived_marker = object()
+
+        class ClassBase:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("class base", types))
+                return base_marker
+
+        class ClassDerived(ClassBase):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("class derived", types))
+                return derived_marker
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            class_result = torch.promote_types(ClassBase, ClassDerived)
+        self.assertIs(class_result, base_marker)
+        self.assertEqual(events, [("class base", (ClassBase, ClassDerived))])
+
+        events.clear()
+
+        class RepeatedClass:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("repeated", types))
+                return NotImplemented
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with self.assertRaises(TypeError):
+                torch.promote_types(RepeatedClass, RepeatedClass)
+        self.assertEqual(
+            events,
+            [
+                ("repeated", (RepeatedClass, RepeatedClass)),
+                ("repeated", (RepeatedClass, RepeatedClass)),
+            ],
+        )
 
         events.clear()
 

@@ -1376,6 +1376,7 @@ struct ConsumedPromoteTypesKeyword<'py> {
 struct ProbedTorchFunctionOverride<'py> {
     receiver: Bound<'py, PyAny>,
     dispatch_type: Bound<'py, PyAny>,
+    precedence_type: Bound<'py, PyType>,
 }
 
 enum BoundTensorOrTorchFunction<'py> {
@@ -1471,14 +1472,16 @@ fn probe_promote_types_torch_function_override<'py>(
 fn probed_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> ProbedTorchFunctionOverride<'py> {
+    let precedence_type = value.get_type();
     let dispatch_type = if value.cast::<PyType>().is_ok() {
         value.clone()
     } else {
-        value.get_type().into_any()
+        precedence_type.clone().into_any()
     };
     ProbedTorchFunctionOverride {
         receiver: value.clone(),
         dispatch_type,
+        precedence_type,
     }
 }
 
@@ -2496,7 +2499,12 @@ fn ordered_binary_overrides<'py>(
             overrides.push(probed.clone());
             return Ok(overrides);
         };
-        if first.dispatch_type.is(&probed.dispatch_type) {
+        // PyTorch reports a class-valued operand itself in the dispatch types,
+        // but orders an incoming operand by its runtime type. Its metaclass is
+        // therefore compared with the first reported class, preserving class
+        // argument order and repeated class identities without changing
+        // ordinary instance subclass precedence.
+        if first.dispatch_type.is(probed.precedence_type.as_any()) {
             return Ok(overrides);
         }
 
@@ -2504,11 +2512,7 @@ fn ordered_binary_overrides<'py>(
             .dispatch_type
             .cast::<PyType>()
             .expect("a torch-function dispatch type is a Python type");
-        let other_type = probed
-            .dispatch_type
-            .cast::<PyType>()
-            .expect("a torch-function dispatch type is a Python type");
-        if other_type.is_subclass(first_type.as_any())? {
+        if probed.precedence_type.is_subclass(first_type.as_any())? {
             overrides.insert(0, probed.clone());
         } else {
             overrides.push(probed.clone());
