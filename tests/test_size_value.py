@@ -666,9 +666,9 @@ assert type(value[1]) is int
                     sys.modules.pop(name, None)
             sys.modules.update(saved_modules)
 
-    def test_tensor_metadata_return_types_remain_unchanged(self):
+    def test_tensor_shape_uses_size_without_adding_size_no_argument_overload(self):
         tensor = torch.zeros((2, 3))
-        self.assertIs(type(tensor.shape), tuple)
+        self.assertIs(type(tensor.shape), torch.Size)
         self.assertIs(type(tensor.stride()), tuple)
         self.assertIs(type(tensor.size(0)), int)
         with self.assertRaises(TypeError) as raised:
