@@ -3137,6 +3137,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 70
       }
+    },
+    {
+      "key": "pr:210",
+      "recordedAt": "2026-08-17T11:54:20.772Z",
+      "label": "PR #210",
+      "kind": "leaf",
+      "prNumber": 210,
+      "title": "Expose top-level torch.multiply alias",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 71,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 52.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 70
+      }
     }
   ]
 }
