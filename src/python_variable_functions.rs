@@ -14,8 +14,8 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     adjoint_variable_function, get_device_variable_function, matmul_variable_function,
-    movedim_variable_function, permute_variable_function, positive_variable_function,
-    resolve_conj_variable_function, scalar_tensor_variable_function,
+    moveaxis_variable_function, movedim_variable_function, permute_variable_function,
+    positive_variable_function, resolve_conj_variable_function, scalar_tensor_variable_function,
 };
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
@@ -87,6 +87,43 @@ Examples::
     >>> torch.movedim(t, (1, 2), (0, 1)).shape
     torch.Size([2, 1, 3])
     >>> torch.movedim(t, (1, 2), (0, 1))
+    tensor([[[-0.3362, -0.9627,  0.5173]],
+
+            [[-0.8437,  0.1727, -0.1398]]])
+";
+
+const MOVEAXIS_DOC: &std::ffi::CStr = cr"
+moveaxis(input, source, destination) -> Tensor
+
+Alias for :func:`torch.movedim`.
+
+This function is equivalent to NumPy's moveaxis function.
+
+Examples::
+
+    >>> t = torch.randn(3,2,1)
+    >>> t
+    tensor([[[-0.3362],
+            [-0.8437]],
+
+            [[-0.9627],
+            [ 0.1727]],
+
+            [[ 0.5173],
+            [-0.1398]]])
+    >>> torch.moveaxis(t, 1, 0).shape
+    torch.Size([2, 3, 1])
+    >>> torch.moveaxis(t, 1, 0)
+    tensor([[[-0.3362],
+            [-0.9627],
+            [ 0.5173]],
+
+            [[-0.8437],
+            [ 0.1727],
+            [-0.1398]]])
+    >>> torch.moveaxis(t, (1, 2), (0, 1)).shape
+    torch.Size([2, 1, 3])
+    >>> torch.moveaxis(t, (1, 2), (0, 1))
     tensor([[[-0.3362, -0.9627,  0.5173]],
 
             [[-0.8437,  0.1727, -0.1398]]])
@@ -222,6 +259,7 @@ variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
+variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
 
 macro_rules! variable_function_method {
@@ -256,6 +294,7 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
         variable_function_method!(c"permute", permute_callback, PERMUTE_DOC),
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
+        variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
         ffi::PyMethodDef::zeroed(),
     ]));
