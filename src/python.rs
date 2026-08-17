@@ -24,7 +24,7 @@ use crate::{
     python_memory_format::{PyMemoryFormat, memory_format_object},
     python_no_argument_builtins::add_no_argument_builtins,
     python_scalar_conversions::register_scalar_conversions,
-    python_size::size_type_object,
+    python_size::{construct_size, size_type_object},
     python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_torch_function_mode as torch_function_mode_stack,
     python_variable_functions::create_variable_functions_class,
@@ -596,6 +596,14 @@ impl PyTensorBase {
         )? {
             return Ok(result);
         }
+
+        let Some(dimension) = dimension else {
+            let dimensions = {
+                let tensor = tensor.try_borrow()?;
+                PyTuple::new(slf.py(), tensor.inner.shape().iter().copied())?
+            };
+            return construct_size(slf.py(), dimensions.as_any());
+        };
 
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
         let tensor = tensor.try_borrow()?;
@@ -5440,7 +5448,7 @@ fn extract_select_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
 fn bind_size_dimension<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<ParsedCallArgument<'py>> {
+) -> PyResult<Option<ParsedCallArgument<'py>>> {
     if positional.len() > 1 {
         return Err(PyTypeError::new_err(format!(
             "size() takes from 0 to 1 positional arguments but {} were given",
@@ -5465,9 +5473,8 @@ fn bind_size_dimension<'py>(
     };
 
     // PyTorch validates the recognized argument type before diagnosing extra
-    // keywords, but treats None as the optional no-argument overload until
-    // binding has otherwise completed. This implementation rejects that
-    // overload only after reproducing the shared binding precedence.
+    // keywords, but treats None as the optional no-argument overload only
+    // after binding has otherwise completed.
     if let Some(dimension) = &dimension
         && !dimension.value.is_none()
     {
@@ -5493,15 +5500,10 @@ fn bind_size_dimension<'py>(
         }
     }
 
-    let Some(dimension) = dimension else {
-        return Err(PyTypeError::new_err(
-            "size() missing 1 required positional arguments: \"dim\"",
-        ));
-    };
-    if dimension.value.is_none() {
-        return Err(size_dimension_type_error(&dimension, "NoneType"));
+    match dimension {
+        Some(dimension) if !dimension.value.is_none() => Ok(Some(dimension)),
+        _ => Ok(None),
     }
-    Ok(dimension)
 }
 
 fn validate_size_dimension(dimension: &ParsedCallArgument<'_>) -> PyResult<()> {

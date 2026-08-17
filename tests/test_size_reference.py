@@ -38,7 +38,7 @@ class TensorSizeReferenceTests(unittest.TestCase):
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "Tensor.size(dim) differentials require pinned PyTorch 2.13.0"
+                "Tensor.size differentials require pinned PyTorch 2.13.0"
             )
 
     def make_cases(self, module):
@@ -60,7 +60,16 @@ class TensorSizeReferenceTests(unittest.TestCase):
             .transpose(0, 2),
         )
 
-    def size_contract(self, tensor):
+    @staticmethod
+    def size_value_contract(module, value):
+        return (
+            type(value).__name__,
+            type(value) is module.Size,
+            tuple(value),
+            repr(value),
+        )
+
+    def size_contract(self, module, tensor):
         shape = tuple(tensor.shape)
         metadata = (
             shape,
@@ -69,6 +78,14 @@ class TensorSizeReferenceTests(unittest.TestCase):
             tensor.data_ptr(),
             tensor.requires_grad,
             tensor.is_leaf,
+        )
+        optional_results = tuple(
+            self.size_value_contract(module, result)
+            for result in (
+                tensor.size(),
+                tensor.size(None),
+                tensor.size(dim=None),
+            )
         )
         results = []
         for axis, expected in enumerate(shape):
@@ -87,6 +104,7 @@ class TensorSizeReferenceTests(unittest.TestCase):
                 )
         return {
             "shape": shape,
+            "optional_results": optional_results,
             "results": tuple(results),
             "metadata_unchanged": metadata
             == (
@@ -111,8 +129,8 @@ class TensorSizeReferenceTests(unittest.TestCase):
         ):
             with self.subTest(case=case, shape=actual.shape):
                 self.assertEqual(
-                    self.size_contract(actual),
-                    self.size_contract(expected),
+                    self.size_contract(torch, actual),
+                    self.size_contract(reference_torch, expected),
                 )
 
     def error(self, action):
@@ -120,7 +138,7 @@ class TensorSizeReferenceTests(unittest.TestCase):
             action()
         except Exception as error:
             return type(error).__name__, str(error)
-        self.fail("Tensor.size(dim) unexpectedly accepted the operation")
+        self.fail("Tensor.size unexpectedly accepted the operation")
 
     def integer_and_error_contract(self, module):
         tensor = module.zeros((2, 3, 4), dtype=module.float32)
@@ -196,7 +214,10 @@ class TensorSizeReferenceTests(unittest.TestCase):
         invalid_calls = (
             lambda: tensor.size(0, 1),
             lambda: tensor.size(0, dim=1),
+            lambda: tensor.size(None, dim=1),
             lambda: tensor.size(foo=0),
+            lambda: tensor.size(None, foo=0),
+            lambda: tensor.size(dim=None, foo=0),
             lambda: tensor.size(dim=0, foo=1),
             lambda: tensor.size(True, dim=0),
             lambda: tensor.size(2**63, foo=1),
@@ -236,6 +257,14 @@ class TensorSizeReferenceTests(unittest.TestCase):
             "class_identity": module.Tensor.size is descriptor,
             "class_get_identity": descriptor.__get__(None, module.Tensor)
             is descriptor,
+            "optional_values": tuple(
+                self.size_value_contract(module, result)
+                for result in (
+                    descriptor(tensor),
+                    descriptor(tensor, None),
+                    descriptor(tensor, dim=None),
+                )
+            ),
             "positional_value": descriptor(tensor, 0),
             "keyword_value": descriptor(tensor, dim=-1),
             "signatures": tuple(signatures),
@@ -264,6 +293,30 @@ class TensorSizeReferenceTests(unittest.TestCase):
             def __torch_function__(self, func, types, args=(), kwargs=None):
                 self.calls.append((func, types, args, kwargs))
                 return self.result
+
+        optional_recorded = []
+        for form, call in (
+            ("omitted", lambda: tensor.size()),
+            ("positional None", lambda: tensor.size(None)),
+            ("keyword None", lambda: tensor.size(dim=None)),
+        ):
+            mode = RecordingMode(marker)
+            with mode:
+                result = call()
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            optional_recorded.append(
+                (
+                    form,
+                    result is marker,
+                    len(mode.calls),
+                    function is descriptor,
+                    dispatch_types,
+                    len(args),
+                    args[0] is tensor,
+                    args[1:],
+                    kwargs,
+                )
+            )
 
         positional = RecordingMode(marker)
         with positional:
@@ -311,9 +364,27 @@ class TensorSizeReferenceTests(unittest.TestCase):
                 order.append(self.label)
                 return func(*args, **(kwargs or {}))
 
-        with ForwardingMode("lower"):
-            with ForwardingMode("upper"):
-                forwarded = tensor.size(dim=-1)
+        forwarded = []
+        for form, call in (
+            ("omitted", lambda: tensor.size()),
+            ("positional None", lambda: tensor.size(None)),
+            ("keyword None", lambda: tensor.size(dim=None)),
+            ("integer", lambda: tensor.size(dim=-1)),
+        ):
+            order.clear()
+            with ForwardingMode("lower"):
+                with ForwardingMode("upper"):
+                    result = call()
+            is_size = type(result) is module.Size
+            forwarded.append(
+                (
+                    form,
+                    tuple(order),
+                    type(result).__name__,
+                    is_size,
+                    tuple(result) if is_size else result,
+                )
+            )
 
         declining = RecordingMode(NotImplemented)
         lower = RecordingMode(marker)
@@ -330,6 +401,7 @@ class TensorSizeReferenceTests(unittest.TestCase):
             declining_error = None
 
         return {
+            "optional_recorded": tuple(optional_recorded),
             "positional_result": positional_result is marker,
             "positional_call_count": len(positional.calls),
             "positional_function": positional_function is descriptor,
@@ -348,9 +420,7 @@ class TensorSizeReferenceTests(unittest.TestCase):
             "deferred": tuple(deferred),
             "rejected": tuple(rejected),
             "custom_index_calls": custom.calls,
-            "forwarding_order": order,
-            "forwarded_type": type(forwarded).__name__,
-            "forwarded": forwarded,
+            "forwarded": tuple(forwarded),
             "declining_error": declining_error,
             "declining_calls": len(declining.calls),
             "lower_calls": len(lower.calls),

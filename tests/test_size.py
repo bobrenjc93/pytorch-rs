@@ -63,11 +63,46 @@ class TensorSizeTests(unittest.TestCase):
         self.assertGreater(offset.storage_offset(), 0)
         self.assertFalse(strided.is_contiguous())
         return (
+            ("scalar", torch.tensor(3.0)),
             ("empty", torch.zeros((2, 0, 3))),
             ("offset", offset),
             ("strided", strided),
             ("extreme empty", extreme_empty),
         )
+
+    def test_optional_dimension_returns_canonical_size_metadata(self):
+        for case, tensor in self.metadata_cases():
+            shape = tuple(tensor.shape)
+            expected = torch.Size(shape)
+            metadata = (
+                shape,
+                tensor.stride(),
+                tensor.storage_offset(),
+                tensor.data_ptr(),
+                tensor.requires_grad,
+                tensor.is_leaf,
+            )
+            for form, result in (
+                ("omitted", tensor.size()),
+                ("positional None", tensor.size(None)),
+                ("keyword None", tensor.size(dim=None)),
+            ):
+                with self.subTest(case=case, form=form):
+                    self.assertIs(type(result), torch.Size)
+                    self.assertEqual(result, expected)
+                    self.assertEqual(tuple(result), shape)
+                    self.assertEqual(repr(result), repr(expected))
+            self.assertEqual(
+                (
+                    tuple(tensor.shape),
+                    tensor.stride(),
+                    tensor.storage_offset(),
+                    tensor.data_ptr(),
+                    tensor.requires_grad,
+                    tensor.is_leaf,
+                ),
+                metadata,
+            )
 
     def test_positive_and_negative_dimensions_read_native_shape_metadata(self):
         for case, tensor in self.metadata_cases():
@@ -196,29 +231,13 @@ class TensorSizeTests(unittest.TestCase):
                         "Overflow when unpacking long long",
                     )
 
-    def test_standalone_size_does_not_add_the_no_argument_tensor_overload(self):
+    def test_optional_dimension_does_not_add_a_top_level_size_function(self):
         tensor = torch.zeros((2, 3))
         self.assertTrue(hasattr(torch, "Size"))
-        with self.assertRaises(TypeError) as raised:
-            tensor.size()
-        self.assertEqual(
-            str(raised.exception),
-            'size() missing 1 required positional arguments: "dim"',
-        )
-        for call, message in (
-            (
-                lambda: tensor.size(None),
-                "size(): argument 'dim' (position 1) must be int, not NoneType",
-            ),
-            (
-                lambda: tensor.size(dim=None),
-                "size(): argument 'dim' must be int, not NoneType",
-            ),
-        ):
-            with self.subTest(message=message):
-                with self.assertRaises(TypeError) as raised:
-                    call()
-                self.assertEqual(str(raised.exception), message)
+        self.assertFalse(hasattr(torch, "size"))
+        self.assertIs(type(tensor.size()), torch.Size)
+        self.assertIs(type(tensor.size(None)), torch.Size)
+        self.assertIs(type(tensor.size(dim=None)), torch.Size)
 
     def test_tensorbase_descriptor_metadata_and_binding_errors(self):
         tensor = torch.zeros((2, 3))
@@ -247,6 +266,13 @@ class TensorSizeTests(unittest.TestCase):
         )
         self.assertIs(torch.Tensor.size, descriptor)
         self.assertIs(descriptor.__get__(None, torch.Tensor), descriptor)
+        for result in (
+            descriptor(tensor),
+            descriptor(tensor, None),
+            descriptor(tensor, dim=None),
+        ):
+            self.assertIs(type(result), torch.Size)
+            self.assertEqual(result, torch.Size([2, 3]))
         self.assertEqual(descriptor(tensor, 0), 2)
         self.assertEqual(descriptor(tensor, dim=-1), 3)
         for callable_object in (descriptor, bound):
@@ -263,7 +289,19 @@ class TensorSizeTests(unittest.TestCase):
                 "size() got multiple values for argument 'dim'",
             ),
             (
+                lambda: tensor.size(None, dim=1),
+                "size() got multiple values for argument 'dim'",
+            ),
+            (
                 lambda: tensor.size(foo=0),
+                "size() got an unexpected keyword argument 'foo'",
+            ),
+            (
+                lambda: tensor.size(None, foo=0),
+                "size() got an unexpected keyword argument 'foo'",
+            ),
+            (
+                lambda: tensor.size(dim=None, foo=0),
                 "size() got an unexpected keyword argument 'foo'",
             ),
             (
@@ -312,31 +350,27 @@ class TensorSizeTests(unittest.TestCase):
                 self.calls.append((func, types, args, kwargs))
                 return self.result
 
-        positional = RecordingMode(marker)
-        with positional:
-            positional_result = tensor.size(1)
-        self.assertIs(positional_result, marker)
-        self.assertEqual(len(positional.calls), 1)
-        function, dispatch_types, args, kwargs = positional.calls[0]
-        self.assertIs(function, descriptor)
-        self.assertEqual(dispatch_types, ())
-        self.assertEqual(len(args), 2)
-        self.assertIs(args[0], tensor)
-        self.assertEqual(args[1], 1)
-        self.assertIsNone(kwargs)
-
-        keyword = RecordingMode(marker)
-        with keyword:
-            keyword_result = tensor.size(dim=-1)
-        self.assertIs(keyword_result, marker)
-        function, dispatch_types, args, kwargs = keyword.calls[0]
-        self.assertIs(function, descriptor)
-        self.assertEqual(dispatch_types, ())
-        self.assertEqual(len(args), 1)
-        self.assertIs(args[0], tensor)
-        self.assertEqual(kwargs, {"dim": -1})
-
-        order = []
+        cases = (
+            ("omitted", lambda: tensor.size(), (), None),
+            ("positional None", lambda: tensor.size(None), (None,), None),
+            ("keyword None", lambda: tensor.size(dim=None), (), {"dim": None}),
+            ("positional integer", lambda: tensor.size(1), (1,), None),
+            ("keyword integer", lambda: tensor.size(dim=-1), (), {"dim": -1}),
+        )
+        for form, call, trailing_args, expected_kwargs in cases:
+            mode = RecordingMode(marker)
+            with mode:
+                result = call()
+            with self.subTest(form=form):
+                self.assertIs(result, marker)
+                self.assertEqual(len(mode.calls), 1)
+                function, dispatch_types, args, kwargs = mode.calls[0]
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, ())
+                self.assertEqual(len(args), 1 + len(trailing_args))
+                self.assertIs(args[0], tensor)
+                self.assertEqual(args[1:], trailing_args)
+                self.assertEqual(kwargs, expected_kwargs)
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):
             def __init__(self, label):
@@ -346,12 +380,30 @@ class TensorSizeTests(unittest.TestCase):
                 order.append(self.label)
                 return func(*args, **(kwargs or {}))
 
-        with ForwardingMode("lower"):
-            with ForwardingMode("upper"):
-                forwarded = tensor.size(dim=-1)
-        self.assertEqual(order, ["upper", "lower"])
-        self.assertIs(type(forwarded), int)
-        self.assertEqual(forwarded, 3)
+        for form, call, expected_type, expected_value in (
+            ("omitted", lambda: tensor.size(), torch.Size, torch.Size([2, 3])),
+            (
+                "positional None",
+                lambda: tensor.size(None),
+                torch.Size,
+                torch.Size([2, 3]),
+            ),
+            (
+                "keyword None",
+                lambda: tensor.size(dim=None),
+                torch.Size,
+                torch.Size([2, 3]),
+            ),
+            ("integer", lambda: tensor.size(dim=-1), int, 3),
+        ):
+            order = []
+            with ForwardingMode("lower"):
+                with ForwardingMode("upper"):
+                    forwarded = call()
+            with self.subTest(form=form):
+                self.assertEqual(order, ["upper", "lower"])
+                self.assertIs(type(forwarded), expected_type)
+                self.assertEqual(forwarded, expected_value)
 
     def test_mode_dispatch_precedes_conversion_but_follows_type_binding(self):
         tensor = torch.zeros((2, 3))
