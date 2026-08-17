@@ -7,6 +7,23 @@ from math import e, inf, nan, pi
 from . import torch_rs as _native
 from .torch_rs import *
 
+
+def _restore_tensor_to_descriptor():
+    return Tensor.to
+
+
+def _reduce_method_descriptor(descriptor):
+    if descriptor is Tensor.to:
+        return _restore_tensor_to_descriptor, ()
+    return descriptor.__reduce__()
+
+
+# TensorBase must retain PyTorch's public ``torch._C`` ownership metadata, but
+# this package intentionally does not replace the top-level ``torch`` module.
+# Give the newly exposed descriptor an importable package-local pickle path
+# while leaving every other built-in method descriptor's reducer unchanged.
+_copyreg.pickle(type(Tensor.to), _reduce_method_descriptor)
+
 # PyTorch's built-in variable functions reduce through owners in ``torch._C``.
 # Expose the native extension under the equivalent package-local name so those
 # owners remain importable without creating or modifying a top-level ``torch``.
