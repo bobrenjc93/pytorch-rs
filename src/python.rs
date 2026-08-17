@@ -1308,6 +1308,23 @@ pub(crate) fn multiply_variable_function(
     multiplication_variable_function(MultiplicationOperation::Multiply, py, args, kwargs)
 }
 
+pub(crate) fn promote_types_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let [type1, type2] = bind_promote_types_arguments(args, kwargs)?;
+    let promoted = parse_promote_types_dtype("type1", &type1)?;
+    let other = parse_promote_types_dtype("type2", &type2)?;
+    validate_promote_types_keywords(args.len(), kwargs)?;
+
+    // Float32 is the complete supported dtype set, so two validated dtype
+    // arguments are necessarily identical. Preserve that narrow boundary
+    // instead of introducing a promotion table before another dtype exists.
+    debug_assert_eq!(promoted, other);
+    dispatch_promote_types(py, promoted, args, kwargs)
+}
+
 fn multiplication_variable_function(
     operation: MultiplicationOperation,
     py: Python<'_>,
@@ -1861,6 +1878,49 @@ fn torch_function_dispatch_error_for_overrides(
         "Multiple dispatch failed for '{function}'; all __torch_function__ handlers returned NotImplemented:\n\n{}\n\nFor more information, try re-running with TORCH_LOGS=not_implemented",
         handlers.join("\n")
     )))
+}
+
+fn dispatch_promote_types(
+    py: Python<'_>,
+    promoted: DType,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(dtype_object(py, promoted)?.clone_ref(py).into_any());
+    }
+
+    let variable_functions = VARIABLE_FUNCTIONS_CLASS.get(py).ok_or_else(|| {
+        PyRuntimeError::new_err(
+            "torch.promote_types was called before module initialization completed",
+        )
+    })?;
+    let function = variable_functions
+        .bind(py)
+        .getattr("promote_types")?
+        .unbind();
+    let types = PyTuple::empty(py);
+
+    // Generated variable functions validate their schema before dispatch and
+    // disable the top mode for the complete attempt. Explicit forwarding from
+    // a mode therefore reaches the next mode, then the native singleton path.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+        return Err(torch_function_dispatch_error(
+            py,
+            "torch.promote_types",
+            Some(mode),
+            None,
+        )?);
+    }
+
+    Ok(dtype_object(py, promoted)?.clone_ref(py).into_any())
 }
 
 fn dispatch_positive(
@@ -7159,6 +7219,122 @@ fn bind_tensor_arguments<'py, const N: usize>(
     ))
 }
 
+fn bind_promote_types_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<[ParsedCallArgument<'py>; 2]> {
+    const NAMES: [&str; 2] = ["type1", "type2"];
+    const KEY_NAMES: [&CStr; 2] = [c"type1", c"type2"];
+
+    if positional.len() > NAMES.len() {
+        return Err(PyTypeError::new_err(format!(
+            "promote_types() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 2] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    if let Some(keywords) = keywords {
+        for (index, key) in KEY_NAMES.into_iter().enumerate().skip(positional.len()) {
+            if let Some(value) = legacy_dict_get_item_string(keywords, key) {
+                arguments[index] = Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                });
+            }
+        }
+    }
+
+    if let Some(first_missing) = arguments.iter().position(Option::is_none) {
+        // As in PyTorch's generated parser, a supplied prefix is type-checked
+        // before a missing suffix is reported. Later keywords are not examined
+        // when the first required argument is absent.
+        for (name, argument) in NAMES.iter().zip(arguments.iter()).take(first_missing) {
+            parse_promote_types_dtype(
+                name,
+                argument
+                    .as_ref()
+                    .expect("arguments preceding the first gap are present"),
+            )?;
+        }
+        let missing = &NAMES[first_missing..];
+        let quoted_names = missing
+            .iter()
+            .map(|name| format!("\"{name}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let argument = if missing.len() == 1 {
+            "arguments"
+        } else {
+            "argument"
+        };
+        return Err(PyTypeError::new_err(format!(
+            "promote_types() missing {} required positional {argument}: {quoted_names}",
+            missing.len()
+        )));
+    }
+
+    Ok(arguments
+        .map(|argument| argument.expect("all required promote_types arguments were bound above")))
+}
+
+fn validate_promote_types_keywords(
+    positional_count: usize,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    let Some(keywords) = keywords else {
+        return Ok(());
+    };
+
+    for key in keywords.keys() {
+        let position = if key.eq("type1")? {
+            Some(0)
+        } else if key.eq("type2")? {
+            Some(1)
+        } else {
+            None
+        };
+        if let Some(position) = position {
+            if position < positional_count {
+                return Err(PyTypeError::new_err(format!(
+                    "promote_types() got multiple values for argument '{}'",
+                    if position == 0 { "type1" } else { "type2" }
+                )));
+            }
+            continue;
+        }
+
+        let key = key.extract::<String>()?;
+        let mut message = format!("promote_types() got an unexpected keyword argument '{key}'");
+        if let Some(nul) = message.find('\0') {
+            message.truncate(nul);
+        }
+        return Err(PyTypeError::new_err(message));
+    }
+    Ok(())
+}
+
+fn parse_promote_types_dtype(name: &str, argument: &ParsedCallArgument<'_>) -> PyResult<DType> {
+    if let Ok(dtype) = argument.value.cast::<PyDType>() {
+        return Ok(dtype.try_borrow()?.inner());
+    }
+
+    let position = argument
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = transpose_type_name(&argument.value)?;
+    Err(PyTypeError::new_err(format!(
+        "promote_types(): argument '{name}'{position} must be torch.dtype, not {actual}"
+    )))
+}
+
 #[derive(Clone, Copy)]
 enum LegacyBinaryInputKind {
     Tensor,
@@ -9654,6 +9830,7 @@ fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "matmul",
         "mul",
         "multiply",
+        "promote_types",
     ] {
         let function = variable_functions.getattr(name)?;
         function.setattr("__module__", "torch")?;

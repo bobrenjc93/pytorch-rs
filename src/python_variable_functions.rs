@@ -16,8 +16,9 @@ use crate::python::{
     adjoint_variable_function, get_device_variable_function, is_conj_variable_function,
     matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
     mul_variable_function, multiply_variable_function, permute_variable_function,
-    positive_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, unbind_variable_function,
+    positive_variable_function, promote_types_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    unbind_variable_function,
 };
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
@@ -94,6 +95,26 @@ const MULTIPLY_DOC: &std::ffi::CStr = c"
 multiply(input, other, *, out=None)
 
 Alias for :func:`torch.mul`.
+";
+
+const PROMOTE_TYPES_DOC: &std::ffi::CStr = c"
+promote_types(type1, type2) -> dtype
+
+Returns the :class:`torch.dtype` with the smallest size and scalar kind that is
+not smaller nor of lower kind than either `type1` or `type2`. See type promotion
+:ref:`documentation <type-promotion-doc>` for more information on the type
+promotion logic.
+
+Args:
+    type1 (:class:`torch.dtype`)
+    type2 (:class:`torch.dtype`)
+
+Example::
+
+    >>> torch.promote_types(torch.int32, torch.float32)
+    torch.float32
+    >>> torch.promote_types(torch.uint8, torch.long)
+    torch.long
 ";
 
 const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
@@ -327,6 +348,7 @@ variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
+variable_function_callback!(promote_types_callback, promote_types_variable_function);
 
 macro_rules! variable_function_method {
     ($name:expr, $callback:ident, $doc:expr) => {
@@ -368,6 +390,7 @@ pub(crate) fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyA
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
+        variable_function_method!(c"promote_types", promote_types_callback, PROMOTE_TYPES_DOC),
         ffi::PyMethodDef::zeroed(),
     ]));
     let mut slots = [
