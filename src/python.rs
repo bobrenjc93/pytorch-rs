@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRecursionError, PyRuntimeError, PyTypeError,
-    PyUserWarning, PyValueError,
+    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
+    PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -1673,20 +1673,19 @@ fn redispatch_const_data_ptr_mode_python_310(
             ffi::Py_LeaveRecursiveCall();
         }
     }
-    if initial_redispatch
-        && let Err(error) = &result
-        && error.is_instance_of::<PyRecursionError>(py)
-        && error.value(py).str()?.to_str()? == "maximum recursion depth exceeded"
-    {
-        // PyTorch's Tensor.__torch_function__ subclass probe supplies this
-        // CPython 3.10 recursion context; the direct Rust retry has no Python
-        // frame from which CPython could otherwise recover it.
-        error.value(py).setattr(
-            "args",
-            ("maximum recursion depth exceeded in __subclasscheck__",),
-        )?;
-    }
     result
+}
+
+#[allow(
+    unsafe_code,
+    reason = "CPython 3.10 TensorBase parity requires probing the recursive subclass-dispatch boundary"
+)]
+fn probe_const_data_ptr_handler_recursion_python_310(py: Python<'_>) -> PyResult<()> {
+    if unsafe { ffi::Py_EnterRecursiveCall(c" in __subclasscheck__".as_ptr()) } != 0 {
+        return Err(PyErr::fetch(py));
+    }
+    unsafe { ffi::Py_LeaveRecursiveCall() };
+    Ok(())
 }
 
 fn dispatch_tensorbase_mode(
@@ -1723,6 +1722,11 @@ fn dispatch_tensorbase_mode_impl(
     };
     validate_torch_function_mode_handler(mode.bind(py))?;
     let handler = mode.bind(py).getattr("__torch_function__")?;
+    if python_310_const_data_ptr_redispatching {
+        // Probe before invoking user code so only a guard failure receives
+        // CPython's subclass-check context; handler exceptions remain opaque.
+        probe_const_data_ptr_handler_recursion_python_310(py)?;
+    }
     let result = call_torch_function_handler(py, &handler, &function, &types, &args, None)?;
     if !is_not_implemented(py, &result) {
         return Ok(Some(result));

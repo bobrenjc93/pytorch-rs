@@ -269,6 +269,66 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
+    def handler_recursion_error_observation(self, module_name):
+        source = r'''
+import importlib
+import json
+
+module = importlib.import_module(MODULE)
+tensor = module.tensor([1.0], dtype=module.float32)
+
+class ExplodingRecursionError(RecursionError):
+    def __str__(self):
+        raise LookupError("exception stringification must not run")
+
+observations = []
+for error in (
+    RecursionError("maximum recursion depth exceeded"),
+    ExplodingRecursionError("maximum recursion depth exceeded"),
+):
+    class StatefulMode(module.overrides.TorchFunctionMode):
+        def __init__(self):
+            self.calls = 0
+
+        def __torch_function__(self, func, types, args=(), kwargs=None):
+            self.calls += 1
+            if self.calls == 1:
+                return NotImplemented
+            raise error
+
+    mode = StatefulMode()
+    try:
+        with mode:
+            tensor.const_data_ptr()
+    except Exception as caught:
+        observations.append({
+            "type": type(caught).__name__,
+            "args": caught.args,
+            "same_object": caught is error,
+            "calls": mode.calls,
+        })
+    else:
+        observations.append(None)
+
+print(json.dumps({
+    "observations": observations,
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_handler_recursion_errors_propagate_unchanged(self):
+        self.assertEqual(
+            self.handler_recursion_error_observation("torch_rs"),
+            self.handler_recursion_error_observation("torch"),
+        )
+
     def test_reference_cow_boundary_remains_explicitly_unsupported(self):
         self.assertFalse(hasattr(torch, "_lazy_clone"))
         self.assertFalse(hasattr(torch.Tensor, "_lazy_clone"))
