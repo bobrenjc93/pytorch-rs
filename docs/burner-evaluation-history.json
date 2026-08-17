@@ -3265,6 +3265,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 71
       }
+    },
+    {
+      "key": "pr:221",
+      "recordedAt": "2026-08-17T19:49:16.116Z",
+      "label": "PR #221",
+      "kind": "leaf",
+      "prNumber": 221,
+      "title": "Expose read-only Tensor.is_nested metadata",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 71.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 54.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 71
+      }
     }
   ]
 }
