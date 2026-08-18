@@ -130,6 +130,32 @@ fn data_ptr_tracks_empty_offset_alias_and_materialized_storage() {
 }
 
 #[test]
+fn const_data_ptr_matches_data_ptr_for_ordinary_storage() {
+    let scalar = Tensor::from_vec(vec![2.5], []).unwrap();
+    let source = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [3, 4]).unwrap();
+    let offset = source.index_integer(2).unwrap();
+    let strided = source.transpose(0, 1).unwrap().index_integer(1).unwrap();
+    let detached = strided.detach().unwrap();
+    let empty = Tensor::zeros([3, 0, 4]).unwrap().index_integer(2).unwrap();
+    let leaf = Tensor::ones([2, 2]).unwrap().with_requires_grad(true);
+    let autograd_output = leaf.mul_scalar(3.0).unwrap().transpose(0, 1).unwrap();
+
+    for tensor in [
+        &scalar,
+        &source,
+        &offset,
+        &strided,
+        &detached,
+        &empty,
+        &leaf,
+        &autograd_output,
+    ] {
+        assert_eq!(tensor.const_data_ptr(), tensor.data_ptr());
+        assert_eq!(tensor.const_data_ptr(), tensor.const_data_ptr());
+    }
+}
+
+#[test]
 fn construction_validates_shape() {
     let error = Tensor::from_vec(vec![1.0, 2.0], [3]).unwrap_err();
     assert_eq!(

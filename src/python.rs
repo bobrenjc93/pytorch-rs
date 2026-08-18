@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -39,6 +40,10 @@ static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+
+thread_local! {
+    static CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
 
 const TORCH_FUNCTION_DESCRIPTOR_CALLER_SOURCE: &CStr = cr"
 def _call_descriptor(function, args):
@@ -744,6 +749,27 @@ impl PyTensorBase {
     fn element_size(slf: &Bound<'_, Self>) -> PyResult<usize> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         Ok(tensor.inner.element_size())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nconst_data_ptr() -> int\n\nReturns the address of the first element of :attr:`self` tensor.\n\nUnlike :meth:`data_ptr`, this is guaranteed to be a read-only access\nthat will not trigger copy-on-write materialization. For regular\n(non-COW) tensors, the return value is identical to :meth:`data_ptr`.\n\n.. warning::\n\n    The returned pointer must not be used to mutate the tensor data.\n    Use :meth:`data_ptr` when write access is needed.\n"]
+    #[pyo3(text_signature = None)]
+    fn const_data_ptr(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_mode(
+            slf.py(),
+            tensor,
+            TensorBaseModeTarget::Method("const_data_ptr"),
+        )? {
+            return Ok(result);
+        }
+
+        tensor
+            .try_borrow()?
+            .inner
+            .const_data_ptr()
+            .into_py_any(slf.py())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1599,6 +1625,39 @@ fn call_torch_function_handler(
     Ok(result.unbind())
 }
 
+#[allow(
+    unsafe_code,
+    reason = "mode dispatch must use CPython's combined descriptor lookup and call boundary, matching PyTorch"
+)]
+fn call_torch_function_mode_handler(
+    py: Python<'_>,
+    mode: &Bound<'_, PyAny>,
+    function: &Py<PyAny>,
+    types: &Bound<'_, PyTuple>,
+    args: &Bound<'_, PyTuple>,
+) -> PyResult<Py<PyAny>> {
+    // PyTorch invokes a mode through PyObject_CallMethod after separately
+    // validating one descriptor resolution. Keeping the second resolution and
+    // invocation in the same CPython operation is observable at the recursion
+    // limit for stateful descriptors.
+    let result = unsafe {
+        ffi::PyObject_CallMethod(
+            mode.as_ptr(),
+            c"__torch_function__".as_ptr(),
+            c"OOO".as_ptr(),
+            function.as_ptr(),
+            types.as_ptr(),
+            args.as_ptr(),
+        )
+    };
+    if result.is_null() {
+        Err(PyErr::fetch(py))
+    } else {
+        // SAFETY: PyObject_CallMethod returned a new owned reference.
+        Ok(unsafe { Bound::<PyAny>::from_owned_ptr(py, result) }.unbind())
+    }
+}
+
 fn is_not_implemented(py: Python<'_>, result: &Py<PyAny>) -> bool {
     result.as_ptr() == py.NotImplemented().as_ptr()
 }
@@ -1613,6 +1672,77 @@ fn torch_function_descriptor_caller(py: Python<'_>) -> PyResult<&'static Py<PyAn
         )?;
         Ok(helpers.getattr("_call_descriptor")?.unbind())
     })
+}
+
+struct ConstDataPtrLegacyRedispatchDepth;
+
+impl ConstDataPtrLegacyRedispatchDepth {
+    fn enter() -> Self {
+        CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        Self
+    }
+}
+
+impl Drop for ConstDataPtrLegacyRedispatchDepth {
+    fn drop(&mut self) {
+        CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
+fn const_data_ptr_legacy_redispatch_depth() -> usize {
+    CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH.with(Cell::get)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "CPython 3.10 and 3.11 TensorBase parity requires probing legacy recursive dispatch boundaries"
+)]
+fn probe_const_data_ptr_redispatch_legacy(py: Python<'_>, redispatch_depth: usize) -> PyResult<()> {
+    // The Python helper below retains the recursive fallback frame, while the
+    // native PyTorch path also crosses alternating subclass and callable
+    // recursion checks before retrying the descriptor. Probe those checks only
+    // after the mode declines so accepted results and handler exceptions win.
+    let python_310_contexts = [
+        c" in __subclasscheck__",
+        c" while calling a Python object",
+        c" in __subclasscheck__",
+        c" while calling a Python object",
+        c" in __subclasscheck__",
+        c" while calling a Python object",
+    ];
+    let python_311_contexts = [
+        c" while calling a Python object",
+        c" in __subclasscheck__",
+        c" while calling a Python object",
+        c" in __subclasscheck__",
+        // The initial Tensor.__torch_function__ retry reaches its subclass
+        // boundary before another callable boundary at tight headroom.
+        if redispatch_depth == 1 {
+            c" in __subclasscheck__"
+        } else {
+            c" while calling a Python object"
+        },
+    ];
+    let contexts: &[&CStr] = if py.version_info() < (3, 11) {
+        &python_310_contexts
+    } else {
+        &python_311_contexts
+    };
+    let mut entered = 0;
+    for context in contexts {
+        if unsafe { ffi::Py_EnterRecursiveCall(context.as_ptr()) } != 0 {
+            let error = PyErr::fetch(py);
+            for _ in 0..entered {
+                unsafe { ffi::Py_LeaveRecursiveCall() };
+            }
+            return Err(error);
+        }
+        entered += 1;
+    }
+    for _ in 0..entered {
+        unsafe { ffi::Py_LeaveRecursiveCall() };
+    }
+    Ok(())
 }
 
 fn dispatch_tensorbase_mode(
@@ -1639,10 +1769,14 @@ fn dispatch_tensorbase_mode(
         return Ok(None);
     };
     validate_torch_function_mode_handler(mode.bind(py))?;
-    let handler = mode.bind(py).getattr("__torch_function__")?;
-    let result = call_torch_function_handler(py, &handler, &function, &types, &args, None)?;
+    let result = call_torch_function_mode_handler(py, mode.bind(py), &function, &types, &args)?;
     if !is_not_implemented(py, &result) {
         return Ok(Some(result));
+    }
+    if py.version_info() < (3, 12)
+        && matches!(target, TensorBaseModeTarget::Method("const_data_ptr"))
+    {
+        probe_const_data_ptr_redispatch_legacy(py, const_data_ptr_legacy_redispatch_depth())?;
     }
 
     // TensorBase's fallback retries the descriptor after restoring the active
@@ -1654,6 +1788,9 @@ fn dispatch_tensorbase_mode(
     // Keep the retry in a Python frame so configured `sys.setrecursionlimit`
     // values and mode side effects match TensorBase's recursive fallback.
     let caller = torch_function_descriptor_caller(py)?;
+    let legacy_redispatch = py.version_info() < (3, 12)
+        && matches!(target, TensorBaseModeTarget::Method("const_data_ptr"));
+    let _redispatch_depth = legacy_redispatch.then(ConstDataPtrLegacyRedispatchDepth::enter);
     Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
 }
 
@@ -10001,6 +10138,9 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
+    // Build the recursive TensorBase fallback while import has normal recursion
+    // headroom. Lazy construction is observably too late near the recursion limit.
+    let _ = torch_function_descriptor_caller(py)?;
     module.add("Size", size_type_object(py)?.clone_ref(py))?;
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();
