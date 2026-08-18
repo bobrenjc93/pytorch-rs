@@ -127,6 +127,16 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
             expected_signature.return_annotation, reference_torch.Tensor
         )
 
+        actual_wildcard = {}
+        expected_wildcard = {}
+        exec(
+            "from torch_rs.nn.functional import *", actual_wildcard
+        )
+        exec("from torch.nn.functional import *", expected_wildcard)
+        self.assertEqual(
+            "types" in actual_wildcard, "types" in expected_wildcard
+        )
+
     def test_identity_calls_match_for_values_layouts_and_autograd_metadata(self):
         calls = (
             (
@@ -701,6 +711,29 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
         )
         self.assertIs(actual_error[0], expected_error[0])
         self.assertEqual(actual_error[1], expected_error[1])
+
+        def first_recursion_rank(module, function):
+            limit = sys.getrecursionlimit()
+            for rank in range(limit - 20, limit + 1):
+                probability = module.tensor([-2.0]).reshape((1,) * rank)
+                try:
+                    function(
+                        module.tensor([0.0]),
+                        p=probability,
+                        training=False,
+                    )
+                except RecursionError:
+                    return rank
+                except ValueError:
+                    pass
+            self.fail("expected tensor formatting to reach recursion limit")
+
+        self.assertEqual(
+            first_recursion_rank(torch, functional.dropout),
+            first_recursion_rank(
+                reference_torch, reference_functional.dropout
+            ),
+        )
 
     def run_override_case(self, function):
         replacement = object()

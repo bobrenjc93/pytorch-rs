@@ -1,7 +1,7 @@
 """Functional interface."""
 
 import math
-import types
+import types as _types
 import warnings
 
 import torch_rs as torch
@@ -34,7 +34,7 @@ def _overloaded_dropout_arguments(input, include_tensor):
 
 def _is_disabled_torch_function_impl(handler):
     return (
-        isinstance(handler, types.BuiltinFunctionType)
+        isinstance(handler, _types.BuiltinFunctionType)
         and handler.__module__ == "torch._C"
         and handler.__name__ == "_disabled_torch_function_impl"
     )
@@ -181,9 +181,9 @@ def _format_single_element_tensor(tensor, value):
 
 
 def _format_single_element_tensor_contents(
-    dimensions, formatted, formatter_frames=5
+    dimensions, formatted, formatter_frames=6
 ):
-    # PyTorch reaches its recursive tensor printer through five additional
+    # PyTorch reaches its recursive tensor printer through six additional
     # Tensor.__format__/repr helper frames. Preserve that recursion headroom so
     # deeply ranked probability diagnostics fail at the same resource limit.
     if formatter_frames:
