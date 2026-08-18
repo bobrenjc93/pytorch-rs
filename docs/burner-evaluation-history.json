@@ -3393,6 +3393,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 75
       }
+    },
+    {
+      "key": "pr:243",
+      "recordedAt": "2026-08-18T17:18:02.023Z",
+      "label": "PR #243",
+      "kind": "leaf",
+      "prNumber": 243,
+      "title": "Move casting and promotion relations into DType",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 72.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 55.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 76
+      }
     }
   ]
 }
