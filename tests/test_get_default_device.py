@@ -103,8 +103,8 @@ class GetDefaultDeviceTests(unittest.TestCase):
             "torch.device",
         )
         self.assertEqual(torch.__all__.count("get_default_device"), 1)
-        self.assertFalse(hasattr(torch, "set_default_device"))
-        self.assertNotIn("set_default_device", torch.__all__)
+        self.assertTrue(hasattr(torch, "set_default_device"))
+        self.assertEqual(torch.__all__.count("set_default_device"), 1)
 
     def test_rejects_all_arguments_with_pytorch_2_13_errors(self):
         function = torch.get_default_device

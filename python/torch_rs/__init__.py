@@ -2,6 +2,7 @@
 
 import copyreg as _copyreg
 import sys as _sys
+import threading as _threading
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
@@ -17,11 +18,73 @@ _sys.modules[f"{__name__}._C"] = _C
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
 # from this package without adding ``torch`` to wildcard imports.
 torch = _sys.modules[__name__]
+_DEFAULT_DEVICE_CONTEXT = _threading.local()
 
 
 def get_default_device() -> "torch.device":
     r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
+    device = getattr(_DEFAULT_DEVICE_CONTEXT, "device", None)
+    if device is not None and device.index is not None:
+        return device
     return torch.device("cpu")
+
+
+def set_default_device(device: "Device") -> None:
+    """Sets the default ``torch.Tensor`` to be allocated on ``device``.  This
+    does not affect factory function calls which are called with an explicit
+    ``device`` argument.  Factory calls will be performed as if they
+    were passed ``device`` as an argument.
+
+    To only temporarily change the default device instead of setting it
+    globally, use ``with torch.device(device):`` instead.
+
+    The default device is initially ``cpu``.  If you set the default tensor
+    device to another device (e.g., ``cuda``) without a device index, tensors
+    will be allocated on whatever the current device for the device type,
+    even after :func:`torch.cuda.set_device` is called.
+
+    .. warning::
+
+        This function imposes a slight performance cost on every Python
+        call to the torch API (not just factory functions).  If this
+        is causing problems for you, please comment on
+        https://github.com/pytorch/pytorch/issues/92701
+
+    .. note::
+
+        This doesn't affect functions that create tensors that share the same memory as the input, like:
+        :func:`torch.from_numpy` and :func:`torch.frombuffer`
+
+    Args:
+        device (device or string): the device to set as default
+
+    Example::
+
+        >>> # xdoctest: +SKIP("requires cuda, changes global state")
+        >>> torch.get_default_device()
+        device(type='cpu')
+        >>> torch.set_default_device('cuda')  # current device is 0
+        >>> torch.get_default_device()
+        device(type='cuda', index=0)
+        >>> torch.set_default_device('cuda')
+        >>> torch.cuda.set_device('cuda:1')  # current device is 1
+        >>> torch.get_default_device()
+        device(type='cuda', index=1)
+        >>> torch.set_default_device('cuda:1')
+        >>> torch.get_default_device()
+        device(type='cuda', index=1)
+
+    """
+    if device is None:
+        _DEFAULT_DEVICE_CONTEXT.device = None
+        return
+
+    # Parsing through the public descriptor preserves torch.device's CPU
+    # index normalization and its PyTorch-compatible validation errors. The
+    # descriptor itself remains thread-local metadata; tensor storage stays on
+    # the backend's ordinary unindexed CPU device.
+    parsed_device = torch.device(device)
+    _DEFAULT_DEVICE_CONTEXT.device = parsed_device
 
 
 def set_default_dtype(d: "torch.dtype", /) -> None:
@@ -100,7 +163,15 @@ __doc__ = _native.__doc__
 # numeric constants live on ``torch`` rather than ``torch._C``.  A separate
 # list also keeps reloading safe: the native wildcard import must only name
 # attributes that the extension itself owns.
-__all__ = [*_native.__all__, "get_default_device", "e", "pi", "nan", "inf"]
+__all__ = [
+    *_native.__all__,
+    "get_default_device",
+    "set_default_device",
+    "e",
+    "pi",
+    "nan",
+    "inf",
+]
 # PyTorch lists ``matmul`` once among its hand-written package exports and once
 # among generated variable functions. Preserve that observable duplicate while
 # the native module continues to own the callable itself.
@@ -114,4 +185,4 @@ from . import overrides as overrides
 from . import utils as utils
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _copyreg, _native, _sys
+del _copyreg, _native, _sys, _threading
