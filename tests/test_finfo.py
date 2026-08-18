@@ -1,6 +1,7 @@
 import copy
 import inspect
 import pickle
+import sys
 import types
 import unittest
 
@@ -72,6 +73,32 @@ class FInfoTests(unittest.TestCase):
         self.assertEqual(torch.finfo.__module__, "torch_rs")
         self.assertIsNone(torch.finfo.__doc__)
         self.assertIn("finfo", torch.__all__)
+        surface = set(vars(torch.finfo))
+        surface.discard("__module__")
+        self.assertEqual(
+            surface,
+            {
+                "__doc__",
+                "__eq__",
+                "__ge__",
+                "__gt__",
+                "__hash__",
+                "__le__",
+                "__lt__",
+                "__ne__",
+                "__new__",
+                "__repr__",
+                "__str__",
+                "bits",
+                "dtype",
+                "eps",
+                "max",
+                "min",
+                "resolution",
+                "smallest_normal",
+                "tiny",
+            },
+        )
         with self.assertRaises(ValueError):
             inspect.signature(torch.finfo)
 
@@ -111,11 +138,29 @@ class FInfoTests(unittest.TestCase):
             info.__dict__
         with self.assertRaises(AttributeError):
             info.__weakref__
+        self.assertFalse(hasattr(info, "__getnewargs__"))
         self.assert_error(
             TypeError,
             "type 'torch_rs.finfo' is not an acceptable base type",
             lambda: type("SubFInfo", (torch.finfo,), {}),
         )
+
+    def test_type_object_is_immutable(self):
+        actions = (
+            ("extra", lambda: setattr(torch.finfo, "extra", 1)),
+            (
+                "__repr__",
+                lambda: setattr(torch.finfo, "__repr__", lambda self: "changed"),
+            ),
+            ("bits", lambda: delattr(torch.finfo, "bits")),
+        )
+        for name, action in actions:
+            with self.subTest(name=name):
+                self.assert_error(
+                    TypeError,
+                    f"cannot set '{name}' attribute of immutable type 'torch_rs.finfo'",
+                    action,
+                )
 
     def test_metadata_is_read_only(self):
         info = torch.finfo()
@@ -144,9 +189,12 @@ class FInfoTests(unittest.TestCase):
                         action,
                     )
 
+        extra_message = "'torch_rs.finfo' object has no attribute 'extra'"
+        if sys.version_info >= (3, 13):
+            extra_message += " and no __dict__ for setting new attributes"
         self.assert_error(
             AttributeError,
-            "'torch_rs.finfo' object has no attribute 'extra'",
+            extra_message,
             lambda: setattr(info, "extra", 1),
         )
 
@@ -160,6 +208,24 @@ class FInfoTests(unittest.TestCase):
         self.assertNotEqual(left, None)
         self.assertNotEqual(left, object())
         self.assertFalse(left == (left.bits, left.dtype))
+
+        class Foreign:
+            def __init__(self):
+                self.events = []
+
+            def __eq__(self, other):
+                self.events.append(("eq", other))
+                return "reflected equality sentinel"
+
+            def __ne__(self, other):
+                self.events.append(("ne", other))
+                raise RuntimeError("reflected inequality ran")
+
+        foreign = Foreign()
+        self.assertIs(left == foreign, False)
+        self.assertEqual(foreign.events, [])
+        self.assertIs(left != foreign, True)
+        self.assertEqual(foreign.events, [])
 
         self.assert_error(
             TypeError,

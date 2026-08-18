@@ -19,6 +19,8 @@ mod python_device;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_dtype;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_finfo;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_grad_mode;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_layout;

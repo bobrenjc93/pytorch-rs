@@ -77,6 +77,17 @@ class FInfoReferenceTests(unittest.TestCase):
         self.assertEqual(actual_class.__name__, expected_class.__name__)
         self.assertEqual(actual_class.__qualname__, expected_class.__qualname__)
         self.assertEqual(actual_class.__doc__, expected_class.__doc__)
+        self.assertEqual(actual_class.__basicsize__, expected_class.__basicsize__)
+        self.assertEqual(actual_class.__itemsize__, expected_class.__itemsize__)
+        actual_surface = set(vars(actual_class))
+        expected_surface = set(vars(expected_class))
+        actual_surface.discard("__module__")
+        expected_surface.discard("__module__")
+        self.assertEqual(actual_surface, expected_surface)
+        self.assertEqual(
+            hasattr(torch.finfo(), "__getnewargs__"),
+            hasattr(reference_torch.finfo(), "__getnewargs__"),
+        )
         self.assertEqual(
             repr(actual_class).replace(actual_class.__module__, "torch"),
             repr(expected_class),
@@ -118,6 +129,27 @@ class FInfoReferenceTests(unittest.TestCase):
                 self.assertIs(expected.__objclass__, expected_class)
                 self.assertIs(actual.__get__(None, actual_class), actual)
                 self.assertIs(expected.__get__(None, expected_class), expected)
+
+    def test_type_immutability_matches_pytorch_2_13(self):
+        actual_actions = (
+            lambda: setattr(torch.finfo, "extra", 1),
+            lambda: setattr(torch.finfo, "__repr__", lambda self: "changed"),
+            lambda: delattr(torch.finfo, "bits"),
+        )
+        expected_actions = (
+            lambda: setattr(reference_torch.finfo, "extra", 1),
+            lambda: setattr(
+                reference_torch.finfo, "__repr__", lambda self: "changed"
+            ),
+            lambda: delattr(reference_torch.finfo, "bits"),
+        )
+        for actual_action, expected_action in zip(
+            actual_actions, expected_actions, strict=True
+        ):
+            self.assertEqual(
+                self.normalized_error(torch, actual_action),
+                self.normalized_error(reference_torch, expected_action),
+            )
 
     def test_constructor_errors_match_pytorch_2_13(self):
         cases = (
@@ -183,6 +215,15 @@ class FInfoReferenceTests(unittest.TestCase):
                         self.normalized_error(reference_torch, expected_action),
                     )
 
+        self.assertEqual(
+            self.normalized_error(
+                torch, lambda: setattr(actual, "extra", None)
+            ),
+            self.normalized_error(
+                reference_torch, lambda: setattr(expected, "extra", None)
+            ),
+        )
+
         actual_other = torch.finfo(torch.float)
         expected_other = reference_torch.finfo(reference_torch.float)
         self.assertEqual(
@@ -203,6 +244,30 @@ class FInfoReferenceTests(unittest.TestCase):
                 self.normalized_error(torch, actual_action),
                 self.normalized_error(reference_torch, expected_action),
             )
+
+        def foreign_comparison(module):
+            class Foreign:
+                def __init__(self):
+                    self.events = []
+
+                def __eq__(self, other):
+                    self.events.append(("eq", other))
+                    return "reflected equality sentinel"
+
+                def __ne__(self, other):
+                    self.events.append(("ne", other))
+                    raise RuntimeError("reflected inequality ran")
+
+            value = module.finfo()
+            foreign = Foreign()
+            equality = value == foreign
+            inequality = value != foreign
+            return equality, inequality, tuple(foreign.events)
+
+        self.assertEqual(
+            foreign_comparison(torch),
+            foreign_comparison(reference_torch),
+        )
 
     def test_unpicklability_and_copy_errors_match_pytorch_2_13(self):
         actual = torch.finfo()
