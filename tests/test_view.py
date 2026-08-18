@@ -1,4 +1,5 @@
 import inspect
+import operator
 import re
 import sys
 import types
@@ -222,6 +223,21 @@ class TensorViewTests(unittest.TestCase):
             tensor.view((2, 3.0))
         with self.assertRaisesRegex(TypeError, "Overflow when unpacking long long"):
             tensor.view((2**63, 1))
+
+    def test_operator_index_poisoning_cannot_change_shape_parsing(self):
+        tensor = torch.zeros((6,))
+        original_index = operator.index
+        try:
+            operator.index = lambda value: {2: 1, 3: 6}.get(value, value)
+
+            result = tensor.view((2, 3))
+            self.assertEqual(result.shape, (2, 3))
+            self.assertEqual(result.stride(), (3, 1))
+            self.assertEqual(result.data_ptr(), tensor.data_ptr())
+            with self.assertRaises(TypeError):
+                tensor.view((2, 3.0))
+        finally:
+            operator.index = original_index
 
     def test_autograd_repeated_backward_and_no_grad_use_view_semantics(self):
         leaf = torch.tensor(

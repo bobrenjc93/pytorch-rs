@@ -9178,7 +9178,7 @@ fn bind_view_shape_argument<'py>(
         ViewShapeArgument::List(shape.clone())
     } else if value.cast::<PyDType>().is_ok() {
         return Err(unsupported_view_dtype_error());
-    } else if is_view_shape_dimension(&value)? {
+    } else if is_view_shape_dimension(&value) {
         return Err(unsupported_view_integer_error());
     } else {
         return Err(unsupported_view_argument_error());
@@ -9198,7 +9198,7 @@ fn validate_view_shape_first(shape: &ViewShapeArgument<'_>) -> PyResult<()> {
     let Some(first) = first else {
         return Ok(());
     };
-    if is_view_shape_dimension(&first)? {
+    if is_view_shape_dimension(&first) {
         return Ok(());
     }
     let actual = python_type_name(&first)?;
@@ -9207,14 +9207,28 @@ fn validate_view_shape_first(shape: &ViewShapeArgument<'_>) -> PyResult<()> {
     )))
 }
 
-fn is_view_shape_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn is_view_shape_dimension(dimension: &Bound<'_, PyAny>) -> bool {
     if dimension.is_instance_of::<PyBool>() {
-        return Ok(false);
+        return false;
     }
-    Ok(PyModule::import(dimension.py(), "operator")?
-        .getattr("index")?
-        .call1((dimension,))
-        .is_ok())
+    view_number_index(dimension).is_ok()
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyNumber_Index invokes the native Python number-index protocol and returns a new reference"
+)]
+fn view_number_index<'py>(dimension: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyInt>> {
+    // SAFETY: `dimension` is live for the call. PyNumber_Index returns a new
+    // Python int reference or sets an exception and returns null.
+    unsafe {
+        Bound::<PyAny>::from_owned_ptr_or_err(
+            dimension.py(),
+            ffi::PyNumber_Index(dimension.as_ptr()),
+        )?
+        .cast_into::<PyInt>()
+        .map_err(Into::into)
+    }
 }
 
 fn parse_view_shape_argument(shape: ViewShapeArgument<'_>) -> PyResult<Vec<i64>> {
@@ -9235,9 +9249,7 @@ fn parse_view_shape_dimensions<'py>(
     let mut parsed = try_size_vector(length)?;
     for (index, dimension) in dimensions.enumerate() {
         let position = index + 1;
-        let indexed = PyModule::import(dimension.py(), "operator")?
-            .getattr("index")?
-            .call1((&dimension,));
+        let indexed = view_number_index(&dimension);
         let Ok(indexed) = indexed else {
             return Err(view_shape_dimension_unpack_error(position, &dimension)?);
         };

@@ -1,4 +1,5 @@
 import inspect
+import operator
 import re
 import sys
 import types
@@ -486,6 +487,34 @@ class TensorViewReferenceTests(unittest.TestCase):
         for error in (actual_overflow.exception, expected_overflow.exception):
             self.assertIn("failed to unpack the object at pos 1", str(error))
             self.assertIn("Overflow when unpacking long long", str(error))
+
+    def test_operator_index_poisoning_matches_pytorch_2_13(self):
+        actual = torch.zeros((6,), dtype=torch.float32)
+        expected = reference_torch.zeros((6,), dtype=reference_torch.float32)
+        original_index = operator.index
+        try:
+            operator.index = lambda value: {2: 1, 3: 6}.get(value, value)
+
+            actual_result = actual.view((2, 3))
+            expected_result = expected.view((2, 3))
+            self.assertEqual(
+                (
+                    tuple(actual_result.shape),
+                    actual_result.stride(),
+                    actual_result.data_ptr() == actual.data_ptr(),
+                ),
+                (
+                    tuple(expected_result.shape),
+                    expected_result.stride(),
+                    expected_result.data_ptr() == expected.data_ptr(),
+                ),
+            )
+            self.assert_error_matches(
+                lambda: actual.view((2, 3.0)),
+                lambda: expected.view((2, 3.0)),
+            )
+        finally:
+            operator.index = original_index
 
     def test_deliberately_unsupported_overloads_remain_outside_the_binding(self):
         actual = torch.zeros((6,), dtype=torch.float32)
