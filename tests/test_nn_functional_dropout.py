@@ -365,6 +365,11 @@ class FunctionalDropoutTests(unittest.TestCase):
                 "dropout(): argument 'p' (position 2) must be float, not Tensor",
             ),
             (
+                torch.tensor([0.5]).reshape((1,) * 1000),
+                TypeError,
+                "dropout(): argument 'p' (position 2) must be float, not Tensor",
+            ),
+            (
                 torch.tensor([float("nan")]),
                 TypeError,
                 "dropout(): argument 'p' (position 2) must be float, not Tensor",

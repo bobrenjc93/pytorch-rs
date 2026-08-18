@@ -407,6 +407,12 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
                 ),
             ),
             (
+                torch.tensor([0.5]).reshape((1,) * 1000),
+                reference_torch.tensor(
+                    [0.5], dtype=reference_torch.float32
+                ).reshape((1,) * 1000),
+            ),
+            (
                 torch.tensor([float("nan")]),
                 reference_torch.tensor(
                     [float("nan")], dtype=reference_torch.float32
