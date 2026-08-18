@@ -370,7 +370,11 @@ print(json.dumps(outputs))
             ),
             (
                 lambda: tensor.__complex__(value=1),
-                "TensorBase.__complex__() takes no keyword arguments",
+                (
+                    "Tensor.__complex__() takes no keyword arguments"
+                    if sys.version_info < (3, 11)
+                    else "TensorBase.__complex__() takes no keyword arguments"
+                ),
             ),
             (
                 lambda: bound(value=1),
