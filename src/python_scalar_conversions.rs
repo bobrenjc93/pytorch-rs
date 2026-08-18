@@ -9,7 +9,7 @@ use pyo3::types::{PyComplex, PyInt, PyType};
 
 use crate::{
     TensorError, is_grad_enabled as core_is_grad_enabled,
-    python::{PyTensor, PyTensorBase, warn_once},
+    python::{PyTensor, PyTensorBase, dispatch_tensorbase_no_argument_mode, warn_once},
     python_tensor_errors::tensor_error,
 };
 
@@ -58,14 +58,22 @@ impl PyTensorBase {
     }
 
     #[pyo3(text_signature = None)]
-    fn complex_scalar<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyComplex>> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
+    fn complex_scalar(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "__complex__")?
+        {
+            return Ok(result);
+        }
+
+        let tensor = tensor.try_borrow()?;
         warn_if_requires_grad(slf.py(), &tensor)?;
         let value = tensor
             .inner()
             .item()
             .map_err(|error| scalar_conversion_error(&error))?;
-        Ok(PyComplex::from_doubles(slf.py(), f64::from(value), 0.0))
+        Ok(PyComplex::from_doubles(slf.py(), f64::from(value), 0.0)
+            .into_any()
+            .unbind())
     }
 }
 

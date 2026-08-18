@@ -141,6 +141,121 @@ class TensorComplexReferenceTests(unittest.TestCase):
                 )
                 self.assert_error_matches(actual.__complex__, expected.__complex__)
 
+    def mode_dispatch_observation(self, module_name):
+        source = r'''
+import importlib, inspect, json, warnings
+module = importlib.import_module(MODULE)
+descriptor = inspect.getattr_static(module.Tensor, "__complex__")
+
+class RecordingMode(module.overrides.TorchFunctionMode):
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls.append((func, types, args, kwargs))
+        return self.result
+
+records = []
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    for layout, tensor in (
+        ("scalar", module.tensor(2.5, requires_grad=True)),
+        ("multi", module.tensor([2.5, 2.5], requires_grad=True)),
+    ):
+        graph_before = [tensor.requires_grad, tensor.is_leaf, tensor.grad is None]
+        for conversion in ("builtin", "method"):
+            mode = RecordingMode(3.0 + 4.0j)
+            with mode:
+                if conversion == "builtin":
+                    result = complex(tensor)
+                else:
+                    result = tensor.__complex__()
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            records.append({
+                "layout": layout,
+                "conversion": conversion,
+                "result": [result.real, result.imag],
+                "call_count": len(mode.calls),
+                "function_type": type(function).__name__,
+                "function_name": function.__name__,
+                "function_qualname": function.__qualname__,
+                "function_is_descriptor": function is descriptor,
+                "types": dispatch_types == (module.Tensor,),
+                "args": len(args) == 1 and args[0] is tensor,
+                "kwargs_is_none": kwargs is None,
+                "graph_unchanged": graph_before == [
+                    tensor.requires_grad,
+                    tensor.is_leaf,
+                    tensor.grad is None,
+                ],
+            })
+
+tensor = module.tensor(2.5)
+marker = object()
+arbitrary_mode = RecordingMode(marker)
+with arbitrary_mode:
+    arbitrary_result = tensor.__complex__()
+
+invalid_mode = RecordingMode(7.0)
+try:
+    with invalid_mode:
+        complex(tensor)
+except Exception as error:
+    invalid_result = [type(error).__name__, str(error)]
+else:
+    invalid_result = None
+
+forwarded = {}
+for conversion in ("builtin", "method"):
+    order = []
+
+    class ForwardingMode(module.overrides.TorchFunctionMode):
+        def __init__(self, label):
+            self.label = label
+
+        def __torch_function__(self, func, types, args=(), kwargs=None):
+            order.append(self.label)
+            return func(*args, **(kwargs or {}))
+
+    with ForwardingMode("lower"):
+        with ForwardingMode("upper"):
+            if conversion == "builtin":
+                result = complex(tensor)
+            else:
+                result = tensor.__complex__()
+    forwarded[conversion] = {
+        "order": order,
+        "result": [result.real, result.imag],
+    }
+
+print(json.dumps({
+    "records": records,
+    "warnings": [
+        [item.category.__name__, str(item.message)] for item in caught
+    ],
+    "arbitrary_method_result": arbitrary_result is marker,
+    "arbitrary_call_count": len(arbitrary_mode.calls),
+    "invalid_builtin_result": invalid_result,
+    "invalid_call_count": len(invalid_mode.calls),
+    "forwarded": forwarded,
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}, sort_keys=True))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_observation("torch_rs"),
+            self.mode_dispatch_observation("torch"),
+        )
+
     def test_graph_state_and_backward_match_pytorch_2_13(self):
         for bits in SPECIAL_BITS:
             outcomes = []

@@ -131,6 +131,82 @@ class TensorComplexTests(unittest.TestCase):
                         conversion()
                     self.assertIs(type(raised.exception), ValueError)
 
+    def test_mode_dispatches_before_validation_and_forwards(self):
+        descriptor = inspect.getattr_static(torch.Tensor, "__complex__")
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        for shape in ((), (2,)):
+            tensor = torch.full(shape, 2.5, requires_grad=True)
+            graph_before = (tensor.requires_grad, tensor.is_leaf, tensor.grad)
+            for name, conversion in (
+                ("builtin", lambda: complex(tensor)),
+                ("method", tensor.__complex__),
+            ):
+                with self.subTest(shape=shape, conversion=name):
+                    mode = RecordingMode(3.0 + 4.0j)
+                    with warnings.catch_warnings(record=True) as caught:
+                        warnings.simplefilter("always")
+                        with mode:
+                            result = conversion()
+
+                    self.assertEqual(result, 3.0 + 4.0j)
+                    self.assertEqual(caught, [])
+                    self.assertEqual(
+                        (tensor.requires_grad, tensor.is_leaf, tensor.grad),
+                        graph_before,
+                    )
+                    self.assertEqual(len(mode.calls), 1)
+                    function, dispatch_types, args, kwargs = mode.calls[0]
+                    self.assertIs(function, descriptor)
+                    self.assertEqual(dispatch_types, (torch.Tensor,))
+                    self.assertEqual(len(args), 1)
+                    self.assertIs(args[0], tensor)
+                    self.assertIsNone(kwargs)
+
+        tensor = torch.tensor(2.5)
+        marker = object()
+        mode = RecordingMode(marker)
+        with mode:
+            self.assertIs(tensor.__complex__(), marker)
+
+        mode = RecordingMode(7.0)
+        with mode:
+            with self.assertRaisesRegex(
+                TypeError, "^__complex__ returned non-complex \\(type float\\)$"
+            ):
+                complex(tensor)
+
+        for name, conversion in (
+            ("builtin", lambda: complex(tensor)),
+            ("method", tensor.__complex__),
+        ):
+            with self.subTest(forwarding=name):
+                order = []
+
+                class ForwardingMode(torch.overrides.TorchFunctionMode):
+                    def __init__(self, label):
+                        self.label = label
+
+                    def __torch_function__(
+                        self, func, types, args=(), kwargs=None
+                    ):
+                        order.append(self.label)
+                        return func(*args, **(kwargs or {}))
+
+                with ForwardingMode("lower"):
+                    with ForwardingMode("upper"):
+                        result = conversion()
+                self.assertEqual(result, 2.5 + 0.0j)
+                self.assertEqual(order, ["upper", "lower"])
+
     def test_requires_grad_conversion_does_not_mutate_graphs(self):
         for bits in SPECIAL_BITS:
             real = float(np.asarray((bits,), dtype=np.uint32).view(np.float32)[0])
