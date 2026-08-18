@@ -1373,14 +1373,31 @@ pub(crate) fn multiply_variable_function(
     multiplication_variable_function(MultiplicationOperation::Multiply, py, args, kwargs)
 }
 
+pub(crate) fn can_cast_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    dtype_binary_variable_function(DTypeBinaryOperation::CanCast, py, args, kwargs)
+}
+
 pub(crate) fn promote_types_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let ([type1, type2], consumed_keywords) = bind_promote_types_arguments(args, kwargs)?;
-    validate_promote_types_keywords(args.len(), kwargs, &consumed_keywords)?;
-    dispatch_promote_types(py, &type1, &type2, args, kwargs)
+    dtype_binary_variable_function(DTypeBinaryOperation::PromoteTypes, py, args, kwargs)
+}
+
+fn dtype_binary_variable_function(
+    operation: DTypeBinaryOperation,
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let ([left, right], consumed_keywords) = bind_dtype_binary_arguments(operation, args, kwargs)?;
+    validate_dtype_binary_keywords(operation, args.len(), kwargs, &consumed_keywords)?;
+    dispatch_dtype_binary(operation, py, &left, &right, args, kwargs)
 }
 
 fn multiplication_variable_function(
@@ -1432,7 +1449,7 @@ struct ParsedCallArgument<'py> {
     position: Option<usize>,
 }
 
-struct ConsumedPromoteTypesKeyword<'py> {
+struct ConsumedDTypeBinaryKeyword<'py> {
     key: Bound<'py, PyAny>,
     position: usize,
 }
@@ -1455,9 +1472,45 @@ enum BoundMulOperand<'py> {
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
-enum BoundPromoteTypesOperand<'py> {
+enum BoundDTypeBinaryOperand<'py> {
     DType(DType),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+#[derive(Clone, Copy)]
+enum DTypeBinaryOperation {
+    CanCast,
+    PromoteTypes,
+}
+
+impl DTypeBinaryOperation {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::CanCast => "can_cast",
+            Self::PromoteTypes => "promote_types",
+        }
+    }
+
+    const fn argument_names(self) -> [&'static str; 2] {
+        match self {
+            Self::CanCast => ["from_", "to"],
+            Self::PromoteTypes => ["type1", "type2"],
+        }
+    }
+
+    const fn qualified_name(self) -> &'static str {
+        match self {
+            Self::CanCast => "torch.can_cast",
+            Self::PromoteTypes => "torch.promote_types",
+        }
+    }
+
+    const fn dispatch_allocation_error(self) -> &'static str {
+        match self {
+            Self::CanCast => "unable to allocate can_cast dispatch operands",
+            Self::PromoteTypes => "unable to allocate promote_types dispatch operands",
+        }
+    }
 }
 
 fn matrix_adjoint(
@@ -1520,9 +1573,9 @@ fn probe_torch_function_override<'py>(
 
 #[allow(
     unsafe_code,
-    reason = "promote_types dtype parity requires CPython's one-shot exception-suppressing attribute probe"
+    reason = "dtype argument parity requires CPython's one-shot exception-suppressing attribute probe"
 )]
-fn probe_promote_types_torch_function_override<'py>(
+fn probe_dtype_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
     // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
@@ -1974,19 +2027,20 @@ fn torch_function_dispatch_error_for_overrides(
     )))
 }
 
-fn dispatch_promote_types(
+fn dispatch_dtype_binary(
+    operation: DTypeBinaryOperation,
     py: Python<'_>,
-    type1: &BoundPromoteTypesOperand<'_>,
-    type2: &BoundPromoteTypesOperand<'_>,
+    left: &BoundDTypeBinaryOperand<'_>,
+    right: &BoundDTypeBinaryOperand<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let overrides = ordered_promote_types_overrides(type1, type2)?;
+    let overrides = ordered_dtype_binary_overrides(operation, left, right)?;
     if torch_function_mode_stack::is_empty() && overrides.is_empty() {
-        return apply_promote_types(py, type1, type2);
+        return apply_dtype_binary(operation, py, left, right);
     }
 
-    let function = variable_function(py, "promote_types")?;
+    let function = variable_function(py, operation.name())?;
     let dispatch_types = PyTuple::new(
         py,
         overrides.iter().map(|probed| probed.dispatch_type.clone()),
@@ -2017,33 +2071,38 @@ fn dispatch_promote_types(
     }
 
     if active_mode.get().is_none() && overrides.is_empty() {
-        return apply_promote_types(py, type1, type2);
+        return apply_dtype_binary(operation, py, left, right);
     }
 
     Err(torch_function_dispatch_error_for_overrides(
         py,
-        "torch.promote_types",
+        operation.qualified_name(),
         active_mode.get(),
         &overrides,
     )?)
 }
 
-fn apply_promote_types(
+fn apply_dtype_binary(
+    operation: DTypeBinaryOperation,
     py: Python<'_>,
-    type1: &BoundPromoteTypesOperand<'_>,
-    type2: &BoundPromoteTypesOperand<'_>,
+    left: &BoundDTypeBinaryOperand<'_>,
+    right: &BoundDTypeBinaryOperand<'_>,
 ) -> PyResult<Py<PyAny>> {
-    let (BoundPromoteTypesOperand::DType(type1), BoundPromoteTypesOperand::DType(type2)) =
-        (type1, type2)
+    let (BoundDTypeBinaryOperand::DType(left), BoundDTypeBinaryOperand::DType(right)) =
+        (left, right)
     else {
-        unreachable!("promote_types overrides were dispatched before the native path")
+        unreachable!("dtype overrides were dispatched before the native path")
     };
 
     // Float32 is the complete supported dtype set, so two validated dtype
     // arguments are necessarily identical. Preserve that narrow boundary
-    // instead of introducing a promotion table before another dtype exists.
-    debug_assert_eq!(type1, type2);
-    Ok(dtype_object(py, *type1)?.clone_ref(py).into_any())
+    // instead of introducing a cast or promotion table before another dtype
+    // exists.
+    debug_assert_eq!(left, right);
+    match operation {
+        DTypeBinaryOperation::CanCast => true.into_py_any(py),
+        DTypeBinaryOperation::PromoteTypes => Ok(dtype_object(py, *left)?.clone_ref(py).into_any()),
+    }
 }
 
 fn dispatch_positive(
@@ -2615,23 +2674,20 @@ fn ordered_matmul_overrides<'py>(
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
 }
 
-fn ordered_promote_types_overrides<'py>(
-    type1: &BoundPromoteTypesOperand<'py>,
-    type2: &BoundPromoteTypesOperand<'py>,
+fn ordered_dtype_binary_overrides<'py>(
+    operation: DTypeBinaryOperation,
+    left: &BoundDTypeBinaryOperand<'py>,
+    right: &BoundDTypeBinaryOperand<'py>,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
-    let type1 = match type1 {
-        BoundPromoteTypesOperand::Override(probed) => Some(probed),
-        BoundPromoteTypesOperand::DType(_) => None,
+    let left = match left {
+        BoundDTypeBinaryOperand::Override(probed) => Some(probed),
+        BoundDTypeBinaryOperand::DType(_) => None,
     };
-    let type2 = match type2 {
-        BoundPromoteTypesOperand::Override(probed) => Some(probed),
-        BoundPromoteTypesOperand::DType(_) => None,
+    let right = match right {
+        BoundDTypeBinaryOperand::Override(probed) => Some(probed),
+        BoundDTypeBinaryOperand::DType(_) => None,
     };
-    ordered_binary_overrides(
-        type1,
-        type2,
-        "unable to allocate promote_types dispatch operands",
-    )
+    ordered_binary_overrides(left, right, operation.dispatch_allocation_error())
 }
 
 fn ordered_multiplication_overrides<'py>(
@@ -7367,18 +7423,20 @@ fn bind_tensor_arguments<'py, const N: usize>(
     ))
 }
 
-fn bind_promote_types_arguments<'py>(
+fn bind_dtype_binary_arguments<'py>(
+    operation: DTypeBinaryOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<(
-    [BoundPromoteTypesOperand<'py>; 2],
-    Vec<ConsumedPromoteTypesKeyword<'py>>,
+    [BoundDTypeBinaryOperand<'py>; 2],
+    Vec<ConsumedDTypeBinaryKeyword<'py>>,
 )> {
-    const NAMES: [&str; 2] = ["type1", "type2"];
+    let names = operation.argument_names();
+    let function = operation.name();
 
-    if positional.len() > NAMES.len() {
+    if positional.len() > names.len() {
         return Err(PyTypeError::new_err(format!(
-            "promote_types() takes 2 positional arguments but {} were given",
+            "{function}() takes 2 positional arguments but {} were given",
             positional.len()
         )));
     }
@@ -7389,12 +7447,13 @@ fn bind_promote_types_arguments<'py>(
     let remaining_keywords = keywords.map(PyDictMethods::copy).transpose()?;
     let mut consumed_keywords = Vec::new();
     let sentinel = PyDict::new(positional.py()).into_any();
-    let mut operands: [Option<BoundPromoteTypesOperand<'py>>; 2] = std::array::from_fn(|_| None);
+    let mut operands: [Option<BoundDTypeBinaryOperand<'py>>; 2] = std::array::from_fn(|_| None);
 
     // PyTorch binds and validates each schema slot before looking up the next
-    // keyword. In particular, a type2 key must not run Python equality code
-    // before type1 has been accepted as a dtype or torch-function override.
-    for (index, name) in NAMES.iter().copied().enumerate() {
+    // keyword. In particular, the second key must not run Python equality code
+    // before the first operand has been accepted as a dtype or torch-function
+    // override.
+    for (index, name) in names.iter().copied().enumerate() {
         let argument = if index < positional.len() {
             Some(ParsedCallArgument {
                 value: positional.get_item(index)?,
@@ -7404,7 +7463,7 @@ fn bind_promote_types_arguments<'py>(
             let keys_before = remaining_keywords.keys();
             // PyTorch's generated argument parser suppresses lookup failures
             // here; a miss is reported as the complete remaining schema suffix.
-            let value = pop_promote_types_keyword(remaining_keywords, name, &sentinel)
+            let value = pop_dtype_binary_keyword(remaining_keywords, name, &sentinel)
                 .ok()
                 .flatten();
             if let Some(value) = value {
@@ -7413,11 +7472,11 @@ fn bind_promote_types_arguments<'py>(
                     .iter()
                     .find(|key| !keys_after.iter().any(|remaining| remaining.is(key)))
                     .ok_or_else(|| {
-                        PyRuntimeError::new_err(
-                            "promote_types() could not identify a consumed keyword",
-                        )
+                        PyRuntimeError::new_err(format!(
+                            "{function}() could not identify a consumed keyword"
+                        ))
                     })?;
-                consumed_keywords.push(ConsumedPromoteTypesKeyword {
+                consumed_keywords.push(ConsumedDTypeBinaryKeyword {
                     key,
                     position: index,
                 });
@@ -7435,7 +7494,7 @@ fn bind_promote_types_arguments<'py>(
         let Some(argument) = argument else {
             // PyTorch reports the complete remaining schema suffix even when
             // a later argument in that suffix was supplied by keyword.
-            let missing = &NAMES[index..];
+            let missing = &names[index..];
             let quoted_names = missing
                 .iter()
                 .map(|name| format!("\"{name}\""))
@@ -7447,22 +7506,22 @@ fn bind_promote_types_arguments<'py>(
                 "argument"
             };
             return Err(PyTypeError::new_err(format!(
-                "promote_types() missing {} required positional {argument}: {quoted_names}",
+                "{function}() missing {} required positional {argument}: {quoted_names}",
                 missing.len()
             )));
         };
-        operands[index] = Some(parse_promote_types_operand(name, &argument)?);
+        operands[index] = Some(parse_dtype_binary_operand(operation, name, &argument)?);
     }
 
     Ok((
         operands.map(|operand| {
-            operand.expect("all required promote_types operands were bound and parsed above")
+            operand.expect("all required dtype operands were bound and parsed above")
         }),
         consumed_keywords,
     ))
 }
 
-fn pop_promote_types_keyword<'py>(
+fn pop_dtype_binary_keyword<'py>(
     keywords: &Bound<'py, PyDict>,
     name: &str,
     sentinel: &Bound<'py, PyAny>,
@@ -7471,10 +7530,11 @@ fn pop_promote_types_keyword<'py>(
     Ok((!value.is(sentinel)).then_some(value))
 }
 
-fn validate_promote_types_keywords(
+fn validate_dtype_binary_keywords(
+    operation: DTypeBinaryOperation,
     positional_count: usize,
     keywords: Option<&Bound<'_, PyDict>>,
-    consumed_keywords: &[ConsumedPromoteTypesKeyword<'_>],
+    consumed_keywords: &[ConsumedDTypeBinaryKeyword<'_>],
 ) -> PyResult<()> {
     let Some(keywords) = keywords else {
         return Ok(());
@@ -7483,11 +7543,13 @@ fn validate_promote_types_keywords(
         return Ok(());
     }
 
+    let names = operation.argument_names();
+    let function = operation.name();
     let mut invalid_keyword_arguments = false;
     for key in keywords.keys().iter() {
-        let matched_position = if key.eq("type1")? {
+        let matched_position = if key.eq(names[0])? {
             Some(0)
-        } else if key.eq("type2")? {
+        } else if key.eq(names[1])? {
             Some(1)
         } else {
             None
@@ -7510,8 +7572,8 @@ fn validate_promote_types_keywords(
 
         let key = key.extract::<String>()?;
         let mut message = matched_position.map_or_else(
-            || format!("promote_types() got an unexpected keyword argument '{key}'"),
-            |_| format!("promote_types() got multiple values for argument '{key}'"),
+            || format!("{function}() got an unexpected keyword argument '{key}'"),
+            |_| format!("{function}() got multiple values for argument '{key}'"),
         );
         if let Some(nul) = message.find('\0') {
             message.truncate(nul);
@@ -7526,15 +7588,16 @@ fn validate_promote_types_keywords(
     }
 }
 
-fn parse_promote_types_operand<'py>(
+fn parse_dtype_binary_operand<'py>(
+    operation: DTypeBinaryOperation,
     name: &str,
     argument: &ParsedCallArgument<'py>,
-) -> PyResult<BoundPromoteTypesOperand<'py>> {
+) -> PyResult<BoundDTypeBinaryOperand<'py>> {
     if let Ok(dtype) = argument.value.cast::<PyDType>() {
-        return Ok(BoundPromoteTypesOperand::DType(dtype.try_borrow()?.inner()));
+        return Ok(BoundDTypeBinaryOperand::DType(dtype.try_borrow()?.inner()));
     }
-    if let Some(probed) = probe_promote_types_torch_function_override(&argument.value) {
-        return Ok(BoundPromoteTypesOperand::Override(probed));
+    if let Some(probed) = probe_dtype_torch_function_override(&argument.value) {
+        return Ok(BoundDTypeBinaryOperand::Override(probed));
     }
 
     let position = argument
@@ -7542,7 +7605,8 @@ fn parse_promote_types_operand<'py>(
         .map_or_else(String::new, |position| format!(" (position {position})"));
     let actual = python_type_name(&argument.value)?;
     Err(PyTypeError::new_err(format!(
-        "promote_types(): argument '{name}'{position} must be torch.dtype, not {actual}"
+        "{}(): argument '{name}'{position} must be torch.dtype, not {actual}",
+        operation.name()
     )))
 }
 
