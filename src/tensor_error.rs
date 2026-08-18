@@ -97,6 +97,7 @@ pub enum TensorError {
     DerivativeNotImplemented {
         operation: &'static str,
     },
+    LeafMovedIntoGraphInterior,
     DoesNotRequireGrad,
     BackwardGraphFreed,
 }
@@ -195,6 +196,7 @@ impl Display for TensorError {
             }
             error @ (Self::BackwardRequiresScalar { .. }
             | Self::DerivativeNotImplemented { .. }
+            | Self::LeafMovedIntoGraphInterior
             | Self::DoesNotRequireGrad
             | Self::BackwardGraphFreed) => format_autograd_error(formatter, error),
         }
@@ -334,6 +336,9 @@ fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> 
         ),
         TensorError::DerivativeNotImplemented { operation } => {
             write!(formatter, "derivative for {operation} is not implemented")
+        }
+        TensorError::LeafMovedIntoGraphInterior => {
+            formatter.write_str("leaf variable has been moved into the graph interior")
         }
         TensorError::DoesNotRequireGrad => formatter.write_str(
             "element 0 of tensors does not require grad and does not have a grad_fn",

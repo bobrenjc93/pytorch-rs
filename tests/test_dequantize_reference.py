@@ -208,6 +208,90 @@ class TensorDequantizeReferenceTests(unittest.TestCase):
             self.populated_leaf_grad_contract(reference_torch),
         )
 
+    def moved_leaf_contract(self, module):
+        leaf = module.tensor(
+            [2.0, 3.0], dtype=module.float32, requires_grad=True
+        )
+        pending = (leaf * 4.0).sum()
+        (leaf * 5.0).sum().backward()
+        gradient = leaf.grad
+        result = leaf.dequantize()
+
+        def outcome(action):
+            try:
+                action()
+            except Exception as error:
+                return type(error).__name__, str(error)
+            return None
+
+        first_error = outcome(pending.backward)
+        gradient_after_error = leaf.grad
+        second_error = outcome(pending.backward)
+        return {
+            "result_is_receiver": result is leaf,
+            "is_leaf": leaf.is_leaf,
+            "first_error": first_error,
+            "second_error": second_error,
+            "gradient_before": gradient.tolist(),
+            "gradient_after": gradient_after_error.tolist(),
+            "gradient_is_stable": gradient_after_error is gradient,
+        }
+
+    def test_pending_leaf_edges_are_invalidated_like_pytorch_2_13(self):
+        self.assertEqual(
+            self.moved_leaf_contract(torch),
+            self.moved_leaf_contract(reference_torch),
+        )
+
+    def failing_backward_contract(self, module):
+        def outcome(action):
+            try:
+                action()
+            except Exception as error:
+                return type(error).__name__, str(error)
+            return None
+
+        leaf = module.tensor([0.5], dtype=module.float32, requires_grad=True)
+        loss = leaf.dequantize().sin().sum()
+        chain_errors = outcome(loss.backward), outcome(loss.backward)
+
+        failing_leaf = module.tensor(
+            0.0, dtype=module.float32, requires_grad=True
+        )
+        independent_leaf = module.tensor(
+            3.0, dtype=module.float32, requires_grad=True
+        )
+        branched_loss = failing_leaf.dequantize().sin() * independent_leaf
+        branch_first_error = outcome(branched_loss.backward)
+        committed = independent_leaf.grad
+        branch_second_error = outcome(branched_loss.backward)
+
+        older_leaf = module.tensor(
+            2.0, dtype=module.float32, requires_grad=True
+        )
+        freed_branch = older_leaf.sin()
+        freed_branch.backward()
+        newer_leaf = module.tensor(
+            0.5, dtype=module.float32, requires_grad=True
+        )
+        failing_branch = newer_leaf.dequantize().sin()
+        ordered_loss = failing_branch * freed_branch
+
+        return {
+            "chain_errors": chain_errors,
+            "branch_first_error": branch_first_error,
+            "branch_second_error": branch_second_error,
+            "committed_gradient": committed.tolist(),
+            "committed_gradient_is_stable": independent_leaf.grad is committed,
+            "ordered_error": outcome(ordered_loss.backward),
+        }
+
+    def test_failing_backward_lifecycle_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.failing_backward_contract(torch),
+            self.failing_backward_contract(reference_torch),
+        )
+
     def no_grad_contract(self, module, case):
         leaf = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]],

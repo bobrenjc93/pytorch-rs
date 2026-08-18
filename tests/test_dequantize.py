@@ -197,6 +197,73 @@ class TensorDequantizeTests(unittest.TestCase):
         ):
             populated_leaf.backward()
 
+    def test_dequantizing_leaf_invalidates_pending_leaf_edges(self):
+        leaf = torch.tensor([2.0, 3.0], requires_grad=True)
+        pending = (leaf * 4.0).sum()
+        (leaf * 5.0).sum().backward()
+        gradient = leaf.grad
+        self.assertEqual(gradient.tolist(), [5.0, 5.0])
+
+        self.assertIs(leaf.dequantize(), leaf)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "^leaf variable has been moved into the graph interior$",
+        ):
+            pending.backward()
+        self.assertIs(leaf.grad, gradient)
+        self.assertEqual(gradient.tolist(), [5.0, 5.0])
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "^Trying to backward through the graph a second time",
+        ):
+            pending.backward()
+
+    def test_failed_backward_consumes_and_commits_in_execution_order(self):
+        leaf = torch.tensor([0.5], requires_grad=True)
+        loss = leaf.dequantize().sin().sum()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "^derivative for dequantize is not implemented$",
+        ):
+            loss.backward()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "^Trying to backward through the graph a second time",
+        ):
+            loss.backward()
+
+        failing_leaf = torch.tensor(0.0, requires_grad=True)
+        independent_leaf = torch.tensor(3.0, requires_grad=True)
+        branched_loss = failing_leaf.dequantize().sin() * independent_leaf
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "^derivative for dequantize is not implemented$",
+        ):
+            branched_loss.backward()
+        self.assertIsNone(failing_leaf.grad)
+        committed = independent_leaf.grad
+        self.assertEqual(committed.tolist(), 0.0)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "^Trying to backward through the graph a second time",
+        ):
+            branched_loss.backward()
+        self.assertIs(independent_leaf.grad, committed)
+        self.assertEqual(committed.tolist(), 0.0)
+
+        older_leaf = torch.tensor(2.0, requires_grad=True)
+        freed_branch = older_leaf.sin()
+        freed_branch.backward()
+        newer_leaf = torch.tensor(0.5, requires_grad=True)
+        failing_branch = newer_leaf.dequantize().sin()
+        ordered_loss = failing_branch * freed_branch
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "^derivative for dequantize is not implemented$",
+        ):
+            ordered_loss.backward()
+
     def test_no_grad_preserves_the_existing_autograd_graph(self):
         for case, make_tensor, multiplier in (
             ("leaf", lambda leaf: leaf, 1.0),

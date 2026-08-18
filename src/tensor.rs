@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap};
 use std::fmt::Formatter;
 use std::iter::FusedIterator;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 
 use crate::autograd_node::AutogradNode;
@@ -14,6 +15,7 @@ use crate::tensor_error::TensorError;
 const F32_SIGN_MASK: u32 = 0x8000_0000;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
+static AUTOGRAD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 struct AutogradMeta {
     kind: AutogradKind,
@@ -25,8 +27,10 @@ enum AutogradKind {
         dtype: DType,
         device: Device,
         grad: Mutex<Option<Arc<Storage>>>,
+        moved_into_graph: AtomicBool,
     },
     NonLeaf {
+        sequence_nr: u64,
         grad_fn: Mutex<Option<GradFn>>,
     },
 }
@@ -98,6 +102,20 @@ enum TransformMapping {
     },
 }
 
+fn non_leaf_autograd(grad_fn: GradFn) -> Arc<AutogradMeta> {
+    let sequence_nr = if matches!(&grad_fn, GradFn::UnsupportedDerivative { .. }) {
+        u64::MAX
+    } else {
+        AUTOGRAD_SEQUENCE.fetch_add(1, AtomicOrdering::Relaxed)
+    };
+    Arc::new(AutogradMeta {
+        kind: AutogradKind::NonLeaf {
+            sequence_nr,
+            grad_fn: Mutex::new(Some(grad_fn)),
+        },
+    })
+}
+
 impl SavedTensor {
     fn take_parent(&mut self, pending: &mut Vec<Arc<AutogradMeta>>) {
         if let Some(parent) = self.autograd.take() {
@@ -107,6 +125,29 @@ impl SavedTensor {
 }
 
 impl GradFn {
+    fn push_backward_parents(&self, parents: &mut Vec<Arc<AutogradMeta>>) {
+        let mut push = |tensor: &SavedTensor| {
+            if let Some(parent) = &tensor.autograd {
+                parents.push(Arc::clone(parent));
+            }
+        };
+        match self {
+            Self::Multiply { left, right, .. } => {
+                push(left);
+                push(right);
+            }
+            Self::MultiplyScalar { input, .. }
+            | Self::Negate { input, .. }
+            | Self::Relu { input }
+            | Self::Sin { input }
+            | Self::Sum { input }
+            | Self::Transform { input, .. }
+            | Self::Unbind { input, .. } => push(input),
+            // PyTorch raises at this node without inspecting its prior edge.
+            Self::UnsupportedDerivative { .. } => {}
+        }
+    }
+
     fn take_parents(&mut self, pending: &mut Vec<Arc<AutogradMeta>>) {
         match self {
             Self::Multiply { left, right, .. } => {
@@ -172,8 +213,18 @@ impl GradFn {
 }
 
 impl AutogradMeta {
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    fn mark_leaf_moved_into_graph(&self) {
+        if let AutogradKind::Leaf {
+            moved_into_graph, ..
+        } = &self.kind
+        {
+            moved_into_graph.store(true, AtomicOrdering::Release);
+        }
+    }
+
     fn take_grad_fn(&mut self) -> Option<GradFn> {
-        let AutogradKind::NonLeaf { grad_fn } = &mut self.kind else {
+        let AutogradKind::NonLeaf { grad_fn, .. } = &mut self.kind else {
             return None;
         };
         grad_fn
@@ -681,7 +732,7 @@ impl Tensor {
     #[cfg(feature = "python-bindings")]
     pub(crate) fn grad_fn_name(&self) -> Option<&'static str> {
         let metadata = self.autograd.as_deref()?;
-        let AutogradKind::NonLeaf { grad_fn } = &metadata.kind else {
+        let AutogradKind::NonLeaf { grad_fn, .. } = &metadata.kind else {
             return None;
         };
         let grad_fn = grad_fn
@@ -745,6 +796,7 @@ impl Tensor {
                     dtype: self.dtype(),
                     device: self.device(),
                     grad: Mutex::new(None),
+                    moved_into_graph: AtomicBool::new(false),
                 },
             }));
             self.output_nr = 0;
@@ -860,11 +912,11 @@ impl Tensor {
     ) -> Result<(), TensorError> {
         if self.records_grad() {
             let input = SavedTensor::try_from_tensor(self, false)?;
-            self.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::UnsupportedDerivative { input, operation })),
-                },
-            }));
+            let replacement = non_leaf_autograd(GradFn::UnsupportedDerivative { input, operation });
+            if let Some(previous) = &self.autograd {
+                previous.mark_leaf_moved_into_graph();
+            }
+            self.autograd = Some(replacement);
             self.output_nr = 0;
             self.view_requires_grad = false;
         }
@@ -882,14 +934,10 @@ impl Tensor {
         node: AutogradNode,
     ) -> Result<(), TensorError> {
         if self.records_grad() {
-            output.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Transform {
-                        input: SavedTensor::try_from_tensor(self, false)?,
-                        mapping,
-                        node,
-                    })),
-                },
+            output.autograd = Some(non_leaf_autograd(GradFn::Transform {
+                input: SavedTensor::try_from_tensor(self, false)?,
+                mapping,
+                node,
             }));
         }
         Ok(())
@@ -927,13 +975,9 @@ impl Tensor {
 
     fn finish_negate_vjp(&self, mut output: Self, node: AutogradNode) -> Result<Self, TensorError> {
         if self.records_grad() {
-            output.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Negate {
-                        input: SavedTensor::try_from_tensor(self, false)?,
-                        node,
-                    })),
-                },
+            output.autograd = Some(non_leaf_autograd(GradFn::Negate {
+                input: SavedTensor::try_from_tensor(self, false)?,
+                node,
             }));
         }
         Ok(output)
@@ -941,12 +985,8 @@ impl Tensor {
 
     fn finish_sin_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
         if self.records_grad() {
-            output.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Sin {
-                        input: SavedTensor::try_from_tensor(self, true)?,
-                    })),
-                },
+            output.autograd = Some(non_leaf_autograd(GradFn::Sin {
+                input: SavedTensor::try_from_tensor(self, true)?,
             }));
         }
         Ok(output)
@@ -954,12 +994,8 @@ impl Tensor {
 
     fn finish_relu_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
         if self.records_grad() {
-            output.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Relu {
-                        input: SavedTensor::try_from_tensor(self, true)?,
-                    })),
-                },
+            output.autograd = Some(non_leaf_autograd(GradFn::Relu {
+                input: SavedTensor::try_from_tensor(self, true)?,
             }));
         }
         Ok(output)
@@ -1756,14 +1792,10 @@ impl Tensor {
         }
         if self.records_grad() && !outputs.is_empty() {
             let output_elements = outputs[0].elements;
-            let autograd = Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Unbind {
-                        input: SavedTensor::try_from_tensor(self, false)?,
-                        output_count,
-                        output_elements,
-                    })),
-                },
+            let autograd = non_leaf_autograd(GradFn::Unbind {
+                input: SavedTensor::try_from_tensor(self, false)?,
+                output_count,
+                output_elements,
             });
             for (output_nr, output) in outputs.iter_mut().enumerate() {
                 output.autograd = Some(Arc::clone(&autograd));
@@ -2062,11 +2094,7 @@ impl Tensor {
                 output_shape,
                 output_elements: output.elements,
             };
-            output.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(grad_fn)),
-                },
-            }));
+            output.autograd = Some(non_leaf_autograd(grad_fn));
         }
         Ok(output)
     }
@@ -2112,11 +2140,7 @@ impl Tensor {
         if self.requires_grad() && is_grad_enabled() {
             let input = SavedTensor::try_from_tensor(self, false)?;
             let scalar = input.autograd.is_some().then_some(scalar);
-            output.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::MultiplyScalar { input, scalar })),
-                },
-            }));
+            output.autograd = Some(non_leaf_autograd(GradFn::MultiplyScalar { input, scalar }));
         }
         Ok(output)
     }
@@ -2221,12 +2245,8 @@ impl Tensor {
             self.device(),
         );
         if self.requires_grad() && is_grad_enabled() {
-            output.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Sum {
-                        input: SavedTensor::from_tensor_metadata(self),
-                    })),
-                },
+            output.autograd = Some(non_leaf_autograd(GradFn::Sum {
+                input: SavedTensor::from_tensor_metadata(self),
             }));
         }
         output
@@ -2688,131 +2708,230 @@ impl SavedTensor {
     }
 }
 
-type Topology = Vec<(Arc<AutogradMeta>, Option<GradFn>)>;
 type GradientKey = (usize, usize);
 type Gradients = HashMap<GradientKey, Vec<f32>>;
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct BackwardPriority {
+    class: u8,
+    sequence_nr: u64,
+}
+
+struct BackwardNode {
+    meta: Arc<AutogradMeta>,
+    parents: Vec<Arc<AutogradMeta>>,
+    priority: BackwardPriority,
+}
+
+struct BackwardGraph {
+    nodes: HashMap<usize, BackwardNode>,
+    dependencies: HashMap<usize, usize>,
+}
+
+struct ReadyNode {
+    id: usize,
+    priority: BackwardPriority,
+    tie_breaker: u64,
+}
+
+impl PartialEq for ReadyNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.priority == other.priority
+            && self.tie_breaker == other.tie_breaker
+    }
+}
+
+impl Eq for ReadyNode {}
+
+impl PartialOrd for ReadyNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ReadyNode {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.priority
+            .cmp(&other.priority)
+            .then_with(|| self.tie_breaker.cmp(&other.tie_breaker))
+            .then_with(|| self.id.cmp(&other.id))
+    }
+}
+
 fn run_backward(root: &Arc<AutogradMeta>, root_output_nr: usize) -> Result<(), TensorError> {
-    // Saved values form a transaction: a traversal must either consume all of
-    // them and commit its leaf gradients, or consume none. Serializing the
-    // complete operation prevents concurrent roots which share intermediates
-    // from each consuming a different subset of the same graph.
+    // Serialize execution so each node can consume saved state and commit leaf
+    // gradients as soon as it runs, matching PyTorch even when a later node
+    // fails. A priority queue follows reverse creation order; leaf accumulators
+    // and generated NotImplemented nodes have the special priorities used by
+    // PyTorch's engine.
     let _backward_traversal = BACKWARD_TRAVERSAL
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let topology = collect_topology(root)?;
+    let BackwardGraph {
+        nodes,
+        mut dependencies,
+    } = build_backward_graph(root);
 
     let mut gradients = HashMap::new();
     gradients.insert(gradient_key(root, root_output_nr), vec![1.0]);
-    let mut leaf_gradients = Vec::new();
 
-    for (meta, grad_fn) in topology.iter().rev() {
-        match grad_fn {
-            None => {
-                if let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) {
-                    leaf_gradients.push((Arc::clone(meta), upstream));
-                }
-            }
-            Some(GradFn::Unbind {
-                input,
-                output_count,
-                output_elements,
-            }) => {
-                apply_unbind_grad_fn(meta, input, *output_count, *output_elements, &mut gradients)?;
-            }
-            Some(grad_fn) => {
-                let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) else {
-                    continue;
-                };
-                apply_grad_fn(grad_fn, &upstream, &mut gradients)?;
-            }
+    let mut ready = BinaryHeap::new();
+    let mut enqueue_order = 0_u64;
+    for (&id, node) in &nodes {
+        if dependencies.get(&id).copied().unwrap_or(0) == 0 {
+            ready.push(ready_node(id, node.priority, &mut enqueue_order));
         }
     }
 
-    // Release only value-dependent saved state after all fallible gradient
-    // calculations have succeeded. Metadata-only edges remain available for
-    // repeated backward traversals.
-    for (meta, grad_fn) in &topology {
-        if grad_fn.is_some()
-            && let AutogradKind::NonLeaf { grad_fn } = &meta.kind
-        {
-            let mut grad_fn = grad_fn
-                .lock()
-                .expect("gradient function mutex must not be poisoned");
-            grad_fn
-                .as_mut()
-                .ok_or(TensorError::BackwardGraphFreed)?
-                .consume_saved_values()?;
+    while let Some(ReadyNode { id, .. }) = ready.pop() {
+        let node = nodes
+            .get(&id)
+            .expect("every ready autograd node must have an execution plan");
+        execute_backward_node(&node.meta, &mut gradients)?;
+        for parent in &node.parents {
+            let parent_id = autograd_id(parent);
+            let dependency = dependencies
+                .get_mut(&parent_id)
+                .expect("every autograd parent must have a dependency count");
+            *dependency = (*dependency)
+                .checked_sub(1)
+                .expect("an autograd dependency must be released only once");
+            if *dependency == 0 {
+                let parent = nodes
+                    .get(&parent_id)
+                    .expect("every autograd parent must have an execution plan");
+                ready.push(ready_node(parent_id, parent.priority, &mut enqueue_order));
+            }
         }
-    }
-    for (meta, gradient) in leaf_gradients {
-        accumulate_leaf_gradient(&meta, gradient);
     }
     Ok(())
 }
 
-enum TopologyFrame {
-    Enter(Arc<AutogradMeta>),
-    Exit(Arc<AutogradMeta>, Box<Option<GradFn>>),
+fn ready_node(id: usize, priority: BackwardPriority, enqueue_order: &mut u64) -> ReadyNode {
+    let tie_breaker = u64::MAX
+        .checked_sub(*enqueue_order)
+        .expect("autograd ready-queue order must fit in u64");
+    *enqueue_order = (*enqueue_order)
+        .checked_add(1)
+        .expect("autograd ready-queue order must fit in u64");
+    ReadyNode {
+        id,
+        priority,
+        tie_breaker,
+    }
 }
 
-fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
-    let mut seen = HashSet::new();
-    let mut topology = Vec::new();
-    let mut stack = vec![TopologyFrame::Enter(Arc::clone(root))];
-    while let Some(frame) = stack.pop() {
-        match frame {
-            TopologyFrame::Exit(meta, grad_fn) => topology.push((meta, *grad_fn)),
-            TopologyFrame::Enter(meta) => {
-                if !seen.insert(autograd_id(&meta)) {
-                    continue;
-                }
-                let grad_fn = match &meta.kind {
-                    AutogradKind::Leaf { .. } => None,
-                    AutogradKind::NonLeaf { grad_fn } => {
-                        let grad_fn = grad_fn
-                            .lock()
-                            .expect("gradient function mutex must not be poisoned")
-                            .clone()
-                            .ok_or(TensorError::BackwardGraphFreed)?;
-                        grad_fn.validate_saved_values()?;
-                        Some(grad_fn)
-                    }
-                };
-                stack.push(TopologyFrame::Exit(
-                    Arc::clone(&meta),
-                    Box::new(grad_fn.clone()),
-                ));
-                if let Some(grad_fn) = &grad_fn {
-                    match grad_fn {
-                        GradFn::Multiply { left, right, .. } => {
-                            push_saved_parent(&mut stack, right);
-                            push_saved_parent(&mut stack, left);
-                        }
-                        GradFn::MultiplyScalar { input, .. }
-                        | GradFn::Negate { input, .. }
-                        | GradFn::Relu { input }
-                        | GradFn::Sin { input }
-                        | GradFn::Sum { input }
-                        | GradFn::Transform { input, .. }
-                        | GradFn::Unbind { input, .. } => {
-                            push_saved_parent(&mut stack, input);
-                        }
-                        // An unsupported derivative is a traversal barrier:
-                        // backward must report this edge before inspecting or
-                        // consuming any saved state in the prior graph.
-                        GradFn::UnsupportedDerivative { .. } => {}
-                    }
-                }
+fn build_backward_graph(root: &Arc<AutogradMeta>) -> BackwardGraph {
+    let mut nodes = HashMap::new();
+    let mut dependencies: HashMap<usize, usize> = HashMap::new();
+    let mut pending = vec![Arc::clone(root)];
+    while let Some(meta) = pending.pop() {
+        let id = autograd_id(&meta);
+        if nodes.contains_key(&id) {
+            continue;
+        }
+        let (priority, parents) = backward_node_plan(&meta);
+        dependencies.entry(id).or_insert(0);
+        for parent in &parents {
+            let dependency = dependencies.entry(autograd_id(parent)).or_insert(0);
+            *dependency = (*dependency)
+                .checked_add(1)
+                .expect("autograd dependency count must fit in usize");
+            pending.push(Arc::clone(parent));
+        }
+        nodes.insert(
+            id,
+            BackwardNode {
+                meta,
+                parents,
+                priority,
+            },
+        );
+    }
+    BackwardGraph {
+        nodes,
+        dependencies,
+    }
+}
+
+fn backward_node_plan(meta: &Arc<AutogradMeta>) -> (BackwardPriority, Vec<Arc<AutogradMeta>>) {
+    match &meta.kind {
+        AutogradKind::Leaf { .. } => (
+            BackwardPriority {
+                class: 1,
+                sequence_nr: u64::MAX,
+            },
+            Vec::new(),
+        ),
+        AutogradKind::NonLeaf {
+            sequence_nr,
+            grad_fn,
+        } => {
+            let grad_fn = grad_fn
+                .lock()
+                .expect("gradient function mutex must not be poisoned");
+            let mut parents = Vec::with_capacity(2);
+            let class = u8::from(matches!(
+                grad_fn.as_ref(),
+                Some(GradFn::UnsupportedDerivative { .. })
+            ));
+            if let Some(grad_fn) = grad_fn.as_ref() {
+                grad_fn.push_backward_parents(&mut parents);
             }
+            (
+                BackwardPriority {
+                    class,
+                    sequence_nr: *sequence_nr,
+                },
+                parents,
+            )
         }
     }
-    Ok(topology)
 }
 
-fn push_saved_parent(stack: &mut Vec<TopologyFrame>, tensor: &SavedTensor) {
-    if let Some(meta) = &tensor.autograd {
-        stack.push(TopologyFrame::Enter(Arc::clone(meta)));
+fn execute_backward_node(
+    meta: &Arc<AutogradMeta>,
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    match &meta.kind {
+        AutogradKind::Leaf {
+            moved_into_graph, ..
+        } => {
+            let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) else {
+                return Ok(());
+            };
+            if moved_into_graph.load(AtomicOrdering::Acquire) {
+                return Err(TensorError::LeafMovedIntoGraphInterior);
+            }
+            accumulate_leaf_gradient(meta, upstream);
+            Ok(())
+        }
+        AutogradKind::NonLeaf { grad_fn, .. } => {
+            let mut grad_fn = grad_fn
+                .lock()
+                .expect("gradient function mutex must not be poisoned");
+            let grad_fn = grad_fn.as_mut().ok_or(TensorError::BackwardGraphFreed)?;
+            if let GradFn::Unbind {
+                input,
+                output_count,
+                output_elements,
+            } = &*grad_fn
+            {
+                grad_fn.validate_saved_values()?;
+                apply_unbind_grad_fn(meta, input, *output_count, *output_elements, gradients)?;
+                grad_fn.consume_saved_values()?;
+                return Ok(());
+            }
+
+            let Some(upstream) = gradients.remove(&gradient_key(meta, 0)) else {
+                return Ok(());
+            };
+            grad_fn.validate_saved_values()?;
+            apply_grad_fn(grad_fn, &upstream, gradients)?;
+            grad_fn.consume_saved_values()?;
+            Ok(())
+        }
     }
 }
 
