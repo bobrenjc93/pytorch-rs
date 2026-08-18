@@ -1,12 +1,11 @@
-use std::cell::Cell;
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
-    PyTypeError, PyUserWarning, PyValueError,
+    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
+    PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -18,11 +17,13 @@ use pyo3::types::{
 
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
+    python_cpython_compat as cpython_compat,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
     python_grad_mode::add_no_grad,
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_memory_format::{PyMemoryFormat, memory_format_object},
+    python_nn_functional::add_nn_functional_bridges,
     python_no_argument_builtins::add_no_argument_builtins,
     python_scalar_conversions::register_scalar_conversions,
     python_size::{construct_size, size_type_object},
@@ -32,7 +33,6 @@ use crate::{
 };
 
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
-static TORCH_FUNCTION_DESCRIPTOR_CALLER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static H_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -40,15 +40,6 @@ static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
-
-thread_local! {
-    static CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH: Cell<usize> = const { Cell::new(0) };
-}
-
-const TORCH_FUNCTION_DESCRIPTOR_CALLER_SOURCE: &CStr = cr"
-def _call_descriptor(function, args):
-    return function(*args)
-";
 
 const IS_TENSOR_SOURCE: &CStr = cr#"
 import copy as _copy
@@ -1625,124 +1616,8 @@ fn call_torch_function_handler(
     Ok(result.unbind())
 }
 
-#[allow(
-    unsafe_code,
-    reason = "mode dispatch must use CPython's combined descriptor lookup and call boundary, matching PyTorch"
-)]
-fn call_torch_function_mode_handler(
-    py: Python<'_>,
-    mode: &Bound<'_, PyAny>,
-    function: &Py<PyAny>,
-    types: &Bound<'_, PyTuple>,
-    args: &Bound<'_, PyTuple>,
-) -> PyResult<Py<PyAny>> {
-    // PyTorch invokes a mode through PyObject_CallMethod after separately
-    // validating one descriptor resolution. Keeping the second resolution and
-    // invocation in the same CPython operation is observable at the recursion
-    // limit for stateful descriptors.
-    let result = unsafe {
-        ffi::PyObject_CallMethod(
-            mode.as_ptr(),
-            c"__torch_function__".as_ptr(),
-            c"OOO".as_ptr(),
-            function.as_ptr(),
-            types.as_ptr(),
-            args.as_ptr(),
-        )
-    };
-    if result.is_null() {
-        Err(PyErr::fetch(py))
-    } else {
-        // SAFETY: PyObject_CallMethod returned a new owned reference.
-        Ok(unsafe { Bound::<PyAny>::from_owned_ptr(py, result) }.unbind())
-    }
-}
-
 fn is_not_implemented(py: Python<'_>, result: &Py<PyAny>) -> bool {
     result.as_ptr() == py.NotImplemented().as_ptr()
-}
-
-fn torch_function_descriptor_caller(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
-    TORCH_FUNCTION_DESCRIPTOR_CALLER.get_or_try_init(py, || {
-        let helpers = PyModule::from_code(
-            py,
-            TORCH_FUNCTION_DESCRIPTOR_CALLER_SOURCE,
-            c"torch_rs/_torch_function.py",
-            c"torch_rs._torch_function",
-        )?;
-        Ok(helpers.getattr("_call_descriptor")?.unbind())
-    })
-}
-
-struct ConstDataPtrLegacyRedispatchDepth;
-
-impl ConstDataPtrLegacyRedispatchDepth {
-    fn enter() -> Self {
-        CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH.with(|depth| depth.set(depth.get() + 1));
-        Self
-    }
-}
-
-impl Drop for ConstDataPtrLegacyRedispatchDepth {
-    fn drop(&mut self) {
-        CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH.with(|depth| depth.set(depth.get() - 1));
-    }
-}
-
-fn const_data_ptr_legacy_redispatch_depth() -> usize {
-    CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH.with(Cell::get)
-}
-
-#[allow(
-    unsafe_code,
-    reason = "CPython 3.10 and 3.11 TensorBase parity requires probing legacy recursive dispatch boundaries"
-)]
-fn probe_const_data_ptr_redispatch_legacy(py: Python<'_>, redispatch_depth: usize) -> PyResult<()> {
-    // The Python helper below retains the recursive fallback frame, while the
-    // native PyTorch path also crosses alternating subclass and callable
-    // recursion checks before retrying the descriptor. Probe those checks only
-    // after the mode declines so accepted results and handler exceptions win.
-    let python_310_contexts = [
-        c" in __subclasscheck__",
-        c" while calling a Python object",
-        c" in __subclasscheck__",
-        c" while calling a Python object",
-        c" in __subclasscheck__",
-        c" while calling a Python object",
-    ];
-    let python_311_contexts = [
-        c" while calling a Python object",
-        c" in __subclasscheck__",
-        c" while calling a Python object",
-        c" in __subclasscheck__",
-        // The initial Tensor.__torch_function__ retry reaches its subclass
-        // boundary before another callable boundary at tight headroom.
-        if redispatch_depth == 1 {
-            c" in __subclasscheck__"
-        } else {
-            c" while calling a Python object"
-        },
-    ];
-    let contexts: &[&CStr] = if py.version_info() < (3, 11) {
-        &python_310_contexts
-    } else {
-        &python_311_contexts
-    };
-    let mut entered = 0;
-    for context in contexts {
-        if unsafe { ffi::Py_EnterRecursiveCall(context.as_ptr()) } != 0 {
-            let error = PyErr::fetch(py);
-            for _ in 0..entered {
-                unsafe { ffi::Py_LeaveRecursiveCall() };
-            }
-            return Err(error);
-        }
-        entered += 1;
-    }
-    for _ in 0..entered {
-        unsafe { ffi::Py_LeaveRecursiveCall() };
-    }
-    Ok(())
 }
 
 fn dispatch_tensorbase_mode(
@@ -1769,14 +1644,20 @@ fn dispatch_tensorbase_mode(
         return Ok(None);
     };
     validate_torch_function_mode_handler(mode.bind(py))?;
-    let result = call_torch_function_mode_handler(py, mode.bind(py), &function, &types, &args)?;
+    let result = cpython_compat::call_torch_function_mode_handler(
+        py,
+        mode.bind(py),
+        &function,
+        &types,
+        &args,
+    )?;
     if !is_not_implemented(py, &result) {
         return Ok(Some(result));
     }
-    if py.version_info() < (3, 12)
-        && matches!(target, TensorBaseModeTarget::Method("const_data_ptr"))
-    {
-        probe_const_data_ptr_redispatch_legacy(py, const_data_ptr_legacy_redispatch_depth())?;
+    let legacy_const_data_ptr = cpython_compat::uses_legacy_tensorbase_redispatch(py)
+        && matches!(target, TensorBaseModeTarget::Method("const_data_ptr"));
+    if legacy_const_data_ptr {
+        cpython_compat::probe_const_data_ptr_legacy_redispatch(py)?;
     }
 
     // TensorBase's fallback retries the descriptor after restoring the active
@@ -1787,10 +1668,9 @@ fn dispatch_tensorbase_mode(
     active_mode.restore();
     // Keep the retry in a Python frame so configured `sys.setrecursionlimit`
     // values and mode side effects match TensorBase's recursive fallback.
-    let caller = torch_function_descriptor_caller(py)?;
-    let legacy_redispatch = py.version_info() < (3, 12)
-        && matches!(target, TensorBaseModeTarget::Method("const_data_ptr"));
-    let _redispatch_depth = legacy_redispatch.then(ConstDataPtrLegacyRedispatchDepth::enter);
+    let caller = cpython_compat::torch_function_descriptor_caller(py)?;
+    let _redispatch_depth =
+        legacy_const_data_ptr.then(cpython_compat::enter_const_data_ptr_legacy_redispatch);
     Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
 }
 
@@ -3621,7 +3501,7 @@ impl PyTensor {
         {
             return match operation {
                 MultiplicationOperation::Mul => {
-                    let actual = transpose_type_name(&other.value)?;
+                    let actual = python_type_name(&other.value)?;
                     Err(mul_argument_type_error(other.position, &actual))
                 }
                 MultiplicationOperation::Multiply => Err(multiply_binding_error(args, kwargs)?),
@@ -3835,7 +3715,7 @@ fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyRe
     if requires_grad.is_exact_instance_of::<PyBool>() {
         return requires_grad.is_truthy();
     }
-    let type_name = transpose_type_name(requires_grad)?;
+    let type_name = python_type_name(requires_grad)?;
     Err(PyTypeError::new_err(format!(
         "{function}(): argument 'requires_grad' must be bool, not {type_name}"
     )))
@@ -3885,127 +3765,6 @@ fn relu(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
         .cast::<PyTensor>()
         .expect("the relu input type was checked while binding");
     tensor.try_borrow()?.relu()
-}
-
-fn dropout_probability_type_error(
-    operation: &str,
-    probability: &Bound<'_, PyAny>,
-) -> PyResult<PyErr> {
-    let actual = transpose_type_name(probability)?;
-    Ok(PyTypeError::new_err(format!(
-        "{operation}(): argument 'p' (position 2) must be float, not {actual}"
-    )))
-}
-
-fn extract_dropout_probability(probability: &Bound<'_, PyAny>) -> PyResult<f64> {
-    probability.extract::<f64>()
-}
-
-fn parse_dropout_probability(operation: &str, probability: &Bound<'_, PyAny>) -> PyResult<f64> {
-    if let Ok(tensor) = probability.cast::<PyTensor>() {
-        let tensor = tensor.try_borrow()?;
-        if tensor.inner.shape().is_empty() && !tensor.inner.requires_grad() {
-            return tensor
-                .inner
-                .item()
-                .map(f64::from)
-                .map_err(|error| item_error(&error));
-        }
-        return Err(dropout_probability_type_error(operation, probability)?);
-    }
-
-    if probability.is_instance_of::<PyInt>() || probability.is_instance_of::<PyFloat>() {
-        return extract_dropout_probability(probability);
-    }
-
-    let Ok(numpy) = PyModule::import(probability.py(), "numpy") else {
-        return Err(dropout_probability_type_error(operation, probability)?);
-    };
-    let generic = numpy.getattr("generic")?;
-    if !probability.is_instance(&generic)? {
-        return Err(dropout_probability_type_error(operation, probability)?);
-    }
-
-    if probability.is_instance(&numpy.getattr("bool_")?)? {
-        return probability
-            .is_truthy()
-            .map(|probability| if probability { 1.0 } else { 0.0 });
-    }
-    for scalar_type in ["integer", "floating", "complexfloating"] {
-        if probability.is_instance(&numpy.getattr(scalar_type)?)? {
-            return extract_dropout_probability(probability);
-        }
-    }
-
-    Err(dropout_probability_type_error(operation, probability)?)
-}
-
-fn format_dropout_probability(py: Python<'_>, probability: f64) -> PyResult<String> {
-    if probability.is_nan() {
-        return Ok(if probability.is_sign_negative() {
-            "-nan".to_owned()
-        } else {
-            "nan".to_owned()
-        });
-    }
-    PyModule::import(py, "builtins")?
-        .getattr("format")?
-        .call1((probability, ".6g"))?
-        .extract()
-}
-
-#[pyfunction]
-fn _nn_functional_dropout(
-    py: Python<'_>,
-    input: &Bound<'_, PyAny>,
-    probability: &Bound<'_, PyAny>,
-    training: &Bound<'_, PyAny>,
-    inplace: bool,
-) -> PyResult<Py<PyAny>> {
-    // This private bridge mirrors the native operator's schema checks for the
-    // identity cases only. It deliberately owns no random state or mutation.
-    let operation = if inplace { "dropout_" } else { "dropout" };
-    let Ok(tensor) = input.cast::<PyTensor>() else {
-        let actual = transpose_type_name(input)?;
-        return Err(PyTypeError::new_err(format!(
-            "{operation}(): argument 'input' (position 1) must be Tensor, not {actual}"
-        )));
-    };
-    let probability = parse_dropout_probability(operation, probability)?;
-    if !training.is_exact_instance_of::<PyBool>() {
-        let actual = transpose_type_name(training)?;
-        return Err(PyTypeError::new_err(format!(
-            "{operation}(): argument 'train' (position 3) must be bool, not {actual}"
-        )));
-    }
-    let training = training.is_truthy()?;
-
-    if !(0.0..=1.0).contains(&probability) {
-        let probability = format_dropout_probability(py, probability)?;
-        return Err(PyRuntimeError::new_err(format!(
-            "dropout probability has to be between 0 and 1, but got {probability}"
-        )));
-    }
-
-    let input_is_empty = tensor.try_borrow()?.inner.numel() == 0;
-    if !training || probability == 0.0 || input_is_empty {
-        return Ok(tensor.clone().unbind().into_any());
-    }
-
-    Err(PyNotImplementedError::new_err(
-        "torch_rs.nn.functional.dropout does not support sampling",
-    ))
-}
-
-#[pyfunction]
-fn _nn_functional_dropout_tensor_autograd_suffix(input: &PyTensor) -> String {
-    if !input.inner.requires_grad() {
-        return String::new();
-    }
-    input.inner.grad_fn_name().map_or_else(
-        || ", requires_grad=True".to_owned(),
-        |name| format!(", grad_fn=<{name}>"),
-    )
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
@@ -4085,7 +3844,7 @@ fn apply_top_level_dimension_swap(
     if let Some(keyword_error) = keyword_error {
         return Err(keyword_error);
     }
-    let input_type = transpose_type_name(&input.value)?;
+    let input_type = python_type_name(&input.value)?;
     let input_tensor = input.value.cast::<PyTensor>().map_err(|_| {
         dimension_swap_argument_type_error(
             operation,
@@ -4112,7 +3871,7 @@ fn apply_top_level_dimension_swap(
 #[pyfunction(signature = (*args, **kwargs), text_signature = "(input, dim=None)")]
 fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
     let (input, input_position, dimension) = bind_top_level_squeeze_arguments(args, kwargs)?;
-    let input_type = transpose_type_name(&input)?;
+    let input_type = python_type_name(&input)?;
     let input = match input.cast::<PyTensor>() {
         Ok(input) => input,
         Err(_) if matches!(&dimension, ParsedSqueezeDimensions::All) => {
@@ -4194,7 +3953,7 @@ fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyRes
     let Ok(tensor) = input.cast::<PyTensor>() else {
         let position =
             position.map_or_else(String::new, |position| format!(" (position {position})"));
-        let input_type = transpose_type_name(input)?;
+        let input_type = python_type_name(input)?;
         return Err(PyTypeError::new_err(format!(
             "numel(): argument 'input'{position} must be Tensor, not {input_type}"
         )));
@@ -4612,7 +4371,7 @@ fn validate_scalar_tensor_value(scalar: &ParsedCallArgument<'_>) -> PyResult<()>
     let position = scalar
         .position
         .map_or_else(String::new, |position| format!(" (position {position})"));
-    let actual = transpose_type_name(value)?;
+    let actual = python_type_name(value)?;
     Err(PyTypeError::new_err(format!(
         "scalar_tensor(): argument 's'{position} must be Number, not {actual}"
     )))
@@ -4686,7 +4445,7 @@ fn parse_scalar_tensor_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()>
     if layout.is_instance(layout_objects(layout.py())?.layout.bind(layout.py()))? {
         return Ok(());
     }
-    let actual = transpose_type_name(layout)?;
+    let actual = python_type_name(layout)?;
     Err(PyTypeError::new_err(format!(
         "scalar_tensor(): argument 'layout' must be torch.layout, not {actual}"
     )))
@@ -4699,7 +4458,7 @@ fn validate_scalar_tensor_device_type(device: Option<&Bound<'_, PyAny>>) -> PyRe
     if device.cast::<PyDevice>().is_ok() || device.cast::<PyString>().is_ok() {
         return Ok(());
     }
-    let actual = transpose_type_name(device)?;
+    let actual = python_type_name(device)?;
     Err(PyTypeError::new_err(format!(
         "scalar_tensor(): argument 'device' must be torch.device, not {actual}"
     )))
@@ -4786,7 +4545,7 @@ fn parse_scalar_tensor_bool(argument: &str, value: Option<&Bound<'_, PyAny>>) ->
     if value.is_exact_instance_of::<PyBool>() {
         return value.is_truthy();
     }
-    let actual = transpose_type_name(value)?;
+    let actual = python_type_name(value)?;
     Err(PyTypeError::new_err(format!(
         "scalar_tensor(): argument '{argument}' must be bool, not {actual}"
     )))
@@ -5125,7 +4884,7 @@ fn extract_creation_dimension(function: &str, dimension: &Bound<'_, PyAny>) -> P
 }
 
 fn creation_dimension_type_error(function: &str, dimension: &Bound<'_, PyAny>) -> PyResult<PyErr> {
-    let type_name = transpose_type_name(dimension)?;
+    let type_name = python_type_name(dimension)?;
     Ok(PyTypeError::new_err(format!(
         "{function}(): argument 'size' (position 1) must be tuple of ints, not {type_name}"
     )))
@@ -5621,7 +5380,7 @@ fn validate_select_index(index: &ParsedCallArgument<'_>) -> PyResult<()> {
         return Ok(());
     }
 
-    let actual = transpose_type_name(&index.value)?;
+    let actual = python_type_name(&index.value)?;
     Err(dimension_swap_argument_type_error(
         "select",
         "index",
@@ -5729,7 +5488,7 @@ fn validate_size_dimension(dimension: &ParsedCallArgument<'_>) -> PyResult<()> {
         return Ok(());
     }
 
-    let actual = transpose_type_name(&dimension.value)?;
+    let actual = python_type_name(&dimension.value)?;
     Err(size_dimension_type_error(dimension, &actual))
 }
 
@@ -5767,7 +5526,7 @@ fn validate_dimension_swap_dimension(
         return Ok(());
     }
 
-    let type_name = transpose_type_name(dimension)?;
+    let type_name = python_type_name(dimension)?;
     Err(dimension_swap_argument_type_error(
         operation, argument, position, "int", &type_name,
     ))
@@ -5833,7 +5592,7 @@ fn parse_flatten_dimension(
         }
     }
 
-    let actual = transpose_type_name(dimension)?;
+    let actual = python_type_name(dimension)?;
     let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
     Err(PyTypeError::new_err(format!(
         "flatten(): argument '{argument}'{position} must be int, not {actual}"
@@ -5970,7 +5729,7 @@ fn validate_flatten_input(input: &Bound<'_, PyAny>, position: Option<usize>) -> 
     if input.cast::<PyTensor>().is_ok() {
         return Ok(());
     }
-    let actual = transpose_type_name(input)?;
+    let actual = python_type_name(input)?;
     let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
     Err(PyTypeError::new_err(format!(
         "flatten(): argument 'input'{position} must be Tensor, not {actual}"
@@ -6062,7 +5821,7 @@ fn bind_method_squeeze_arguments(
         length => {
             let mut dimensions = try_size_vector(length)?;
             for dimension in positional.iter() {
-                let actual = transpose_type_name(&dimension)?;
+                let actual = python_type_name(&dimension)?;
                 let Some(dimension) = parse_squeeze_integer(&dimension, true)? else {
                     return Err(squeeze_method_invalid_positional(&actual));
                 };
@@ -6166,7 +5925,7 @@ fn parse_squeeze_argument(
         );
     }
 
-    let actual = transpose_type_name(argument)?;
+    let actual = python_type_name(argument)?;
     let Some(dimension) = parse_squeeze_integer(argument, allow_index_protocol)? else {
         return Err(match (top_level, keyword) {
             (true, Some(keyword)) => {
@@ -6190,7 +5949,7 @@ fn parse_squeeze_sequence<'py>(
 ) -> PyResult<ParsedSqueezeDimensions> {
     let mut parsed = try_size_vector(length)?;
     for (index, dimension) in dimensions.enumerate() {
-        let actual = transpose_type_name(&dimension)?;
+        let actual = python_type_name(&dimension)?;
         let parsed_dimension = parse_squeeze_integer(&dimension, true).map_err(|_| {
             PyTypeError::new_err(format!(
                 "squeeze(): argument 'dim' failed to unpack the object at pos {} with error \"Overflow when unpacking long long\"",
@@ -6199,7 +5958,7 @@ fn parse_squeeze_sequence<'py>(
         })?;
         let Some(dimension) = parsed_dimension else {
             if index == 0 {
-                let sequence_type = transpose_type_name(sequence)?;
+                let sequence_type = python_type_name(sequence)?;
                 let detail = call_argument_type_description(sequence)?;
                 return Err(match (top_level, keyword) {
                     (true, Some(keyword)) => squeeze_top_level_invalid_keyword(
@@ -6280,10 +6039,10 @@ fn call_argument_type_description_with(
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<String> {
     if !value.is_instance_of::<PyTuple>() && !value.is_instance_of::<PyList>() {
-        return transpose_type_name_with(value, allocation);
+        return python_type_name_with(value, allocation);
     }
 
-    let kind = transpose_type_name_with(value, allocation)?;
+    let kind = python_type_name_with(value, allocation)?;
     let tuple = value.is_instance_of::<PyTuple>();
     let (opening, closing) = if tuple { ("(", ")") } else { ("[", "]") };
     let sequence = value.cast::<PySequence>()?;
@@ -6295,7 +6054,7 @@ fn call_argument_type_description_with(
         if index != 0 {
             try_push_string_with(&mut description, ", ", allocation)?;
         }
-        let name = transpose_type_name_with(&sequence.get_item(index)?, allocation)?;
+        let name = python_type_name_with(&sequence.get_item(index)?, allocation)?;
         try_push_string_with(&mut description, &name, allocation)?;
     }
     if tuple && length == 1 {
@@ -6337,7 +6096,7 @@ fn call_type_summary_with(
         if index != 0 {
             try_push_string_with(&mut summary, ", ", allocation)?;
         }
-        let name = transpose_type_name_with(&value, allocation)?;
+        let name = python_type_name_with(&value, allocation)?;
         try_push_string_with(&mut summary, &name, allocation)?;
     }
 
@@ -6350,7 +6109,7 @@ fn call_type_summary_with(
                 &mut keyword_names,
                 (
                     try_string_from_str_with(key, allocation)?,
-                    transpose_type_name_with(&value, allocation)?,
+                    python_type_name_with(&value, allocation)?,
                 ),
                 allocation,
             )?;
@@ -7182,7 +6941,7 @@ fn squeeze_top_level_input_with_dimension_error(
     } else {
         positional.get_item(0)?
     };
-    let input_type = transpose_type_name(&input)?;
+    let input_type = python_type_name(&input)?;
 
     let (dimension_value, dimension_keyword) = if positional.len() > 1 {
         (positional.get_item(1)?, None)
@@ -7200,7 +6959,7 @@ fn squeeze_top_level_input_with_dimension_error(
             .map(|(value, keyword)| (value, Some(keyword)))
             .expect("a non-omitted bound dimension must remain present")
     };
-    let dimension_type = transpose_type_name(&dimension_value)?;
+    let dimension_type = python_type_name(&dimension_value)?;
     let dimension_detail_type = if dimension_value.is_instance_of::<PyTuple>()
         || dimension_value.is_instance_of::<PyList>()
     {
@@ -7375,7 +7134,7 @@ fn bind_detach_argument<'py>(
         let position = input
             .position
             .map_or_else(String::new, |position| format!(" (position {position})"));
-        let actual = transpose_type_name(&input.value)?;
+        let actual = python_type_name(&input.value)?;
         return Err(PyTypeError::new_err(format!(
             "detach(): argument 'input'{position} must be Tensor, not {actual}"
         )));
@@ -7514,7 +7273,7 @@ fn legacy_single_tensor_type_error(
     let position = input
         .position
         .map_or_else(String::new, |position| format!(" (position {position})"));
-    let input_type = transpose_type_name(&input.value)?;
+    let input_type = python_type_name(&input.value)?;
     Ok(PyTypeError::new_err(format!(
         "{function}(): argument 'input'{position} must be Tensor, not {input_type}"
     )))
@@ -7780,7 +7539,7 @@ fn parse_promote_types_operand<'py>(
     let position = argument
         .position
         .map_or_else(String::new, |position| format!(" (position {position})"));
-    let actual = transpose_type_name(&argument.value)?;
+    let actual = python_type_name(&argument.value)?;
     Err(PyTypeError::new_err(format!(
         "promote_types(): argument '{name}'{position} must be torch.dtype, not {actual}"
     )))
@@ -8011,7 +7770,7 @@ fn parse_tensor_argument<'a, 'py>(
         let position = value
             .position
             .map_or_else(String::new, |position| format!(" (position {position})"));
-        let actual = transpose_type_name(&value.value)?;
+        let actual = python_type_name(&value.value)?;
         return Err(PyTypeError::new_err(format!(
             "{function}(): argument '{argument}'{position} must be Tensor, not {actual}"
         )));
@@ -8382,7 +8141,7 @@ fn push_multiply_mismatched_argument(
     keyword: Option<&str>,
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<()> {
-    let actual_type = transpose_type_name_with(value, allocation)?;
+    let actual_type = python_type_name_with(value, allocation)?;
     let detail = call_argument_type_description_with(value, allocation)?;
     let invalid_type = actual_type != expected_type;
     if invalid_type {
@@ -8414,7 +8173,7 @@ fn multiply_binding_error(
     let (tensor_mismatch, number_mismatch) = if positional.len() + keyword_length == 1 {
         if positional.len() == 1 {
             let value = positional.get_item(0)?;
-            let actual_type = transpose_type_name_with(&value, &allocation)?;
+            let actual_type = python_type_name_with(&value, &allocation)?;
             let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
             let number_detail = call_argument_type_description_with(&value, &allocation)?;
             (
@@ -8441,7 +8200,7 @@ fn multiply_binding_error(
                 .expect("a single keyword argument remains present");
             let key = pytorch_keyword_name(&key)?;
             if key == "other" {
-                let actual_type = transpose_type_name_with(&value, &allocation)?;
+                let actual_type = python_type_name_with(&value, &allocation)?;
                 let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
                 let number_detail = call_argument_type_description_with(&value, &allocation)?;
                 (
@@ -8892,7 +8651,7 @@ fn movedim_invalid_type_mismatch(
         if index != 0 {
             try_push_string_with(&mut mismatch, ", ", allocation)?;
         }
-        let actual = transpose_type_name_with(&argument.value, allocation)?;
+        let actual = python_type_name_with(&argument.value, allocation)?;
         let detail = call_argument_type_description_with(&argument.value, allocation)?;
         let input = matches!(kind, MovedimCallKind::VariableFunction(_)) && index == 0;
         let invalid = if input {
@@ -9156,7 +8915,7 @@ fn validate_permute_sequence_first(
     let Some(position) = position else {
         return Err(permute_argument_type_error(outer, None)?);
     };
-    let actual = transpose_type_name(&first)?;
+    let actual = python_type_name(&first)?;
     Err(PyTypeError::new_err(format!(
         "permute(): argument 'dims' (position {position}) must be tuple of ints, but found element of type {actual} at pos 0"
     )))
@@ -9180,7 +8939,7 @@ fn permute_argument_type_error(
     position: Option<usize>,
 ) -> PyResult<PyErr> {
     let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
-    let actual = transpose_type_name(dimensions)?;
+    let actual = python_type_name(dimensions)?;
     Ok(PyTypeError::new_err(format!(
         "permute(): argument 'dims'{position} must be tuple of ints, not {actual}"
     )))
@@ -9213,7 +8972,7 @@ fn permute_dimension_unpack_error(
     position: usize,
     dimension: &Bound<'_, PyAny>,
 ) -> PyResult<PyErr> {
-    let actual = transpose_type_name(dimension)?;
+    let actual = python_type_name(dimension)?;
     Ok(PyTypeError::new_err(format!(
         "permute(): argument 'dims' failed to unpack the object at pos {position} with error \"type must be tuple of ints,but got {actual}\""
     )))
@@ -9316,7 +9075,7 @@ fn validate_dimension_swap_argument_prefix<const N: usize>(
             .expect("arguments preceding the first dimension-swap gap are present");
         if *name == "input" {
             if argument.value.cast::<PyTensor>().is_err() {
-                let actual = transpose_type_name(&argument.value)?;
+                let actual = python_type_name(&argument.value)?;
                 return Err(dimension_swap_argument_type_error(
                     operation,
                     name,
@@ -9400,7 +9159,7 @@ pub(crate) fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'sta
     }
 }
 
-fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+pub(crate) fn python_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     if let Some(name) = native_pytorch_type_name(value) {
         let mut output = String::new();
         try_push_string(&mut output, name)?;
@@ -9410,7 +9169,7 @@ fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     }
 }
 
-fn transpose_type_name_with(
+fn python_type_name_with(
     value: &Bound<'_, PyAny>,
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<String> {
@@ -10114,7 +9873,7 @@ fn unsupported_tensor_data_error(
     value: &Bound<'_, PyAny>,
     dtype_was_explicit: bool,
 ) -> PyResult<PyErr> {
-    let type_name = transpose_type_name(value)?;
+    let type_name = python_type_name(value)?;
     if dtype_was_explicit {
         Ok(PyTypeError::new_err(format!(
             "must be real number, not {type_name}"
@@ -10259,9 +10018,7 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
 #[pymodule]
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
-    // Build the recursive TensorBase fallback while import has normal recursion
-    // headroom. Lazy construction is observably too late near the recursion limit.
-    let _ = torch_function_descriptor_caller(py)?;
+    cpython_compat::initialize_torch_function_descriptor_caller(py)?;
     module.add("Size", size_type_object(py)?.clone_ref(py))?;
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();
@@ -10297,19 +10054,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
     module.add_function(wrap_pyfunction!(relu, module)?)?;
-    let dropout = wrap_pyfunction!(_nn_functional_dropout, module)?;
-    let dropout_name = dropout.getattr("__name__")?;
-    module.add_function(dropout.clone())?;
-    module
-        .getattr("__all__")?
-        .call_method1("remove", (dropout_name,))?;
-    let dropout_autograd_suffix =
-        wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?;
-    let dropout_autograd_suffix_name = dropout_autograd_suffix.getattr("__name__")?;
-    module.add_function(dropout_autograd_suffix.clone())?;
-    module
-        .getattr("__all__")?
-        .call_method1("remove", (dropout_autograd_suffix_name,))?;
+    add_nn_functional_bridges(module)?;
     module.add_function(wrap_pyfunction!(is_same_size, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;
     module.add_function(wrap_pyfunction!(t, module)?)?;

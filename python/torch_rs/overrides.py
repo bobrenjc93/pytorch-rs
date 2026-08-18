@@ -1,8 +1,10 @@
 """Dynamic ``__torch_function__`` override modes."""
 
+import types as _types
 import warnings
 
 from .torch_rs import (
+    Tensor,
     _get_function_stack_at,
     _len_torch_function_stack,
     _pop_torch_function_stack,
@@ -54,6 +56,113 @@ def _get_current_function_mode_stack():
         _get_function_stack_at(index)
         for index in range(_len_torch_function_stack())
     ]
+
+
+def _is_disabled_torch_function_impl(handler):
+    return (
+        isinstance(handler, _types.BuiltinFunctionType)
+        and handler.__module__ == "torch._C"
+        and handler.__name__ == "_disabled_torch_function_impl"
+    )
+
+
+def _overloaded_unary_arguments(input, include_tensor):
+    input_type = type(input)
+    if input_type is Tensor:
+        # A mode-triggered handle_torch_function call includes the ordinary
+        # Tensor type even though the unary fast path excludes it otherwise.
+        return [input] if include_tensor else []
+    if hasattr(input_type, "__torch_function__"):
+        handler = input_type.__torch_function__
+        if _is_disabled_torch_function_impl(handler):
+            return []
+        return [input]
+    return []
+
+
+def _has_unary_torch_function(input):
+    # PyTorch's C-level unary probe treats the Tensor type object as
+    # overridable, excludes an ordinary exact Tensor, and suppresses errors
+    # raised while looking up user-defined override descriptors.
+    if input is Tensor:
+        return True
+    if type(input) is Tensor:
+        return False
+    try:
+        handler = input.__torch_function__
+    except BaseException:
+        return False
+    return not _is_disabled_torch_function_impl(handler)
+
+
+def _dispatch_unary_torch_function(
+    public_function,
+    implementation,
+    input,
+    keyword_arguments,
+    include_tensor=True,
+):
+    mode = _get_current_function_mode()
+    if mode is None and not _has_unary_torch_function(input):
+        return implementation(input, **keyword_arguments)
+
+    overloaded_args = _overloaded_unary_arguments(input, include_tensor)
+    types = tuple(type(argument) for argument in overloaded_args)
+    if mode is not None:
+        popped_mode = _pop_mode()
+        try:
+            result = popped_mode.__torch_function__(
+                public_function,
+                types,
+                (input,),
+                keyword_arguments.copy(),
+            )
+        finally:
+            _push_mode(popped_mode)
+        if result is not NotImplemented:
+            return result
+
+    for overloaded_arg in overloaded_args:
+        if type(overloaded_arg) is Tensor:
+            return _dispatch_unary_torch_function(
+                public_function,
+                implementation,
+                input,
+                keyword_arguments,
+                include_tensor=False,
+            )
+
+        torch_func_method = overloaded_arg.__torch_function__
+        if (
+            hasattr(torch_func_method, "__self__")
+            and torch_func_method.__self__ is overloaded_arg
+        ):
+            warnings.warn(
+                "Defining your `__torch_function__ as a plain method is "
+                "deprecated and will be an error in future, please define "
+                "it as a classmethod.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        result = torch_func_method(
+            public_function,
+            types,
+            (input,),
+            keyword_arguments.copy(),
+        )
+        if result is not NotImplemented:
+            return result
+
+    func_name = f"{public_function.__module__}.{public_function.__name__}"
+    message = (
+        f"no implementation found for '{func_name}' on types that implement "
+        f"__torch_function__: {[type(arg) for arg in overloaded_args]}"
+    )
+    current_mode = _get_current_function_mode()
+    if current_mode is not None:
+        message += f" nor in mode {current_mode}"
+    raise TypeError(message)
 
 
 __all__ = ["TorchFunctionMode"]
