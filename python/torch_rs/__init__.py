@@ -1,12 +1,20 @@
 """PyTorch-compatible public package backed by the native extension."""
 
 import copyreg as _copyreg
+import importlib as _importlib
 import sys as _sys
-import types as _types
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
 from .torch_rs import *
+
+_tensor_serialization = _importlib.import_module(
+    f"{__name__}._tensor_serialization"
+)
+# ``TensorBase`` reports PyTorch's public ``torch._C`` owner, which may belong
+# to an installed reference package in the same interpreter. Install stable
+# standard-pickle and multiprocessing reducers for its captured ``to`` method.
+_tensor_serialization.install()
 
 # PyTorch's built-in variable functions reduce through owners in ``torch._C``.
 # Expose the native extension under the equivalent package-local name so those
@@ -96,45 +104,6 @@ def _reduce_layout(value):
 
 _copyreg.pickle(layout, _reduce_layout)
 
-
-_previous_method_descriptor_reducer = _copyreg.dispatch_table.get(
-    _types.MethodDescriptorType
-)
-# A package reload sees our existing wrapper in the process-wide table. Retain
-# its original delegate instead of growing a wrapper chain on every reload.
-if getattr(
-    _previous_method_descriptor_reducer,
-    "_torch_rs_tensor_to_reducer",
-    False,
-):
-    _previous_method_descriptor_reducer = getattr(
-        _previous_method_descriptor_reducer,
-        "_torch_rs_previous_reducer",
-        None,
-    )
-
-
-def _reduce_method_descriptor(
-    descriptor,
-    _previous_reducer=_previous_method_descriptor_reducer,
-):
-    if descriptor.__objclass__ is Tensor.__base__ and descriptor.__name__ == "to":
-        return getattr, (Tensor, "to")
-    if _previous_reducer is not None:
-        return _previous_reducer(descriptor)
-    return descriptor.__reduce__()
-
-
-# ``TensorBase`` reports PyTorch's public ``torch._C`` owner, which may belong
-# to an installed reference package in the same interpreter. Resolve this one
-# descriptor through the live torch_rs Tensor type so pickle retains identity,
-# while preserving any reducer another package registered before torch_rs.
-_reduce_method_descriptor._torch_rs_tensor_to_reducer = True
-_reduce_method_descriptor._torch_rs_previous_reducer = (
-    _previous_method_descriptor_reducer
-)
-_copyreg.pickle(_types.MethodDescriptorType, _reduce_method_descriptor)
-
 __doc__ = _native.__doc__
 # Keep package-only exports out of the native module's list, just as PyTorch's
 # numeric constants live on ``torch`` rather than ``torch._C``.  A separate
@@ -154,4 +123,4 @@ from . import overrides as overrides
 from . import utils as utils
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _copyreg, _native, _previous_method_descriptor_reducer, _sys, _types
+del _copyreg, _importlib, _native, _sys, _tensor_serialization

@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import multiprocessing
 import pickle
 import re
 import subprocess
@@ -7,9 +8,19 @@ import sys
 import textwrap
 import types
 import unittest
+from multiprocessing import reduction as multiprocessing_reduction
 
 import numpy as np
 import torch_rs as torch
+
+
+def _spawn_tensor_to_descriptor(descriptor):
+    expected = inspect.getattr_static(torch.Tensor, "to")
+    if descriptor is not expected:
+        raise AssertionError("spawned process received a noncanonical Tensor.to")
+    restored = pickle.loads(multiprocessing_reduction.ForkingPickler.dumps(descriptor))
+    if restored is not expected:
+        raise AssertionError("spawned ForkingPickler round trip changed Tensor.to")
 
 
 class TensorToTests(unittest.TestCase):
@@ -194,39 +205,180 @@ class TensorToTests(unittest.TestCase):
                     descriptor,
                 )
 
+    def test_forking_pickler_and_spawn_transport_preserve_descriptor(self):
+        descriptor = inspect.getattr_static(torch.Tensor, "to")
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                payload = multiprocessing_reduction.ForkingPickler.dumps(
+                    descriptor, protocol
+                )
+                self.assertIs(pickle.loads(payload), descriptor)
+
+        context = multiprocessing.get_context("spawn")
+        process = context.Process(
+            target=_spawn_tensor_to_descriptor,
+            args=(descriptor,),
+        )
+        process.start()
+        process.join(30)
+        if process.is_alive():
+            process.terminate()
+            process.join()
+            self.fail("spawned Tensor.to transport process did not exit")
+        self.assertEqual(process.exitcode, 0)
+        process.close()
+
+    def test_descriptor_pickle_ignores_mutable_public_tensor_bindings(self):
+        source = textwrap.dedent(
+            """\
+            import importlib
+            import inspect
+            import pickle
+            from multiprocessing import reduction
+
+            import torch_rs
+
+            tensor_type = torch_rs.Tensor
+            descriptor = inspect.getattr_static(tensor_type, "to")
+
+            torch_rs.Tensor = object()
+            assert pickle.loads(pickle.dumps(descriptor)) is descriptor
+            assert pickle.loads(reduction.ForkingPickler.dumps(descriptor)) is descriptor
+
+            torch_rs.Tensor = tensor_type
+            tensor_type.to = lambda self: "replacement"
+            assert inspect.getattr_static(tensor_type, "to") is not descriptor
+            assert pickle.loads(pickle.dumps(descriptor)) is descriptor
+            assert pickle.loads(reduction.ForkingPickler.dumps(descriptor)) is descriptor
+
+            importlib.reload(torch_rs)
+            assert pickle.loads(pickle.dumps(descriptor)) is descriptor
+            assert pickle.loads(reduction.ForkingPickler.dumps(descriptor)) is descriptor
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
     def test_import_preserves_preexisting_method_descriptor_reducer(self):
         source = textwrap.dedent(
             """\
             import copyreg
+            import functools
             import importlib
             import inspect
             import pickle
             import types
+            from multiprocessing import reduction
 
-            def restore_sentinel():
-                return "sentinel"
+            def restore_copyreg_sentinel():
+                return "copyreg sentinel"
 
-            def reduce_method_descriptor(descriptor):
+            def reduce_copyreg_method_descriptor(descriptor):
                 assert descriptor is str.upper
-                return restore_sentinel, ()
+                return restore_copyreg_sentinel, ()
 
-            copyreg.pickle(types.MethodDescriptorType, reduce_method_descriptor)
-            assert pickle.loads(pickle.dumps(str.upper)) == "sentinel"
+            def restore_forking_sentinel():
+                return "forking sentinel"
+
+            def reduce_forking_method_descriptor(descriptor):
+                assert descriptor is str.upper
+                return restore_forking_sentinel, ()
+
+            copyreg.pickle(
+                types.MethodDescriptorType,
+                reduce_copyreg_method_descriptor,
+            )
+            reduction.ForkingPickler.register(
+                types.MethodDescriptorType,
+                reduce_forking_method_descriptor,
+            )
+            assert pickle.loads(pickle.dumps(str.upper)) == "copyreg sentinel"
+            assert (
+                pickle.loads(reduction.ForkingPickler.dumps(str.upper))
+                == "forking sentinel"
+            )
 
             import torch_rs
 
             descriptor = inspect.getattr_static(torch_rs.Tensor, "to")
-            first_wrapper = copyreg.dispatch_table[types.MethodDescriptorType]
-            assert first_wrapper._torch_rs_previous_reducer is reduce_method_descriptor
-            assert pickle.loads(pickle.dumps(str.upper)) == "sentinel"
+            assert pickle.loads(pickle.dumps(str.upper)) == "copyreg sentinel"
+            assert (
+                pickle.loads(reduction.ForkingPickler.dumps(str.upper))
+                == "forking sentinel"
+            )
             assert pickle.loads(pickle.dumps(descriptor)) is descriptor
+            assert (
+                pickle.loads(reduction.ForkingPickler.dumps(descriptor))
+                is descriptor
+            )
 
             importlib.reload(torch_rs)
-            second_wrapper = copyreg.dispatch_table[types.MethodDescriptorType]
-            assert second_wrapper is not first_wrapper
-            assert second_wrapper._torch_rs_previous_reducer is reduce_method_descriptor
-            assert pickle.loads(pickle.dumps(str.upper)) == "sentinel"
+            assert pickle.loads(pickle.dumps(str.upper)) == "copyreg sentinel"
+            assert (
+                pickle.loads(reduction.ForkingPickler.dumps(str.upper))
+                == "forking sentinel"
+            )
             assert pickle.loads(pickle.dumps(descriptor)) is descriptor
+            assert (
+                pickle.loads(reduction.ForkingPickler.dumps(descriptor))
+                is descriptor
+            )
+
+            copyreg_wrapper = copyreg.dispatch_table[types.MethodDescriptorType]
+            forking_wrapper = reduction.ForkingPickler._extra_reducers[
+                types.MethodDescriptorType
+            ]
+
+            def restore_external_copyreg():
+                return "external copyreg wrapper"
+
+            @functools.wraps(copyreg_wrapper)
+            def external_copyreg_wrapper(value):
+                if value is str.upper:
+                    return restore_external_copyreg, ()
+                return copyreg_wrapper(value)
+
+            def restore_external_forking():
+                return "external forking wrapper"
+
+            @functools.wraps(forking_wrapper)
+            def external_forking_wrapper(value):
+                if value is str.upper:
+                    return restore_external_forking, ()
+                return forking_wrapper(value)
+
+            copyreg.pickle(
+                types.MethodDescriptorType,
+                external_copyreg_wrapper,
+            )
+            reduction.ForkingPickler.register(
+                types.MethodDescriptorType,
+                external_forking_wrapper,
+            )
+            importlib.reload(torch_rs)
+
+            assert (
+                pickle.loads(pickle.dumps(str.upper))
+                == "external copyreg wrapper"
+            )
+            assert (
+                pickle.loads(reduction.ForkingPickler.dumps(str.upper))
+                == "external forking wrapper"
+            )
+            assert pickle.loads(pickle.dumps(descriptor)) is descriptor
+            assert (
+                pickle.loads(reduction.ForkingPickler.dumps(descriptor))
+                is descriptor
+            )
             """
         )
         completed = subprocess.run(
