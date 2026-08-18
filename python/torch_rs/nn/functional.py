@@ -11,7 +11,10 @@ from torch_rs.overrides import (
     _push_mode,
 )
 
-from ..torch_rs import _nn_functional_dropout
+from ..torch_rs import (
+    _nn_functional_dropout,
+    _nn_functional_dropout_tensor_autograd_suffix,
+)
 
 
 def _overloaded_dropout_arguments(input, include_tensor):
@@ -156,7 +159,8 @@ def _format_single_element_tensor(tensor, value):
 
     formatted = "[" * len(tensor.shape) + formatted
     formatted += "]" * len(tensor.shape)
-    return f"tensor({formatted})"
+    suffix = _nn_functional_dropout_tensor_autograd_suffix(tensor)
+    return f"tensor({formatted}{suffix})"
 
 
 def relu(input: Tensor, inplace: bool = False) -> Tensor:

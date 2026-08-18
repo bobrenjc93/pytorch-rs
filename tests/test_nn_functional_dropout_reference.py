@@ -310,6 +310,10 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
     def test_non_scalar_tensor_probability_validation_matches(self):
         actual_input = torch.tensor([1.0, 2.0])
         expected_input = reference_torch.tensor([1.0, 2.0])
+        actual_leaf_probability = torch.tensor([2.0], requires_grad=True)
+        expected_leaf_probability = reference_torch.tensor(
+            [2.0], dtype=reference_torch.float32, requires_grad=True
+        )
 
         probability_cases = (
             (
@@ -348,6 +352,19 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
                 reference_torch.tensor(
                     [float("nan")], dtype=reference_torch.float32
                 ),
+            ),
+            (actual_leaf_probability, expected_leaf_probability),
+            (
+                actual_leaf_probability * 2,
+                expected_leaf_probability * 2,
+            ),
+            (
+                actual_leaf_probability + 1,
+                expected_leaf_probability + 1,
+            ),
+            (
+                actual_leaf_probability.reshape(1, 1),
+                expected_leaf_probability.reshape(1, 1),
             ),
         )
         for case, (actual_probability, expected_probability) in enumerate(

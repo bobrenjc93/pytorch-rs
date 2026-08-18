@@ -101,6 +101,11 @@ class FunctionalDropoutTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "dropout"))
         self.assertNotIn("dropout", torch.__all__)
         self.assertFalse(hasattr(torch, "_nn_functional_dropout"))
+        self.assertFalse(
+            hasattr(
+                torch, "_nn_functional_dropout_tensor_autograd_suffix"
+            )
+        )
 
         function = functional.dropout
         signature = inspect.signature(function)
@@ -252,12 +257,37 @@ class FunctionalDropoutTests(unittest.TestCase):
                 source, p=torch.tensor(float("nan")), training=False
             )
 
+        leaf_probability = torch.tensor([2.0], requires_grad=True)
         tensor_error_cases = (
             (
                 torch.tensor([2.0]),
                 ValueError,
                 "dropout probability has to be between 0 and 1, but got "
                 "tensor([2.])",
+            ),
+            (
+                leaf_probability,
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([2.], requires_grad=True)",
+            ),
+            (
+                leaf_probability * 2,
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([4.], grad_fn=<MulBackward0>)",
+            ),
+            (
+                leaf_probability + 1,
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([3.], grad_fn=<AddBackward0>)",
+            ),
+            (
+                leaf_probability.reshape(1, 1),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([[2.]], grad_fn=<ViewBackward0>)",
             ),
             (
                 torch.tensor([-0.1]),

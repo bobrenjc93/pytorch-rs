@@ -2980,7 +2980,7 @@ impl PyTensor {
             )));
         }
         self.inner
-            .reverse_dimensions()
+            .t()
             .map(Self::new)
             .map_err(|error| transpose_error(&error))
     }
@@ -3857,6 +3857,17 @@ fn _nn_functional_dropout(
     Err(PyNotImplementedError::new_err(
         "torch_rs.nn.functional.dropout does not support sampling",
     ))
+}
+
+#[pyfunction]
+fn _nn_functional_dropout_tensor_autograd_suffix(input: &PyTensor) -> String {
+    if !input.inner.requires_grad() {
+        return String::new();
+    }
+    input.inner.grad_fn_name().map_or_else(
+        || ", requires_grad=True".to_owned(),
+        |name| format!(", grad_fn=<{name}>"),
+    )
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
@@ -10151,6 +10162,13 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module
         .getattr("__all__")?
         .call_method1("remove", (dropout_name,))?;
+    let dropout_autograd_suffix =
+        wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?;
+    let dropout_autograd_suffix_name = dropout_autograd_suffix.getattr("__name__")?;
+    module.add_function(dropout_autograd_suffix.clone())?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", (dropout_autograd_suffix_name,))?;
     module.add_function(wrap_pyfunction!(is_same_size, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;
     module.add_function(wrap_pyfunction!(t, module)?)?;
