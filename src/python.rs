@@ -1081,6 +1081,173 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = r"
+view(*shape) -> Tensor
+
+Returns a new tensor with the same data as the :attr:`self` tensor but of a
+different :attr:`shape`.
+
+The returned tensor shares the same data and must have the same number
+of elements, but may have a different size. For a tensor to be viewed, the new
+view size must be compatible with its original size and stride, i.e., each new
+view dimension must either be a subspace of an original dimension, or only span
+across original dimensions :math:`d, d+1, \dots, d+k` that satisfy the following
+contiguity-like condition that :math:`\forall i = d, \dots, d+k-1`,
+
+.. math::
+
+  \text{stride}[i] = \text{stride}[i+1] \times \text{size}[i+1]
+
+Otherwise, it will not be possible to view :attr:`self` tensor as :attr:`shape`
+without copying it (e.g., via :meth:`contiguous`). When it is unclear whether a
+:meth:`view` can be performed, it is advisable to use :meth:`reshape`, which
+returns a view if the shapes are compatible, and copies (equivalent to calling
+:meth:`contiguous`) otherwise.
+
+Args:
+    shape (torch.Size or int...): the desired size
+
+Example::
+
+    >>> x = torch.randn(4, 4)
+    >>> x.size()
+    torch.Size([4, 4])
+    >>> y = x.view(16)
+    >>> y.size()
+    torch.Size([16])
+    >>> z = x.view(-1, 8)  # the size -1 is inferred from other dimensions
+    >>> z.size()
+    torch.Size([2, 8])
+
+    >>> a = torch.randn(1, 2, 3, 4)
+    >>> a.size()
+    torch.Size([1, 2, 3, 4])
+    >>> b = a.transpose(1, 2)  # Swaps 2nd and 3rd dimension
+    >>> b.size()
+    torch.Size([1, 3, 2, 4])
+    >>> c = a.view(1, 3, 2, 4)  # Does not change tensor layout in memory
+    >>> c.size()
+    torch.Size([1, 3, 2, 4])
+    >>> torch.equal(b, c)
+    False
+
+
+.. method:: view(dtype) -> Tensor
+   :noindex:
+
+Returns a new tensor with the same data as the :attr:`self` tensor but of a
+different :attr:`dtype`.
+
+If the element size of :attr:`dtype` is different than that of ``self.dtype``,
+then the size of the last dimension of the output will be scaled
+proportionally.  For instance, if :attr:`dtype` element size is twice that of
+``self.dtype``, then each pair of elements in the last dimension of
+:attr:`self` will be combined, and the size of the last dimension of the output
+will be half that of :attr:`self`. If :attr:`dtype` element size is half that
+of ``self.dtype``, then each element in the last dimension of :attr:`self` will
+be split in two, and the size of the last dimension of the output will be
+double that of :attr:`self`. For this to be possible, the following conditions
+must be true:
+
+    * ``self.dim()`` must be greater than 0.
+    * ``self.stride(-1)`` must be 1.
+
+Additionally, if the element size of :attr:`dtype` is greater than that of
+``self.dtype``, the following conditions must be true as well:
+
+    * ``self.size(-1)`` must be divisible by the ratio between the element
+      sizes of the dtypes.
+    * ``self.storage_offset()`` must be divisible by the ratio between the
+      element sizes of the dtypes.
+    * The strides of all dimensions, except the last dimension, must be
+      divisible by the ratio between the element sizes of the dtypes.
+
+If any of the above conditions are not met, an error is thrown.
+
+.. warning::
+
+    This overload is not supported by TorchScript, and using it in a Torchscript
+    program will cause undefined behavior.
+
+
+Args:
+    dtype (:class:`torch.dtype`): the desired dtype
+
+Example::
+
+    >>> x = torch.randn(4, 4)
+    >>> x
+    tensor([[ 0.9482, -0.0310,  1.4999, -0.5316],
+            [-0.1520,  0.7472,  0.5617, -0.8649],
+            [-2.4724, -0.0334, -0.2976, -0.8499],
+            [-0.2109,  1.9913, -0.9607, -0.6123]])
+    >>> x.dtype
+    torch.float32
+
+    >>> y = x.view(torch.int32)
+    >>> y
+    tensor([[ 1064483442, -1124191867,  1069546515, -1089989247],
+            [-1105482831,  1061112040,  1057999968, -1084397505],
+            [-1071760287, -1123489973, -1097310419, -1084649136],
+            [-1101533110,  1073668768, -1082790149, -1088634448]],
+        dtype=torch.int32)
+    >>> y[0, 0] = 1000000000
+    >>> x
+    tensor([[ 0.0047, -0.0310,  1.4999, -0.5316],
+            [-0.1520,  0.7472,  0.5617, -0.8649],
+            [-2.4724, -0.0334, -0.2976, -0.8499],
+            [-0.2109,  1.9913, -0.9607, -0.6123]])
+
+    >>> x.view(torch.cfloat)
+    tensor([[ 0.0047-0.0310j,  1.4999-0.5316j],
+            [-0.1520+0.7472j,  0.5617-0.8649j],
+            [-2.4724-0.0334j, -0.2976-0.8499j],
+            [-0.2109+1.9913j, -0.9607-0.6123j]])
+    >>> x.view(torch.cfloat).size()
+    torch.Size([4, 2])
+
+    >>> x.view(torch.uint8)
+    tensor([[  0, 202, 154,  59, 182, 243, 253, 188, 185, 252, 191,  63, 240,  22,
+               8, 191],
+            [227, 165,  27, 190, 128,  72,  63,  63, 146, 203,  15,  63,  22, 106,
+              93, 191],
+            [205,  59,  30, 192, 112, 206,   8, 189,   7,  95, 152, 190,  12, 147,
+              89, 191],
+            [ 43, 246,  87, 190, 235, 226, 254,  63, 111, 240, 117, 191, 177, 191,
+              28, 191]], dtype=torch.uint8)
+    >>> x.view(torch.uint8).size()
+    torch.Size([4, 16])
+"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn view(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let shape = bind_view_shape_argument(args, kwargs)?;
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "view",
+            "torch.Tensor.view",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        let shape = parse_view_shape_argument(shape)?;
+        let inner = tensor
+            .try_borrow()?
+            .inner
+            .view(shape)
+            .map_err(|error| tensor_error(&error))?;
+        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nview_as(other) -> Tensor\n\nView this tensor as the same size as :attr:`other`.\n``self.view_as(other)`` is equivalent to ``self.view(other.size())``.\n\nPlease see :meth:`~Tensor.view` for more information about ``view``.\n\nArgs:\n    other (:class:`torch.Tensor`): The result tensor has the same size\n        as :attr:`other`.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn view_as(
@@ -8960,6 +9127,152 @@ fn bind_dimension_swap_arguments<'py, const N: usize>(
         }),
         keyword_error,
     ))
+}
+
+enum ViewShapeArgument<'py> {
+    Tuple(Bound<'py, PyTuple>),
+    List(Bound<'py, PyList>),
+}
+
+fn bind_view_shape_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ViewShapeArgument<'py>> {
+    let mut keyword_shape = None;
+    let mut keyword_error = None;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            match key.as_str() {
+                "size" => {
+                    if positional.is_empty() && keyword_shape.is_none() {
+                        keyword_shape = Some(value);
+                    } else {
+                        keyword_error.get_or_insert_with(|| {
+                            PyTypeError::new_err("view() got multiple values for argument 'size'")
+                        });
+                    }
+                }
+                "dtype" if positional.is_empty() => {
+                    return Err(unsupported_view_dtype_error());
+                }
+                _ => {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(format!(
+                            "view() got an unexpected keyword argument '{key}'"
+                        ))
+                    });
+                }
+            }
+        }
+    }
+
+    let value = match positional.len() {
+        0 => keyword_shape.ok_or_else(unsupported_view_argument_error)?,
+        1 => positional.get_item(0)?,
+        _ => return Err(unsupported_view_integer_error()),
+    };
+    let shape = if let Ok(shape) = value.cast::<PyTuple>() {
+        ViewShapeArgument::Tuple(shape.clone())
+    } else if let Ok(shape) = value.cast::<PyList>() {
+        ViewShapeArgument::List(shape.clone())
+    } else if value.cast::<PyDType>().is_ok() {
+        return Err(unsupported_view_dtype_error());
+    } else if is_view_shape_dimension(&value)? {
+        return Err(unsupported_view_integer_error());
+    } else {
+        return Err(unsupported_view_argument_error());
+    };
+    validate_view_shape_first(&shape)?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    Ok(shape)
+}
+
+fn validate_view_shape_first(shape: &ViewShapeArgument<'_>) -> PyResult<()> {
+    let first = match shape {
+        ViewShapeArgument::Tuple(dimensions) => dimensions.get_item(0).ok(),
+        ViewShapeArgument::List(dimensions) => dimensions.get_item(0).ok(),
+    };
+    let Some(first) = first else {
+        return Ok(());
+    };
+    if is_view_shape_dimension(&first)? {
+        return Ok(());
+    }
+    let actual = python_type_name(&first)?;
+    Err(PyTypeError::new_err(format!(
+        "view(): argument 'size' must be tuple of ints, but found element of type {actual} at pos 0"
+    )))
+}
+
+fn is_view_shape_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if dimension.is_instance_of::<PyBool>() {
+        return Ok(false);
+    }
+    Ok(PyModule::import(dimension.py(), "operator")?
+        .getattr("index")?
+        .call1((dimension,))
+        .is_ok())
+}
+
+fn parse_view_shape_argument(shape: ViewShapeArgument<'_>) -> PyResult<Vec<i64>> {
+    match shape {
+        ViewShapeArgument::Tuple(dimensions) => {
+            parse_view_shape_dimensions(dimensions.len(), dimensions.iter())
+        }
+        ViewShapeArgument::List(dimensions) => {
+            parse_view_shape_dimensions(dimensions.len(), dimensions.iter())
+        }
+    }
+}
+
+fn parse_view_shape_dimensions<'py>(
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+) -> PyResult<Vec<i64>> {
+    let mut parsed = try_size_vector(length)?;
+    for (index, dimension) in dimensions.enumerate() {
+        let position = index + 1;
+        let indexed = PyModule::import(dimension.py(), "operator")?
+            .getattr("index")?
+            .call1((&dimension,));
+        let Ok(indexed) = indexed else {
+            return Err(view_shape_dimension_unpack_error(position, &dimension)?);
+        };
+        let dimension = indexed.extract::<i64>().map_err(|_| {
+            PyTypeError::new_err(format!(
+                "view(): argument 'size' failed to unpack the object at pos {position} with error \"Overflow when unpacking long long\""
+            ))
+        })?;
+        try_push_size(&mut parsed, dimension)?;
+    }
+    Ok(parsed)
+}
+
+fn view_shape_dimension_unpack_error(
+    position: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let actual = python_type_name(dimension)?;
+    Ok(PyTypeError::new_err(format!(
+        "view(): argument 'size' failed to unpack the object at pos {position} with error \"type must be tuple of ints,but got {actual}\""
+    )))
+}
+
+fn unsupported_view_argument_error() -> PyErr {
+    PyTypeError::new_err("view() supports exactly one tuple, list, or torch.Size shape argument")
+}
+
+fn unsupported_view_integer_error() -> PyErr {
+    PyTypeError::new_err(
+        "view(): variadic integer shapes are not supported; pass a tuple, list, or torch.Size",
+    )
+}
+
+fn unsupported_view_dtype_error() -> PyErr {
+    PyTypeError::new_err("view(): dtype reinterpretation is not supported")
 }
 
 enum PermuteDimensionArguments<'py> {

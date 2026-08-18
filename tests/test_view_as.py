@@ -224,7 +224,7 @@ class TensorViewAsTests(unittest.TestCase):
         self.assertIsNone(no_grad_leaf.grad)
         self.assertIsNone(no_grad_other.grad)
 
-    def test_tensorbase_descriptor_documentation_and_view_remains_unsupported(self):
+    def test_tensorbase_descriptor_and_documentation(self):
         tensor = torch.tensor([1.0, 2.0])
         other = torch.zeros((2, 1))
         descriptor = inspect.getattr_static(torch.Tensor, "view_as")
@@ -254,8 +254,8 @@ class TensorViewAsTests(unittest.TestCase):
 
         self.assertEqual(descriptor(tensor, other).shape, (2, 1))
         self.assertEqual(descriptor(tensor, other=other).shape, (2, 1))
-        self.assertFalse(hasattr(torch.Tensor, "view"))
-        self.assertFalse(hasattr(tensor, "view"))
+        self.assertTrue(hasattr(torch.Tensor, "view"))
+        self.assertTrue(hasattr(tensor, "view"))
 
     def test_torch_function_modes_receive_original_calls_and_forward(self):
         tensor = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
