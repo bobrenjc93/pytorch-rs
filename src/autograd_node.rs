@@ -22,6 +22,7 @@ pub(crate) enum AutogradNode {
     Copy,
     Transpose,
     Unbind,
+    Unsqueeze,
     View,
 }
 
@@ -48,6 +49,7 @@ impl AutogradNode {
             Self::Copy => "ToCopyBackward0",
             Self::Transpose => "TransposeBackward0",
             Self::Unbind => "UnbindBackward0",
+            Self::Unsqueeze => "UnsqueezeBackward0",
             Self::View => "ViewBackward0",
         }
     }

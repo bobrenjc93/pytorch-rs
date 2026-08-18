@@ -1873,6 +1873,34 @@ impl Tensor {
         self.reshape_resolved(resolved)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn atleast_2d_vector_view(&self) -> Result<Self, TensorError> {
+        debug_assert_eq!(self.shape.len(), 1);
+        let leading_stride = self.shape[0]
+            .checked_mul(self.strides[0])
+            .ok_or(TensorError::StrideCalculationOverflow)?;
+
+        let mut shape = try_result_vector(2, self.elements)?;
+        shape.extend([1, self.shape[0]]);
+        let mut strides = try_result_vector(2, self.elements)?;
+        strides.extend([leading_stride, self.strides[0]]);
+
+        self.finish_view_transform(
+            Self {
+                storage: Arc::clone(&self.storage),
+                shape,
+                strides,
+                offset: self.offset,
+                elements: self.elements,
+                output_nr: 0,
+                view_requires_grad: false,
+                autograd: None,
+            },
+            TransformMapping::Identity,
+            AutogradNode::Unsqueeze,
+        )
+    }
+
     /// Returns a metadata-only tensor view with a new shape.
     ///
     /// One dimension may be `-1`, in which case it is inferred from the
