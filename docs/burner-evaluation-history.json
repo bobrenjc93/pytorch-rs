@@ -3329,6 +3329,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 72
       }
+    },
+    {
+      "key": "pr:234",
+      "recordedAt": "2026-08-18T13:51:58.318Z",
+      "label": "PR #234",
+      "kind": "leaf",
+      "prNumber": 234,
+      "title": "Block contiguous rank-2 matmul across output rows",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 72.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 54.9,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 72
+      }
     }
   ]
 }
