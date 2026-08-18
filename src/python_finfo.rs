@@ -1,6 +1,6 @@
 //! Stable-ABI construction for immutable native floating-point metadata.
 
-use std::ffi::{c_int, c_void};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use std::mem::size_of;
 
 use pyo3::exceptions::{PyRuntimeError, PyTypeError};
@@ -9,9 +9,13 @@ use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAny, PyDict, PyString, PyTuple};
 use pyo3::{IntoPyObjectExt, ffi};
 
-use crate::{DType, dtype::FloatingPointInfo, python_dtype::PyDType};
+use crate::{
+    DType, dtype::FloatingPointInfo, python::native_pytorch_type_name, python_dtype::PyDType,
+};
 
-const INVALID_COMBINATION_SUFFIX: &str = "but expected one of:\n * (torch.dtype type)\n * ()\n";
+const INVALID_COMBINATION_PREFIX: &str =
+    "finfo() received an invalid combination of arguments - got (";
+const INVALID_COMBINATION_SUFFIX: &str = "), but expected one of:\n * (torch.dtype type)\n * ()\n";
 const FLOAT32_CODE: c_int = 0;
 
 static FINFO_TYPE: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
@@ -22,53 +26,135 @@ struct FInfoObject {
     dtype: c_int,
 }
 
-fn constructor_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
-    if value.cast::<PyDType>().is_ok() {
-        return Ok("torch.dtype".to_owned());
+#[repr(C)]
+struct PyTypeObjectNamePrefix {
+    _ob_base: ffi::PyVarObject,
+    tp_name: *const c_char,
+}
+
+fn allocation_error() -> PyErr {
+    PyRuntimeError::new_err("std::bad_alloc")
+}
+
+fn add_message_capacity(capacity: &mut usize, additional: usize) -> PyResult<()> {
+    *capacity = capacity
+        .checked_add(additional)
+        .ok_or_else(allocation_error)?;
+    Ok(())
+}
+
+fn try_push_message(message: &mut String, value: &str) -> PyResult<()> {
+    message
+        .try_reserve(value.len())
+        .map_err(|_| allocation_error())?;
+    message.push_str(value);
+    Ok(())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "CPython exposes the non-overridable tp_name in every live type-object prefix"
+)]
+fn cpython_type_name<'a>(value: &'a Bound<'_, PyAny>) -> PyResult<&'a str> {
+    let value_type = value.get_type();
+    let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
+    // SAFETY: every classic CPython type object starts with PyVarObject and
+    // tp_name. The value keeps its type alive while the borrowed name is used.
+    let name = unsafe { (*prefix).tp_name };
+    if name.is_null() {
+        return Err(PyRuntimeError::new_err("Python type has no tp_name"));
+    }
+    // SAFETY: CPython keeps tp_name NUL-terminated and alive with the type.
+    unsafe { CStr::from_ptr(name) }
+        .to_str()
+        .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))
+}
+
+fn constructor_type_name<'a>(value: &'a Bound<'_, PyAny>) -> PyResult<&'a str> {
+    if let Some(name) = native_pytorch_type_name(value) {
+        return Ok(name);
     }
 
-    let value_type = value.get_type();
-    let name = value_type.name()?;
-    let module = value_type.getattr("__module__")?.extract::<String>()?;
-    if module == "torch" || module.starts_with("numpy") || (module == "torch_rs" && name == "finfo")
-    {
-        Ok(format!("{module}.{name}"))
-    } else {
-        Ok(name.to_string())
-    }
+    let name = cpython_type_name(value)?;
+    Ok(match name {
+        "torch_rs.dtype" => "torch.dtype",
+        "torch_rs.device" => "torch.device",
+        "torch_rs.layout" => "torch.layout",
+        "torch_rs.memory_format" => "torch.memory_format",
+        "torch_rs.Size" => "torch.Size",
+        "torch_rs.finfo" => "torch.finfo",
+        _ => name,
+    })
+}
+
+fn keyword_name<'a>(key: &'a Bound<'_, PyAny>) -> PyResult<&'a str> {
+    key.cast::<PyString>()?.to_str()
 }
 
 fn invalid_combination(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyErr> {
-    let mut arguments =
-        Vec::with_capacity(positional.len() + keywords.map_or(0, pyo3::types::PyDictMethods::len));
-    for value in positional {
-        arguments.push(constructor_type_name(&value)?);
-    }
+    let mut keyword_arguments = Vec::new();
     if let Some(keywords) = keywords {
-        let mut keyword_arguments = Vec::with_capacity(keywords.len());
-        for (key, value) in keywords {
-            keyword_arguments.push(format!(
-                "{}={}",
-                key.extract::<String>()?,
-                constructor_type_name(&value)?
-            ));
+        keyword_arguments
+            .try_reserve_exact(keywords.len())
+            .map_err(|_| allocation_error())?;
+        for item in keywords {
+            keyword_arguments.push(item);
         }
-        keyword_arguments.reverse();
-        arguments.extend(keyword_arguments);
     }
 
-    let trailing_separator = if positional.is_empty() && !arguments.is_empty() {
-        ", "
-    } else {
-        ""
-    };
-    Ok(PyTypeError::new_err(format!(
-        "finfo() received an invalid combination of arguments - got ({}{trailing_separator}), {INVALID_COMBINATION_SUFFIX}",
-        arguments.join(", ")
-    )))
+    let mut capacity = INVALID_COMBINATION_PREFIX.len();
+    let mut has_argument = false;
+    for value in positional {
+        if has_argument {
+            add_message_capacity(&mut capacity, ", ".len())?;
+        }
+        add_message_capacity(&mut capacity, constructor_type_name(&value)?.len())?;
+        has_argument = true;
+    }
+    for (key, value) in keyword_arguments.iter().rev() {
+        if has_argument {
+            add_message_capacity(&mut capacity, ", ".len())?;
+        }
+        add_message_capacity(&mut capacity, keyword_name(key)?.len())?;
+        add_message_capacity(&mut capacity, "=".len())?;
+        add_message_capacity(&mut capacity, constructor_type_name(value)?.len())?;
+        has_argument = true;
+    }
+    if positional.is_empty() && has_argument {
+        add_message_capacity(&mut capacity, ", ".len())?;
+    }
+    add_message_capacity(&mut capacity, INVALID_COMBINATION_SUFFIX.len())?;
+
+    let mut message = String::new();
+    message
+        .try_reserve_exact(capacity)
+        .map_err(|_| allocation_error())?;
+    try_push_message(&mut message, INVALID_COMBINATION_PREFIX)?;
+    has_argument = false;
+    for value in positional {
+        if has_argument {
+            try_push_message(&mut message, ", ")?;
+        }
+        try_push_message(&mut message, constructor_type_name(&value)?)?;
+        has_argument = true;
+    }
+    for (key, value) in keyword_arguments.iter().rev() {
+        if has_argument {
+            try_push_message(&mut message, ", ")?;
+        }
+        try_push_message(&mut message, keyword_name(key)?)?;
+        try_push_message(&mut message, "=")?;
+        try_push_message(&mut message, constructor_type_name(value)?)?;
+        has_argument = true;
+    }
+    if positional.is_empty() && has_argument {
+        try_push_message(&mut message, ", ")?;
+    }
+    try_push_message(&mut message, INVALID_COMBINATION_SUFFIX)?;
+    Ok(PyTypeError::new_err(message))
 }
 
 fn bind_constructor<'py>(
@@ -87,31 +173,39 @@ fn bind_constructor<'py>(
             };
             Ok(Some((value, false)))
         }
-        (0, _) => {
-            let keywords = keywords.expect("keyword arguments have a dictionary");
-            if keywords.get_item("type")?.is_none() {
-                Err(PyTypeError::new_err(
-                    "finfo() missing 1 required positional arguments: \"type\"",
-                ))
-            } else {
-                Err(invalid_combination(positional, Some(keywords))?)
-            }
-        }
         (1, 0) => Ok(Some((positional.get_item(0)?, true))),
         _ => Err(invalid_combination(positional, keywords)?),
     }
 }
 
 fn parse_dtype(value: &Bound<'_, PyAny>, positional: bool) -> PyResult<DType> {
+    const PREFIX: &str = "finfo(): argument 'type'";
+    const POSITION: &str = " (position 1)";
+    const INFIX: &str = " must be torch.dtype, not ";
+
     if let Ok(dtype) = value.cast::<PyDType>() {
         return Ok(dtype.try_borrow()?.inner());
     }
 
-    let position = if positional { " (position 1)" } else { "" };
-    Err(PyTypeError::new_err(format!(
-        "finfo(): argument 'type'{position} must be torch.dtype, not {}",
-        constructor_type_name(value)?
-    )))
+    let name = constructor_type_name(value)?;
+    let mut capacity = PREFIX.len();
+    if positional {
+        add_message_capacity(&mut capacity, POSITION.len())?;
+    }
+    add_message_capacity(&mut capacity, INFIX.len())?;
+    add_message_capacity(&mut capacity, name.len())?;
+
+    let mut message = String::new();
+    message
+        .try_reserve_exact(capacity)
+        .map_err(|_| allocation_error())?;
+    try_push_message(&mut message, PREFIX)?;
+    if positional {
+        try_push_message(&mut message, POSITION)?;
+    }
+    try_push_message(&mut message, INFIX)?;
+    try_push_message(&mut message, name)?;
+    Err(PyTypeError::new_err(message))
 }
 
 const fn dtype_code(dtype: DType) -> c_int {

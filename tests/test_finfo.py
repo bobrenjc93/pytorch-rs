@@ -2,6 +2,9 @@ import copy
 import inspect
 import pickle
 import re
+import subprocess
+import sys
+import textwrap
 import types
 import unittest
 
@@ -198,6 +201,52 @@ class FInfoTests(unittest.TestCase):
             lambda: type("Derived", (finfo_type,), {}),
         )
 
+    def test_type_diagnostics_use_native_names_without_metaclass_dispatch(self):
+        values = (
+            (torch.device("cpu"), "torch.device"),
+            (torch.strided, "torch.layout"),
+            (torch.contiguous_format, "torch.memory_format"),
+            (torch.Size([1]), "torch.Size"),
+            (torch.tensor([1.0]), "Tensor"),
+            (torch.finfo(), "torch.finfo"),
+        )
+        for value, name in values:
+            with self.subTest(name=name):
+                self.assert_error(
+                    TypeError,
+                    "finfo(): argument 'type' (position 1) must be "
+                    f"torch.dtype, not {name}",
+                    lambda value=value: torch.finfo(value),
+                )
+
+        lookups = []
+
+        class HostileMeta(type):
+            def __getattribute__(cls, name):
+                lookups.append(name)
+                if name == "__module__":
+                    raise RuntimeError("metaclass module trap")
+                return super().__getattribute__(name)
+
+        class Value(metaclass=HostileMeta):
+            pass
+
+        lookups.clear()
+        self.assert_error(
+            TypeError,
+            "finfo(): argument 'type' (position 1) must be torch.dtype, not Value",
+            lambda: torch.finfo(Value()),
+        )
+        self.assertEqual(lookups, [])
+        self.assert_error(
+            TypeError,
+            "finfo() received an invalid combination of arguments - got "
+            "(Value, object), but expected one of:\n"
+            " * (torch.dtype type)\n * ()\n",
+            lambda: torch.finfo(Value(), object()),
+        )
+        self.assertEqual(lookups, [])
+
     def test_constructor_errors_match_without_expanding_other_dtypes(self):
         cases = (
             (
@@ -234,6 +283,20 @@ class FInfoTests(unittest.TestCase):
                 "(dtype=torch.dtype, type=torch.dtype, ), but expected one of:\n"
                 " * (torch.dtype type)\n * ()\n",
             ),
+            (
+                lambda: torch.finfo(
+                    dtype=torch.float32, unexpected=1
+                ),
+                "finfo() received an invalid combination of arguments - got "
+                "(unexpected=int, dtype=torch.dtype, ), but expected one of:\n"
+                " * (torch.dtype type)\n * ()\n",
+            ),
+            (
+                lambda: torch.finfo(first=1, second=2),
+                "finfo() received an invalid combination of arguments - got "
+                "(second=int, first=int, ), but expected one of:\n"
+                " * (torch.dtype type)\n * ()\n",
+            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
@@ -244,6 +307,48 @@ class FInfoTests(unittest.TestCase):
             TypeError,
             "finfo(): argument 'type' (position 1) must be torch.dtype, not type",
             lambda: torch.finfo(float),
+        )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_invalid_call_raises_bad_alloc_instead_of_aborting(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+
+            import torch_rs as torch
+
+            arguments = (None,) * 2_000_000
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 8 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            try:
+                torch.finfo(*arguments)
+            except RuntimeError as error:
+                assert str(error) == "std::bad_alloc", repr(error)
+            else:
+                raise AssertionError("the constrained call unexpectedly succeeded")
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode == 77:
+            self.skipTest("process hard address-space limit is too low")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
 
 

@@ -200,6 +200,10 @@ class FInfoReferenceTests(unittest.TestCase):
                     type=module.float32, dtype=module.float32
                 ),
                 lambda: module.finfo(module.float32, type=module.float32),
+                lambda: module.finfo(
+                    dtype=module.float32, unexpected=1
+                ),
+                lambda: module.finfo(first=1, second=2),
             )
             pickle_errors = tuple(
                 self.error(
@@ -231,6 +235,44 @@ class FInfoReferenceTests(unittest.TestCase):
                     module, lambda: copy.deepcopy(value)
                 ),
             }
+
+        self.assertEqual(contract(torch), contract(reference_torch))
+
+    def test_public_and_hostile_metaclass_type_diagnostics_match(self):
+        def contract(module):
+            public_values = (
+                module.device("cpu"),
+                module.strided,
+                module.contiguous_format,
+                module.Size([1]),
+                module.tensor([1.0]),
+                module.finfo(),
+            )
+            public_errors = tuple(
+                self.error(module, lambda value=value: module.finfo(value))
+                for value in public_values
+            )
+
+            lookups = []
+
+            class HostileMeta(type):
+                def __getattribute__(cls, name):
+                    lookups.append(name)
+                    if name == "__module__":
+                        raise RuntimeError("metaclass module trap")
+                    return super().__getattribute__(name)
+
+            class Value(metaclass=HostileMeta):
+                pass
+
+            lookups.clear()
+            metaclass_errors = (
+                self.error(module, lambda: module.finfo(Value())),
+                self.error(
+                    module, lambda: module.finfo(Value(), object())
+                ),
+            )
+            return public_errors, metaclass_errors, tuple(lookups)
 
         self.assertEqual(contract(torch), contract(reference_torch))
 
