@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
-    PyValueError,
+    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
+    PyTypeError, PyUserWarning, PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -3748,6 +3748,95 @@ fn relu(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
         .cast::<PyTensor>()
         .expect("the relu input type was checked while binding");
     tensor.try_borrow()?.relu()
+}
+
+fn dropout_probability_type_error(
+    operation: &str,
+    probability: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let actual = transpose_type_name(probability)?;
+    Ok(PyTypeError::new_err(format!(
+        "{operation}(): argument 'p' (position 2) must be float, not {actual}"
+    )))
+}
+
+fn extract_dropout_probability(operation: &str, probability: &Bound<'_, PyAny>) -> PyResult<f64> {
+    match probability.extract::<f64>() {
+        Ok(probability) => Ok(probability),
+        Err(_) => Err(dropout_probability_type_error(operation, probability)?),
+    }
+}
+
+fn parse_dropout_probability(operation: &str, probability: &Bound<'_, PyAny>) -> PyResult<f64> {
+    if probability.is_instance_of::<PyInt>() || probability.is_instance_of::<PyFloat>() {
+        return extract_dropout_probability(operation, probability);
+    }
+
+    let Ok(numpy) = PyModule::import(probability.py(), "numpy") else {
+        return Err(dropout_probability_type_error(operation, probability)?);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !probability.is_instance(&generic)? {
+        return Err(dropout_probability_type_error(operation, probability)?);
+    }
+
+    if probability.is_instance(&numpy.getattr("bool_")?)? {
+        return probability
+            .is_truthy()
+            .map(|probability| if probability { 1.0 } else { 0.0 });
+    }
+    for scalar_type in ["integer", "floating", "complexfloating"] {
+        if probability.is_instance(&numpy.getattr(scalar_type)?)? {
+            return extract_dropout_probability(operation, probability);
+        }
+    }
+
+    Err(dropout_probability_type_error(operation, probability)?)
+}
+
+#[pyfunction]
+fn _nn_functional_dropout(
+    input: &Bound<'_, PyAny>,
+    probability: &Bound<'_, PyAny>,
+    training: &Bound<'_, PyAny>,
+    inplace: bool,
+) -> PyResult<Py<PyAny>> {
+    // This private bridge mirrors the native operator's schema checks for the
+    // identity cases only. It deliberately owns no random state or mutation.
+    let operation = if inplace { "dropout_" } else { "dropout" };
+    let Ok(tensor) = input.cast::<PyTensor>() else {
+        let actual = transpose_type_name(input)?;
+        return Err(PyTypeError::new_err(format!(
+            "{operation}(): argument 'input' (position 1) must be Tensor, not {actual}"
+        )));
+    };
+    let probability = parse_dropout_probability(operation, probability)?;
+    if !training.is_exact_instance_of::<PyBool>() {
+        let actual = transpose_type_name(training)?;
+        return Err(PyTypeError::new_err(format!(
+            "{operation}(): argument 'train' (position 3) must be bool, not {actual}"
+        )));
+    }
+    let training = training.is_truthy()?;
+
+    if !(0.0..=1.0).contains(&probability) {
+        let probability = if probability.is_nan() {
+            "nan".to_owned()
+        } else {
+            probability.to_string()
+        };
+        return Err(PyRuntimeError::new_err(format!(
+            "dropout probability has to be between 0 and 1, but got {probability}"
+        )));
+    }
+
+    if !training || probability == 0.0 {
+        return Ok(tensor.clone().unbind().into_any());
+    }
+
+    Err(PyNotImplementedError::new_err(
+        "torch_rs.nn.functional.dropout does not support sampling",
+    ))
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
@@ -10036,6 +10125,12 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
     module.add_function(wrap_pyfunction!(relu, module)?)?;
+    let dropout = wrap_pyfunction!(_nn_functional_dropout, module)?;
+    let dropout_name = dropout.getattr("__name__")?;
+    module.add_function(dropout.clone())?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", (dropout_name,))?;
     module.add_function(wrap_pyfunction!(is_same_size, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;
     module.add_function(wrap_pyfunction!(t, module)?)?;
