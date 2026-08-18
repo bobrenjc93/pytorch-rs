@@ -102,10 +102,31 @@ def _get_tensor_to_descriptor():
     return Tensor.__base__.to
 
 
+_METHOD_DESCRIPTOR_REDUCER_TAG = "torch_rs.Tensor.to.method_descriptor.v1"
+_registered_method_descriptor_reducer = _copyreg.dispatch_table.get(
+    _types.MethodDescriptorType
+)
+if (
+    getattr(
+        _registered_method_descriptor_reducer,
+        "_torch_rs_method_descriptor_reducer_tag",
+        None,
+    )
+    == _METHOD_DESCRIPTOR_REDUCER_TAG
+):
+    _prior_method_descriptor_reducer = getattr(
+        _registered_method_descriptor_reducer,
+        "_torch_rs_prior_method_descriptor_reducer",
+        None,
+    )
+else:
+    _prior_method_descriptor_reducer = _registered_method_descriptor_reducer
+
+
 def _reduce_method_descriptor(
     descriptor,
     _tensor_to_descriptor=Tensor.__base__.to,
-    _prior_reducer=_copyreg.dispatch_table.get(_types.MethodDescriptorType),
+    _prior_reducer=_prior_method_descriptor_reducer,
     _module_name=__name__,
 ):
     # Native descriptors normally reduce through their owner class. Our owner
@@ -126,6 +147,12 @@ def _reduce_method_descriptor(
     return descriptor.__reduce__()
 
 
+_reduce_method_descriptor._torch_rs_method_descriptor_reducer_tag = (
+    _METHOD_DESCRIPTOR_REDUCER_TAG
+)
+_reduce_method_descriptor._torch_rs_prior_method_descriptor_reducer = (
+    _prior_method_descriptor_reducer
+)
 _copyreg.pickle(_types.MethodDescriptorType, _reduce_method_descriptor)
 
 __doc__ = _native.__doc__
@@ -147,4 +174,12 @@ from . import overrides as overrides
 from . import utils as utils
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _copyreg, _native, _sys, _types
+del (
+    _METHOD_DESCRIPTOR_REDUCER_TAG,
+    _copyreg,
+    _native,
+    _prior_method_descriptor_reducer,
+    _registered_method_descriptor_reducer,
+    _sys,
+    _types,
+)

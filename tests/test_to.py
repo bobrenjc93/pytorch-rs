@@ -248,6 +248,114 @@ assert calls == [str.upper] * (pickle.HIGHEST_PROTOCOL + 1)
             f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
 
+    def test_reloads_do_not_chain_method_descriptor_reducers(self):
+        source = r"""
+import copyreg
+import importlib
+import inspect
+import pickle
+import types
+
+calls = []
+
+def restore_prior_result():
+    return str.lower
+
+def prior_reducer(descriptor):
+    calls.append(descriptor)
+    return restore_prior_result, ()
+
+copyreg.pickle(types.MethodDescriptorType, prior_reducer)
+
+import torch_rs
+
+for _ in range(1100):
+    torch_rs = importlib.reload(torch_rs)
+
+registered = copyreg.dispatch_table[types.MethodDescriptorType]
+assert (
+    registered._torch_rs_prior_method_descriptor_reducer is prior_reducer
+)
+assert pickle.loads(pickle.dumps(str.upper)) is str.lower
+assert calls == [str.upper]
+
+tensor_to = inspect.getattr_static(torch_rs.Tensor, "to")
+assert pickle.loads(pickle.dumps(tensor_to)) is tensor_to
+assert calls == [str.upper]
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
+    def test_reinitialization_releases_the_previous_package_and_reducer(self):
+        source = r"""
+import copyreg
+import gc
+import importlib
+import pickle
+import sys
+import types
+import weakref
+
+calls = []
+
+def restore_prior_result():
+    return str.lower
+
+def prior_reducer(descriptor):
+    calls.append(descriptor)
+    return restore_prior_result, ()
+
+copyreg.pickle(types.MethodDescriptorType, prior_reducer)
+
+import torch_rs
+
+old_package = weakref.ref(torch_rs)
+old_reducer_object = copyreg.dispatch_table[types.MethodDescriptorType]
+old_reducer = weakref.ref(old_reducer_object)
+old_helper = weakref.ref(torch_rs._get_tensor_to_descriptor)
+
+for name in tuple(sys.modules):
+    if name == "torch_rs" or name.startswith("torch_rs."):
+        sys.modules.pop(name, None)
+del torch_rs, old_reducer_object
+
+reinitialized = importlib.import_module("torch_rs")
+for _ in range(3):
+    gc.collect()
+
+assert old_package() is None
+assert old_reducer() is None
+assert old_helper() is None
+
+registered = copyreg.dispatch_table[types.MethodDescriptorType]
+assert (
+    registered._torch_rs_prior_method_descriptor_reducer is prior_reducer
+)
+assert pickle.loads(pickle.dumps(str.upper)) is str.lower
+assert calls == [str.upper]
+assert reinitialized.Tensor.to is not None
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
     def test_unrelated_descriptor_pickle_does_not_import_torch_rs(self):
         source = r"""
 import builtins
