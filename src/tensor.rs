@@ -479,6 +479,16 @@ impl Tensor {
             .expose_provenance()
     }
 
+    /// Returns the read-only address of the tensor's first logical element.
+    ///
+    /// This tensor core does not currently expose copy-on-write storage, so
+    /// the result is identical to [`Self::data_ptr`] without materializing or
+    /// mutating the tensor.
+    #[must_use]
+    pub fn const_data_ptr(&self) -> usize {
+        self.data_ptr()
+    }
+
     /// Reports whether two tensors refer to the same underlying allocation.
     #[must_use]
     pub fn shares_storage_with(&self, other: &Self) -> bool {

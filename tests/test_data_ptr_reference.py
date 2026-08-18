@@ -76,6 +76,23 @@ class TensorDataPtrReferenceTests(unittest.TestCase):
             offset_empty.clone().data_ptr(),
             extreme_empty.storage_offset(),
             extreme_empty.data_ptr(),
+            tuple(
+                tensor.const_data_ptr() == tensor.data_ptr()
+                for tensor in (
+                    source,
+                    transposed,
+                    row,
+                    strided_row,
+                    detached,
+                    cloned,
+                    packed,
+                    empty,
+                    offset_empty,
+                    offset_empty.detach(),
+                    offset_empty.clone(),
+                    extreme_empty,
+                )
+            ),
         )
 
     def test_offsets_empty_views_and_alias_relationships_match_pytorch_2_13(self):
@@ -87,7 +104,8 @@ class TensorDataPtrReferenceTests(unittest.TestCase):
         self.assertEqual(actual[7], 4)
         self.assertEqual(actual[11], 0)
         self.assertEqual(actual[13:16], (0, 0, 0))
-        self.assertEqual(actual[16:], (sys.maxsize - 1, 0))
+        self.assertEqual(actual[16:18], (sys.maxsize - 1, 0))
+        self.assertTrue(all(actual[18]))
 
     def autograd_outcome(self, module):
         leaf = module.tensor(
@@ -129,6 +147,14 @@ class TensorDataPtrReferenceTests(unittest.TestCase):
             packed.is_leaf,
             state_before,
             state_after,
+            (
+                view.const_data_ptr() == view_ptr,
+                produced.const_data_ptr() == produced.data_ptr(),
+                detached.const_data_ptr() == detached.data_ptr(),
+                cloned.const_data_ptr() == cloned.data_ptr(),
+                packed.const_data_ptr() == packed.data_ptr(),
+                leaf.grad.const_data_ptr() == leaf.grad.data_ptr(),
+            ),
             np.asarray(leaf.grad).copy(),
         )
 
@@ -198,6 +224,144 @@ class TensorDataPtrReferenceTests(unittest.TestCase):
         for case, (actual_call, expected_call) in enumerate(call_pairs):
             with self.subTest(invalid_call=case):
                 self.assert_error_matches(actual_call, expected_call)
+
+    def test_const_descriptor_documentation_and_errors_match_pytorch_2_13(self):
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0])
+        actual_descriptor = inspect.getattr_static(torch.Tensor, "const_data_ptr")
+        expected_descriptor = inspect.getattr_static(
+            reference_torch.Tensor, "const_data_ptr"
+        )
+        actual_bound = actual.const_data_ptr
+        expected_bound = expected.const_data_ptr
+
+        for actual_callable, expected_callable, expected_type in (
+            (actual_descriptor, expected_descriptor, types.MethodDescriptorType),
+            (actual_bound, expected_bound, types.BuiltinMethodType),
+        ):
+            self.assertIs(type(actual_callable), expected_type)
+            self.assertIs(type(expected_callable), expected_type)
+            self.assertEqual(actual_callable.__name__, expected_callable.__name__)
+            self.assertEqual(
+                actual_callable.__qualname__, expected_callable.__qualname__
+            )
+            self.assertEqual(
+                actual_callable.__text_signature__,
+                expected_callable.__text_signature__,
+            )
+            self.assertEqual(actual_callable.__doc__, expected_callable.__doc__)
+            self.assertEqual(
+                self.signature_outcome(actual_callable),
+                self.signature_outcome(expected_callable),
+            )
+
+        self.assertEqual(repr(actual_descriptor), repr(expected_descriptor))
+
+        self.assertEqual(
+            actual_descriptor.__objclass__.__name__,
+            expected_descriptor.__objclass__.__name__,
+        )
+        self.assertEqual(
+            actual_descriptor.__objclass__.__module__,
+            expected_descriptor.__objclass__.__module__,
+        )
+        self.assertEqual(
+            hasattr(actual_descriptor, "__module__"),
+            hasattr(expected_descriptor, "__module__"),
+        )
+        self.assertEqual(actual_bound.__module__, expected_bound.__module__)
+        self.assertEqual(actual_descriptor(actual), actual.data_ptr())
+        self.assertEqual(expected_descriptor(expected), expected.data_ptr())
+
+        call_pairs = (
+            (
+                lambda: actual.const_data_ptr(1),
+                lambda: expected.const_data_ptr(1),
+            ),
+            (lambda: actual_bound(1, 2), lambda: expected_bound(1, 2)),
+            (
+                lambda: actual_descriptor(actual, 1),
+                lambda: expected_descriptor(expected, 1),
+            ),
+            (
+                lambda: actual.const_data_ptr(dim=0),
+                lambda: expected.const_data_ptr(dim=0),
+            ),
+            (
+                lambda: actual_bound(unexpected=True),
+                lambda: expected_bound(unexpected=True),
+            ),
+            (
+                lambda: actual_descriptor(actual, unexpected=True),
+                lambda: expected_descriptor(expected, unexpected=True),
+            ),
+            (lambda: actual_descriptor(), lambda: expected_descriptor()),
+            (lambda: actual_descriptor(1), lambda: expected_descriptor(1)),
+            (
+                lambda: actual_descriptor(self=actual),
+                lambda: expected_descriptor(self=expected),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(call_pairs):
+            with self.subTest(invalid_call=case):
+                self.assert_error_matches(actual_call, expected_call)
+
+    def mode_dispatch_outcome(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        descriptor = inspect.getattr_static(module.Tensor, "const_data_ptr")
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        recording = RecordingMode()
+        with recording:
+            intercepted = tensor.const_data_ptr()
+        function, dispatch_types, args, kwargs = recording.calls[0]
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor.const_data_ptr()
+
+        return {
+            "intercepted": intercepted is marker,
+            "call_count": len(recording.calls),
+            "function_type": type(function).__name__,
+            "function_name": function.__name__,
+            "function_qualname": function.__qualname__,
+            "function_owner": (
+                function.__objclass__.__module__,
+                function.__objclass__.__name__,
+            ),
+            "function_is_descriptor": function is descriptor,
+            "dispatch_types": dispatch_types == (module.Tensor,),
+            "args": len(args) == 1 and args[0] is tensor,
+            "kwargs_is_none": kwargs is None,
+            "forwarding_order": order,
+            "forwarded_type": type(forwarded).__name__,
+            "forwarded_matches_data_ptr": forwarded == tensor.data_ptr(),
+        }
+
+    def test_const_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_outcome(torch),
+            self.mode_dispatch_outcome(reference_torch),
+        )
 
 
 if __name__ == "__main__":
