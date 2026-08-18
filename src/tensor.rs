@@ -2346,9 +2346,12 @@ impl Tensor {
             return self.zip_map_same_shape(other, operation);
         }
 
-        if let Some((data, plan)) =
+        let contiguous_broadcast = if self.shape.len() == other.shape.len() {
+            materialize_contiguous_trailing_singleton_broadcast(self, other, &operation)?
+        } else {
             materialize_contiguous_trailing_vector_broadcast(self, other, &operation)?
-        {
+        };
+        if let Some((data, plan)) = contiguous_broadcast {
             return Ok(Self::from_owned_parts(
                 data,
                 plan.shape,
@@ -3145,6 +3148,97 @@ fn apply_binary_operation_scalar(
     right: f32,
 ) -> f32 {
     operation(left, right)
+}
+
+#[inline(never)]
+fn materialize_contiguous_trailing_singleton_broadcast(
+    left: &Tensor,
+    right: &Tensor,
+    operation: &impl Fn(f32, f32) -> f32,
+) -> Result<Option<(Vec<f32>, BroadcastPlan)>, TensorError> {
+    let rank = left.shape.len();
+    if rank == 0
+        || right.shape.len() != rank
+        || left.shape == right.shape
+        || left.shape[..rank - 1] != right.shape[..rank - 1]
+    {
+        return Ok(None);
+    }
+
+    let (broad, row_scalars, scalar_on_left) = if right.shape[rank - 1] == 1 {
+        (left, right, false)
+    } else if left.shape[rank - 1] == 1 {
+        (right, left, true)
+    } else {
+        return Ok(None);
+    };
+    let (Some(broad_values), Some(row_scalar_values)) =
+        (broad.contiguous_slice(), row_scalars.contiguous_slice())
+    else {
+        return Ok(None);
+    };
+    let plan = BroadcastPlan::new(left, right)?;
+    if !layout_is_contiguous(&plan.shape, &plan.strides, plan.elements) {
+        return Ok(None);
+    }
+
+    let row_width = broad.shape[rank - 1];
+    let mut data = try_result_vector(plan.elements, plan.elements)?;
+    if row_width != 0 {
+        debug_assert_eq!(broad_values.len() / row_width, row_scalar_values.len());
+        if scalar_on_left {
+            for (broad_row, row_scalar) in broad_values
+                .chunks_exact(row_width)
+                .zip(row_scalar_values.iter().copied())
+            {
+                data.extend(
+                    broad_row
+                        .iter()
+                        .copied()
+                        .map(|broad| operation(row_scalar, broad)),
+                );
+            }
+        } else {
+            for (broad_row, row_scalar) in broad_values
+                .chunks_exact(row_width)
+                .zip(row_scalar_values.iter().copied())
+            {
+                data.extend(
+                    broad_row
+                        .iter()
+                        .copied()
+                        .map(|broad| operation(broad, row_scalar)),
+                );
+            }
+        }
+
+        // Vectorized arithmetic can select a different NaN payload when both
+        // operands are NaNs. Recompute those lanes with the scalar fallback's
+        // operand order while leaving the common row loop vectorizable.
+        if row_scalar_values.iter().any(|value| value.is_nan()) {
+            for ((output_row, broad_row), row_scalar) in data
+                .chunks_exact_mut(row_width)
+                .zip(broad_values.chunks_exact(row_width))
+                .zip(row_scalar_values.iter().copied())
+            {
+                if !row_scalar.is_nan() {
+                    continue;
+                }
+                for (output, &broad) in output_row.iter_mut().zip(broad_row) {
+                    if broad.is_nan() {
+                        let (left, right) = if scalar_on_left {
+                            (row_scalar, broad)
+                        } else {
+                            (broad, row_scalar)
+                        };
+                        *output = apply_binary_operation_scalar(operation, left, right);
+                    }
+                }
+            }
+        }
+    }
+    debug_assert_eq!(data.len(), plan.elements);
+    Ok(Some((data, plan)))
 }
 
 #[inline(never)]
@@ -4129,6 +4223,7 @@ mod tests {
     use super::{
         CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device,
         F32_SIGN_MASK, SavedTensor, Tensor, TensorError,
+        materialize_contiguous_trailing_singleton_broadcast,
         materialize_contiguous_trailing_vector_broadcast, try_result_vector,
     };
 
@@ -4263,6 +4358,63 @@ mod tests {
             left.mul(right).unwrap(),
             left.div(right).unwrap(),
         ]
+    }
+
+    fn binary_fallback_output(
+        left: &Tensor,
+        right: &Tensor,
+        operation: impl Fn(f32, f32) -> f32,
+    ) -> Tensor {
+        if left.shape == right.shape {
+            left.zip_map_same_shape(right, operation).unwrap()
+        } else {
+            left.zip_map_broadcast(right, operation).unwrap()
+        }
+    }
+
+    fn binary_fallback_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {
+        [
+            binary_fallback_output(left, right, |left, right| left + right),
+            binary_fallback_output(left, right, |left, right| left - right),
+            binary_fallback_output(left, right, |left, right| left * right),
+            binary_fallback_output(left, right, |left, right| left / right),
+        ]
+    }
+
+    fn assert_binary_outputs_match(actual: [Tensor; 4], expected: [Tensor; 4]) {
+        for (actual, expected) in actual.into_iter().zip(expected) {
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert_eq!(actual.dtype(), expected.dtype());
+            assert_eq!(actual.device(), expected.device());
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    fn assert_trailing_singleton_matches_fallback(left: &Tensor, right: &Tensor) {
+        assert_binary_outputs_match(
+            binary_outputs(left, right),
+            binary_fallback_outputs(left, right),
+        );
+    }
+
+    fn assert_owned_binary_matches_shared_fallback(left: &Tensor, right: &Tensor) {
+        assert_binary_outputs_match(
+            binary_outputs(left, right),
+            binary_outputs(&shared_gradient_copy(left), &shared_gradient_copy(right)),
+        );
+    }
+
+    fn assert_uses_trailing_singleton_fast_path(left: &Tensor, right: &Tensor) {
+        let output =
+            materialize_contiguous_trailing_singleton_broadcast(left, right, &add_values).unwrap();
+        assert!(output.is_some());
     }
 
     fn add_values(left: f32, right: f32) -> f32 {
@@ -4705,6 +4857,105 @@ mod tests {
         let empty_vector = Tensor::zeros([0]).unwrap();
         assert_matches_fallback(&empty_broad, &empty_vector);
         assert_matches_fallback(&empty_vector, &empty_broad);
+    }
+
+    #[test]
+    fn contiguous_trailing_singleton_broadcast_is_bitwise_identical_to_fallback() {
+        let broad = offset_contiguous_tensor(
+            &[
+                0x7f81_2345,
+                0x0000_0000,
+                0x8000_0000,
+                0x7f80_0000,
+                0xff80_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x3f80_0000,
+                0xffc5_4321,
+                0xbf80_0000,
+            ],
+            &[2, 5],
+        );
+        let row_scalars = offset_contiguous_tensor(&[0x7fc6_789a, 0x8000_0000], &[2, 1]);
+        assert_eq!(broad.storage_offset(), 10);
+        assert_eq!(row_scalars.storage_offset(), 2);
+        for (left, right) in [(&broad, &row_scalars), (&row_scalars, &broad)] {
+            assert_uses_trailing_singleton_fast_path(left, right);
+            assert_trailing_singleton_matches_fallback(left, right);
+        }
+
+        let singleton_left = offset_contiguous_tensor(
+            &[0x0000_0000, 0x8000_0000, 0x7f81_2345, 0x7f80_0000],
+            &[4, 1],
+        );
+        let singleton_right = offset_contiguous_tensor(
+            &[0x8000_0000, 0x0000_0000, 0xffc5_4321, 0xff80_0000],
+            &[4, 1],
+        );
+        for (left, right) in [
+            (&singleton_left, &singleton_right),
+            (&singleton_right, &singleton_left),
+        ] {
+            assert_owned_binary_matches_shared_fallback(left, right);
+            assert!(
+                materialize_contiguous_trailing_singleton_broadcast(left, right, &add_values,)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+
+        let empty_singleton_left = Tensor::zeros([1, 0, 1]).unwrap();
+        let empty_singleton_right = Tensor::ones([1, 0, 1]).unwrap();
+        assert_owned_binary_matches_shared_fallback(&empty_singleton_left, &empty_singleton_right);
+        assert_eq!(
+            empty_singleton_left
+                .add(&empty_singleton_right)
+                .unwrap()
+                .stride(),
+            [1, 1, 1]
+        );
+
+        for (left, right) in [
+            (
+                Tensor::zeros([0, 5]).unwrap(),
+                Tensor::zeros([0, 1]).unwrap(),
+            ),
+            (
+                Tensor::zeros([3, 0]).unwrap(),
+                Tensor::zeros([3, 1]).unwrap(),
+            ),
+            (
+                Tensor::zeros([2, 0, 7]).unwrap(),
+                Tensor::zeros([2, 0, 1]).unwrap(),
+            ),
+        ] {
+            for (left, right) in [(&left, &right), (&right, &left)] {
+                assert_uses_trailing_singleton_fast_path(left, right);
+                assert_trailing_singleton_matches_fallback(left, right);
+            }
+        }
+
+        let strided = Tensor::ones([5, 2]).unwrap().transpose(0, 1).unwrap();
+        let row_scalars = Tensor::ones([2, 1]).unwrap();
+        assert!(
+            materialize_contiguous_trailing_singleton_broadcast(
+                &strided,
+                &row_scalars,
+                &add_values,
+            )
+            .unwrap()
+            .is_none()
+        );
+        let different_prefix = Tensor::ones([1, 3, 1]).unwrap();
+        assert!(
+            materialize_contiguous_trailing_singleton_broadcast(
+                &Tensor::ones([2, 1, 5]).unwrap(),
+                &different_prefix,
+                &add_values,
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 
     #[test]
