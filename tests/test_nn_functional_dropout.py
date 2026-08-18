@@ -258,6 +258,7 @@ class FunctionalDropoutTests(unittest.TestCase):
             )
 
         leaf_probability = torch.tensor([2.0], requires_grad=True)
+        copy_probability = torch.tensor([[[[2.0]]]], requires_grad=True)
         tensor_error_cases = (
             (
                 torch.tensor([2.0]),
@@ -288,6 +289,24 @@ class FunctionalDropoutTests(unittest.TestCase):
                 ValueError,
                 "dropout probability has to be between 0 and 1, but got "
                 "tensor([[2.]], grad_fn=<ViewBackward0>)",
+            ),
+            (
+                3 - torch.tensor([1.0], requires_grad=True),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([2.], grad_fn=<RsubBackward1>)",
+            ),
+            (
+                copy_probability.cpu(memory_format=torch.channels_last),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([[[[2.]]]], grad_fn=<ToCopyBackward0>)",
+            ),
+            (
+                copy_probability.float(memory_format=torch.channels_last),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([[[[2.]]]], grad_fn=<ToCopyBackward0>)",
             ),
             (
                 torch.tensor([-0.1]),

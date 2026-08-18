@@ -314,6 +314,16 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
         expected_leaf_probability = reference_torch.tensor(
             [2.0], dtype=reference_torch.float32, requires_grad=True
         )
+        actual_reflected_leaf = torch.tensor([1.0], requires_grad=True)
+        expected_reflected_leaf = reference_torch.tensor(
+            [1.0], dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_copy_leaf = torch.tensor([[[[2.0]]]], requires_grad=True)
+        expected_copy_leaf = reference_torch.tensor(
+            [[[[2.0]]]],
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
 
         probability_cases = (
             (
@@ -365,6 +375,19 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
             (
                 actual_leaf_probability.reshape(1, 1),
                 expected_leaf_probability.reshape(1, 1),
+            ),
+            (3 - actual_reflected_leaf, 3 - expected_reflected_leaf),
+            (
+                actual_copy_leaf.cpu(memory_format=torch.channels_last),
+                expected_copy_leaf.cpu(
+                    memory_format=reference_torch.channels_last
+                ),
+            ),
+            (
+                actual_copy_leaf.float(memory_format=torch.channels_last),
+                expected_copy_leaf.float(
+                    memory_format=reference_torch.channels_last
+                ),
             ),
         )
         for case, (actual_probability, expected_probability) in enumerate(

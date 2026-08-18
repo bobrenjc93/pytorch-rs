@@ -55,6 +55,8 @@ enum GradFn {
     },
     Negate {
         input: SavedTensor,
+        #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+        name: &'static str,
     },
     Relu {
         input: SavedTensor,
@@ -106,7 +108,7 @@ impl GradFn {
                 right.take_parent(pending);
             }
             Self::MultiplyScalar { input, .. }
-            | Self::Negate { input }
+            | Self::Negate { input, .. }
             | Self::Relu { input }
             | Self::Sin { input }
             | Self::Sum { input }
@@ -668,11 +670,10 @@ impl Tensor {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         Some(match grad_fn.as_ref()? {
             GradFn::Multiply { .. } | GradFn::MultiplyScalar { .. } => "MulBackward0",
-            GradFn::Negate { .. } => "NegBackward0",
+            GradFn::Negate { name, .. } | GradFn::Transform { name, .. } => *name,
             GradFn::Relu { .. } => "ReluBackward0",
             GradFn::Sin { .. } => "SinBackward0",
             GradFn::Sum { .. } => "SumBackward0",
-            GradFn::Transform { name, .. } => *name,
             GradFn::Unbind { .. } => "UnbindBackward0",
         })
     }
@@ -885,12 +886,13 @@ impl Tensor {
         Ok(output)
     }
 
-    fn finish_negate_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
+    fn finish_negate_vjp(&self, mut output: Self, name: &'static str) -> Result<Self, TensorError> {
         if self.records_grad() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Negate {
                         input: SavedTensor::try_from_tensor(self, false)?,
+                        name,
                     })),
                 },
             }));
@@ -1436,7 +1438,7 @@ impl Tensor {
     /// preserve-format request, checked stride overflow, or allocation
     /// failure.
     pub fn try_contiguous(&self, memory_format: MemoryFormat) -> Result<Self, TensorError> {
-        self.try_contiguous_impl(memory_format, true)
+        self.try_contiguous_impl(memory_format, true, "CloneBackward0")
     }
 
     #[cfg(feature = "python-bindings")]
@@ -1460,13 +1462,14 @@ impl Tensor {
         // copy-specific preflight separate from contiguous's existing
         // identity and rank-validation path.
         let _ = contiguous_strides(&self.shape, self.elements)?;
-        self.try_contiguous_impl(memory_format, false)
+        self.try_contiguous_impl(memory_format, false, "ToCopyBackward0")
     }
 
     fn try_contiguous_impl(
         &self,
         memory_format: MemoryFormat,
         reuse_matching_storage: bool,
+        grad_fn_name: &'static str,
     ) -> Result<Self, TensorError> {
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
@@ -1494,7 +1497,7 @@ impl Tensor {
                 view_requires_grad: false,
                 autograd: None,
             };
-            self.record_view_transform(&mut output, TransformMapping::Identity, "CloneBackward0")?;
+            self.record_view_transform(&mut output, TransformMapping::Identity, grad_fn_name)?;
             return Ok(output);
         }
 
@@ -1509,7 +1512,7 @@ impl Tensor {
         let shape = try_clone_result_shape(&self.shape, self.elements)?;
         let data = self.materialize_with_strides(&strides, |value| value)?;
         let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
-        self.record_transform(&mut output, TransformMapping::Identity, "CloneBackward0")?;
+        self.record_transform(&mut output, TransformMapping::Identity, grad_fn_name)?;
         Ok(output)
     }
 
@@ -2083,7 +2086,7 @@ impl Tensor {
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn negate(&self) -> Result<Self, TensorError> {
         let output = self.unary_map(negate_value)?;
-        self.finish_negate_vjp(output)
+        self.finish_negate_vjp(output, "NegBackward0")
     }
 
     /// Divides every element by a scalar using IEEE 754 true division.
@@ -2102,7 +2105,7 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn scalar_sub(&self, scalar: f32) -> Result<Self, TensorError> {
         let output = self.map_scalar(scalar, |value, scalar| scalar - value)?;
-        self.finish_negate_vjp(output)
+        self.finish_negate_vjp(output, "RsubBackward1")
     }
 
     /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal
@@ -2744,7 +2747,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             push_saved_parent(&mut stack, left);
                         }
                         GradFn::MultiplyScalar { input, .. }
-                        | GradFn::Negate { input }
+                        | GradFn::Negate { input, .. }
                         | GradFn::Relu { input }
                         | GradFn::Sin { input }
                         | GradFn::Sum { input }
@@ -2786,7 +2789,7 @@ fn apply_grad_fn(
                 add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
-        GradFn::Negate { input } => {
+        GradFn::Negate { input, .. } => {
             if let Some(meta) = &input.autograd {
                 debug_assert_eq!(input.elements, upstream.len());
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
