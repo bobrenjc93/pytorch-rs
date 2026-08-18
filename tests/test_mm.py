@@ -137,11 +137,15 @@ class MmTests(unittest.TestCase):
                     r"^mm\(\): the 'out' argument is not supported$",
                 ):
                     torch.mm(plain, plain, out=out)
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^mm\(\): the 'out_dtype' argument is not supported$",
+        for call in (
+            lambda: torch.mm(plain, plain, torch.float32),
+            lambda: torch.mm(plain, plain, out_dtype=torch.float32),
         ):
-            torch.mm(plain, plain, torch.float32)
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^mm\(\): the 'out_dtype' argument is not supported$",
+            ):
+                call()
 
     def test_modes_receive_original_calls_and_can_forward(self):
         left = torch.tensor([[1.0]])
@@ -281,6 +285,78 @@ class MmTests(unittest.TestCase):
         self.assertEqual(len(Override.calls), 1)
         self.assertIs(mode_calls[0][0], function)
         self.assertIs(Override.calls[0][0], function)
+
+    def test_out_dtype_keyword_dispatch_and_duplicate_binding(self):
+        left = torch.tensor([[1.0]])
+        right = torch.tensor([[2.0]])
+        function = torch.mm
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        for call, positional_count, keyword_names in (
+            (
+                lambda: function(left, right, out_dtype=torch.float32),
+                2,
+                ("out_dtype",),
+            ),
+            (
+                lambda: function(
+                    input=left, mat2=right, out_dtype=torch.float32
+                ),
+                0,
+                ("input", "mat2", "out_dtype"),
+            ),
+        ):
+            mode = RecordingMode()
+            with mode:
+                self.assertIs(call(), marker)
+            self.assertEqual(len(mode.calls), 1)
+            func, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(func, function)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(len(args), positional_count)
+            self.assertEqual(tuple(kwargs), keyword_names)
+            self.assertIs(kwargs["out_dtype"], torch.float32)
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        for call in (
+            lambda: function(Override(), right, out_dtype=torch.float32),
+            lambda: function(left, right, out_dtype=Override()),
+        ):
+            Override.calls.clear()
+            self.assertIs(call(), marker)
+            self.assertEqual(len(Override.calls), 1)
+            self.assertIs(Override.calls[0][0], function)
+            self.assertEqual(Override.calls[0][1], (Override,))
+            self.assertEqual(tuple(Override.calls[0][3]), ("out_dtype",))
+
+        mode = RecordingMode()
+        with mode:
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^mm\(\) got multiple values for argument 'out_dtype'$",
+            ):
+                function(
+                    left,
+                    right,
+                    torch.float32,
+                    out_dtype=torch.float32,
+                )
+        self.assertEqual(mode.calls, [])
 
     def test_callable_metadata_pickling_exports_and_tensor_boundary(self):
         function = torch.mm

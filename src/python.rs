@@ -7770,12 +7770,27 @@ fn bind_mm_arguments<'py>(
     let (Some(input), Some(mat2)) = (input, mat2) else {
         return Err(mm_binding_error(positional, keywords)?);
     };
-    let has_out_dtype = positional.len() == 3;
+    let positional_out_dtype = (positional.len() == 3)
+        .then(|| positional.get_item(2))
+        .transpose()?;
+    let keyword_out_dtype =
+        keywords.and_then(|values| legacy_dict_get_item_string(values, c"out_dtype"));
+    if keyword_out_dtype.is_some() {
+        consumed_keywords += 1;
+    }
     let out = keywords.and_then(|values| legacy_dict_get_item_string(values, c"out"));
     let has_out = out.is_some();
     if has_out {
         consumed_keywords += 1;
     }
+    if positional_out_dtype.is_some() && keyword_out_dtype.is_some() {
+        if !has_out && consumed_keywords == keywords.map_or(0, PyDictMethods::len) {
+            return Err(mm_multiple_out_dtype_error());
+        }
+        return Err(mm_binding_error(positional, keywords)?);
+    }
+    let out_dtype = positional_out_dtype.or(keyword_out_dtype);
+    let has_out_dtype = out_dtype.is_some();
     let expected_arguments = 2 + usize::from(has_out_dtype) + usize::from(has_out);
     if argument_count != expected_arguments
         || consumed_keywords != keywords.map_or(0, PyDictMethods::len)
@@ -7794,14 +7809,13 @@ fn bind_mm_arguments<'py>(
         .try_reserve_exact(usize::from(has_out_dtype) + usize::from(has_out))
         .map_err(|_| PyMemoryError::new_err("unable to allocate mm optional operands"))?;
 
-    if has_out_dtype {
-        let out_dtype = positional.get_item(2)?;
-        if out_dtype.cast::<PyDType>().is_err() {
-            let Some(probed) = probe_torch_function_override(&out_dtype) else {
-                return Err(mm_binding_error(positional, keywords)?);
-            };
-            optional_overrides.push(probed);
-        }
+    if let Some(out_dtype) = out_dtype
+        && out_dtype.cast::<PyDType>().is_err()
+    {
+        let Some(probed) = probe_torch_function_override(&out_dtype) else {
+            return Err(mm_binding_error(positional, keywords)?);
+        };
+        optional_overrides.push(probed);
     }
     if let Some(out) = out
         && !out.is_none()
@@ -7820,6 +7834,10 @@ fn bind_mm_arguments<'py>(
         has_out,
         has_out_dtype,
     })
+}
+
+fn mm_multiple_out_dtype_error() -> PyErr {
+    PyTypeError::new_err("mm() got multiple values for argument 'out_dtype'")
 }
 
 fn mm_binding_error(

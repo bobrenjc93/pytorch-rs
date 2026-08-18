@@ -5,8 +5,12 @@ import types
 import unittest
 
 import numpy as np
-import torch as reference_torch
 import torch_rs as torch
+
+try:
+    import torch as reference_torch
+except ImportError:
+    reference_torch = None
 
 
 def mm_layout_cases(module):
@@ -37,6 +41,7 @@ def mm_layout_cases(module):
     )
 
 
+@unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class MmReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -177,6 +182,16 @@ class MmReferenceTests(unittest.TestCase):
             (lambda: function(x=left, mat2=right), ("x", "mat2")),
             (lambda: function(vector, right), None),
             (lambda: function(left, right, out=left), ("out",)),
+            (
+                lambda: function(left, right, out_dtype=module.float32),
+                ("out_dtype",),
+            ),
+            (
+                lambda: function(
+                    input=left, mat2=right, out_dtype=module.float32
+                ),
+                ("input", "mat2", "out_dtype"),
+            ),
         )
         for call, keywords in calls:
             mode = RecordingMode()
@@ -210,6 +225,13 @@ class MmReferenceTests(unittest.TestCase):
             (lambda value: function(left, value), None),
             (lambda value: function(input=left, mat2=value), "mat2"),
             (lambda value: function(left, right, out=value), "out"),
+            (
+                lambda value: function(
+                    value, right, out_dtype=module.float32
+                ),
+                None,
+            ),
+            (lambda value: function(left, right, out_dtype=value), "out_dtype"),
         ):
             value = Override()
             Override.calls.clear()
@@ -222,6 +244,7 @@ class MmReferenceTests(unittest.TestCase):
                     tuple(item.__name__ for item in dispatch_types),
                     len(args),
                     kwargs is None,
+                    None if kwargs is None else tuple(kwargs),
                     keyword is not None
                     and kwargs is not None
                     and kwargs[keyword] is value,
@@ -279,6 +302,12 @@ class MmReferenceTests(unittest.TestCase):
             lambda: function([], right),
             lambda: function(left),
             lambda: function(left, right, extra=True),
+            lambda: function(
+                left,
+                right,
+                module.float32,
+                out_dtype=module.float32,
+            ),
         ):
             invalid_mode = RecordingMode()
             try:
@@ -359,6 +388,24 @@ class MmReferenceTests(unittest.TestCase):
             (
                 lambda: torch.mm(actual, actual, out=[]),
                 lambda: reference_torch.mm(expected, expected, out=[]),
+            ),
+            (
+                lambda: torch.mm(actual, actual, out_dtype=1),
+                lambda: reference_torch.mm(expected, expected, out_dtype=1),
+            ),
+            (
+                lambda: torch.mm(
+                    actual,
+                    actual,
+                    torch.float32,
+                    out_dtype=torch.float32,
+                ),
+                lambda: reference_torch.mm(
+                    expected,
+                    expected,
+                    reference_torch.float32,
+                    out_dtype=reference_torch.float32,
+                ),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
