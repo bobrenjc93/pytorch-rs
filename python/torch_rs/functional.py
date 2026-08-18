@@ -7,10 +7,11 @@ from .torch_rs import (
     Size,
     atleast_1d as _VF_atleast_1d,
     atleast_2d as _VF_atleast_2d,
+    atleast_3d as _VF_atleast_3d,
 )
 
 
-__all__ = ["atleast_1d", "atleast_2d", "broadcast_shapes"]
+__all__ = ["atleast_1d", "atleast_2d", "atleast_3d", "broadcast_shapes"]
 
 
 def _atleast_1d_impl(input):
@@ -98,6 +99,60 @@ def atleast_2d(*tensors):
     return _dispatch_unary_torch_function(
         atleast_2d,
         _atleast_2d_impl,
+        tensors[0],
+        {},
+    )
+
+
+def _atleast_3d_impl(input):
+    return _VF_atleast_3d(input)
+
+
+def atleast_3d(*tensors):
+    r"""
+    Returns a 3-dimensional view of each input tensor with zero dimensions.
+    Input tensors with three or more dimensions are returned as-is.
+
+    Args:
+        input (Tensor or sequence of Tensors): tensor(s) to be converted to at least 3-dimensional.
+
+    Returns:
+        output (Tensor or tuple of Tensors)
+
+    Example:
+
+        >>> x = torch.tensor(0.5)
+        >>> x
+        tensor(0.5000)
+        >>> torch.atleast_3d(x)
+        tensor([[[0.5000]]])
+        >>> y = torch.arange(4).view(2, 2)
+        >>> y
+        tensor([[0, 1],
+                [2, 3]])
+        >>> torch.atleast_3d(y)
+        tensor([[[0],
+                 [1]],
+                <BLANKLINE>
+                [[2],
+                 [3]]])
+        >>> x = torch.tensor(1).view(1, 1, 1)
+        >>> x
+        tensor([[[1]]])
+        >>> torch.atleast_3d(x)
+        tensor([[[1]]])
+        >>> x = torch.tensor(0.5)
+        >>> y = torch.tensor(1.0)
+        >>> torch.atleast_3d((x, y))
+        (tensor([[[0.5000]]]), tensor([[[1.]]]))
+        >>> torch.atleast_3d()
+        ()
+    """
+    if len(tensors) != 1:
+        raise TypeError("atleast_3d() only supports a single Tensor input")
+    return _dispatch_unary_torch_function(
+        atleast_3d,
+        _atleast_3d_impl,
         tensors[0],
         {},
     )

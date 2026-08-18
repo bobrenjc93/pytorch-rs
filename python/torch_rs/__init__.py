@@ -114,6 +114,7 @@ from . import overrides as overrides
 from . import utils as utils
 from .functional import atleast_1d as atleast_1d
 from .functional import atleast_2d as atleast_2d
+from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
 
 del _copyreg, _native, _sys
