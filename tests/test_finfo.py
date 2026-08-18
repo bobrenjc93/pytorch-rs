@@ -101,6 +101,23 @@ class FInfoTests(unittest.TestCase):
         short_error = "cannot pickle 'finfo' object"
         qualified_error = "cannot pickle 'torch_rs.finfo' object"
 
+        for name in ("__getnewargs__", "__getnewargs_ex__"):
+            with self.subTest(name=name, target="type"):
+                self.assertFalse(hasattr(torch.finfo, name))
+                self.assertNotIn(name, torch.finfo.__dict__)
+                self.assert_error(
+                    AttributeError,
+                    f"type object 'torch_rs.finfo' has no attribute '{name}'",
+                    lambda name=name: getattr(torch.finfo, name),
+                )
+            with self.subTest(name=name, target="instance"):
+                self.assertFalse(hasattr(value, name))
+                self.assert_error(
+                    AttributeError,
+                    f"'torch_rs.finfo' object has no attribute '{name}'",
+                    lambda name=name: getattr(value, name),
+                )
+
         self.assert_error(TypeError, short_error, value.__reduce__)
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             expected = short_error if protocol < 2 else qualified_error
@@ -300,6 +317,28 @@ class FInfoTests(unittest.TestCase):
             "error unpacking string as utf-8",
             lambda: torch.finfo(
                 **{"\ud800": torch.float32, "other": torch.float32}
+            ),
+        )
+
+        class HostileKeyword(str):
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                raise RuntimeError("keyword equality trap")
+
+        self.assert_error(
+            TypeError,
+            'finfo() missing 1 required positional arguments: "type"',
+            lambda: torch.finfo(
+                **{HostileKeyword("type"): torch.float32}
+            ),
+        )
+        self.assert_error(
+            TypeError,
+            "finfo() received an invalid combination of arguments - got "
+            "(other=NoneType, a",
+            lambda: torch.finfo(
+                **{"a\0b": torch.float32, "other": None}
             ),
         )
 

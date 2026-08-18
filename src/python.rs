@@ -8490,7 +8490,7 @@ fn bind_movedim_call_arguments<'py, const N: usize>(
     unsafe_code,
     reason = "PyTorch's generated parser uses exception-suppressing legacy dictionary lookup"
 )]
-fn legacy_dict_get_item_string<'py>(
+pub(crate) fn legacy_dict_get_item_string<'py>(
     dictionary: &Bound<'py, PyDict>,
     name: &CStr,
 ) -> Option<Bound<'py, PyAny>> {

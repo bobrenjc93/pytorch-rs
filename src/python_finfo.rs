@@ -12,7 +12,9 @@ use pyo3::{IntoPyObjectExt, ffi};
 use crate::{
     DType,
     dtype::FloatingPointInfo,
-    python::{native_pytorch_type_name, pytorch_ordered_keyword_entries},
+    python::{
+        legacy_dict_get_item_string, native_pytorch_type_name, pytorch_ordered_keyword_entries,
+    },
     python_dtype::PyDType,
 };
 
@@ -146,6 +148,9 @@ fn invalid_combination(
         try_push_message(&mut message, ", ")?;
     }
     try_push_message(&mut message, INVALID_COMBINATION_SUFFIX)?;
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
     Ok(PyTypeError::new_err(message))
 }
 
@@ -158,7 +163,7 @@ fn bind_constructor<'py>(
         (0, 0) => Ok(None),
         (0, 1) => {
             let keywords = keywords.expect("one keyword argument has a dictionary");
-            let Some(value) = keywords.get_item("type")? else {
+            let Some(value) = legacy_dict_get_item_string(keywords, c"type") else {
                 return Err(PyTypeError::new_err(
                     "finfo() missing 1 required positional arguments: \"type\"",
                 ));
@@ -306,19 +311,6 @@ unsafe fn finfo_richcompare_callback(
 
 #[allow(
     unsafe_code,
-    reason = "CPython supplies a live finfo instance to the panic-safe PyO3 trampoline"
-)]
-unsafe fn unpicklable_newargs_callback(
-    _py: Python<'_>,
-    _object: *mut ffi::PyObject,
-) -> PyResult<*mut ffi::PyObject> {
-    Err(PyTypeError::new_err(
-        "cannot pickle 'torch_rs.finfo' object",
-    ))
-}
-
-#[allow(
-    unsafe_code,
     reason = "each getter reads a live finfo instance and calls a matching stable-ABI constructor"
 )]
 unsafe fn instance_info(object: *mut ffi::PyObject) -> FloatingPointInfo {
@@ -427,15 +419,6 @@ fn create_finfo_type(py: Python<'_>) -> PyResult<Py<PyAny>> {
         getset(c"tiny", get_tiny),
         ffi::PyGetSetDef::default(),
     ]));
-    let methods = Box::leak(Box::new([
-        pyo3::impl_::pymethods::PyMethodDef::noargs(
-            c"__getnewargs__",
-            pyo3::impl_::trampoline::get_trampoline_function!(noargs, unpicklable_newargs_callback),
-            c"",
-        )
-        .into_raw(),
-        ffi::PyMethodDef::zeroed(),
-    ]));
     let mut slots = [
         ffi::PyType_Slot {
             slot: ffi::Py_tp_new,
@@ -462,10 +445,6 @@ fn create_finfo_type(py: Python<'_>) -> PyResult<Py<PyAny>> {
                 richcmpfunc,
                 finfo_richcompare_callback
             ) as *mut c_void,
-        },
-        ffi::PyType_Slot {
-            slot: ffi::Py_tp_methods,
-            pfunc: methods.as_mut_ptr().cast::<c_void>(),
         },
         ffi::PyType_Slot {
             slot: ffi::Py_tp_getset,

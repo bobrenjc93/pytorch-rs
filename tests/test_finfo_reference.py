@@ -189,6 +189,13 @@ class FInfoReferenceTests(unittest.TestCase):
     def test_constructor_errors_and_unpicklability_match(self):
         def contract(module):
             value = module.finfo()
+
+            class HostileKeyword(str):
+                __hash__ = str.__hash__
+
+                def __eq__(self, other):
+                    raise RuntimeError("keyword equality trap")
+
             constructors = (
                 lambda: module.finfo(None),
                 lambda: module.finfo(type=None),
@@ -209,6 +216,12 @@ class FInfoReferenceTests(unittest.TestCase):
                         "\ud800": module.float32,
                         "other": module.float32,
                     }
+                ),
+                lambda: module.finfo(
+                    **{HostileKeyword("type"): module.float32}
+                ),
+                lambda: module.finfo(
+                    **{"a\0b": module.float32, "other": None}
                 ),
                 lambda: module.finfo(
                     **{
@@ -251,6 +264,23 @@ class FInfoReferenceTests(unittest.TestCase):
                 "copy": self.error(module, lambda: copy.copy(value)),
                 "deepcopy": self.error(
                     module, lambda: copy.deepcopy(value)
+                ),
+                "pickle_helper_attributes": tuple(
+                    (
+                        name,
+                        hasattr(module.finfo, name),
+                        name in module.finfo.__dict__,
+                        self.error(
+                            module,
+                            lambda name=name: getattr(module.finfo, name),
+                        ),
+                        hasattr(value, name),
+                        self.error(
+                            module,
+                            lambda name=name: getattr(value, name),
+                        ),
+                    )
+                    for name in ("__getnewargs__", "__getnewargs_ex__")
                 ),
             }
 
