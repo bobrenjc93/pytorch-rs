@@ -204,6 +204,24 @@ class FInfoReferenceTests(unittest.TestCase):
                     dtype=module.float32, unexpected=1
                 ),
                 lambda: module.finfo(first=1, second=2),
+                lambda: module.finfo(
+                    **{
+                        "\ud800": module.float32,
+                        "other": module.float32,
+                    }
+                ),
+                lambda: module.finfo(
+                    **{
+                        f"key{index}": module.float32
+                        for index in range(14)
+                    }
+                ),
+                lambda: module.finfo(
+                    **{
+                        f"key{index}": module.float32
+                        for index in range(258)
+                    }
+                ),
             )
             pickle_errors = tuple(
                 self.error(

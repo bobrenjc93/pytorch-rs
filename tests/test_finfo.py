@@ -275,32 +275,33 @@ class FInfoTests(unittest.TestCase):
                 "(torch.dtype, torch.dtype), but expected one of:\n"
                 " * (torch.dtype type)\n * ()\n",
             ),
-            (
-                lambda: torch.finfo(
-                    type=torch.float32, dtype=torch.float32
-                ),
-                "finfo() received an invalid combination of arguments - got "
-                "(dtype=torch.dtype, type=torch.dtype, ), but expected one of:\n"
-                " * (torch.dtype type)\n * ()\n",
-            ),
-            (
-                lambda: torch.finfo(
-                    dtype=torch.float32, unexpected=1
-                ),
-                "finfo() received an invalid combination of arguments - got "
-                "(unexpected=int, dtype=torch.dtype, ), but expected one of:\n"
-                " * (torch.dtype type)\n * ()\n",
-            ),
-            (
-                lambda: torch.finfo(first=1, second=2),
-                "finfo() received an invalid combination of arguments - got "
-                "(second=int, first=int, ), but expected one of:\n"
-                " * (torch.dtype type)\n * ()\n",
-            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
                 self.assert_error(TypeError, message, call)
+
+        for call in (
+            lambda: torch.finfo(
+                type=torch.float32, dtype=torch.float32
+            ),
+            lambda: torch.finfo(
+                dtype=torch.float32, unexpected=1
+            ),
+            lambda: torch.finfo(first=1, second=2),
+        ):
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^finfo\(\) received an invalid combination of arguments - got ",
+            ):
+                call()
+
+        self.assert_error(
+            RuntimeError,
+            "error unpacking string as utf-8",
+            lambda: torch.finfo(
+                **{"\ud800": torch.float32, "other": torch.float32}
+            ),
+        )
 
         self.assertFalse(hasattr(torch, "float64"))
         self.assert_error(
@@ -350,6 +351,61 @@ class FInfoTests(unittest.TestCase):
             0,
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_repr_allocation_failure_raises_memory_error_without_panicking(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+
+            import torch_rs as torch
+
+            value = torch.finfo()
+            representation_length = len(str(value))
+            fillers = [None] * 1_000_000
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 4 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                os._exit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            for index in range(len(fillers)):
+                try:
+                    fillers[index] = "x" * representation_length
+                except MemoryError:
+                    break
+            else:
+                os._exit(78)
+
+            try:
+                repr(value)
+            except MemoryError:
+                os._exit(0)
+            except BaseException:
+                os._exit(2)
+            else:
+                os._exit(3)
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode == 77:
+            self.skipTest("process hard address-space limit is too low")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+        self.assertEqual(completed.stderr, "")
 
 
 if __name__ == "__main__":

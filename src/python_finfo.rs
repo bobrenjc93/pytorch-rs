@@ -10,7 +10,10 @@ use pyo3::types::{PyAny, PyDict, PyString, PyTuple};
 use pyo3::{IntoPyObjectExt, ffi};
 
 use crate::{
-    DType, dtype::FloatingPointInfo, python::native_pytorch_type_name, python_dtype::PyDType,
+    DType,
+    dtype::FloatingPointInfo,
+    python::{native_pytorch_type_name, pytorch_ordered_keyword_entries},
+    python_dtype::PyDType,
 };
 
 const INVALID_COMBINATION_PREFIX: &str =
@@ -87,23 +90,12 @@ fn constructor_type_name<'a>(value: &'a Bound<'_, PyAny>) -> PyResult<&'a str> {
     })
 }
 
-fn keyword_name<'a>(key: &'a Bound<'_, PyAny>) -> PyResult<&'a str> {
-    key.cast::<PyString>()?.to_str()
-}
-
 fn invalid_combination(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyErr> {
-    let mut keyword_arguments = Vec::new();
-    if let Some(keywords) = keywords {
-        keyword_arguments
-            .try_reserve_exact(keywords.len())
-            .map_err(|_| allocation_error())?;
-        for item in keywords {
-            keyword_arguments.push(item);
-        }
-    }
+    let keyword_arguments =
+        keywords.map_or_else(|| Ok(Vec::new()), pytorch_ordered_keyword_entries)?;
 
     let mut capacity = INVALID_COMBINATION_PREFIX.len();
     let mut has_argument = false;
@@ -114,11 +106,11 @@ fn invalid_combination(
         add_message_capacity(&mut capacity, constructor_type_name(&value)?.len())?;
         has_argument = true;
     }
-    for (key, value) in keyword_arguments.iter().rev() {
+    for (key, value) in &keyword_arguments {
         if has_argument {
             add_message_capacity(&mut capacity, ", ".len())?;
         }
-        add_message_capacity(&mut capacity, keyword_name(key)?.len())?;
+        add_message_capacity(&mut capacity, key.len())?;
         add_message_capacity(&mut capacity, "=".len())?;
         add_message_capacity(&mut capacity, constructor_type_name(value)?.len())?;
         has_argument = true;
@@ -141,11 +133,11 @@ fn invalid_combination(
         try_push_message(&mut message, constructor_type_name(&value)?)?;
         has_argument = true;
     }
-    for (key, value) in keyword_arguments.iter().rev() {
+    for (key, value) in &keyword_arguments {
         if has_argument {
             try_push_message(&mut message, ", ")?;
         }
-        try_push_message(&mut message, keyword_name(key)?)?;
+        try_push_message(&mut message, key)?;
         try_push_message(&mut message, "=")?;
         try_push_message(&mut message, constructor_type_name(value)?)?;
         has_argument = true;
@@ -262,7 +254,6 @@ unsafe fn finfo_new_callback(
 
 #[allow(
     unsafe_code,
-    clippy::unnecessary_wraps,
     reason = "CPython supplies a live finfo instance to the panic-safe PyO3 trampoline"
 )]
 unsafe fn finfo_repr_callback(
@@ -271,7 +262,8 @@ unsafe fn finfo_repr_callback(
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: reprfunc is installed only on the finfo type.
     let info = unsafe { instance_dtype(object) }.finfo();
-    Ok(PyString::new(py, info.representation()).unbind().into_ptr())
+    PyString::from_bytes(py, info.representation().as_bytes())
+        .map(|value| value.unbind().into_ptr())
 }
 
 #[allow(
