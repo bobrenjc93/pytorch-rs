@@ -14,17 +14,17 @@ use pyo3::types::{PyDict, PyModule, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    adjoint_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    permute_variable_function, positive_variable_function, promote_types_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
-    select_variable_function, unbind_variable_function,
+    adjoint_variable_function, can_cast_variable_function, get_device_variable_function,
+    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, permute_variable_function, positive_variable_function,
+    promote_types_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    scalar_tensor_variable_function, select_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 17] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 18] = [
     "get_device",
     "scalar_tensor",
     "adjoint",
@@ -41,6 +41,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 17] = [
     "matmul",
     "mul",
     "multiply",
+    "can_cast",
     "promote_types",
 ];
 
@@ -118,6 +119,24 @@ const MULTIPLY_DOC: &std::ffi::CStr = c"
 multiply(input, other, *, out=None)
 
 Alias for :func:`torch.mul`.
+";
+
+const CAN_CAST_DOC: &std::ffi::CStr = cr"
+can_cast(from_, to) -> bool
+
+Determines if a type conversion is allowed under PyTorch casting rules
+described in the type promotion :ref:`documentation <type-promotion-doc>`.
+
+Args:
+    from\_ (dtype): The original :class:`torch.dtype`.
+    to (dtype): The target :class:`torch.dtype`.
+
+Example::
+
+    >>> torch.can_cast(torch.double, torch.float)
+    True
+    >>> torch.can_cast(torch.float, torch.int)
+    False
 ";
 
 const PROMOTE_TYPES_DOC: &std::ffi::CStr = c"
@@ -374,6 +393,7 @@ variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
+variable_function_callback!(can_cast_callback, can_cast_variable_function);
 variable_function_callback!(promote_types_callback, promote_types_variable_function);
 
 macro_rules! variable_function_method {
@@ -412,6 +432,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
+        variable_function_method!(c"can_cast", can_cast_callback, CAN_CAST_DOC),
         variable_function_method!(c"promote_types", promote_types_callback, PROMOTE_TYPES_DOC),
         ffi::PyMethodDef::zeroed(),
     ]));
