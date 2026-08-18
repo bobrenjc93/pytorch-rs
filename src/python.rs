@@ -20,6 +20,7 @@ use crate::{
     python_cpython_compat as cpython_compat,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
+    python_finfo::finfo_type_object,
     python_grad_mode::add_no_grad,
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_memory_format::{PyMemoryFormat, memory_format_object},
@@ -8489,7 +8490,7 @@ fn bind_movedim_call_arguments<'py, const N: usize>(
     unsafe_code,
     reason = "PyTorch's generated parser uses exception-suppressing legacy dictionary lookup"
 )]
-fn legacy_dict_get_item_string<'py>(
+pub(crate) fn legacy_dict_get_item_string<'py>(
     dictionary: &Bound<'py, PyDict>,
     name: &CStr,
 ) -> Option<Bound<'py, PyAny>> {
@@ -8600,7 +8601,7 @@ fn movedim_error_arguments<'py>(
     let keyword_count = keywords.map_or(0, PyDictMethods::len);
     let mut incorrect = try_size_vector_with(keyword_count, allocation)?;
     if let Some(keywords) = keywords {
-        for (key, value) in movedim_ordered_keywords(keywords, allocation)? {
+        for (key, value) in pytorch_ordered_keyword_entries_with(keywords, allocation)? {
             let index = names.iter().position(|name| *name == key);
             if let Some(index) = index
                 && arguments[index].is_none()
@@ -8617,7 +8618,14 @@ fn movedim_error_arguments<'py>(
     Ok((arguments, incorrect))
 }
 
-fn movedim_ordered_keywords<'py>(
+pub(crate) fn pytorch_ordered_keyword_entries<'py>(
+    keywords: &Bound<'py, PyDict>,
+) -> PyResult<Vec<(String, Bound<'py, PyAny>)>> {
+    let allocation = PythonAllocationFallback::new(keywords.py());
+    pytorch_ordered_keyword_entries_with(keywords, &allocation)
+}
+
+fn pytorch_ordered_keyword_entries_with<'py>(
     keywords: &Bound<'py, PyDict>,
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<Vec<(String, Bound<'py, PyAny>)>> {
@@ -10030,6 +10038,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     tensor_type.setattr("__pos__", positive_descriptor)?;
     register_scalar_conversions(&tensor_base)?;
     module.add_class::<PyDType>()?;
+    module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
     add_default_dtype_validator(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
