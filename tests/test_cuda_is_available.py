@@ -19,6 +19,8 @@ FUNCTION_DOC = """
         ``PYTORCH_NVML_BASED_CUDA_CHECK=1`` is set. For more details, see
         :ref:`multiprocessing-poison-fork-note`.
     """
+if sys.version_info >= (3, 13):
+    FUNCTION_DOC = textwrap.dedent(FUNCTION_DOC)
 
 
 class CudaIsAvailableTests(unittest.TestCase):
