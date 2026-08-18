@@ -2,6 +2,9 @@ import importlib
 import inspect
 import pickle
 import re
+import subprocess
+import sys
+import textwrap
 import types
 import unittest
 
@@ -190,6 +193,53 @@ class TensorToTests(unittest.TestCase):
                     pickle.loads(pickle.dumps(descriptor, protocol=protocol)),
                     descriptor,
                 )
+
+    def test_import_preserves_preexisting_method_descriptor_reducer(self):
+        source = textwrap.dedent(
+            """\
+            import copyreg
+            import importlib
+            import inspect
+            import pickle
+            import types
+
+            def restore_sentinel():
+                return "sentinel"
+
+            def reduce_method_descriptor(descriptor):
+                assert descriptor is str.upper
+                return restore_sentinel, ()
+
+            copyreg.pickle(types.MethodDescriptorType, reduce_method_descriptor)
+            assert pickle.loads(pickle.dumps(str.upper)) == "sentinel"
+
+            import torch_rs
+
+            descriptor = inspect.getattr_static(torch_rs.Tensor, "to")
+            first_wrapper = copyreg.dispatch_table[types.MethodDescriptorType]
+            assert first_wrapper._torch_rs_previous_reducer is reduce_method_descriptor
+            assert pickle.loads(pickle.dumps(str.upper)) == "sentinel"
+            assert pickle.loads(pickle.dumps(descriptor)) is descriptor
+
+            importlib.reload(torch_rs)
+            second_wrapper = copyreg.dispatch_table[types.MethodDescriptorType]
+            assert second_wrapper is not first_wrapper
+            assert second_wrapper._torch_rs_previous_reducer is reduce_method_descriptor
+            assert pickle.loads(pickle.dumps(str.upper)) == "sentinel"
+            assert pickle.loads(pickle.dumps(descriptor)) is descriptor
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_torch_function_modes_match_tensorbase_dispatch(self):
         tensor = torch.tensor([1.0])
