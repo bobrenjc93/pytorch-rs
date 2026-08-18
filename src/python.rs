@@ -486,6 +486,28 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\ndequantize() -> Tensor\n\nGiven a quantized Tensor, dequantize it and return the dequantized float Tensor.\n"]
+    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
+    // derives `($self, /)` from that descriptor shape, while older runtimes
+    // leave `__text_signature__` unset; PyTorch follows the same split.
+    #[pyo3(text_signature = None)]
+    fn dequantize(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::Method("dequantize"))?
+        {
+            return Ok(result);
+        }
+
+        // Float32 is the complete supported dtype surface, so no reachable
+        // Tensor has quantized storage. Dequantization is therefore the exact
+        // receiver, without a storage borrow, metadata rewrite, copy, or
+        // autograd operation. Quantized storage remains deliberately absent.
+        Ok(tensor.clone().unbind().into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nfloat(memory_format=torch.preserve_format) -> Tensor\n\n``self.float()`` is equivalent to ``self.to(torch.float32)``. See :func:`to`.\n\nArgs:\n    memory_format (:class:`torch.memory_format`, optional): the desired memory format of\n        returned Tensor. Default: ``torch.preserve_format``.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn float(
