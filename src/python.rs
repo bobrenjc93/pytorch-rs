@@ -18,7 +18,7 @@ use pyo3::types::{
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
-    python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
+    python_dtype::{PyDType, PyFInfo, add_default_dtype_validator, dtype_object},
     python_grad_mode::add_no_grad,
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_memory_format::{PyMemoryFormat, memory_format_object},
@@ -6048,12 +6048,12 @@ fn call_argument_type_description_with(
 }
 
 #[derive(Clone, Copy)]
-enum CallKeywordOrder {
+pub(crate) enum CallKeywordOrder {
     Sorted,
     PyTorchUnorderedMap,
 }
 
-fn call_type_summary(
+pub(crate) fn call_type_summary(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
     keyword_order: CallKeywordOrder,
@@ -9133,6 +9133,8 @@ pub(crate) fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'sta
         Some("Tensor")
     } else if value.is_exact_instance_of::<PyDType>() {
         Some("torch.dtype")
+    } else if value.is_exact_instance_of::<PyFInfo>() {
+        Some("torch.finfo")
     } else if value.is_exact_instance_of::<PyDevice>() {
         Some("torch.device")
     } else if value.is_exact_instance_of::<PyMemoryFormat>() {
@@ -9140,6 +9142,10 @@ pub(crate) fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'sta
     } else {
         None
     }
+}
+
+pub(crate) fn python_argument_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    transpose_type_name(value)
 }
 
 fn transpose_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
@@ -10012,6 +10018,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     tensor_type.setattr("__pos__", positive_descriptor)?;
     register_scalar_conversions(&tensor_base)?;
     module.add_class::<PyDType>()?;
+    module.add_class::<PyFInfo>()?;
     add_default_dtype_validator(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
