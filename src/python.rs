@@ -2028,6 +2028,14 @@ fn dispatch_tensorbase_mode(
     Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
 }
 
+pub(crate) fn dispatch_tensorbase_no_argument_mode(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    method: &'static str,
+) -> PyResult<Option<Py<PyAny>>> {
+    dispatch_tensorbase_mode(py, tensor, TensorBaseModeTarget::Method(method))
+}
+
 fn unbind_first_dimension(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,

@@ -3505,6 +3505,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 76
       }
+    },
+    {
+      "key": "pr:262",
+      "recordedAt": "2026-08-18T22:38:51.254Z",
+      "label": "PR #262",
+      "kind": "leaf",
+      "prNumber": 262,
+      "title": "Add Python complex conversion for one-element tensors",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 73,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 56.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 76
+      }
     }
   ]
 }

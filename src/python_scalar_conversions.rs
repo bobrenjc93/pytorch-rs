@@ -5,24 +5,24 @@ use std::sync::atomic::AtomicBool;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyInt, PyType};
+use pyo3::types::{PyComplex, PyInt, PyType};
 
 use crate::{
     TensorError, is_grad_enabled as core_is_grad_enabled,
-    python::{PyTensor, PyTensorBase, warn_once},
+    python::{PyTensor, PyTensorBase, dispatch_tensorbase_no_argument_mode, warn_once},
     python_tensor_errors::tensor_error,
 };
 
-static FLOAT_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static SCALAR_REQUIRES_GRAD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "macos")]
-const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:823.)";
+const SCALAR_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at /Users/runner/work/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:823.)";
 #[cfg(target_os = "linux")]
-const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)";
+const SCALAR_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:822.)";
 #[cfg(target_os = "windows")]
-const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\autograd\\generated\\python_variable_methods.cpp:823.)";
+const SCALAR_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first. (Triggered internally at C:\\actions-runner\\_work\\pytorch\\pytorch\\torch\\csrc\\autograd\\generated\\python_variable_methods.cpp:823.)";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-const FLOAT_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first.";
+const SCALAR_REQUIRES_GRAD_WARNING: &CStr = c"Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.\nConsider using tensor.detach() first.";
 
 #[pymethods]
 impl PyTensorBase {
@@ -49,19 +49,43 @@ impl PyTensorBase {
     #[pyo3(text_signature = None)]
     fn float_scalar(slf: &Bound<'_, Self>) -> PyResult<f64> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        if core_is_grad_enabled() && tensor.inner().requires_grad() {
-            warn_once(
-                slf.py(),
-                &FLOAT_REQUIRES_GRAD_WARNING_EMITTED,
-                FLOAT_REQUIRES_GRAD_WARNING,
-            )?;
-        }
+        warn_if_requires_grad(slf.py(), &tensor)?;
         tensor
             .inner()
             .item()
             .map(f64::from)
             .map_err(|error| scalar_conversion_error(&error))
     }
+
+    #[pyo3(text_signature = None)]
+    fn complex_scalar(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "__complex__")?
+        {
+            return Ok(result);
+        }
+
+        let tensor = tensor.try_borrow()?;
+        warn_if_requires_grad(slf.py(), &tensor)?;
+        let value = tensor
+            .inner()
+            .item()
+            .map_err(|error| scalar_conversion_error(&error))?;
+        Ok(PyComplex::from_doubles(slf.py(), f64::from(value), 0.0)
+            .into_any()
+            .unbind())
+    }
+}
+
+fn warn_if_requires_grad(py: Python<'_>, tensor: &PyTensor) -> PyResult<()> {
+    if core_is_grad_enabled() && tensor.inner().requires_grad() {
+        warn_once(
+            py,
+            &SCALAR_REQUIRES_GRAD_WARNING_EMITTED,
+            SCALAR_REQUIRES_GRAD_WARNING,
+        )?;
+    }
+    Ok(())
 }
 
 fn scalar_conversion_error(error: &TensorError) -> PyErr {
@@ -72,8 +96,8 @@ fn scalar_conversion_error(error: &TensorError) -> PyErr {
     }
 }
 
-// PyTorch publishes __int__ and __float__ as METH_NOARGS methods on TensorBase
-// instead of the slot wrappers CPython normally exposes for extension types.
+// PyTorch publishes __int__, __float__, and __complex__ as METH_NOARGS methods
+// on TensorBase instead of CPython-generated special-method wrappers.
 pyo3::inventory::submit! {
     type Inventory = <PyTensorBase as pyo3::impl_::pyclass::PyClassImpl>::Inventory;
     Inventory::new(pyo3::impl_::pyclass::PyClassItems {
@@ -98,18 +122,30 @@ pyo3::inventory::submit! {
                     c"",
                 ),
             ),
+            pyo3::impl_::pymethods::PyMethodDefType::Method(
+                pyo3::impl_::pymethods::PyMethodDef::noargs(
+                    c"__complex__",
+                    pyo3::impl_::trampoline::get_trampoline_function!(
+                        noargs,
+                        PyTensorBase::__pymethod_complex_scalar__
+                    ),
+                    c"",
+                ),
+            ),
         ],
         slots: &[],
     })
 }
 
 pub(crate) fn register_scalar_conversions(tensor_base: &Bound<'_, PyType>) -> PyResult<()> {
-    // Reassigning each method descriptor connects it to the corresponding
-    // numeric slot while retaining the native TensorBase descriptor metadata.
+    // Reassigning the native descriptors refreshes numeric-slot and special
+    // lookup while retaining TensorBase descriptor metadata.
     let int_descriptor = tensor_base.getattr("__int__")?;
     tensor_base.setattr("__int__", int_descriptor)?;
     let float_descriptor = tensor_base.getattr("__float__")?;
     tensor_base.setattr("__float__", float_descriptor)?;
+    let complex_descriptor = tensor_base.getattr("__complex__")?;
+    tensor_base.setattr("__complex__", complex_descriptor)?;
 
     // The implementation names exist only to let PyO3 generate panic-safe
     // trampolines for the public descriptors above.
@@ -118,6 +154,9 @@ pub(crate) fn register_scalar_conversions(tensor_base: &Bound<'_, PyType>) -> Py
     }
     if tensor_base.hasattr("float_scalar")? {
         tensor_base.delattr("float_scalar")?;
+    }
+    if tensor_base.hasattr("complex_scalar")? {
+        tensor_base.delattr("complex_scalar")?;
     }
     Ok(())
 }
