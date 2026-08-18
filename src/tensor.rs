@@ -1170,6 +1170,39 @@ impl Tensor {
         }
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn unsqueeze_front(&self) -> Result<Self, TensorError> {
+        let mut shape = try_result_vector(self.shape.len() + 1, self.elements)?;
+        shape.push(1);
+        shape.extend_from_slice(&self.shape);
+
+        let leading_stride = match (self.shape.first(), self.strides.first()) {
+            (Some(dimension), Some(stride)) => dimension
+                .checked_mul(*stride)
+                .ok_or(TensorError::StrideCalculationOverflow)?,
+            (None, None) => 1,
+            _ => unreachable!("validated tensor shape and stride ranks must match"),
+        };
+        let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
+        strides.push(leading_stride);
+        strides.extend_from_slice(&self.strides);
+
+        self.finish_view_transform(
+            Self {
+                storage: Arc::clone(&self.storage),
+                shape,
+                strides,
+                offset: self.offset,
+                elements: self.elements,
+                output_nr: 0,
+                view_requires_grad: false,
+                autograd: None,
+            },
+            TransformMapping::Identity,
+            AutogradNode::Unsqueeze,
+        )
+    }
+
     /// Removes every singleton dimension without copying storage.
     ///
     /// Shape and stride entries for dimensions of size one are dropped while
