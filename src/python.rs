@@ -1068,19 +1068,7 @@ impl PyTensorBase {
             return Err(keyword_error);
         }
 
-        let shape = {
-            let other = other.try_borrow()?;
-            let mut shape = try_size_vector(other.inner.shape().len())?;
-            for &dimension in other.inner.shape() {
-                let dimension = i64::try_from(dimension).map_err(|_| {
-                    PyOverflowError::new_err(
-                        "tensor dimension exceeds the signed 64-bit shape limit",
-                    )
-                })?;
-                try_push_size(&mut shape, dimension)?;
-            }
-            shape
-        };
+        let shape = tensor_shape_as_i64(other)?;
 
         slf.as_any()
             .cast::<PyTensor>()?
@@ -1089,6 +1077,42 @@ impl PyTensorBase {
             .reshape(shape)
             .map(PyTensor::new)
             .map_err(|error| tensor_error(&error))
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nview_as(other) -> Tensor\n\nView this tensor as the same size as :attr:`other`.\n``self.view_as(other)`` is equivalent to ``self.view(other.size())``.\n\nPlease see :meth:`~Tensor.view` for more information about ``view``.\n\nArgs:\n    other (:class:`torch.Tensor`): The result tensor has the same size\n        as :attr:`other`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn view_as(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let (arguments, keyword_error) = bind_tensor_arguments("view_as", args, kwargs, ["other"])?;
+        let other = parse_tensor_argument("view_as", "other", &arguments[0])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "view_as",
+            "torch.Tensor.view_as",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        let shape = tensor_shape_as_i64(other)?;
+        let inner = tensor
+            .try_borrow()?
+            .inner
+            .view(shape)
+            .map_err(|error| tensor_error(&error))?;
+        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1297,6 +1321,18 @@ pub(crate) fn moveaxis_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     dimension_move_variable_function(DimensionMoveOperation::Moveaxis, py, args, kwargs)
+}
+
+fn tensor_shape_as_i64(tensor: &Bound<'_, PyTensor>) -> PyResult<Vec<i64>> {
+    let tensor = tensor.try_borrow()?;
+    let mut shape = try_size_vector(tensor.inner.shape().len())?;
+    for &dimension in tensor.inner.shape() {
+        let dimension = i64::try_from(dimension).map_err(|_| {
+            PyOverflowError::new_err("tensor dimension exceeds the signed 64-bit shape limit")
+        })?;
+        try_push_size(&mut shape, dimension)?;
+    }
+    Ok(shape)
 }
 
 fn dimension_move_tensor_method(
