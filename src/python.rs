@@ -487,6 +487,138 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = r"
+to(*args, **kwargs) -> Tensor
+
+Performs Tensor dtype and/or device conversion. A :class:`torch.dtype` and :class:`torch.device` are
+inferred from the arguments of ``self.to(*args, **kwargs)``.
+
+.. note::
+
+    If the ``self`` Tensor already
+    has the correct :class:`torch.dtype` and :class:`torch.device`, then ``self`` is returned.
+    Otherwise, the returned tensor is a copy of ``self`` with the desired
+    :class:`torch.dtype` and :class:`torch.device`.
+
+.. note::
+
+    If ``self`` requires gradients (``requires_grad=True``) but the target
+    ``dtype`` specified is an integer type, the returned tensor will implicitly
+    set ``requires_grad=False``. This is because only tensors with
+    floating-point or complex dtypes can require gradients.
+
+Here are the ways to call ``to``:
+
+.. method:: to(dtype, non_blocking=False, copy=False, memory_format=torch.preserve_format) -> Tensor
+   :noindex:
+
+    Returns a Tensor with the specified :attr:`dtype`
+
+    Args:
+        memory_format (:class:`torch.memory_format`, optional): the desired memory format of
+        returned Tensor. Default: ``torch.preserve_format``.
+
+.. note::
+
+    According to `C++ type conversion rules <https://en.cppreference.com/w/cpp/language/implicit_conversion.html>`_,
+    converting floating point value to integer type will truncate the fractional part.
+    If the truncated value cannot fit into the target type (e.g., casting ``torch.inf`` to ``torch.long``),
+    the behavior is undefined and the result may vary across platforms.
+
+.. method:: to(device=None, dtype=None, non_blocking=False, copy=False, memory_format=torch.preserve_format) -> Tensor
+   :noindex:
+
+    Returns a Tensor with the specified :attr:`device` and (optional)
+    :attr:`dtype`. If :attr:`dtype` is ``None`` it is inferred to be ``self.dtype``.
+    When :attr:`non_blocking` is set to ``True``, the function attempts to perform
+    the conversion asynchronously with respect to the host, if possible. This
+    asynchronous behavior applies to both pinned and pageable memory. However,
+    caution is advised when using this feature. For more information, refer to the
+    `tutorial on good usage of non_blocking and pin_memory <https://pytorch.org/tutorials/intermediate/pinmem_nonblock.html>`__.
+    When :attr:`copy` is set, a new Tensor is created even when the Tensor
+    already matches the desired conversion.
+
+    Args:
+        memory_format (:class:`torch.memory_format`, optional): the desired memory format of
+        returned Tensor. Default: ``torch.preserve_format``.
+
+.. method:: to(other, non_blocking=False, copy=False) -> Tensor
+   :noindex:
+
+    Returns a Tensor with same :class:`torch.dtype` and :class:`torch.device` as
+    the Tensor :attr:`other`.
+    When :attr:`non_blocking` is set to ``True``, the function attempts to perform
+    the conversion asynchronously with respect to the host, if possible. This
+    asynchronous behavior applies to both pinned and pageable memory. However,
+    caution is advised when using this feature. For more information, refer to the
+    `tutorial on good usage of non_blocking and pin_memory <https://pytorch.org/tutorials/intermediate/pinmem_nonblock.html>`__.
+    When :attr:`copy` is set, a new Tensor is created even when the Tensor
+    already matches the desired conversion.
+
+Example::
+
+    >>> tensor = torch.randn(2, 2)  # Initially dtype=float32, device=cpu
+    >>> tensor.to(torch.float64)
+    tensor([[-0.5044,  0.0005],
+            [ 0.3310, -0.0584]], dtype=torch.float64)
+
+    >>> cuda0 = torch.device('cuda:0')
+    >>> tensor.to(cuda0)
+    tensor([[-0.5044,  0.0005],
+            [ 0.3310, -0.0584]], device='cuda:0')
+
+    >>> tensor.to(cuda0, dtype=torch.float64)
+    tensor([[-0.5044,  0.0005],
+            [ 0.3310, -0.0584]], dtype=torch.float64, device='cuda:0')
+
+    >>> other = torch.randn((), dtype=torch.float64, device=cuda0)
+    >>> tensor.to(other, non_blocking=True)
+    tensor([[-0.5044,  0.0005],
+            [ 0.3310, -0.0584]], dtype=torch.float64, device='cuda:0')
+"]
+    // Keep PyTorch's variadic native descriptor shape even though this CPU,
+    // float32-only surface intentionally exposes just the zero-argument path.
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn to(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "to() takes 0 positional arguments but {} {} given",
+                args.len(),
+                if args.len() == 1 { "was" } else { "were" }
+            )));
+        }
+        if let Some(kwargs) = kwargs
+            && let Some((key, _)) = kwargs.iter().next()
+        {
+            let key = key.extract::<String>()?;
+            return Err(PyTypeError::new_err(format!(
+                "to() got an unexpected keyword argument '{key}'"
+            )));
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "to",
+            "torch.Tensor.to",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        // With no requested conversion, preserve the Python wrapper itself so
+        // storage, views, offsets, and autograd state remain completely intact.
+        Ok(tensor.clone().unbind().into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nfloat(memory_format=torch.preserve_format) -> Tensor\n\n``self.float()`` is equivalent to ``self.to(torch.float32)``. See :func:`to`.\n\nArgs:\n    memory_format (:class:`torch.memory_format`, optional): the desired memory format of\n        returned Tensor. Default: ``torch.preserve_format``.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn float(

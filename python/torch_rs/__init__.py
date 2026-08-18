@@ -1,11 +1,20 @@
 """PyTorch-compatible public package backed by the native extension."""
 
 import copyreg as _copyreg
+import importlib as _importlib
 import sys as _sys
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
 from .torch_rs import *
+
+_tensor_serialization = _importlib.import_module(
+    f"{__name__}._tensor_serialization"
+)
+# ``TensorBase`` reports PyTorch's public ``torch._C`` owner, which may belong
+# to an installed reference package in the same interpreter. Install stable
+# standard-pickle and multiprocessing reducers for its captured ``to`` method.
+_tensor_serialization.install()
 
 # PyTorch's built-in variable functions reduce through owners in ``torch._C``.
 # Expose the native extension under the equivalent package-local name so those
@@ -114,4 +123,4 @@ from . import overrides as overrides
 from . import utils as utils
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _copyreg, _native, _sys
+del _copyreg, _importlib, _native, _sys, _tensor_serialization
