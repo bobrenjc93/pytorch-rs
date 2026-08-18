@@ -55,6 +55,8 @@ enum GradFn {
     },
     Negate {
         input: SavedTensor,
+        #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+        name: &'static str,
     },
     Relu {
         input: SavedTensor,
@@ -68,6 +70,8 @@ enum GradFn {
     Transform {
         input: SavedTensor,
         mapping: TransformMapping,
+        #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+        name: &'static str,
     },
     Unbind {
         input: SavedTensor,
@@ -104,7 +108,7 @@ impl GradFn {
                 right.take_parent(pending);
             }
             Self::MultiplyScalar { input, .. }
-            | Self::Negate { input }
+            | Self::Negate { input, .. }
             | Self::Relu { input }
             | Self::Sin { input }
             | Self::Sum { input }
@@ -664,6 +668,25 @@ impl Tensor {
         )
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn grad_fn_name(&self) -> Option<&'static str> {
+        let metadata = self.autograd.as_deref()?;
+        let AutogradKind::NonLeaf { grad_fn } = &metadata.kind else {
+            return None;
+        };
+        let grad_fn = grad_fn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Some(match grad_fn.as_ref()? {
+            GradFn::Multiply { .. } | GradFn::MultiplyScalar { .. } => "MulBackward0",
+            GradFn::Negate { name, .. } | GradFn::Transform { name, .. } => *name,
+            GradFn::Relu { .. } => "ReluBackward0",
+            GradFn::Sin { .. } => "SinBackward0",
+            GradFn::Sum { .. } => "SumBackward0",
+            GradFn::Unbind { .. } => "UnbindBackward0",
+        })
+    }
+
     /// Returns whether this tensor was created under inference mode.
     ///
     /// The native engine does not expose inference mode, so every reachable
@@ -826,6 +849,7 @@ impl Tensor {
         &self,
         output: &mut Self,
         mapping: TransformMapping,
+        name: &'static str,
     ) -> Result<(), TensorError> {
         if self.records_grad() {
             output.autograd = Some(Arc::new(AutogradMeta {
@@ -833,6 +857,7 @@ impl Tensor {
                     grad_fn: Mutex::new(Some(GradFn::Transform {
                         input: SavedTensor::try_from_tensor(self, false)?,
                         mapping,
+                        name,
                     })),
                 },
             }));
@@ -844,17 +869,19 @@ impl Tensor {
         &self,
         output: &mut Self,
         mapping: TransformMapping,
+        name: &'static str,
     ) -> Result<(), TensorError> {
         output.view_requires_grad = self.requires_grad();
-        self.record_transform(output, mapping)
+        self.record_transform(output, mapping, name)
     }
 
     fn finish_view_transform(
         &self,
         mut output: Self,
         mapping: TransformMapping,
+        name: &'static str,
     ) -> Result<Self, TensorError> {
-        self.record_view_transform(&mut output, mapping)?;
+        self.record_view_transform(&mut output, mapping, name)?;
         Ok(output)
     }
 
@@ -862,17 +889,19 @@ impl Tensor {
         &self,
         mut output: Self,
         mapping: TransformMapping,
+        name: &'static str,
     ) -> Result<Self, TensorError> {
-        self.record_transform(&mut output, mapping)?;
+        self.record_transform(&mut output, mapping, name)?;
         Ok(output)
     }
 
-    fn finish_negate_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
+    fn finish_negate_vjp(&self, mut output: Self, name: &'static str) -> Result<Self, TensorError> {
         if self.records_grad() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::Negate {
                         input: SavedTensor::try_from_tensor(self, false)?,
+                        name,
                     })),
                 },
             }));
@@ -1001,6 +1030,14 @@ impl Tensor {
     /// invalid or duplicate axis, its reordered element-count multiplication
     /// overflows, or when view metadata allocation fails.
     pub fn permute_axes(&self, dimensions: impl AsRef<[usize]>) -> Result<Self, TensorError> {
+        self.permute_axes_with_grad_fn(dimensions, "PermuteBackward0")
+    }
+
+    fn permute_axes_with_grad_fn(
+        &self,
+        dimensions: impl AsRef<[usize]>,
+        grad_fn_name: &'static str,
+    ) -> Result<Self, TensorError> {
         let dimensions = dimensions.as_ref();
         let rank = self.shape.len();
         if dimensions.len() != rank {
@@ -1054,6 +1091,7 @@ impl Tensor {
                     dimensions: saved_dimensions,
                     output_shape,
                 },
+                grad_fn_name,
             )?;
         }
         Ok(output)
@@ -1069,9 +1107,21 @@ impl Tensor {
     ///
     /// Returns an error when view metadata allocation fails.
     pub fn reverse_dimensions(&self) -> Result<Self, TensorError> {
+        self.reverse_dimensions_with_grad_fn("PermuteBackward0")
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn t(&self) -> Result<Self, TensorError> {
+        self.reverse_dimensions_with_grad_fn("TBackward0")
+    }
+
+    fn reverse_dimensions_with_grad_fn(
+        &self,
+        grad_fn_name: &'static str,
+    ) -> Result<Self, TensorError> {
         let mut dimensions = try_result_vector(self.shape.len(), self.elements)?;
         dimensions.extend((0..self.shape.len()).rev());
-        self.permute_axes(dimensions)
+        self.permute_axes_with_grad_fn(dimensions, grad_fn_name)
     }
 
     /// Swaps two dimensions without copying storage.
@@ -1093,7 +1143,7 @@ impl Tensor {
             dimensions.swap(axis0, axis1);
         }
 
-        self.permute_axes(dimensions)
+        self.permute_axes_with_grad_fn(dimensions, "TransposeBackward0")
     }
 
     /// Swaps the final two dimensions without copying storage.
@@ -1127,7 +1177,7 @@ impl Tensor {
     ///
     /// Returns an error when view metadata allocation fails.
     pub fn squeeze(&self) -> Result<Self, TensorError> {
-        self.squeeze_selected(|_, dimension| dimension == 1)
+        self.squeeze_selected(|_, dimension| dimension == 1, "SqueezeBackward0")
     }
 
     /// Removes one singleton dimension without copying storage.
@@ -1142,7 +1192,10 @@ impl Tensor {
     /// allocation fails.
     pub fn squeeze_dim(&self, dimension: i64) -> Result<Self, TensorError> {
         let axis = normalize_transpose_dimension(dimension, self.shape.len())?;
-        self.squeeze_selected(|candidate, size| candidate == axis && size == 1)
+        self.squeeze_selected(
+            |candidate, size| candidate == axis && size == 1,
+            "SqueezeBackward1",
+        )
     }
 
     /// Removes the selected singleton dimensions without copying storage.
@@ -1171,10 +1224,17 @@ impl Tensor {
             selected |= mask;
         }
 
-        self.squeeze_selected(|axis, size| selected & (1_u64 << axis) != 0 && size == 1)
+        self.squeeze_selected(
+            |axis, size| selected & (1_u64 << axis) != 0 && size == 1,
+            "SqueezeBackward2",
+        )
     }
 
-    fn squeeze_selected(&self, remove: impl Fn(usize, usize) -> bool) -> Result<Self, TensorError> {
+    fn squeeze_selected(
+        &self,
+        remove: impl Fn(usize, usize) -> bool,
+        grad_fn_name: &'static str,
+    ) -> Result<Self, TensorError> {
         let mut shape = try_result_vector(self.shape.len(), self.elements)?;
         let mut strides = try_result_vector(self.strides.len(), self.elements)?;
         for (axis, (&dimension, &stride)) in self.shape.iter().zip(self.strides.iter()).enumerate()
@@ -1194,7 +1254,7 @@ impl Tensor {
             view_requires_grad: false,
             autograd: None,
         };
-        self.record_view_transform(&mut output, TransformMapping::Identity)?;
+        self.record_view_transform(&mut output, TransformMapping::Identity, grad_fn_name)?;
         Ok(output)
     }
 
@@ -1311,8 +1371,11 @@ impl Tensor {
     /// Returns an error when contiguous storage or result metadata cannot be
     /// created.
     pub fn ravel(&self) -> Result<Self, TensorError> {
-        self.try_contiguous(MemoryFormat::Contiguous)?
-            .flatten(0, -1)
+        let contiguous = self.try_contiguous(MemoryFormat::Contiguous)?;
+        if contiguous.shape.len() == 1 {
+            return contiguous.metadata_alias_with_grad_fn("ViewBackward0");
+        }
+        contiguous.flatten(0, -1)
     }
 
     /// Creates an independent copy of this tensor's logical values.
@@ -1364,7 +1427,7 @@ impl Tensor {
         };
         let data = self.materialize_with_strides(&strides, |value| value)?;
         let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
-        self.record_transform(&mut output, TransformMapping::Identity)?;
+        self.record_transform(&mut output, TransformMapping::Identity, "CloneBackward0")?;
         Ok(output)
     }
 
@@ -1387,7 +1450,7 @@ impl Tensor {
     /// preserve-format request, checked stride overflow, or allocation
     /// failure.
     pub fn try_contiguous(&self, memory_format: MemoryFormat) -> Result<Self, TensorError> {
-        self.try_contiguous_impl(memory_format, true)
+        self.try_contiguous_impl(memory_format, true, "CloneBackward0")
     }
 
     #[cfg(feature = "python-bindings")]
@@ -1411,13 +1474,14 @@ impl Tensor {
         // copy-specific preflight separate from contiguous's existing
         // identity and rank-validation path.
         let _ = contiguous_strides(&self.shape, self.elements)?;
-        self.try_contiguous_impl(memory_format, false)
+        self.try_contiguous_impl(memory_format, false, "ToCopyBackward0")
     }
 
     fn try_contiguous_impl(
         &self,
         memory_format: MemoryFormat,
         reuse_matching_storage: bool,
+        grad_fn_name: &'static str,
     ) -> Result<Self, TensorError> {
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
@@ -1445,7 +1509,7 @@ impl Tensor {
                 view_requires_grad: false,
                 autograd: None,
             };
-            self.record_view_transform(&mut output, TransformMapping::Identity)?;
+            self.record_view_transform(&mut output, TransformMapping::Identity, grad_fn_name)?;
             return Ok(output);
         }
 
@@ -1460,13 +1524,17 @@ impl Tensor {
         let shape = try_clone_result_shape(&self.shape, self.elements)?;
         let data = self.materialize_with_strides(&strides, |value| value)?;
         let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
-        self.record_transform(&mut output, TransformMapping::Identity)?;
+        self.record_transform(&mut output, TransformMapping::Identity, grad_fn_name)?;
         Ok(output)
     }
 
     fn metadata_alias(&self) -> Result<Self, TensorError> {
+        self.metadata_alias_with_grad_fn("AliasBackward0")
+    }
+
+    fn metadata_alias_with_grad_fn(&self, grad_fn_name: &'static str) -> Result<Self, TensorError> {
         let mut output = self.metadata_alias_detached()?;
-        self.record_view_transform(&mut output, TransformMapping::Identity)?;
+        self.record_view_transform(&mut output, TransformMapping::Identity, grad_fn_name)?;
         Ok(output)
     }
 
@@ -1731,7 +1799,11 @@ impl Tensor {
             let input_start = logical_prefix
                 .checked_mul(elements)
                 .ok_or(TensorError::IndexCalculationOverflow)?;
-            self.record_transform(&mut output, TransformMapping::Index { input_start })?;
+            self.record_transform(
+                &mut output,
+                TransformMapping::Index { input_start },
+                "SelectBackward0",
+            )?;
         }
         Ok(output)
     }
@@ -1884,6 +1956,7 @@ impl Tensor {
                     autograd: None,
                 },
                 TransformMapping::Identity,
+                "ViewBackward0",
             );
         }
 
@@ -1902,6 +1975,7 @@ impl Tensor {
                     autograd: None,
                 },
                 TransformMapping::Identity,
+                "ViewBackward0",
             );
         }
 
@@ -1919,6 +1993,7 @@ impl Tensor {
                 autograd: None,
             },
             TransformMapping::Identity,
+            "ViewBackward0",
         )
     }
 
@@ -1987,7 +2062,7 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
         let output = self.map_scalar(scalar, |value, scalar| value + scalar)?;
-        self.finish_copy_transform(output, TransformMapping::Identity)
+        self.finish_copy_transform(output, TransformMapping::Identity, "AddBackward0")
     }
 
     /// Subtracts a scalar from every element.
@@ -1997,7 +2072,7 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn sub_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
         let output = self.map_scalar(scalar, |value, scalar| value - scalar)?;
-        self.finish_copy_transform(output, TransformMapping::Identity)
+        self.finish_copy_transform(output, TransformMapping::Identity, "SubBackward0")
     }
 
     /// Multiplies every element by a scalar.
@@ -2027,7 +2102,7 @@ impl Tensor {
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn negate(&self) -> Result<Self, TensorError> {
         let output = self.unary_map(negate_value)?;
-        self.finish_negate_vjp(output)
+        self.finish_negate_vjp(output, "NegBackward0")
     }
 
     /// Divides every element by a scalar using IEEE 754 true division.
@@ -2046,7 +2121,7 @@ impl Tensor {
     /// Returns an error when result allocation fails.
     pub fn scalar_sub(&self, scalar: f32) -> Result<Self, TensorError> {
         let output = self.map_scalar(scalar, |value, scalar| scalar - value)?;
-        self.finish_negate_vjp(output)
+        self.finish_negate_vjp(output, "RsubBackward1")
     }
 
     /// Divides a scalar by every element using `PyTorch`'s float32 reciprocal
@@ -2688,7 +2763,7 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                             push_saved_parent(&mut stack, left);
                         }
                         GradFn::MultiplyScalar { input, .. }
-                        | GradFn::Negate { input }
+                        | GradFn::Negate { input, .. }
                         | GradFn::Relu { input }
                         | GradFn::Sin { input }
                         | GradFn::Sum { input }
@@ -2730,7 +2805,7 @@ fn apply_grad_fn(
                 add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
-        GradFn::Negate { input } => {
+        GradFn::Negate { input, .. } => {
             if let Some(meta) = &input.autograd {
                 debug_assert_eq!(input.elements, upstream.len());
                 let mut gradient = try_result_vector(input.elements, input.elements)?;
@@ -2807,7 +2882,7 @@ fn apply_grad_fn(
                 add_gradient(gradients, meta, right.output_nr, gradient.values);
             }
         }
-        GradFn::Transform { input, mapping } => {
+        GradFn::Transform { input, mapping, .. } => {
             if let Some(meta) = &input.autograd {
                 let gradient = transform_backward(input, mapping, upstream)?;
                 add_gradient(gradients, meta, input.output_nr, gradient);

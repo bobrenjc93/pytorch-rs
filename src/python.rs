@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
-    PyValueError,
+    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
+    PyTypeError, PyUserWarning, PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -3117,7 +3117,7 @@ impl PyTensor {
             )));
         }
         self.inner
-            .reverse_dimensions()
+            .t()
             .map(Self::new)
             .map_err(|error| transpose_error(&error))
     }
@@ -3885,6 +3885,127 @@ fn relu(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
         .cast::<PyTensor>()
         .expect("the relu input type was checked while binding");
     tensor.try_borrow()?.relu()
+}
+
+fn dropout_probability_type_error(
+    operation: &str,
+    probability: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let actual = transpose_type_name(probability)?;
+    Ok(PyTypeError::new_err(format!(
+        "{operation}(): argument 'p' (position 2) must be float, not {actual}"
+    )))
+}
+
+fn extract_dropout_probability(probability: &Bound<'_, PyAny>) -> PyResult<f64> {
+    probability.extract::<f64>()
+}
+
+fn parse_dropout_probability(operation: &str, probability: &Bound<'_, PyAny>) -> PyResult<f64> {
+    if let Ok(tensor) = probability.cast::<PyTensor>() {
+        let tensor = tensor.try_borrow()?;
+        if tensor.inner.shape().is_empty() && !tensor.inner.requires_grad() {
+            return tensor
+                .inner
+                .item()
+                .map(f64::from)
+                .map_err(|error| item_error(&error));
+        }
+        return Err(dropout_probability_type_error(operation, probability)?);
+    }
+
+    if probability.is_instance_of::<PyInt>() || probability.is_instance_of::<PyFloat>() {
+        return extract_dropout_probability(probability);
+    }
+
+    let Ok(numpy) = PyModule::import(probability.py(), "numpy") else {
+        return Err(dropout_probability_type_error(operation, probability)?);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !probability.is_instance(&generic)? {
+        return Err(dropout_probability_type_error(operation, probability)?);
+    }
+
+    if probability.is_instance(&numpy.getattr("bool_")?)? {
+        return probability
+            .is_truthy()
+            .map(|probability| if probability { 1.0 } else { 0.0 });
+    }
+    for scalar_type in ["integer", "floating", "complexfloating"] {
+        if probability.is_instance(&numpy.getattr(scalar_type)?)? {
+            return extract_dropout_probability(probability);
+        }
+    }
+
+    Err(dropout_probability_type_error(operation, probability)?)
+}
+
+fn format_dropout_probability(py: Python<'_>, probability: f64) -> PyResult<String> {
+    if probability.is_nan() {
+        return Ok(if probability.is_sign_negative() {
+            "-nan".to_owned()
+        } else {
+            "nan".to_owned()
+        });
+    }
+    PyModule::import(py, "builtins")?
+        .getattr("format")?
+        .call1((probability, ".6g"))?
+        .extract()
+}
+
+#[pyfunction]
+fn _nn_functional_dropout(
+    py: Python<'_>,
+    input: &Bound<'_, PyAny>,
+    probability: &Bound<'_, PyAny>,
+    training: &Bound<'_, PyAny>,
+    inplace: bool,
+) -> PyResult<Py<PyAny>> {
+    // This private bridge mirrors the native operator's schema checks for the
+    // identity cases only. It deliberately owns no random state or mutation.
+    let operation = if inplace { "dropout_" } else { "dropout" };
+    let Ok(tensor) = input.cast::<PyTensor>() else {
+        let actual = transpose_type_name(input)?;
+        return Err(PyTypeError::new_err(format!(
+            "{operation}(): argument 'input' (position 1) must be Tensor, not {actual}"
+        )));
+    };
+    let probability = parse_dropout_probability(operation, probability)?;
+    if !training.is_exact_instance_of::<PyBool>() {
+        let actual = transpose_type_name(training)?;
+        return Err(PyTypeError::new_err(format!(
+            "{operation}(): argument 'train' (position 3) must be bool, not {actual}"
+        )));
+    }
+    let training = training.is_truthy()?;
+
+    if !(0.0..=1.0).contains(&probability) {
+        let probability = format_dropout_probability(py, probability)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "dropout probability has to be between 0 and 1, but got {probability}"
+        )));
+    }
+
+    let input_is_empty = tensor.try_borrow()?.inner.numel() == 0;
+    if !training || probability == 0.0 || input_is_empty {
+        return Ok(tensor.clone().unbind().into_any());
+    }
+
+    Err(PyNotImplementedError::new_err(
+        "torch_rs.nn.functional.dropout does not support sampling",
+    ))
+}
+
+#[pyfunction]
+fn _nn_functional_dropout_tensor_autograd_suffix(input: &PyTensor) -> String {
+    if !input.inner.requires_grad() {
+        return String::new();
+    }
+    input.inner.grad_fn_name().map_or_else(
+        || ", requires_grad=True".to_owned(),
+        |name| format!(", grad_fn=<{name}>"),
+    )
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
@@ -10176,6 +10297,19 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(detach, module)?)?;
     module.add_function(wrap_pyfunction!(relu, module)?)?;
+    let dropout = wrap_pyfunction!(_nn_functional_dropout, module)?;
+    let dropout_name = dropout.getattr("__name__")?;
+    module.add_function(dropout.clone())?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", (dropout_name,))?;
+    let dropout_autograd_suffix =
+        wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?;
+    let dropout_autograd_suffix_name = dropout_autograd_suffix.getattr("__name__")?;
+    module.add_function(dropout_autograd_suffix.clone())?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", (dropout_autograd_suffix_name,))?;
     module.add_function(wrap_pyfunction!(is_same_size, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;
     module.add_function(wrap_pyfunction!(t, module)?)?;
