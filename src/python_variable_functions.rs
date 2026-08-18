@@ -19,12 +19,13 @@ use crate::python::{
     moveaxis_variable_function, movedim_variable_function, mul_variable_function,
     multiply_variable_function, permute_variable_function, positive_variable_function,
     promote_types_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, unbind_variable_function,
+    result_type_variable_function, scalar_tensor_variable_function, select_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 18] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 19] = [
     "get_device",
     "scalar_tensor",
     "adjoint",
@@ -43,6 +44,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 18] = [
     "multiply",
     "can_cast",
     "promote_types",
+    "result_type",
 ];
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
@@ -157,6 +159,25 @@ Example::
     torch.float32
     >>> torch.promote_types(torch.uint8, torch.long)
     torch.long
+";
+
+const RESULT_TYPE_DOC: &std::ffi::CStr = c"
+result_type(tensor1, tensor2) -> dtype
+
+Returns the :class:`torch.dtype` that would result from performing an arithmetic
+operation on the provided input tensors. See type promotion :ref:`documentation <type-promotion-doc>`
+for more information on the type promotion logic.
+
+Args:
+    tensor1 (Tensor or Number): an input tensor or number
+    tensor2 (Tensor or Number): an input tensor or number
+
+Example::
+
+    >>> torch.result_type(torch.tensor([1, 2], dtype=torch.int), 1.0)
+    torch.float32
+    >>> torch.result_type(torch.tensor([1, 2], dtype=torch.uint8), torch.tensor(1))
+    torch.uint8
 ";
 
 const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
@@ -395,6 +416,7 @@ variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
 variable_function_callback!(can_cast_callback, can_cast_variable_function);
 variable_function_callback!(promote_types_callback, promote_types_variable_function);
+variable_function_callback!(result_type_callback, result_type_variable_function);
 
 macro_rules! variable_function_method {
     ($name:expr, $callback:ident, $doc:expr) => {
@@ -434,6 +456,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
         variable_function_method!(c"can_cast", can_cast_callback, CAN_CAST_DOC),
         variable_function_method!(c"promote_types", promote_types_callback, PROMOTE_TYPES_DOC),
+        variable_function_method!(c"result_type", result_type_callback, RESULT_TYPE_DOC),
         ffi::PyMethodDef::zeroed(),
     ]));
     let mut slots = [

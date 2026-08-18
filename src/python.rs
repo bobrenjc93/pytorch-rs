@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
-    PyValueError,
+    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
+    PyTypeError, PyUserWarning, PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -1575,6 +1575,15 @@ pub(crate) fn promote_types_variable_function(
     dtype_binary_variable_function(DTypeBinaryOperation::PromoteTypes, py, args, kwargs)
 }
 
+pub(crate) fn result_type_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let operands = bind_result_type_arguments(args, kwargs)?;
+    dispatch_result_type(py, &operands, args, kwargs)
+}
+
 fn dtype_binary_variable_function(
     operation: DTypeBinaryOperation,
     py: Python<'_>,
@@ -1662,6 +1671,108 @@ enum BoundMulOperand<'py> {
 enum BoundDTypeOperand<'py> {
     DType(DType),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+#[derive(Clone)]
+enum ClassifiedResultTypeOperand<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Number,
+    Override(ProbedTorchFunctionOverride<'py>),
+    Invalid,
+}
+
+enum BoundResultTypeOperand<'py> {
+    Tensor(Bound<'py, PyTensor>),
+    Number,
+    Override(ProbedTorchFunctionOverride<'py>),
+}
+
+#[derive(Clone, Copy)]
+enum ResultTypeArgumentKind {
+    Tensor,
+    Number,
+}
+
+impl ResultTypeArgumentKind {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Tensor => "Tensor",
+            Self::Number => "Number",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ResultTypeOverload {
+    TensorTensor,
+    NumberTensor,
+    TensorNumber,
+    NumberNumber,
+}
+
+const RESULT_TYPE_OVERLOADS: [ResultTypeOverload; 4] = [
+    ResultTypeOverload::TensorTensor,
+    ResultTypeOverload::NumberTensor,
+    ResultTypeOverload::TensorNumber,
+    ResultTypeOverload::NumberNumber,
+];
+
+impl ResultTypeOverload {
+    const fn argument_names(self) -> [&'static str; 2] {
+        match self {
+            Self::TensorTensor | Self::TensorNumber => ["tensor", "other"],
+            Self::NumberTensor => ["scalar", "tensor"],
+            Self::NumberNumber => ["scalar1", "scalar2"],
+        }
+    }
+
+    const fn argument_kinds(self) -> [ResultTypeArgumentKind; 2] {
+        match self {
+            Self::TensorTensor => [ResultTypeArgumentKind::Tensor; 2],
+            Self::NumberTensor => [
+                ResultTypeArgumentKind::Number,
+                ResultTypeArgumentKind::Tensor,
+            ],
+            Self::TensorNumber => [
+                ResultTypeArgumentKind::Tensor,
+                ResultTypeArgumentKind::Number,
+            ],
+            Self::NumberNumber => [ResultTypeArgumentKind::Number; 2],
+        }
+    }
+
+    const fn signature(self) -> &'static str {
+        match self {
+            Self::TensorTensor => "(Tensor tensor, Tensor other)",
+            Self::NumberTensor => "(Number scalar, Tensor tensor)",
+            Self::TensorNumber => "(Tensor tensor, Number other)",
+            Self::NumberNumber => "(Number scalar1, Number scalar2)",
+        }
+    }
+}
+
+impl ClassifiedResultTypeOperand<'_> {
+    fn matches(&self, expected: ResultTypeArgumentKind) -> bool {
+        matches!(
+            (self, expected),
+            (Self::Tensor(_), ResultTypeArgumentKind::Tensor)
+                | (Self::Number, ResultTypeArgumentKind::Number)
+                | (Self::Override(_), _)
+        )
+    }
+}
+
+impl<'py> ClassifiedResultTypeOperand<'py> {
+    fn into_bound(self) -> BoundResultTypeOperand<'py> {
+        match self {
+            Self::Tensor(tensor) => BoundResultTypeOperand::Tensor(tensor),
+            Self::Number => BoundResultTypeOperand::Number,
+            Self::Override(probed) => BoundResultTypeOperand::Override(probed),
+            Self::Invalid => {
+                unreachable!("invalid result_type operands were rejected during binding")
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -2286,6 +2397,84 @@ fn apply_dtype_binary(
             .clone_ref(py)
             .into_any()),
     }
+}
+
+fn dispatch_result_type(
+    py: Python<'_>,
+    operands: &[BoundResultTypeOperand<'_>; 2],
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_result_type_overrides(operands)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_result_type(py, operands);
+    }
+
+    let function = variable_function(py, "result_type")?;
+    let dispatch_types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Generated variable functions validate overload selection before
+    // dispatch and disable the top mode for the complete attempt. Explicit
+    // forwarding therefore reaches the next mode, operand overrides, then the
+    // supported native Tensor/Tensor path.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &dispatch_types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &dispatch_types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_result_type(py, operands);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.result_type",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_result_type(
+    py: Python<'_>,
+    operands: &[BoundResultTypeOperand<'_>; 2],
+) -> PyResult<Py<PyAny>> {
+    let [
+        BoundResultTypeOperand::Tensor(tensor),
+        BoundResultTypeOperand::Tensor(other),
+    ] = operands
+    else {
+        return Err(PyNotImplementedError::new_err(
+            "result_type(): scalar operands are not supported; both operands must be Tensor",
+        ));
+    };
+
+    // Dtype is immutable storage metadata. Promotion therefore neither reads
+    // tensor values nor materializes arbitrary views, and the native DType
+    // relation remains the single source of truth for every supported pair.
+    let promoted = {
+        let tensor = tensor.try_borrow()?;
+        let other = other.try_borrow()?;
+        tensor.inner.dtype().promote(other.inner.dtype())
+    };
+    Ok(dtype_object(py, promoted)?.clone_ref(py).into_any())
 }
 
 fn dispatch_positive(
@@ -2963,6 +3152,25 @@ fn ordered_dtype_overrides<'py>(
         BoundDTypeOperand::DType(_) => None,
     };
     ordered_binary_overrides(first, second, operation.dispatch_allocation_error())
+}
+
+fn ordered_result_type_overrides<'py>(
+    operands: &[BoundResultTypeOperand<'py>; 2],
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let [first, second] = operands;
+    let first = match first {
+        BoundResultTypeOperand::Override(probed) => Some(probed),
+        BoundResultTypeOperand::Tensor(_) | BoundResultTypeOperand::Number => None,
+    };
+    let second = match second {
+        BoundResultTypeOperand::Override(probed) => Some(probed),
+        BoundResultTypeOperand::Tensor(_) | BoundResultTypeOperand::Number => None,
+    };
+    ordered_binary_overrides(
+        first,
+        second,
+        "unable to allocate result_type dispatch operands",
+    )
 }
 
 fn ordered_multiplication_overrides<'py>(
@@ -7790,6 +7998,283 @@ fn bind_dtype_binary_arguments<'py>(
         }),
         consumed_keywords,
     ))
+}
+
+fn bind_result_type_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<[BoundResultTypeOperand<'py>; 2]> {
+    let argument_count = positional
+        .len()
+        .saturating_add(keywords.map_or(0, PyDictMethods::len));
+    if argument_count != 2 {
+        return Err(result_type_binding_error(positional, keywords)?);
+    }
+
+    let mut candidates = Vec::new();
+    candidates
+        .try_reserve_exact(RESULT_TYPE_OVERLOADS.len())
+        .map_err(|_| {
+            PyMemoryError::new_err("unable to allocate result_type overload candidates")
+        })?;
+    for overload in RESULT_TYPE_OVERLOADS {
+        if let Some(arguments) = bind_result_type_overload(overload, positional, keywords)? {
+            candidates.push((overload, arguments));
+        }
+    }
+    let Some((_, first_arguments)) = candidates.first() else {
+        return Err(result_type_binding_error(positional, keywords)?);
+    };
+
+    let classified = [
+        classify_result_type_operand(&first_arguments[0])?,
+        classify_result_type_operand(&first_arguments[1])?,
+    ];
+    let matched = candidates.iter().any(|(overload, arguments)| {
+        debug_assert!(arguments[0].is(&first_arguments[0]));
+        debug_assert!(arguments[1].is(&first_arguments[1]));
+        let kinds = overload.argument_kinds();
+        classified[0].matches(kinds[0]) && classified[1].matches(kinds[1])
+    });
+    if !matched {
+        return Err(result_type_binding_error(positional, keywords)?);
+    }
+
+    Ok(classified.map(ClassifiedResultTypeOperand::into_bound))
+}
+
+fn bind_result_type_overload<'py>(
+    overload: ResultTypeOverload,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<Option<[Bound<'py, PyAny>; 2]>> {
+    let names = overload.argument_names();
+    let mut arguments: [Option<Bound<'py, PyAny>>; 2] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(value);
+    }
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = pytorch_keyword_name(&key)?;
+            let Some(index) = names.iter().position(|name| *name == key) else {
+                return Ok(None);
+            };
+            if arguments[index].is_some() {
+                return Ok(None);
+            }
+            arguments[index] = Some(value);
+        }
+    }
+    if arguments.iter().any(Option::is_none) {
+        return Ok(None);
+    }
+    Ok(Some(arguments.map(|argument| {
+        argument.expect("a two-argument result_type overload filled every schema position")
+    })))
+}
+
+fn classify_result_type_operand<'py>(
+    value: &Bound<'py, PyAny>,
+) -> PyResult<ClassifiedResultTypeOperand<'py>> {
+    if let Ok(tensor) = value.cast::<PyTensor>() {
+        return Ok(ClassifiedResultTypeOperand::Tensor(tensor.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override(value) {
+        return Ok(ClassifiedResultTypeOperand::Override(probed));
+    }
+    if is_result_type_number(value)? {
+        return Ok(ClassifiedResultTypeOperand::Number);
+    }
+    Ok(ClassifiedResultTypeOperand::Invalid)
+}
+
+fn is_result_type_number(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_instance_of::<PyInt>()
+        || value.is_instance_of::<PyFloat>()
+        || value.is_instance_of::<PyComplex>()
+    {
+        return Ok(true);
+    }
+
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(false);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !value.is_instance(&generic)? {
+        return Ok(false);
+    }
+    for scalar_type in ["bool_", "integer", "floating", "complexfloating"] {
+        if value.is_instance(&numpy.getattr(scalar_type)?)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn result_type_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let allocation = PythonAllocationFallback::new(positional.py());
+    let summary = call_type_summary_with(
+        positional,
+        keywords,
+        CallKeywordOrder::PyTorchUnorderedMap,
+        &allocation,
+    )?;
+    let argument_count = positional
+        .len()
+        .saturating_add(keywords.map_or(0, PyDictMethods::len));
+    let mut message = try_string_from_str_with(
+        "result_type() received an invalid combination of arguments - got (",
+        &allocation,
+    )?;
+    try_push_string_with(&mut message, &summary, &allocation)?;
+    try_push_string_with(&mut message, "), but expected one of:\n", &allocation)?;
+    for overload in RESULT_TYPE_OVERLOADS {
+        try_push_string_with(&mut message, " * ", &allocation)?;
+        try_push_string_with(&mut message, overload.signature(), &allocation)?;
+        if argument_count == 2 {
+            let mismatch =
+                result_type_overload_mismatch(overload, positional, keywords, &allocation)?;
+            try_push_string_with(&mut message, &mismatch, &allocation)?;
+        }
+        try_push_string_with(&mut message, "\n", &allocation)?;
+    }
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    let py = positional.py();
+    let message = PyString::from_bytes(py, message.as_bytes()).map_err(|_| allocation.error())?;
+    let exception = py
+        .get_type::<PyTypeError>()
+        .call1((message,))
+        .map_err(|_| allocation.error())?;
+    Ok(PyErr::from_value(exception))
+}
+
+fn result_type_overload_mismatch(
+    overload: ResultTypeOverload,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<String> {
+    let names = overload.argument_names();
+    let keyword_length = keywords.map_or(0, PyDictMethods::len);
+    let mut keyword_names = try_size_vector_with(keyword_length, allocation)?;
+    if let Some(keywords) = keywords {
+        for (key, _) in keywords {
+            let key = pytorch_keyword_name(&key)?;
+            try_push_size_with(
+                &mut keyword_names,
+                (try_string_from_str_with(key, allocation)?, ()),
+                allocation,
+            )?;
+        }
+        keyword_names = pytorch_unordered_keyword_order(keyword_names, allocation)?;
+    }
+
+    let mut incorrect_keywords = try_size_vector_with(keyword_length, allocation)?;
+    for (keyword, ()) in keyword_names {
+        let fills_unbound_position = names
+            .iter()
+            .position(|name| *name == keyword)
+            .is_some_and(|position| position >= positional.len());
+        if !fills_unbound_position {
+            try_push_size_with(&mut incorrect_keywords, keyword, allocation)?;
+        }
+    }
+    if !incorrect_keywords.is_empty() {
+        let mut mismatch = try_string_from_str_with(
+            "\n      didn't match because some of the keywords were incorrect: ",
+            allocation,
+        )?;
+        for (index, keyword) in incorrect_keywords.into_iter().enumerate() {
+            if index != 0 {
+                try_push_string_with(&mut mismatch, ", ", allocation)?;
+            }
+            try_push_string_with(&mut mismatch, &keyword, allocation)?;
+        }
+        return Ok(mismatch);
+    }
+
+    let kinds = overload.argument_kinds();
+    let mut mismatch = try_string_from_str_with(
+        "\n      didn't match because some of the arguments have invalid types: (",
+        allocation,
+    )?;
+    let mut argument_index = 0_usize;
+    for (index, value) in positional.iter().enumerate() {
+        if argument_index != 0 {
+            try_push_string_with(&mut mismatch, ", ", allocation)?;
+        }
+        push_result_type_mismatched_argument(
+            &mut mismatch,
+            &value,
+            kinds[index],
+            None,
+            allocation,
+        )?;
+        argument_index += 1;
+    }
+    if let Some(keywords) = keywords {
+        for index in positional.len()..2 {
+            let value = result_type_keyword_value(keywords, names[index])?
+                .expect("an overload without incorrect keywords filled every result_type position");
+            if argument_index != 0 {
+                try_push_string_with(&mut mismatch, ", ", allocation)?;
+            }
+            push_result_type_mismatched_argument(
+                &mut mismatch,
+                &value,
+                kinds[index],
+                Some(names[index]),
+                allocation,
+            )?;
+            argument_index += 1;
+        }
+    }
+    if positional.is_empty() && argument_index != 0 {
+        try_push_string_with(&mut mismatch, ", ", allocation)?;
+    }
+    try_push_string_with(&mut mismatch, ")", allocation)?;
+    Ok(mismatch)
+}
+
+fn result_type_keyword_value<'py>(
+    keywords: &Bound<'py, PyDict>,
+    name: &str,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    for (key, value) in keywords {
+        if pytorch_keyword_name(&key)? == name {
+            return Ok(Some(value));
+        }
+    }
+    Ok(None)
+}
+
+fn push_result_type_mismatched_argument(
+    mismatch: &mut String,
+    value: &Bound<'_, PyAny>,
+    expected: ResultTypeArgumentKind,
+    keyword: Option<&str>,
+    allocation: &PythonAllocationFallback<'_>,
+) -> PyResult<()> {
+    let actual_type = python_type_name_with(value, allocation)?;
+    let detail = call_argument_type_description_with(value, allocation)?;
+    let valid = actual_type == expected.name();
+    if !valid {
+        try_push_string_with(mismatch, "!", allocation)?;
+    }
+    if let Some(keyword) = keyword {
+        try_push_string_with(mismatch, keyword, allocation)?;
+        try_push_string_with(mismatch, "=", allocation)?;
+    }
+    try_push_string_with(mismatch, &detail, allocation)?;
+    if !valid {
+        try_push_string_with(mismatch, "!", allocation)?;
+    }
+    Ok(())
 }
 
 fn pop_dtype_keyword<'py>(
