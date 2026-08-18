@@ -12,6 +12,9 @@ use crate::storage::Storage;
 use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
+const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
+// Keep latency-sized products on the smaller single-row loop.
+const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -2249,19 +2252,7 @@ impl Tensor {
         if let (Some(left_data), Some(right_data)) =
             (self.contiguous_slice(), other.contiguous_slice())
         {
-            if output_elements != 0 && inner != 0 {
-                for (left_row, output_row) in left_data
-                    .chunks_exact(inner)
-                    .zip(output.chunks_exact_mut(columns))
-                {
-                    for (&left, right_row) in left_row.iter().zip(right_data.chunks_exact(columns))
-                    {
-                        for (output_value, &right) in output_row.iter_mut().zip(right_row) {
-                            *output_value += left * right;
-                        }
-                    }
-                }
-            }
+            accumulate_contiguous_matmul(left_data, right_data, &mut output, rows, inner, columns);
         } else if output_elements != 0
             && inner != 0
             && let (Some(left_data), Some(right_data)) =
@@ -3555,6 +3546,87 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
+// Isolate contiguous code generation from the unchanged strided dispatch.
+#[inline(never)]
+fn accumulate_contiguous_matmul(
+    left: &[f32],
+    right: &[f32],
+    output: &mut [f32],
+    rows: usize,
+    inner: usize,
+    columns: usize,
+) {
+    if output.is_empty() || inner == 0 {
+        return;
+    }
+    if rows >= CONTIGUOUS_MATMUL_ROW_BLOCK && right.len() >= CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS {
+        contiguous_matmul_row_blocked(left, right, output, rows, inner, columns);
+        return;
+    }
+
+    for (left_row, output_row) in left
+        .chunks_exact(inner)
+        .zip(output.chunks_exact_mut(columns))
+    {
+        for (&left, right_row) in left_row.iter().zip(right.chunks_exact(columns)) {
+            for (output_value, &right) in output_row.iter_mut().zip(right_row) {
+                *output_value += left * right;
+            }
+        }
+    }
+}
+
+// Keep the unrolled kernel separate from the latency-sized contiguous loop.
+#[inline(never)]
+fn contiguous_matmul_row_blocked(
+    left: &[f32],
+    right: &[f32],
+    output: &mut [f32],
+    rows: usize,
+    inner: usize,
+    columns: usize,
+) {
+    let blocked_rows = rows / CONTIGUOUS_MATMUL_ROW_BLOCK * CONTIGUOUS_MATMUL_ROW_BLOCK;
+    let blocked_left_elements = blocked_rows * inner;
+    let blocked_output_elements = blocked_rows * columns;
+    let (blocked_left, tail_left) = left.split_at(blocked_left_elements);
+    let (blocked_output, tail_output) = output.split_at_mut(blocked_output_elements);
+
+    for (left_tile, output_tile) in blocked_left
+        .chunks_exact(inner * CONTIGUOUS_MATMUL_ROW_BLOCK)
+        .zip(blocked_output.chunks_exact_mut(columns * CONTIGUOUS_MATMUL_ROW_BLOCK))
+    {
+        let (output_row_0, remaining) = output_tile.split_at_mut(columns);
+        let (output_row_1, remaining) = remaining.split_at_mut(columns);
+        let (output_row_2, output_row_3) = remaining.split_at_mut(columns);
+        for (depth, right_row) in right.chunks_exact(columns).enumerate() {
+            let left_0 = left_tile[depth];
+            let left_1 = left_tile[inner + depth];
+            let left_2 = left_tile[2 * inner + depth];
+            let left_3 = left_tile[3 * inner + depth];
+            // Depth stays outermost, preserving every result's addition order.
+            for column in 0..columns {
+                let right = right_row[column];
+                output_row_0[column] += left_0 * right;
+                output_row_1[column] += left_1 * right;
+                output_row_2[column] += left_2 * right;
+                output_row_3[column] += left_3 * right;
+            }
+        }
+    }
+
+    for (left_row, output_row) in tail_left
+        .chunks_exact(inner)
+        .zip(tail_output.chunks_exact_mut(columns))
+    {
+        for (&left, right_row) in left_row.iter().zip(right.chunks_exact(columns)) {
+            for (output_value, &right) in output_row.iter_mut().zip(right_row) {
+                *output_value += left * right;
+            }
+        }
+    }
+}
+
 fn checked_matrix_row_base(
     tensor: &Tensor,
     row: usize,
@@ -4028,7 +4100,8 @@ mod tests {
     use crate::storage::Storage;
 
     use super::{
-        DType, Device, F32_SIGN_MASK, SavedTensor, Tensor, TensorError,
+        CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device,
+        F32_SIGN_MASK, SavedTensor, Tensor, TensorError,
         materialize_contiguous_trailing_vector_broadcast, try_result_vector,
     };
 
@@ -4243,6 +4316,60 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    #[test]
+    fn blocked_contiguous_matmul_preserves_each_result_bit_pattern() {
+        let rows = CONTIGUOUS_MATMUL_ROW_BLOCK + 1;
+        let inner = 64;
+        let columns = 64;
+        assert!(inner * columns >= CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS);
+
+        let finite_bits = [
+            0x60ad_78ec,
+            0xe0ad_78ec,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+        ];
+        let left = Tensor::from_vec(
+            (0..rows * inner)
+                .map(|index| f32::from_bits(finite_bits[(index * 5 + index / inner) % 8]))
+                .collect(),
+            [rows, inner],
+        )
+        .unwrap();
+        let right = Tensor::from_vec(
+            (0..inner * columns)
+                .map(|index| {
+                    let depth = index / columns;
+                    let column = index % columns;
+                    let bits = match column % 8 {
+                        3 if depth == 7 => 0x7f80_0000,
+                        4 if depth == 11 => 0xff80_0000,
+                        5 if depth == 13 => 0x7fc1_2345,
+                        _ => finite_bits[(depth * 3 + column) % 8],
+                    };
+                    f32::from_bits(bits)
+                })
+                .collect(),
+            [inner, columns],
+        )
+        .unwrap();
+        let expected = shared_gradient_copy(&left)
+            .matmul(&shared_gradient_copy(&right))
+            .unwrap();
+        let actual = left.matmul(&right).unwrap();
+
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected.logical_values().map(f32::to_bits))
+        );
     }
 
     #[test]
