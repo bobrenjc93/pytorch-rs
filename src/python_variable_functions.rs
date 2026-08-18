@@ -14,19 +14,21 @@ use pyo3::types::{PyDict, PyModule, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    adjoint_variable_function, can_cast_variable_function, get_device_variable_function,
-    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, unbind_variable_function,
+    adjoint_variable_function, atleast_1d_variable_function, can_cast_variable_function,
+    get_device_variable_function, is_conj_variable_function, is_inference_variable_function,
+    matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
+    mul_variable_function, multiply_variable_function, permute_variable_function,
+    positive_variable_function, promote_types_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 18] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 19] = [
     "get_device",
     "scalar_tensor",
+    "atleast_1d",
     "adjoint",
     "positive",
     "is_conj",
@@ -379,6 +381,7 @@ macro_rules! variable_function_callback {
 
 variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
+variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
@@ -418,6 +421,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
     let methods = Box::leak(Box::new([
         variable_function_method!(c"get_device", get_device_callback, c""),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
+        variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
