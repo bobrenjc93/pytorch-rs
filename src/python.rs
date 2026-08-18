@@ -1355,6 +1355,43 @@ pub(crate) fn scalar_tensor_variable_function(
         .unbind())
 }
 
+pub(crate) fn atleast_1d_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if args.len() != 1 || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "atleast_1d() only supports a single Tensor input",
+        ));
+    }
+
+    let input = args.get_item(0)?;
+    if input.is_instance_of::<PyTuple>() || input.is_instance_of::<PyList>() {
+        return Err(PyTypeError::new_err(
+            "atleast_1d() only supports a single Tensor input",
+        ));
+    }
+    let Ok(tensor) = input.cast::<PyTensor>() else {
+        let actual = python_type_name(&input)?;
+        return Err(PyTypeError::new_err(format!(
+            "atleast_1d() received an invalid combination of arguments - got ({actual}), but expected one of:\n * (Tensor input)\n      didn't match because some of the arguments have invalid types: (!{actual}!)\n * (tuple of Tensors tensors)\n      didn't match because some of the arguments have invalid types: (!{actual}!)\n"
+        )));
+    };
+
+    let inner = {
+        let tensor = tensor.try_borrow()?;
+        if !tensor.inner.shape().is_empty() {
+            return Ok(input.unbind());
+        }
+        tensor
+            .inner
+            .reshape([1])
+            .map_err(|error| tensor_error(&error))?
+    };
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
 pub(crate) fn adjoint_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,

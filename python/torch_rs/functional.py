@@ -2,10 +2,55 @@
 
 from collections.abc import Sequence
 
-from .torch_rs import Size
+from .overrides import _dispatch_unary_torch_function
+from .torch_rs import Size, atleast_1d as _VF_atleast_1d
 
 
-__all__ = ["broadcast_shapes"]
+__all__ = ["atleast_1d", "broadcast_shapes"]
+
+
+def _atleast_1d_impl(input):
+    return _VF_atleast_1d(input)
+
+
+def atleast_1d(*tensors):
+    r"""
+    Returns a 1-dimensional view of each input tensor with zero dimensions.
+    Input tensors with one or more dimensions are returned as-is.
+
+    Args:
+        input (Tensor or sequence of Tensors): tensor(s) to be converted to at least 1-dimensional.
+
+    Returns:
+        output (Tensor or tuple of Tensors)
+
+    Example::
+
+        >>> x = torch.arange(2)
+        >>> x
+        tensor([0, 1])
+        >>> torch.atleast_1d(x)
+        tensor([0, 1])
+        >>> x = torch.tensor(1.)
+        >>> x
+        tensor(1.)
+        >>> torch.atleast_1d(x)
+        tensor([1.])
+        >>> x = torch.tensor(0.5)
+        >>> y = torch.tensor(1.)
+        >>> torch.atleast_1d((x, y))
+        (tensor([0.5000]), tensor([1.]))
+        >>> torch.atleast_1d()
+        ()
+    """
+    if len(tensors) != 1:
+        raise TypeError("atleast_1d() only supports a single Tensor input")
+    return _dispatch_unary_torch_function(
+        atleast_1d,
+        _atleast_1d_impl,
+        tensors[0],
+        {},
+    )
 
 
 def _guard_or_false(condition):

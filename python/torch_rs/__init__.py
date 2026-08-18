@@ -112,6 +112,7 @@ from . import functional as functional
 from . import nn as nn
 from . import overrides as overrides
 from . import utils as utils
+from .functional import atleast_1d as atleast_1d
 from .functional import broadcast_shapes as broadcast_shapes
 
 del _copyreg, _native, _sys
