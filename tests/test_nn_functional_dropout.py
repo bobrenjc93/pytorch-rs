@@ -252,6 +252,52 @@ class FunctionalDropoutTests(unittest.TestCase):
                 source, p=torch.tensor(float("nan")), training=False
             )
 
+        tensor_error_cases = (
+            (
+                torch.tensor([2.0]),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([2.])",
+            ),
+            (
+                torch.tensor([-0.1]),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([-0.1000])",
+            ),
+            (
+                torch.tensor([[1.0e9]]),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([[1.0000e+09]])",
+            ),
+            (
+                torch.zeros((0,)),
+                RuntimeError,
+                "Boolean value of Tensor with no values is ambiguous",
+            ),
+            (
+                torch.tensor([0.0, 2.0]),
+                RuntimeError,
+                "Boolean value of Tensor with more than one value is ambiguous",
+            ),
+            (
+                torch.tensor([0.5]),
+                TypeError,
+                "dropout(): argument 'p' (position 2) must be float, not Tensor",
+            ),
+            (
+                torch.tensor([float("nan")]),
+                TypeError,
+                "dropout(): argument 'p' (position 2) must be float, not Tensor",
+            ),
+        )
+        for probability, error_type, message in tensor_error_cases:
+            with self.subTest(tensor_shape=probability.shape, message=message):
+                with self.assertRaises(error_type) as raised:
+                    functional.dropout(source, p=probability, training=False)
+                self.assertEqual(str(raised.exception), message)
+
         for inplace, operation in ((False, "dropout"), (True, "dropout_")):
             probability = torch.tensor(0.5, requires_grad=True)
             with self.subTest(grad_probability_inplace=inplace):
@@ -281,6 +327,26 @@ class FunctionalDropoutTests(unittest.TestCase):
             functional.dropout(
                 source, p=SneakyProbability(2), training=False
             )
+
+        native_format_cases = (
+            (-float("nan"), "-nan"),
+            (SneakyProbability(1.0000000000001), "1"),
+            (SneakyProbability(1.23456789), "1.23457"),
+            (SneakyProbability(999999.9), "1e+06"),
+            (SneakyProbability(-1.23456789e-7), "-1.23457e-07"),
+            (SneakyProbability(-5e-324), "-4.94066e-324"),
+        )
+        for probability, formatted in native_format_cases:
+            with self.subTest(native_probability=formatted):
+                with self.assertRaises(RuntimeError) as raised:
+                    functional.dropout(
+                        source, p=probability, training=False
+                    )
+                self.assertEqual(
+                    str(raised.exception),
+                    "dropout probability has to be between 0 and 1, but got "
+                    f"{formatted}",
+                )
 
         error_cases = (
             (

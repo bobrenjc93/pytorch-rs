@@ -1,5 +1,6 @@
 """Functional interface."""
 
+import math
 import warnings
 
 import torch_rs as torch
@@ -106,17 +107,56 @@ def _dropout_impl(input, p, training, inplace, include_tensor):
             input, p, training, inplace, include_tensor
         )
 
-    range_probability = (
-        p.item() if type(p) is Tensor and len(p.shape) == 0 else p
-    )
+    range_probability, probability_display = _dropout_range_probability(p)
     if range_probability < 0.0 or range_probability > 1.0:
         raise ValueError(
             "dropout probability has to be between 0 and 1, but got "
-            f"{range_probability}"
+            f"{probability_display}"
         )
     if inplace:
         return _nn_functional_dropout(input, p, training, True)
     return _nn_functional_dropout(input, p, training, False)
+
+
+def _dropout_range_probability(p):
+    if type(p) is not Tensor:
+        return p, p
+
+    element_count = p.numel()
+    if element_count == 0:
+        raise RuntimeError("Boolean value of Tensor with no values is ambiguous")
+    if element_count != 1:
+        raise RuntimeError(
+            "Boolean value of Tensor with more than one value is ambiguous"
+        )
+
+    value = p.item()
+    if len(p.shape) == 0:
+        return value, value
+    return value, _format_single_element_tensor(p, value)
+
+
+def _format_single_element_tensor(tensor, value):
+    finite = math.isfinite(value)
+    if finite and value != 0.0:
+        integer_mode = value == math.ceil(value)
+        scientific = abs(value) > 1.0e8 or abs(value) < 1.0e-4
+    else:
+        integer_mode = True
+        scientific = False
+
+    if scientific:
+        formatted = f"{value:.4e}"
+    elif integer_mode:
+        formatted = f"{value:.0f}"
+        if finite:
+            formatted += "."
+    else:
+        formatted = f"{value:.4f}"
+
+    formatted = "[" * len(tensor.shape) + formatted
+    formatted += "]" * len(tensor.shape)
+    return f"tensor({formatted})"
 
 
 def relu(input: Tensor, inplace: bool = False) -> Tensor:

@@ -307,6 +307,66 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
                 self.assertIs(actual_error[0], expected_error[0])
                 self.assertEqual(actual_error[1], expected_error[1])
 
+    def test_non_scalar_tensor_probability_validation_matches(self):
+        actual_input = torch.tensor([1.0, 2.0])
+        expected_input = reference_torch.tensor([1.0, 2.0])
+
+        probability_cases = (
+            (
+                torch.tensor([2.0]),
+                reference_torch.tensor(
+                    [2.0], dtype=reference_torch.float32
+                ),
+            ),
+            (
+                torch.tensor([-0.1]),
+                reference_torch.tensor(
+                    [-0.1], dtype=reference_torch.float32
+                ),
+            ),
+            (
+                torch.tensor([[1.0e9]]),
+                reference_torch.tensor(
+                    [[1.0e9]], dtype=reference_torch.float32
+                ),
+            ),
+            (torch.zeros((0,)), reference_torch.zeros((0,))),
+            (
+                torch.tensor([0.0, 2.0]),
+                reference_torch.tensor(
+                    [0.0, 2.0], dtype=reference_torch.float32
+                ),
+            ),
+            (
+                torch.tensor([0.5]),
+                reference_torch.tensor(
+                    [0.5], dtype=reference_torch.float32
+                ),
+            ),
+            (
+                torch.tensor([float("nan")]),
+                reference_torch.tensor(
+                    [float("nan")], dtype=reference_torch.float32
+                ),
+            ),
+        )
+        for case, (actual_probability, expected_probability) in enumerate(
+            probability_cases
+        ):
+            actual_error = self.capture_error(
+                lambda: functional.dropout(
+                    actual_input, p=actual_probability, training=False
+                )
+            )
+            expected_error = self.capture_error(
+                lambda: reference_functional.dropout(
+                    expected_input, p=expected_probability, training=False
+                )
+            )
+            with self.subTest(case=case):
+                self.assertIs(actual_error[0], expected_error[0])
+                self.assertEqual(actual_error[1], expected_error[1])
+
     def test_probability_validation_schema_and_binding_errors_match(self):
         actual_input = torch.tensor([1.0])
         expected_input = reference_torch.tensor([1.0])
@@ -478,6 +538,35 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
         )
         self.assertIs(actual_error[0], expected_error[0])
         self.assertEqual(actual_error[1], expected_error[1])
+
+        class SneakyProbability(float):
+            def __lt__(self, other):
+                return False
+
+            def __gt__(self, other):
+                return False
+
+        for probability in (
+            -float("nan"),
+            SneakyProbability(1.0000000000001),
+            SneakyProbability(1.23456789),
+            SneakyProbability(999999.9),
+            SneakyProbability(-1.23456789e-7),
+            SneakyProbability(-5e-324),
+        ):
+            actual_error = self.capture_error(
+                lambda: functional.dropout(
+                    actual_input, p=probability, training=False
+                )
+            )
+            expected_error = self.capture_error(
+                lambda: reference_functional.dropout(
+                    expected_input, p=probability, training=False
+                )
+            )
+            with self.subTest(native_probability=probability):
+                self.assertIs(actual_error[0], expected_error[0])
+                self.assertEqual(actual_error[1], expected_error[1])
 
     def run_override_case(self, function):
         replacement = object()

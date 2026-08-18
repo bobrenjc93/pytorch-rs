@@ -3803,8 +3803,23 @@ fn parse_dropout_probability(operation: &str, probability: &Bound<'_, PyAny>) ->
     Err(dropout_probability_type_error(operation, probability)?)
 }
 
+fn format_dropout_probability(py: Python<'_>, probability: f64) -> PyResult<String> {
+    if probability.is_nan() {
+        return Ok(if probability.is_sign_negative() {
+            "-nan".to_owned()
+        } else {
+            "nan".to_owned()
+        });
+    }
+    PyModule::import(py, "builtins")?
+        .getattr("format")?
+        .call1((probability, ".6g"))?
+        .extract()
+}
+
 #[pyfunction]
 fn _nn_functional_dropout(
+    py: Python<'_>,
     input: &Bound<'_, PyAny>,
     probability: &Bound<'_, PyAny>,
     training: &Bound<'_, PyAny>,
@@ -3829,11 +3844,7 @@ fn _nn_functional_dropout(
     let training = training.is_truthy()?;
 
     if !(0.0..=1.0).contains(&probability) {
-        let probability = if probability.is_nan() {
-            "nan".to_owned()
-        } else {
-            probability.to_string()
-        };
+        let probability = format_dropout_probability(py, probability)?;
         return Err(PyRuntimeError::new_err(format!(
             "dropout probability has to be between 0 and 1, but got {probability}"
         )));
