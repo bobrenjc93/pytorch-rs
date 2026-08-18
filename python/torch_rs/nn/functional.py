@@ -1,6 +1,7 @@
 """Functional interface."""
 
 import math
+import sys as _sys
 import types as _types
 import warnings
 
@@ -15,6 +16,14 @@ from torch_rs.overrides import (
 from ..torch_rs import (
     _nn_functional_dropout,
     _nn_functional_dropout_tensor_autograd_suffix,
+)
+
+
+# Match PyTorch 2.13's fixed format/repr call depth before recursive slice
+# formatting; its legacy printer crosses three more frames.
+_DROPOUT_LEGACY_TENSOR_PRINTER = _sys.version_info < (3, 12)
+_DROPOUT_TENSOR_FORMATTER_FRAMES = (
+    9 if _DROPOUT_LEGACY_TENSOR_PRINTER else 6
 )
 
 
@@ -181,24 +190,36 @@ def _format_single_element_tensor(tensor, value):
 
 
 def _format_single_element_tensor_contents(
-    dimensions, formatted, formatter_frames=6
+    dimensions,
+    formatted,
+    formatter_frames=_DROPOUT_TENSOR_FORMATTER_FRAMES,
 ):
-    # PyTorch reaches its recursive tensor printer through six additional
-    # Tensor.__format__/repr helper frames. Preserve that recursion headroom so
-    # deeply ranked probability diagnostics fail at the same resource limit.
+    # Preserve the interpreter-specific recursion headroom that PyTorch uses
+    # before entering its recursive tensor printer.
     if formatter_frames:
         return _format_single_element_tensor_contents(
             dimensions, formatted, formatter_frames - 1
         )
+
+    # PyTorch asks every recursive printer frame for the tensor dimension.
+    # Before Python 3.12 that native call is also where CPython can report the
+    # resource limit as "while calling a Python object".
+    if _DROPOUT_LEGACY_TENSOR_PRINTER:
+        dimensions = int(dimensions)
     if dimensions == 1:
         return f"[{formatted}]"
-    return (
-        "["
-        + _format_single_element_tensor_contents(
+
+    # PyTorch formats each slice through a list comprehension. Comprehensions
+    # have their own frame through Python 3.11 and are inlined by PEP 709 from
+    # Python 3.12 onward, so keeping this one-element comprehension is
+    # observable at a configured recursion limit.
+    nested = [
+        _format_single_element_tensor_contents(
             dimensions - 1, formatted, 0
         )
-        + "]"
-    )
+        for _ in range(1)
+    ]
+    return "[" + nested[0] + "]"
 
 
 def relu(input: Tensor, inplace: bool = False) -> Tensor:
