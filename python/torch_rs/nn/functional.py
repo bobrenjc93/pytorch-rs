@@ -11,6 +11,7 @@ from torch_rs.overrides import _dispatch_unary_torch_function
 from ..torch_rs import (
     _nn_functional_alpha_dropout,
     _nn_functional_dropout,
+    _nn_functional_feature_alpha_dropout,
 )
 
 
@@ -39,6 +40,13 @@ def _alpha_dropout_impl(input, p, training, inplace):
     if inplace:
         return _nn_functional_alpha_dropout(input, p, training, True)
     return _nn_functional_alpha_dropout(input, p, training, False)
+
+
+def _feature_alpha_dropout_impl(input, p, training, inplace):
+    _validate_dropout_probability(p)
+    if inplace:
+        return _nn_functional_feature_alpha_dropout(input, p, training, True)
+    return _nn_functional_feature_alpha_dropout(input, p, training, False)
 
 
 def _dropout_range_probability(p):
@@ -110,6 +118,39 @@ def alpha_dropout(
     return _dispatch_unary_torch_function(
         alpha_dropout,
         _alpha_dropout_impl,
+        input,
+        {"p": p, "training": training, "inplace": inplace},
+    )
+
+
+def feature_alpha_dropout(
+    input: Tensor,
+    p: float = 0.5,
+    training: bool = False,
+    inplace: bool = False,
+) -> Tensor:
+    r"""Randomly masks out entire channels (a channel is a feature map).
+
+    For example, the :math:`j`-th channel of the :math:`i`-th sample in the batch input
+    is a tensor :math:`\text{input}[i, j]` of the input tensor. Instead of
+    setting activations to zero, as in regular Dropout, the activations are set
+    to the negative saturation value of the SELU activation function.
+
+    Each element will be masked independently on every forward call with
+    probability :attr:`p` using samples from a Bernoulli distribution.
+    The elements to be masked are randomized on every forward call, and scaled
+    and shifted to maintain zero mean and unit variance.
+
+    See :class:`~torch.nn.FeatureAlphaDropout` for details.
+
+    Args:
+        p: dropout probability of a channel to be zeroed. Default: 0.5
+        training: apply dropout if is ``True``. Default: ``True``
+        inplace: If set to ``True``, will do this operation in-place. Default: ``False``
+    """
+    return _dispatch_unary_torch_function(
+        feature_alpha_dropout,
+        _feature_alpha_dropout_impl,
         input,
         {"p": p, "training": training, "inplace": inplace},
     )

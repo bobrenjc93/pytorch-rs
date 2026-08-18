@@ -29,6 +29,18 @@ const ALPHA_DROPOUT_INPLACE_PROBABILITY: ArgumentSchema =
     ArgumentSchema::new("alpha_dropout_", "p", 2, "float");
 const ALPHA_DROPOUT_INPLACE_TRAINING: ArgumentSchema =
     ArgumentSchema::new("alpha_dropout_", "train", 3, "bool");
+const FEATURE_ALPHA_DROPOUT_INPUT: ArgumentSchema =
+    ArgumentSchema::new("feature_alpha_dropout", "input", 1, "Tensor");
+const FEATURE_ALPHA_DROPOUT_PROBABILITY: ArgumentSchema =
+    ArgumentSchema::new("feature_alpha_dropout", "p", 2, "float");
+const FEATURE_ALPHA_DROPOUT_TRAINING: ArgumentSchema =
+    ArgumentSchema::new("feature_alpha_dropout", "train", 3, "bool");
+const FEATURE_ALPHA_DROPOUT_INPLACE_INPUT: ArgumentSchema =
+    ArgumentSchema::new("feature_alpha_dropout_", "input", 1, "Tensor");
+const FEATURE_ALPHA_DROPOUT_INPLACE_PROBABILITY: ArgumentSchema =
+    ArgumentSchema::new("feature_alpha_dropout_", "p", 2, "float");
+const FEATURE_ALPHA_DROPOUT_INPLACE_TRAINING: ArgumentSchema =
+    ArgumentSchema::new("feature_alpha_dropout_", "train", 3, "bool");
 
 struct DropoutSchema {
     input: ArgumentSchema,
@@ -68,12 +80,29 @@ impl DropoutSchema {
             }
         }
     }
+
+    const fn feature_alpha_dropout(inplace: bool) -> Self {
+        if inplace {
+            Self {
+                input: FEATURE_ALPHA_DROPOUT_INPLACE_INPUT,
+                probability: FEATURE_ALPHA_DROPOUT_INPLACE_PROBABILITY,
+                training: FEATURE_ALPHA_DROPOUT_INPLACE_TRAINING,
+            }
+        } else {
+            Self {
+                input: FEATURE_ALPHA_DROPOUT_INPUT,
+                probability: FEATURE_ALPHA_DROPOUT_PROBABILITY,
+                training: FEATURE_ALPHA_DROPOUT_TRAINING,
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
 enum DropoutKind {
     Standard,
     Alpha,
+    FeatureAlpha,
 }
 
 impl DropoutKind {
@@ -81,12 +110,13 @@ impl DropoutKind {
         match self {
             Self::Standard => DropoutSchema::dropout(inplace),
             Self::Alpha => DropoutSchema::alpha_dropout(inplace),
+            Self::FeatureAlpha => DropoutSchema::feature_alpha_dropout(inplace),
         }
     }
 
     const fn supports_tensor_probability(self) -> bool {
         match self {
-            Self::Standard => true,
+            Self::Standard | Self::FeatureAlpha => true,
             Self::Alpha => false,
         }
     }
@@ -95,6 +125,9 @@ impl DropoutKind {
         match self {
             Self::Standard => "torch_rs.nn.functional.dropout does not support sampling",
             Self::Alpha => "torch_rs.nn.functional.alpha_dropout does not support sampling",
+            Self::FeatureAlpha => {
+                "torch_rs.nn.functional.feature_alpha_dropout does not support sampling"
+            }
         }
     }
 }
@@ -189,6 +222,24 @@ fn _nn_functional_alpha_dropout(
 }
 
 #[pyfunction]
+fn _nn_functional_feature_alpha_dropout(
+    py: Python<'_>,
+    input: &Bound<'_, PyAny>,
+    probability: &Bound<'_, PyAny>,
+    training: &Bound<'_, PyAny>,
+    inplace: bool,
+) -> PyResult<Py<PyAny>> {
+    nn_functional_dropout_identity(
+        py,
+        input,
+        probability,
+        training,
+        inplace,
+        DropoutKind::FeatureAlpha,
+    )
+}
+
+#[pyfunction]
 fn _nn_functional_dropout_tensor_autograd_suffix(input: &PyTensor) -> String {
     if !input.inner().requires_grad() {
         return String::new();
@@ -203,6 +254,7 @@ pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResul
     for function in [
         wrap_pyfunction!(_nn_functional_dropout, module)?,
         wrap_pyfunction!(_nn_functional_alpha_dropout, module)?,
+        wrap_pyfunction!(_nn_functional_feature_alpha_dropout, module)?,
         wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?,
     ] {
         let name = function.getattr("__name__")?;
