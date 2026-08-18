@@ -84,8 +84,8 @@ class TensorDequantizeTests(unittest.TestCase):
             return None
         return np.asarray(tensor.detach()).reshape(-1).view(np.uint32).copy()
 
-    def test_non_quantized_tensors_return_exact_receiver_without_changes(self):
-        leaf, tracked, cases = self.tensor_cases()
+    def test_non_quantized_tensors_preserve_receiver_storage_layout_and_values(self):
+        _leaf, _tracked, cases = self.tensor_cases()
         for case, tensor in cases:
             with self.subTest(case=case, shape=tensor.shape, stride=tensor.stride()):
                 metadata = (
@@ -98,9 +98,7 @@ class TensorDequantizeTests(unittest.TestCase):
                     tensor.layout,
                     tensor.is_quantized,
                     tensor.requires_grad,
-                    tensor.is_leaf,
                     tensor.retains_grad,
-                    tensor.output_nr,
                 )
                 bits = self.value_bits(tensor)
 
@@ -120,41 +118,110 @@ class TensorDequantizeTests(unittest.TestCase):
                         result.layout,
                         result.is_quantized,
                         result.requires_grad,
-                        result.is_leaf,
                         result.retains_grad,
-                        result.output_nr,
                     ),
                     metadata,
                 )
+                if result.requires_grad:
+                    self.assertFalse(result.is_leaf)
+                    self.assertEqual(result.output_nr, 0)
                 if bits is not None:
                     np.testing.assert_array_equal(self.value_bits(result), bits)
 
-        tracked.dequantize().sum().backward()
-        np.testing.assert_array_equal(
-            np.asarray(leaf.grad), np.full((2, 2), 2.0, dtype=np.float32)
-        )
-        gradient = leaf.grad
-        self.assertIs(leaf.dequantize(), leaf)
-        self.assertIs(leaf.grad, gradient)
+    def test_grad_enabled_installs_unsupported_dequantize_edge(self):
+        def leaf_case():
+            leaf = torch.tensor([2.0], requires_grad=True)
+            return leaf, leaf
+
+        def nonleaf_case():
+            leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+            return leaf, (leaf * 2.0).transpose(0, 1)
+
+        def multi_output_case():
+            leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+            return leaf, (leaf * 2.0).unbind()[1]
+
+        for case, factory in (
+            ("leaf", leaf_case),
+            ("non-leaf view", nonleaf_case),
+            ("multi-output view", multi_output_case),
+        ):
+            with self.subTest(case=case):
+                leaf, tensor = factory()
+                metadata = (
+                    tensor.shape,
+                    tensor.stride(),
+                    tensor.storage_offset(),
+                    tensor.data_ptr(),
+                    tensor.dtype,
+                    tensor.device,
+                    tensor.layout,
+                )
+
+                result = tensor.dequantize()
+
+                self.assertIs(result, tensor)
+                self.assertEqual(
+                    (
+                        result.shape,
+                        result.stride(),
+                        result.storage_offset(),
+                        result.data_ptr(),
+                        result.dtype,
+                        result.device,
+                        result.layout,
+                    ),
+                    metadata,
+                )
+                self.assertTrue(result.requires_grad)
+                self.assertFalse(result.is_leaf)
+                self.assertEqual(result.output_nr, 0)
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^derivative for dequantize is not implemented$",
+                ):
+                    result.sum().backward()
+                self.assertIsNone(leaf.grad)
+
+        populated_leaf = torch.tensor(2.0, requires_grad=True)
+        populated_leaf.backward()
+        self.assertIs(populated_leaf.dequantize(), populated_leaf)
+        self.assertFalse(populated_leaf.is_leaf)
+        gradient = populated_leaf.grad
+        self.assertIsNotNone(gradient)
+        self.assertEqual(gradient.tolist(), 1.0)
+        self.assertIs(populated_leaf.grad, gradient)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "^derivative for dequantize is not implemented$",
+        ):
+            populated_leaf.backward()
 
     def test_no_grad_preserves_the_existing_autograd_graph(self):
-        leaf = torch.tensor(
-            [[1.0, 2.0], [3.0, 4.0]],
-            dtype=torch.float32,
-            requires_grad=True,
-        )
-        tracked = (leaf * 3.0).transpose(0, 1)
+        for case, make_tensor, multiplier in (
+            ("leaf", lambda leaf: leaf, 1.0),
+            ("non-leaf view", lambda leaf: (leaf * 3.0).transpose(0, 1), 3.0),
+        ):
+            with self.subTest(case=case):
+                leaf = torch.tensor(
+                    [[1.0, 2.0], [3.0, 4.0]],
+                    dtype=torch.float32,
+                    requires_grad=True,
+                )
+                tensor = make_tensor(leaf)
+                graph_metadata = (tensor.is_leaf, tensor.output_nr)
 
-        with torch.no_grad():
-            result = tracked.dequantize()
+                with torch.no_grad():
+                    result = tensor.dequantize()
 
-        self.assertIs(result, tracked)
-        self.assertTrue(result.requires_grad)
-        self.assertFalse(result.is_leaf)
-        result.sum().backward()
-        np.testing.assert_array_equal(
-            np.asarray(leaf.grad), np.full((2, 2), 3.0, dtype=np.float32)
-        )
+                self.assertIs(result, tensor)
+                self.assertTrue(result.requires_grad)
+                self.assertEqual((result.is_leaf, result.output_nr), graph_metadata)
+                result.sum().backward()
+                np.testing.assert_array_equal(
+                    np.asarray(leaf.grad),
+                    np.full((2, 2), multiplier, dtype=np.float32),
+                )
 
     def test_tensorbase_descriptor_documentation_and_signature(self):
         tensor = torch.tensor([1.0])

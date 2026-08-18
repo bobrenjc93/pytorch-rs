@@ -34,6 +34,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::FlattenNonConcreteInteger
         | TensorError::ElementCountOverflow
         | TensorError::BackwardRequiresScalar { .. }
+        | TensorError::DerivativeNotImplemented { .. }
         | TensorError::DoesNotRequireGrad
         | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex

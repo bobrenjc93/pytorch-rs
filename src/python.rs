@@ -499,10 +499,28 @@ impl PyTensorBase {
             return Ok(result);
         }
 
-        // Float32 is the complete supported dtype surface, so no reachable
-        // Tensor has quantized storage. Dequantization is therefore the exact
-        // receiver, without a storage borrow, metadata rewrite, copy, or
-        // autograd operation. Quantized storage remains deliberately absent.
+        // Float32 is the complete supported dtype surface, so dequantization
+        // preserves the exact Python receiver and its storage and layout. In
+        // grad-enabled mode PyTorch still replaces its autograd edge with an
+        // unsupported dequantize edge; no_grad leaves the prior graph intact.
+        {
+            let tensor_state = tensor.try_borrow()?;
+            if tensor_state.grad_cache.get(slf.py()).is_none()
+                && let Some(inner) = tensor_state
+                    .inner
+                    .live_grad()
+                    .map_err(|error| tensor_error(&error))?
+            {
+                tensor_state
+                    .grad_cache
+                    .get_or_try_init(slf.py(), || Py::new(slf.py(), PyTensor::new(inner)))?;
+            }
+        }
+        tensor
+            .try_borrow_mut()?
+            .inner
+            .record_unsupported_derivative("dequantize")
+            .map_err(|error| tensor_error(&error))?;
         Ok(tensor.clone().unbind().into_any())
     }
 

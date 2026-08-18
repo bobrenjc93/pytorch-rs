@@ -68,6 +68,11 @@ enum GradFn {
     Sum {
         input: SavedTensor,
     },
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    UnsupportedDerivative {
+        input: SavedTensor,
+        operation: &'static str,
+    },
     Transform {
         input: SavedTensor,
         mapping: TransformMapping,
@@ -113,6 +118,7 @@ impl GradFn {
             | Self::Relu { input }
             | Self::Sin { input }
             | Self::Sum { input }
+            | Self::UnsupportedDerivative { input, .. }
             | Self::Transform { input, .. }
             | Self::Unbind { input, .. } => input.take_parent(pending),
         }
@@ -139,6 +145,7 @@ impl GradFn {
             }
             Self::Negate { .. }
             | Self::Sum { .. }
+            | Self::UnsupportedDerivative { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
         }
@@ -156,6 +163,7 @@ impl GradFn {
             Self::Relu { input } | Self::Sin { input } => input.storage = None,
             Self::Negate { .. }
             | Self::Sum { .. }
+            | Self::UnsupportedDerivative { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
         }
@@ -685,6 +693,7 @@ impl Tensor {
             GradFn::Relu { .. } => AutogradNode::Relu,
             GradFn::Sin { .. } => AutogradNode::Sin,
             GradFn::Sum { .. } => AutogradNode::Sum,
+            GradFn::UnsupportedDerivative { .. } => return Some("NotImplemented"),
             GradFn::Unbind { .. } => AutogradNode::Unbind,
         };
         Some(node.python_name())
@@ -842,6 +851,24 @@ impl Tensor {
             .as_ref()
             .ok_or(TensorError::DoesNotRequireGrad)?;
         run_backward(meta, self.output_nr)
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn record_unsupported_derivative(
+        &mut self,
+        operation: &'static str,
+    ) -> Result<(), TensorError> {
+        if self.records_grad() {
+            let input = SavedTensor::try_from_tensor(self, false)?;
+            self.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::UnsupportedDerivative { input, operation })),
+                },
+            }));
+            self.output_nr = 0;
+            self.view_requires_grad = false;
+        }
+        Ok(())
     }
 
     fn records_grad(&self) -> bool {
@@ -2771,6 +2798,10 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         | GradFn::Unbind { input, .. } => {
                             push_saved_parent(&mut stack, input);
                         }
+                        // An unsupported derivative is a traversal barrier:
+                        // backward must report this edge before inspecting or
+                        // consuming any saved state in the prior graph.
+                        GradFn::UnsupportedDerivative { .. } => {}
                     }
                 }
             }
@@ -2883,12 +2914,25 @@ fn apply_grad_fn(
             }
         }
         GradFn::Transform { input, mapping, .. } => {
-            if let Some(meta) = &input.autograd {
-                let gradient = transform_backward(input, mapping, upstream)?;
-                add_gradient(gradients, meta, input.output_nr, gradient);
-            }
+            apply_transform_grad_fn(input, mapping, upstream, gradients)?;
+        }
+        GradFn::UnsupportedDerivative { operation, .. } => {
+            return Err(TensorError::DerivativeNotImplemented { operation });
         }
         GradFn::Unbind { .. } => unreachable!(),
+    }
+    Ok(())
+}
+
+fn apply_transform_grad_fn(
+    input: &SavedTensor,
+    mapping: &TransformMapping,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        let gradient = transform_backward(input, mapping, upstream)?;
+        add_gradient(gradients, meta, input.output_nr, gradient);
     }
     Ok(())
 }

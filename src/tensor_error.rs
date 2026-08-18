@@ -94,6 +94,9 @@ pub enum TensorError {
     BackwardRequiresScalar {
         elements: usize,
     },
+    DerivativeNotImplemented {
+        operation: &'static str,
+    },
     DoesNotRequireGrad,
     BackwardGraphFreed,
 }
@@ -191,6 +194,7 @@ impl Display for TensorError {
                 format_memory_format_error(formatter, error)
             }
             error @ (Self::BackwardRequiresScalar { .. }
+            | Self::DerivativeNotImplemented { .. }
             | Self::DoesNotRequireGrad
             | Self::BackwardGraphFreed) => format_autograd_error(formatter, error),
         }
@@ -328,6 +332,9 @@ fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> 
             formatter,
             "grad can be implicitly created only for scalar outputs (output has {elements} elements)"
         ),
+        TensorError::DerivativeNotImplemented { operation } => {
+            write!(formatter, "derivative for {operation} is not implemented")
+        }
         TensorError::DoesNotRequireGrad => formatter.write_str(
             "element 0 of tensors does not require grad and does not have a grad_fn",
         ),

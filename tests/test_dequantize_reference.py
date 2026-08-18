@@ -111,10 +111,13 @@ class TensorDequantizeReferenceTests(unittest.TestCase):
             ),
             "bits_unchanged": bits == self.value_bits(result),
             "is_non_quantized": result.is_quantized is False,
+            "is_leaf": result.is_leaf,
+            "retains_grad": result.retains_grad,
+            "output_nr": result.output_nr,
         }
 
     def test_supported_non_quantized_identity_matches_pytorch_2_13(self):
-        actual_leaf, actual_tracked, actual_cases = self.tensor_cases(torch)
+        _actual_leaf, _actual_tracked, actual_cases = self.tensor_cases(torch)
         _expected_leaf, _expected_tracked, expected_cases = self.tensor_cases(
             reference_torch
         )
@@ -127,41 +130,116 @@ class TensorDequantizeReferenceTests(unittest.TestCase):
                     self.identity_contract(expected),
                 )
 
-        # PyTorch 2.13 replaces a grad-tracked receiver's edge with an
-        # unsupported dequantize edge even though it returns the same Python
-        # object. The requested surface is the stricter exact identity, whose
-        # graph preservation is covered directly in test_dequantize.py.
-        actual_tracked.dequantize().sum().backward()
-        self.assertEqual(actual_leaf.grad.tolist(), [[2.0, 2.0], [2.0, 2.0]])
-
-    def no_grad_contract(self, module):
+    def grad_enabled_contract(self, module, case):
         leaf = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]],
             dtype=module.float32,
             requires_grad=True,
         )
-        tracked = (leaf * 3.0).transpose(0, 1)
+        if case == "leaf":
+            tensor = leaf
+        elif case == "non-leaf view":
+            tensor = (leaf * 2.0).transpose(0, 1)
+        else:
+            tensor = (leaf * 2.0).unbind()[1]
+        graph_before = (tensor.is_leaf, tensor.output_nr)
+        metadata = (
+            tuple(tensor.shape),
+            tuple(tensor.stride()),
+            tensor.storage_offset(),
+            tensor.data_ptr(),
+        )
+
+        result = tensor.dequantize()
+        try:
+            result.sum().backward()
+        except Exception as error:
+            backward_error = type(error).__name__, str(error)
+        else:
+            backward_error = None
+
+        return {
+            "result_is_receiver": result is tensor,
+            "graph_before": graph_before,
+            "is_leaf": result.is_leaf,
+            "output_nr": result.output_nr,
+            "requires_grad": result.requires_grad,
+            "metadata_unchanged": metadata
+            == (
+                tuple(result.shape),
+                tuple(result.stride()),
+                result.storage_offset(),
+                result.data_ptr(),
+            ),
+            "backward_error": backward_error,
+        }
+
+    def test_grad_enabled_unsupported_edge_matches_pytorch_2_13(self):
+        for case in ("leaf", "non-leaf view", "multi-output view"):
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.grad_enabled_contract(torch, case),
+                    self.grad_enabled_contract(reference_torch, case),
+                )
+
+    def populated_leaf_grad_contract(self, module):
+        leaf = module.tensor(2.0, dtype=module.float32, requires_grad=True)
+        leaf.backward()
+        result = leaf.dequantize()
+        gradient = leaf.grad
+        try:
+            leaf.backward()
+        except Exception as error:
+            backward_error = type(error).__name__, str(error)
+        else:
+            backward_error = None
+        return {
+            "result_is_receiver": result is leaf,
+            "is_leaf": leaf.is_leaf,
+            "output_nr": leaf.output_nr,
+            "gradient": gradient.tolist(),
+            "gradient_is_stable": leaf.grad is gradient,
+            "backward_error": backward_error,
+        }
+
+    def test_populated_leaf_gradient_survives_the_edge_replacement(self):
+        self.assertEqual(
+            self.populated_leaf_grad_contract(torch),
+            self.populated_leaf_grad_contract(reference_torch),
+        )
+
+    def no_grad_contract(self, module, case):
+        leaf = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0]],
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        tensor = leaf if case == "leaf" else (leaf * 3.0).transpose(0, 1)
+        graph_before = (tensor.is_leaf, tensor.output_nr)
         with module.no_grad():
-            result = tracked.dequantize()
+            result = tensor.dequantize()
         result.sum().backward()
         return {
-            "result_is_receiver": result is tracked,
+            "result_is_receiver": result is tensor,
             "requires_grad": result.requires_grad,
             "is_leaf": result.is_leaf,
             "output_nr": result.output_nr,
+            "graph_before": graph_before,
             "shape": tuple(result.shape),
             "stride": tuple(result.stride()),
             "offset": result.storage_offset(),
-            "pointer_unchanged": result.data_ptr() == tracked.data_ptr(),
+            "pointer_unchanged": result.data_ptr() == tensor.data_ptr(),
             "gradient": leaf.grad.tolist(),
             "grad_mode_restored": module.is_grad_enabled(),
         }
 
     def test_no_grad_graph_identity_matches_pytorch_2_13(self):
-        self.assertEqual(
-            self.no_grad_contract(torch),
-            self.no_grad_contract(reference_torch),
-        )
+        for case in ("leaf", "non-leaf view"):
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.no_grad_contract(torch, case),
+                    self.no_grad_contract(reference_torch, case),
+                )
 
     def error(self, action):
         try:
