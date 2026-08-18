@@ -332,6 +332,134 @@ class TensorViewAsTests(unittest.TestCase):
         self.assertEqual(len(declining.calls), 1)
         self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
 
+    def test_other_torch_function_override_precedence_and_not_implemented(self):
+        tensor = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        descriptor = inspect.getattr_static(torch.Tensor, "view_as")
+        marker = object()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                cls.calls.append((func, dispatch_types, args, kwargs))
+                return marker
+
+        for case, call, expected_args, expected_kwargs in (
+            (
+                "positional",
+                lambda value: tensor.view_as(value),
+                lambda value: (tensor, value),
+                lambda value: None,
+            ),
+            (
+                "keyword",
+                lambda value: tensor.view_as(other=value),
+                lambda value: (tensor,),
+                lambda value: {"other": value},
+            ),
+        ):
+            value = Override()
+            Override.calls.clear()
+            with self.subTest(case=case):
+                self.assertIs(call(value), marker)
+                self.assertEqual(len(Override.calls), 1)
+                function, dispatch_types, args, kwargs = Override.calls[0]
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertEqual(args, expected_args(value))
+                self.assertEqual(kwargs, expected_kwargs(value))
+
+        events = []
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                events.append(("mode", func, dispatch_types, args, kwargs))
+                return self.result
+
+        value = Override()
+        Override.calls.clear()
+        with RecordingMode(marker):
+            self.assertIs(tensor.view_as(other=value), marker)
+        self.assertEqual([event[0] for event in events], ["mode"])
+        self.assertEqual(Override.calls, [])
+        self.assertEqual(events[0][2], (Override,))
+
+        events.clear()
+        with RecordingMode(NotImplemented):
+            self.assertIs(tensor.view_as(other=value), marker)
+        self.assertEqual([event[0] for event in events], ["mode"])
+        self.assertEqual(len(Override.calls), 1)
+        self.assertEqual(Override.calls[0][1], (Override,))
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                events.append(("forward", func, dispatch_types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        events.clear()
+        Override.calls.clear()
+        with ForwardingMode():
+            self.assertIs(tensor.view_as(value), marker)
+        self.assertEqual([event[0] for event in events], ["forward"])
+        self.assertEqual(len(Override.calls), 1)
+
+        mutation_events = []
+
+        class MutableOverride:
+            pass
+
+        def original_handler(func, dispatch_types, args=(), kwargs=None):
+            mutation_events.append("original")
+            return marker
+
+        def replacement_handler(func, dispatch_types, args=(), kwargs=None):
+            mutation_events.append("replacement")
+            return marker
+
+        MutableOverride.__torch_function__ = classmethod(original_handler)
+
+        class MutatingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                mutation_events.append("mode")
+                MutableOverride.__torch_function__ = classmethod(replacement_handler)
+                return NotImplemented
+
+        with MutatingMode():
+            self.assertIs(tensor.view_as(MutableOverride()), marker)
+        self.assertEqual(mutation_events, ["mode", "replacement"])
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaises(TypeError) as raised:
+            tensor.view_as(DecliningOverride())
+        self.assertEqual(
+            str(raised.exception),
+            "Multiple dispatch failed for 'torch.Tensor.view_as'; all "
+            "__torch_function__ handlers returned NotImplemented:\n\n"
+            f"  - tensor subclass <class '{DecliningOverride.__module__}."
+            f"{DecliningOverride.__qualname__}'>\n\n"
+            "For more information, try re-running with "
+            "TORCH_LOGS=not_implemented",
+        )
+
+        events.clear()
+        with self.assertRaises(TypeError) as raised:
+            with RecordingMode(NotImplemented):
+                tensor.view_as(DecliningOverride())
+        self.assertIn("  - mode object ", str(raised.exception))
+        self.assertIn(
+            f"  - tensor subclass <class '{DecliningOverride.__module__}."
+            f"{DecliningOverride.__qualname__}'>",
+            str(raised.exception),
+        )
+
     def test_binding_and_tensor_type_error_precedence(self):
         tensor = torch.tensor([1.0])
         other = torch.tensor([2.0])

@@ -392,6 +392,157 @@ class TensorViewAsReferenceTests(unittest.TestCase):
             self.mode_contract(torch), self.mode_contract(reference_torch)
         )
 
+    def override_contract(self, module):
+        tensor = module.tensor(
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], dtype=module.float32
+        )
+        descriptor = inspect.getattr_static(module.Tensor, "view_as")
+        marker = object()
+        events = []
+
+        def normalize_call(call):
+            function, dispatch_types, args, kwargs = call
+
+            def normalize(value):
+                if value is tensor:
+                    return "self"
+                return type(value).__name__
+
+            return (
+                function is descriptor,
+                function.__qualname__,
+                tuple(dispatch_type.__name__ for dispatch_type in dispatch_types),
+                tuple(normalize(argument) for argument in args),
+                {key: normalize(value) for key, value in kwargs.items()}
+                if kwargs is not None
+                else None,
+            )
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                call = (func, dispatch_types, args, kwargs)
+                cls.calls.append(call)
+                events.append(("override", normalize_call(call)))
+                return marker
+
+        direct = []
+        for call in (
+            lambda value: tensor.view_as(value),
+            lambda value: tensor.view_as(other=value),
+        ):
+            value = Override()
+            Override.calls.clear()
+            events.clear()
+            result = call(value)
+            direct.append(
+                (result is marker, tuple(map(normalize_call, Override.calls)))
+            )
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                call = (func, dispatch_types, args, kwargs)
+                events.append(("mode", normalize_call(call)))
+                return self.result
+
+        value = Override()
+        events.clear()
+        Override.calls.clear()
+        with RecordingMode(marker):
+            accepting_result = tensor.view_as(other=value)
+        accepting = accepting_result is marker, tuple(events), len(Override.calls)
+
+        events.clear()
+        Override.calls.clear()
+        with RecordingMode(NotImplemented):
+            declining_result = tensor.view_as(other=value)
+        declining = declining_result is marker, tuple(events)
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                call = (func, dispatch_types, args, kwargs)
+                events.append(("forward", normalize_call(call)))
+                return func(*args, **(kwargs or {}))
+
+        events.clear()
+        Override.calls.clear()
+        with ForwardingMode():
+            forwarding_result = tensor.view_as(value)
+        forwarding = forwarding_result is marker, tuple(events)
+
+        mutation_events = []
+
+        class MutableOverride:
+            pass
+
+        def original_handler(func, dispatch_types, args=(), kwargs=None):
+            mutation_events.append("original")
+            return marker
+
+        def replacement_handler(func, dispatch_types, args=(), kwargs=None):
+            mutation_events.append("replacement")
+            return marker
+
+        MutableOverride.__torch_function__ = classmethod(original_handler)
+
+        class MutatingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                mutation_events.append("mode")
+                MutableOverride.__torch_function__ = classmethod(replacement_handler)
+                return NotImplemented
+
+        with MutatingMode():
+            mutation_result = tensor.view_as(MutableOverride())
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                return NotImplemented
+
+        def error(call):
+            try:
+                call()
+            except Exception as raised:
+                return (
+                    type(raised).__name__,
+                    re.sub(r"0x[0-9a-f]+", "0x<address>", str(raised)),
+                )
+            self.fail(f"{module.__name__} accepted a declining override")
+
+        direct_error = error(lambda: tensor.view_as(DecliningOverride()))
+        mode = RecordingMode(NotImplemented)
+        mode_error = error(
+            lambda: self.call_inside_mode(
+                mode, lambda: tensor.view_as(other=DecliningOverride())
+            )
+        )
+
+        return {
+            "direct": tuple(direct),
+            "accepting_mode": accepting,
+            "declining_mode": declining,
+            "forwarding_mode": forwarding,
+            "mutation": (mutation_result is marker, tuple(mutation_events)),
+            "direct_error": direct_error,
+            "mode_error": mode_error,
+            "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+        }
+
+    def call_inside_mode(self, mode, call):
+        with mode:
+            return call()
+
+    def test_operand_override_precedence_and_not_implemented_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.override_contract(torch),
+            self.override_contract(reference_torch),
+        )
+
     def test_binding_and_type_error_precedence_match_pytorch_2_13(self):
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor(
