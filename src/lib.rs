@@ -5,6 +5,7 @@
 //! core. Burner grows the supported surface monotonically while correctness,
 //! benchmark integrity, and existing performance remain merge gates.
 
+mod autograd_node;
 mod device;
 mod dtype;
 mod grad_mode;
@@ -15,6 +16,10 @@ mod memory_format;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_argument_schema;
+#[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_cpython_compat;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_device;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_dtype;
@@ -24,6 +29,8 @@ mod python_grad_mode;
 mod python_layout;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_memory_format;
+#[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_nn_functional;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_no_argument_builtins;
 #[cfg(all(feature = "python-bindings", not(doc)))]

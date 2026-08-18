@@ -3297,6 +3297,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 71
       }
+    },
+    {
+      "key": "pr:228",
+      "recordedAt": "2026-08-18T11:05:17.144Z",
+      "label": "PR #228",
+      "kind": "composite",
+      "prNumber": 228,
+      "title": "YOLO generation 2: 3 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 72,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 54.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 72
+      }
     }
   ]
 }
