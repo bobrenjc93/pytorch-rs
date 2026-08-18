@@ -84,6 +84,23 @@ impl DType {
         }
     }
 
+    /// Reports whether values of this scalar type can be cast to `to` under
+    /// `PyTorch`'s casting rules.
+    #[must_use]
+    pub const fn can_cast_to(self, to: Self) -> bool {
+        match (self, to) {
+            (Self::Float32, Self::Float32) => true,
+        }
+    }
+
+    /// Returns the scalar type produced by promoting this type with `other`.
+    #[must_use]
+    pub const fn promote(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Float32, Self::Float32) => Self::Float32,
+        }
+    }
+
     /// Reports whether values of this scalar type are floating point.
     #[must_use]
     pub const fn is_floating_point(self) -> bool {
@@ -144,6 +161,38 @@ impl Display for DType {
 #[cfg(test)]
 mod tests {
     use super::DType;
+
+    const CURRENT_DTYPES: [DType; 1] = [DType::Float32];
+
+    #[test]
+    fn casting_relation_covers_every_current_dtype_pair() {
+        const EXPECTED: [[bool; 1]; 1] = [[true]];
+
+        for (from_index, from) in CURRENT_DTYPES.into_iter().enumerate() {
+            for (to_index, to) in CURRENT_DTYPES.into_iter().enumerate() {
+                assert_eq!(
+                    from.can_cast_to(to),
+                    EXPECTED[from_index][to_index],
+                    "casting {from} to {to}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn promotion_relation_covers_every_current_dtype_pair() {
+        const EXPECTED: [[DType; 1]; 1] = [[DType::Float32]];
+
+        for (left_index, left) in CURRENT_DTYPES.into_iter().enumerate() {
+            for (right_index, right) in CURRENT_DTYPES.into_iter().enumerate() {
+                assert_eq!(
+                    left.promote(right),
+                    EXPECTED[left_index][right_index],
+                    "promoting {left} with {right}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn float32_limits_are_native_f32_metadata() {
