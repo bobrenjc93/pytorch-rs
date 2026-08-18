@@ -100,6 +100,7 @@ class FunctionalDropoutTests(unittest.TestCase):
         exec(
             "from torch_rs.nn.functional import *", wildcard_namespace
         )
+        self.assertNotIn("sys", wildcard_namespace)
         self.assertNotIn("types", wildcard_namespace)
         self.assertIsNone(nn.__doc__)
         self.assertEqual(functional.__doc__, "Functional interface.")

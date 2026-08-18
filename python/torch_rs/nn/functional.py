@@ -1,7 +1,7 @@
 """Functional interface."""
 
 import math
-import sys
+import sys as _sys
 import types as _types
 import warnings
 
@@ -184,7 +184,7 @@ def _format_single_element_tensor(tensor, value):
         # PyTorch's native tensor formatter reaches the callable boundary.
         # Preserve the original exception and traceback while matching that
         # public diagnostic.
-        if sys.version_info < (3, 12):
+        if _sys.version_info < (3, 12):
             error.args = (
                 "maximum recursion depth exceeded while calling a Python object",
             )
