@@ -2113,16 +2113,11 @@ fn apply_dtype_binary(
         unreachable!("dtype overrides were dispatched before the native path")
     };
 
-    // Float32 is the complete supported dtype set, so two validated dtype
-    // arguments are necessarily identical. Preserve that narrow boundary for
-    // both metadata queries instead of introducing another dtype or a casting
-    // and promotion table before one is needed.
-    debug_assert_eq!(first, second);
     match operation {
-        DTypeBinaryOperation::CanCast => true.into_py_any(py),
-        DTypeBinaryOperation::PromoteTypes => {
-            Ok(dtype_object(py, *first)?.clone_ref(py).into_any())
-        }
+        DTypeBinaryOperation::CanCast => first.can_cast_to(*second).into_py_any(py),
+        DTypeBinaryOperation::PromoteTypes => Ok(dtype_object(py, first.promote(*second))?
+            .clone_ref(py)
+            .into_any()),
     }
 }
 
