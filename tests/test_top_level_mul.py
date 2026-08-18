@@ -228,10 +228,11 @@ class TopLevelMulTests(unittest.TestCase):
         self.assertEqual(order, ["upper", "lower"])
         self.assert_tensor_matches(actual, 4.0 * left, case="forwarded modes")
 
+        out = torch.zeros((1,))
         for call in (
             lambda: torch.mul([], right),
             lambda: torch.mul(left, []),
-            lambda: torch.mul(left, right, out=torch.zeros((1,))),
+            lambda: torch.mul(left, right, out=out),
         ):
             mode = RecordingMode()
             with mode:

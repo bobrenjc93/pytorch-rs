@@ -18,14 +18,32 @@ _sys.modules[f"{__name__}._C"] = _C
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
 # from this package without adding ``torch`` to wildcard imports.
 torch = _sys.modules[__name__]
-_DEFAULT_DEVICE_CONTEXT = _threading.local()
+_GLOBAL_DEVICE_CONTEXT = _threading.local()
 
 
 def get_default_device() -> "torch.device":
     r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
-    device = getattr(_DEFAULT_DEVICE_CONTEXT, "device", None)
-    if device is not None and device.index is not None:
-        return device
+    from torch_rs.overrides import _get_current_function_mode_stack
+    from torch_rs.utils._device import DeviceContext
+
+    def _get_device_with_index(device):
+        if device.index is not None:
+            return device
+        return torch.tensor([]).device
+
+    device_mode = next(
+        filter(
+            lambda mode: isinstance(mode, DeviceContext),
+            reversed(_get_current_function_mode_stack()),
+        ),
+        None,
+    )
+    if device_mode:
+        return _get_device_with_index(device_mode.device)
+
+    device_context = getattr(_GLOBAL_DEVICE_CONTEXT, "device_context", None)
+    if device_context is not None:
+        return _get_device_with_index(device_context.device)
     return torch.device("cpu")
 
 
@@ -75,16 +93,19 @@ def set_default_device(device: "Device") -> None:
         device(type='cuda', index=1)
 
     """
-    if device is None:
-        _DEFAULT_DEVICE_CONTEXT.device = None
-        return
+    if hasattr(_GLOBAL_DEVICE_CONTEXT, "device_context"):
+        device_context = _GLOBAL_DEVICE_CONTEXT.device_context
+        if device_context is not None:
+            device_context.__exit__(None, None, None)
 
-    # Parsing through the public descriptor preserves torch.device's CPU
-    # index normalization and its PyTorch-compatible validation errors. The
-    # descriptor itself remains thread-local metadata; tensor storage stays on
-    # the backend's ordinary unindexed CPU device.
-    parsed_device = torch.device(device)
-    _DEFAULT_DEVICE_CONTEXT.device = parsed_device
+    if device is None:
+        device_context = None
+    else:
+        from torch_rs.utils._device import DeviceContext
+
+        device_context = DeviceContext(device)
+        device_context.__enter__()
+    _GLOBAL_DEVICE_CONTEXT.device_context = device_context
 
 
 def set_default_dtype(d: "torch.dtype", /) -> None:

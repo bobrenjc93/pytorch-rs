@@ -1350,7 +1350,11 @@ pub(crate) fn scalar_tensor_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    Ok(Bound::new(py, scalar_tensor_impl(args, kwargs)?)?
+    let arguments = bind_scalar_tensor_arguments(args, kwargs)?;
+    if let Some(result) = dispatch_factory_mode(py, "scalar_tensor", args, kwargs)? {
+        return Ok(result);
+    }
+    Ok(Bound::new(py, scalar_tensor_impl(arguments)?)?
         .into_any()
         .unbind())
 }
@@ -2212,6 +2216,37 @@ fn torch_function_dispatch_error_for_overrides(
         "Multiple dispatch failed for '{function}'; all __torch_function__ handlers returned NotImplemented:\n\n{}\n\nFor more information, try re-running with TORCH_LOGS=not_implemented",
         handlers.join("\n")
     )))
+}
+
+fn dispatch_factory_mode(
+    py: Python<'_>,
+    name: &str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(None);
+    }
+
+    let function = PyModule::import(py, "torch_rs")?.getattr(name)?.unbind();
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(None);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        &format!("torch.{name}"),
+        Some(mode),
+        None,
+    )?)
 }
 
 fn dispatch_dtype_binary(
@@ -3994,12 +4029,29 @@ impl BinaryOperation {
     text_signature = "(data, *, dtype=None, device=None, requires_grad=False)"
 )]
 fn tensor(
+    py: Python<'_>,
     data: &Bound<'_, PyAny>,
     dtype: Option<&Bound<'_, PyAny>>,
     device: Option<&Bound<'_, PyAny>>,
     requires_grad: StrictBool,
-) -> PyResult<PyTensor> {
+) -> PyResult<Py<PyAny>> {
     let requires_grad = requires_grad.0;
+    let dispatch_args = PyTuple::new(py, [data.clone().into_any()])?;
+    let dispatch_kwargs = PyDict::new(py);
+    if let Some(dtype) = dtype {
+        dispatch_kwargs.set_item("dtype", dtype)?;
+    }
+    if let Some(device) = device {
+        dispatch_kwargs.set_item("device", device)?;
+    }
+    if requires_grad {
+        dispatch_kwargs.set_item("requires_grad", true)?;
+    }
+    let dispatch_kwargs = (!dispatch_kwargs.is_empty()).then_some(&dispatch_kwargs);
+    if let Some(result) = dispatch_factory_mode(py, "tensor", &dispatch_args, dispatch_kwargs)? {
+        return Ok(result);
+    }
+
     let dtype_was_explicit = dtype.is_some();
     let (dtype, device) = parse_metadata("tensor", dtype, device)?;
     let (flattened, shape) = if let Ok(scalar) = data.extract::<f32>() {
@@ -4021,16 +4073,12 @@ fn tensor(
     } else {
         return Err(unsupported_tensor_data_error(data, dtype_was_explicit)?);
     };
-    CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
-        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| tensor_error(&error))
+    let inner = CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
-fn scalar_tensor_impl(
-    args: &Bound<'_, PyTuple>,
-    kwargs: Option<&Bound<'_, PyDict>>,
-) -> PyResult<PyTensor> {
-    let arguments = bind_scalar_tensor_arguments(args, kwargs)?;
+fn scalar_tensor_impl(arguments: ScalarTensorCallArguments<'_>) -> PyResult<PyTensor> {
     let (value, dtype, device, pin_memory, requires_grad) =
         parse_scalar_tensor_arguments(arguments)?;
     if pin_memory {
@@ -4378,62 +4426,90 @@ fn is_signed(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
     signature = (*args, **kwargs),
     text_signature = "(size=None, *, shape=None, dtype=None, device=None, requires_grad=False)"
 )]
-fn zeros(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn zeros(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
     let arguments = bind_creation_arguments("zeros", args, kwargs)?;
+    if let Some(result) = dispatch_factory_mode(py, "zeros", args, kwargs)? {
+        return Ok(result);
+    }
     let (size, dtype, device, requires_grad) = parse_creation_arguments("zeros", arguments)?;
     let ParsedCreationSize {
         dimensions,
         scalar_dimension,
     } = size;
-    CoreTensor::zeros_with_metadata(dimensions, dtype, device)
-        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| scalar_creation_error(&error, scalar_dimension))
+    let inner = CoreTensor::zeros_with_metadata(dimensions, dtype, device)
+        .map_err(|error| scalar_creation_error(&error, scalar_dimension))?;
+    Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
 #[pyfunction(
     signature = (*args, **kwargs),
     text_signature = "(size=None, *, shape=None, dtype=None, device=None, requires_grad=False)"
 )]
-fn ones(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn ones(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
     let arguments = bind_creation_arguments("ones", args, kwargs)?;
+    if let Some(result) = dispatch_factory_mode(py, "ones", args, kwargs)? {
+        return Ok(result);
+    }
     let (size, dtype, device, requires_grad) = parse_creation_arguments("ones", arguments)?;
     let ParsedCreationSize {
         dimensions,
         scalar_dimension,
     } = size;
-    CoreTensor::ones_with_metadata(dimensions, dtype, device)
-        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| scalar_creation_error(&error, scalar_dimension))
+    let inner = CoreTensor::ones_with_metadata(dimensions, dtype, device)
+        .map_err(|error| scalar_creation_error(&error, scalar_dimension))?;
+    Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
 #[pyfunction(
     signature = (*args, **kwargs),
     text_signature = "(n, m=None, *, dtype=None, device=None, requires_grad=False)"
 )]
-fn eye(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn eye(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
     let arguments = bind_eye_arguments(args, kwargs)?;
+    if let Some(result) = dispatch_factory_mode(py, "eye", args, kwargs)? {
+        return Ok(result);
+    }
     let (n, m, dtype, device, requires_grad) = parse_eye_arguments(arguments)?;
     let shape = [n, m];
 
-    CoreTensor::eye_with_metadata(n, m, dtype, device)
-        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| creation_shape_error(&error, &shape))
+    let inner = CoreTensor::eye_with_metadata(n, m, dtype, device)
+        .map_err(|error| creation_shape_error(&error, &shape))?;
+    Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
 #[pyfunction(
     signature = (*args, **kwargs),
     text_signature = "(size, fill_value, *, dtype=None, device=None, requires_grad=False)"
 )]
-fn full(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
+fn full(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
     let arguments = bind_full_arguments(args, kwargs)?;
+    if let Some(result) = dispatch_factory_mode(py, "full", args, kwargs)? {
+        return Ok(result);
+    }
     let (size, fill_value, dtype, device, requires_grad) = parse_full_arguments(arguments)?;
     let shape = validate_size(size)?;
     CoreTensor::validate_full_shape(&shape)
         .map_err(|error| creation_shape_error(&error, &shape))?;
     let fill_value = fill_value.into_f32()?;
-    CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
-        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
-        .map_err(|error| tensor_error(&error))
+    let inner = CoreTensor::full_with_metadata(shape, fill_value, dtype, device)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner.with_requires_grad(requires_grad)))?.into_any())
 }
 
 fn layout_objects(py: Python<'_>) -> PyResult<&'static PyLayoutObjects> {

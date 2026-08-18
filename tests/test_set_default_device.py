@@ -4,6 +4,7 @@ import types
 import unittest
 
 import torch_rs as torch
+from torch_rs.utils._device import DeviceContext
 
 
 FUNCTION_DOC = """Sets the default ``torch.Tensor`` to be allocated on ``device``.  This
@@ -139,6 +140,110 @@ class SetDefaultDeviceTests(unittest.TestCase):
                     explicit_factory("cuda:0")
 
         self.assertEqual(torch.get_default_device(), torch.device("cpu", 6))
+
+    def test_device_context_stack_lifecycle_preserves_user_modes(self):
+        stack = torch.overrides._get_current_function_mode_stack
+        self.assertEqual(stack(), [])
+
+        torch.set_default_device("cpu")
+        first = stack()[0]
+        self.assertIsInstance(first, DeviceContext)
+        self.assertEqual(first.device, torch.device("cpu"))
+        self.assertEqual(stack(), [first])
+
+        torch.set_default_device("cpu:3")
+        second = stack()[0]
+        self.assertIsInstance(second, DeviceContext)
+        self.assertIsNot(second, first)
+        self.assertEqual(second.device, torch.device("cpu", 3))
+        self.assertEqual(stack(), [second])
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return func(*args, **(kwargs or {}))
+
+        mode = ForwardingMode()
+        with mode:
+            self.assertEqual(stack(), [second, mode])
+            torch.set_default_device("cpu:4")
+            replacement = stack()[0]
+            self.assertIsInstance(replacement, DeviceContext)
+            self.assertIsNot(replacement, second)
+            self.assertEqual(stack(), [replacement, mode])
+            torch.set_default_device(None)
+            self.assertEqual(stack(), [mode])
+        self.assertEqual(stack(), [])
+
+        outer = DeviceContext("cpu:1")
+        inner = DeviceContext("cpu:2")
+        outer.__enter__()
+        try:
+            self.assertEqual(stack(), [outer])
+            inner.__enter__()
+            try:
+                self.assertIs(inner.prev_mode, outer)
+                self.assertEqual(stack(), [inner])
+            finally:
+                inner.__exit__(None, None, None)
+            self.assertEqual(stack(), [outer])
+        finally:
+            outer.__exit__(None, None, None)
+        self.assertEqual(stack(), [])
+
+    def test_default_device_dispatches_supported_factories_through_modes(self):
+        stack = torch.overrides._get_current_function_mode_stack
+        factory_calls = (
+            (torch.tensor, lambda: torch.tensor([1.0])),
+            (torch.scalar_tensor, lambda: torch.scalar_tensor(1.0)),
+            (torch.zeros, lambda: torch.zeros(1)),
+            (torch.ones, lambda: torch.ones(1)),
+            (torch.eye, lambda: torch.eye(1)),
+            (torch.full, lambda: torch.full((1,), 2.0)),
+        )
+        factories = {function for function, _ in factory_calls}
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                if func in factories:
+                    self.calls.append(
+                        (
+                            func,
+                            types,
+                            len(args),
+                            None if kwargs is None else dict(kwargs),
+                            tuple(type(mode).__name__ for mode in stack()),
+                        )
+                    )
+                return func(*args, **(kwargs or {}))
+
+        mode = RecordingMode()
+        with mode:
+            torch.set_default_device("cpu:6")
+            mode.calls.clear()
+            outputs = [call() for _, call in factory_calls]
+            self.assertEqual(
+                [type(active).__name__ for active in stack()],
+                ["DeviceContext", "RecordingMode"],
+            )
+            torch.set_default_device(None)
+
+        self.assertEqual(
+            [call[0] for call in mode.calls],
+            [function for function, _ in factory_calls],
+        )
+        self.assertTrue(all(call[1] == () for call in mode.calls))
+        self.assertEqual([call[2] for call in mode.calls], [1, 1, 1, 1, 1, 2])
+        self.assertTrue(all(call[3] is None for call in mode.calls))
+        self.assertTrue(
+            all(call[4] == ("DeviceContext",) for call in mode.calls)
+        )
+        for output in outputs:
+            self.assertEqual(output.device, torch.device("cpu"))
+            self.assertIsNone(output.device.index)
+        self.assertEqual(stack(), [])
 
     def test_default_is_thread_local_and_is_not_inherited(self):
         torch.set_default_device("cpu:7")

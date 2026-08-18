@@ -1,3 +1,4 @@
+import importlib
 import inspect
 import threading
 import types
@@ -142,6 +143,113 @@ class SetDefaultDeviceReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.threaded_outcome(torch),
             self.threaded_outcome(reference_torch),
+        )
+
+    def mode_stack_outcome(self, module):
+        device_module = importlib.import_module(f"{module.__name__}.utils._device")
+        current_stack = module.overrides._get_current_function_mode_stack
+
+        def stack_snapshot():
+            return tuple(
+                (
+                    type(mode).__module__.replace("torch_rs", "torch"),
+                    type(mode).__name__,
+                    str(mode.device) if hasattr(mode, "device") else None,
+                )
+                for mode in current_stack()
+            )
+
+        initial = stack_snapshot()
+        module.set_default_device("cpu")
+        first_context = current_stack()[0]
+        first = stack_snapshot()
+        module.set_default_device("cpu:3")
+        second_context = current_stack()[0]
+        second = stack_snapshot()
+
+        factory_calls = (
+            (module.tensor, lambda: module.tensor([1.0])),
+            (module.scalar_tensor, lambda: module.scalar_tensor(1.0)),
+            (module.zeros, lambda: module.zeros(1)),
+            (module.ones, lambda: module.ones(1)),
+            (module.eye, lambda: module.eye(1)),
+            (module.full, lambda: module.full((1,), 2.0)),
+        )
+        factory_names = {
+            function: function.__name__ for function, _ in factory_calls
+        }
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                if func in factory_names:
+                    self.calls.append(
+                        (
+                            factory_names[func],
+                            tuple(value.__name__ for value in types),
+                            len(args),
+                            None if kwargs is None else tuple(sorted(kwargs)),
+                            stack_snapshot(),
+                        )
+                    )
+                return func(*args, **(kwargs or {}))
+
+        mode = RecordingMode()
+        with mode:
+            before_nested_replacement = stack_snapshot()
+            module.set_default_device("cpu:4")
+            replacement_context = current_stack()[0]
+            after_nested_replacement = stack_snapshot()
+            mode.calls.clear()
+            outputs = [call() for _, call in factory_calls]
+            after_factories = stack_snapshot()
+            module.set_default_device(None)
+            after_nested_reset = stack_snapshot()
+        after_user_mode = stack_snapshot()
+        output_devices = tuple(str(output.device) for output in outputs)
+
+        outer = device_module.DeviceContext("cpu:1")
+        inner = device_module.DeviceContext("cpu:2")
+        outer.__enter__()
+        try:
+            manual_outer = stack_snapshot()
+            inner.__enter__()
+            try:
+                manual_inner = stack_snapshot()
+                previous_context_restored = inner.prev_mode is outer
+            finally:
+                inner.__exit__(None, None, None)
+            manual_inner_exit = stack_snapshot()
+        finally:
+            outer.__exit__(None, None, None)
+        manual_outer_exit = stack_snapshot()
+
+        return (
+            initial,
+            first,
+            second,
+            first_context is not second_context,
+            before_nested_replacement,
+            after_nested_replacement,
+            second_context is not replacement_context,
+            tuple(mode.calls),
+            after_factories,
+            after_nested_reset,
+            after_user_mode,
+            output_devices,
+            manual_outer,
+            manual_inner,
+            previous_context_restored,
+            manual_inner_exit,
+            manual_outer_exit,
+        )
+
+    def test_device_context_stack_and_factory_dispatch_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_stack_outcome(torch),
+            self.mode_stack_outcome(reference_torch),
         )
 
     def test_callable_metadata_and_export_match_pytorch_2_13(self):
