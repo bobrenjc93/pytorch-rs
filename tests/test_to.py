@@ -207,6 +207,93 @@ for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
 
+    def test_import_preserves_a_prior_method_descriptor_reducer(self):
+        source = r"""
+import copyreg
+import inspect
+import pickle
+import types
+
+calls = []
+
+def restore_prior_result():
+    return str.lower
+
+def prior_reducer(descriptor):
+    calls.append(descriptor)
+    return restore_prior_result, ()
+
+copyreg.pickle(types.MethodDescriptorType, prior_reducer)
+
+import torch_rs
+
+tensor_to = inspect.getattr_static(torch_rs.Tensor, "to")
+for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+    assert pickle.loads(pickle.dumps(tensor_to, protocol=protocol)) is tensor_to
+assert calls == []
+
+for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+    assert pickle.loads(pickle.dumps(str.upper, protocol=protocol)) is str.lower
+assert calls == [str.upper] * (pickle.HIGHEST_PROTOCOL + 1)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
+    def test_unrelated_descriptor_pickle_does_not_import_torch_rs(self):
+        source = r"""
+import builtins
+import pickle
+import sys
+
+import torch_rs
+
+for name in tuple(sys.modules):
+    if name == "torch_rs" or name.startswith("torch_rs."):
+        sys.modules.pop(name, None)
+
+import_attempts = []
+original_import = builtins.__import__
+
+def guarded_import(name, *args, **kwargs):
+    if name == "torch_rs" or name.startswith("torch_rs."):
+        import_attempts.append(name)
+        raise ModuleNotFoundError(name)
+    return original_import(name, *args, **kwargs)
+
+builtins.__import__ = guarded_import
+try:
+    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+        assert pickle.loads(pickle.dumps(str.upper, protocol=protocol)) is str.upper
+finally:
+    builtins.__import__ = original_import
+
+assert import_attempts == []
+assert not any(
+    name == "torch_rs" or name.startswith("torch_rs.")
+    for name in sys.modules
+)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
+
     def test_unbound_no_argument_errors_match_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "to")

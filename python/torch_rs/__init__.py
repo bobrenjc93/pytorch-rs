@@ -102,16 +102,27 @@ def _get_tensor_to_descriptor():
     return Tensor.__base__.to
 
 
-def _reduce_method_descriptor(descriptor):
+def _reduce_method_descriptor(
+    descriptor,
+    _tensor_to_descriptor=Tensor.__base__.to,
+    _prior_reducer=_copyreg.dispatch_table.get(_types.MethodDescriptorType),
+    _module_name=__name__,
+):
     # Native descriptors normally reduce through their owner class. Our owner
     # deliberately reports PyTorch's ``torch._C.TensorBase`` metadata while it
     # lives in ``torch_rs``, so resolve this descriptor through the public
-    # package instead. Resolve the live module dynamically because supported
-    # package reinitialization can leave copyreg holding an earlier reducer.
-    # Preserve the default reduction for every other method descriptor.
-    package = __import__(__name__)
-    if descriptor is package.Tensor.__base__.to:
+    # package instead. Check exact identity before importing the package so
+    # unrelated descriptors remain independent of torch_rs availability.
+    if descriptor is _tensor_to_descriptor:
+        # Resolve the live module dynamically because supported package
+        # reinitialization can leave copyreg holding an earlier reducer.
+        package = __import__(_module_name)
         return package._get_tensor_to_descriptor, ()
+
+    # copyreg registrations are process-wide. Preserve any reducer installed
+    # before torch_rs and delegate unrelated method descriptors to it.
+    if _prior_reducer is not None:
+        return _prior_reducer(descriptor)
     return descriptor.__reduce__()
 
 
