@@ -8,11 +8,7 @@ from torch_rs import Tensor
 from torch_rs._diagnostics import _format_single_element_tensor
 from torch_rs.overrides import _dispatch_unary_torch_function
 
-from ..torch_rs import (
-    _nn_functional_alpha_dropout,
-    _nn_functional_dropout,
-    _nn_functional_feature_alpha_dropout,
-)
+from ..torch_rs import _nn_functional_dropout
 
 
 def _validate_dropout_probability(p):
@@ -31,22 +27,26 @@ def _validate_dropout_probability(p):
 def _dropout_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
     if inplace:
-        return _nn_functional_dropout(input, p, training, True)
-    return _nn_functional_dropout(input, p, training, False)
+        return _nn_functional_dropout("dropout", input, p, training, True)
+    return _nn_functional_dropout("dropout", input, p, training, False)
 
 
 def _alpha_dropout_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
     if inplace:
-        return _nn_functional_alpha_dropout(input, p, training, True)
-    return _nn_functional_alpha_dropout(input, p, training, False)
+        return _nn_functional_dropout("alpha_dropout", input, p, training, True)
+    return _nn_functional_dropout("alpha_dropout", input, p, training, False)
 
 
 def _feature_alpha_dropout_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
     if inplace:
-        return _nn_functional_feature_alpha_dropout(input, p, training, True)
-    return _nn_functional_feature_alpha_dropout(input, p, training, False)
+        return _nn_functional_dropout(
+            "feature_alpha_dropout", input, p, training, True
+        )
+    return _nn_functional_dropout(
+        "feature_alpha_dropout", input, p, training, False
+    )
 
 
 def _dropout_range_probability(p):
