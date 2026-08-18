@@ -127,8 +127,22 @@ class FunctionalDropoutTests(unittest.TestCase):
         self.assertIs(signature.return_annotation, torch.Tensor)
 
     def test_evaluation_and_zero_probability_return_the_exact_input(self):
-        evaluation_probabilities = (0.0, 0.25, 1, True, np.float32(0.75))
-        zero_probabilities = (0, 0.0, -0.0, False, np.float32(0.0))
+        evaluation_probabilities = (
+            0.0,
+            0.25,
+            1,
+            True,
+            np.float32(0.75),
+            torch.tensor(0.75),
+        )
+        zero_probabilities = (
+            0,
+            0.0,
+            -0.0,
+            False,
+            np.float32(0.0),
+            torch.tensor(0.0),
+        )
 
         for case, source in enumerate(self.make_cases(requires_grad=True)):
             for probability in evaluation_probabilities:
@@ -217,6 +231,42 @@ class FunctionalDropoutTests(unittest.TestCase):
                 ):
                     functional.dropout(source, p=probability, training=False)
 
+        for value in (-0.1, 1.1, float("inf")):
+            probability = torch.tensor(value)
+            with self.subTest(tensor_probability=value):
+                with self.assertRaises(ValueError) as raised:
+                    functional.dropout(
+                        None, p=probability, training=False
+                    )
+                self.assertEqual(
+                    str(raised.exception),
+                    "dropout probability has to be between 0 and 1, but got "
+                    f"{probability.item()}",
+                )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "^dropout probability has to be between 0 and 1, but got nan$",
+        ):
+            functional.dropout(
+                source, p=torch.tensor(float("nan")), training=False
+            )
+
+        for inplace, operation in ((False, "dropout"), (True, "dropout_")):
+            probability = torch.tensor(0.5, requires_grad=True)
+            with self.subTest(grad_probability_inplace=inplace):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    rf"^{operation}\(\): argument 'p' \(position 2\) "
+                    "must be float, not Tensor$",
+                ):
+                    functional.dropout(
+                        source,
+                        p=probability,
+                        training=False,
+                        inplace=inplace,
+                    )
+
         class SneakyProbability(float):
             def __lt__(self, other):
                 return False
@@ -284,6 +334,33 @@ class FunctionalDropoutTests(unittest.TestCase):
         ):
             functional.dropout(
                 source, p=0, training=True, inplace=BoolFailure()
+            )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", np.exceptions.ComplexWarning)
+            with self.assertRaisesRegex(
+                np.exceptions.ComplexWarning,
+                "^Casting complex values to real discards the imaginary part$",
+            ):
+                functional.dropout(
+                    source, p=np.complex64(0), training=False
+                )
+
+        class MemoryFailure(int):
+            def __float__(self):
+                raise MemoryError("probability conversion failed")
+
+            def __lt__(self, other):
+                return False
+
+            def __gt__(self, other):
+                return False
+
+        with self.assertRaisesRegex(
+            MemoryError, "^probability conversion failed$"
+        ):
+            functional.dropout(
+                source, p=MemoryFailure(0), training=False
             )
 
     def test_overrides_observe_the_public_function_before_validation(self):
@@ -429,7 +506,12 @@ class FunctionalDropoutTests(unittest.TestCase):
         )
         source = leaf[1]
 
-        for probability in (0.25, 1.0):
+        for probability in (
+            0.25,
+            1.0,
+            torch.tensor(0.25),
+            torch.tensor(1.0),
+        ):
             for inplace in (False, True):
                 before = self.snapshot(source)
                 with self.subTest(probability=probability, inplace=inplace):

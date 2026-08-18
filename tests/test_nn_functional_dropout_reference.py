@@ -225,6 +225,88 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
             actual_output, expected_output, case="no_grad"
         )
 
+    def test_scalar_tensor_probability_schema_matches(self):
+        actual_input = torch.tensor([1.0, 2.0], requires_grad=True)
+        expected_input = reference_torch.tensor(
+            [1.0, 2.0], requires_grad=True
+        )
+
+        for value, training in (
+            (0.0, True),
+            (0.5, False),
+            (1.0, False),
+        ):
+            for inplace in (False, True):
+                actual_probability = torch.tensor(value)
+                expected_probability = reference_torch.tensor(
+                    value, dtype=reference_torch.float32
+                )
+                with self.subTest(
+                    value=value, training=training, inplace=inplace
+                ):
+                    actual = functional.dropout(
+                        actual_input,
+                        p=actual_probability,
+                        training=training,
+                        inplace=inplace,
+                    )
+                    expected = reference_functional.dropout(
+                        expected_input,
+                        p=expected_probability,
+                        training=training,
+                        inplace=inplace,
+                    )
+                    self.assertIs(actual, actual_input)
+                    self.assertIs(expected, expected_input)
+
+        for value in (-0.1, 1.1, float("inf"), float("nan")):
+            actual_probability = torch.tensor(value)
+            expected_probability = reference_torch.tensor(
+                value, dtype=reference_torch.float32
+            )
+            actual_error = self.capture_error(
+                lambda: functional.dropout(
+                    actual_input,
+                    p=actual_probability,
+                    training=False,
+                )
+            )
+            expected_error = self.capture_error(
+                lambda: reference_functional.dropout(
+                    expected_input,
+                    p=expected_probability,
+                    training=False,
+                )
+            )
+            with self.subTest(invalid_value=value):
+                self.assertIs(actual_error[0], expected_error[0])
+                self.assertEqual(actual_error[1], expected_error[1])
+
+        for inplace in (False, True):
+            actual_probability = torch.tensor(0.5, requires_grad=True)
+            expected_probability = reference_torch.tensor(
+                0.5, dtype=reference_torch.float32, requires_grad=True
+            )
+            actual_error = self.capture_error(
+                lambda: functional.dropout(
+                    actual_input,
+                    p=actual_probability,
+                    training=False,
+                    inplace=inplace,
+                )
+            )
+            expected_error = self.capture_error(
+                lambda: reference_functional.dropout(
+                    expected_input,
+                    p=expected_probability,
+                    training=False,
+                    inplace=inplace,
+                )
+            )
+            with self.subTest(grad_probability_inplace=inplace):
+                self.assertIs(actual_error[0], expected_error[0])
+                self.assertEqual(actual_error[1], expected_error[1])
+
     def test_probability_validation_schema_and_binding_errors_match(self):
         actual_input = torch.tensor([1.0])
         expected_input = reference_torch.tensor([1.0])
@@ -356,6 +438,46 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
                     [str(item.message) for item in actual_warnings],
                     [str(item.message) for item in expected_warnings],
                 )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", np.exceptions.ComplexWarning)
+            actual_error = self.capture_error(
+                lambda: functional.dropout(
+                    actual_input, p=np.complex64(0), training=False
+                )
+            )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", np.exceptions.ComplexWarning)
+            expected_error = self.capture_error(
+                lambda: reference_functional.dropout(
+                    expected_input, p=np.complex64(0), training=False
+                )
+            )
+        self.assertIs(actual_error[0], expected_error[0])
+        self.assertEqual(actual_error[1], expected_error[1])
+
+        class MemoryFailure(int):
+            def __float__(self):
+                raise MemoryError("probability conversion failed")
+
+            def __lt__(self, other):
+                return False
+
+            def __gt__(self, other):
+                return False
+
+        actual_error = self.capture_error(
+            lambda: functional.dropout(
+                actual_input, p=MemoryFailure(0), training=False
+            )
+        )
+        expected_error = self.capture_error(
+            lambda: reference_functional.dropout(
+                expected_input, p=MemoryFailure(0), training=False
+            )
+        )
+        self.assertIs(actual_error[0], expected_error[0])
+        self.assertEqual(actual_error[1], expected_error[1])
 
     def run_override_case(self, function):
         replacement = object()

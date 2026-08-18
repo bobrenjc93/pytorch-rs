@@ -3760,16 +3760,25 @@ fn dropout_probability_type_error(
     )))
 }
 
-fn extract_dropout_probability(operation: &str, probability: &Bound<'_, PyAny>) -> PyResult<f64> {
-    match probability.extract::<f64>() {
-        Ok(probability) => Ok(probability),
-        Err(_) => Err(dropout_probability_type_error(operation, probability)?),
-    }
+fn extract_dropout_probability(probability: &Bound<'_, PyAny>) -> PyResult<f64> {
+    probability.extract::<f64>()
 }
 
 fn parse_dropout_probability(operation: &str, probability: &Bound<'_, PyAny>) -> PyResult<f64> {
+    if let Ok(tensor) = probability.cast::<PyTensor>() {
+        let tensor = tensor.try_borrow()?;
+        if tensor.inner.shape().is_empty() && !tensor.inner.requires_grad() {
+            return tensor
+                .inner
+                .item()
+                .map(f64::from)
+                .map_err(|error| item_error(&error));
+        }
+        return Err(dropout_probability_type_error(operation, probability)?);
+    }
+
     if probability.is_instance_of::<PyInt>() || probability.is_instance_of::<PyFloat>() {
-        return extract_dropout_probability(operation, probability);
+        return extract_dropout_probability(probability);
     }
 
     let Ok(numpy) = PyModule::import(probability.py(), "numpy") else {
@@ -3787,7 +3796,7 @@ fn parse_dropout_probability(operation: &str, probability: &Bound<'_, PyAny>) ->
     }
     for scalar_type in ["integer", "floating", "complexfloating"] {
         if probability.is_instance(&numpy.getattr(scalar_type)?)? {
-            return extract_dropout_probability(operation, probability);
+            return extract_dropout_probability(probability);
         }
     }
 

@@ -106,9 +106,13 @@ def _dropout_impl(input, p, training, inplace, include_tensor):
             input, p, training, inplace, include_tensor
         )
 
-    if p < 0.0 or p > 1.0:
+    range_probability = (
+        p.item() if type(p) is Tensor and len(p.shape) == 0 else p
+    )
+    if range_probability < 0.0 or range_probability > 1.0:
         raise ValueError(
-            f"dropout probability has to be between 0 and 1, but got {p}"
+            "dropout probability has to be between 0 and 1, but got "
+            f"{range_probability}"
         )
     if inplace:
         return _nn_functional_dropout(input, p, training, True)
