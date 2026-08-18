@@ -2,6 +2,7 @@
 
 import copyreg as _copyreg
 import sys as _sys
+import types as _types
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
@@ -95,6 +96,27 @@ def _reduce_layout(value):
 
 _copyreg.pickle(layout, _reduce_layout)
 
+
+def _get_tensor_to_descriptor():
+    """Return the canonical native ``TensorBase.to`` descriptor."""
+    return Tensor.__base__.to
+
+
+def _reduce_method_descriptor(descriptor):
+    # Native descriptors normally reduce through their owner class. Our owner
+    # deliberately reports PyTorch's ``torch._C.TensorBase`` metadata while it
+    # lives in ``torch_rs``, so resolve this descriptor through the public
+    # package instead. Resolve the live module dynamically because supported
+    # package reinitialization can leave copyreg holding an earlier reducer.
+    # Preserve the default reduction for every other method descriptor.
+    package = __import__(__name__)
+    if descriptor is package.Tensor.__base__.to:
+        return package._get_tensor_to_descriptor, ()
+    return descriptor.__reduce__()
+
+
+_copyreg.pickle(_types.MethodDescriptorType, _reduce_method_descriptor)
+
 __doc__ = _native.__doc__
 # Keep package-only exports out of the native module's list, just as PyTorch's
 # numeric constants live on ``torch`` rather than ``torch._C``.  A separate
@@ -114,4 +136,4 @@ from . import overrides as overrides
 from . import utils as utils
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _copyreg, _native, _sys
+del _copyreg, _native, _sys, _types
