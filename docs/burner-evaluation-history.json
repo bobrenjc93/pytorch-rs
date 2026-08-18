@@ -3521,6 +3521,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 76
       }
+    },
+    {
+      "key": "pr:263",
+      "recordedAt": "2026-08-18T23:05:46.729Z",
+      "label": "PR #263",
+      "kind": "leaf",
+      "prNumber": 263,
+      "title": "Add identity-only nn.functional.feature_alpha_dropout",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 73.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 56.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 76
+      }
     }
   ]
 }
