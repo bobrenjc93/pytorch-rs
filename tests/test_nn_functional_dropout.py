@@ -522,14 +522,18 @@ class FunctionalDropoutTests(unittest.TestCase):
         previous_limit = sys.getrecursionlimit()
         try:
             sys.setrecursionlimit(80)
-            with self.assertRaisesRegex(
-                RecursionError, "^maximum recursion depth exceeded$"
-            ):
+            with self.assertRaises(RecursionError) as raised:
                 functional.dropout(
                     torch.tensor([0.0]),
                     p=probability,
                     training=False,
                 )
+            expected_message = (
+                "maximum recursion depth exceeded while calling a Python object"
+                if sys.version_info < (3, 12)
+                else "maximum recursion depth exceeded"
+            )
+            self.assertEqual(str(raised.exception), expected_message)
         finally:
             sys.setrecursionlimit(previous_limit)
 

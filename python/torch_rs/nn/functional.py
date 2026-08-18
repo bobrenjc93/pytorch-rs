@@ -1,6 +1,7 @@
 """Functional interface."""
 
 import math
+import sys
 import types as _types
 import warnings
 
@@ -173,9 +174,21 @@ def _format_single_element_tensor(tensor, value):
     else:
         formatted = f"{value:.4f}"
 
-    formatted = _format_single_element_tensor_contents(
-        len(tensor.shape), formatted
-    )
+    try:
+        formatted = _format_single_element_tensor_contents(
+            len(tensor.shape), formatted
+        )
+    except RecursionError as error:
+        # Before CPython 3.12, the pure-Python recursion check reports the
+        # boundary where it happened (for example, ``in comparison``), while
+        # PyTorch's native tensor formatter reaches the callable boundary.
+        # Preserve the original exception and traceback while matching that
+        # public diagnostic.
+        if sys.version_info < (3, 12):
+            error.args = (
+                "maximum recursion depth exceeded while calling a Python object",
+            )
+        raise
     suffix = _nn_functional_dropout_tensor_autograd_suffix(tensor)
     return f"tensor({formatted}{suffix})"
 
