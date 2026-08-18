@@ -9,11 +9,12 @@ from torch_rs._diagnostics import _format_single_element_tensor
 from torch_rs.overrides import _dispatch_unary_torch_function
 
 from ..torch_rs import (
+    _nn_functional_alpha_dropout,
     _nn_functional_dropout,
 )
 
 
-def _dropout_impl(input, p, training, inplace):
+def _validate_dropout_probability(p):
     range_probability, probability_for_error = _dropout_range_probability(p)
     if range_probability < 0.0 or range_probability > 1.0:
         if type(probability_for_error) is Tensor:
@@ -24,9 +25,20 @@ def _dropout_impl(input, p, training, inplace):
             "dropout probability has to be between 0 and 1, but got "
             f"{probability_for_error}"
         )
+
+
+def _dropout_impl(input, p, training, inplace):
+    _validate_dropout_probability(p)
     if inplace:
         return _nn_functional_dropout(input, p, training, True)
     return _nn_functional_dropout(input, p, training, False)
+
+
+def _alpha_dropout_impl(input, p, training, inplace):
+    _validate_dropout_probability(p)
+    if inplace:
+        return _nn_functional_alpha_dropout(input, p, training, True)
+    return _nn_functional_alpha_dropout(input, p, training, False)
 
 
 def _dropout_range_probability(p):
@@ -80,6 +92,24 @@ def dropout(
     return _dispatch_unary_torch_function(
         dropout,
         _dropout_impl,
+        input,
+        {"p": p, "training": training, "inplace": inplace},
+    )
+
+
+def alpha_dropout(
+    input: Tensor,
+    p: float = 0.5,
+    training: bool = False,
+    inplace: bool = False,
+) -> Tensor:
+    r"""Apply alpha dropout to the input.
+
+    See :class:`~torch.nn.AlphaDropout` for details.
+    """
+    return _dispatch_unary_torch_function(
+        alpha_dropout,
+        _alpha_dropout_impl,
         input,
         {"p": p, "training": training, "inplace": inplace},
     )
