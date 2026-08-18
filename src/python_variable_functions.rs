@@ -15,16 +15,16 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     adjoint_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    permute_variable_function, positive_variable_function, promote_types_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
-    select_variable_function, unbind_variable_function,
+    is_inference_variable_function, matmul_variable_function, mm_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, permute_variable_function, positive_variable_function,
+    promote_types_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    scalar_tensor_variable_function, select_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 17] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 18] = [
     "get_device",
     "scalar_tensor",
     "adjoint",
@@ -39,6 +39,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 17] = [
     "movedim",
     "moveaxis",
     "matmul",
+    "mm",
     "mul",
     "multiply",
     "promote_types",
@@ -320,6 +321,63 @@ Example::
 
 ";
 
+const MM_DOC: &std::ffi::CStr = cr"
+mm(input, mat2, *, out=None) -> Tensor
+
+Performs a matrix multiplication of the matrices :attr:`input` and :attr:`mat2`.
+
+If :attr:`input` is a :math:`(n \times m)` tensor, :attr:`mat2` is a
+:math:`(m \times p)` tensor, :attr:`out` will be a :math:`(n \times p)` tensor.
+
+.. note:: This function does not :ref:`broadcast <broadcasting-semantics>`.
+          For broadcasting matrix products, see :func:`torch.matmul`.
+
+Supports strided and sparse 2-D tensors as inputs, autograd with
+respect to strided inputs.
+
+This operation has support for arguments with :ref:`sparse layouts<sparse-docs>`.
+If :attr:`out` is provided its layout will be used. Otherwise, the result
+layout will be deduced from that of :attr:`input`.
+
+
+.. warning::
+    Sparse support is a beta feature and some layout(s)/dtype/device combinations may not be supported,
+    or may not have autograd support. If you notice missing functionality please
+    open a feature request.
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+On certain ROCm devices, when using float16 inputs this module will use :ref:`different precision<fp16_on_mi200>` for backward.
+
+Args:
+    input (Tensor): the first matrix to be matrix multiplied
+    mat2 (Tensor): the second matrix to be matrix multiplied
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> mat1 = torch.randn(2, 3)
+    >>> mat2 = torch.randn(3, 3)
+    >>> torch.mm(mat1, mat2)
+    tensor([[ 0.4851,  0.5037, -0.3633],
+            [-0.0760, -3.6705,  2.4784]])
+
+.. function:: mm(input, mat2, out_dtype, *, out=None) -> Tensor
+   :noindex:
+
+Args:
+    input (Tensor): the first matrix to be matrix multiplied
+    mat2 (Tensor): the second matrix to be matrix multiplied
+    out_dtype (dtype): the dtype of the output tensor.
+        Supported only on CUDA and for torch.float32 given
+        torch.float16/torch.bfloat16 input dtypes.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+";
+
 #[allow(
     unsafe_code,
     reason = "CPython passes borrowed tuple and dictionary pointers to C method callbacks"
@@ -374,6 +432,7 @@ variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
+variable_function_callback!(mm_callback, mm_variable_function);
 variable_function_callback!(promote_types_callback, promote_types_variable_function);
 
 macro_rules! variable_function_method {
@@ -412,6 +471,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
+        variable_function_method!(c"mm", mm_callback, MM_DOC),
         variable_function_method!(c"promote_types", promote_types_callback, PROMOTE_TYPES_DOC),
         ffi::PyMethodDef::zeroed(),
     ]));

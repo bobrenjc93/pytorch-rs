@@ -1357,6 +1357,15 @@ pub(crate) fn matmul_variable_function(
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
 }
 
+pub(crate) fn mm_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = bind_mm_arguments(args, kwargs)?;
+    dispatch_top_level_mm(py, &call, args, kwargs)
+}
+
 pub(crate) fn mul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1430,6 +1439,20 @@ impl<'a, 'py> FromPyObject<'a, 'py> for StrictBool {
 struct ParsedCallArgument<'py> {
     value: Bound<'py, PyAny>,
     position: Option<usize>,
+}
+
+struct BoundMmCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    mat2: BoundTensorOrTorchFunction<'py>,
+    optional_overrides: Vec<ProbedTorchFunctionOverride<'py>>,
+    has_out: bool,
+    has_out_dtype: bool,
+}
+
+struct SelectedMmRequiredArguments<'py> {
+    input: Option<ParsedCallArgument<'py>>,
+    mat2: Option<ParsedCallArgument<'py>>,
+    consumed_keywords: usize,
 }
 
 struct ConsumedPromoteTypesKeyword<'py> {
@@ -2560,6 +2583,33 @@ fn dispatch_matmul(
     }
 }
 
+fn insert_ordered_override<'py>(
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+    probed: &ProbedTorchFunctionOverride<'py>,
+) -> PyResult<()> {
+    for (index, existing) in overrides.iter().enumerate() {
+        // PyTorch reports a class-valued operand itself in the dispatch types,
+        // but orders an incoming operand by its runtime type. Its metaclass is
+        // therefore compared with the reported class, preserving class
+        // argument order and repeated class identities without changing
+        // ordinary instance subclass precedence.
+        if existing.dispatch_type.is(probed.precedence_type.as_any()) {
+            return Ok(());
+        }
+
+        let existing_type = existing
+            .dispatch_type
+            .cast::<PyType>()
+            .expect("a torch-function dispatch type is a Python type");
+        if probed.precedence_type.is_subclass(existing_type.as_any())? {
+            overrides.insert(index, probed.clone());
+            return Ok(());
+        }
+    }
+    overrides.push(probed.clone());
+    Ok(())
+}
+
 fn ordered_binary_overrides<'py>(
     first: Option<&ProbedTorchFunctionOverride<'py>>,
     second: Option<&ProbedTorchFunctionOverride<'py>>,
@@ -2571,31 +2621,10 @@ fn ordered_binary_overrides<'py>(
         .map_err(|_| PyMemoryError::new_err(allocation_error))?;
 
     if let Some(probed) = first {
-        overrides.push(probed.clone());
+        insert_ordered_override(&mut overrides, probed)?;
     }
     if let Some(probed) = second {
-        let Some(first) = overrides.first() else {
-            overrides.push(probed.clone());
-            return Ok(overrides);
-        };
-        // PyTorch reports a class-valued operand itself in the dispatch types,
-        // but orders an incoming operand by its runtime type. Its metaclass is
-        // therefore compared with the first reported class, preserving class
-        // argument order and repeated class identities without changing
-        // ordinary instance subclass precedence.
-        if first.dispatch_type.is(probed.precedence_type.as_any()) {
-            return Ok(overrides);
-        }
-
-        let first_type = first
-            .dispatch_type
-            .cast::<PyType>()
-            .expect("a torch-function dispatch type is a Python type");
-        if probed.precedence_type.is_subclass(first_type.as_any())? {
-            overrides.insert(0, probed.clone());
-        } else {
-            overrides.push(probed.clone());
-        }
+        insert_ordered_override(&mut overrides, probed)?;
     }
     Ok(overrides)
 }
@@ -2613,6 +2642,19 @@ fn ordered_matmul_overrides<'py>(
         BoundTensorOrTorchFunction::Tensor(_) => None,
     };
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
+}
+
+fn ordered_mm_overrides<'py>(
+    call: &BoundMmCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let mut overrides = ordered_matmul_overrides(&call.input, &call.mat2)?;
+    overrides
+        .try_reserve_exact(call.optional_overrides.len())
+        .map_err(|_| PyMemoryError::new_err("unable to allocate mm dispatch operands"))?;
+    for probed in &call.optional_overrides {
+        insert_ordered_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
 }
 
 fn ordered_promote_types_overrides<'py>(
@@ -2701,6 +2743,73 @@ fn dispatch_top_level_matmul(
         active_mode.get(),
         &overrides,
     )?)
+}
+
+fn dispatch_top_level_mm(
+    py: Python<'_>,
+    call: &BoundMmCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_mm_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_mm(py, call);
+    }
+
+    let function = variable_function(py, "mm")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Disable the top mode for the complete dispatch attempt. A mode can call
+    // the public function explicitly to forward to the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.mm",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_mm(py: Python<'_>, call: &BoundMmCall<'_>) -> PyResult<Py<PyAny>> {
+    if call.has_out_dtype {
+        return Err(PyRuntimeError::new_err(
+            "mm(): the 'out_dtype' argument is not supported",
+        ));
+    }
+    if call.has_out {
+        return Err(PyRuntimeError::new_err(
+            "mm(): the 'out' argument is not supported",
+        ));
+    }
+
+    let (BoundTensorOrTorchFunction::Tensor(input), BoundTensorOrTorchFunction::Tensor(mat2)) =
+        (&call.input, &call.mat2)
+    else {
+        unreachable!("mm overrides were collected before the native fast path")
+    };
+    let mat2 = mat2.try_borrow()?;
+    let result = input.try_borrow()?.matrix_multiply_for_mm(&mat2)?;
+    Ok(Py::new(py, result)?.into_any())
 }
 
 fn dispatch_top_level_multiplication(
@@ -3475,6 +3584,29 @@ impl PyTensor {
             .matmul(&other.inner)
             .map(Self::new)
             .map_err(|error| tensor_error(&error))
+    }
+
+    fn matrix_multiply_for_mm(&self, other: &Self) -> PyResult<Self> {
+        let left_shape = self.inner.shape();
+        let right_shape = other.inner.shape();
+        if left_shape.len() != 2 {
+            return Err(PyRuntimeError::new_err("self must be a matrix"));
+        }
+        if right_shape.len() != 2 {
+            return Err(PyRuntimeError::new_err("mat2 must be a matrix"));
+        }
+        if left_shape[1] != right_shape[0] {
+            return Err(PyRuntimeError::new_err(format!(
+                "mat1 and mat2 shapes cannot be multiplied ({}x{} and {}x{})",
+                left_shape[0], left_shape[1], right_shape[0], right_shape[1]
+            )));
+        }
+        if self.inner.requires_grad() || other.inner.requires_grad() {
+            return Err(PyRuntimeError::new_err(
+                "mm(): operands that require grad are not supported",
+            ));
+        }
+        self.matrix_multiply(other)
     }
 
     fn negated(&self) -> PyResult<Self> {
@@ -7543,6 +7675,160 @@ fn parse_promote_types_operand<'py>(
     let actual = python_type_name(&argument.value)?;
     Err(PyTypeError::new_err(format!(
         "promote_types(): argument '{name}'{position} must be torch.dtype, not {actual}"
+    )))
+}
+
+fn select_mm_required_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<SelectedMmRequiredArguments<'py>> {
+    let mut consumed_keywords = 0_usize;
+    let input = if positional.is_empty() {
+        [c"input", c"x", c"a", c"x1"]
+            .into_iter()
+            .find_map(|name| {
+                let value = keywords.and_then(|values| legacy_dict_get_item_string(values, name));
+                if value.is_some() {
+                    consumed_keywords += 1;
+                }
+                value
+            })
+            .map(|value| ParsedCallArgument {
+                value,
+                position: None,
+            })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let mat2 = if positional.len() < 2 {
+        let value = keywords.and_then(|values| legacy_dict_get_item_string(values, c"mat2"));
+        if value.is_some() {
+            consumed_keywords += 1;
+        }
+        value.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+    Ok(SelectedMmRequiredArguments {
+        input,
+        mat2,
+        consumed_keywords,
+    })
+}
+
+fn bind_mm_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundMmCall<'py>> {
+    let argument_count = positional
+        .len()
+        .checked_add(keywords.map_or(0, PyDictMethods::len))
+        .ok_or_else(|| PyMemoryError::new_err("mm argument count overflowed"))?;
+    if positional.len() > 3 || argument_count < 2 {
+        return Err(mm_binding_error(positional, keywords)?);
+    }
+
+    let SelectedMmRequiredArguments {
+        input,
+        mat2,
+        mut consumed_keywords,
+    } = select_mm_required_arguments(positional, keywords)?;
+
+    if argument_count == 2 {
+        let Some(input) = input else {
+            return Err(PyTypeError::new_err(
+                "mm() missing 2 required positional argument: \"input\", \"mat2\"",
+            ));
+        };
+        let Some(mat2) = mat2 else {
+            parse_tensor_or_torch_function_argument("mm", "input", &input)?;
+            return Err(PyTypeError::new_err(
+                "mm() missing 1 required positional arguments: \"mat2\"",
+            ));
+        };
+        if consumed_keywords != keywords.map_or(0, PyDictMethods::len) {
+            return Err(mm_binding_error(positional, keywords)?);
+        }
+        return Ok(BoundMmCall {
+            input: parse_tensor_or_torch_function_argument("mm", "input", &input)?,
+            mat2: parse_tensor_or_torch_function_argument("mm", "mat2", &mat2)?,
+            optional_overrides: Vec::new(),
+            has_out: false,
+            has_out_dtype: false,
+        });
+    }
+
+    let (Some(input), Some(mat2)) = (input, mat2) else {
+        return Err(mm_binding_error(positional, keywords)?);
+    };
+    let has_out_dtype = positional.len() == 3;
+    let out = keywords.and_then(|values| legacy_dict_get_item_string(values, c"out"));
+    let has_out = out.is_some();
+    if has_out {
+        consumed_keywords += 1;
+    }
+    let expected_arguments = 2 + usize::from(has_out_dtype) + usize::from(has_out);
+    if argument_count != expected_arguments
+        || consumed_keywords != keywords.map_or(0, PyDictMethods::len)
+    {
+        return Err(mm_binding_error(positional, keywords)?);
+    }
+
+    let Ok(input) = parse_tensor_or_torch_function_argument("mm", "input", &input) else {
+        return Err(mm_binding_error(positional, keywords)?);
+    };
+    let Ok(mat2) = parse_tensor_or_torch_function_argument("mm", "mat2", &mat2) else {
+        return Err(mm_binding_error(positional, keywords)?);
+    };
+    let mut optional_overrides = Vec::new();
+    optional_overrides
+        .try_reserve_exact(usize::from(has_out_dtype) + usize::from(has_out))
+        .map_err(|_| PyMemoryError::new_err("unable to allocate mm optional operands"))?;
+
+    if has_out_dtype {
+        let out_dtype = positional.get_item(2)?;
+        if out_dtype.cast::<PyDType>().is_err() {
+            let Some(probed) = probe_torch_function_override(&out_dtype) else {
+                return Err(mm_binding_error(positional, keywords)?);
+            };
+            optional_overrides.push(probed);
+        }
+    }
+    if let Some(out) = out
+        && !out.is_none()
+        && out.cast::<PyTensor>().is_err()
+    {
+        let Some(probed) = probe_torch_function_override(&out) else {
+            return Err(mm_binding_error(positional, keywords)?);
+        };
+        optional_overrides.push(probed);
+    }
+
+    Ok(BoundMmCall {
+        input,
+        mat2,
+        optional_overrides,
+        has_out,
+        has_out_dtype,
+    })
+}
+
+fn mm_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "mm() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (Tensor input, Tensor mat2, *, Tensor out = None)\n * (Tensor input, Tensor mat2, torch.dtype out_dtype, *, Tensor out = None)\n"
     )))
 }
 
