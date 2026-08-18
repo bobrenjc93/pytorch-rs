@@ -24,6 +24,8 @@ mod python_device;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_dtype;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_finfo;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_grad_mode;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_layout;
@@ -51,7 +53,7 @@ mod tensor_error;
 pub(crate) use grad_mode::{enter_no_grad, exit_no_grad};
 
 pub use device::Device;
-pub use dtype::DType;
+pub use dtype::{DType, FloatingPointInfo};
 pub use grad_mode::{NoGradGuard, is_grad_enabled, no_grad};
 pub use memory_format::MemoryFormat;
 pub use tensor::{LogicalValues, Tensor};
