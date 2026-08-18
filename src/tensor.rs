@@ -1362,8 +1362,11 @@ impl Tensor {
     /// Returns an error when contiguous storage or result metadata cannot be
     /// created.
     pub fn ravel(&self) -> Result<Self, TensorError> {
-        self.try_contiguous(MemoryFormat::Contiguous)?
-            .flatten(0, -1)
+        let contiguous = self.try_contiguous(MemoryFormat::Contiguous)?;
+        if contiguous.shape.len() == 1 {
+            return contiguous.metadata_alias_with_grad_fn("ViewBackward0");
+        }
+        contiguous.flatten(0, -1)
     }
 
     /// Creates an independent copy of this tensor's logical values.
@@ -1517,8 +1520,12 @@ impl Tensor {
     }
 
     fn metadata_alias(&self) -> Result<Self, TensorError> {
+        self.metadata_alias_with_grad_fn("AliasBackward0")
+    }
+
+    fn metadata_alias_with_grad_fn(&self, grad_fn_name: &'static str) -> Result<Self, TensorError> {
         let mut output = self.metadata_alias_detached()?;
-        self.record_view_transform(&mut output, TransformMapping::Identity, "AliasBackward0")?;
+        self.record_view_transform(&mut output, TransformMapping::Identity, grad_fn_name)?;
         Ok(output)
     }
 

@@ -3850,7 +3850,8 @@ fn _nn_functional_dropout(
         )));
     }
 
-    if !training || probability == 0.0 {
+    let input_is_empty = tensor.try_borrow()?.inner.numel() == 0;
+    if !training || probability == 0.0 || input_is_empty {
         return Ok(tensor.clone().unbind().into_any());
     }
 

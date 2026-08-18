@@ -1,6 +1,7 @@
 """Functional interface."""
 
 import math
+import types
 import warnings
 
 import torch_rs as torch
@@ -24,8 +25,19 @@ def _overloaded_dropout_arguments(input, include_tensor):
         # Tensor type even though the unary fast path excludes it otherwise.
         return [input] if include_tensor else []
     if hasattr(input_type, "__torch_function__"):
+        handler = input_type.__torch_function__
+        if _is_disabled_torch_function_impl(handler):
+            return []
         return [input]
     return []
+
+
+def _is_disabled_torch_function_impl(handler):
+    return (
+        isinstance(handler, types.BuiltinFunctionType)
+        and handler.__module__ == "torch._C"
+        and handler.__name__ == "_disabled_torch_function_impl"
+    )
 
 
 def _has_dropout_torch_function(input):
@@ -37,10 +49,10 @@ def _has_dropout_torch_function(input):
     if type(input) is Tensor:
         return False
     try:
-        input.__torch_function__
+        handler = input.__torch_function__
     except BaseException:
         return False
-    return True
+    return not _is_disabled_torch_function_impl(handler)
 
 
 def _handle_dropout_torch_function(
@@ -157,10 +169,32 @@ def _format_single_element_tensor(tensor, value):
     else:
         formatted = f"{value:.4f}"
 
-    formatted = "[" * len(tensor.shape) + formatted
-    formatted += "]" * len(tensor.shape)
+    formatted = _format_single_element_tensor_contents(
+        len(tensor.shape), formatted
+    )
     suffix = _nn_functional_dropout_tensor_autograd_suffix(tensor)
     return f"tensor({formatted}{suffix})"
+
+
+def _format_single_element_tensor_contents(
+    dimensions, formatted, formatter_frames=5
+):
+    # PyTorch reaches its recursive tensor printer through five additional
+    # Tensor.__format__/repr helper frames. Preserve that recursion headroom so
+    # deeply ranked probability diagnostics fail at the same resource limit.
+    if formatter_frames:
+        return _format_single_element_tensor_contents(
+            dimensions, formatted, formatter_frames - 1
+        )
+    if dimensions == 1:
+        return f"[{formatted}]"
+    return (
+        "["
+        + _format_single_element_tensor_contents(
+            dimensions - 1, formatted, 0
+        )
+        + "]"
+    )
 
 
 def relu(input: Tensor, inplace: bool = False) -> Tensor:

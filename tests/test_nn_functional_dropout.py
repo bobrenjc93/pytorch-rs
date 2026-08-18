@@ -212,6 +212,29 @@ class FunctionalDropoutTests(unittest.TestCase):
         self.assertFalse(unchanged.is_leaf)
         self.assertIsNone(untracked_leaf.grad)
 
+    def test_empty_training_inputs_return_the_exact_input(self):
+        leaf = torch.zeros((2, 0, 3), requires_grad=True)
+        sources = (leaf, leaf.transpose(0, 2)[1])
+
+        for case, source in enumerate(sources):
+            for probability in (0.25, 1.0, torch.tensor(0.25)):
+                for inplace in (False, True):
+                    before = self.snapshot(source)
+                    with self.subTest(
+                        case=case,
+                        probability=probability,
+                        inplace=inplace,
+                    ):
+                        output = functional.dropout(
+                            source,
+                            p=probability,
+                            training=True,
+                            inplace=inplace,
+                        )
+                        self.assert_unchanged_identity(
+                            output, source, before
+                        )
+
     def test_probability_validation_and_native_schema_errors(self):
         source = torch.tensor([1.0, 2.0])
 
@@ -289,6 +312,12 @@ class FunctionalDropoutTests(unittest.TestCase):
                 ValueError,
                 "dropout probability has to be between 0 and 1, but got "
                 "tensor([[2.]], grad_fn=<ViewBackward0>)",
+            ),
+            (
+                torch.tensor([-2.0], requires_grad=True).ravel(),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([-2.], grad_fn=<ViewBackward0>)",
             ),
             (
                 3 - torch.tensor([1.0], requires_grad=True),
@@ -478,6 +507,22 @@ class FunctionalDropoutTests(unittest.TestCase):
                 source, p=MemoryFailure(0), training=False
             )
 
+    def test_tensor_probability_formatting_obeys_recursion_limit(self):
+        probability = torch.tensor([-2.0]).reshape((1,) * 72)
+        previous_limit = sys.getrecursionlimit()
+        try:
+            sys.setrecursionlimit(80)
+            with self.assertRaisesRegex(
+                RecursionError, "^maximum recursion depth exceeded$"
+            ):
+                functional.dropout(
+                    torch.tensor([0.0]),
+                    p=probability,
+                    training=False,
+                )
+        finally:
+            sys.setrecursionlimit(previous_limit)
+
     def test_overrides_observe_the_public_function_before_validation(self):
         replacement = object()
 
@@ -558,6 +603,32 @@ class FunctionalDropoutTests(unittest.TestCase):
             "^dropout probability has to be between 0 and 1, but got -1$",
         ):
             functional.dropout(BrokenProbe(), p=-1)
+
+        class StatefulDescriptor:
+            def __init__(self):
+                self.type_accesses = 0
+
+            def __get__(self, instance, owner):
+                if instance is None:
+                    self.type_accesses += 1
+                    if self.type_accesses == 2:
+                        raise RuntimeError("second type lookup")
+
+                def override(func, types, args=(), kwargs=None):
+                    return replacement
+
+                return override
+
+        descriptor = StatefulDescriptor()
+
+        class StatefulOverride:
+            __torch_function__ = descriptor
+
+        with self.assertRaisesRegex(
+            RuntimeError, "^second type lookup$"
+        ):
+            functional.dropout(StatefulOverride(), training=False)
+        self.assertEqual(descriptor.type_accesses, 2)
 
     def test_torch_function_modes_observe_forward_and_decline(self):
         source = torch.tensor([1.0, 2.0])

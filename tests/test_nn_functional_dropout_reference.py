@@ -1,4 +1,5 @@
 import inspect
+import sys
 import types
 import unittest
 import warnings
@@ -225,6 +226,54 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
             actual_output, expected_output, case="no_grad"
         )
 
+    def test_empty_training_identity_and_rng_state_match(self):
+        for requires_grad in (False, True):
+            actual_sources = self.make_case(
+                torch, "empty", requires_grad=requires_grad
+            )
+            expected_sources = self.make_case(
+                reference_torch, "empty", requires_grad=requires_grad
+            )
+            for source_kind, (actual_input, expected_input) in enumerate(
+                zip(actual_sources, expected_sources, strict=True)
+            ):
+                for probability in (0.25, 1.0):
+                    for inplace in (False, True):
+                        expected_rng = reference_torch.get_rng_state().clone()
+                        actual = functional.dropout(
+                            actual_input,
+                            p=probability,
+                            training=True,
+                            inplace=inplace,
+                        )
+                        expected = reference_functional.dropout(
+                            expected_input,
+                            p=probability,
+                            training=True,
+                            inplace=inplace,
+                        )
+                        case = (
+                            requires_grad,
+                            source_kind,
+                            probability,
+                            inplace,
+                        )
+                        with self.subTest(case=case):
+                            self.assertIs(actual, actual_input)
+                            self.assertIs(expected, expected_input)
+                            self.assertTrue(
+                                reference_torch.equal(
+                                    expected_rng,
+                                    reference_torch.get_rng_state(),
+                                )
+                            )
+                        self.assert_metadata_matches(
+                            actual, expected, case=case
+                        )
+                        self.assert_values_match(
+                            actual, expected, case=case
+                        )
+
     def test_scalar_tensor_probability_schema_matches(self):
         actual_input = torch.tensor([1.0, 2.0], requires_grad=True)
         expected_input = reference_torch.tensor(
@@ -375,6 +424,14 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
             (
                 actual_leaf_probability.reshape(1, 1),
                 expected_leaf_probability.reshape(1, 1),
+            ),
+            (
+                torch.tensor([-2.0], requires_grad=True).ravel(),
+                reference_torch.tensor(
+                    [-2.0],
+                    dtype=reference_torch.float32,
+                    requires_grad=True,
+                ).ravel(),
             ),
             (3 - actual_reflected_leaf, 3 - expected_reflected_leaf),
             (
@@ -608,6 +665,37 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
                 self.assertIs(actual_error[0], expected_error[0])
                 self.assertEqual(actual_error[1], expected_error[1])
 
+    def test_tensor_probability_recursion_limit_matches(self):
+        actual_probability = torch.tensor([-2.0]).reshape((1,) * 72)
+        expected_probability = reference_torch.tensor(
+            [-2.0], dtype=reference_torch.float32
+        ).reshape((1,) * 72)
+
+        def capture_with_limit(call):
+            previous_limit = sys.getrecursionlimit()
+            try:
+                sys.setrecursionlimit(80)
+                return self.capture_error(call)
+            finally:
+                sys.setrecursionlimit(previous_limit)
+
+        actual_error = capture_with_limit(
+            lambda: functional.dropout(
+                torch.tensor([0.0]),
+                p=actual_probability,
+                training=False,
+            )
+        )
+        expected_error = capture_with_limit(
+            lambda: reference_functional.dropout(
+                reference_torch.tensor([0.0]),
+                p=expected_probability,
+                training=False,
+            )
+        )
+        self.assertIs(actual_error[0], expected_error[0])
+        self.assertEqual(actual_error[1], expected_error[1])
+
     def run_override_case(self, function):
         replacement = object()
 
@@ -668,6 +756,70 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
         )
         expected_error = self.capture_error(
             lambda: reference_functional.dropout(BrokenProbe(), p=-1)
+        )
+        self.assertIs(actual_error[0], expected_error[0])
+        self.assertEqual(actual_error[1], expected_error[1])
+
+        def stateful_override():
+            class StatefulDescriptor:
+                def __init__(self):
+                    self.type_accesses = 0
+
+                def __get__(self, instance, owner):
+                    if instance is None:
+                        self.type_accesses += 1
+                        if self.type_accesses == 2:
+                            raise RuntimeError("second type lookup")
+
+                    def override(func, types, args=(), kwargs=None):
+                        return "override"
+
+                    return override
+
+            descriptor = StatefulDescriptor()
+
+            class StatefulOverride:
+                __torch_function__ = descriptor
+
+            return StatefulOverride(), descriptor
+
+        actual_override, actual_descriptor = stateful_override()
+        expected_override, expected_descriptor = stateful_override()
+        actual_error = self.capture_error(
+            lambda: functional.dropout(actual_override, training=False)
+        )
+        expected_error = self.capture_error(
+            lambda: reference_functional.dropout(
+                expected_override, training=False
+            )
+        )
+        self.assertIs(actual_error[0], expected_error[0])
+        self.assertEqual(actual_error[1], expected_error[1])
+        self.assertEqual(
+            actual_descriptor.type_accesses,
+            expected_descriptor.type_accesses,
+        )
+
+        def disabled_input():
+            return type(
+                "DisabledInput",
+                (),
+                {
+                    "__torch_function__": (
+                        reference_torch._C._disabled_torch_function_impl
+                    )
+                },
+            )()
+
+        actual_error = self.capture_error(
+            lambda: functional.dropout(
+                disabled_input(), p=0, training=False
+            )
+        )
+        expected_error = self.capture_error(
+            lambda: reference_functional.dropout(
+                disabled_input(), p=0, training=False
+            )
         )
         self.assertIs(actual_error[0], expected_error[0])
         self.assertEqual(actual_error[1], expected_error[1])
