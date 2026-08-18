@@ -3425,6 +3425,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 76
       }
+    },
+    {
+      "key": "pr:247",
+      "recordedAt": "2026-08-18T18:47:52.518Z",
+      "label": "PR #247",
+      "kind": "leaf",
+      "prNumber": 247,
+      "title": "Expose single-Tensor torch.atleast_1d",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 72.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 55.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 76
+      }
     }
   ]
 }
