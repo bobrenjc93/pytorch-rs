@@ -2192,6 +2192,60 @@ fn reshape_is_a_contiguous_shared_storage_view() {
 }
 
 #[test]
+fn view_reuses_reshape_stride_analysis_without_copying() {
+    let scalar = Tensor::from_vec(vec![-0.0], []).unwrap();
+    let scalar_view = scalar.view([]).unwrap();
+    assert!(scalar_view.shape().is_empty());
+    assert!(scalar_view.stride().is_empty());
+    assert!(scalar_view.shares_storage_with(&scalar));
+
+    let empty = Tensor::zeros([2, 0, 3])
+        .unwrap()
+        .transpose(0, 2)
+        .unwrap()
+        .index_integer(1)
+        .unwrap();
+    let empty_view = empty.view([2, 0]).unwrap();
+    assert_eq!(empty_view.shape(), [2, 0]);
+    assert_eq!(empty_view.stride(), [1, 1]);
+    assert_eq!(empty_view.storage_offset(), 1);
+    assert!(empty_view.shares_storage_with(&empty));
+
+    let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let offset = source.index_integer(1).unwrap();
+    let offset_view = offset.view([2, 6]).unwrap();
+    assert_eq!(offset_view.stride(), [6, 1]);
+    assert_eq!(offset_view.storage_offset(), 12);
+    assert!(offset_view.shares_storage_with(&offset));
+
+    let non_contiguous = source.transpose(0, 1).unwrap();
+    let compatible = non_contiguous.view([3, 2, 2, 2]).unwrap();
+    assert_eq!(compatible.stride(), [4, 12, 2, 1]);
+    assert!(compatible.shares_storage_with(&non_contiguous));
+
+    let error = non_contiguous.view([6, 4]).unwrap_err();
+    assert_eq!(error, TensorError::ViewIncompatibleLayout);
+    assert_eq!(
+        error.to_string(),
+        "view size is not compatible with input tensor's size and stride (at least one dimension spans across two contiguous subspaces). Use .reshape(...) instead."
+    );
+    assert!(
+        !non_contiguous
+            .reshape([6, 4])
+            .unwrap()
+            .shares_storage_with(&non_contiguous)
+    );
+
+    assert_eq!(
+        Tensor::zeros([6]).unwrap().view([2, 2]),
+        Err(TensorError::ReshapeElementCountMismatch {
+            shape: vec![2, 2],
+            elements: 6,
+        })
+    );
+}
+
+#[test]
 fn clone_deep_copies_a_views_logical_range_and_preserves_float_bits() {
     let values = [
         0.0_f32,

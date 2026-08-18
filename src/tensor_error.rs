@@ -74,6 +74,7 @@ pub enum TensorError {
         shape: Vec<i64>,
         elements: usize,
     },
+    ViewIncompatibleLayout,
     ElementCountOverflow,
     StrideCalculationOverflow,
     StorageCapacityOverflow {
@@ -170,6 +171,9 @@ impl Display for TensorError {
             Self::ReshapeElementCountMismatch { shape, elements } => write!(
                 formatter,
                 "shape '{shape:?}' is invalid for input of size {elements}"
+            ),
+            Self::ViewIncompatibleLayout => formatter.write_str(
+                "view size is not compatible with input tensor's size and stride (at least one dimension spans across two contiguous subspaces). Use .reshape(...) instead.",
             ),
             Self::ElementCountOverflow => {
                 formatter.write_str("tensor element count overflowed usize")

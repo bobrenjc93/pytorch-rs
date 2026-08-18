@@ -1869,7 +1869,30 @@ impl Tensor {
     /// for an empty tensor, arithmetic overflow, or metadata allocation
     /// failure.
     pub fn reshape(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
-        let requested = shape.as_ref();
+        let resolved = self.resolve_reshape_shape(shape.as_ref())?;
+        self.reshape_resolved(resolved)
+    }
+
+    /// Returns a metadata-only tensor view with a new shape.
+    ///
+    /// One dimension may be `-1`, in which case it is inferred from the
+    /// tensor's element count. The result always shares storage and preserves
+    /// the source offset. Unlike [`Self::reshape`], layouts whose existing
+    /// strides cannot represent the requested shape return an error instead of
+    /// being copied into contiguous storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for negative dimensions other than `-1`, multiple
+    /// inferred dimensions, incompatible element counts, ambiguous inference
+    /// for an empty tensor, a stride-incompatible layout, arithmetic overflow,
+    /// or metadata allocation failure.
+    pub fn view(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
+        let resolved = self.resolve_reshape_shape(shape.as_ref())?;
+        self.view_resolved(resolved)
+    }
+
+    fn resolve_reshape_shape(&self, requested: &[i64]) -> Result<Vec<usize>, TensorError> {
         let mut inferred_index = None;
 
         for (index, dimension) in requested.iter().copied().enumerate() {
@@ -1937,49 +1960,12 @@ impl Tensor {
             });
         }
 
-        self.reshape_resolved(resolved)
+        Ok(resolved)
     }
 
     fn reshape_resolved(&self, resolved: Vec<usize>) -> Result<Self, TensorError> {
-        if self.elements == 0 {
-            let strides = if resolved == self.shape {
-                try_clone_result_shape(&self.strides, self.elements)?
-            } else {
-                reshape_strides(&resolved, self.elements)?
-            };
-            return self.finish_view_transform(
-                Self {
-                    storage: Arc::clone(&self.storage),
-                    shape: resolved,
-                    strides,
-                    offset: self.offset,
-                    elements: self.elements,
-                    output_nr: 0,
-                    view_requires_grad: false,
-                    autograd: None,
-                },
-                TransformMapping::Identity,
-                AutogradNode::View,
-            );
-        }
-
-        if let Some(strides) =
-            compute_reshape_view_strides(&self.shape, &self.strides, &resolved, self.elements)?
-        {
-            return self.finish_view_transform(
-                Self {
-                    storage: Arc::clone(&self.storage),
-                    shape: resolved,
-                    strides,
-                    offset: self.offset,
-                    elements: self.elements,
-                    output_nr: 0,
-                    view_requires_grad: false,
-                    autograd: None,
-                },
-                TransformMapping::Identity,
-                AutogradNode::View,
-            );
+        if let Some(strides) = self.reshape_view_strides(&resolved)? {
+            return self.finish_reshape_view(resolved, strides);
         }
 
         let strides = contiguous_strides(&resolved, self.elements)?;
@@ -1990,6 +1976,47 @@ impl Tensor {
                 shape: resolved,
                 strides,
                 offset: 0,
+                elements: self.elements,
+                output_nr: 0,
+                view_requires_grad: false,
+                autograd: None,
+            },
+            TransformMapping::Identity,
+            AutogradNode::View,
+        )
+    }
+
+    fn view_resolved(&self, resolved: Vec<usize>) -> Result<Self, TensorError> {
+        let strides = self
+            .reshape_view_strides(&resolved)?
+            .ok_or(TensorError::ViewIncompatibleLayout)?;
+        self.finish_reshape_view(resolved, strides)
+    }
+
+    fn reshape_view_strides(&self, resolved: &[usize]) -> Result<Option<Vec<usize>>, TensorError> {
+        if self.elements == 0 {
+            let strides = if resolved == self.shape {
+                try_clone_result_shape(&self.strides, self.elements)?
+            } else {
+                reshape_strides(resolved, self.elements)?
+            };
+            return Ok(Some(strides));
+        }
+
+        compute_reshape_view_strides(&self.shape, &self.strides, resolved, self.elements)
+    }
+
+    fn finish_reshape_view(
+        &self,
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+    ) -> Result<Self, TensorError> {
+        self.finish_view_transform(
+            Self {
+                storage: Arc::clone(&self.storage),
+                shape,
+                strides,
+                offset: self.offset,
                 elements: self.elements,
                 output_nr: 0,
                 view_requires_grad: false,

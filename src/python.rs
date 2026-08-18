@@ -1068,19 +1068,7 @@ impl PyTensorBase {
             return Err(keyword_error);
         }
 
-        let shape = {
-            let other = other.try_borrow()?;
-            let mut shape = try_size_vector(other.inner.shape().len())?;
-            for &dimension in other.inner.shape() {
-                let dimension = i64::try_from(dimension).map_err(|_| {
-                    PyOverflowError::new_err(
-                        "tensor dimension exceeds the signed 64-bit shape limit",
-                    )
-                })?;
-                try_push_size(&mut shape, dimension)?;
-            }
-            shape
-        };
+        let shape = tensor_shape_as_i64(other)?;
 
         slf.as_any()
             .cast::<PyTensor>()?
@@ -1089,6 +1077,25 @@ impl PyTensorBase {
             .reshape(shape)
             .map(PyTensor::new)
             .map_err(|error| tensor_error(&error))
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nview_as(other) -> Tensor\n\nView this tensor as the same size as :attr:`other`.\n``self.view_as(other)`` is equivalent to ``self.view(other.size())``.\n\nPlease see :meth:`~Tensor.view` for more information about ``view``.\n\nArgs:\n    other (:class:`torch.Tensor`): The result tensor has the same size\n        as :attr:`other`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn view_as(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let (arguments, keyword_error) = bind_tensor_arguments("view_as", args, kwargs, ["other"])?;
+        let other = parse_tensor_or_torch_function_argument("view_as", "other", &arguments[0])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        dispatch_view_as(slf.py(), tensor, &other, args, kwargs)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1297,6 +1304,18 @@ pub(crate) fn moveaxis_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     dimension_move_variable_function(DimensionMoveOperation::Moveaxis, py, args, kwargs)
+}
+
+fn tensor_shape_as_i64(tensor: &Bound<'_, PyTensor>) -> PyResult<Vec<i64>> {
+    let tensor = tensor.try_borrow()?;
+    let mut shape = try_size_vector(tensor.inner.shape().len())?;
+    for &dimension in tensor.inner.shape() {
+        let dimension = i64::try_from(dimension).map_err(|_| {
+            PyOverflowError::new_err("tensor dimension exceeds the signed 64-bit shape limit")
+        })?;
+        try_push_size(&mut shape, dimension)?;
+    }
+    Ok(shape)
 }
 
 fn dimension_move_tensor_method(
@@ -2479,6 +2498,98 @@ fn apply_top_level_movedim(
         destination,
     )?;
     let inner = movedim_tensor(&input.try_borrow()?.inner, source, destination)?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn dispatch_view_as(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    other: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty()
+        && let BoundTensorOrTorchFunction::Tensor(other) = other
+    {
+        return apply_view_as(py, tensor, other);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("view_as")?.unbind();
+    let types = match other {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+    };
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("view_as dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate view_as dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    // Generated tensor methods validate their schema before dispatch and
+    // disable the top mode for the complete attempt. Explicit forwarding from
+    // a mode therefore reaches the next mode, then the operand override or the
+    // native view path.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match other {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            // Resolve only after the mode has declined so mode side effects on
+            // the operand's handler match PyTorch's deferred lookup.
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.Tensor.view_as",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(other) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.Tensor.view_as",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            apply_view_as(py, tensor, other)
+        }
+    }
+}
+
+fn apply_view_as(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    other: &Bound<'_, PyTensor>,
+) -> PyResult<Py<PyAny>> {
+    let shape = tensor_shape_as_i64(other)?;
+    let inner = tensor
+        .try_borrow()?
+        .inner
+        .view(shape)
+        .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 

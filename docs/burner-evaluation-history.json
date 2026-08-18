@@ -3345,6 +3345,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 72
       }
+    },
+    {
+      "key": "pr:237",
+      "recordedAt": "2026-08-18T14:52:21.092Z",
+      "label": "PR #237",
+      "kind": "leaf",
+      "prNumber": 237,
+      "title": "Expose view-compatible Tensor.view_as only",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 72.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 55.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 73
+      }
     }
   ]
 }
