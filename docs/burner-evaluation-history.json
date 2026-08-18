@@ -3361,6 +3361,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 73
       }
+    },
+    {
+      "key": "pr:239",
+      "recordedAt": "2026-08-18T15:26:11.902Z",
+      "label": "PR #239",
+      "kind": "leaf",
+      "prNumber": 239,
+      "title": "Add float32-only torch.can_cast",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 72.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 55.2,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 74
+      }
     }
   ]
 }
