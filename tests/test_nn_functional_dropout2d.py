@@ -279,17 +279,15 @@ class FunctionalDropout2dTests(unittest.TestCase):
                         source, p=probability, training=False
                     )
 
+        for inplace in (False, True):
+            with self.subTest(none_input=True, inplace=inplace):
+                with self.assertRaisesRegex(
+                    AttributeError,
+                    "^'NoneType' object has no attribute 'dim'$",
+                ):
+                    functional.dropout2d(None, p=0, inplace=inplace)
+
         error_cases = (
-            (
-                lambda: functional.dropout2d(None, p=0),
-                "feature_dropout(): argument 'input' (position 1) must be "
-                "Tensor, not NoneType",
-            ),
-            (
-                lambda: functional.dropout2d(None, p=0, inplace=True),
-                "feature_dropout_(): argument 'input' (position 1) must be "
-                "Tensor, not NoneType",
-            ),
             (
                 lambda: functional.dropout2d(source, p=Decimal("0")),
                 "feature_dropout(): argument 'p' (position 2) must be float, "

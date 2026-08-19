@@ -33,6 +33,8 @@ def _dropout_impl(input, p, training, inplace):
 
 def _dropout2d_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
+    # Preserve PyTorch's pre-native invalid-input validation order.
+    input.dim()
     if inplace:
         return _nn_functional_dropout("dropout2d", input, p, training, True)
     return _nn_functional_dropout("dropout2d", input, p, training, False)

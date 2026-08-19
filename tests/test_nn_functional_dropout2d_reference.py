@@ -370,6 +370,26 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
 
         paired_calls = (
             (
+                lambda: functional.dropout2d(
+                    None, p=-0.1, training="invalid", inplace=True
+                ),
+                lambda: reference_functional.dropout2d(
+                    None, p=-0.1, training="invalid", inplace=True
+                ),
+            ),
+            (
+                lambda: functional.dropout2d(None, p=0),
+                lambda: reference_functional.dropout2d(None, p=0),
+            ),
+            (
+                lambda: functional.dropout2d(
+                    None, p=0, training=1, inplace=True
+                ),
+                lambda: reference_functional.dropout2d(
+                    None, p=0, training=1, inplace=True
+                ),
+            ),
+            (
                 lambda: functional.dropout2d(actual_input, p=-0.1),
                 lambda: reference_functional.dropout2d(
                     expected_input, p=-0.1
