@@ -12,6 +12,9 @@ import numpy as np
 import torch_rs as torch
 import torch_rs.nn as nn
 import torch_rs.nn.functional as functional
+from torch_rs._diagnostics import (
+    _nn_functional_dropout_tensor_autograd_suffix,
+)
 
 
 FUNCTION_DOC = r"""Randomly zero out entire channels (a channel is a 1D feature map).
@@ -47,6 +50,43 @@ Args:
 
 
 class FunctionalDropout1dTests(unittest.TestCase):
+    def make_probability_one_cases(self, *, requires_grad):
+        contiguous = torch.tensor(
+            [[[-1.0, 2.0, -0.0, 3.0], [4.0, -5.0, 6.0, -7.0]]],
+            requires_grad=requires_grad,
+        )
+        backing = torch.tensor(
+            [
+                [
+                    [
+                        [9.0, 9.0, 9.0, 9.0],
+                        [9.0, 9.0, 9.0, 9.0],
+                        [9.0, 9.0, 9.0, 9.0],
+                    ],
+                    [
+                        [9.0, 9.0, 9.0, 9.0],
+                        [9.0, 9.0, 9.0, 9.0],
+                        [9.0, 9.0, 9.0, 9.0],
+                    ],
+                ],
+                [
+                    [
+                        [-1.0, 2.0, -0.0, 3.0],
+                        [4.0, -5.0, 6.0, -7.0],
+                        [8.0, -9.0, 10.0, -11.0],
+                    ],
+                    [
+                        [-12.0, 13.0, -14.0, 15.0],
+                        [16.0, -17.0, 18.0, -19.0],
+                        [-20.0, 21.0, -22.0, 23.0],
+                    ],
+                ],
+            ],
+            requires_grad=requires_grad,
+        )
+        offset = backing[1]
+        return contiguous, offset, offset.transpose(1, 2)
+
     def snapshot(self, tensor):
         return (
             id(tensor),
@@ -186,6 +226,103 @@ class FunctionalDropout1dTests(unittest.TestCase):
         self.assertTrue(unchanged.requires_grad)
         self.assertFalse(unchanged.is_leaf)
         self.assertIsNone(untracked_leaf.grad)
+
+    def test_training_probability_one_returns_a_new_signed_zero_product(self):
+        for case, source in enumerate(
+            self.make_probability_one_cases(requires_grad=False)
+        ):
+            expected_bits = (
+                np.asarray(source).reshape(-1).view(np.uint32)
+                & np.uint32(0x80000000)
+            )
+            for probability in (
+                1.0,
+                True,
+                np.float32(1.0),
+                torch.tensor(1.0),
+            ):
+                before = self.snapshot(source)
+                output = functional.dropout1d(
+                    source,
+                    p=probability,
+                    training=True,
+                    inplace=False,
+                )
+                with self.subTest(case=case, probability=type(probability)):
+                    self.assertIsNot(output, source)
+                    self.assertFalse(output.is_set_to(source))
+                    self.assertNotEqual(output.data_ptr(), source.data_ptr())
+                    self.assertEqual(output.shape, source.shape)
+                    self.assertEqual(output.stride(), source.stride())
+                    self.assertEqual(output.storage_offset(), 0)
+                    self.assertIs(output.dtype, source.dtype)
+                    self.assertEqual(output.device, source.device)
+                    self.assertFalse(output.requires_grad)
+                    self.assertTrue(output.is_leaf)
+                    self.assertEqual(output.output_nr, 0)
+                    np.testing.assert_array_equal(
+                        np.asarray(output).reshape(-1).view(np.uint32),
+                        expected_bits,
+                    )
+                    self.assertEqual(self.snapshot(source)[:-1], before[:-1])
+                    np.testing.assert_array_equal(
+                        self.snapshot(source)[-1], before[-1]
+                    )
+
+    def test_training_probability_one_autograd_and_no_grad(self):
+        leaf = torch.tensor(
+            [[[-1.0, 2.0], [-0.0, 3.0]]], requires_grad=True
+        )
+        source = leaf.transpose(1, 2)
+        before = np.asarray(source.detach()).copy().view(np.uint32)
+        output = functional.dropout1d(
+            source,
+            p=torch.tensor(1.0),
+            training=True,
+            inplace=False,
+        )
+        self.assertIsNot(output, source)
+        self.assertFalse(output.is_set_to(source))
+        self.assertEqual(output.stride(), source.stride())
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        self.assertEqual(output.output_nr, 0)
+        self.assertEqual(
+            _nn_functional_dropout_tensor_autograd_suffix(output),
+            ", grad_fn=<MulBackward0>",
+        )
+        np.testing.assert_array_equal(
+            np.asarray(output.detach()).reshape(-1).view(np.uint32),
+            [0x80000000, 0x80000000, 0x00000000, 0x00000000],
+        )
+        weights = torch.tensor([[[2.0, -3.0], [-5.0, 7.0]]])
+        (output * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad).reshape(-1).view(np.uint32),
+            [0x00000000, 0x80000000, 0x80000000, 0x00000000],
+        )
+        np.testing.assert_array_equal(
+            np.asarray(source.detach()).view(np.uint32), before
+        )
+
+        no_grad_leaf = torch.tensor(
+            [[[-1.0, 2.0], [-0.0, 3.0]]], requires_grad=True
+        )
+        no_grad_source = no_grad_leaf.transpose(1, 2)
+        with torch.no_grad():
+            untracked = functional.dropout1d(
+                no_grad_source, p=1, training=True
+            )
+        self.assertIsNot(untracked, no_grad_source)
+        self.assertFalse(untracked.is_set_to(no_grad_source))
+        self.assertEqual(untracked.stride(), no_grad_source.stride())
+        self.assertFalse(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
+        np.testing.assert_array_equal(
+            np.asarray(untracked).reshape(-1).view(np.uint32),
+            [0x80000000, 0x80000000, 0x00000000, 0x00000000],
+        )
+        self.assertIsNone(no_grad_leaf.grad)
 
     def test_probability_validation_and_feature_dropout_schema(self):
         source = torch.zeros((1, 2, 3))
@@ -371,35 +508,39 @@ class FunctionalDropout1dTests(unittest.TestCase):
         mode = RecordingMode(forward=True)
         with mode:
             output = functional.dropout1d(
-                source, p=0, training=True, inplace=True
+                source, p=1, training=True, inplace=False
             )
-        self.assertIs(output, source)
+        self.assertIsNot(output, source)
+        self.assertFalse(output.is_set_to(source))
+        np.testing.assert_array_equal(
+            np.asarray(output).reshape(-1).view(np.uint32),
+            np.zeros(source.numel(), dtype=np.uint32),
+        )
         self.assertEqual(len(mode.calls), 1)
 
-    def test_sampling_and_non_rank_three_inputs_are_explicitly_unsupported(self):
+    def test_sampling_inplace_and_non_rank_three_inputs_are_unsupported(self):
         source = torch.tensor(
             [[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True
         )
         before = self.snapshot(source)
-        for probability in (0.25, 1.0):
-            for inplace in (False, True):
-                with self.subTest(sampling=probability, inplace=inplace):
-                    with self.assertRaisesRegex(
-                        NotImplementedError,
-                        "^torch_rs.nn.functional.dropout1d does not support "
-                        "sampling$",
-                    ):
-                        functional.dropout1d(
-                            source,
-                            p=probability,
-                            training=True,
-                            inplace=inplace,
-                        )
-                    self.assertEqual(self.snapshot(source)[:-1], before[:-1])
-                    np.testing.assert_array_equal(
-                        self.snapshot(source)[-1], before[-1]
+        for probability, inplace in ((0.25, False), (0.25, True), (1.0, True)):
+            with self.subTest(sampling=probability, inplace=inplace):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    "^torch_rs.nn.functional.dropout1d does not support "
+                    "sampling$",
+                ):
+                    functional.dropout1d(
+                        source,
+                        p=probability,
+                        training=True,
+                        inplace=inplace,
                     )
-                    self.assertIsNone(source.grad)
+                self.assertEqual(self.snapshot(source)[:-1], before[:-1])
+                np.testing.assert_array_equal(
+                    self.snapshot(source)[-1], before[-1]
+                )
+                self.assertIsNone(source.grad)
 
         non_rank_three = (
             torch.tensor(-0.0),
@@ -409,7 +550,12 @@ class FunctionalDropout1dTests(unittest.TestCase):
             torch.zeros((2, 3, 4, 5, 6, 7)),
             torch.zeros((2, 0, 3, 4)),
         )
-        identity_modes = ((0.5, False), (0.0, True), (0.5, True))
+        identity_modes = (
+            (0.5, False),
+            (0.0, True),
+            (0.5, True),
+            (1.0, True),
+        )
         for source in non_rank_three:
             for probability, training in identity_modes:
                 for inplace in (False, True):
