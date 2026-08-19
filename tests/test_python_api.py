@@ -1025,15 +1025,34 @@ class PythonApiBaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             extreme.clone(memory_format=torch.contiguous_format)
 
-    def test_clone_rejects_unsupported_formats_and_extra_arguments(self):
+    def test_clone_validates_formats_and_extra_arguments(self):
         tensor = torch.tensor([1.0])
-        for memory_format in (torch.channels_last, torch.channels_last_3d):
+        for operation in (
+            lambda: tensor.clone(memory_format=torch.channels_last),
+            lambda: torch.clone(tensor, memory_format=torch.channels_last),
+        ):
+            with self.subTest(memory_format=torch.channels_last, operation=operation):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "required rank 4 tensor to use channels_last format",
+                ):
+                    operation()
+
+        rank_five = torch.zeros((2, 3, 4, 5, 6))
+        for source in (tensor, rank_five):
             for operation in (
-                lambda: tensor.clone(memory_format=memory_format),
-                lambda: torch.clone(tensor, memory_format=memory_format),
+                lambda source=source: source.clone(
+                    memory_format=torch.channels_last_3d
+                ),
+                lambda source=source: torch.clone(
+                    source, memory_format=torch.channels_last_3d
+                ),
             ):
-                with self.subTest(memory_format=memory_format, operation=operation):
-                    with self.assertRaises(RuntimeError):
+                with self.subTest(source_shape=source.shape, operation=operation):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "clone with memory format torch.channels_last_3d is not supported",
+                    ):
                         operation()
 
         for memory_format in (object(), 1, "contiguous_format"):

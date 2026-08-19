@@ -2306,6 +2306,87 @@ fn clone_deep_copies_a_views_logical_range_and_preserves_float_bits() {
 }
 
 #[test]
+fn clone_materializes_canonical_channels_last_storage() {
+    let special_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x7fc1_2345,
+        0x7f80_0000,
+        0xff80_0000,
+        0x3f80_0000,
+    ];
+    let values = (0..72)
+        .map(|index| f32::from_bits(special_bits[index % special_bits.len()]))
+        .collect::<Vec<_>>();
+    let source = Tensor::from_vec(values[..24].to_vec(), [2, 3, 2, 2]).unwrap();
+    let offset_base = Tensor::from_vec(values, [3, 2, 3, 2, 2]).unwrap();
+    let offset = offset_base.index_integer(1).unwrap();
+    let strided = source.transpose(1, 2).unwrap();
+    let channels_last = source.try_contiguous(MemoryFormat::ChannelsLast).unwrap();
+
+    for (case, input, expected_stride) in [
+        ("contiguous", &source, vec![12, 1, 6, 3]),
+        ("offset", &offset, vec![12, 1, 6, 3]),
+        ("strided", &strided, vec![12, 1, 4, 2]),
+        ("channels_last", &channels_last, vec![12, 1, 6, 3]),
+    ] {
+        let expected_bits = input.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+        let cloned = input
+            .try_clone_with_memory_format(MemoryFormat::ChannelsLast)
+            .unwrap();
+        assert_eq!(cloned.shape(), input.shape(), "{case}");
+        assert_eq!(cloned.stride(), expected_stride, "{case}");
+        assert_eq!(cloned.storage_offset(), 0, "{case}");
+        assert_eq!(cloned.dtype(), input.dtype(), "{case}");
+        assert_eq!(cloned.device(), input.device(), "{case}");
+        assert!(
+            cloned.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast),
+            "{case}"
+        );
+        assert!(!cloned.shares_storage_with(input), "{case}");
+        assert_eq!(
+            cloned
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            expected_bits,
+            "{case}"
+        );
+    }
+
+    for (shape, expected_stride) in [
+        (vec![2, 0, 4, 5], vec![0, 1, 0, 0]),
+        (vec![2, 3, 0, 5], vec![0, 1, 15, 3]),
+        (vec![2, 3, 4, 0], vec![0, 1, 0, 3]),
+        (vec![0, 3, 4, 5], vec![60, 1, 15, 3]),
+    ] {
+        let input = Tensor::zeros(shape).unwrap();
+        let cloned = input
+            .try_clone_with_memory_format(MemoryFormat::ChannelsLast)
+            .unwrap();
+        assert_eq!(cloned.stride(), expected_stride);
+        assert_eq!(cloned.storage_offset(), 0);
+        assert_eq!(cloned.numel(), 0);
+        assert!(cloned.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+        assert!(!cloned.shares_storage_with(&input));
+    }
+
+    let (surviving_clone, expected_values) = {
+        let temporary = Tensor::from_vec((0_u8..48).map(f32::from).collect(), [2, 3, 2, 4])
+            .unwrap()
+            .transpose(2, 3)
+            .unwrap();
+        let expected_values = temporary.try_to_vec().unwrap();
+        let cloned = temporary
+            .try_clone_with_memory_format(MemoryFormat::ChannelsLast)
+            .unwrap();
+        (cloned, expected_values)
+    };
+    assert_eq!(surviving_clone.stride(), [24, 1, 6, 3]);
+    assert_eq!(surviving_clone.try_to_vec().unwrap(), expected_values);
+}
+
+#[test]
 fn clone_handles_scalars_and_extreme_empty_view_offsets() {
     let scalar = Tensor::from_vec(vec![-0.0], []).unwrap();
     let scalar_copy = scalar.try_clone().unwrap();
@@ -2365,10 +2446,49 @@ fn clone_handles_scalars_and_extreme_empty_view_offsets() {
     );
     assert_eq!(
         extreme_shape.try_clone_with_memory_format(MemoryFormat::ChannelsLast),
-        Err(TensorError::UnsupportedMemoryFormat {
+        Err(TensorError::ContiguousMemoryFormatRankMismatch {
             memory_format: MemoryFormat::ChannelsLast,
+            expected_rank: 4,
+            actual_rank: 3,
         })
     );
+}
+
+#[test]
+fn clone_validates_channels_last_rank_without_enabling_channels_last_3d() {
+    for rank in 0..=6 {
+        let tensor = Tensor::zeros(vec![2; rank]).unwrap();
+        if rank != 4 {
+            assert_eq!(
+                tensor.try_clone_with_memory_format(MemoryFormat::ChannelsLast),
+                Err(TensorError::ContiguousMemoryFormatRankMismatch {
+                    memory_format: MemoryFormat::ChannelsLast,
+                    expected_rank: 4,
+                    actual_rank: rank,
+                })
+            );
+        }
+    }
+    assert_eq!(
+        Tensor::zeros([2, 3, 4])
+            .unwrap()
+            .try_clone_with_memory_format(MemoryFormat::ChannelsLast)
+            .unwrap_err()
+            .to_string(),
+        "required rank 4 tensor to use channels_last format"
+    );
+
+    for tensor in [
+        Tensor::zeros([2, 3, 4, 5]).unwrap(),
+        Tensor::zeros([2, 3, 4, 5, 6]).unwrap(),
+    ] {
+        assert_eq!(
+            tensor.try_clone_with_memory_format(MemoryFormat::ChannelsLast3d),
+            Err(TensorError::UnsupportedMemoryFormat {
+                memory_format: MemoryFormat::ChannelsLast3d,
+            })
+        );
+    }
 }
 
 #[test]

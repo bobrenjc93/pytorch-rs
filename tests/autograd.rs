@@ -739,6 +739,36 @@ fn metadata_only_graphs_support_repeated_backward() {
 }
 
 #[test]
+fn channels_last_clone_preserves_autograd_and_respects_no_grad() {
+    let leaf = Tensor::from_vec((0_u8..48).map(f32::from).collect(), [2, 3, 2, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let view = leaf.transpose(2, 3).unwrap();
+    let cloned = view
+        .try_clone_with_memory_format(MemoryFormat::ChannelsLast)
+        .unwrap();
+    assert_eq!(cloned.shape(), [2, 3, 4, 2]);
+    assert_eq!(cloned.stride(), [24, 1, 6, 3]);
+    assert!(cloned.requires_grad());
+    assert!(!cloned.is_leaf());
+    assert!(!cloned.shares_storage_with(&view));
+
+    let weights = Tensor::from_vec((1_u8..=48).map(f32::from).collect(), [2, 3, 4, 2]).unwrap();
+    cloned.mul(&weights).unwrap().sum().backward().unwrap();
+    let expected = weights.transpose(2, 3).unwrap().try_to_vec().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), expected);
+
+    let untracked = {
+        let _guard = no_grad();
+        view.try_clone_with_memory_format(MemoryFormat::ChannelsLast)
+            .unwrap()
+    };
+    assert_eq!(untracked.stride(), [24, 1, 6, 3]);
+    assert!(!untracked.requires_grad());
+    assert!(untracked.is_leaf());
+}
+
+#[test]
 fn no_grad_guards_remain_disabled_until_every_guard_is_dropped() {
     let leaf = Tensor::from_vec(vec![2.0], [])
         .unwrap()
