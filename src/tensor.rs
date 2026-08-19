@@ -2329,71 +2329,14 @@ impl Tensor {
         if let Some(result) = self.try_row_contiguous_transpose_rhs_matmul(other) {
             return result;
         }
-        self.matmul_general(other)
+        self.matmul_fallback(other)
     }
 
-    // Keep replay detection from perturbing the unchanged general kernels.
-    #[inline(never)]
-    fn try_row_contiguous_transpose_rhs_matmul(
-        &self,
-        other: &Self,
-    ) -> Option<Result<Self, TensorError>> {
-        let [rows, inner] = self.shape.as_slice() else {
-            return None;
-        };
-        let [other_inner, columns] = other.shape.as_slice() else {
-            return None;
-        };
-        if inner != other_inner
-            || *rows == 0
-            || *inner <= 1
-            || *columns == 0
-            || self.strides[1] != 1
-        {
-            return None;
-        }
-        let left = self.storage.owned_values()?;
-        let right = other.storage.owned_values()?;
-        let right_columns = other.transpose_contiguous_matrix_slice(right)?;
-
-        Some((|| {
-            let mut output_shape = try_result_vector(2, 0)?;
-            output_shape.push(*rows);
-            output_shape.push(*columns);
-            let (output_elements, output_strides) = validated_layout(&output_shape)?;
-            let mut output = filled_storage(output_elements, 0.0)?;
-            accumulate_row_contiguous_transpose_rhs_matmul(
-                self,
-                left,
-                right_columns,
-                &mut output,
-                *inner,
-                *columns,
-            )?;
-            // Optimized dot-product code can select a different NaN operand
-            // than the established depth-major kernel. Replay non-finite
-            // results there to keep payloads independent of storage kind.
-            if output.iter().any(|value| !value.is_finite()) {
-                // Release the speculative result before the fallback allocates
-                // its replacement output.
-                drop(output);
-                return self.matmul_general(other);
-            }
-            Ok(Self::from_owned_parts(
-                output,
-                output_shape,
-                output_strides,
-                self.dtype(),
-                self.device(),
-            ))
-        })())
-    }
-
-    // Preserve the existing general kernels after the narrow pre-dispatch;
-    // outlining this body measurably regresses strided release workloads.
+    // Callers that already performed the narrow layout dispatch use this body
+    // directly so the established fallback kernels keep their original codegen.
     #[allow(clippy::inline_always)]
     #[inline(always)]
-    fn matmul_general(&self, other: &Self) -> Result<Self, TensorError> {
+    pub(crate) fn matmul_fallback(&self, other: &Self) -> Result<Self, TensorError> {
         if self.shape.len() != 2 || other.shape.len() != 2 {
             return Err(TensorError::MatmulRequiresMatrices {
                 left: self.shape.clone(),
@@ -2473,6 +2416,63 @@ impl Tensor {
             self.dtype(),
             self.device(),
         ))
+    }
+
+    // Keep replay detection from perturbing the unchanged general kernels.
+    #[inline(never)]
+    pub(crate) fn try_row_contiguous_transpose_rhs_matmul(
+        &self,
+        other: &Self,
+    ) -> Option<Result<Self, TensorError>> {
+        let [rows, inner] = self.shape.as_slice() else {
+            return None;
+        };
+        let [other_inner, columns] = other.shape.as_slice() else {
+            return None;
+        };
+        if inner != other_inner
+            || *rows == 0
+            || *inner <= 1
+            || *columns == 0
+            || self.strides[1] != 1
+        {
+            return None;
+        }
+        let left = self.storage.owned_values()?;
+        let right = other.storage.owned_values()?;
+        let right_columns = other.transpose_contiguous_matrix_slice(right)?;
+
+        Some((|| {
+            let mut output_shape = try_result_vector(2, 0)?;
+            output_shape.push(*rows);
+            output_shape.push(*columns);
+            let (output_elements, output_strides) = validated_layout(&output_shape)?;
+            let mut output = filled_storage(output_elements, 0.0)?;
+            accumulate_row_contiguous_transpose_rhs_matmul(
+                self,
+                left,
+                right_columns,
+                &mut output,
+                *inner,
+                *columns,
+            )?;
+            // Optimized dot-product code can select a different NaN operand
+            // than the established depth-major kernel. Replay non-finite
+            // results there to keep payloads independent of storage kind.
+            if output.iter().any(|value| !value.is_finite()) {
+                // Release the speculative result before the fallback allocates
+                // its replacement output.
+                drop(output);
+                return self.matmul_fallback(other);
+            }
+            Ok(Self::from_owned_parts(
+                output,
+                output_shape,
+                output_strides,
+                self.dtype(),
+                self.device(),
+            ))
+        })())
     }
 
     fn zip_map(
