@@ -1464,19 +1464,27 @@ impl Tensor {
     ///
     /// [`MemoryFormat::Preserve`] retains dense strides and packs non-dense
     /// views in the same dimension order. [`MemoryFormat::Contiguous`]
-    /// recalculates canonical row-major strides. Preserve clones retain an
-    /// existing dense channel-last layout, but explicitly selecting a
-    /// channel-last clone format is not yet supported.
+    /// recalculates canonical row-major strides. [`MemoryFormat::ChannelsLast`]
+    /// recalculates canonical channel-last strides for rank-four tensors.
+    /// Preserve clones retain an existing dense channel-last layout.
     ///
     /// # Errors
     ///
     /// Returns an error when result metadata or storage allocation fails,
-    /// contiguous stride calculation overflows, or the requested format is not
-    /// supported.
+    /// stride calculation overflows, a channel-last request has the wrong
+    /// rank, or the requested format is not supported.
     pub fn try_clone_with_memory_format(
         &self,
         memory_format: MemoryFormat,
     ) -> Result<Self, TensorError> {
+        if memory_format == MemoryFormat::ChannelsLast && self.shape.len() != 4 {
+            return Err(TensorError::ContiguousMemoryFormatRankMismatch {
+                memory_format,
+                expected_rank: 4,
+                actual_rank: self.shape.len(),
+            });
+        }
+
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = match memory_format {
@@ -1489,7 +1497,8 @@ impl Tensor {
                 elements,
             )?,
             MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
-            MemoryFormat::ChannelsLast | MemoryFormat::ChannelsLast3d => {
+            MemoryFormat::ChannelsLast => channels_last_strides(&shape, elements)?,
+            MemoryFormat::ChannelsLast3d => {
                 return Err(TensorError::UnsupportedMemoryFormat { memory_format });
             }
         };
