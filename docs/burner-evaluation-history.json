@@ -3729,6 +3729,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 81
       }
+    },
+    {
+      "key": "pr:303",
+      "recordedAt": "2026-08-19T13:55:05.350Z",
+      "label": "PR #303",
+      "kind": "leaf",
+      "prNumber": 303,
+      "title": "Add deterministic alpha_dropout at p=1",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 74.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 57.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 81
+      }
     }
   ]
 }
