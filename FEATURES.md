@@ -14,7 +14,7 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 | neural-network functional API and modules | 15% | out-of-place `torch.nn.functional.relu` backed by the native ReLU kernel, plus exact-identity `torch.nn.functional.dropout`, rank-3 `torch.nn.functional.dropout1d`, rank-4 `torch.nn.functional.dropout2d`, rank-5 `torch.nn.functional.dropout3d`, `torch.nn.functional.alpha_dropout`, and `torch.nn.functional.feature_alpha_dropout` for evaluation mode, zero probability, or empty inputs |
 | optimizers, initialization, data utilities | 5% | unsupported |
 | serialization, state dictionaries, model interchange | 5% | unsupported |
-| compilation, parallelism, distributed execution | 5% | Eager-state `torch.compiler.is_compiling()` query; compilation, export, parallelism, and distributed execution remain unsupported |
+| compilation, parallelism, distributed execution | 5% | Eager-state `torch.compiler.is_compiling()` and backend-capability `torch.distributed.is_available()` queries; compilation, export, parallel execution, process groups, and collectives remain unsupported |
 | ergonomics, diagnostics, documentation, ecosystem integration | 5% | minimal |
 
 Within an area, coverage includes ordinary use plus error behavior, empty tensors, numerical edge cases, non-contiguous layouts, and interactions with autograd and device/dtype dispatch. Newly supported cells are added to permanent regression and performance matrices; existing cells are not retired to improve a score.
