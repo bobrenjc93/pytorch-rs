@@ -369,7 +369,38 @@ class FunctionalDropout1dTests(unittest.TestCase):
         self.assertIs(output, source)
         self.assertEqual(len(mode.calls), 1)
 
-    def test_sampling_and_non_rank_three_inputs_are_explicitly_unsupported(self):
+    def test_pytorch_invalid_ranks_precede_native_argument_parsing(self):
+        cases = (
+            (torch.zeros(()), 0, 1),
+            (torch.zeros((2,)), Decimal("0"), False),
+            (torch.zeros((1, 2, 3, 4)), torch.tensor([0.0]), False),
+            (torch.zeros((1, 0, 3, 4)), 0, np.bool_(False)),
+        )
+        for source, probability, training in cases:
+            expected_message = (
+                "dropout1d: Expected 2D or 3D input, but received a "
+                f"{source.dim()}D input. Note that dropout1d exists to provide "
+                "channel-wise dropout on inputs with 1 spatial dimension, a "
+                "channel dimension, and an optional batch dimension (i.e. 2D "
+                "or 3D inputs)."
+            )
+            for inplace in (False, True):
+                with self.subTest(
+                    rank=source.dim(),
+                    probability=type(probability),
+                    training=type(training),
+                    inplace=inplace,
+                ):
+                    with self.assertRaises(RuntimeError) as raised:
+                        functional.dropout1d(
+                            source,
+                            p=probability,
+                            training=training,
+                            inplace=inplace,
+                        )
+                    self.assertEqual(str(raised.exception), expected_message)
+
+    def test_sampling_and_rank_two_inputs_are_explicitly_unsupported(self):
         source = torch.tensor(
             [[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True
         )
@@ -394,23 +425,24 @@ class FunctionalDropout1dTests(unittest.TestCase):
                     )
                     self.assertIsNone(source.grad)
 
-        non_rank_three = (
-            torch.tensor(-0.0),
-            torch.zeros((2,)),
+        rank_two_inputs = (
             torch.zeros((2, 3)),
             torch.zeros((2, 0)),
-            torch.zeros((2, 3, 4, 5)),
-            torch.zeros((2, 0, 3, 4)),
         )
-        identity_modes = ((0.5, False), (0.0, True), (0.5, True))
-        for source in non_rank_three:
-            for probability, training in identity_modes:
+        calls = (
+            (0.5, False),
+            (0.0, True),
+            (Decimal("0"), False),
+            (torch.tensor([0.0]), False),
+            (0.0, 1),
+        )
+        for source in rank_two_inputs:
+            for probability, training in calls:
                 for inplace in (False, True):
                     with self.subTest(
-                        rank=len(source.shape),
                         empty=source.numel() == 0,
-                        probability=probability,
-                        training=training,
+                        probability=type(probability),
+                        training=type(training),
                         inplace=inplace,
                     ):
                         with warnings.catch_warnings(record=True) as caught:

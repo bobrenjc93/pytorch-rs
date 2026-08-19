@@ -526,6 +526,45 @@ class FunctionalDropout1dReferenceTests(unittest.TestCase):
         self.assertIs(expected_output, expected_input)
         self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
 
+    def test_pytorch_invalid_ranks_precede_native_argument_errors(self):
+        cases = (
+            ((), lambda module: 0, 1),
+            ((2,), lambda module: Decimal("0"), False),
+            ((1, 2, 3, 4), lambda module: module.tensor([0.0]), False),
+            ((1, 0, 3, 4), lambda module: 0, np.bool_(False)),
+        )
+        for shape, probability_factory, training in cases:
+            actual_input = torch.zeros(shape)
+            expected_input = reference_torch.zeros(shape)
+            for inplace in (False, True):
+                actual_probability = probability_factory(torch)
+                expected_probability = probability_factory(reference_torch)
+                actual_error = self.capture_error(
+                    lambda: functional.dropout1d(
+                        actual_input,
+                        p=actual_probability,
+                        training=training,
+                        inplace=inplace,
+                    )
+                )
+                expected_error = self.capture_error(
+                    lambda: reference_functional.dropout1d(
+                        expected_input,
+                        p=expected_probability,
+                        training=training,
+                        inplace=inplace,
+                    )
+                )
+                with self.subTest(
+                    rank=len(shape),
+                    probability=type(actual_probability),
+                    training=type(training),
+                    inplace=inplace,
+                ):
+                    self.assertIs(actual_error[0], RuntimeError)
+                    self.assertIs(actual_error[0], expected_error[0])
+                    self.assertEqual(actual_error[1], expected_error[1])
+
     def test_sampling_and_rank_two_inputs_are_intentionally_unsupported(self):
         actual_input = torch.tensor(
             [[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True
@@ -582,6 +621,60 @@ class FunctionalDropout1dReferenceTests(unittest.TestCase):
                         np.testing.assert_array_equal(
                             expected.cpu().numpy(), np.zeros(shape, dtype=np.float32)
                         )
+
+        actual_input = torch.zeros((2, 3))
+        expected_input = reference_torch.zeros((2, 3))
+        invalid_native_cases = (
+            (
+                lambda module: Decimal("0"),
+                False,
+                "feature_dropout(): argument 'p' (position 2) must be float, "
+                "not decimal.Decimal",
+            ),
+            (
+                lambda module: module.tensor([0.0]),
+                False,
+                "feature_dropout(): argument 'p' (position 2) must be float, "
+                "not Tensor",
+            ),
+            (
+                lambda module: 0,
+                1,
+                "feature_dropout(): argument 'train' (position 3) must be "
+                "bool, not int",
+            ),
+        )
+        for probability_factory, training, expected_native_message in (
+            invalid_native_cases
+        ):
+            actual_probability = probability_factory(torch)
+            expected_probability = probability_factory(reference_torch)
+            actual_error = self.capture_error(
+                lambda: functional.dropout1d(
+                    actual_input,
+                    p=actual_probability,
+                    training=training,
+                )
+            )
+            expected_error = self.capture_error(
+                lambda: reference_functional.dropout1d(
+                    expected_input,
+                    p=expected_probability,
+                    training=training,
+                )
+            )
+            with self.subTest(
+                rank_two_probability=type(actual_probability),
+                rank_two_training=type(training),
+            ):
+                self.assertIs(actual_error[0], NotImplementedError)
+                self.assertEqual(
+                    actual_error[1],
+                    "torch_rs.nn.functional.dropout1d only supports rank-3 "
+                    "inputs",
+                )
+                self.assertIs(expected_error[0], TypeError)
+                self.assertEqual(expected_error[1], expected_native_message)
 
 
 if __name__ == "__main__":
