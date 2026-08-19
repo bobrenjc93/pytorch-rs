@@ -2332,6 +2332,8 @@ impl Tensor {
         self.matmul_general(other)
     }
 
+    // Keep replay detection from perturbing the unchanged general kernels.
+    #[inline(never)]
     fn try_row_contiguous_transpose_rhs_matmul(
         &self,
         other: &Self,
@@ -2368,6 +2370,12 @@ impl Tensor {
                 *inner,
                 *columns,
             )?;
+            // Optimized dot-product code can select a different NaN operand
+            // than the established depth-major kernel. Replay non-finite
+            // results there to keep payloads independent of storage kind.
+            if output.iter().any(|value| !value.is_finite()) {
+                return self.matmul_general(other);
+            }
             Ok(Self::from_owned_parts(
                 output,
                 output_shape,
@@ -4806,6 +4814,50 @@ mod tests {
                 .map(f32::to_bits)
                 .eq(expected.logical_values().map(f32::to_bits))
         );
+    }
+
+    #[test]
+    fn transpose_contiguous_rhs_matmul_replays_colliding_nan_payloads() {
+        let nan_bits = [0xffc0_0001, 0x7fc1_2345];
+        let assert_matches_fallback = |left: &Tensor, right: &Tensor| {
+            let expected = left.matmul(&shared_gradient_copy(right)).unwrap();
+            let actual = left.matmul(right).unwrap();
+            assert!(expected.as_slice()[0].is_nan());
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        };
+
+        let left =
+            offset_padded_row_contiguous_matrix(&[1.0_f32.to_bits(), 2.0_f32.to_bits()], 1, 2);
+        let right = offset_transpose_contiguous_matrix(
+            &[
+                nan_bits[0],
+                nan_bits[1],
+                1.0_f32.to_bits(),
+                1.0_f32.to_bits(),
+            ],
+            2,
+            2,
+        );
+        assert_matches_fallback(&left, &right);
+
+        let rows = CONTIGUOUS_MATMUL_ROW_BLOCK + 1;
+        let inner = 64;
+        let columns = 64;
+        assert!(inner * columns >= CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS);
+        let mut left_bits = vec![1.0_f32.to_bits(); rows * inner];
+        for row in 0..rows {
+            left_bits[row * inner + 1] = 2.0_f32.to_bits();
+        }
+        let mut right_bits = vec![1.0_f32.to_bits(); inner * columns];
+        right_bits[..2].copy_from_slice(&nan_bits);
+        let left = offset_padded_row_contiguous_matrix(&left_bits, rows, inner);
+        let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
+        assert_matches_fallback(&left, &right);
     }
 
     #[test]
