@@ -14,7 +14,7 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 | neural-network functional API and modules | 15% | out-of-place `torch.nn.functional.relu` backed by the native ReLU kernel; exact-identity dropout-family evaluation, zero-probability, and empty-input paths; and deterministic out-of-place `torch.nn.functional.dropout` training at `p=1` through native scalar multiplication |
 | optimizers, initialization, data utilities | 5% | unsupported |
 | serialization, state dictionaries, model interchange | 5% | unsupported |
-| compilation, parallelism, distributed execution | 5% | Eager-state `torch.compiler.is_compiling()` and `torch.compiler.is_dynamo_compiling()`, backend-capability `torch.distributed.is_available()`, and default-state `torch.distributed.is_initialized()` queries; compilation, export, parallel execution, process-group creation, and collectives remain unsupported |
+| compilation, parallelism, distributed execution | 5% | Eager-state `torch.compiler.is_compiling()` and `torch.compiler.is_dynamo_compiling()`, package and NCCL backend-capability `torch.distributed.is_available()` and `torch.distributed.is_nccl_available()` queries, and the default-state `torch.distributed.is_initialized()` query; compilation, export, parallel execution, process-group creation, NCCL execution, and collectives remain unsupported |
 | ergonomics, diagnostics, documentation, ecosystem integration | 5% | minimal |
 
 Within an area, coverage includes ordinary use plus error behavior, empty tensors, numerical edge cases, non-contiguous layouts, and interactions with autograd and device/dtype dispatch. Newly supported cells are added to permanent regression and performance matrices; existing cells are not retired to improve a score.
