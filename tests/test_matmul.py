@@ -102,8 +102,11 @@ def matmul_layout_cases(module):
     offset_right = module.tensor(
         np.arange(12, dtype=np.float32).reshape(2, 3, 2).tolist()
     )[1]
+    offset_transpose_left = module.tensor(
+        np.arange(24, dtype=np.float32).reshape(3, 2, 4).tolist()
+    )[1]
     offset_transposed_right = module.tensor(
-        np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist()
+        np.arange(16, dtype=np.float32).reshape(2, 2, 4).tolist()
     )[1].transpose(0, 1)
 
     strided_left = module.tensor(
@@ -125,7 +128,11 @@ def matmul_layout_cases(module):
             module.tensor([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]]),
         ),
         ("offset contiguous", offset_left, offset_right),
-        ("offset transpose-contiguous rhs", offset_left, offset_transposed_right),
+        (
+            "offset transpose-contiguous rhs",
+            offset_transpose_left,
+            offset_transposed_right,
+        ),
         ("strided", strided_left, strided_right),
         (
             "offset empty rows",

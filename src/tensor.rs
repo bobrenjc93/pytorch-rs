@@ -19,6 +19,7 @@ const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
 // empirically measured crossover points.
 const TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER: usize = 4;
 const VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER: usize = 32;
+const STRIDED_MATMUL_MAX_COLUMNS_PER_LOW_ROW: usize = 16;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -2436,6 +2437,8 @@ impl Tensor {
             || *rows == 0
             || *inner < TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER
             || *columns == 0
+            || (*rows < CONTIGUOUS_MATMUL_ROW_BLOCK
+                && *columns > rows.saturating_mul(STRIDED_MATMUL_MAX_COLUMNS_PER_LOW_ROW))
             || self.strides[1] != 1
         {
             return None;
@@ -3874,7 +3877,9 @@ fn accumulate_validated_owned_strided_matmul(
     debug_assert_eq!(output.len() % columns, 0);
     let rows = output.len() / columns;
     debug_assert_ne!(rows, 0);
-    if inner < VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER {
+    if inner < VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER
+        || columns > rows.saturating_mul(STRIDED_MATMUL_MAX_COLUMNS_PER_LOW_ROW)
+    {
         return false;
     }
     let [left_row_stride, left_depth_stride] = left_tensor.strides.as_slice() else {
@@ -4663,7 +4668,8 @@ mod tests {
 
     use super::{
         CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device,
-        F32_SIGN_MASK, SavedTensor, TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER, Tensor, TensorError,
+        F32_SIGN_MASK, STRIDED_MATMUL_MAX_COLUMNS_PER_LOW_ROW, SavedTensor,
+        TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER, Tensor, TensorError,
         VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER, accumulate_validated_owned_strided_matmul,
         materialize_contiguous_trailing_broadcast, try_result_vector,
     };
@@ -4969,7 +4975,7 @@ mod tests {
     }
 
     #[test]
-    fn blocked_transpose_contiguous_rhs_matmul_preserves_each_result_bit_pattern() {
+    fn blocked_transpose_contiguous_rhs_matmul_exercises_block_and_tail() {
         let rows = CONTIGUOUS_MATMUL_ROW_BLOCK + 1;
         let inner = 64;
         let columns = 64;
@@ -4992,18 +4998,16 @@ mod tests {
             .map(|index| {
                 let column = index / inner;
                 let depth = index % inner;
-                match column % 8 {
-                    3 if depth == 7 => 0x7f80_0000,
-                    4 if depth == 11 => 0xff80_0000,
-                    5 if depth == 13 => 0x7fc1_2345,
-                    _ => finite_bits[(depth * 3 + column) % finite_bits.len()],
-                }
+                finite_bits[(depth * 3 + column) % finite_bits.len()]
             })
             .collect::<Vec<_>>();
         let left = offset_padded_row_contiguous_matrix(&left_bits, rows, inner);
         let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
         let expected = left.matmul(&shared_gradient_copy(&right)).unwrap();
-        let actual = left.matmul(&right).unwrap();
+        let actual = left
+            .try_row_contiguous_transpose_rhs_matmul(&right)
+            .expect("finite blocked layout must select specialized dispatch")
+            .unwrap();
 
         assert!(
             actual
@@ -5040,6 +5044,20 @@ mod tests {
     }
 
     #[test]
+    fn transpose_contiguous_rhs_fast_path_gates_wide_low_row_outputs() {
+        let inner = 128;
+        let columns = 128;
+        let right_bits = vec![1.0_f32.to_bits(); inner * columns];
+        let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
+
+        for rows in 1..=CONTIGUOUS_MATMUL_ROW_BLOCK {
+            let left = Tensor::ones([rows, inner]).unwrap();
+            let dispatched = left.try_row_contiguous_transpose_rhs_matmul(&right);
+            assert_eq!(dispatched.is_some(), rows == CONTIGUOUS_MATMUL_ROW_BLOCK);
+        }
+    }
+
+    #[test]
     fn validated_owned_strided_matmul_gates_small_inner_and_nonfinite_inputs() {
         let rows = 2;
         let columns = 3;
@@ -5069,6 +5087,23 @@ mod tests {
         }
 
         let inner = VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER;
+        let wide_columns = STRIDED_MATMUL_MAX_COLUMNS_PER_LOW_ROW * 4;
+        let left_bits = vec![1.0_f32.to_bits(); inner];
+        let right_bits = vec![1.0_f32.to_bits(); inner * wide_columns];
+        let left = offset_padded_row_contiguous_matrix(&left_bits, 1, inner);
+        let right = offset_padded_row_contiguous_matrix(&right_bits, inner, wide_columns);
+        let mut output = vec![0.0; wide_columns];
+        assert!(!accumulate_validated_owned_strided_matmul(
+            &left,
+            &right,
+            left.storage.owned_values().unwrap(),
+            right.storage.owned_values().unwrap(),
+            &mut output,
+            inner,
+            wide_columns,
+        ));
+        assert!(output.iter().all(|value| value.to_bits() == 0));
+
         let left_bits = vec![1.0_f32.to_bits(); rows * inner];
         let mut right_bits = vec![1.0_f32.to_bits(); inner * columns];
         right_bits[0] = 0x7fc1_2345;
