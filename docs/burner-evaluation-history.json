@@ -3873,6 +3873,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 83
       }
+    },
+    {
+      "key": "pr:348",
+      "recordedAt": "2026-08-19T21:15:05.983Z",
+      "label": "PR #348",
+      "kind": "composite",
+      "prNumber": 348,
+      "title": "YOLO generation 21: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 74.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 58.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 84
+      }
     }
   ]
 }
