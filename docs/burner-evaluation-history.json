@@ -3793,6 +3793,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 83
       }
+    },
+    {
+      "key": "pr:320",
+      "recordedAt": "2026-08-19T17:17:17.714Z",
+      "label": "PR #320",
+      "kind": "leaf",
+      "prNumber": 320,
+      "title": "Extract TensorBase storage-pointer bindings",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 74.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 58,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 83
+      }
     }
   ]
 }
