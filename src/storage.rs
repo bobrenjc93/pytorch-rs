@@ -17,6 +17,125 @@ enum StorageData<T> {
     SharedGradient(Mutex<Vec<T>>),
 }
 
+impl StorageData<f32> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Owned(values) => values.len(),
+            Self::SharedGradient(values) => values
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .len(),
+        }
+    }
+
+    fn data_ptr(&self) -> *const u8 {
+        match self {
+            Self::Owned(values) => values.as_ptr().cast(),
+            // Gradient accumulation only updates existing elements, so the
+            // allocation remains stable after this guard is released.
+            Self::SharedGradient(values) => values
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ptr()
+                .cast(),
+        }
+    }
+
+    fn owned_values(&self) -> Option<&[f32]> {
+        match self {
+            Self::Owned(values) => Some(values),
+            Self::SharedGradient(_) => None,
+        }
+    }
+
+    fn value(&self, index: usize) -> Option<f32> {
+        match self {
+            Self::Owned(values) => values.get(index).copied(),
+            Self::SharedGradient(values) => values
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(index)
+                .copied(),
+        }
+    }
+
+    fn try_copy_values<E>(
+        &self,
+        copy: impl FnOnce(&[f32]) -> Result<Vec<f32>, E>,
+    ) -> Result<Vec<f32>, E> {
+        match self {
+            Self::Owned(values) => copy(values),
+            Self::SharedGradient(values) => {
+                let values = values
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                copy(&values)
+            }
+        }
+    }
+
+    fn copy_range(&self, start: usize, end: usize) -> Vec<f32> {
+        match self {
+            Self::Owned(values) => values[start..end].to_vec(),
+            Self::SharedGradient(values) => values
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)[start..end]
+                .to_vec(),
+        }
+    }
+
+    fn into_range(self, start: usize, end: usize) -> Vec<f32> {
+        match self {
+            Self::Owned(values) if start == 0 && end == values.len() => values,
+            Self::Owned(values) => values[start..end].to_vec(),
+            Self::SharedGradient(values) => {
+                let values = values
+                    .into_inner()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if start == 0 && end == values.len() {
+                    values
+                } else {
+                    values[start..end].to_vec()
+                }
+            }
+        }
+    }
+
+    fn try_clone_for_saved<R, E>(
+        &self,
+        reuse_owned: impl FnOnce() -> R,
+        save_shared: impl FnOnce(Vec<f32>) -> R,
+        copy: impl FnOnce(&[f32]) -> Result<Vec<f32>, E>,
+    ) -> Result<R, E> {
+        match self {
+            Self::Owned(_) => Ok(reuse_owned()),
+            Self::SharedGradient(values) => {
+                let values = values
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                Ok(save_shared(copy(&values)?))
+            }
+        }
+    }
+
+    fn accumulate_shared_gradient(&self, contribution: Vec<f32>) {
+        match self {
+            Self::Owned(_) => {
+                unreachable!("leaf gradients always use shared gradient storage");
+            }
+            Self::SharedGradient(existing) => {
+                let mut existing = existing
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                debug_assert_eq!(existing.len(), contribution.len());
+                for (value, contribution) in existing.iter_mut().zip(contribution) {
+                    *value += contribution;
+                }
+            }
+        }
+    }
+}
+
 impl Storage {
     pub(crate) fn from_owned(data: Vec<f32>, dtype: DType, device: Device) -> Self {
         Self {
@@ -40,11 +159,7 @@ impl Storage {
 
     pub(crate) fn len(&self) -> usize {
         match &self.payload {
-            StoragePayload::CpuFloat32(StorageData::Owned(values)) => values.len(),
-            StoragePayload::CpuFloat32(StorageData::SharedGradient(values)) => values
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .len(),
+            StoragePayload::CpuFloat32(values) => values.len(),
         }
     }
 
@@ -62,32 +177,19 @@ impl Storage {
 
     pub(crate) fn data_ptr(&self) -> *const u8 {
         match &self.payload {
-            StoragePayload::CpuFloat32(StorageData::Owned(values)) => values.as_ptr().cast(),
-            // Gradient accumulation only updates existing elements, so the
-            // allocation remains stable after this guard is released.
-            StoragePayload::CpuFloat32(StorageData::SharedGradient(values)) => values
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .as_ptr()
-                .cast(),
+            StoragePayload::CpuFloat32(values) => values.data_ptr(),
         }
     }
 
     pub(crate) fn owned_values(&self) -> Option<&[f32]> {
         match &self.payload {
-            StoragePayload::CpuFloat32(StorageData::Owned(values)) => Some(values),
-            StoragePayload::CpuFloat32(StorageData::SharedGradient(_)) => None,
+            StoragePayload::CpuFloat32(values) => values.owned_values(),
         }
     }
 
     pub(crate) fn value(&self, index: usize) -> Option<f32> {
         match &self.payload {
-            StoragePayload::CpuFloat32(StorageData::Owned(values)) => values.get(index).copied(),
-            StoragePayload::CpuFloat32(StorageData::SharedGradient(values)) => values
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get(index)
-                .copied(),
+            StoragePayload::CpuFloat32(values) => values.value(index),
         }
     }
 
@@ -96,44 +198,19 @@ impl Storage {
         copy: impl FnOnce(&[f32]) -> Result<Vec<f32>, E>,
     ) -> Result<Vec<f32>, E> {
         match &self.payload {
-            StoragePayload::CpuFloat32(StorageData::Owned(values)) => copy(values),
-            StoragePayload::CpuFloat32(StorageData::SharedGradient(values)) => {
-                let values = values
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                copy(&values)
-            }
+            StoragePayload::CpuFloat32(values) => values.try_copy_values(copy),
         }
     }
 
     pub(crate) fn copy_range(&self, start: usize, end: usize) -> Vec<f32> {
         match &self.payload {
-            StoragePayload::CpuFloat32(StorageData::Owned(values)) => values[start..end].to_vec(),
-            StoragePayload::CpuFloat32(StorageData::SharedGradient(values)) => values
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)[start..end]
-                .to_vec(),
+            StoragePayload::CpuFloat32(values) => values.copy_range(start, end),
         }
     }
 
     pub(crate) fn into_range(self, start: usize, end: usize) -> Vec<f32> {
         match self.payload {
-            StoragePayload::CpuFloat32(StorageData::Owned(values))
-                if start == 0 && end == values.len() =>
-            {
-                values
-            }
-            StoragePayload::CpuFloat32(StorageData::Owned(values)) => values[start..end].to_vec(),
-            StoragePayload::CpuFloat32(StorageData::SharedGradient(values)) => {
-                let values = values
-                    .into_inner()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if start == 0 && end == values.len() {
-                    values
-                } else {
-                    values[start..end].to_vec()
-                }
-            }
+            StoragePayload::CpuFloat32(values) => values.into_range(start, end),
         }
     }
 
@@ -142,34 +219,18 @@ impl Storage {
         copy: impl FnOnce(&[f32]) -> Result<Vec<f32>, E>,
     ) -> Result<Arc<Self>, E> {
         match &storage.payload {
-            StoragePayload::CpuFloat32(StorageData::Owned(_)) => Ok(Arc::clone(storage)),
-            StoragePayload::CpuFloat32(StorageData::SharedGradient(values)) => {
-                let values = values
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let data = copy(&values)?;
-                Ok(Arc::new(Self::from_owned(
-                    data,
-                    DType::Float32,
-                    Device::Cpu,
-                )))
-            }
+            StoragePayload::CpuFloat32(values) => values.try_clone_for_saved(
+                || Arc::clone(storage),
+                |data| Arc::new(Self::from_owned(data, DType::Float32, Device::Cpu)),
+                copy,
+            ),
         }
     }
 
     pub(crate) fn accumulate_shared_gradient(&self, contribution: Vec<f32>) {
         match &self.payload {
-            StoragePayload::CpuFloat32(StorageData::Owned(_)) => {
-                unreachable!("leaf gradients always use shared gradient storage");
-            }
-            StoragePayload::CpuFloat32(StorageData::SharedGradient(existing)) => {
-                let mut existing = existing
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                debug_assert_eq!(existing.len(), contribution.len());
-                for (value, contribution) in existing.iter_mut().zip(contribution) {
-                    *value += contribution;
-                }
+            StoragePayload::CpuFloat32(values) => {
+                values.accumulate_shared_gradient(contribution);
             }
         }
     }
@@ -178,12 +239,13 @@ impl Storage {
 #[cfg(test)]
 mod tests {
     use std::convert::Infallible;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::sync::Arc;
 
     use crate::device::Device;
     use crate::dtype::DType;
 
-    use super::Storage;
+    use super::{Storage, StorageData, StoragePayload};
 
     #[test]
     fn owned_float32_payload_preserves_pointer_and_copy_paths() {
@@ -284,5 +346,53 @@ mod tests {
                 .unwrap(),
             [8.0, 10.0]
         );
+    }
+
+    #[test]
+    fn shared_gradient_operations_recover_from_poison() {
+        let values = vec![1.0, 2.0, 3.0];
+        let pointer = values.as_ptr();
+        let storage = Arc::new(Storage::from_shared_gradient(
+            values,
+            DType::Float32,
+            Device::Cpu,
+        ));
+
+        let StoragePayload::CpuFloat32(StorageData::SharedGradient(values)) = &storage.payload
+        else {
+            unreachable!("test storage must contain a shared gradient");
+        };
+        let poison = catch_unwind(AssertUnwindSafe(|| {
+            let _guard = values.lock().unwrap();
+            panic!("poison shared gradient storage");
+        }));
+        assert!(poison.is_err());
+
+        assert_eq!(storage.len(), 3);
+        assert_eq!(storage.data_ptr(), pointer.cast());
+        assert_eq!(storage.owned_values(), None);
+        assert_eq!(storage.value(1), Some(2.0));
+        assert_eq!(storage.copy_range(1, 3), [2.0, 3.0]);
+        assert_eq!(
+            storage
+                .try_copy_values(|values| Ok::<_, Infallible>(values.to_vec()))
+                .unwrap(),
+            [1.0, 2.0, 3.0]
+        );
+
+        let saved =
+            Storage::try_clone_for_saved(&storage, |values| Ok::<_, Infallible>(values.to_vec()))
+                .unwrap();
+        assert_eq!(saved.owned_values(), Some([1.0, 2.0, 3.0].as_slice()));
+
+        storage.accumulate_shared_gradient(vec![3.0, 2.0, 1.0]);
+        assert_eq!(storage.copy_range(0, 3), [4.0, 4.0, 4.0]);
+
+        let Ok(storage) = Arc::try_unwrap(storage) else {
+            unreachable!("saved snapshots must not retain shared storage");
+        };
+        let values = storage.into_range(0, 3);
+        assert_eq!(values.as_ptr(), pointer);
+        assert_eq!(values, [4.0, 4.0, 4.0]);
     }
 }
