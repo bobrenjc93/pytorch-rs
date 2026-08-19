@@ -65,6 +65,10 @@ class TensorMatmulReferenceTests(unittest.TestCase):
             np.arange(12, dtype=np.float32).reshape(2, 3, 2).tolist(),
             dtype=module.float32,
         )[1]
+        offset_transposed_right = module.tensor(
+            np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist(),
+            dtype=module.float32,
+        )[1].transpose(0, 1)
         strided_left = module.tensor(
             [[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]], dtype=module.float32
         ).transpose(0, 1)
@@ -83,6 +87,11 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                 ),
             ),
             ("offset contiguous", offset_left, offset_right),
+            (
+                "offset transpose-contiguous rhs",
+                offset_left,
+                offset_transposed_right,
+            ),
             ("strided", strided_left, strided_right),
             (
                 "offset empty rows",

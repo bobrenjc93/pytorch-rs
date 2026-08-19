@@ -1684,6 +1684,17 @@ impl Tensor {
         values.get(self.offset..end)
     }
 
+    fn transpose_contiguous_matrix_slice<'a>(&self, values: &'a [f32]) -> Option<&'a [f32]> {
+        let [rows, _columns] = self.shape.as_slice() else {
+            return None;
+        };
+        if self.strides.as_slice() != [1, *rows] {
+            return None;
+        }
+        let end = self.offset.checked_add(self.elements)?;
+        values.get(self.offset..end)
+    }
+
     fn value_at_linear_index(&self, index: usize) -> f32 {
         if let Some(values) = self.contiguous_slice() {
             return values[index];
@@ -2315,6 +2326,63 @@ impl Tensor {
     /// Returns an error unless both tensors are matrices with compatible inner
     /// dimensions.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        if let Some(result) = self.try_row_contiguous_transpose_rhs_matmul(other) {
+            return result;
+        }
+        self.matmul_general(other)
+    }
+
+    fn try_row_contiguous_transpose_rhs_matmul(
+        &self,
+        other: &Self,
+    ) -> Option<Result<Self, TensorError>> {
+        let [rows, inner] = self.shape.as_slice() else {
+            return None;
+        };
+        let [other_inner, columns] = other.shape.as_slice() else {
+            return None;
+        };
+        if inner != other_inner
+            || *rows == 0
+            || *inner == 0
+            || *columns == 0
+            || (*inner != 1 && self.strides[1] != 1)
+        {
+            return None;
+        }
+        let left = self.storage.owned_values()?;
+        let right = other.storage.owned_values()?;
+        let right_columns = other.transpose_contiguous_matrix_slice(right)?;
+
+        Some((|| {
+            let mut output_shape = try_result_vector(2, 0)?;
+            output_shape.push(*rows);
+            output_shape.push(*columns);
+            let (output_elements, output_strides) = validated_layout(&output_shape)?;
+            let mut output = filled_storage(output_elements, 0.0)?;
+            accumulate_row_contiguous_transpose_rhs_matmul(
+                self,
+                left,
+                right_columns,
+                &mut output,
+                *inner,
+                *columns,
+            )?;
+            Ok(Self::from_owned_parts(
+                output,
+                output_shape,
+                output_strides,
+                self.dtype(),
+                self.device(),
+            ))
+        })())
+    }
+
+    // Preserve the existing general kernels after the narrow pre-dispatch;
+    // outlining this body measurably regresses strided release workloads.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn matmul_general(&self, other: &Self) -> Result<Self, TensorError> {
         if self.shape.len() != 2 || other.shape.len() != 2 {
             return Err(TensorError::MatmulRequiresMatrices {
                 left: self.shape.clone(),
@@ -3718,7 +3786,110 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
-// Isolate contiguous code generation from the unchanged strided dispatch.
+// A transposed contiguous matrix stores each logical column in one adjacent
+// physical slice. Row-contiguous left operands let both inputs of every dot
+// product use slices while depth remains in the original accumulation order.
+#[inline(never)]
+fn accumulate_row_contiguous_transpose_rhs_matmul(
+    left_tensor: &Tensor,
+    left: &[f32],
+    right_columns: &[f32],
+    output: &mut [f32],
+    inner: usize,
+    columns: usize,
+) -> Result<(), TensorError> {
+    debug_assert_ne!(inner, 0);
+    debug_assert_ne!(columns, 0);
+    debug_assert_eq!(right_columns.len(), inner * columns);
+    let rows = output.len() / columns;
+    if rows >= CONTIGUOUS_MATMUL_ROW_BLOCK
+        && right_columns.len() >= CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS
+    {
+        return row_contiguous_transpose_rhs_matmul_row_blocked(
+            left_tensor,
+            left,
+            right_columns,
+            output,
+            rows,
+            inner,
+            columns,
+        );
+    }
+
+    for (row, output_row) in output.chunks_exact_mut(columns).enumerate() {
+        let left_row = checked_contiguous_matrix_row(left_tensor, left, row, inner)?;
+        for (output_value, right_column) in
+            output_row.iter_mut().zip(right_columns.chunks_exact(inner))
+        {
+            for (&left_value, &right_value) in left_row.iter().zip(right_column) {
+                *output_value += left_value * right_value;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[inline(never)]
+fn row_contiguous_transpose_rhs_matmul_row_blocked(
+    left_tensor: &Tensor,
+    left: &[f32],
+    right_columns: &[f32],
+    output: &mut [f32],
+    rows: usize,
+    inner: usize,
+    columns: usize,
+) -> Result<(), TensorError> {
+    let blocked_rows = rows / CONTIGUOUS_MATMUL_ROW_BLOCK * CONTIGUOUS_MATMUL_ROW_BLOCK;
+    let blocked_output_elements = blocked_rows * columns;
+    let (blocked_output, tail_output) = output.split_at_mut(blocked_output_elements);
+
+    for (tile, output_tile) in blocked_output
+        .chunks_exact_mut(columns * CONTIGUOUS_MATMUL_ROW_BLOCK)
+        .enumerate()
+    {
+        let first_row = tile * CONTIGUOUS_MATMUL_ROW_BLOCK;
+        let left_row_0 = checked_contiguous_matrix_row(left_tensor, left, first_row, inner)?;
+        let left_row_1 = checked_contiguous_matrix_row(left_tensor, left, first_row + 1, inner)?;
+        let left_row_2 = checked_contiguous_matrix_row(left_tensor, left, first_row + 2, inner)?;
+        let left_row_3 = checked_contiguous_matrix_row(left_tensor, left, first_row + 3, inner)?;
+        let (output_row_0, remaining) = output_tile.split_at_mut(columns);
+        let (output_row_1, remaining) = remaining.split_at_mut(columns);
+        let (output_row_2, output_row_3) = remaining.split_at_mut(columns);
+
+        for (column, right_column) in right_columns.chunks_exact(inner).enumerate() {
+            let mut value_0 = output_row_0[column];
+            let mut value_1 = output_row_1[column];
+            let mut value_2 = output_row_2[column];
+            let mut value_3 = output_row_3[column];
+            for depth in 0..inner {
+                let right_value = right_column[depth];
+                value_0 += left_row_0[depth] * right_value;
+                value_1 += left_row_1[depth] * right_value;
+                value_2 += left_row_2[depth] * right_value;
+                value_3 += left_row_3[depth] * right_value;
+            }
+            output_row_0[column] = value_0;
+            output_row_1[column] = value_1;
+            output_row_2[column] = value_2;
+            output_row_3[column] = value_3;
+        }
+    }
+
+    for (tail_row, output_row) in tail_output.chunks_exact_mut(columns).enumerate() {
+        let row = blocked_rows + tail_row;
+        let left_row = checked_contiguous_matrix_row(left_tensor, left, row, inner)?;
+        for (output_value, right_column) in
+            output_row.iter_mut().zip(right_columns.chunks_exact(inner))
+        {
+            for (&left_value, &right_value) in left_row.iter().zip(right_column) {
+                *output_value += left_value * right_value;
+            }
+        }
+    }
+    Ok(())
+}
+
+// Isolate contiguous code generation from the unchanged general dispatch.
 #[inline(never)]
 fn accumulate_contiguous_matmul(
     left: &[f32],
@@ -3797,6 +3968,21 @@ fn contiguous_matmul_row_blocked(
             }
         }
     }
+}
+
+fn checked_contiguous_matrix_row<'a>(
+    tensor: &Tensor,
+    values: &'a [f32],
+    row: usize,
+    columns: usize,
+) -> Result<&'a [f32], TensorError> {
+    let start = checked_matrix_row_base(tensor, row, columns, values.len())?;
+    let end = start
+        .checked_add(columns)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    values
+        .get(start..end)
+        .ok_or(TensorError::IndexCalculationOverflow)
 }
 
 fn checked_matrix_row_base(
@@ -4438,6 +4624,39 @@ mod tests {
             .unwrap()
     }
 
+    fn offset_transpose_contiguous_matrix(bits: &[u32], inner: usize, columns: usize) -> Tensor {
+        assert_eq!(bits.len(), inner * columns);
+        let mut values = vec![0.0; bits.len()];
+        values.extend(bits.iter().copied().map(f32::from_bits));
+        Tensor::from_vec(values, [2, columns, inner])
+            .unwrap()
+            .index_integer(1)
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap()
+    }
+
+    fn offset_padded_row_contiguous_matrix(bits: &[u32], rows: usize, inner: usize) -> Tensor {
+        assert_eq!(bits.len(), rows * inner);
+        let mut values = Vec::with_capacity(rows * inner * 2);
+        for row in 0..rows {
+            values.resize(values.len() + inner, 0.0);
+            let start = row * inner;
+            values.extend(
+                bits[start..start + inner]
+                    .iter()
+                    .copied()
+                    .map(f32::from_bits),
+            );
+        }
+        Tensor::from_vec(values, [rows, 2, inner])
+            .unwrap()
+            .permute_axes([1, 0, 2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap()
+    }
+
     #[test]
     fn contiguous_matmul_is_bitwise_identical_to_shared_gradient_fallback() {
         let left = Tensor::from_vec(
@@ -4545,6 +4764,51 @@ mod tests {
     }
 
     #[test]
+    fn blocked_transpose_contiguous_rhs_matmul_preserves_each_result_bit_pattern() {
+        let rows = CONTIGUOUS_MATMUL_ROW_BLOCK + 1;
+        let inner = 64;
+        let columns = 64;
+        assert!(inner * columns >= CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS);
+
+        let finite_bits = [
+            0x60ad_78ec,
+            0xe0ad_78ec,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+        ];
+        let left_bits = (0..rows * inner)
+            .map(|index| finite_bits[(index * 5 + index / inner) % finite_bits.len()])
+            .collect::<Vec<_>>();
+        let right_bits = (0..inner * columns)
+            .map(|index| {
+                let column = index / inner;
+                let depth = index % inner;
+                match column % 8 {
+                    3 if depth == 7 => 0x7f80_0000,
+                    4 if depth == 11 => 0xff80_0000,
+                    5 if depth == 13 => 0x7fc1_2345,
+                    _ => finite_bits[(depth * 3 + column) % finite_bits.len()],
+                }
+            })
+            .collect::<Vec<_>>();
+        let left = offset_padded_row_contiguous_matrix(&left_bits, rows, inner);
+        let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
+        let expected = left.matmul(&shared_gradient_copy(&right)).unwrap();
+        let actual = left.matmul(&right).unwrap();
+
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected.logical_values().map(f32::to_bits))
+        );
+    }
+
+    #[test]
     fn contiguous_matmul_preserves_empty_dimension_outputs() {
         let no_rows = Tensor::zeros([0, 3])
             .unwrap()
@@ -4606,6 +4870,102 @@ mod tests {
             left.matmul(&shared_right).unwrap(),
             shared_left.matmul(&right).unwrap(),
         ] {
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn transpose_contiguous_rhs_matmul_preserves_offset_awkward_bit_patterns() {
+        let (rows, inner, columns) = (5, 7, 4);
+        let finite_bits = [
+            0x60ad_78ec,
+            0xe0ad_78ec,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+        ];
+        let left_bits = (0..rows * inner)
+            .map(|index| match index {
+                9 => 0x7f80_0000,
+                17 => 0xff80_0000,
+                31 => 0x7fc1_2345,
+                _ => finite_bits[(index * 5 + index / inner) % finite_bits.len()],
+            })
+            .collect::<Vec<_>>();
+        let right_bits = (0..inner * columns)
+            .map(|index| match index {
+                12 => 0x7f80_0000,
+                19 => 0xffc6_789a,
+                _ if index / inner == 3 => {
+                    if index % 2 == 0 {
+                        0x8000_0000
+                    } else {
+                        0x0000_0000
+                    }
+                }
+                _ => finite_bits[(index * 3 + index / inner) % finite_bits.len()],
+            })
+            .collect::<Vec<_>>();
+        let left = offset_padded_row_contiguous_matrix(&left_bits, rows, inner);
+        let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
+
+        assert_eq!(left.shape(), [rows, inner]);
+        assert_eq!(left.stride(), [2 * inner, 1]);
+        assert_ne!(left.storage_offset(), 0);
+        assert_eq!(right.shape(), [inner, columns]);
+        assert_eq!(right.stride(), [1, inner]);
+        assert_ne!(right.storage_offset(), 0);
+        let right_columns = right
+            .transpose_contiguous_matrix_slice(right.storage.owned_values().unwrap())
+            .unwrap();
+        assert_eq!(right_columns.len(), inner * columns);
+        assert_eq!(
+            right_columns.as_ptr(),
+            right.storage.owned_values().unwrap()[right.storage_offset()..].as_ptr()
+        );
+
+        let expected = left.matmul(&shared_gradient_copy(&right)).unwrap();
+        let expected_values = expected.as_slice();
+        assert!(
+            expected_values
+                .iter()
+                .any(|value| value.is_finite() && *value != 0.0)
+        );
+        assert!(expected_values.iter().any(|value| value.is_infinite()));
+        assert!(expected_values.iter().any(|value| value.is_nan()));
+        assert!(expected_values.iter().any(|value| value.to_bits() == 0));
+        for actual in [
+            left.matmul(&right).unwrap(),
+            shared_gradient_copy(&left).matmul(&right).unwrap(),
+        ] {
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn transpose_contiguous_rhs_matmul_preserves_empty_outputs() {
+        for (rows, inner, columns) in [(0, 7, 3), (3, 0, 5), (3, 7, 0)] {
+            let left_bits = vec![1.0_f32.to_bits(); rows * inner];
+            let right_bits = vec![2.0_f32.to_bits(); inner * columns];
+            let left = offset_padded_row_contiguous_matrix(&left_bits, rows, inner);
+            let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
+            let expected = left.matmul(&shared_gradient_copy(&right)).unwrap();
+            let actual = left.matmul(&right).unwrap();
+
+            assert_eq!(actual.shape(), [rows, columns]);
             assert!(
                 actual
                     .logical_values()
