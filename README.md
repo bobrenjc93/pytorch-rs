@@ -116,7 +116,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.compiler.is_compiling()` and `torch.compiler.is_dynamo_compiling()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 
-`torch.distributed.is_available()` and `torch.distributed.is_nccl_available()` are honest package and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All three return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Process-group creation, NCCL execution, collectives, and every other distributed API remain unsupported.
+`torch.distributed.is_available()` and `torch.distributed.is_nccl_available()` are honest package and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All three return the exact `False` singleton without probing hardware, environment variables, or PyTorch. `torch.distributed.is_torchelastic_launched()` separately reports whether `TORCHELASTIC_RUN_ID` is present without importing PyTorch or exposing elastic launching. Process-group creation, NCCL execution, collectives, elastic launching, and the remaining distributed APIs stay unsupported.
 
 ## Non-negotiable evaluation rules
 
