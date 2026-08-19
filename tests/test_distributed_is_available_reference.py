@@ -213,7 +213,12 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_public,
-            {"distributed_c10d", "is_available", "is_initialized"},
+            {
+                "distributed_c10d",
+                "is_available",
+                "is_initialized",
+                "is_nccl_available",
+            },
         )
         unsupported = expected_public - actual_public
         self.assertTrue(unsupported)
