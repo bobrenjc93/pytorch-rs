@@ -85,12 +85,14 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_reference_can_report_true_while_torch_rs_reports_false(self):
+    def test_reference_build_capability_is_stable_while_torch_rs_reports_false(self):
+        reference_baseline = reference_torch.distributed.is_nccl_available()
         actual_baseline, actual_workers = self.threaded_outcome(torch)
         expected_baseline, expected_workers = self.threaded_outcome(reference_torch)
 
         self.assertIs(actual_baseline, False)
-        self.assertIs(expected_baseline, True)
+        self.assertIs(type(reference_baseline), bool)
+        self.assertIs(expected_baseline, reference_baseline)
         for baseline, worker_states in (
             (actual_baseline, actual_workers),
             (expected_baseline, expected_workers),
@@ -260,7 +262,6 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         for name in (
             "Backend",
             "ProcessGroup",
-            "ProcessGroupNCCL",
             "all_reduce",
             "destroy_process_group",
             "get_rank",
@@ -272,6 +273,18 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 self.assertTrue(hasattr(expected_c10d, name))
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
+
+        expected_nccl_available = expected_distributed.is_nccl_available()
+        self.assertIs(
+            hasattr(expected_distributed, "ProcessGroupNCCL"),
+            expected_nccl_available,
+        )
+        self.assertIs(
+            hasattr(expected_c10d, "ProcessGroupNCCL"),
+            expected_nccl_available,
+        )
+        self.assertFalse(hasattr(actual_distributed, "ProcessGroupNCCL"))
+        self.assertFalse(hasattr(actual_c10d, "ProcessGroupNCCL"))
 
 
 if __name__ == "__main__":
