@@ -30,6 +30,11 @@ FUNCTION_DOC = """
         >>>     # ...rest of the function...
     """
 
+if sys.version_info >= (3, 13):
+    # CPython 3.13+ cleans function docstring indentation while preserving
+    # the initial and terminating newlines.
+    FUNCTION_DOC = "\n" + inspect.cleandoc(FUNCTION_DOC) + "\n"
+
 
 UNSUPPORTED_COMPILER_APIS = (
     "compile",
