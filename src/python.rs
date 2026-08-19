@@ -16,7 +16,7 @@ use pyo3::types::{
 };
 
 use crate::{
-    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
+    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, is_grad_enabled,
     python_cpython_compat as cpython_compat,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
@@ -1486,6 +1486,15 @@ pub(crate) fn positive_variable_function(
     dispatch_positive(py, &input, args, kwargs)
 }
 
+pub(crate) fn exp_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = bind_exp_arguments(args, kwargs)?;
+    dispatch_top_level_exp(py, &call, args, kwargs)
+}
+
 pub(crate) fn is_conj_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1764,6 +1773,11 @@ struct ProbedTorchFunctionOverride<'py> {
 enum BoundTensorOrTorchFunction<'py> {
     Tensor(Bound<'py, PyTensor>),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+struct BoundExpCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
 enum BoundMulOperand<'py> {
@@ -2462,6 +2476,84 @@ fn dispatch_positive(
             Ok(tensor.clone().unbind().into_any())
         }
     }
+}
+
+fn ordered_exp_overrides<'py>(
+    call: &BoundExpCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match &call.input {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let out = match &call.out {
+        Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
+        Some(BoundTensorOrTorchFunction::Tensor(_)) | None => None,
+    };
+    ordered_binary_overrides(input, out, "unable to allocate exp dispatch operands")
+}
+
+fn dispatch_top_level_exp(
+    py: Python<'_>,
+    call: &BoundExpCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_exp_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_exp(py, call);
+    }
+
+    let function = variable_function(py, "exp")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Disable the top mode for the complete dispatch attempt. A mode can call
+    // the public function explicitly to forward to the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.exp",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_exp(py: Python<'_>, call: &BoundExpCall<'_>) -> PyResult<Py<PyAny>> {
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "exp(): the 'out' argument is not supported",
+        ));
+    }
+
+    let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
+        unreachable!("exp overrides were dispatched before the native path")
+    };
+    let input = input.try_borrow()?;
+    if input.inner.requires_grad() && is_grad_enabled() {
+        return Err(PyRuntimeError::new_err(
+            "exp(): autograd recording is not supported",
+        ));
+    }
+    Ok(Py::new(py, input.exp()?)?.into_any())
 }
 
 fn dispatch_resolve_conj(
@@ -7626,6 +7718,67 @@ fn bind_legacy_single_tensor_or_override_argument<'py>(
     };
     validate_legacy_single_keywords(function, &selection, keywords)?;
     Ok(bound)
+}
+
+fn bind_exp_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundExpCall<'py>> {
+    let selection = select_legacy_single_argument("exp", positional, keywords)?;
+    let input = parse_tensor_or_torch_function_argument("exp", "input", &selection.input)?;
+    let out = match keywords
+        .map(|values| values.get_item("out"))
+        .transpose()?
+        .flatten()
+    {
+        Some(out) if !out.is_none() => Some(parse_tensor_or_torch_function_argument(
+            "exp",
+            "out",
+            &ParsedCallArgument {
+                value: out,
+                position: None,
+            },
+        )?),
+        Some(_) | None => None,
+    };
+    validate_exp_keywords(&selection, keywords)?;
+    Ok(BoundExpCall { input, out })
+}
+
+fn validate_exp_keywords(
+    selection: &LegacySingleArgumentSelection<'_>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    let Some(keywords) = keywords else {
+        return Ok(());
+    };
+    let has_out = keywords.get_item("out")?.is_some();
+    // Legacy input aliases remain valid alongside the generated keyword-only
+    // out parameter, but no other keyword may accompany them.
+    let sole_alias =
+        if selection.input.position.is_none() && keywords.len() == 1 + usize::from(has_out) {
+            selection.keyword_alias
+        } else {
+            None
+        };
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        if key == "out" || sole_alias == Some(key.as_str()) {
+            continue;
+        }
+        if key == "input" {
+            if selection.input.position.is_some() {
+                return Err(PyTypeError::new_err(
+                    "exp() got multiple values for argument 'input'",
+                ));
+            }
+            continue;
+        }
+        return Err(PyTypeError::new_err(format!(
+            "exp() got an unexpected keyword argument '{key}'"
+        )));
+    }
+    Ok(())
 }
 
 struct LegacySingleArgumentSelection<'py> {
