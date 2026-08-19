@@ -192,6 +192,7 @@ class SequentialSamplerReferenceTests(unittest.TestCase):
             "ConcatDataset",
             "DataChunk",
             "Dataset",
+            "DistributedSampler",
             "IterableDataset",
             "Sampler",
             "SequentialSampler",
