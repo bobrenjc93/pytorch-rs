@@ -3857,6 +3857,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 83
       }
+    },
+    {
+      "key": "pr:342",
+      "recordedAt": "2026-08-19T20:29:03.082Z",
+      "label": "PR #342",
+      "kind": "leaf",
+      "prNumber": 342,
+      "title": "Enable autograd for top-level torch.sin",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 74.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 58.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 83
+      }
     }
   ]
 }

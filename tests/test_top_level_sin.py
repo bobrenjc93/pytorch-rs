@@ -62,6 +62,27 @@ class TopLevelSinTests(unittest.TestCase):
             ("alias and out none", lambda: torch.sin(x=source, out=None)),
         )
 
+    @staticmethod
+    def make_autograd_case(case):
+        if case == "scalar":
+            leaf = torch.tensor(1.5, requires_grad=True)
+            return leaf, leaf
+        if case == "empty":
+            leaf = torch.zeros((2, 0, 3), requires_grad=True)
+            return leaf, leaf.transpose(0, 2)[1]
+
+        leaf = torch.tensor(
+            np.linspace(-3.0, 3.0, 24, dtype=np.float32)
+            .reshape(2, 3, 4)
+            .tolist(),
+            requires_grad=True,
+        )
+        if case == "offset":
+            return leaf, leaf.transpose(0, 2)[1]
+        if case == "strided":
+            return leaf, leaf.transpose(0, 2)
+        raise AssertionError(f"unknown autograd case: {case}")
+
     def test_supported_calls_reuse_tensor_sin_values_and_layouts(self):
         base = torch.tensor(
             np.linspace(-3.0, 3.0, 24, dtype=np.float32)
@@ -113,44 +134,84 @@ class TopLevelSinTests(unittest.TestCase):
                 ):
                     call()
 
-    def test_no_grad_is_supported_but_recording_remains_explicitly_unsupported(self):
-        leaf = torch.tensor(
-            [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]], requires_grad=True
+    def test_autograd_scalar_empty_offset_and_strided_reuse_tensor_sine_vjp(self):
+        forms = (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
         )
-        source = leaf.transpose(0, 1)[1]
+        for case in ("scalar", "empty", "offset", "strided"):
+            for form in forms:
+                function_leaf, function_source = self.make_autograd_case(case)
+                method_leaf, method_source = self.make_autograd_case(case)
+                output = dict(self.supported_calls(function_source))[form]()
+                method_output = method_source.sin()
 
-        # Tensor.sin keeps its existing autograd behavior. Only the new
-        # top-level wrapper rejects calls that would record a gradient edge.
-        tracked_method_output = source.sin()
-        self.assertTrue(tracked_method_output.requires_grad)
-        self.assertFalse(tracked_method_output.is_leaf)
-        with torch.no_grad():
-            untracked_method_output = source.sin()
-
-        for form, call in self.supported_calls(source):
-            with self.subTest(form=form, mode="recording"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^sin\(\): autograd recording is not supported$",
-                ):
-                    call()
-            with self.subTest(form=form, mode="no_grad"):
-                with torch.no_grad():
-                    output = call()
                 self.assert_matches_method(
-                    output, untracked_method_output, case=(form, "no_grad")
+                    output, method_output, case=(case, form, "output")
+                )
+                output.sum().backward()
+                method_output.sum().backward()
+                self.assert_matches_method(
+                    function_leaf.grad,
+                    method_leaf.grad,
+                    case=(case, form, "gradient"),
                 )
 
-        tracked_method_output.sum().backward()
-        self.assertIsNotNone(leaf.grad)
+    def test_gradient_accumulation_no_grad_and_freed_graph_reuse_method_path(self):
+        values = [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]]
+        weights = [[1.0, -2.0], [3.0, -4.0], [5.0, -6.0]]
+        function_leaf = torch.tensor(values, requires_grad=True)
+        method_leaf = torch.tensor(values, requires_grad=True)
+        function_source = function_leaf.transpose(0, 1)
+        method_source = method_leaf.transpose(0, 1)
 
-        detached = source.detach()
+        function_loss = (
+            torch.sin(function_source, out=None) * torch.tensor(weights)
+        ).sum()
+        method_loss = (method_source.sin() * torch.tensor(weights)).sum()
+        function_loss.backward()
+        method_loss.backward()
+        self.assert_matches_method(
+            function_leaf.grad, method_leaf.grad, case="first gradient"
+        )
+
+        torch.sin(input=function_source).sum().backward()
+        method_source.sin().sum().backward()
+        self.assert_matches_method(
+            function_leaf.grad, method_leaf.grad, case="accumulated gradient"
+        )
+
+        with self.assertRaises(RuntimeError) as function_raised:
+            function_loss.backward()
+        with self.assertRaises(RuntimeError) as method_raised:
+            method_loss.backward()
+        self.assertEqual(str(function_raised.exception), str(method_raised.exception))
+
+        no_grad_function_leaf = torch.tensor(values, requires_grad=True)
+        no_grad_method_leaf = torch.tensor(values, requires_grad=True)
+        with torch.no_grad():
+            function_output = torch.sin(
+                no_grad_function_leaf.transpose(0, 1), out=None
+            )
+            method_output = no_grad_method_leaf.transpose(0, 1).sin()
+        self.assert_matches_method(
+            function_output, method_output, case="no_grad output"
+        )
+        self.assertIsNone(no_grad_function_leaf.grad)
+        self.assertTrue(torch.sin(no_grad_function_leaf).requires_grad)
+
+        detached = no_grad_function_leaf.detach().transpose(0, 1)
         self.assert_matches_method(
             torch.sin(detached), detached.sin(), case="detached input"
         )
 
     def test_concrete_out_tensor_is_rejected_without_mutation(self):
-        source = torch.tensor([0.0, 1.0])
+        source = torch.tensor([0.0, 1.0], requires_grad=True)
         destination = torch.tensor([17.0, 19.0])
         for form, call in (
             ("positional", lambda: torch.sin(source, out=destination)),
