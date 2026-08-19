@@ -107,6 +107,30 @@ class TopLevelSinReferenceTests(unittest.TestCase):
             return module.sin(x=tensor, out=None)
         return module.sin(**{form: tensor})
 
+    @staticmethod
+    def make_autograd_case(module, case):
+        if case == "scalar":
+            leaf = module.tensor(1.5, dtype=module.float32, requires_grad=True)
+            return leaf, leaf
+        if case == "empty":
+            leaf = module.zeros(
+                (2, 0, 3), dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf.transpose(0, 2)[1]
+
+        leaf = module.tensor(
+            np.linspace(-3.0, 3.0, 24, dtype=np.float32)
+            .reshape(2, 3, 4)
+            .tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        if case == "offset":
+            return leaf, leaf.transpose(0, 2)[1]
+        if case == "strided":
+            return leaf, leaf.transpose(0, 2)
+        raise AssertionError(f"unknown autograd case: {case}")
+
     def test_scalar_empty_offset_strided_and_edge_results_match_pytorch_2_13(self):
         actual_cases = self.make_cases(torch)
         expected_cases = self.make_cases(reference_torch)
@@ -132,22 +156,105 @@ class TopLevelSinReferenceTests(unittest.TestCase):
                     case=(case, form),
                 )
 
-    def test_requires_grad_inputs_match_inside_no_grad(self):
-        actual_leaf = torch.tensor(
-            [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]], requires_grad=True
+    def test_scalar_empty_offset_and_strided_autograd_match_pytorch_2_13(self):
+        forms = (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
         )
-        expected_leaf = reference_torch.tensor(
-            [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]], requires_grad=True
-        )
-        actual_input = actual_leaf.transpose(0, 1)[1]
-        expected_input = expected_leaf.transpose(0, 1)[1]
-
-        for form in ("positional", "input", "x", "a", "x1", "out none"):
-            with torch.no_grad():
+        for case in ("scalar", "empty", "offset", "strided"):
+            for form in forms:
+                actual_leaf, actual_input = self.make_autograd_case(torch, case)
+                expected_leaf, expected_input = self.make_autograd_case(
+                    reference_torch, case
+                )
                 actual = self.call_sin(torch, actual_input, form)
-            with reference_torch.no_grad():
                 expected = self.call_sin(reference_torch, expected_input, form)
-            self.assert_matches(actual, expected, case=form)
+
+                self.assert_matches(actual, expected, case=(case, form, "output"))
+                actual.sum().backward()
+                expected.sum().backward()
+                self.assert_matches(
+                    actual_leaf.grad,
+                    expected_leaf.grad,
+                    case=(case, form, "gradient"),
+                )
+
+    def test_accumulation_no_grad_and_freed_graph_match_pytorch_2_13(self):
+        values = [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]]
+        weights = [[1.0, -2.0], [3.0, -4.0], [5.0, -6.0]]
+        actual_leaf = torch.tensor(values, requires_grad=True)
+        expected_leaf = reference_torch.tensor(values, requires_grad=True)
+        actual_input = actual_leaf.transpose(0, 1)
+        expected_input = expected_leaf.transpose(0, 1)
+
+        actual_output = torch.sin(actual_input, out=None)
+        expected_output = reference_torch.sin(expected_input, out=None)
+        self.assert_matches(actual_output, expected_output, case="tracked output")
+        actual_loss = (actual_output * torch.tensor(weights)).sum()
+        expected_loss = (
+            expected_output * reference_torch.tensor(weights)
+        ).sum()
+        actual_loss.backward()
+        expected_loss.backward()
+        self.assert_matches(
+            actual_leaf.grad, expected_leaf.grad, case="first gradient"
+        )
+
+        torch.sin(input=actual_input).sum().backward()
+        reference_torch.sin(input=expected_input).sum().backward()
+        self.assert_matches(
+            actual_leaf.grad, expected_leaf.grad, case="accumulated gradient"
+        )
+        self.assert_error_matches(actual_loss.backward, expected_loss.backward)
+
+        no_grad_actual_leaf = torch.tensor(values, requires_grad=True)
+        no_grad_expected_leaf = reference_torch.tensor(values, requires_grad=True)
+        with torch.no_grad():
+            actual_untracked = torch.sin(
+                no_grad_actual_leaf.transpose(0, 1), out=None
+            )
+        with reference_torch.no_grad():
+            expected_untracked = reference_torch.sin(
+                no_grad_expected_leaf.transpose(0, 1), out=None
+            )
+        self.assert_matches(
+            actual_untracked, expected_untracked, case="no_grad output"
+        )
+        self.assertIsNone(no_grad_actual_leaf.grad)
+        self.assertIsNone(no_grad_expected_leaf.grad)
+        self.assertTrue(torch.sin(no_grad_actual_leaf).requires_grad)
+        self.assertTrue(reference_torch.sin(no_grad_expected_leaf).requires_grad)
+
+        actual_detached = no_grad_actual_leaf.detach().transpose(0, 1)
+        expected_detached = no_grad_expected_leaf.detach().transpose(0, 1)
+        self.assert_matches(
+            torch.sin(actual_detached),
+            reference_torch.sin(expected_detached),
+            case="detached input",
+        )
+
+        boundary_actual_leaf = torch.tensor(values, requires_grad=True)
+        boundary_expected_leaf = reference_torch.tensor(values, requires_grad=True)
+        with torch.no_grad():
+            boundary_actual_input = boundary_actual_leaf.transpose(0, 1)
+        with reference_torch.no_grad():
+            boundary_expected_input = boundary_expected_leaf.transpose(0, 1)
+        boundary_actual_loss = torch.sin(boundary_actual_input).sum()
+        boundary_expected_loss = reference_torch.sin(
+            boundary_expected_input
+        ).sum()
+        boundary_actual_loss.backward()
+        boundary_expected_loss.backward()
+        self.assertIsNone(boundary_actual_leaf.grad)
+        self.assertIsNone(boundary_expected_leaf.grad)
+        self.assert_error_matches(
+            boundary_actual_loss.backward, boundary_expected_loss.backward
+        )
 
     def callable_contract(self, module):
         function = module.sin
@@ -194,7 +301,7 @@ class TopLevelSinReferenceTests(unittest.TestCase):
         )
 
     def dispatch_observation(self, module):
-        tensor = module.tensor([0.0])
+        tensor = module.tensor([0.0], requires_grad=True)
         destination = module.tensor([0.0])
         function = module.sin
         marker = object()
@@ -301,6 +408,16 @@ class TopLevelSinReferenceTests(unittest.TestCase):
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
                 forwarded = function(input=tensor, out=None)
+        forwarded.sum().backward()
+        forwarded_observation = (
+            forwarded.requires_grad,
+            forwarded.is_leaf,
+            tuple(forwarded.shape),
+            forwarded.stride(),
+            forwarded.storage_offset(),
+            tuple(np.asarray(forwarded.detach()).reshape(-1)),
+            tuple(np.asarray(tensor.grad).reshape(-1)),
+        )
 
         fallback_events = []
 
@@ -337,7 +454,7 @@ class TopLevelSinReferenceTests(unittest.TestCase):
             subclass_result is marker,
             subclass_order,
             forward_order,
-            tuple(np.asarray(forwarded).reshape(-1)),
+            forwarded_observation,
             fallback_result is marker,
             len(declining_mode.calls),
             fallback_events,

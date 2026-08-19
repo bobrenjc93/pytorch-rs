@@ -1741,7 +1741,7 @@ struct UnaryOutOperation {
     qualified_name: &'static str,
     dispatch_allocation_error: &'static str,
     out_unsupported_error: &'static str,
-    autograd_unsupported_error: &'static str,
+    autograd_unsupported_error: Option<&'static str>,
     apply: UnaryOutApplication,
 }
 
@@ -1751,7 +1751,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.exp",
         dispatch_allocation_error: "unable to allocate exp dispatch operands",
         out_unsupported_error: "exp(): the 'out' argument is not supported",
-        autograd_unsupported_error: "exp(): autograd recording is not supported",
+        autograd_unsupported_error: Some("exp(): autograd recording is not supported"),
         apply: CoreTensor::exp,
     };
 
@@ -1760,7 +1760,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.sin",
         dispatch_allocation_error: "unable to allocate sin dispatch operands",
         out_unsupported_error: "sin(): the 'out' argument is not supported",
-        autograd_unsupported_error: "sin(): autograd recording is not supported",
+        autograd_unsupported_error: None,
         apply: CoreTensor::sin,
     };
 }
@@ -2610,10 +2610,11 @@ fn apply_top_level_unary_out(
         unreachable!("unary-out overrides were dispatched before the native path")
     };
     let input = input.try_borrow()?;
-    if input.inner.requires_grad() && is_grad_enabled() {
-        return Err(PyRuntimeError::new_err(
-            operation.autograd_unsupported_error,
-        ));
+    if input.inner.requires_grad()
+        && is_grad_enabled()
+        && let Some(error) = operation.autograd_unsupported_error
+    {
+        return Err(PyRuntimeError::new_err(error));
     }
     let output = (operation.apply)(&input.inner).map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
