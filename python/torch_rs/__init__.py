@@ -109,6 +109,7 @@ if "matmul" in _native.__all__:
 
 from . import autograd as autograd
 from . import compiler as compiler
+from . import distributed as distributed
 from . import functional as functional
 from . import nn as nn
 from . import overrides as overrides
