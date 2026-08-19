@@ -11,7 +11,7 @@ Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 | creation, elementwise, reductions | 15% | Python-integer `torch.broadcast_shapes` shape inference, basic arithmetic, inference-only top-level `torch.exp`, reductions, and exact tensor equality |
 | linear algebra and signal operations | 10% | rank-2 matmul only |
 | autograd and higher-order differentiation | 15% | unsupported |
-| neural-network functional API and modules | 15% | out-of-place `torch.nn.functional.relu` backed by the native ReLU kernel, plus exact-identity `torch.nn.functional.dropout`, `torch.nn.functional.alpha_dropout`, and `torch.nn.functional.feature_alpha_dropout` for evaluation mode, zero probability, or empty inputs |
+| neural-network functional API and modules | 15% | out-of-place `torch.nn.functional.relu` backed by the native ReLU kernel, plus exact-identity `torch.nn.functional.dropout`, rank-4 `torch.nn.functional.dropout2d`, `torch.nn.functional.alpha_dropout`, and `torch.nn.functional.feature_alpha_dropout` for evaluation mode, zero probability, or empty inputs |
 | optimizers, initialization, data utilities | 5% | unsupported |
 | serialization, state dictionaries, model interchange | 5% | unsupported |
 | compilation, parallelism, distributed execution | 5% | unsupported |

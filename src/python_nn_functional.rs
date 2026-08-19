@@ -9,29 +9,44 @@ use crate::{
     python_argument_schema::{ArgumentSchema, parse_float_like_argument},
 };
 
-const DROPOUT_METADATA: [DropoutMetadata; 3] = [
+const DROPOUT_METADATA: [DropoutMetadata; 4] = [
     DropoutMetadata {
+        public_function: "dropout",
         operation: "dropout",
         inplace_operation: "dropout_",
         supports_tensor_probability: true,
+        required_rank: None,
     },
     DropoutMetadata {
+        public_function: "alpha_dropout",
         operation: "alpha_dropout",
         inplace_operation: "alpha_dropout_",
         supports_tensor_probability: false,
+        required_rank: None,
     },
     DropoutMetadata {
+        public_function: "feature_alpha_dropout",
         operation: "feature_alpha_dropout",
         inplace_operation: "feature_alpha_dropout_",
         supports_tensor_probability: true,
+        required_rank: None,
+    },
+    DropoutMetadata {
+        public_function: "dropout2d",
+        operation: "feature_dropout",
+        inplace_operation: "feature_dropout_",
+        supports_tensor_probability: true,
+        required_rank: Some(4),
     },
 ];
 
 #[derive(Clone, Copy)]
 struct DropoutMetadata {
+    public_function: &'static str,
     operation: &'static str,
     inplace_operation: &'static str,
     supports_tensor_probability: bool,
+    required_rank: Option<usize>,
 }
 
 struct DropoutSchema {
@@ -59,7 +74,7 @@ fn dropout_metadata(kind: &str) -> PyResult<DropoutMetadata> {
     DROPOUT_METADATA
         .iter()
         .copied()
-        .find(|metadata| metadata.operation == kind)
+        .find(|metadata| metadata.public_function == kind)
         .ok_or_else(|| PyRuntimeError::new_err(format!("unknown dropout kind: {kind}")))
 }
 
@@ -108,6 +123,15 @@ fn _nn_functional_dropout(
         )));
     }
 
+    if let Some(required_rank) = metadata.required_rank
+        && tensor.try_borrow()?.inner().shape().len() != required_rank
+    {
+        return Err(PyNotImplementedError::new_err(format!(
+            "torch_rs.nn.functional.{} only supports rank-{required_rank} inputs",
+            metadata.public_function
+        )));
+    }
+
     let input_is_empty = tensor.try_borrow()?.inner().numel() == 0;
     if !training || probability == 0.0 || input_is_empty {
         return Ok(tensor.clone().unbind().into_any());
@@ -115,7 +139,7 @@ fn _nn_functional_dropout(
 
     Err(PyNotImplementedError::new_err(format!(
         "torch_rs.nn.functional.{} does not support sampling",
-        metadata.operation
+        metadata.public_function
     )))
 }
 
