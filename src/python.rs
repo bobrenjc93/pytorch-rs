@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
-    PyValueError,
+    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
+    PyTypeError, PyUserWarning, PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -825,6 +825,65 @@ impl PyTensorBase {
         }
 
         tensor.try_borrow()?.inner.is_pinned().into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nnumpy(*, force=False) -> numpy.ndarray\n\nReturns the tensor as a NumPy :class:`ndarray`.\n\nIf :attr:`force` is ``False`` (the default), the conversion\nis performed only if the tensor is on the CPU, does not require grad,\ndoes not have its conjugate bit set, and is a dtype and layout that\nNumPy supports. The returned ndarray and the tensor will share their\nstorage, so changes to the tensor will be reflected in the ndarray\nand vice versa.\n\nIf :attr:`force` is ``True`` this is equivalent to\ncalling ``t.detach().cpu().resolve_conj().resolve_neg().numpy()``.\nIf the tensor isn't on the CPU or the conjugate or negative bit is set,\nthe tensor won't share its storage with the returned ndarray.\nSetting :attr:`force` to ``True`` can be a useful shorthand.\n\nArgs:\n    force (bool): if ``True``, the ndarray may be a copy of the tensor\n               instead of always sharing memory, defaults to ``False``.\n"]
+    // PyTorch exposes a variadic native descriptor with no embedded signature,
+    // then enforces the documented keyword-only force argument in its parser.
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn numpy(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "numpy() takes 0 positional arguments but {} {} given",
+                args.len(),
+                if args.len() == 1 { "was" } else { "were" }
+            )));
+        }
+
+        let mut force = false;
+        if let Some(kwargs) = kwargs {
+            // PyTorch converts the recognized argument before reporting any
+            // extra keyword, independent of keyword insertion order.
+            if let Some(value) = kwargs.get_item("force")? {
+                force = parse_numpy_force(&value)?;
+            }
+            for (key, _) in kwargs {
+                let key = key.extract::<String>()?;
+                if key != "force" {
+                    return Err(PyTypeError::new_err(format!(
+                        "numpy() got an unexpected keyword argument '{key}'"
+                    )));
+                }
+            }
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "numpy",
+            "torch.Tensor.numpy",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        if !force {
+            return Err(PyNotImplementedError::new_err(
+                "numpy(): force=False is not supported because zero-copy NumPy storage sharing is not implemented; pass force=True to request an independent copy",
+            ));
+        }
+
+        // The native export helper always copies logical values, so the result
+        // is detached from both tensor storage and its autograd history.
+        tensor.try_borrow()?.numpy_array_copy(slf.py(), None)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -4300,6 +4359,16 @@ fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyRe
     let type_name = python_type_name(requires_grad)?;
     Err(PyTypeError::new_err(format!(
         "{function}(): argument 'requires_grad' must be bool, not {type_name}"
+    )))
+}
+
+fn parse_numpy_force(force: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if force.is_exact_instance_of::<PyBool>() {
+        return force.is_truthy();
+    }
+    let type_name = python_type_name(force)?;
+    Err(PyTypeError::new_err(format!(
+        "numpy(): argument 'force' must be bool, not {type_name}"
     )))
 }
 
