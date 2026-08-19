@@ -38,6 +38,7 @@ assert torch.is_signed(input=x)
 assert torch.get_device(input=x) == -1
 assert torch.compiler.is_compiling() is False
 assert torch.distributed.is_available() is False
+assert torch.distributed.is_initialized() is False
 assert torch.float32.to_real() is torch.float32
 limits = torch.finfo()
 assert limits == torch.finfo(torch.float)
@@ -108,7 +109,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.compiler.is_compiling()` is an eager-state compatibility query that returns the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 
-`torch.distributed.is_available()` is an honest backend-capability query that returns the exact `False` singleton without probing hardware, environment variables, or PyTorch. Process groups, collectives, and every other distributed API remain unsupported.
+`torch.distributed.is_available()` is an honest backend-capability query, and `torch.distributed.is_initialized()` exposes the stable default process-group state. Both return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Process-group creation, collectives, and every other distributed API remain unsupported.
 
 ## Non-negotiable evaluation rules
 

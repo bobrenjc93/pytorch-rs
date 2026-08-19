@@ -10,3 +10,6 @@ def is_available() -> bool:
     ``USE_DISTRIBUTED=0`` for MacOS.
     """
     return False
+
+
+from .distributed_c10d import is_initialized as is_initialized
