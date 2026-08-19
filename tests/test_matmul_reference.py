@@ -65,12 +65,27 @@ class TensorMatmulReferenceTests(unittest.TestCase):
             np.arange(12, dtype=np.float32).reshape(2, 3, 2).tolist(),
             dtype=module.float32,
         )[1]
+        offset_transposed_right = module.tensor(
+            np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist(),
+            dtype=module.float32,
+        )[1].transpose(0, 1)
         strided_left = module.tensor(
             [[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]], dtype=module.float32
         ).transpose(0, 1)
         strided_right = module.tensor(
             [[7.0, 9.0, 11.0], [8.0, 10.0, 12.0]], dtype=module.float32
         ).transpose(0, 1)
+        special_left = module.tensor(
+            [
+                [float("inf"), 1.0],
+                [float("-inf"), -1.0],
+                [float("nan"), 2.0],
+            ],
+            dtype=module.float32,
+        )
+        special_right = module.tensor(
+            [[1.0, -1.0], [0.5, 1.0]], dtype=module.float32
+        )
         return (
             (
                 "contiguous",
@@ -83,6 +98,18 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                 ),
             ),
             ("offset contiguous", offset_left, offset_right),
+            ("offset transpose-contiguous rhs", offset_left, offset_transposed_right),
+            (
+                "awkward transpose-contiguous rhs",
+                module.tensor(
+                    np.arange(35, dtype=np.float32).reshape(5, 7).tolist(),
+                    dtype=module.float32,
+                ),
+                module.tensor(
+                    np.arange(21, dtype=np.float32).reshape(3, 7).tolist(),
+                    dtype=module.float32,
+                ).transpose(0, 1),
+            ),
             ("strided", strided_left, strided_right),
             (
                 "offset empty rows",
@@ -94,18 +121,8 @@ class TensorMatmulReferenceTests(unittest.TestCase):
                 module.ones((2, 0), dtype=module.float32),
                 module.zeros((0, 3), dtype=module.float32),
             ),
-            (
-                "non-finite",
-                module.tensor(
-                    [
-                        [float("inf"), 1.0],
-                        [float("-inf"), -1.0],
-                        [float("nan"), 2.0],
-                    ],
-                    dtype=module.float32,
-                ),
-                module.tensor([[1.0, -1.0], [0.5, 1.0]], dtype=module.float32),
-            ),
+            ("non-finite", special_left, special_right),
+            ("non-finite transpose-contiguous rhs", special_left, special_right.T),
         )
 
     def test_rank_two_positional_keyword_results_and_layouts_match_pytorch_2_13(self):

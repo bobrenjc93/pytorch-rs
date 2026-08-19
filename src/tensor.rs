@@ -2341,6 +2341,21 @@ impl Tensor {
             accumulate_contiguous_matmul(left_data, right_data, &mut output, rows, inner, columns);
         } else if output_elements != 0
             && inner != 0
+            && self.strides[1] == 1
+            && other.strides[0] == 1
+            && layout_is_contiguous_in_order(&other.shape, &other.strides, &[0, 1])
+            && let (Some(left_data), Some(right_data)) =
+                (self.contiguous_slice(), other.dense_physical_slice())
+        {
+            accumulate_transpose_contiguous_rhs_matmul(
+                left_data,
+                right_data,
+                &mut output,
+                inner,
+                columns,
+            );
+        } else if output_elements != 0
+            && inner != 0
             && let (Some(left_data), Some(right_data)) =
                 (self.storage.owned_values(), other.storage.owned_values())
         {
@@ -3748,6 +3763,103 @@ fn accumulate_contiguous_matmul(
     }
 }
 
+// A transposed contiguous matrix stores each logical column as one physical
+// slice. Visiting columns before depth turns the RHS access into contiguous dot
+// products while retaining the original depth order for every output value.
+#[inline(never)]
+fn accumulate_transpose_contiguous_rhs_matmul(
+    left: &[f32],
+    right: &[f32],
+    output: &mut [f32],
+    inner: usize,
+    columns: usize,
+) {
+    debug_assert_ne!(inner, 0);
+    debug_assert_ne!(columns, 0);
+    debug_assert_eq!(left.len() / inner * columns, output.len());
+    debug_assert_eq!(right.len(), inner * columns);
+
+    let rows = left.len() / inner;
+    let blocked_rows = rows / CONTIGUOUS_MATMUL_ROW_BLOCK * CONTIGUOUS_MATMUL_ROW_BLOCK;
+    let (blocked_left, tail_left) = left.split_at(blocked_rows * inner);
+    let (blocked_output, tail_output) = output.split_at_mut(blocked_rows * columns);
+
+    for (left_tile, output_tile) in blocked_left
+        .chunks_exact(inner * CONTIGUOUS_MATMUL_ROW_BLOCK)
+        .zip(blocked_output.chunks_exact_mut(columns * CONTIGUOUS_MATMUL_ROW_BLOCK))
+    {
+        let (left_row_0, remaining) = left_tile.split_at(inner);
+        let (left_row_1, remaining) = remaining.split_at(inner);
+        let (left_row_2, left_row_3) = remaining.split_at(inner);
+        let (output_row_0, remaining) = output_tile.split_at_mut(columns);
+        let (output_row_1, remaining) = remaining.split_at_mut(columns);
+        let (output_row_2, output_row_3) = remaining.split_at_mut(columns);
+
+        for (column, right_column) in right.chunks_exact(inner).enumerate() {
+            let mut output_0 = output_row_0[column];
+            let mut output_1 = output_row_1[column];
+            let mut output_2 = output_row_2[column];
+            let mut output_3 = output_row_3[column];
+            for depth in 0..inner {
+                let right_value = right_column[depth];
+                output_0 += left_row_0[depth] * right_value;
+                output_1 += left_row_1[depth] * right_value;
+                output_2 += left_row_2[depth] * right_value;
+                output_3 += left_row_3[depth] * right_value;
+            }
+            output_row_0[column] = output_0;
+            output_row_1[column] = output_1;
+            output_row_2[column] = output_2;
+            output_row_3[column] = output_3;
+        }
+    }
+
+    for (left_row, output_row) in tail_left
+        .chunks_exact(inner)
+        .zip(tail_output.chunks_exact_mut(columns))
+    {
+        for (right_column, output_value) in right.chunks_exact(inner).zip(output_row.iter_mut()) {
+            for (&left_value, &right_value) in left_row.iter().zip(right_column) {
+                *output_value += left_value * right_value;
+            }
+        }
+    }
+
+    // Register-blocking may select a different NaN payload even though each
+    // result retains its depth order. Scanning the smaller output catches every
+    // non-finite input or finite overflow; replay those rare cases through
+    // scalar memory updates to preserve the existing bit patterns.
+    if output.iter().any(|value| !value.is_finite()) {
+        output.fill(0.0);
+        accumulate_transpose_contiguous_rhs_matmul_ordered(left, right, output, inner, columns);
+    }
+}
+
+#[inline(never)]
+fn accumulate_transpose_contiguous_rhs_matmul_ordered(
+    left: &[f32],
+    right: &[f32],
+    output: &mut [f32],
+    inner: usize,
+    columns: usize,
+) {
+    for (left_row, output_row) in left
+        .chunks_exact(inner)
+        .zip(output.chunks_exact_mut(columns))
+    {
+        for (right_column, output_value) in right.chunks_exact(inner).zip(output_row.iter_mut()) {
+            for (&left_value, &right_value) in left_row.iter().zip(right_column) {
+                accumulate_matmul_product(output_value, left_value, right_value);
+            }
+        }
+    }
+}
+
+#[inline(never)]
+fn accumulate_matmul_product(output: &mut f32, left: f32, right: f32) {
+    *output += left * right;
+}
+
 // Keep the unrolled kernel separate from the latency-sized contiguous loop.
 #[inline(never)]
 fn contiguous_matmul_row_blocked(
@@ -4438,6 +4550,28 @@ mod tests {
             .unwrap()
     }
 
+    fn offset_transpose_contiguous_matrix(bits: &[u32], inner: usize, columns: usize) -> Tensor {
+        offset_contiguous_tensor(bits, &[columns, inner])
+            .transpose(0, 1)
+            .unwrap()
+    }
+
+    fn matmul_matching_shared_right_fallback(left: &Tensor, right: &Tensor) -> Tensor {
+        let expected = left.matmul(&shared_gradient_copy(right)).unwrap();
+        let actual = left.matmul(right).unwrap();
+        assert_eq!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            expected
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>()
+        );
+        actual
+    }
+
     #[test]
     fn contiguous_matmul_is_bitwise_identical_to_shared_gradient_fallback() {
         let left = Tensor::from_vec(
@@ -4564,6 +4698,152 @@ mod tests {
             .unwrap()
             .matmul(&Tensor::zeros([0, 4]).unwrap())
             .unwrap();
+        assert_eq!(no_inner.shape(), [2, 4]);
+        assert!(no_inner.as_slice().iter().all(|value| value.to_bits() == 0));
+    }
+
+    #[test]
+    fn transpose_contiguous_rhs_matmul_preserves_each_result_bit_pattern() {
+        let rows = 5;
+        let inner = 7;
+        let columns = 3;
+        let finite_bits = [
+            0x3f80_0000,
+            0xbf80_0000,
+            0x4000_0000,
+            0xc000_0000,
+            0x3f00_0000,
+            0xbf00_0000,
+            0x4040_0000,
+            0xc040_0000,
+        ];
+        let mut left_bits = (0..rows * inner)
+            .map(|index| finite_bits[(index * 5 + index / inner) % finite_bits.len()])
+            .collect::<Vec<_>>();
+        left_bits[..inner].copy_from_slice(&[
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0000,
+        ]);
+        left_bits[4 * inner..].copy_from_slice(&[
+            0x60ad_78ec,
+            0xe0ad_78ec,
+            0x0000_0001,
+            0x8000_0001,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0080_0000,
+        ]);
+
+        let mut right_bits = (0..inner * columns)
+            .map(|index| finite_bits[(index * 3 + 1) % finite_bits.len()])
+            .collect::<Vec<_>>();
+        right_bits[0] = 0x3f80_0000;
+        right_bits[inner] = 0xbf80_0000;
+        right_bits[2 * inner] = 0x0000_0000;
+        for column in 0..columns {
+            right_bits[column * inner + 2] = 0x3f80_0000;
+        }
+
+        let finite_left = offset_contiguous_tensor(&left_bits, &[rows, inner]);
+        let finite_right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
+
+        assert_eq!(finite_left.stride(), [inner, 1]);
+        assert_eq!(finite_right.stride(), [1, inner]);
+        assert_ne!(finite_left.storage_offset(), 0);
+        assert_ne!(finite_right.storage_offset(), 0);
+        assert!(finite_left.is_contiguous());
+        assert!(!finite_right.is_contiguous());
+        assert!(finite_right.is_non_overlapping_and_dense());
+
+        let finite_actual = matmul_matching_shared_right_fallback(&finite_left, &finite_right);
+        assert_eq!(finite_actual.shape(), [rows, columns]);
+        assert!(
+            finite_actual.as_slice()[..columns]
+                .iter()
+                .all(|value| value.to_bits() == 0)
+        );
+
+        left_bits[inner] = 0x7f80_0000;
+        left_bits[2 * inner + 1] = 0xff80_0000;
+        left_bits[3 * inner + 2] = 0x7fc1_2345;
+        right_bits[2 * inner + 4] = 0x7f80_0000;
+        right_bits[2 * inner + 5] = 0xff80_0000;
+        right_bits[2 * inner + 6] = 0x7fc6_789a;
+        let left = offset_contiguous_tensor(&left_bits, &[rows, inner]);
+        let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
+        let actual = matmul_matching_shared_right_fallback(&left, &right);
+
+        assert!(
+            actual.as_slice()[..2]
+                .iter()
+                .all(|value| value.to_bits() == 0)
+        );
+        assert!(actual.as_slice()[2].is_nan());
+        assert_eq!(
+            actual.as_slice()[columns].to_bits(),
+            f32::INFINITY.to_bits()
+        );
+        assert_eq!(
+            actual.as_slice()[columns + 1].to_bits(),
+            f32::NEG_INFINITY.to_bits()
+        );
+        assert!(actual.as_slice()[columns + 2].is_nan());
+        assert!(
+            actual.as_slice()[3 * columns..4 * columns]
+                .iter()
+                .all(|value| value.is_nan())
+        );
+    }
+
+    #[test]
+    fn transpose_contiguous_rhs_matmul_preserves_finite_overflow_bits() {
+        let left_bits = [
+            0x7f7f_ffff,
+            0x3f80_0000,
+            0xff7f_ffff,
+            0x3f80_0000,
+            0x7f7f_ffff,
+            0xbf80_0000,
+            0xff7f_ffff,
+            0xbf80_0000,
+        ];
+        let right_bits = [0x4000_0000, 0x0000_0000, 0xc000_0000, 0x8000_0000];
+        let left = offset_contiguous_tensor(&left_bits, &[4, 2]);
+        let right = offset_transpose_contiguous_matrix(&right_bits, 2, 2);
+        let actual = matmul_matching_shared_right_fallback(&left, &right);
+
+        assert!(actual.as_slice().iter().all(|value| value.is_infinite()));
+    }
+
+    #[test]
+    fn transpose_contiguous_rhs_matmul_preserves_empty_dimension_outputs() {
+        let no_rows_left = Tensor::zeros([0, 3]).unwrap();
+        let no_rows_right = Tensor::ones([4, 3]).unwrap().transpose(0, 1).unwrap();
+        let no_rows = no_rows_left.matmul(&no_rows_right).unwrap();
+        assert_eq!(no_rows.shape(), [0, 4]);
+        assert!(no_rows.as_slice().is_empty());
+
+        let no_columns_left = offset_contiguous_tensor(&[0; 6], &[2, 3]);
+        let no_columns_right = Tensor::zeros([2, 0, 3])
+            .unwrap()
+            .index_integer(1)
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        assert_ne!(no_columns_left.storage_offset(), 0);
+        assert_ne!(no_columns_right.storage_offset(), 0);
+        let no_columns = no_columns_left.matmul(&no_columns_right).unwrap();
+        assert_eq!(no_columns.shape(), [2, 0]);
+        assert!(no_columns.as_slice().is_empty());
+
+        let no_inner_left = Tensor::ones([2, 0]).unwrap();
+        let no_inner_right = Tensor::zeros([4, 0]).unwrap().transpose(0, 1).unwrap();
+        let no_inner = no_inner_left.matmul(&no_inner_right).unwrap();
         assert_eq!(no_inner.shape(), [2, 4]);
         assert!(no_inner.as_slice().iter().all(|value| value.to_bits() == 0));
     }
