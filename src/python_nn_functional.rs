@@ -9,7 +9,7 @@ use crate::{
     python_argument_schema::{ArgumentSchema, parse_float_like_argument},
 };
 
-const DROPOUT_METADATA: [DropoutMetadata; 4] = [
+const DROPOUT_METADATA: [DropoutMetadata; 5] = [
     DropoutMetadata {
         public_function: "dropout",
         operation: "dropout",
@@ -37,6 +37,13 @@ const DROPOUT_METADATA: [DropoutMetadata; 4] = [
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
         required_rank: Some(4),
+    },
+    DropoutMetadata {
+        public_function: "dropout3d",
+        operation: "feature_dropout",
+        inplace_operation: "feature_dropout_",
+        supports_tensor_probability: true,
+        required_rank: Some(5),
     },
 ];
 
