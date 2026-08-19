@@ -140,7 +140,8 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_compiler.__all__
-                if name in {"is_compiling", "is_dynamo_compiling"}
+                if name
+                in {"is_compiling", "is_dynamo_compiling", "is_exporting"}
             ],
         )
         self.assertEqual(
@@ -150,6 +151,10 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
         self.assertEqual(
             torch.__all__.count("is_dynamo_compiling"),
             reference_torch.__all__.count("is_dynamo_compiling"),
+        )
+        self.assertEqual(
+            torch.__all__.count("is_exporting"),
+            reference_torch.__all__.count("is_exporting"),
         )
 
         for module, function in (
