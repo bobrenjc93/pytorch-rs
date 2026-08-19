@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
-    PyValueError,
+    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
+    PyTypeError, PyUserWarning, PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -786,6 +786,73 @@ impl PyTensorBase {
     fn data_ptr(slf: &Bound<'_, Self>) -> PyResult<usize> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         Ok(tensor.inner.data_ptr())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nnumpy(*, force=False) -> numpy.ndarray\n\nReturns the tensor as a NumPy :class:`ndarray`.\n\nIf :attr:`force` is ``False`` (the default), the conversion\nis performed only if the tensor is on the CPU, does not require grad,\ndoes not have its conjugate bit set, and is a dtype and layout that\nNumPy supports. The returned ndarray and the tensor will share their\nstorage, so changes to the tensor will be reflected in the ndarray\nand vice versa.\n\nIf :attr:`force` is ``True`` this is equivalent to\ncalling ``t.detach().cpu().resolve_conj().resolve_neg().numpy()``.\nIf the tensor isn't on the CPU or the conjugate or negative bit is set,\nthe tensor won't share its storage with the returned ndarray.\nSetting :attr:`force` to ``True`` can be a useful shorthand.\n\nArgs:\n    force (bool): if ``True``, the ndarray may be a copy of the tensor\n               instead of always sharing memory, defaults to ``False``.\n"]
+    // Retain PyTorch's variadic native descriptor metadata while validating
+    // the documented keyword-only schema explicitly. PyO3's typed bool
+    // extraction accepts values outside PyTorch's exact-bool contract.
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn numpy(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "numpy() takes 0 positional arguments but {} {} given",
+                args.len(),
+                if args.len() == 1 { "was" } else { "were" }
+            )));
+        }
+
+        let mut force = false;
+        if let Some(kwargs) = kwargs {
+            // PyTorch converts the recognized argument before reporting any
+            // extra keywords, independent of keyword insertion order.
+            if let Some(value) = kwargs.get_item("force")? {
+                if !value.is_exact_instance_of::<PyBool>() {
+                    let actual = python_type_name(&value)?;
+                    return Err(PyTypeError::new_err(format!(
+                        "numpy(): argument 'force' must be bool, not {actual}"
+                    )));
+                }
+                force = value.is_truthy()?;
+            }
+            for (key, _) in kwargs {
+                let key = key.extract::<String>()?;
+                if key != "force" {
+                    return Err(PyTypeError::new_err(format!(
+                        "numpy() got an unexpected keyword argument '{key}'"
+                    )));
+                }
+            }
+        }
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "numpy",
+            "torch.Tensor.numpy",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        if !force {
+            return Err(PyNotImplementedError::new_err(
+                "Tensor.numpy(force=False) requires zero-copy NumPy storage sharing; use force=True to export an independent copy",
+            ));
+        }
+
+        // The existing materialization helper reads logical values without
+        // retaining tensor storage or autograd state. That gives force=True
+        // the required detached, independent float32 ndarray for every layout.
+        tensor.try_borrow()?.numpy_array_copy(slf.py(), None)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
