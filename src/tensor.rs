@@ -2366,27 +2366,38 @@ impl Tensor {
             && let (Some(left_data), Some(right_data)) =
                 (self.storage.owned_values(), other.storage.owned_values())
         {
-            // Immutable owned storage can be borrowed for the whole kernel.
-            // Check each monotonic row span once before incrementing within it.
-            let left_depth_stride = self.strides[1];
-            let right_column_stride = other.strides[1];
-            for (row, output_row) in output.chunks_exact_mut(columns).enumerate() {
-                let mut left_offset = checked_matrix_row_base(self, row, inner, left_data.len())?;
-                for depth in 0..inner {
-                    let left = left_data[left_offset];
-                    let mut right_offset =
-                        checked_matrix_row_base(other, depth, columns, right_data.len())?;
-                    let mut column = 0;
-                    loop {
-                        output_row[column] += left * right_data[right_offset];
-                        column += 1;
-                        if column == columns {
-                            break;
+            if !accumulate_validated_owned_strided_matmul(
+                self,
+                other,
+                left_data,
+                right_data,
+                &mut output,
+                inner,
+                columns,
+            ) {
+                // Preserve the established error behavior for malformed
+                // internal layouts that fail the one-time bounds proof.
+                let left_depth_stride = self.strides[1];
+                let right_column_stride = other.strides[1];
+                for (row, output_row) in output.chunks_exact_mut(columns).enumerate() {
+                    let mut left_offset =
+                        checked_matrix_row_base(self, row, inner, left_data.len())?;
+                    for depth in 0..inner {
+                        let left = left_data[left_offset];
+                        let mut right_offset =
+                            checked_matrix_row_base(other, depth, columns, right_data.len())?;
+                        let mut column = 0;
+                        loop {
+                            output_row[column] += left * right_data[right_offset];
+                            column += 1;
+                            if column == columns {
+                                break;
+                            }
+                            right_offset += right_column_stride;
                         }
-                        right_offset += right_column_stride;
-                    }
-                    if depth + 1 != inner {
-                        left_offset += left_depth_stride;
+                        if depth + 1 != inner {
+                            left_offset += left_depth_stride;
+                        }
                     }
                 }
             }
@@ -3797,6 +3808,104 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
+// Prove both positive-stride matrix views fit their immutable owned storage
+// once, then preserve the established row/depth/column accumulation order with
+// simple strided iterators. This avoids repeating checked row arithmetic in the
+// hot loop without weakening malformed-layout errors.
+#[allow(clippy::inline_always)]
+#[inline(always)]
+fn accumulate_validated_owned_strided_matmul(
+    left_tensor: &Tensor,
+    right_tensor: &Tensor,
+    left: &[f32],
+    right: &[f32],
+    output: &mut [f32],
+    inner: usize,
+    columns: usize,
+) -> bool {
+    debug_assert_ne!(inner, 0);
+    debug_assert_ne!(columns, 0);
+    debug_assert_eq!(output.len() % columns, 0);
+    let rows = output.len() / columns;
+    debug_assert_ne!(rows, 0);
+    let [left_row_stride, left_depth_stride] = left_tensor.strides.as_slice() else {
+        return false;
+    };
+    let [right_depth_stride, right_column_stride] = right_tensor.strides.as_slice() else {
+        return false;
+    };
+    if *left_row_stride == 0
+        || *left_depth_stride == 0
+        || *right_depth_stride == 0
+        || *right_column_stride == 0
+    {
+        return false;
+    }
+
+    let Some(left_row_extent) = (rows - 1).checked_mul(*left_row_stride) else {
+        return false;
+    };
+    let Some(left_depth_extent) = (inner - 1).checked_mul(*left_depth_stride) else {
+        return false;
+    };
+    let Some(left_last) = left_tensor
+        .offset
+        .checked_add(left_row_extent)
+        .and_then(|offset| offset.checked_add(left_depth_extent))
+    else {
+        return false;
+    };
+    let Some(left_span_len) = left_depth_extent.checked_add(1) else {
+        return false;
+    };
+    if left_last >= left.len() {
+        return false;
+    }
+
+    let Some(right_depth_extent) = (inner - 1).checked_mul(*right_depth_stride) else {
+        return false;
+    };
+    let Some(right_column_extent) = (columns - 1).checked_mul(*right_column_stride) else {
+        return false;
+    };
+    let Some(right_last) = right_tensor
+        .offset
+        .checked_add(right_depth_extent)
+        .and_then(|offset| offset.checked_add(right_column_extent))
+    else {
+        return false;
+    };
+    let Some(right_span_len) = right_column_extent.checked_add(1) else {
+        return false;
+    };
+    if right_last >= right.len() {
+        return false;
+    }
+
+    let mut left_row_base = left_tensor.offset;
+    for (row, output_row) in output.chunks_exact_mut(columns).enumerate() {
+        let left_depths = left[left_row_base..left_row_base + left_span_len]
+            .iter()
+            .step_by(*left_depth_stride);
+        let mut right_depth_base = right_tensor.offset;
+        for (depth, &left_value) in left_depths.enumerate() {
+            let right_columns = right[right_depth_base..right_depth_base + right_span_len]
+                .iter()
+                .step_by(*right_column_stride);
+            for (output_value, &right_value) in output_row.iter_mut().zip(right_columns) {
+                *output_value += left_value * right_value;
+            }
+            if depth + 1 != inner {
+                right_depth_base += right_depth_stride;
+            }
+        }
+        if row + 1 != rows {
+            left_row_base += left_row_stride;
+        }
+    }
+    true
+}
+
 // A transposed contiguous matrix stores each logical column in one adjacent
 // physical slice. Row-contiguous left operands let both inputs of every dot
 // product use slices while depth remains in the original accumulation order.
@@ -4960,6 +5069,67 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    #[test]
+    fn validated_owned_strided_matmul_preserves_colliding_nan_payloads() {
+        let nan_bits = [0xffc0_0001, 0x7fc1_2345];
+        let assert_matches_fallback = |left: &Tensor, right: &Tensor| {
+            let expected = shared_gradient_copy(left)
+                .matmul(&shared_gradient_copy(right))
+                .unwrap();
+            let actual = left.matmul(right).unwrap();
+            assert!(expected.as_slice()[0].is_nan());
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        };
+
+        let left_bits = [
+            1.0_f32.to_bits(),
+            2.0_f32.to_bits(),
+            1.0_f32.to_bits(),
+            2.0_f32.to_bits(),
+        ];
+        let padded_left = offset_padded_row_contiguous_matrix(&left_bits, 2, 2);
+        let padded_right = offset_padded_row_contiguous_matrix(
+            &[
+                nan_bits[0],
+                1.0_f32.to_bits(),
+                nan_bits[1],
+                1.0_f32.to_bits(),
+            ],
+            2,
+            2,
+        );
+        assert_matches_fallback(&padded_left, &padded_right);
+
+        let strided_left = offset_transpose_contiguous_matrix(
+            &[
+                1.0_f32.to_bits(),
+                1.0_f32.to_bits(),
+                2.0_f32.to_bits(),
+                2.0_f32.to_bits(),
+            ],
+            2,
+            2,
+        );
+        let strided_right = offset_transpose_contiguous_matrix(
+            &[
+                nan_bits[0],
+                nan_bits[1],
+                1.0_f32.to_bits(),
+                1.0_f32.to_bits(),
+            ],
+            2,
+            2,
+        );
+        assert_eq!(strided_left.stride(), [1, 2]);
+        assert_eq!(strided_right.stride(), [1, 2]);
+        assert_matches_fallback(&strided_left, &strided_right);
     }
 
     #[test]

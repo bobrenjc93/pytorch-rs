@@ -3077,7 +3077,7 @@ fn dispatch_matmul(
         && let BoundTensorOrTorchFunction::Tensor(other) = other
     {
         let other = other.try_borrow()?;
-        let result = tensor.try_borrow()?.matrix_multiply_dispatched(&other)?;
+        let result = tensor.try_borrow()?.matrix_multiply(&other)?;
         return Ok(Py::new(py, result)?.into_any());
     }
 
@@ -3138,7 +3138,7 @@ fn dispatch_matmul(
                 )?);
             }
             let other = other.try_borrow()?;
-            let result = tensor.try_borrow()?.matrix_multiply_dispatched(&other)?;
+            let result = tensor.try_borrow()?.matrix_multiply(&other)?;
             Ok(Py::new(py, result)?.into_any())
         }
     }
@@ -3246,7 +3246,7 @@ fn dispatch_top_level_matmul(
             unreachable!("matmul overrides were collected before the native fast path")
         };
         let other = other.try_borrow()?;
-        let result = input.try_borrow()?.matrix_multiply_dispatched(&other)?;
+        let result = input.try_borrow()?.matrix_multiply(&other)?;
         return Ok(Py::new(py, result)?.into_any());
     }
 
@@ -4022,7 +4022,7 @@ impl PyTensor {
     }
 
     fn __matmul__(&self, other: &Self) -> PyResult<Self> {
-        self.matrix_multiply_dispatched(other)
+        self.matrix_multiply(other)
     }
 
     fn __bool__(&self) -> PyResult<bool> {
@@ -4051,22 +4051,9 @@ impl PyTensor {
 }
 
 impl PyTensor {
-    fn matrix_multiply_dispatched(&self, other: &Self) -> PyResult<Self> {
-        if let Some(output) = self
-            .inner
-            .try_row_contiguous_transpose_rhs_matmul(&other.inner)
-        {
-            return output.map(Self::new).map_err(|error| tensor_error(&error));
-        }
-        self.matrix_multiply(other)
-    }
-
-    // Keep the established kernels in a stable codegen unit. Folding this
-    // body into the layout dispatcher regresses non-target strided matmuls.
-    #[inline(never)]
     fn matrix_multiply(&self, other: &Self) -> PyResult<Self> {
         self.inner
-            .matmul_fallback(&other.inner)
+            .matmul(&other.inner)
             .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
