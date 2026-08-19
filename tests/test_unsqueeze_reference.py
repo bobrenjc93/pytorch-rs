@@ -1,5 +1,6 @@
 import inspect
 import re
+import sys
 import types
 import unittest
 
@@ -90,6 +91,38 @@ class TensorUnsqueezeReferenceTests(unittest.TestCase):
                         actual_contract[0], expected_contract[0]
                     )
                     self.assertEqual(actual_contract[1:], expected_contract[1:])
+
+    def extreme_empty_stride_contract(self, module):
+        outcomes = []
+        for trailing in (1, 2, 3, 4, 5):
+            source = module.zeros((0,), dtype=module.float32).reshape(
+                (sys.maxsize, 0, trailing)
+            )
+            for form in ("positional", "keyword", "negative"):
+                try:
+                    result = self.call(source, form)
+                except Exception as error:
+                    outcomes.append((trailing, form, type(error).__name__, str(error)))
+                    continue
+                outcomes.append(
+                    (
+                        trailing,
+                        form,
+                        "ok",
+                        tuple(result.shape),
+                        result.stride(),
+                        result.storage_offset(),
+                        result.data_ptr(),
+                        result.is_set_to(source.unsqueeze(0)),
+                    )
+                )
+        return tuple(outcomes)
+
+    def test_extreme_empty_signed_stride_wrapping_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.extreme_empty_stride_contract(torch),
+            self.extreme_empty_stride_contract(reference_torch),
+        )
 
     def autograd_contract(self, module):
         repeated_leaf = module.tensor(
@@ -224,6 +257,71 @@ class TensorUnsqueezeReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.binding_error_contract(torch),
             self.binding_error_contract(reference_torch),
+        )
+
+    def keyword_subclass_contract(self, module):
+        tensor = module.zeros((2, 3), dtype=module.float32)
+
+        class PlainKeyword(str):
+            pass
+
+        class TrueKeyword(str):
+            def __eq__(self, other):
+                return True
+
+            __hash__ = str.__hash__
+
+        class FalseKeyword(str):
+            def __eq__(self, other):
+                return False
+
+            __hash__ = str.__hash__
+
+        class RaisingKeyword(str):
+            def __eq__(self, other):
+                raise RuntimeError("keyword equality failure")
+
+            __hash__ = str.__hash__
+
+        class MismatchedHashKeyword(str):
+            def __eq__(self, other):
+                return True
+
+            def __hash__(self):
+                return 0
+
+        def outcome(call):
+            try:
+                result = call()
+            except Exception as error:
+                return type(error).__name__, str(error)
+            return "ok", tuple(result.shape), result.stride()
+
+        return tuple(
+            outcome(call)
+            for call in (
+                lambda: tensor.unsqueeze(**{PlainKeyword("dim"): 0}),
+                lambda: tensor.unsqueeze(**{TrueKeyword("dim"): 0}),
+                lambda: tensor.unsqueeze(**{FalseKeyword("dim"): 0}),
+                lambda: tensor.unsqueeze(**{RaisingKeyword("dim"): 0}),
+                lambda: tensor.unsqueeze(**{MismatchedHashKeyword("dim"): 0}),
+                lambda: tensor.unsqueeze(**{TrueKeyword("unexpected"): 0}),
+                lambda: tensor.unsqueeze(0, **{FalseKeyword("dim"): 1}),
+                lambda: tensor.unsqueeze(0, **{TrueKeyword("unexpected"): 1}),
+                lambda: tensor.unsqueeze(0, **{RaisingKeyword("dim"): 1}),
+                lambda: tensor.unsqueeze(
+                    **{"dim": 0, TrueKeyword("unexpected"): 1}
+                ),
+                lambda: tensor.unsqueeze(**{"dim": 0, FalseKeyword("dim"): 1}),
+                lambda: tensor.unsqueeze(0, **{"bad\0tail": 1}),
+                lambda: tensor.unsqueeze(dim=0, **{"bad\0tail": 1}),
+            )
+        )
+
+    def test_hostile_and_nul_keywords_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.keyword_subclass_contract(torch),
+            self.keyword_subclass_contract(reference_torch),
         )
 
     def descriptor_contract(self, module):

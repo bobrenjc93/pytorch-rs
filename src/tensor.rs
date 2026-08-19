@@ -1177,9 +1177,22 @@ impl Tensor {
         shape.extend_from_slice(&self.shape);
 
         let leading_stride = match (self.shape.first(), self.strides.first()) {
-            (Some(dimension), Some(stride)) => dimension
-                .checked_mul(*stride)
-                .ok_or(TensorError::StrideCalculationOverflow)?,
+            (Some(dimension), Some(stride)) => {
+                let leading_stride = signed_wrapping_stride_product_value(*stride, *dimension)?;
+                if leading_stride < 0 {
+                    let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
+                    strides.push(leading_stride);
+                    for &stride in &self.strides {
+                        strides.push(
+                            i64::try_from(stride)
+                                .map_err(|_| TensorError::StrideCalculationOverflow)?,
+                        );
+                    }
+                    return Err(TensorError::NegativeStrides { strides });
+                }
+                usize::try_from(leading_stride)
+                    .map_err(|_| TensorError::StrideCalculationOverflow)?
+            }
             (None, None) => 1,
             _ => unreachable!("validated tensor shape and stride ranks must match"),
         };
@@ -4189,13 +4202,20 @@ fn reshape_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, Tenso
 }
 
 fn signed_wrapping_stride_product(stride: usize, dimension: usize) -> Result<usize, TensorError> {
+    let product = signed_wrapping_stride_product_value(stride, dimension)?;
+    usize::try_from(product).map_err(|_| TensorError::StrideCalculationOverflow)
+}
+
+fn signed_wrapping_stride_product_value(
+    stride: usize,
+    dimension: usize,
+) -> Result<i64, TensorError> {
     if stride == 0 || dimension == 0 {
         return Ok(0);
     }
     let stride = i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?;
     let dimension = i64::try_from(dimension).map_err(|_| TensorError::StrideCalculationOverflow)?;
-    let product = stride.wrapping_mul(dimension);
-    usize::try_from(product).map_err(|_| TensorError::StrideCalculationOverflow)
+    Ok(stride.wrapping_mul(dimension))
 }
 
 fn checked_stride_product(stride: usize, dimension: usize) -> Result<usize, TensorError> {
@@ -4369,6 +4389,34 @@ mod tests {
         let gradient = signed_source.grad().unwrap().unwrap();
         assert_eq!(gradient.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
         assert_eq!(gradient.as_slice()[1].to_bits(), 1.0_f32.to_bits());
+    }
+
+    #[cfg(all(feature = "python-bindings", target_pointer_width = "64"))]
+    #[test]
+    fn front_unsqueeze_uses_signed_wrapping_stride_arithmetic() {
+        let maximum = usize::try_from(i64::MAX).unwrap();
+        let even = Tensor::zeros([0])
+            .unwrap()
+            .reshape([i64::MAX, 0, 2])
+            .unwrap();
+        assert_eq!(even.stride(), [2, 2, 1]);
+        assert_eq!(
+            even.unsqueeze_front(),
+            Err(TensorError::NegativeStrides {
+                strides: vec![-2, 2, 2, 1],
+            })
+        );
+
+        let odd = Tensor::zeros([0])
+            .unwrap()
+            .reshape([i64::MAX, 0, 3])
+            .unwrap();
+        assert_eq!(odd.stride(), [3, 3, 1]);
+        let result = odd.unsqueeze_front().unwrap();
+        assert_eq!(result.shape(), [1, maximum, 0, 3]);
+        assert_eq!(result.stride(), [maximum - 2, 3, 3, 1]);
+        assert_eq!(result.storage_offset(), 0);
+        assert!(result.shares_storage_with(&odd));
     }
 
     #[test]

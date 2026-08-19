@@ -1793,7 +1793,7 @@ struct ParsedCallArgument<'py> {
     position: Option<usize>,
 }
 
-struct ConsumedDTypeKeyword<'py> {
+struct ConsumedKeyword<'py> {
     key: Bound<'py, PyAny>,
     position: usize,
 }
@@ -5721,20 +5721,43 @@ fn bind_unsqueeze_dimension<'py>(
         )));
     }
 
-    let dimension = if positional.is_empty() {
-        if let Some(keywords) = keywords {
-            keywords.get_item("dim")?.map(|value| ParsedCallArgument {
-                value,
-                position: None,
-            })
+    let (dimension, consumed_keyword) = if positional.is_empty() {
+        let remaining_keywords = keywords.map(PyDictMethods::copy).transpose()?;
+        let sentinel = PyDict::new(positional.py()).into_any();
+        let value = remaining_keywords.as_ref().and_then(|remaining_keywords| {
+            pop_generated_keyword(remaining_keywords, "dim", &sentinel)
+                .ok()
+                .flatten()
+        });
+        if let (Some(value), Some(remaining_keywords)) = (value, remaining_keywords.as_ref()) {
+            let remaining_keys = remaining_keywords.keys();
+            let original_keys = keywords
+                .expect("a consumed unsqueeze keyword requires original keywords")
+                .keys();
+            let consumed_keyword = original_keys
+                .iter()
+                .find(|key| !remaining_keys.iter().any(|remaining| remaining.is(key)))
+                .ok_or_else(|| {
+                    PyRuntimeError::new_err("unsqueeze() could not identify a consumed keyword")
+                })?;
+            (
+                Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                }),
+                Some(consumed_keyword),
+            )
         } else {
-            None
+            (None, None)
         }
     } else {
-        Some(ParsedCallArgument {
-            value: positional.get_item(0)?,
-            position: Some(1),
-        })
+        (
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            }),
+            None,
+        )
     };
 
     let Some(dimension) = dimension else {
@@ -5748,23 +5771,58 @@ fn bind_unsqueeze_dimension<'py>(
     // after TorchFunctionMode dispatch so a mode sees the original integer.
     validate_dimension_swap_dimension("unsqueeze", "dim", dimension.position, &dimension.value)?;
 
-    if let Some(keywords) = keywords {
-        for key in keywords.keys() {
-            let key = key.extract::<String>()?;
-            if key != "dim" {
-                return Err(PyTypeError::new_err(format!(
-                    "unsqueeze() got an unexpected keyword argument '{key}'"
-                )));
-            }
-            if !positional.is_empty() {
-                return Err(PyTypeError::new_err(
-                    "unsqueeze() got multiple values for argument 'dim'",
-                ));
-            }
-        }
-    }
+    validate_unsqueeze_keywords(positional.len(), keywords, consumed_keyword.as_ref())?;
 
     Ok(dimension)
+}
+
+fn validate_unsqueeze_keywords(
+    positional_count: usize,
+    keywords: Option<&Bound<'_, PyDict>>,
+    consumed_keyword: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let Some(keywords) = keywords else {
+        return Ok(());
+    };
+    if keywords.len() <= usize::from(consumed_keyword.is_some()) {
+        return Ok(());
+    }
+
+    let mut invalid_keyword_arguments = false;
+    for key in keywords.keys().iter() {
+        let matches_dimension = key.eq("dim")?;
+        if consumed_keyword.is_some_and(|consumed| consumed.is(&key)) {
+            continue;
+        }
+
+        let key = pytorch_keyword_name(&key)?;
+        if matches_dimension {
+            if positional_count == 0 {
+                invalid_keyword_arguments = true;
+                continue;
+            }
+            return Err(unsqueeze_keyword_error(key, true));
+        }
+        return Err(unsqueeze_keyword_error(key, false));
+    }
+
+    if invalid_keyword_arguments {
+        Err(PyTypeError::new_err("invalid keyword arguments"))
+    } else {
+        Ok(())
+    }
+}
+
+fn unsqueeze_keyword_error(keyword: &str, duplicate: bool) -> PyErr {
+    let mut message = if duplicate {
+        format!("unsqueeze() got multiple values for argument '{keyword}'")
+    } else {
+        format!("unsqueeze() got an unexpected keyword argument '{keyword}'")
+    };
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    PyTypeError::new_err(message)
 }
 
 fn bind_top_level_unbind_arguments<'py>(
@@ -8119,7 +8177,7 @@ fn bind_dtype_binary_arguments<'py>(
     operation: DTypeBinaryOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<([BoundDTypeOperand<'py>; 2], Vec<ConsumedDTypeKeyword<'py>>)> {
+) -> PyResult<([BoundDTypeOperand<'py>; 2], Vec<ConsumedKeyword<'py>>)> {
     let names = operation.argument_names();
     let function = operation.name();
 
@@ -8151,7 +8209,7 @@ fn bind_dtype_binary_arguments<'py>(
             let keys_before = remaining_keywords.keys();
             // PyTorch's generated argument parser suppresses lookup failures
             // here; a miss is reported as the complete remaining schema suffix.
-            let value = pop_dtype_keyword(remaining_keywords, name, &sentinel)
+            let value = pop_generated_keyword(remaining_keywords, name, &sentinel)
                 .ok()
                 .flatten();
             if let Some(value) = value {
@@ -8164,7 +8222,7 @@ fn bind_dtype_binary_arguments<'py>(
                             "{function}() could not identify a consumed keyword"
                         ))
                     })?;
-                consumed_keywords.push(ConsumedDTypeKeyword {
+                consumed_keywords.push(ConsumedKeyword {
                     key,
                     position: index,
                 });
@@ -8209,7 +8267,7 @@ fn bind_dtype_binary_arguments<'py>(
     ))
 }
 
-fn pop_dtype_keyword<'py>(
+fn pop_generated_keyword<'py>(
     keywords: &Bound<'py, PyDict>,
     name: &str,
     sentinel: &Bound<'py, PyAny>,
@@ -8222,7 +8280,7 @@ fn validate_dtype_binary_keywords(
     operation: DTypeBinaryOperation,
     positional_count: usize,
     keywords: Option<&Bound<'_, PyDict>>,
-    consumed_keywords: &[ConsumedDTypeKeyword<'_>],
+    consumed_keywords: &[ConsumedKeyword<'_>],
 ) -> PyResult<()> {
     let Some(keywords) = keywords else {
         return Ok(());

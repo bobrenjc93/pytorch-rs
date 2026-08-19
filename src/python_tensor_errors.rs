@@ -20,6 +20,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ReshapeElementCountMismatch { .. }
         | TensorError::ViewIncompatibleLayout
         | TensorError::StrideCalculationOverflow
+        | TensorError::NegativeStrides { .. }
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::UnsupportedMemoryFormat { .. }

@@ -77,6 +77,9 @@ pub enum TensorError {
     ViewIncompatibleLayout,
     ElementCountOverflow,
     StrideCalculationOverflow,
+    NegativeStrides {
+        strides: Vec<i64>,
+    },
     StorageCapacityOverflow {
         elements: usize,
     },
@@ -179,6 +182,7 @@ impl Display for TensorError {
                 formatter.write_str("tensor element count overflowed usize")
             }
             Self::StrideCalculationOverflow => formatter.write_str("Stride calculation overflowed"),
+            Self::NegativeStrides { strides } => format_negative_strides(formatter, strides),
             Self::StorageCapacityOverflow { elements } => write!(
                 formatter,
                 "storage for a tensor with {elements} elements exceeds the platform capacity"
@@ -219,6 +223,13 @@ fn format_shape_mismatch(
             "tensor shapes are not broadcastable: {left:?} and {right:?}"
         )
     }
+}
+
+fn format_negative_strides(formatter: &mut Formatter<'_>, strides: &[i64]) -> std::fmt::Result {
+    write!(
+        formatter,
+        "as_strided: Negative strides are not supported at the moment, got strides: {strides:?}"
+    )
 }
 
 fn format_matmul_inner_dimension_mismatch(

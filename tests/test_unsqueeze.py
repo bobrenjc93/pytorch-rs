@@ -1,4 +1,5 @@
 import inspect
+import sys
 import types
 import unittest
 
@@ -97,6 +98,29 @@ class TensorUnsqueezeTests(unittest.TestCase):
         self.assertEqual(strided_result.storage_offset(), 1)
         self.assertEqual(strided_result.data_ptr(), 0)
         self.assert_same_unsqueeze_view(strided_empty, strided_result)
+
+    def test_extreme_empty_strides_use_signed_wrapping_arithmetic(self):
+        even = torch.zeros((0,)).reshape((sys.maxsize, 0, 2))
+        self.assertEqual(even.stride(), (2, 2, 1))
+        for call in (lambda: even.unsqueeze(0), lambda: even.unsqueeze(-4)):
+            with self.subTest(shape=even.shape, call=call):
+                with self.assertRaises(RuntimeError) as raised:
+                    call()
+                self.assertEqual(
+                    str(raised.exception),
+                    "as_strided: Negative strides are not supported at the moment, "
+                    "got strides: [-2, 2, 2, 1]",
+                )
+
+        odd = torch.zeros((0,)).reshape((sys.maxsize, 0, 3))
+        self.assertEqual(odd.stride(), (3, 3, 1))
+        for result in (odd.unsqueeze(0), odd.unsqueeze(dim=-4)):
+            with self.subTest(shape=odd.shape, stride=result.stride()):
+                self.assertEqual(result.shape, (1, sys.maxsize, 0, 3))
+                self.assertEqual(result.stride(), (sys.maxsize - 2, 3, 3, 1))
+                self.assertEqual(result.storage_offset(), 0)
+                self.assertEqual(result.data_ptr(), 0)
+                self.assertTrue(result.is_set_to(odd.unsqueeze(0)))
 
     def test_autograd_repeated_backward_empty_and_no_grad(self):
         leaf = torch.tensor([float(value) for value in range(48)], requires_grad=True)
@@ -241,6 +265,98 @@ class TensorUnsqueezeTests(unittest.TestCase):
                     "^Tensor\\.unsqueeze only supports dimension 0$",
                 ):
                     tensor.unsqueeze(dimension)
+
+    def test_legacy_keyword_lookup_spoofing_and_nul_diagnostics(self):
+        tensor = torch.zeros((2, 3))
+
+        class PlainKeyword(str):
+            pass
+
+        class TrueKeyword(str):
+            def __eq__(self, other):
+                return True
+
+            __hash__ = str.__hash__
+
+        class FalseKeyword(str):
+            def __eq__(self, other):
+                return False
+
+            __hash__ = str.__hash__
+
+        class RaisingKeyword(str):
+            def __eq__(self, other):
+                raise RuntimeError("keyword equality failure")
+
+            __hash__ = str.__hash__
+
+        class MismatchedHashKeyword(str):
+            def __eq__(self, other):
+                return True
+
+            def __hash__(self):
+                return 0
+
+        for keyword in (PlainKeyword("dim"), TrueKeyword("dim")):
+            with self.subTest(keyword_type=type(keyword).__name__):
+                self.assertEqual(tensor.unsqueeze(**{keyword: 0}).shape, (1, 2, 3))
+
+        missing = 'unsqueeze() missing 1 required positional arguments: "dim"'
+        for keyword in (
+            FalseKeyword("dim"),
+            RaisingKeyword("dim"),
+            MismatchedHashKeyword("dim"),
+            TrueKeyword("unexpected"),
+        ):
+            with self.subTest(keyword_type=type(keyword).__name__):
+                with self.assertRaises(TypeError) as raised:
+                    tensor.unsqueeze(**{keyword: 0})
+                self.assertEqual(str(raised.exception), missing)
+
+        cases = (
+            (
+                lambda: tensor.unsqueeze(0, **{FalseKeyword("dim"): 1}),
+                TypeError,
+                "unsqueeze() got an unexpected keyword argument 'dim'",
+            ),
+            (
+                lambda: tensor.unsqueeze(0, **{TrueKeyword("unexpected"): 1}),
+                TypeError,
+                "unsqueeze() got multiple values for argument 'unexpected'",
+            ),
+            (
+                lambda: tensor.unsqueeze(0, **{RaisingKeyword("dim"): 1}),
+                RuntimeError,
+                "keyword equality failure",
+            ),
+            (
+                lambda: tensor.unsqueeze(
+                    **{"dim": 0, TrueKeyword("unexpected"): 1}
+                ),
+                TypeError,
+                "invalid keyword arguments",
+            ),
+            (
+                lambda: tensor.unsqueeze(**{"dim": 0, FalseKeyword("dim"): 1}),
+                TypeError,
+                "unsqueeze() got an unexpected keyword argument 'dim'",
+            ),
+            (
+                lambda: tensor.unsqueeze(0, **{"bad\0tail": 1}),
+                TypeError,
+                "unsqueeze() got an unexpected keyword argument 'bad",
+            ),
+            (
+                lambda: tensor.unsqueeze(dim=0, **{"bad\0tail": 1}),
+                TypeError,
+                "unsqueeze() got an unexpected keyword argument 'bad",
+            ),
+        )
+        for call, error_type, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaises(error_type) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
 
     def test_tensorbase_descriptor_metadata_and_unbound_calls(self):
         tensor = torch.zeros((2, 3))
