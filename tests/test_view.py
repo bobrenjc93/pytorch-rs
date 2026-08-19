@@ -28,6 +28,17 @@ class IndexDimension:
         return self.value
 
 
+class StatefulIndexDimension:
+    def __init__(self, values):
+        self.values = list(values)
+        self.calls = 0
+
+    def __index__(self):
+        value = self.values[self.calls]
+        self.calls += 1
+        return value
+
+
 class TensorViewTests(unittest.TestCase):
     def shape_forms(self, shape):
         return (
@@ -140,6 +151,49 @@ class TensorViewTests(unittest.TestCase):
                         expected_offset=expected_offset,
                     )
 
+    def test_single_integer_and_index_delegate_to_native_view(self):
+        base = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )
+        cases = (
+            ("scalar", torch.tensor(-0.0), 1, (1,), (1,), 0),
+            ("inferred", base, -1, (24,), (1,), 0),
+            ("offset", base[1], IntSubclass(12), (12,), (1,), 12),
+            (
+                "empty-offset",
+                torch.zeros((2, 0, 3)).transpose(0, 2)[1],
+                np.int64(-1),
+                (0,),
+                (1,),
+                1,
+            ),
+            (
+                "compatible-noncontiguous",
+                torch.tensor(
+                    np.arange(6, dtype=np.float32).reshape(2, 3).tolist()
+                ).transpose(0, 1)[0],
+                IndexDimension(2),
+                (2,),
+                (3,),
+                0,
+            ),
+        )
+        for case, source, dimension, shape, stride, offset in cases:
+            with self.subTest(case=case):
+                result = source.view(dimension)
+                self.assert_view_result(
+                    result,
+                    source,
+                    expected_shape=shape,
+                    expected_stride=stride,
+                    expected_offset=offset,
+                )
+
+        stateful = StatefulIndexDimension((24, 1, 24))
+        result = base.view(stateful)
+        self.assertEqual(result.shape, (24,))
+        self.assertEqual(stateful.calls, 3)
+
     def test_inferred_and_extreme_empty_shapes_preserve_aliasing(self):
         source = torch.tensor(np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist())
         for form, argument, keyword in self.shape_forms((2, -1, 2)):
@@ -200,6 +254,15 @@ class TensorViewTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, f"^{re.escape(ambiguous)}$"):
             torch.zeros((0,)).view((0, -1))
 
+        with self.assertRaisesRegex(
+            RuntimeError, r"^shape '\[5\]' is invalid for input of size 6$"
+        ):
+            torch.zeros((6,)).view(5)
+        with self.assertRaisesRegex(
+            RuntimeError, f"^{re.escape(INCOMPATIBLE_LAYOUT)}$"
+        ):
+            source.view(-1)
+
     def test_dimension_conversion_matches_the_sequence_overload(self):
         tensor = torch.zeros((6,))
         for shape in (
@@ -234,6 +297,10 @@ class TensorViewTests(unittest.TestCase):
             self.assertEqual(result.shape, (2, 3))
             self.assertEqual(result.stride(), (3, 1))
             self.assertEqual(result.data_ptr(), tensor.data_ptr())
+            flattened = tensor.view(-1)
+            self.assertEqual(flattened.shape, (6,))
+            self.assertEqual(flattened.stride(), (1,))
+            self.assertEqual(flattened.data_ptr(), tensor.data_ptr())
             with self.assertRaises(TypeError):
                 tensor.view((2, 3.0))
         finally:
@@ -258,6 +325,20 @@ class TensorViewTests(unittest.TestCase):
         np.testing.assert_array_equal(
             np.asarray(leaf.grad),
             np.asarray([[10.0, 30.0, 50.0], [20.0, 40.0, 60.0]]),
+        )
+
+        flat_leaf = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
+        )
+        flat = flat_leaf.view(-1)
+        self.assertEqual(flat.shape, (6,))
+        self.assertEqual(flat.stride(), (1,))
+        self.assertFalse(flat.is_leaf)
+        weights = torch.tensor([10.0, 20.0, 30.0, 40.0, 50.0, 60.0])
+        (flat * weights).sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(flat_leaf.grad),
+            np.asarray([[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]]),
         )
 
         repeated_leaf = torch.tensor(
@@ -317,6 +398,7 @@ class TensorViewTests(unittest.TestCase):
                 inspect.signature(callable_object)
 
         self.assertEqual(descriptor(tensor, (2, 1)).shape, (2, 1))
+        self.assertEqual(descriptor(tensor, -1).shape, (2,))
         self.assertEqual(descriptor(tensor, size=[2, 1]).shape, (2, 1))
 
     def test_torch_function_modes_receive_original_calls_and_forward(self):
@@ -338,6 +420,7 @@ class TensorViewTests(unittest.TestCase):
             ("tuple", lambda: tensor.view((2, 3)), (tensor, (2, 3)), None),
             ("list", lambda: tensor.view([2, 3]), (tensor, [2, 3]), None),
             ("Size", lambda: tensor.view(size), (tensor, size), None),
+            ("integer", lambda: tensor.view(-1), (tensor, -1), None),
             (
                 "keyword",
                 lambda: tensor.view(size=(2, 3)),
@@ -364,7 +447,7 @@ class TensorViewTests(unittest.TestCase):
 
         invalid = RecordingMode(marker)
         with invalid, self.assertRaises(TypeError):
-            tensor.view(6)
+            tensor.view(range(2))
         self.assertEqual(invalid.calls, [])
 
         order = []
@@ -389,6 +472,19 @@ class TensorViewTests(unittest.TestCase):
         self.assertEqual(forwarded.shape, (2, 3))
         self.assertEqual(forwarded.data_ptr(), tensor.data_ptr())
 
+        order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor.view(-1)
+        self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
+        for _, function, dispatch_types, args, kwargs in order:
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (tensor, -1))
+            self.assertIsNone(kwargs)
+        self.assertEqual(forwarded.shape, (6,))
+        self.assertEqual(forwarded.data_ptr(), tensor.data_ptr())
+
         declining = RecordingMode(NotImplemented)
         with self.assertRaises(TypeError) as raised:
             with declining:
@@ -402,14 +498,15 @@ class TensorViewTests(unittest.TestCase):
         self.assertEqual(len(declining.calls), 1)
         self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
 
-    def test_variadic_integer_and_dtype_overloads_remain_unsupported(self):
+    def test_keyword_integer_variadic_and_dtype_overloads_remain_unsupported(self):
         tensor = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
         original = np.asarray(tensor).copy()
         calls = (
-            lambda: tensor.view(6),
+            lambda: tensor.view(size=-1),
             lambda: tensor.view(2, 3),
             lambda: tensor.view(torch.float32),
             lambda: tensor.view(dtype=torch.float32),
+            lambda: tensor.view(True),
         )
         for call in calls:
             with self.subTest(call=call), self.assertRaises(TypeError):
