@@ -1,0 +1,246 @@
+import contextlib
+import copy
+import importlib
+import inspect
+import pickle
+import subprocess
+import sys
+import threading
+import types
+import typing
+import unittest
+
+import torch_rs as torch
+
+
+FUNCTION_DOC = """
+    Indicates whether a graph is executed/traced as part of torch.compile() or torch.export().
+
+    Note that there are 2 other related flags that should deprecated eventually:
+      * torch._dynamo.external_utils.is_compiling()
+      * torch._utils.is_compiling()
+
+    Example::
+
+        >>> def forward(self, x):
+        >>>     if not torch.compiler.is_compiling():
+        >>>        pass # ...logic that is not needed in a compiled/traced graph...
+        >>>
+        >>>     # ...rest of the function...
+    """
+
+
+PYTORCH_COMPILER_EXPORTS = (
+    "compile",
+    "config",
+    "assume_constant_result",
+    "reset",
+    "allow_in_graph",
+    "substitute_in_graph",
+    "list_backends",
+    "disable",
+    "set_default_backend",
+    "get_default_backend",
+    "set_stance",
+    "set_enable_guard_collectives",
+    "cudagraph_mark_step_begin",
+    "load_compiled_function",
+    "wrap_numpy",
+    "is_compiling",
+    "is_dynamo_compiling",
+    "is_exporting",
+    "save_cache_artifacts",
+    "load_cache_artifacts",
+    "keep_portable_guards_unsafe",
+    "skip_guard_on_inbuilt_nn_modules_unsafe",
+    "skip_guard_on_all_nn_modules_unsafe",
+    "keep_tensor_guards_unsafe",
+    "skip_guard_on_globals_unsafe",
+    "skip_all_guards_unsafe",
+    "nested_compile_region",
+)
+
+
+class CompilerIsCompilingTests(unittest.TestCase):
+    def test_eager_false_is_exact_and_preserves_grad_mode(self):
+        function = torch.compiler.is_compiling
+
+        def assert_query_preserves_grad_mode(expected_grad_state):
+            self.assertIs(torch.is_grad_enabled(), expected_grad_state)
+            self.assertIs(function(), False)
+            self.assertIs(torch.is_grad_enabled(), expected_grad_state)
+
+        assert_query_preserves_grad_mode(True)
+        with torch.no_grad():
+            assert_query_preserves_grad_mode(False)
+            with torch.no_grad():
+                assert_query_preserves_grad_mode(False)
+            assert_query_preserves_grad_mode(False)
+        assert_query_preserves_grad_mode(True)
+
+    def test_eager_false_is_stable_across_threads_and_grad_modes(self):
+        function = torch.compiler.is_compiling
+        worker_count = 8
+        barrier = threading.Barrier(worker_count)
+        results = [None] * worker_count
+        errors = []
+
+        def worker(index):
+            try:
+                context = torch.no_grad() if index % 2 else contextlib.nullcontext()
+                with context:
+                    barrier.wait(timeout=10)
+                    results[index] = (
+                        torch.is_grad_enabled(),
+                        function(),
+                        torch.is_grad_enabled(),
+                        function(),
+                        torch.is_grad_enabled(),
+                    )
+            except BaseException as error:
+                errors.append(error)
+
+        threads = [
+            threading.Thread(target=worker, args=(index,))
+            for index in range(worker_count)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        for index, result in enumerate(results):
+            expected_grad_state = index % 2 == 0
+            self.assertEqual(
+                result,
+                (
+                    expected_grad_state,
+                    False,
+                    expected_grad_state,
+                    False,
+                    expected_grad_state,
+                ),
+            )
+            self.assertIs(result[1], False)
+            self.assertIs(result[3], False)
+
+    def test_signature_annotations_documentation_and_module_identity(self):
+        compiler = importlib.import_module("torch_rs.compiler")
+        function = compiler.is_compiling
+
+        self.assertIs(torch.compiler, compiler)
+        self.assertIs(sys.modules["torch_rs.compiler"], compiler)
+        self.assertIs(type(function), types.FunctionType)
+        self.assertEqual(str(inspect.signature(function)), "() -> bool")
+        self.assertEqual(function.__annotations__, {"return": bool})
+        self.assertEqual(typing.get_type_hints(function), {"return": bool})
+        self.assertEqual(function.__name__, "is_compiling")
+        self.assertEqual(function.__qualname__, "is_compiling")
+        self.assertEqual(function.__module__, "torch_rs.compiler")
+        self.assertIs(inspect.getmodule(function), compiler)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
+        )
+        self.assertIsNone(function.__defaults__)
+        self.assertIsNone(function.__kwdefaults__)
+        self.assertEqual(function.__dict__, {})
+        self.assertFalse(hasattr(function, "__text_signature__"))
+
+    def test_exports_copy_and_pickle_use_the_canonical_module(self):
+        compiler = torch.compiler
+        function = compiler.is_compiling
+
+        self.assertEqual(compiler.__all__, ["is_compiling"])
+        compiler_namespace = {}
+        exec("from torch_rs.compiler import *", compiler_namespace)
+        self.assertEqual(
+            {name for name in compiler_namespace if not name.startswith("__")},
+            {"is_compiling"},
+        )
+        self.assertIs(compiler_namespace["is_compiling"], function)
+
+        self.assertNotIn("compiler", torch.__all__)
+        self.assertNotIn("is_compiling", torch.__all__)
+        top_level_namespace = {}
+        exec("from torch_rs import *", top_level_namespace)
+        self.assertNotIn("compiler", top_level_namespace)
+        self.assertNotIn("is_compiling", top_level_namespace)
+
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                payload = pickle.dumps(function, protocol=protocol)
+                self.assertIn(b"torch_rs.compiler", payload)
+                self.assertIs(pickle.loads(payload), function)
+
+    def test_rejects_arguments_with_pytorch_2_13_errors(self):
+        function = torch.compiler.is_compiling
+        cases = (
+            (
+                lambda: function(None),
+                "is_compiling() takes 0 positional arguments but 1 was given",
+            ),
+            (
+                lambda: function(None, None),
+                "is_compiling() takes 0 positional arguments but 2 were given",
+            ),
+            (
+                lambda: function(enabled=True),
+                "is_compiling() got an unexpected keyword argument 'enabled'",
+            ),
+            (
+                lambda: function(None, enabled=True),
+                "is_compiling() got an unexpected keyword argument 'enabled'",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
+                self.assertEqual(raised.exception.args, (message,))
+
+    def test_compile_export_and_other_compiler_apis_remain_unsupported(self):
+        self.assertFalse(hasattr(torch, "compile"))
+        self.assertFalse(hasattr(torch, "export"))
+        self.assertFalse(hasattr(torch, "is_compiling"))
+
+        for name in PYTORCH_COMPILER_EXPORTS:
+            if name != "is_compiling":
+                with self.subTest(name=name):
+                    self.assertFalse(hasattr(torch.compiler, name))
+
+    def test_importing_the_package_does_not_import_pytorch(self):
+        script = r"""
+import sys
+
+class RejectPytorchImport:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "torch" or fullname.startswith("torch."):
+            raise RuntimeError(f"PyTorch import was attempted: {fullname}")
+        return None
+
+sys.meta_path.insert(0, RejectPytorchImport())
+import torch_rs as torch
+
+assert torch.compiler.is_compiling() is False
+assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

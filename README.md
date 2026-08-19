@@ -33,6 +33,7 @@ volumes = torch.zeros((1, 2, 3, 4, 5))
 assert torch.nn.functional.dropout3d(volumes, p=0, training=True) is volumes
 assert torch.is_signed(input=x)
 assert torch.get_device(input=x) == -1
+assert torch.compiler.is_compiling() is False
 assert torch.float32.to_real() is torch.float32
 limits = torch.finfo()
 assert limits == torch.finfo(torch.float)
@@ -100,6 +101,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.can_cast` and `torch.promote_types` accept the existing `torch.float32`/`torch.float` singleton aliases in positional or canonical keyword forms. Casting between the supported aliases returns `True`, while promotion returns the same canonical singleton. No additional dtype, casting pair, or promotion pair is exposed.
 
 `torch.functional.broadcast_shapes` and its identical top-level `torch.broadcast_shapes` alias compute canonical `torch.Size` results directly from nonnegative Python integer, tuple, list, and `torch.Size` inputs without creating tensors. Symbolic dimensions, tracing, and `torch.broadcast_tensors` remain unsupported.
+
+`torch.compiler.is_compiling()` is an eager-state compatibility query that returns the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 
 ## Non-negotiable evaluation rules
 
