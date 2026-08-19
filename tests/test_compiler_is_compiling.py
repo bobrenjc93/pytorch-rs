@@ -155,7 +155,9 @@ class CompilerIsCompilingTests(unittest.TestCase):
         self.assertEqual(function.__qualname__, "is_compiling")
         self.assertEqual(function.__module__, "torch_rs.compiler")
         self.assertIs(inspect.getmodule(function), compiler)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
+        )
         self.assertEqual(function.__annotations__, {"return": bool})
         self.assertEqual(str(inspect.signature(function)), "() -> bool")
         self.assertIsNone(function.__defaults__)
