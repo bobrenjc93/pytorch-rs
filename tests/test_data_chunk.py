@@ -153,6 +153,7 @@ class DataChunkTests(unittest.TestCase):
                 "ConcatDataset",
                 "DataChunk",
                 "Dataset",
+                "DistributedSampler",
                 "IterableDataset",
                 "Sampler",
                 "SequentialSampler",
