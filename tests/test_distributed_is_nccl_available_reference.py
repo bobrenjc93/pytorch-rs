@@ -87,14 +87,16 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_false_capability_allows_the_reference_build_to_report_true(self):
+    def test_false_capability_coexists_with_build_dependent_reference_result(self):
         actual = torch.distributed.is_nccl_available
         expected = reference_torch.distributed.is_nccl_available
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
+        reference_baseline = expected()
 
         self.assertIs(expected_c10d.GroupMember.WORLD, None)
+        self.assertIs(type(reference_baseline), bool)
         environments = (
             {},
             {"CUDA_VISIBLE_DEVICES": ""},
@@ -113,12 +115,12 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             with self.subTest(environment=environment):
                 with mock.patch.dict(os.environ, environment, clear=True):
                     self.assertIs(actual(), False)
-                    self.assertIs(expected(), True)
+                    self.assertIs(expected(), reference_baseline)
 
         actual_baseline, actual_workers = self.threaded_outcome(torch)
         expected_baseline, expected_workers = self.threaded_outcome(reference_torch)
         self.assertIs(actual_baseline, False)
-        self.assertIs(expected_baseline, True)
+        self.assertIs(expected_baseline, reference_baseline)
         for baseline, worker_states in (
             (actual_baseline, actual_workers),
             (expected_baseline, expected_workers),
