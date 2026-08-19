@@ -42,6 +42,8 @@ mod python_size;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_tensor_errors;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_tensor_queries;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_torch_function_mode;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_variable_functions;
