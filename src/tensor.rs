@@ -2366,7 +2366,7 @@ impl Tensor {
             && let (Some(left_data), Some(right_data)) =
                 (self.storage.owned_values(), other.storage.owned_values())
         {
-            if !accumulate_validated_owned_strided_matmul(
+            let used_validated_kernel = accumulate_validated_owned_strided_matmul(
                 self,
                 other,
                 left_data,
@@ -2374,32 +2374,22 @@ impl Tensor {
                 &mut output,
                 inner,
                 columns,
-            ) {
-                // Preserve the established error behavior for malformed
-                // internal layouts that fail the one-time bounds proof.
-                let left_depth_stride = self.strides[1];
-                let right_column_stride = other.strides[1];
-                for (row, output_row) in output.chunks_exact_mut(columns).enumerate() {
-                    let mut left_offset =
-                        checked_matrix_row_base(self, row, inner, left_data.len())?;
-                    for depth in 0..inner {
-                        let left = left_data[left_offset];
-                        let mut right_offset =
-                            checked_matrix_row_base(other, depth, columns, right_data.len())?;
-                        let mut column = 0;
-                        loop {
-                            output_row[column] += left * right_data[right_offset];
-                            column += 1;
-                            if column == columns {
-                                break;
-                            }
-                            right_offset += right_column_stride;
-                        }
-                        if depth + 1 != inner {
-                            left_offset += left_depth_stride;
-                        }
-                    }
-                }
+            );
+            if !used_validated_kernel || output.iter().any(|value| !value.is_finite()) {
+                // Iterator vectorization can select a different NaN operand.
+                // Reuse the speculative allocation while replaying the
+                // established checked kernel for observable non-finite bits and
+                // malformed layouts that fail the one-time bounds proof.
+                output.fill(0.0);
+                accumulate_checked_owned_strided_matmul(
+                    self,
+                    other,
+                    left_data,
+                    right_data,
+                    &mut output,
+                    inner,
+                    columns,
+                )?;
             }
         } else {
             for row in 0..rows {
@@ -3808,6 +3798,42 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
+#[allow(clippy::inline_always)]
+#[inline(always)]
+fn accumulate_checked_owned_strided_matmul(
+    left_tensor: &Tensor,
+    right_tensor: &Tensor,
+    left: &[f32],
+    right: &[f32],
+    output: &mut [f32],
+    inner: usize,
+    columns: usize,
+) -> Result<(), TensorError> {
+    let left_depth_stride = left_tensor.strides[1];
+    let right_column_stride = right_tensor.strides[1];
+    for (row, output_row) in output.chunks_exact_mut(columns).enumerate() {
+        let mut left_offset = checked_matrix_row_base(left_tensor, row, inner, left.len())?;
+        for depth in 0..inner {
+            let left_value = left[left_offset];
+            let mut right_offset =
+                checked_matrix_row_base(right_tensor, depth, columns, right.len())?;
+            let mut column = 0;
+            loop {
+                output_row[column] += left_value * right[right_offset];
+                column += 1;
+                if column == columns {
+                    break;
+                }
+                right_offset += right_column_stride;
+            }
+            if depth + 1 != inner {
+                left_offset += left_depth_stride;
+            }
+        }
+    }
+    Ok(())
+}
+
 // Prove both positive-stride matrix views fit their immutable owned storage
 // once, then preserve the established row/depth/column accumulation order with
 // simple strided iterators. This avoids repeating checked row arithmetic in the
@@ -5087,6 +5113,20 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         };
+
+        let padded_left = offset_padded_row_contiguous_matrix(&[0x60ad_78ec, 0x7fc0_0001], 1, 2);
+        let padded_right = offset_padded_row_contiguous_matrix(&[0xbf80_0000, 0x7fc1_2345], 2, 1);
+        let expected = shared_gradient_copy(&padded_left)
+            .matmul(&shared_gradient_copy(&padded_right))
+            .unwrap();
+        let actual = padded_left.matmul(&padded_right).unwrap();
+        assert_eq!(padded_left.stride(), [4, 1]);
+        assert_eq!(padded_right.stride(), [2, 1]);
+        let expected_bits = expected.as_slice()[0].to_bits();
+        let actual_bits = actual.as_slice()[0].to_bits();
+        assert_eq!(actual_bits, expected_bits);
+        #[cfg(not(debug_assertions))]
+        assert_eq!(actual_bits, 0x7fc1_2345);
 
         let left_bits = [
             1.0_f32.to_bits(),
