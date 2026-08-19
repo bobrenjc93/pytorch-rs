@@ -498,7 +498,7 @@ class Atleast1dReferenceTests(unittest.TestCase):
 
         sequence_error = (
             "atleast_1d() sequence inputs only support an exact tuple or list "
-            "of exact Tensors without __torch_function__ overrides"
+            "of exact Tensors"
         )
         mixed_sequences = (
             (source, None),
@@ -514,10 +514,10 @@ class Atleast1dReferenceTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             reference_torch.atleast_1d((expected, None))
 
-    def test_sequence_override_dispatch_remains_unsupported(self):
+    def test_inner_overrides_remain_unsupported_and_outer_dispatch_matches(self):
         sequence_error = (
             "atleast_1d() sequence inputs only support an exact tuple or list "
-            "of exact Tensors without __torch_function__ overrides"
+            "of exact Tensors"
         )
         actual_source = torch.tensor(1.0)
 
@@ -554,6 +554,70 @@ class Atleast1dReferenceTests(unittest.TestCase):
         )
         self.assertEqual(len(ExpectedOverride.calls), 1)
 
+        def outer_override_outcome(module, sequence_type):
+            function = module.atleast_1d
+            source = module.tensor(1.0, dtype=module.float32)
+            outer_marker = object()
+
+            class OuterOverride(sequence_type):
+                calls = []
+
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    cls.calls.append((func, types, args, kwargs))
+                    return outer_marker
+
+            sequence = OuterOverride((source,))
+            result = function(sequence)
+            func, dispatch_types, args, kwargs = OuterOverride.calls[0]
+            return (
+                result is outer_marker,
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                args == (sequence,),
+                kwargs,
+            )
+
+        for sequence_type in (tuple, list):
+            with self.subTest(outer_override=sequence_type.__name__):
+                self.assertEqual(
+                    outer_override_outcome(torch, sequence_type),
+                    outer_override_outcome(reference_torch, sequence_type),
+                )
+
+        def spoofed_sequence_outcome(module):
+            function = module.atleast_1d
+            spoofed_marker = object()
+
+            class SpoofedSequence:
+                calls = []
+
+                @property
+                def __class__(self):
+                    return tuple
+
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    cls.calls.append((func, types, args, kwargs))
+                    return spoofed_marker
+
+            value = SpoofedSequence()
+            result = function(value)
+            func, dispatch_types, args, kwargs = SpoofedSequence.calls[0]
+            return (
+                isinstance(value, tuple),
+                result is spoofed_marker,
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                args == (value,),
+                kwargs,
+            )
+
+        self.assertEqual(
+            spoofed_sequence_outcome(torch),
+            spoofed_sequence_outcome(reference_torch),
+        )
+
         class ActualMode(torch.overrides.TorchFunctionMode):
             def __init__(self):
                 self.calls = []
@@ -564,11 +628,9 @@ class Atleast1dReferenceTests(unittest.TestCase):
 
         actual_mode = ActualMode()
         with actual_mode:
-            with self.assertRaisesRegex(
-                TypeError, f"^{re.escape(sequence_error)}$"
-            ):
-                torch.atleast_1d((actual_source,))
-        self.assertEqual(actual_mode.calls, [])
+            actual_result = torch.atleast_1d((actual_source,))
+        self.assertIs(actual_result, marker)
+        self.assertEqual(len(actual_mode.calls), 1)
 
         class ExpectedMode(reference_torch.overrides.TorchFunctionMode):
             def __init__(self):
@@ -583,6 +645,26 @@ class Atleast1dReferenceTests(unittest.TestCase):
             expected_result = reference_torch.atleast_1d((expected_source,))
         self.assertIs(expected_result, marker)
         self.assertEqual(len(expected_mode.calls), 1)
+
+        def normalize_mode_call(call, function, source):
+            func, dispatch_types, args, kwargs = call
+            return (
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                args == ((source,),),
+                kwargs,
+            )
+
+        self.assertEqual(
+            normalize_mode_call(
+                actual_mode.calls[0], torch.atleast_1d, actual_source
+            ),
+            normalize_mode_call(
+                expected_mode.calls[0],
+                reference_torch.atleast_1d,
+                expected_source,
+            ),
+        )
 
 
 if __name__ == "__main__":

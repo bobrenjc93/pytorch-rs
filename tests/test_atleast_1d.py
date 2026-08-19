@@ -11,7 +11,7 @@ import torch_rs as torch
 UNSUPPORTED = "atleast_1d() only supports a single Tensor input"
 UNSUPPORTED_SEQUENCE = (
     "atleast_1d() sequence inputs only support an exact tuple or list of "
-    "exact Tensors without __torch_function__ overrides"
+    "exact Tensors"
 )
 
 
@@ -185,7 +185,7 @@ class Atleast1dTests(unittest.TestCase):
         self.assertEqual(result.shape, (1,))
         self.assertEqual(result.data_ptr(), source.data_ptr())
 
-    def test_sequence_override_dispatch_is_explicitly_unsupported(self):
+    def test_inner_sequence_override_dispatch_is_explicitly_unsupported(self):
         source = torch.tensor(2.0)
 
         class Override:
@@ -205,36 +205,89 @@ class Atleast1dTests(unittest.TestCase):
                     torch.atleast_1d(sequence)
         self.assertEqual(Override.calls, [])
 
+    def test_outer_sequence_overrides_and_modes_precede_the_fast_path(self):
+        source = torch.tensor(2.0)
+        marker = object()
+
         class TupleOverride(tuple):
             calls = []
 
             @classmethod
             def __torch_function__(cls, func, types, args=(), kwargs=None):
                 cls.calls.append((func, types, args, kwargs))
-                return object()
+                return marker
 
-        sequence = TupleOverride((source,))
-        with self.assertRaisesRegex(
-            TypeError, f"^{re.escape(UNSUPPORTED_SEQUENCE)}$"
-        ):
-            torch.atleast_1d(sequence)
-        self.assertEqual(TupleOverride.calls, [])
+        class ListOverride(list):
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        for sequence in (TupleOverride((source,)), ListOverride([source])):
+            override_type = type(sequence)
+            with self.subTest(override_type=override_type.__name__):
+                self.assertIs(torch.atleast_1d(sequence), marker)
+                function, dispatch_types, args, kwargs = override_type.calls[0]
+                self.assertIs(function, torch.atleast_1d)
+                self.assertEqual(dispatch_types, (override_type,))
+                self.assertEqual(args, (sequence,))
+                self.assertEqual(kwargs, {})
+
+        class SpoofedSequence:
+            calls = []
+
+            @property
+            def __class__(self):
+                return tuple
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        spoofed = SpoofedSequence()
+        self.assertTrue(isinstance(spoofed, tuple))
+        self.assertIs(torch.atleast_1d(spoofed), marker)
+        function, dispatch_types, args, kwargs = SpoofedSequence.calls[0]
+        self.assertIs(function, torch.atleast_1d)
+        self.assertEqual(dispatch_types, (SpoofedSequence,))
+        self.assertEqual(args, (spoofed,))
+        self.assertEqual(kwargs, {})
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
-            def __init__(self):
+            def __init__(self, result):
                 self.calls = []
+                self.result = result
 
             def __torch_function__(self, func, types, args=(), kwargs=None):
                 self.calls.append((func, types, args, kwargs))
-                return object()
+                return self.result
 
-        mode = RecordingMode()
+        sequence = (source,)
+        mode = RecordingMode(marker)
         with mode:
-            with self.assertRaisesRegex(
-                TypeError, f"^{re.escape(UNSUPPORTED_SEQUENCE)}$"
-            ):
-                torch.atleast_1d((source,))
-        self.assertEqual(mode.calls, [])
+            result = torch.atleast_1d(sequence)
+        self.assertIs(result, marker)
+        self.assertEqual(
+            mode.calls,
+            [(torch.atleast_1d, (), (sequence,), {})],
+        )
+
+        calls = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append((func, types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode():
+            result = torch.atleast_1d(sequence)
+        self.assertEqual(calls, [(torch.atleast_1d, (), (sequence,), {})])
+        self.assertIs(type(result), tuple)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].data_ptr(), source.data_ptr())
 
     def test_function_metadata_exports_and_pickle(self):
         function = torch.atleast_1d
