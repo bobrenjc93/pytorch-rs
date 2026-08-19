@@ -14,24 +14,24 @@ import torch_rs as torch
 
 
 FUNCTION_DOC = """
-    Indicates whether a graph is traced via TorchDynamo.
+    Indicated whether we're under exporting.
 
     It's stricter than is_compiling() flag, as it would only be set to True when
-    TorchDynamo is used.
+    torch.export is used.
 
     Example::
 
         >>> def forward(self, x):
-        >>>     if not torch.compiler.is_dynamo_compiling():
-        >>>        pass # ...logic that is not needed in a TorchDynamo-traced graph...
+        >>>     if not torch.compiler.is_exporting():
+        >>>        pass # ...logic that is not needed in export...
         >>>
         >>>     # ...rest of the function...
     """
 
 
-class CompilerIsDynamoCompilingTests(unittest.TestCase):
+class CompilerIsExportingTests(unittest.TestCase):
     def test_eager_false_is_exact_and_preserves_grad_mode(self):
-        function = torch.compiler.is_dynamo_compiling
+        function = torch.compiler.is_exporting
 
         def assert_query_preserves_grad_mode(expected_grad_state):
             self.assertIs(torch.is_grad_enabled(), expected_grad_state)
@@ -47,7 +47,7 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
         assert_query_preserves_grad_mode(True)
 
     def test_eager_false_is_stable_across_threads_and_grad_modes(self):
-        function = torch.compiler.is_dynamo_compiling
+        function = torch.compiler.is_exporting
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -96,7 +96,7 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
 
     def test_signature_annotations_documentation_and_module_identity(self):
         compiler = importlib.import_module("torch_rs.compiler")
-        function = compiler.is_dynamo_compiling
+        function = compiler.is_exporting
 
         self.assertIs(torch.compiler, compiler)
         self.assertIs(sys.modules["torch_rs.compiler"], compiler)
@@ -104,8 +104,8 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
         self.assertEqual(str(inspect.signature(function)), "() -> bool")
         self.assertEqual(function.__annotations__, {"return": bool})
         self.assertEqual(typing.get_type_hints(function), {"return": bool})
-        self.assertEqual(function.__name__, "is_dynamo_compiling")
-        self.assertEqual(function.__qualname__, "is_dynamo_compiling")
+        self.assertEqual(function.__name__, "is_exporting")
+        self.assertEqual(function.__qualname__, "is_exporting")
         self.assertEqual(function.__module__, "torch_rs.compiler")
         self.assertIs(inspect.getmodule(function), compiler)
         self.assertEqual(
@@ -118,7 +118,7 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
 
     def test_exports_copy_and_pickle_use_the_canonical_module(self):
         compiler = torch.compiler
-        function = compiler.is_dynamo_compiling
+        function = compiler.is_exporting
 
         self.assertEqual(
             compiler.__all__,
@@ -130,19 +130,13 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
             {name for name in compiler_namespace if not name.startswith("__")},
             {"is_compiling", "is_dynamo_compiling", "is_exporting"},
         )
-        self.assertIs(compiler_namespace["is_dynamo_compiling"], function)
-        self.assertIs(
-            compiler_namespace["is_exporting"],
-            compiler.is_exporting,
-        )
+        self.assertIs(compiler_namespace["is_exporting"], function)
 
         self.assertNotIn("compiler", torch.__all__)
-        self.assertNotIn("is_dynamo_compiling", torch.__all__)
         self.assertNotIn("is_exporting", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("compiler", top_level_namespace)
-        self.assertNotIn("is_dynamo_compiling", top_level_namespace)
         self.assertNotIn("is_exporting", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
@@ -154,23 +148,23 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.compiler.is_dynamo_compiling
+        function = torch.compiler.is_exporting
         cases = (
             (
                 lambda: function(None),
-                "is_dynamo_compiling() takes 0 positional arguments but 1 was given",
+                "is_exporting() takes 0 positional arguments but 1 was given",
             ),
             (
                 lambda: function(None, None),
-                "is_dynamo_compiling() takes 0 positional arguments but 2 were given",
+                "is_exporting() takes 0 positional arguments but 2 were given",
             ),
             (
                 lambda: function(enabled=True),
-                "is_dynamo_compiling() got an unexpected keyword argument 'enabled'",
+                "is_exporting() got an unexpected keyword argument 'enabled'",
             ),
             (
                 lambda: function(None, enabled=True),
-                "is_dynamo_compiling() got an unexpected keyword argument 'enabled'",
+                "is_exporting() got an unexpected keyword argument 'enabled'",
             ),
         )
         for call, message in cases:
@@ -180,10 +174,10 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_compilation_remains_unsupported(self):
+    def test_export_remains_unsupported(self):
         self.assertFalse(hasattr(torch, "compile"))
         self.assertFalse(hasattr(torch, "export"))
-        self.assertFalse(hasattr(torch, "is_dynamo_compiling"))
+        self.assertFalse(hasattr(torch, "is_exporting"))
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""
@@ -198,7 +192,7 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
-assert torch.compiler.is_dynamo_compiling() is False
+assert torch.compiler.is_exporting() is False
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
