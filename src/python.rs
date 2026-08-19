@@ -9440,6 +9440,7 @@ fn bind_dimension_swap_arguments<'py, const N: usize>(
 }
 
 enum ViewShapeArgument<'py> {
+    Dimension(Bound<'py, PyAny>),
     Tuple(Bound<'py, PyTuple>),
     List(Bound<'py, PyList>),
 }
@@ -9477,9 +9478,12 @@ fn bind_view_shape_argument<'py>(
         }
     }
 
-    let value = match positional.len() {
-        0 => keyword_shape.ok_or_else(unsupported_view_argument_error)?,
-        1 => positional.get_item(0)?,
+    let (value, positional_dimension) = match positional.len() {
+        0 => (
+            keyword_shape.ok_or_else(unsupported_view_argument_error)?,
+            false,
+        ),
+        1 => (positional.get_item(0)?, true),
         _ => return Err(unsupported_view_integer_error()),
     };
     let shape = if let Ok(shape) = value.cast::<PyTuple>() {
@@ -9489,7 +9493,16 @@ fn bind_view_shape_argument<'py>(
     } else if value.cast::<PyDType>().is_ok() {
         return Err(unsupported_view_dtype_error());
     } else if is_view_shape_dimension(&value) {
-        return Err(unsupported_view_integer_error());
+        if !positional_dimension {
+            return Err(unsupported_view_integer_error());
+        }
+        // PyTorch's overloaded argument parser checks the single-integer
+        // shape form once for each public overload before mode dispatch, then
+        // unpacks it below. Preserve those observable __index__ calls.
+        if !is_view_shape_dimension(&value) {
+            return Err(unsupported_view_argument_error());
+        }
+        ViewShapeArgument::Dimension(value)
     } else {
         return Err(unsupported_view_argument_error());
     };
@@ -9502,6 +9515,7 @@ fn bind_view_shape_argument<'py>(
 
 fn validate_view_shape_first(shape: &ViewShapeArgument<'_>) -> PyResult<()> {
     let first = match shape {
+        ViewShapeArgument::Dimension(_) => None,
         ViewShapeArgument::Tuple(dimensions) => dimensions.get_item(0).ok(),
         ViewShapeArgument::List(dimensions) => dimensions.get_item(0).ok(),
     };
@@ -9543,6 +9557,9 @@ fn view_number_index<'py>(dimension: &Bound<'py, PyAny>) -> PyResult<Bound<'py, 
 
 fn parse_view_shape_argument(shape: ViewShapeArgument<'_>) -> PyResult<Vec<i64>> {
     match shape {
+        ViewShapeArgument::Dimension(dimension) => {
+            parse_view_shape_dimensions(1, std::iter::once(dimension))
+        }
         ViewShapeArgument::Tuple(dimensions) => {
             parse_view_shape_dimensions(dimensions.len(), dimensions.iter())
         }
@@ -9584,7 +9601,9 @@ fn view_shape_dimension_unpack_error(
 }
 
 fn unsupported_view_argument_error() -> PyErr {
-    PyTypeError::new_err("view() supports exactly one tuple, list, or torch.Size shape argument")
+    PyTypeError::new_err(
+        "view() supports exactly one positional integer, tuple, list, or torch.Size shape argument",
+    )
 }
 
 fn unsupported_view_integer_error() -> PyErr {
