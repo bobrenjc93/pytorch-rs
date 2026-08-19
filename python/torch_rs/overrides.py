@@ -48,10 +48,11 @@ def is_tensor_like(inp):
     >>> is_tensor_like(TensorLike())
     True
     """
+    inp_type = type(inp)
     return (
-        inp is Tensor
-        or type(inp) is Tensor
-        or type(inp) is torch.Tensor
+        inp_type is torch.Tensor
+        or inp is Tensor
+        or inp_type is Tensor
         or hasattr(inp, "__torch_function__")
     )
 

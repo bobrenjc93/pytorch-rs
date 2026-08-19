@@ -225,6 +225,18 @@ class IsTensorLikeTests(unittest.TestCase):
 
         self.assertIs(function(native_tensor), True)
 
+        try:
+            del torch.Tensor
+            for value in (native_tensor, native_tensor_type, object()):
+                with self.subTest(deleted_binding_type=type(value).__name__):
+                    with self.assertRaisesRegex(
+                        AttributeError,
+                        r"^module 'torch_rs' has no attribute 'Tensor'$",
+                    ):
+                        function(value)
+        finally:
+            torch.Tensor = native_tensor_type
+
     def test_active_torch_function_modes_do_not_intercept_or_change_results(self):
         function = torch.overrides.is_tensor_like
         tensor = torch.tensor([1.0])

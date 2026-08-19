@@ -193,7 +193,29 @@ class IsTensorLikeReferenceTests(unittest.TestCase):
         finally:
             module.Tensor = native_tensor_type
 
-        return rebound, invalid_binding, function(native_tensor)
+        try:
+            del module.Tensor
+            deleted_binding = []
+            for value in (native_tensor, native_tensor_type, object()):
+                try:
+                    function(value)
+                except BaseException as error:
+                    outcome = (
+                        type(error).__name__,
+                        str(error).replace("torch_rs", "torch"),
+                    )
+                else:
+                    outcome = ("result",)
+                deleted_binding.append(outcome)
+        finally:
+            module.Tensor = native_tensor_type
+
+        return (
+            rebound,
+            invalid_binding,
+            tuple(deleted_binding),
+            function(native_tensor),
+        )
 
     def test_live_public_tensor_binding_matches_pytorch_2_13(self):
         self.assertEqual(
