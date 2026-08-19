@@ -1319,7 +1319,7 @@ impl<'py> IntoPyObject<'py> for PyTensor {
 }
 
 impl PyTensor {
-    fn new(inner: CoreTensor) -> Self {
+    pub(crate) fn new(inner: CoreTensor) -> Self {
         Self {
             inner,
             grad_cache: PyOnceLock::new(),

@@ -1,12 +1,13 @@
 //! Native bridges for Python neural-network functional operators.
 
 use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
-use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyModule};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     python::PyTensor,
     python_argument_schema::{ArgumentSchema, parse_float_like_argument},
+    python_tensor_errors::tensor_error,
 };
 
 const DROPOUT_METADATA: [DropoutMetadata; 6] = [
@@ -116,7 +117,8 @@ fn _nn_functional_dropout(
     inplace: bool,
 ) -> PyResult<Py<PyAny>> {
     // This private bridge mirrors the native operator's schema checks for the
-    // identity cases only. It deliberately owns no random state or mutation.
+    // supported deterministic cases. It deliberately owns no random state or
+    // mutation.
     let metadata = dropout_metadata(kind)?;
     let schema = DropoutSchema::new(metadata, inplace);
     let Ok(tensor) = input.cast::<PyTensor>() else {
@@ -149,6 +151,18 @@ fn _nn_functional_dropout(
     let input_is_empty = tensor.try_borrow()?.inner().numel() == 0;
     if !training || probability == 0.0 || input_is_empty {
         return Ok(tensor.clone().unbind().into_any());
+    }
+
+    if metadata.public_function == "dropout"
+        && !inplace
+        && probability.to_bits() == 1.0_f64.to_bits()
+    {
+        let output = tensor
+            .try_borrow()?
+            .inner()
+            .mul_scalar(0.0)
+            .map_err(|error| tensor_error(&error))?;
+        return PyTensor::new(output).into_py_any(py);
     }
 
     Err(PyNotImplementedError::new_err(format!(
