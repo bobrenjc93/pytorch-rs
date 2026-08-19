@@ -1,12 +1,12 @@
 """Automatic differentiation helpers."""
 
-import operator as _operator
+import warnings as _warnings
 from collections.abc import Sequence
 from typing import Union
 
 from ..overrides import (
     _dispatch_unary_torch_function,
-    _is_forwarded_torch_function_argument,
+    _is_in_torch_function_handler,
 )
 from ..torch_rs import Tensor
 from . import grad_mode as grad_mode
@@ -23,11 +23,22 @@ _TensorOrTensorsOrGradEdge = Union[
     "GradientEdge",
     Sequence["GradientEdge"],
 ]
+_IntegerType = type(0)
+
+
+def _index_as_int(value):
+    index_method = getattr(type(value), "__index__", None)
+    if index_method is None:
+        raise TypeError
+    result = index_method(value)
+    if not isinstance(result, _IntegerType):
+        raise TypeError
+    return _IntegerType.__index__(result)
 
 
 def _is_false_flag(value):
     try:
-        return _operator.index(value) == 0
+        return _index_as_int(value) == 0
     except TypeError:
         return False
 
@@ -37,14 +48,13 @@ def _backward_impl(
     grad_tensors,
     retain_graph,
     create_graph,
-    grad_variables,
     inputs,
 ):
     if not isinstance(tensors, Tensor):
         raise NotImplementedError(
             "torch_rs.autograd.backward only supports a single Tensor"
         )
-    if grad_tensors is not None or grad_variables is not None:
+    if grad_tensors is not None:
         raise NotImplementedError(
             "torch_rs.autograd.backward does not support explicit gradients"
         )
@@ -132,11 +142,26 @@ def backward(
             ``dict(model.named_parameters())``) is also accepted, in which case
             the values are used as the input tensors.
     """
+    if grad_variables is not None:
+        _warnings.warn(
+            "`grad_variables` is deprecated. Use `grad_tensors` instead.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        if grad_tensors is None:
+            grad_tensors = grad_variables
+        else:
+            raise RuntimeError(
+                "`grad_tensors` and `grad_variables` (deprecated) "
+                "arguments both passed to `backward()`. Please only "
+                "use `grad_tensors`."
+            )
+
     forwarded_sequence = (
         type(tensors) is tuple
         and len(tensors) == 1
         and isinstance(tensors[0], Tensor)
-        and _is_forwarded_torch_function_argument(tensors)
+        and _is_in_torch_function_handler()
     )
     input_tensor = tensors[0] if forwarded_sequence else tensors
     mode_tensors = tensors if forwarded_sequence else (tensors,)
@@ -148,7 +173,6 @@ def backward(
             "grad_tensors": grad_tensors,
             "retain_graph": retain_graph,
             "create_graph": create_graph,
-            "grad_variables": grad_variables,
             "inputs": inputs,
         },
         torch_function_args=(mode_tensors,),
@@ -158,5 +182,4 @@ def backward(
             "create_graph": create_graph,
             "inputs": inputs,
         },
-        forwarded_arguments=(mode_tensors,),
     )

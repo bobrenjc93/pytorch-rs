@@ -1,10 +1,16 @@
+import asyncio
+import contextvars
 import copy
 import importlib
 import inspect
+import operator
 import pickle
 import re
+import sys
 import types
 import unittest
+import warnings
+from unittest import mock
 
 import torch_rs as torch
 
@@ -87,6 +93,102 @@ class AutogradBackwardTests(unittest.TestCase):
         ):
             torch.autograd.backward(first)
 
+    def test_graph_flags_ignore_mutation_of_operator_index(self):
+        with mock.patch.object(
+            operator,
+            "index",
+            side_effect=AssertionError("poisoned operator.index"),
+        ):
+            leaf = torch.tensor(2.0, requires_grad=True)
+            self.assertIsNone(
+                torch.autograd.backward(leaf * leaf, create_graph=False)
+            )
+            self.assertEqual(leaf.grad.item(), 4.0)
+
+        with mock.patch.object(operator, "index", return_value=0):
+            for keyword in ("create_graph", "retain_graph"):
+                with self.subTest(keyword=keyword):
+                    leaf = torch.tensor(2.0, requires_grad=True)
+                    with self.assertRaises(NotImplementedError):
+                        torch.autograd.backward(leaf * leaf, **{keyword: True})
+                    self.assertIsNone(leaf.grad)
+
+    def test_forwarding_state_does_not_escape_contexts_or_tasks(self):
+        function = torch.autograd.backward
+        marker = object()
+        copied_context = None
+
+        class ContextCopyingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                nonlocal copied_context
+                copied_context = contextvars.copy_context()
+                return marker
+
+        leaf = torch.tensor(2.0, requires_grad=True)
+        output = leaf * leaf
+        references_before = sys.getrefcount(output)
+        with ContextCopyingMode():
+            self.assertIs(function(output), marker)
+        self.assertIsNotNone(copied_context)
+        self.assertEqual(sys.getrefcount(output), references_before)
+        self.assertIsNone(leaf.grad)
+
+        forwarded_tuple = None
+        stale_context = None
+
+        class CapturingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                nonlocal forwarded_tuple, stale_context
+                forwarded_tuple = args[0]
+                stale_context = contextvars.copy_context()
+                return marker
+
+        stale_leaf = torch.tensor(3.0, requires_grad=True)
+        stale_output = stale_leaf * stale_leaf
+        with CapturingMode():
+            self.assertIs(function(stale_output), marker)
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            "^torch_rs.autograd.backward only supports a single Tensor$",
+        ):
+            stale_context.run(function, forwarded_tuple)
+        self.assertIsNone(stale_leaf.grad)
+
+        async def task_replay():
+            replay_task = None
+
+            class TaskCreatingMode(torch.overrides.TorchFunctionMode):
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    nonlocal replay_task
+                    forwarded = args[0]
+
+                    async def replay():
+                        await asyncio.sleep(0)
+                        try:
+                            func(forwarded, **(kwargs or {}))
+                        except Exception as error:
+                            return type(error).__name__, str(error)
+                        return None
+
+                    replay_task = asyncio.create_task(replay())
+                    return marker
+
+            task_leaf = torch.tensor(4.0, requires_grad=True)
+            task_output = task_leaf * task_leaf
+            with TaskCreatingMode():
+                self.assertIs(function(task_output), marker)
+            return await replay_task, task_leaf.grad
+
+        replay_outcome, replay_gradient = asyncio.run(task_replay())
+        self.assertEqual(
+            replay_outcome,
+            (
+                "NotImplementedError",
+                "torch_rs.autograd.backward only supports a single Tensor",
+            ),
+        )
+        self.assertIsNone(replay_gradient)
+
     def test_advanced_forms_remain_explicitly_unsupported(self):
         tensor = torch.tensor(2.0, requires_grad=True)
         cases = (
@@ -124,7 +226,8 @@ class AutogradBackwardTests(unittest.TestCase):
             ),
         )
         for call, message in cases:
-            with self.subTest(message=message):
+            with self.subTest(message=message), warnings.catch_warnings():
+                warnings.simplefilter("ignore", FutureWarning)
                 with self.assertRaises(NotImplementedError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
@@ -259,6 +362,31 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             with ForwardingMode("upper"):
                 forwarded = function(forwarding_output)
 
+        rebuilt_container = []
+
+        class RebuildingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                rebuilt = tuple(item for item in args[0])
+                rebuilt_container.append(rebuilt is not args[0])
+                return func(rebuilt, **(kwargs or {}))
+
+        rebuilt_leaf = module.tensor(5.0, requires_grad=True)
+        rebuilt_output = rebuilt_leaf * rebuilt_leaf
+        with RebuildingMode():
+            rebuilt_result = function(rebuilt_output)
+
+        replacement_leaf = module.tensor(6.0, requires_grad=True)
+        replacement_output = replacement_leaf * replacement_leaf
+        replaced_leaf = module.tensor(7.0, requires_grad=True)
+        replaced_output = replaced_leaf * replaced_leaf
+
+        class ReplacingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return func((replacement_output,), **(kwargs or {}))
+
+        with ReplacingMode():
+            replaced_result = function(replaced_output)
+
         declining_leaf = module.tensor(4.0, requires_grad=True)
         declining_output = declining_leaf * declining_leaf
         declining = RecordingMode(NotImplemented)
@@ -304,6 +432,16 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                 for label, func, dispatch_types, args, kwargs in order
             ),
             "forwarded": (forwarded, forwarding_leaf.grad.item()),
+            "rebuilt": (
+                tuple(rebuilt_container),
+                rebuilt_result,
+                rebuilt_leaf.grad.item(),
+            ),
+            "replaced": (
+                replaced_result,
+                replaced_leaf.grad is None,
+                replacement_leaf.grad.item(),
+            ),
             "declining": (
                 declining_error,
                 declining_untouched,
@@ -319,6 +457,85 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.mode_contract(torch),
             self.mode_contract(reference_torch),
+        )
+
+    def deprecated_alias_contract(self, module):
+        function = module.autograd.backward
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        alias_output = module.tensor(2.0, requires_grad=True)
+        alias_gradient = module.tensor(1.0)
+        alias_mode = RecordingMode()
+        with warnings.catch_warnings(record=True) as alias_warnings:
+            warnings.simplefilter("always")
+            with alias_mode:
+                alias_result = function(
+                    alias_output, grad_variables=alias_gradient
+                )
+        alias_call = alias_mode.calls[0]
+        alias_func, alias_types, alias_args, alias_kwargs = alias_call
+
+        conflict_output = module.tensor(3.0, requires_grad=True)
+        conflict_grad_tensors = module.tensor(1.0)
+        conflict_grad_variables = module.tensor(1.0)
+        conflict_mode = RecordingMode()
+        with warnings.catch_warnings(record=True) as conflict_warnings:
+            warnings.simplefilter("always")
+            try:
+                with conflict_mode:
+                    function(
+                        conflict_output,
+                        grad_tensors=conflict_grad_tensors,
+                        grad_variables=conflict_grad_variables,
+                    )
+            except Exception as error:
+                conflict_error = (type(error).__name__, str(error))
+            else:
+                self.fail(f"{module.__name__} accepted both gradient aliases")
+
+        return {
+            "alias": (
+                alias_result is marker,
+                tuple(
+                    (type(item.message).__name__, str(item.message))
+                    for item in alias_warnings
+                ),
+                alias_func is function,
+                tuple(item.__name__ for item in alias_types),
+                len(alias_args) == 1
+                and type(alias_args[0]) is tuple
+                and len(alias_args[0]) == 1
+                and alias_args[0][0] is alias_output,
+                tuple(alias_kwargs),
+                alias_kwargs["grad_tensors"] is alias_gradient,
+                alias_kwargs["retain_graph"] is None,
+                alias_kwargs["create_graph"] is False,
+                alias_kwargs["inputs"] is None,
+                alias_output.grad is None,
+            ),
+            "conflict": (
+                tuple(
+                    (type(item.message).__name__, str(item.message))
+                    for item in conflict_warnings
+                ),
+                conflict_error,
+                len(conflict_mode.calls),
+                conflict_output.grad is None,
+            ),
+        }
+
+    def test_deprecated_grad_variables_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.deprecated_alias_contract(torch),
+            self.deprecated_alias_contract(reference_torch),
         )
 
     def test_signature_annotations_metadata_docs_exports_and_pickle_match(self):
