@@ -3826,17 +3826,13 @@ fn accumulate_transpose_contiguous_rhs_matmul(
     }
 
     // Register-blocking may select a different NaN payload even though each
-    // result retains its depth order. Scanning the smaller output catches every
-    // non-finite input or finite overflow; replay those rare cases through
-    // scalar memory updates to preserve the existing bit patterns.
-    if output.iter().any(|value| !value.is_finite()) {
-        output.fill(0.0);
-        accumulate_transpose_contiguous_rhs_matmul_ordered(left, right, output, inner, columns);
-    }
+    // result retains its depth order. Replay only non-finite output cells
+    // through scalar memory updates to preserve the existing bit patterns.
+    replay_non_finite_transpose_contiguous_rhs_matmul_outputs(left, right, output, inner, columns);
 }
 
 #[inline(never)]
-fn accumulate_transpose_contiguous_rhs_matmul_ordered(
+fn replay_non_finite_transpose_contiguous_rhs_matmul_outputs(
     left: &[f32],
     right: &[f32],
     output: &mut [f32],
@@ -3848,6 +3844,10 @@ fn accumulate_transpose_contiguous_rhs_matmul_ordered(
         .zip(output.chunks_exact_mut(columns))
     {
         for (right_column, output_value) in right.chunks_exact(inner).zip(output_row.iter_mut()) {
+            if output_value.is_finite() {
+                continue;
+            }
+            *output_value = 0.0;
             for (&left_value, &right_value) in left_row.iter().zip(right_column) {
                 accumulate_matmul_product(output_value, left_value, right_value);
             }
@@ -4768,12 +4768,21 @@ mod tests {
                 .all(|value| value.to_bits() == 0)
         );
 
+        right_bits[2 * inner + 6] = 0x7fc6_789a;
+        let sparse_non_finite_right =
+            offset_transpose_contiguous_matrix(&right_bits, inner, columns);
+        let sparse_non_finite_actual =
+            matmul_matching_shared_right_fallback(&finite_left, &sparse_non_finite_right);
+        for output_row in sparse_non_finite_actual.as_slice().chunks_exact(columns) {
+            assert!(output_row[..2].iter().all(|value| value.is_finite()));
+            assert!(output_row[2].is_nan());
+        }
+
         left_bits[inner] = 0x7f80_0000;
         left_bits[2 * inner + 1] = 0xff80_0000;
         left_bits[3 * inner + 2] = 0x7fc1_2345;
         right_bits[2 * inner + 4] = 0x7f80_0000;
         right_bits[2 * inner + 5] = 0xff80_0000;
-        right_bits[2 * inner + 6] = 0x7fc6_789a;
         let left = offset_contiguous_tensor(&left_bits, &[rows, inner]);
         let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
         let actual = matmul_matching_shared_right_fallback(&left, &right);
