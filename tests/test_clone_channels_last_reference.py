@@ -1,0 +1,206 @@
+import gc
+import unittest
+
+import numpy as np
+import torch_rs as torch
+
+try:
+    import torch as reference_torch
+except ImportError:
+    reference_torch = None
+
+
+@unittest.skipIf(reference_torch is None, "install the reference dependency group")
+class CloneChannelsLastReferenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if reference_torch.__version__.split("+")[0] != "2.13.0":
+            raise AssertionError(
+                "channels-last clone differentials require pinned PyTorch 2.13.0"
+            )
+
+    @staticmethod
+    def tensor_bits(tensor):
+        values = np.ascontiguousarray(np.asarray(tensor))
+        return values.reshape(-1).view(np.uint32)
+
+    @staticmethod
+    def clone(module, tensor, functional):
+        if functional:
+            return module.clone(input=tensor, memory_format=module.channels_last)
+        return tensor.clone(memory_format=module.channels_last)
+
+    def make_layout_cases(self, module):
+        patterns = np.array(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x3F80_0000,
+            ],
+            dtype=np.uint32,
+        )
+        bits = np.resize(patterns, 144)
+        contiguous = module.tensor(
+            memoryview(bits[:48].view(np.float32)), dtype=module.float32
+        ).reshape((2, 3, 2, 4))
+        offset = module.tensor(
+            memoryview(bits.view(np.float32)), dtype=module.float32
+        ).reshape((3, 2, 3, 2, 4))[1]
+        strided = contiguous.transpose(0, 3)
+        empty = module.zeros((2, 0, 4, 5), dtype=module.float32)
+        return (contiguous, offset, strided, empty)
+
+    def test_layout_values_and_independence_match_pytorch_2_13(self):
+        actual_cases = self.make_layout_cases(torch)
+        expected_cases = self.make_layout_cases(reference_torch)
+        expected_strides = (
+            (24, 1, 12, 3),
+            (24, 1, 12, 3),
+            (12, 1, 6, 3),
+            (0, 1, 0, 0),
+        )
+        for case, (actual_source, expected_source, canonical_stride) in enumerate(
+            zip(actual_cases, expected_cases, expected_strides, strict=True)
+        ):
+            for functional in (False, True):
+                with self.subTest(case=case, functional=functional):
+                    actual = self.clone(torch, actual_source, functional)
+                    expected = self.clone(
+                        reference_torch, expected_source, functional
+                    )
+                    self.assertEqual(actual.shape, tuple(expected.shape))
+                    self.assertEqual(actual.stride(), canonical_stride)
+                    self.assertEqual(actual.stride(), expected.stride())
+                    self.assertEqual(
+                        actual.storage_offset(), expected.storage_offset()
+                    )
+                    self.assertEqual(actual.storage_offset(), 0)
+                    self.assertEqual(
+                        actual.is_contiguous(memory_format=torch.channels_last),
+                        expected.is_contiguous(
+                            memory_format=reference_torch.channels_last
+                        ),
+                    )
+                    self.assertTrue(
+                        actual.is_contiguous(memory_format=torch.channels_last)
+                    )
+                    self.assertEqual(
+                        actual.is_set_to(actual_source),
+                        expected.is_set_to(expected_source),
+                    )
+                    self.assertFalse(actual.is_set_to(actual_source))
+                    self.assertEqual(
+                        actual.dtype is actual_source.dtype,
+                        expected.dtype is expected_source.dtype,
+                    )
+                    self.assertEqual(
+                        str(actual.device), str(expected.device)
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_bits(actual), self.tensor_bits(expected)
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_bits(actual), self.tensor_bits(actual_source)
+                    )
+
+    def autograd_outcome(self, module, functional):
+        leaf = module.ones(
+            (2, 3, 2, 4), dtype=module.float32, requires_grad=True
+        )
+        source = (leaf * 3.0).transpose(0, 3)
+        copied = self.clone(module, source, functional)
+        metadata = (
+            copied.shape,
+            copied.stride(),
+            copied.storage_offset(),
+            copied.requires_grad,
+            copied.is_leaf,
+            copied.is_set_to(source),
+            copied.dtype is source.dtype,
+            str(copied.device),
+        )
+        copied_bits = self.tensor_bits(copied.detach()).copy()
+        del source
+        gc.collect()
+        copied.sum().backward()
+        gradient_bits = self.tensor_bits(leaf.grad).copy()
+        return metadata, copied_bits, gradient_bits
+
+    def no_grad_outcome(self, module, functional):
+        leaf = module.ones(
+            (2, 3, 2, 4), dtype=module.float32, requires_grad=True
+        )
+        source = (leaf * 3.0).transpose(0, 3)
+        with module.no_grad():
+            copied = self.clone(module, source, functional)
+        metadata = (
+            copied.shape,
+            copied.stride(),
+            copied.storage_offset(),
+            copied.requires_grad,
+            copied.is_leaf,
+            copied.dtype is source.dtype,
+            str(copied.device),
+        )
+        del source, leaf
+        gc.collect()
+        return metadata, self.tensor_bits(copied).copy()
+
+    def test_autograd_no_grad_and_source_lifetime_match_pytorch_2_13(self):
+        for functional in (False, True):
+            with self.subTest(functional=functional, mode="autograd"):
+                actual_metadata, actual_values, actual_gradient = (
+                    self.autograd_outcome(torch, functional)
+                )
+                expected_metadata, expected_values, expected_gradient = (
+                    self.autograd_outcome(reference_torch, functional)
+                )
+                self.assertEqual(actual_metadata, expected_metadata)
+                np.testing.assert_array_equal(actual_values, expected_values)
+                np.testing.assert_array_equal(actual_gradient, expected_gradient)
+
+            with self.subTest(functional=functional, mode="no_grad"):
+                actual_metadata, actual_values = self.no_grad_outcome(
+                    torch, functional
+                )
+                expected_metadata, expected_values = self.no_grad_outcome(
+                    reference_torch, functional
+                )
+                self.assertEqual(actual_metadata, expected_metadata)
+                np.testing.assert_array_equal(actual_values, expected_values)
+
+    def assert_error_matches(self, actual_call, expected_call):
+        with self.assertRaises(Exception) as actual_raised:
+            actual_call()
+        with self.assertRaises(Exception) as expected_raised:
+            expected_call()
+        self.assertEqual(
+            type(actual_raised.exception).__name__,
+            type(expected_raised.exception).__name__,
+        )
+        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
+    def test_rank_errors_match_pytorch_2_13(self):
+        for shape in ((), (2, 3, 4), (1, 2, 3, 4, 5)):
+            actual = torch.ones(shape, dtype=torch.float32)
+            expected = reference_torch.ones(shape, dtype=reference_torch.float32)
+            for functional in (False, True):
+                with self.subTest(shape=shape, functional=functional):
+                    self.assert_error_matches(
+                        lambda functional=functional: self.clone(
+                            torch, actual, functional
+                        ),
+                        lambda functional=functional: self.clone(
+                            reference_torch, expected, functional
+                        ),
+                    )
+
+
+if __name__ == "__main__":
+    unittest.main()
