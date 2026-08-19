@@ -278,6 +278,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         expected_public = {
             name for name in vars(expected_distributed) if not name.startswith("_")
         }
+        reference_nccl_available = expected_distributed.is_nccl_available()
 
         self.assertEqual(
             actual_public,
@@ -304,7 +305,6 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             "Backend",
             "GroupMember",
             "ProcessGroup",
-            "ProcessGroupNCCL",
             "all_reduce",
             "destroy_process_group",
             "get_rank",
@@ -316,6 +316,17 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 self.assertTrue(hasattr(expected_c10d, name))
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
+
+        self.assertIs(
+            hasattr(expected_distributed, "ProcessGroupNCCL"),
+            reference_nccl_available,
+        )
+        self.assertIs(
+            hasattr(expected_c10d, "ProcessGroupNCCL"),
+            reference_nccl_available,
+        )
+        self.assertFalse(hasattr(actual_distributed, "ProcessGroupNCCL"))
+        self.assertFalse(hasattr(actual_c10d, "ProcessGroupNCCL"))
 
 
 if __name__ == "__main__":
