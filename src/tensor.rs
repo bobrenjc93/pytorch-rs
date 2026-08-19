@@ -47,6 +47,14 @@ struct SavedTensor {
 
 #[derive(Clone)]
 enum GradFn {
+    #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
+    MatrixMultiply {
+        left: SavedTensor,
+        right: SavedTensor,
+        rows: usize,
+        inner: usize,
+        columns: usize,
+    },
     Multiply {
         left: SavedTensor,
         right: SavedTensor,
@@ -107,7 +115,7 @@ impl SavedTensor {
 impl GradFn {
     fn take_parents(&mut self, pending: &mut Vec<Arc<AutogradMeta>>) {
         match self {
-            Self::Multiply { left, right, .. } => {
+            Self::MatrixMultiply { left, right, .. } | Self::Multiply { left, right, .. } => {
                 left.take_parent(pending);
                 right.take_parent(pending);
             }
@@ -123,7 +131,7 @@ impl GradFn {
 
     fn validate_saved_values(&self) -> Result<(), TensorError> {
         match self {
-            Self::Multiply { left, right, .. } => {
+            Self::MatrixMultiply { left, right, .. } | Self::Multiply { left, right, .. } => {
                 if (left.autograd.is_some() && right.storage.is_none())
                     || (right.autograd.is_some() && left.storage.is_none())
                 {
@@ -151,7 +159,7 @@ impl GradFn {
     fn consume_saved_values(&mut self) -> Result<(), TensorError> {
         self.validate_saved_values()?;
         match self {
-            Self::Multiply { left, right, .. } => {
+            Self::MatrixMultiply { left, right, .. } | Self::Multiply { left, right, .. } => {
                 left.storage = None;
                 right.storage = None;
             }
@@ -689,6 +697,7 @@ impl Tensor {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let node = match grad_fn.as_ref()? {
+            GradFn::MatrixMultiply { .. } => AutogradNode::MatrixMultiply,
             GradFn::Multiply { .. } | GradFn::MultiplyScalar { .. } => AutogradNode::Multiply,
             GradFn::Negate { node, .. } | GradFn::Transform { node, .. } => *node,
             GradFn::Relu { .. } => AutogradNode::Relu,
@@ -2402,6 +2411,32 @@ impl Tensor {
         ))
     }
 
+    /// Multiplies two rank-2 matrices and records the matrix-product VJP.
+    ///
+    /// This deliberately reuses [`Self::matmul`] for the numeric kernel while
+    /// keeping the existing `matmul` autograd behavior unchanged.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn mm(&self, other: &Self) -> Result<Self, TensorError> {
+        let mut output = self.matmul(other)?;
+        if (self.requires_grad() || other.requires_grad()) && is_grad_enabled() {
+            let left_has_edge = self.autograd.is_some();
+            let right_has_edge = other.autograd.is_some();
+            let grad_fn = GradFn::MatrixMultiply {
+                left: SavedTensor::try_from_tensor(self, right_has_edge)?,
+                right: SavedTensor::try_from_tensor(other, left_has_edge)?,
+                rows: self.shape[0],
+                inner: self.shape[1],
+                columns: other.shape[1],
+            };
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(grad_fn)),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
     fn zip_map(
         &self,
         other: &Self,
@@ -2841,7 +2876,8 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                 ));
                 if let Some(grad_fn) = &grad_fn {
                     match grad_fn {
-                        GradFn::Multiply { left, right, .. } => {
+                        GradFn::MatrixMultiply { left, right, .. }
+                        | GradFn::Multiply { left, right, .. } => {
                             push_saved_parent(&mut stack, right);
                             push_saved_parent(&mut stack, left);
                         }
@@ -2874,12 +2910,7 @@ fn apply_grad_fn(
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     match grad_fn {
-        GradFn::Sum { input } => {
-            if let Some(meta) = &input.autograd {
-                let gradient = filled_storage(input.elements, upstream[0])?;
-                add_gradient(gradients, meta, input.output_nr, gradient);
-            }
-        }
+        GradFn::Sum { input } => apply_sum_grad_fn(input, upstream, gradients)?,
         GradFn::MultiplyScalar { input, scalar } => {
             if let Some(meta) = &input.autograd {
                 let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
@@ -2898,6 +2929,9 @@ fn apply_grad_fn(
         }
         GradFn::Relu { input } => apply_relu_grad_fn(input, upstream, gradients)?,
         GradFn::Sin { input } => apply_sin_grad_fn(input, upstream, gradients)?,
+        grad_fn @ GradFn::MatrixMultiply { .. } => {
+            apply_matrix_multiply_grad_fn(grad_fn, upstream, gradients)?;
+        }
         GradFn::Multiply {
             left,
             right,
@@ -2973,6 +3007,69 @@ fn apply_grad_fn(
         }
         GradFn::Unbind { .. } => unreachable!(),
     }
+    Ok(())
+}
+
+fn apply_sum_grad_fn(
+    input: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        let gradient = filled_storage(input.elements, upstream[0])?;
+        add_gradient(gradients, meta, input.output_nr, gradient);
+    }
+    Ok(())
+}
+
+fn apply_matrix_multiply_grad_fn(
+    grad_fn: &GradFn,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    let GradFn::MatrixMultiply {
+        left,
+        right,
+        rows,
+        inner,
+        columns,
+    } = grad_fn
+    else {
+        unreachable!("matrix-multiply backward requires its matching gradient node")
+    };
+    let (rows, inner, columns) = (*rows, *inner, *columns);
+    debug_assert_eq!(left.shape, [rows, inner]);
+    debug_assert_eq!(right.shape, [inner, columns]);
+    debug_assert_eq!(upstream.len(), rows * columns);
+
+    if let Some(meta) = &left.autograd {
+        let mut gradient = filled_storage(left.elements, 0.0)?;
+        for row in 0..rows {
+            for depth in 0..inner {
+                let left_index = row * inner + depth;
+                for column in 0..columns {
+                    gradient[left_index] += upstream[row * columns + column]
+                        * right.value_at_linear_index(depth * columns + column);
+                }
+            }
+        }
+        add_gradient(gradients, meta, left.output_nr, gradient);
+    }
+
+    if let Some(meta) = &right.autograd {
+        let mut gradient = filled_storage(right.elements, 0.0)?;
+        for depth in 0..inner {
+            for column in 0..columns {
+                let right_index = depth * columns + column;
+                for row in 0..rows {
+                    gradient[right_index] += left.value_at_linear_index(row * inner + depth)
+                        * upstream[row * columns + column];
+                }
+            }
+        }
+        add_gradient(gradients, meta, right.output_nr, gradient);
+    }
+
     Ok(())
 }
 
@@ -4575,6 +4672,94 @@ mod tests {
     }
 
     #[test]
+    fn mm_records_matrix_gradients_without_changing_matmul() {
+        let left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        let right = Tensor::from_vec(vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0], [3, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let weights = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+
+        let output = left.mm(&right).unwrap();
+        assert!(output.requires_grad());
+        assert!(!output.is_leaf());
+        #[cfg(feature = "python-bindings")]
+        assert_eq!(output.grad_fn_name(), Some("MmBackward0"));
+        output.mul(&weights).unwrap().sum().backward().unwrap();
+        assert_eq!(
+            left.grad().unwrap().unwrap().as_slice(),
+            [23.0, 29.0, 35.0, 53.0, 67.0, 81.0]
+        );
+        assert_eq!(
+            right.grad().unwrap().unwrap().as_slice(),
+            [13.0, 18.0, 17.0, 24.0, 21.0, 30.0]
+        );
+
+        assert!(!left.matmul(&right).unwrap().requires_grad());
+        let untracked = {
+            let _guard = crate::no_grad();
+            left.mm(&right).unwrap()
+        };
+        assert!(!untracked.requires_grad());
+        assert!(untracked.is_leaf());
+    }
+
+    #[test]
+    fn mm_backpropagates_through_strided_views_and_empty_dimensions() {
+        let left_base = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [3, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let right_base = Tensor::from_vec(vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0], [2, 3])
+            .unwrap()
+            .with_requires_grad(true);
+        let left = left_base.transpose(0, 1).unwrap();
+        let right = right_base.transpose(0, 1).unwrap();
+        let weights = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+
+        left.mm(&right)
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert_eq!(
+            left_base.grad().unwrap().unwrap().as_slice(),
+            [27.0, 61.0, 30.0, 68.0, 33.0, 75.0]
+        );
+        assert_eq!(
+            right_base.grad().unwrap().unwrap().as_slice(),
+            [7.0, 15.0, 23.0, 10.0, 22.0, 34.0]
+        );
+
+        let empty_left = Tensor::zeros([2, 0]).unwrap().with_requires_grad(true);
+        let empty_right = Tensor::zeros([0, 3]).unwrap().with_requires_grad(true);
+        empty_left
+            .mm(&empty_right)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert!(empty_left.grad().unwrap().unwrap().as_slice().is_empty());
+        assert!(empty_right.grad().unwrap().unwrap().as_slice().is_empty());
+
+        let no_rows = Tensor::zeros([0, 2]).unwrap().with_requires_grad(true);
+        let populated_right = Tensor::ones([2, 3]).unwrap().with_requires_grad(true);
+        no_rows
+            .mm(&populated_right)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert!(no_rows.grad().unwrap().unwrap().as_slice().is_empty());
+        assert_eq!(
+            populated_right.grad().unwrap().unwrap().as_slice(),
+            [0.0; 6]
+        );
+    }
+
+    #[test]
     fn owned_strided_matmul_is_bitwise_identical_to_shared_gradient_fallback() {
         let left = offset_strided_matrix([
             0x7f80_0000,
@@ -5124,6 +5309,22 @@ mod tests {
         assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0, 2.0]);
         saved_loss.backward().unwrap();
         assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [1.0, 1.0]);
+    }
+
+    #[test]
+    fn mm_snapshots_live_gradient_operands_for_backward() {
+        let source = Tensor::ones([2, 2]).unwrap().with_requires_grad(true);
+        source.sum().backward().unwrap();
+        let live_gradient = source.live_grad().unwrap().unwrap();
+        let weights = Tensor::from_vec(vec![2.0, 3.0, 4.0, 5.0], [2, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let saved_loss = weights.mm(&live_gradient).unwrap().sum();
+
+        source.sum().backward().unwrap();
+        assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0; 4]);
+        saved_loss.backward().unwrap();
+        assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [2.0; 4]);
     }
 
     #[test]

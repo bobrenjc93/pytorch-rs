@@ -1002,6 +1002,24 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nmm(mat2) -> Tensor\n\nSee :func:`torch.mm`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn mm(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let (arguments, keyword_error) = bind_tensor_arguments("mm", args, kwargs, ["mat2"])?;
+        let mat2 = parse_tensor_or_torch_function_argument("mm", "mat2", &arguments[0])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        dispatch_mm(slf.py(), tensor, &mat2, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\npermute(*dims) -> Tensor\n\nReturns a view of the tensor with its dimensions permuted.\n\nArgs:\n    dims (torch.Size, int..., tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> x.permute(2, 0, 1).size()\n    torch.Size([5, 2, 3])\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn permute(
@@ -3147,6 +3165,98 @@ fn dispatch_matmul(
     }
 }
 
+fn dispatch_mm(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    mat2: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty()
+        && let BoundTensorOrTorchFunction::Tensor(mat2) = mat2
+    {
+        return apply_mm(py, tensor, mat2);
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("mm")?.unbind();
+    let types = match mat2 {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+    };
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("mm dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate mm dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    // Disable the top mode for the complete attempt so explicit forwarding
+    // through TensorBase.mm reaches the next mode, then the operand override
+    // or the native matrix-product path.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match mat2 {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.Tensor.mm",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(mat2) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.Tensor.mm",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            apply_mm(py, tensor, mat2)
+        }
+    }
+}
+
+fn apply_mm(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    mat2: &Bound<'_, PyTensor>,
+) -> PyResult<Py<PyAny>> {
+    let tensor = tensor.try_borrow()?;
+    if tensor.inner.shape().len() != 2 {
+        return Err(PyRuntimeError::new_err("self must be a matrix"));
+    }
+    let mat2 = mat2.try_borrow()?;
+    if mat2.inner.shape().len() != 2 {
+        return Err(PyRuntimeError::new_err("mat2 must be a matrix"));
+    }
+    let result = tensor.matrix_multiply_with_autograd(&mat2)?;
+    Ok(Py::new(py, result)?.into_any())
+}
+
 fn ordered_binary_overrides<'py>(
     first: Option<&ProbedTorchFunctionOverride<'py>>,
     second: Option<&ProbedTorchFunctionOverride<'py>>,
@@ -4057,6 +4167,13 @@ impl PyTensor {
     fn matrix_multiply(&self, other: &Self) -> PyResult<Self> {
         self.inner
             .matmul(&other.inner)
+            .map(Self::new)
+            .map_err(|error| tensor_error(&error))
+    }
+
+    fn matrix_multiply_with_autograd(&self, other: &Self) -> PyResult<Self> {
+        self.inner
+            .mm(&other.inner)
             .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
