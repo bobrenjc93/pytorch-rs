@@ -42,6 +42,7 @@ assert x.dense_dim() == x.ndim
 assert x.sparse_dim() == 0
 assert x.is_pinned() is False
 assert x.output_nr == 0
+assert torch.compiler.is_compiling() is False
 
 # Transposes are native shared-storage views. Tensor.T reverses every dimension,
 # real-valued Tensor.H transposes matrices, Tensor.mT and real-valued Tensor.mH
@@ -98,6 +99,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.can_cast` and `torch.promote_types` accept the existing `torch.float32`/`torch.float` singleton aliases in positional or canonical keyword forms. Casting between the supported aliases returns `True`, while promotion returns the same canonical singleton. No additional dtype, casting pair, or promotion pair is exposed.
 
 `torch.functional.broadcast_shapes` and its identical top-level `torch.broadcast_shapes` alias compute canonical `torch.Size` results directly from nonnegative Python integer, tuple, list, and `torch.Size` inputs without creating tensors. Symbolic dimensions, tracing, and `torch.broadcast_tensors` remain unsupported.
+
+`torch.compiler.is_compiling()` exposes PyTorch's stable compiler-state query without importing PyTorch. It returns `False` throughout the supported eager and gradient-mode surface; compilation, export, and the remaining compiler APIs are not exposed.
 
 ## Non-negotiable evaluation rules
 
