@@ -3569,6 +3569,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 77
       }
+    },
+    {
+      "key": "pr:271",
+      "recordedAt": "2026-08-19T01:45:41.070Z",
+      "label": "PR #271",
+      "kind": "leaf",
+      "prNumber": 271,
+      "title": "Generalize the torch.exp unary-out bridge",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 73.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 56.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 78
+      }
     }
   ]
 }
