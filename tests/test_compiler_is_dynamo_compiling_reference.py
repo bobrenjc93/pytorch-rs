@@ -18,12 +18,13 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CompilerIsCompilingReferenceTests(unittest.TestCase):
+class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "compiler.is_compiling differentials require pinned PyTorch 2.13.0"
+                "compiler.is_dynamo_compiling differentials require pinned "
+                "PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -36,7 +37,7 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def supported_state_outcome(self, module):
-        function = module.compiler.is_compiling
+        function = module.compiler.is_dynamo_compiling
 
         def query_outcome():
             before = module.is_grad_enabled()
@@ -100,8 +101,8 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")
         expected_compiler = importlib.import_module("torch.compiler")
-        actual = actual_compiler.is_compiling
-        expected = expected_compiler.is_compiling
+        actual = actual_compiler.is_dynamo_compiling
+        expected = expected_compiler.is_dynamo_compiling
 
         self.assertIs(torch.compiler, actual_compiler)
         self.assertIs(reference_torch.compiler, expected_compiler)
@@ -131,8 +132,8 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
     def test_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_compiler = torch.compiler
         expected_compiler = reference_torch.compiler
-        actual = actual_compiler.is_compiling
-        expected = expected_compiler.is_compiling
+        actual = actual_compiler.is_dynamo_compiling
+        expected = expected_compiler.is_dynamo_compiling
 
         self.assertEqual(
             actual_compiler.__all__,
@@ -147,34 +148,22 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("compiler"),
         )
         self.assertEqual(
-            torch.__all__.count("is_compiling"),
-            reference_torch.__all__.count("is_compiling"),
-        )
-        self.assertEqual(
             torch.__all__.count("is_dynamo_compiling"),
             reference_torch.__all__.count("is_dynamo_compiling"),
         )
 
-        for module, functions in (
-            (
-                actual_compiler,
-                (actual, actual_compiler.is_dynamo_compiling),
-            ),
-            (
-                expected_compiler,
-                (expected, expected_compiler.is_dynamo_compiling),
-            ),
+        for module, function in (
+            (actual_compiler, actual),
+            (expected_compiler, expected),
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            for function in functions:
-                self.assertIs(namespace[function.__name__], function)
+            self.assertIs(namespace["is_dynamo_compiling"], function)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
-            self.assertNotIn("is_compiling", namespace)
             self.assertNotIn("is_dynamo_compiling", namespace)
 
         self.assertIs(copy.copy(actual), actual)
@@ -191,8 +180,8 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.compiler.is_compiling
-        expected = reference_torch.compiler.is_compiling
+        actual = torch.compiler.is_dynamo_compiling
+        expected = reference_torch.compiler.is_dynamo_compiling
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
@@ -207,16 +196,18 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
                 self.assert_error_matches(actual_call, expected_call)
 
     def test_reference_eager_backend_compile_bounds_the_true_state(self):
-        actual_is_compiling = torch.compiler.is_compiling
-        expected_is_compiling = reference_torch.compiler.is_compiling
-        actual_states = [actual_is_compiling()]
-        expected_states = [expected_is_compiling()]
+        actual_is_dynamo_compiling = torch.compiler.is_dynamo_compiling
+        expected_is_dynamo_compiling = (
+            reference_torch.compiler.is_dynamo_compiling
+        )
+        actual_states = [actual_is_dynamo_compiling()]
+        expected_states = [expected_is_dynamo_compiling()]
 
         def forward(value):
             return (
                 value + 1,
-                expected_is_compiling(),
-                actual_is_compiling(),
+                expected_is_dynamo_compiling(),
+                actual_is_dynamo_compiling(),
             )
 
         compiled = reference_torch.compile(
@@ -227,8 +218,10 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
         result, expected_inside, actual_inside = compiled(
             reference_torch.tensor(1.0)
         )
-        actual_states.extend((actual_inside, actual_is_compiling()))
-        expected_states.extend((expected_inside, expected_is_compiling()))
+        actual_states.extend((actual_inside, actual_is_dynamo_compiling()))
+        expected_states.extend(
+            (expected_inside, expected_is_dynamo_compiling())
+        )
 
         self.assertEqual(result.item(), 2.0)
         for state in actual_states:
@@ -237,21 +230,12 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
         for state in expected_states:
             self.assertIs(type(state), bool)
 
-    def test_compile_export_and_other_compiler_apis_remain_unsupported(self):
+    def test_compilation_remains_unsupported(self):
         self.assertTrue(callable(reference_torch.compile))
         self.assertTrue(hasattr(reference_torch, "export"))
         self.assertFalse(hasattr(torch, "compile"))
         self.assertFalse(hasattr(torch, "export"))
-        self.assertFalse(hasattr(torch, "is_compiling"))
-
-        unsupported = set(reference_torch.compiler.__all__) - {
-            "is_compiling",
-            "is_dynamo_compiling",
-        }
-        self.assertTrue(unsupported)
-        for name in unsupported:
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(torch.compiler, name))
+        self.assertFalse(hasattr(torch, "is_dynamo_compiling"))
 
 
 if __name__ == "__main__":
