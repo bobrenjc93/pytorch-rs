@@ -15,17 +15,18 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     adjoint_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
-    atleast_3d_variable_function, can_cast_variable_function, get_device_variable_function,
-    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, unbind_variable_function,
+    atleast_3d_variable_function, can_cast_variable_function, exp_variable_function,
+    get_device_variable_function, is_conj_variable_function, is_inference_variable_function,
+    matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
+    mul_variable_function, multiply_variable_function, permute_variable_function,
+    positive_variable_function, promote_types_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 21] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 22] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -33,6 +34,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 21] = [
     "atleast_3d",
     "adjoint",
     "positive",
+    "exp",
     "is_conj",
     "is_inference",
     "resolve_conj",
@@ -74,6 +76,27 @@ Example::
 ";
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
+
+const EXP_DOC: &std::ffi::CStr = cr"
+exp(input, *, out=None) -> Tensor
+
+Returns a new tensor with the exponential of the elements
+of the input tensor :attr:`input`.
+
+.. math::
+    y_{i} = e^{x_{i}}
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> torch.exp(torch.tensor([0, math.log(2.)]))
+    tensor([ 1.,  2.])
+";
 
 const MUL_DOC: &std::ffi::CStr = cr"
 mul(input, other, *, out=None) -> Tensor
@@ -388,6 +411,7 @@ variable_function_callback!(atleast_2d_callback, atleast_2d_variable_function);
 variable_function_callback!(atleast_3d_callback, atleast_3d_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
+variable_function_callback!(exp_callback, exp_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
@@ -430,6 +454,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
+        variable_function_method!(c"exp", exp_callback, EXP_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
