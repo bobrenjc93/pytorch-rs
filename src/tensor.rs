@@ -1490,6 +1490,9 @@ impl Tensor {
             )?,
             MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast => {
+                // PyTorch validates canonical destination metadata before
+                // reporting a requested channel-last format's rank mismatch.
+                let _ = contiguous_strides(&shape, elements)?;
                 if shape.len() != 4 {
                     return Err(TensorError::ContiguousMemoryFormatRankMismatch {
                         memory_format,

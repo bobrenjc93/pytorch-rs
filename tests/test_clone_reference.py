@@ -1,3 +1,4 @@
+import sys
 import unittest
 
 import numpy as np
@@ -188,3 +189,13 @@ class CloneChannelsLastReferenceTests(unittest.TestCase):
                         lambda: self.clone(torch, actual, operation),
                         lambda: self.clone(reference_torch, expected, operation),
                     )
+
+        maximum = sys.maxsize
+        actual = torch.zeros((0,)).reshape((0, maximum, 3))
+        expected = reference_torch.zeros((0,)).reshape((0, maximum, 3))
+        for operation in ("method", "function"):
+            with self.subTest(case="overflow_before_rank", operation=operation):
+                self.assert_error_matches(
+                    lambda: self.clone(torch, actual, operation),
+                    lambda: self.clone(reference_torch, expected, operation),
+                )
