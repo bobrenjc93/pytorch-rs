@@ -145,7 +145,12 @@ class DistributedIsAvailableTests(unittest.TestCase):
                 for name in distributed_namespace
                 if not name.startswith("__")
             },
-            {"distributed_c10d", "is_available", "is_initialized"},
+            {
+                "distributed_c10d",
+                "is_available",
+                "is_initialized",
+                "is_nccl_available",
+            },
         )
         self.assertIs(distributed_namespace["is_available"], function)
 
@@ -198,7 +203,12 @@ class DistributedIsAvailableTests(unittest.TestCase):
 
         self.assertEqual(
             {name for name in vars(distributed) if not name.startswith("_")},
-            {"distributed_c10d", "is_available", "is_initialized"},
+            {
+                "distributed_c10d",
+                "is_available",
+                "is_initialized",
+                "is_nccl_available",
+            },
         )
         self.assertFalse(hasattr(torch, "is_available"))
         self.assertFalse(hasattr(torch, "is_initialized"))
