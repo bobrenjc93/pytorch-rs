@@ -1,5 +1,6 @@
 """Dynamic ``__torch_function__`` override modes."""
 
+import contextvars as _contextvars
 import types as _types
 import warnings
 
@@ -10,6 +11,36 @@ from .torch_rs import (
     _pop_torch_function_stack,
     _push_on_torch_function_stack,
 )
+
+
+_forwarded_torch_function_arguments = _contextvars.ContextVar(
+    "forwarded_torch_function_arguments", default=()
+)
+
+
+def _is_forwarded_torch_function_argument(argument):
+    return any(
+        argument is forwarded
+        for forwarded in _forwarded_torch_function_arguments.get()
+    )
+
+
+def _call_torch_function_handler(
+    handler,
+    public_function,
+    types,
+    args,
+    kwargs,
+    forwarded_arguments,
+):
+    current_arguments = _forwarded_torch_function_arguments.get()
+    token = _forwarded_torch_function_arguments.set(
+        (*current_arguments, *forwarded_arguments)
+    )
+    try:
+        return handler(public_function, types, args, kwargs)
+    finally:
+        _forwarded_torch_function_arguments.reset(token)
 
 
 class TorchFunctionMode:
@@ -101,21 +132,31 @@ def _dispatch_unary_torch_function(
     input,
     keyword_arguments,
     include_tensor=True,
+    torch_function_args=None,
+    torch_function_kwargs=None,
+    forwarded_arguments=(),
 ):
     mode = _get_current_function_mode()
     if mode is None and not _has_unary_torch_function(input):
         return implementation(input, **keyword_arguments)
+
+    if torch_function_args is None:
+        torch_function_args = (input,)
+    if torch_function_kwargs is None:
+        torch_function_kwargs = keyword_arguments
 
     overloaded_args = _overloaded_unary_arguments(input, include_tensor)
     types = tuple(type(argument) for argument in overloaded_args)
     if mode is not None:
         popped_mode = _pop_mode()
         try:
-            result = popped_mode.__torch_function__(
+            result = _call_torch_function_handler(
+                popped_mode.__torch_function__,
                 public_function,
                 types,
-                (input,),
-                keyword_arguments.copy(),
+                torch_function_args,
+                torch_function_kwargs.copy(),
+                forwarded_arguments,
             )
         finally:
             _push_mode(popped_mode)
@@ -130,6 +171,9 @@ def _dispatch_unary_torch_function(
                 input,
                 keyword_arguments,
                 include_tensor=False,
+                torch_function_args=torch_function_args,
+                torch_function_kwargs=torch_function_kwargs,
+                forwarded_arguments=forwarded_arguments,
             )
 
         torch_func_method = overloaded_arg.__torch_function__
@@ -145,11 +189,13 @@ def _dispatch_unary_torch_function(
                 stacklevel=2,
             )
 
-        result = torch_func_method(
+        result = _call_torch_function_handler(
+            torch_func_method,
             public_function,
             types,
-            (input,),
-            keyword_arguments.copy(),
+            torch_function_args,
+            torch_function_kwargs.copy(),
+            forwarded_arguments,
         )
         if result is not NotImplemented:
             return result

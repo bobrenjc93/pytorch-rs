@@ -4,6 +4,10 @@ import operator as _operator
 from collections.abc import Sequence
 from typing import Union
 
+from ..overrides import (
+    _dispatch_unary_torch_function,
+    _is_forwarded_torch_function_argument,
+)
 from ..torch_rs import Tensor
 from . import grad_mode as grad_mode
 from .grad_mode import no_grad as no_grad
@@ -26,6 +30,39 @@ def _is_false_flag(value):
         return _operator.index(value) == 0
     except TypeError:
         return False
+
+
+def _backward_impl(
+    tensors,
+    grad_tensors,
+    retain_graph,
+    create_graph,
+    grad_variables,
+    inputs,
+):
+    if not isinstance(tensors, Tensor):
+        raise NotImplementedError(
+            "torch_rs.autograd.backward only supports a single Tensor"
+        )
+    if grad_tensors is not None or grad_variables is not None:
+        raise NotImplementedError(
+            "torch_rs.autograd.backward does not support explicit gradients"
+        )
+    if retain_graph is not None and not _is_false_flag(retain_graph):
+        raise NotImplementedError(
+            "torch_rs.autograd.backward does not support retained graphs"
+        )
+    if not _is_false_flag(create_graph):
+        raise NotImplementedError(
+            "torch_rs.autograd.backward does not support higher-order graphs"
+        )
+    if inputs is not None:
+        raise NotImplementedError(
+            "torch_rs.autograd.backward does not support input filtering"
+        )
+    if tensors.requires_grad and tensors.numel() != 1:
+        raise RuntimeError("grad can be implicitly created only for scalar outputs")
+    tensors.backward()
 
 
 def backward(
@@ -95,24 +132,31 @@ def backward(
             ``dict(model.named_parameters())``) is also accepted, in which case
             the values are used as the input tensors.
     """
-    if not isinstance(tensors, Tensor):
-        raise NotImplementedError(
-            "torch_rs.autograd.backward only supports a single Tensor"
-        )
-    if grad_tensors is not None or grad_variables is not None:
-        raise NotImplementedError(
-            "torch_rs.autograd.backward does not support explicit gradients"
-        )
-    if retain_graph is not None and not _is_false_flag(retain_graph):
-        raise NotImplementedError(
-            "torch_rs.autograd.backward does not support retained graphs"
-        )
-    if not _is_false_flag(create_graph):
-        raise NotImplementedError(
-            "torch_rs.autograd.backward does not support higher-order graphs"
-        )
-    if inputs is not None:
-        raise NotImplementedError(
-            "torch_rs.autograd.backward does not support input filtering"
-        )
-    tensors.backward()
+    forwarded_sequence = (
+        type(tensors) is tuple
+        and len(tensors) == 1
+        and isinstance(tensors[0], Tensor)
+        and _is_forwarded_torch_function_argument(tensors)
+    )
+    input_tensor = tensors[0] if forwarded_sequence else tensors
+    mode_tensors = tensors if forwarded_sequence else (tensors,)
+    return _dispatch_unary_torch_function(
+        backward,
+        _backward_impl,
+        input_tensor,
+        {
+            "grad_tensors": grad_tensors,
+            "retain_graph": retain_graph,
+            "create_graph": create_graph,
+            "grad_variables": grad_variables,
+            "inputs": inputs,
+        },
+        torch_function_args=(mode_tensors,),
+        torch_function_kwargs={
+            "grad_tensors": grad_tensors,
+            "retain_graph": retain_graph,
+            "create_graph": create_graph,
+            "inputs": inputs,
+        },
+        forwarded_arguments=(mode_tensors,),
+    )

@@ -2,6 +2,7 @@ import copy
 import importlib
 import inspect
 import pickle
+import re
 import types
 import unittest
 
@@ -184,6 +185,140 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.supported_contract(torch),
             self.supported_contract(reference_torch),
+        )
+
+    def scalar_boundary_contract(self, module):
+        outcomes = []
+        for shape in ((2,), (0,), (1,), ()):
+            tensor = module.ones(shape, requires_grad=True)
+            try:
+                result = module.autograd.backward(tensor)
+            except Exception as error:
+                outcomes.append((shape, type(error).__name__, str(error)))
+            else:
+                outcomes.append((shape, result, tensor.grad.tolist()))
+        return tuple(outcomes)
+
+    def test_scalar_and_non_scalar_boundaries_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.scalar_boundary_contract(torch),
+            self.scalar_boundary_contract(reference_torch),
+        )
+
+    def mode_contract(self, module):
+        function = module.autograd.backward
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        def normalize_call(call, output):
+            func, dispatch_types, args, kwargs = call
+            return (
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                len(args) == 1
+                and type(args[0]) is tuple
+                and len(args[0]) == 1
+                and args[0][0] is output,
+                kwargs,
+            )
+
+        accepting_leaf = module.tensor(2.0, requires_grad=True)
+        accepting_output = accepting_leaf * accepting_leaf
+        accepting = RecordingMode(marker)
+        with accepting:
+            accepting_result = function(accepting_output)
+        accepting_untouched = accepting_leaf.grad is None
+        function(accepting_output)
+
+        multi_element = module.ones((2,), requires_grad=True)
+        multi_accepting = RecordingMode(marker)
+        with multi_accepting:
+            multi_result = function(multi_element)
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append((self.label, func, types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        forwarding_leaf = module.tensor(3.0, requires_grad=True)
+        forwarding_output = forwarding_leaf * forwarding_leaf
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = function(forwarding_output)
+
+        declining_leaf = module.tensor(4.0, requires_grad=True)
+        declining_output = declining_leaf * declining_leaf
+        declining = RecordingMode(NotImplemented)
+        try:
+            with declining:
+                function(declining_output)
+        except Exception as error:
+            declining_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x<address>", str(error)).replace(
+                    "torch_rs", "torch"
+                ),
+            )
+        else:
+            self.fail(f"{module.__name__} accepted a declining mode")
+        declining_untouched = declining_leaf.grad is None
+
+        return {
+            "accepting": (
+                accepting_result is marker,
+                accepting_untouched,
+                accepting_leaf.grad.item(),
+                tuple(
+                    normalize_call(call, accepting_output)
+                    for call in accepting.calls
+                ),
+            ),
+            "multi_element": (
+                multi_result is marker,
+                multi_element.grad is None,
+                tuple(
+                    normalize_call(call, multi_element)
+                    for call in multi_accepting.calls
+                ),
+            ),
+            "forwarding": tuple(
+                (
+                    label,
+                    normalize_call(
+                        (func, dispatch_types, args, kwargs), forwarding_output
+                    ),
+                )
+                for label, func, dispatch_types, args, kwargs in order
+            ),
+            "forwarded": (forwarded, forwarding_leaf.grad.item()),
+            "declining": (
+                declining_error,
+                declining_untouched,
+                tuple(
+                    normalize_call(call, declining_output)
+                    for call in declining.calls
+                ),
+            ),
+            "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+        }
+
+    def test_torch_function_modes_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_contract(torch),
+            self.mode_contract(reference_torch),
         )
 
     def test_signature_annotations_metadata_docs_exports_and_pickle_match(self):
