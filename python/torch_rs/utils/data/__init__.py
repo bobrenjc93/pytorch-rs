@@ -9,6 +9,7 @@ from .dataset import (
     TensorDataset,
 )
 from .datapipes.datapipe import DataChunk
+from .distributed import DistributedSampler
 from .sampler import BatchSampler, Sampler, SequentialSampler
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "ConcatDataset",
     "DataChunk",
     "Dataset",
+    "DistributedSampler",
     "IterableDataset",
     "Sampler",
     "SequentialSampler",
