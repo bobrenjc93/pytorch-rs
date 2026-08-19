@@ -100,14 +100,15 @@ class NoGradNamespaceTests(unittest.TestCase):
         self.assertIs(torch.no_grad, grad_mode.no_grad)
         self.assertIs(torch.no_grad, autograd_no_grad)
         self.assertIs(torch.no_grad, grad_mode_no_grad)
-        self.assertEqual(autograd.__all__, ["grad_mode", "no_grad"])
+        self.assertEqual(autograd.__all__, ["backward", "grad_mode", "no_grad"])
         self.assertEqual(grad_mode.__all__, ["no_grad"])
         self.assertNotIn("autograd", torch.__all__)
 
         for module in (autograd, grad_mode):
-            for unsupported in ("enable_grad", "grad", "backward"):
+            for unsupported in ("enable_grad", "grad"):
                 with self.subTest(module=module.__name__, unsupported=unsupported):
                     self.assertFalse(hasattr(module, unsupported))
+        self.assertFalse(hasattr(grad_mode, "backward"))
 
     def test_metadata_copy_and_pickle_resolve_through_grad_mode(self):
         grad_mode = torch.autograd.grad_mode
