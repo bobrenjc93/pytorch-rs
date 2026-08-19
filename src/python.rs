@@ -1418,6 +1418,15 @@ pub(crate) fn positive_variable_function(
     dispatch_positive(py, &input, args, kwargs)
 }
 
+pub(crate) fn ravel_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("ravel", args, kwargs)?;
+    dispatch_ravel(py, &input, args, kwargs)
+}
+
 pub(crate) fn exp_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2463,6 +2472,66 @@ fn dispatch_positive(
                 )?);
             }
             Ok(tensor.clone().unbind().into_any())
+        }
+    }
+}
+
+fn dispatch_ravel(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let function = variable_function(py, "ravel")?;
+    let types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(resolved) => {
+            PyTuple::new(py, [resolved.dispatch_type.clone()])?
+        }
+    };
+
+    // PyTorch disables the top mode for the complete dispatch attempt. A mode
+    // can explicitly call `func(*args, **kwargs)` to reach the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.ravel",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(tensor) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.ravel",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            let inner = tensor
+                .try_borrow()?
+                .inner
+                .ravel()
+                .map_err(|error| tensor_error(&error))?;
+            Ok(Py::new(py, PyTensor::new(inner))?.into_any())
         }
     }
 }
