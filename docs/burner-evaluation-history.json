@@ -3809,6 +3809,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 83
       }
+    },
+    {
+      "key": "pr:327",
+      "recordedAt": "2026-08-19T18:05:46.269Z",
+      "label": "PR #327",
+      "kind": "leaf",
+      "prNumber": 327,
+      "title": "Expose inference-only top-level torch.sin",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 74.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 58.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 83
+      }
     }
   ]
 }
