@@ -9,6 +9,9 @@ from fractions import Fraction
 import numpy as np
 import torch_rs as torch
 import torch_rs.nn.functional as functional
+from torch_rs._diagnostics import (
+    _nn_functional_dropout_tensor_autograd_suffix,
+)
 
 try:
     import torch as reference_torch
@@ -41,6 +44,18 @@ class FunctionalAlphaDropoutReferenceTests(unittest.TestCase):
                 requires_grad=requires_grad,
             )
             return leaf, leaf.transpose(0, 2)[1]
+        if case == "nonfinite":
+            leaf = module.tensor(
+                [
+                    float("inf"),
+                    -float("inf"),
+                    float("nan"),
+                    -float("nan"),
+                ],
+                dtype=module.float32,
+                requires_grad=requires_grad,
+            )
+            return leaf, leaf
 
         leaf = module.tensor(
             [
@@ -195,7 +210,13 @@ class FunctionalAlphaDropoutReferenceTests(unittest.TestCase):
         )
 
         for requires_grad in (False, True):
-            for case in ("scalar", "empty", "offset", "strided"):
+            for case in (
+                "scalar",
+                "empty",
+                "offset",
+                "strided",
+                "nonfinite",
+            ):
                 _, actual_input = self.make_case(
                     torch, case, requires_grad=requires_grad
                 )
@@ -223,6 +244,159 @@ class FunctionalAlphaDropoutReferenceTests(unittest.TestCase):
                         actual, expected, case=invocation
                     )
                     self.assert_values_match(actual, expected, case=invocation)
+
+    def test_probability_one_values_layouts_and_rng_state_match(self):
+        probabilities = (
+            (1.0, 1.0),
+            (True, True),
+            (np.bool_(True), np.bool_(True)),
+            (np.int64(1), np.int64(1)),
+            (np.float32(1.0), np.float32(1.0)),
+            (np.complex64(1.0), np.complex64(1.0)),
+        )
+        for requires_grad in (False, True):
+            for case in ("scalar", "offset", "strided", "nonfinite"):
+                _, actual_input = self.make_case(
+                    torch, case, requires_grad=requires_grad
+                )
+                _, expected_input = self.make_case(
+                    reference_torch, case, requires_grad=requires_grad
+                )
+                for probability_case, (
+                    actual_probability,
+                    expected_probability,
+                ) in enumerate(probabilities):
+                    expected_rng = reference_torch.get_rng_state().clone()
+                    with warnings.catch_warnings(record=True) as actual_warnings:
+                        warnings.simplefilter("always")
+                        actual = functional.alpha_dropout(
+                            actual_input,
+                            p=actual_probability,
+                            training=True,
+                            inplace=False,
+                        )
+                    with warnings.catch_warnings(record=True) as expected_warnings:
+                        warnings.simplefilter("always")
+                        expected = reference_functional.alpha_dropout(
+                            expected_input,
+                            p=expected_probability,
+                            training=True,
+                            inplace=False,
+                        )
+                    invocation = (
+                        requires_grad,
+                        case,
+                        probability_case,
+                    )
+                    with self.subTest(case=invocation):
+                        self.assertIsNot(actual, actual_input)
+                        self.assertIsNot(expected, expected_input)
+                        self.assertFalse(actual.is_set_to(actual_input))
+                        self.assertFalse(expected.is_set_to(expected_input))
+                        self.assertNotEqual(
+                            actual.data_ptr(), actual_input.data_ptr()
+                        )
+                        self.assertNotEqual(
+                            expected.data_ptr(), expected_input.data_ptr()
+                        )
+                        self.assertEqual(
+                            [type(item.message) for item in actual_warnings],
+                            [type(item.message) for item in expected_warnings],
+                        )
+                        self.assertEqual(
+                            [str(item.message) for item in actual_warnings],
+                            [str(item.message) for item in expected_warnings],
+                        )
+                        self.assertTrue(
+                            reference_torch.equal(
+                                expected_rng,
+                                reference_torch.get_rng_state(),
+                            )
+                        )
+                    self.assert_metadata_matches(
+                        actual, expected, case=invocation
+                    )
+                    self.assert_values_match(actual, expected, case=invocation)
+
+    def test_probability_one_backward_and_no_grad_match(self):
+        actual_leaf = torch.tensor(
+            [[-1.0, 2.0], [-0.0, 3.0]], requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            [[-1.0, 2.0], [-0.0, 3.0]], requires_grad=True
+        )
+        actual_input = actual_leaf.transpose(0, 1)
+        expected_input = expected_leaf.transpose(0, 1)
+        actual_output = functional.alpha_dropout(
+            actual_input,
+            p=np.float64(1.0),
+            training=True,
+            inplace=False,
+        )
+        expected_output = reference_functional.alpha_dropout(
+            expected_input,
+            p=np.float64(1.0),
+            training=True,
+            inplace=False,
+        )
+        self.assertEqual(
+            _nn_functional_dropout_tensor_autograd_suffix(actual_output),
+            ", grad_fn=<MulBackward0>",
+        )
+        self.assertEqual(type(expected_output.grad_fn).__name__, "MulBackward0")
+        self.assert_metadata_matches(
+            actual_output, expected_output, case="probability-one output"
+        )
+        self.assert_values_match(
+            actual_output, expected_output, case="probability-one output"
+        )
+        actual_weights = torch.tensor([[2.0, -3.0], [-5.0, 7.0]])
+        expected_weights = reference_torch.tensor(
+            [[2.0, -3.0], [-5.0, 7.0]]
+        )
+        (actual_output * actual_weights).sum().backward()
+        (expected_output * expected_weights).sum().backward()
+        self.assert_metadata_matches(
+            actual_leaf.grad,
+            expected_leaf.grad,
+            case="probability-one gradient",
+        )
+        self.assert_values_match(
+            actual_leaf.grad,
+            expected_leaf.grad,
+            case="probability-one gradient",
+        )
+
+        actual_leaf = torch.tensor(
+            [[-1.0, 2.0], [-0.0, 3.0]], requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            [[-1.0, 2.0], [-0.0, 3.0]], requires_grad=True
+        )
+        actual_input = actual_leaf.transpose(0, 1)
+        expected_input = expected_leaf.transpose(0, 1)
+        with torch.no_grad():
+            actual_output = functional.alpha_dropout(
+                actual_input, p=1, training=True
+            )
+        with reference_torch.no_grad():
+            expected_output = reference_functional.alpha_dropout(
+                expected_input, p=1, training=True
+            )
+        self.assertIsNot(actual_output, actual_input)
+        self.assertIsNot(expected_output, expected_input)
+        self.assert_metadata_matches(
+            actual_output,
+            expected_output,
+            case="probability-one no_grad",
+        )
+        self.assert_values_match(
+            actual_output,
+            expected_output,
+            case="probability-one no_grad",
+        )
+        self.assertIsNone(actual_leaf.grad)
+        self.assertIsNone(expected_leaf.grad)
 
     def test_backward_no_grad_and_empty_training_match(self):
         actual_leaf = torch.tensor(
@@ -572,14 +746,20 @@ class FunctionalAlphaDropoutReferenceTests(unittest.TestCase):
         expected_mode = ExpectedMode(forward=True)
         with actual_mode:
             actual_output = functional.alpha_dropout(
-                actual_input, p=0, training=True, inplace=True
+                actual_input, p=1, training=True, inplace=False
             )
         with expected_mode:
             expected_output = reference_functional.alpha_dropout(
-                expected_input, p=0, training=True, inplace=True
+                expected_input, p=1, training=True, inplace=False
             )
-        self.assertIs(actual_output, actual_input)
-        self.assertIs(expected_output, expected_input)
+        self.assertIsNot(actual_output, actual_input)
+        self.assertIsNot(expected_output, expected_input)
+        self.assert_metadata_matches(
+            actual_output, expected_output, case="forwarding mode"
+        )
+        self.assert_values_match(
+            actual_output, expected_output, case="forwarding mode"
+        )
         self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
 
     def test_deliberately_unsupported_boundaries(self):
@@ -588,25 +768,28 @@ class FunctionalAlphaDropoutReferenceTests(unittest.TestCase):
 
         actual_input = torch.tensor([1.0, 2.0], requires_grad=True)
         before = np.asarray(actual_input.detach()).copy().view(np.uint32)
-        for probability in (0.25, 1.0):
-            for inplace in (False, True):
-                with self.subTest(probability=probability, inplace=inplace):
-                    with self.assertRaisesRegex(
-                        NotImplementedError,
-                        "^torch_rs.nn.functional.alpha_dropout does not "
-                        "support sampling$",
-                    ):
-                        functional.alpha_dropout(
-                            actual_input,
-                            p=probability,
-                            training=True,
-                            inplace=inplace,
-                        )
-                    np.testing.assert_array_equal(
-                        np.asarray(actual_input.detach()).view(np.uint32),
-                        before,
+        for probability, inplace in (
+            (0.25, False),
+            (0.25, True),
+            (1.0, True),
+        ):
+            with self.subTest(probability=probability, inplace=inplace):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    "^torch_rs.nn.functional.alpha_dropout does not "
+                    "support sampling$",
+                ):
+                    functional.alpha_dropout(
+                        actual_input,
+                        p=probability,
+                        training=True,
+                        inplace=inplace,
                     )
-                    self.assertIsNone(actual_input.grad)
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input.detach()).view(np.uint32),
+                    before,
+                )
+                self.assertIsNone(actual_input.grad)
 
         actual_probability = torch.tensor(0.0)
         expected_probability = reference_torch.tensor(0.0)
