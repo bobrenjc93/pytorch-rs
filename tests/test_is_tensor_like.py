@@ -59,6 +59,7 @@ class IsTensorLikeTests(unittest.TestCase):
         instance_hook.__torch_function__ = None
         tensor = torch.tensor([1.0, 2.0])
         values = (
+            (torch.Tensor, True),
             (tensor, True),
             (tensor[0], True),
             (ClassHook(), True),
@@ -152,10 +153,23 @@ class IsTensorLikeTests(unittest.TestCase):
 
     def test_predicate_reads_the_live_public_tensor_binding(self):
         native_tensor_type = torch.Tensor
+        native_tensor = torch.tensor([1.0])
         try:
             torch.Tensor = int
+            self.assertIs(
+                torch.overrides.is_tensor_like(native_tensor_type), True
+            )
+            self.assertIs(torch.overrides.is_tensor_like(native_tensor), True)
             self.assertIs(torch.overrides.is_tensor_like(1), True)
+            self.assertIs(torch.overrides.is_tensor_like(int), False)
             self.assertIs(torch.overrides.is_tensor_like("one"), False)
+
+            torch.Tensor = 42
+            self.assertIs(
+                torch.overrides.is_tensor_like(native_tensor_type), True
+            )
+            self.assertIs(torch.overrides.is_tensor_like(native_tensor), True)
+            self.assertIs(torch.overrides.is_tensor_like(1), False)
         finally:
             torch.Tensor = native_tensor_type
 

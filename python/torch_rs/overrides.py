@@ -48,7 +48,16 @@ def is_tensor_like(inp):
     >>> is_tensor_like(TensorLike())
     True
     """
-    return type(inp) is torch.Tensor or hasattr(inp, "__torch_function__")
+    input_type = type(inp)
+    # PyTorch's Tensor class and instances expose __torch_function__. The
+    # native torch-rs type does not, so retain exact native fallbacks while
+    # still honoring the live public Tensor binding first.
+    return (
+        input_type is torch.Tensor
+        or inp is Tensor
+        or input_type is Tensor
+        or hasattr(inp, "__torch_function__")
+    )
 
 
 class TorchFunctionMode:

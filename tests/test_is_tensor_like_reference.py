@@ -60,6 +60,7 @@ class IsTensorLikeReferenceTests(unittest.TestCase):
         instance_hook = InstanceHook()
         instance_hook.__torch_function__ = None
         values = (
+            module.Tensor,
             module.tensor([1.0]),
             ClassHook(),
             instance_hook,
@@ -83,6 +84,39 @@ class IsTensorLikeReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.lookup_observation(torch),
             self.lookup_observation(reference_torch),
+        )
+
+    def tensor_binding_observation(self, module):
+        function = module.overrides.is_tensor_like
+        native_tensor_type = module.Tensor
+        native_tensor = module.tensor([1.0])
+        baseline = (function(native_tensor_type), function(native_tensor))
+        try:
+            module.Tensor = int
+            rebound_to_type = (
+                function(native_tensor_type),
+                function(native_tensor),
+                function(int),
+                function(1),
+                function("one"),
+            )
+
+            module.Tensor = 42
+            rebound_to_object = (
+                function(native_tensor_type),
+                function(native_tensor),
+                function(int),
+                function(1),
+            )
+        finally:
+            module.Tensor = native_tensor_type
+        restored = (function(native_tensor_type), function(native_tensor))
+        return baseline, rebound_to_type, rebound_to_object, restored
+
+    def test_native_tensor_class_and_rebinding_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.tensor_binding_observation(torch),
+            self.tensor_binding_observation(reference_torch),
         )
 
     def subclass_observation(self, module):
