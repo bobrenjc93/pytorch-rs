@@ -1510,6 +1510,14 @@ pub(crate) fn exp_variable_function(
     unary_out_variable_function(UnaryOutOperation::EXP, py, args, kwargs)
 }
 
+pub(crate) fn sin_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::SIN, py, args, kwargs)
+}
+
 fn unary_out_variable_function(
     operation: UnaryOutOperation,
     py: Python<'_>,
@@ -1820,6 +1828,15 @@ impl UnaryOutOperation {
         out_unsupported_error: "exp(): the 'out' argument is not supported",
         autograd_unsupported_error: "exp(): autograd recording is not supported",
         apply: CoreTensor::exp,
+    };
+
+    const SIN: Self = Self {
+        name: "sin",
+        qualified_name: "torch.sin",
+        dispatch_allocation_error: "unable to allocate sin dispatch operands",
+        out_unsupported_error: "sin(): the 'out' argument is not supported",
+        autograd_unsupported_error: "sin(): autograd recording is not supported",
+        apply: CoreTensor::sin,
     };
 }
 
