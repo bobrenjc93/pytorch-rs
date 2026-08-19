@@ -68,14 +68,18 @@ class TensorNumpyReferenceTests(unittest.TestCase):
                 expected = expected_tensor.numpy(force=True)
                 self.assertEqual(actual.shape, expected.shape)
                 self.assertEqual(actual.dtype, expected.dtype)
+                self.assertEqual(actual.strides, expected.strides)
                 np.testing.assert_array_equal(actual, expected)
 
-                before = actual_tensor.tolist()
                 if actual.size:
                     actual.flat[0] = np.float32(777.0)
-                    self.assertEqual(actual_tensor.tolist(), before)
+                    expected.flat[0] = np.float32(777.0)
+                    np.testing.assert_array_equal(
+                        actual_tensor.numpy(force=True),
+                        expected_tensor.numpy(force=True),
+                    )
 
-    def test_requires_grad_force_true_matches_pytorch_and_is_independent(self):
+    def test_requires_grad_force_true_aliasing_matches_pytorch(self):
         actual_tensor = torch.tensor(
             [[1.0, 2.0], [3.0, 4.0]],
             requires_grad=True,
@@ -92,9 +96,32 @@ class TensorNumpyReferenceTests(unittest.TestCase):
         self.assertEqual(actual.shape, expected.shape)
         self.assertEqual(actual.dtype, expected.dtype)
 
-        before = actual_tensor.tolist()
         actual[0, 0] = np.float32(91.0)
-        self.assertEqual(actual_tensor.tolist(), before)
+        expected[0, 0] = np.float32(91.0)
+        np.testing.assert_array_equal(
+            actual_tensor.numpy(force=True),
+            expected_tensor.numpy(force=True),
+        )
+
+    def test_force_true_float32_bits_match_pytorch_2_13(self):
+        bits = np.array(
+            [0x7FA00001, 0x7FC12345, 0x80000000, 0x00000001],
+            dtype=np.uint32,
+        )
+        actual_tensor = torch.tensor(memoryview(bits.view(np.float32)))
+        expected_tensor = reference_torch.from_numpy(bits.view(np.float32).copy())
+
+        actual = actual_tensor.numpy(force=True)
+        expected = expected_tensor.numpy(force=True)
+        np.testing.assert_array_equal(actual.view(np.uint32), expected.view(np.uint32))
+
+        replacement = np.uint32(0x7FA12345)
+        actual.view(np.uint32)[0] = replacement
+        expected.view(np.uint32)[0] = replacement
+        np.testing.assert_array_equal(
+            actual_tensor.numpy(force=True).view(np.uint32),
+            expected_tensor.numpy(force=True).view(np.uint32),
+        )
 
     def callable_contract(self, module):
         tensor = module.tensor([1.0], dtype=module.float32)
@@ -269,16 +296,39 @@ class TensorNumpyReferenceTests(unittest.TestCase):
             self.mode_contract(reference_torch),
         )
 
-    def test_force_false_is_the_intentional_zero_copy_boundary(self):
-        actual = torch.tensor([1.0, 2.0])
-        expected = reference_torch.tensor([1.0, 2.0])
-        for call in (actual.numpy, lambda: actual.numpy(force=False)):
-            with self.assertRaisesRegex(NotImplementedError, "zero-copy"):
-                call()
+    def test_default_force_false_and_grad_mode_match_pytorch_2_13(self):
+        for case, actual_export, expected_export in (
+            ("default", lambda tensor: tensor.numpy(), lambda tensor: tensor.numpy()),
+            (
+                "false",
+                lambda tensor: tensor.numpy(force=False),
+                lambda tensor: tensor.numpy(force=False),
+            ),
+        ):
+            actual_tensor = torch.tensor([1.0, 2.0])
+            expected_tensor = reference_torch.tensor([1.0, 2.0])
+            actual = actual_export(actual_tensor)
+            expected = expected_export(expected_tensor)
+            with self.subTest(case=case, requires_grad=False):
+                self.assertEqual(actual.strides, expected.strides)
+                actual[0] = np.float32(7.0)
+                expected[0] = np.float32(7.0)
+                self.assertEqual(actual_tensor.tolist(), expected_tensor.tolist())
 
-        expected_default = expected.numpy()
-        expected_false = expected.numpy(force=False)
-        np.testing.assert_array_equal(expected_default, expected_false)
+            actual_leaf = torch.tensor([1.0, 2.0], requires_grad=True)
+            expected_leaf = reference_torch.tensor([1.0, 2.0], requires_grad=True)
+            with self.subTest(case=case, requires_grad=True):
+                self.assert_error_matches(
+                    lambda: actual_export(actual_leaf),
+                    lambda: expected_export(expected_leaf),
+                )
+
+            with torch.no_grad(), reference_torch.no_grad():
+                actual = actual_export(actual_leaf)
+                expected = expected_export(expected_leaf)
+            actual[0] = np.float32(8.0)
+            expected[0] = np.float32(8.0)
+            self.assertEqual(actual_leaf.tolist(), expected_leaf.tolist())
 
 
 if __name__ == "__main__":

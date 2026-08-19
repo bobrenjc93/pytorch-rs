@@ -1,3 +1,4 @@
+import gc
 import inspect
 import re
 import types
@@ -30,14 +31,8 @@ Args:
                instead of always sharing memory, defaults to ``False``.
 """
 
-UNSUPPORTED = (
-    "Tensor.numpy(force=False) requires zero-copy NumPy storage sharing; "
-    "use force=True to export an independent copy"
-)
-
-
 class TensorNumpyTests(unittest.TestCase):
-    def assert_forced_copy(self, tensor, *, case):
+    def assert_storage_export(self, tensor, *, case):
         expected = np.asarray(tensor.tolist(), dtype=np.float32).reshape(tensor.shape)
         actual = tensor.numpy(force=True)
 
@@ -45,18 +40,26 @@ class TensorNumpyTests(unittest.TestCase):
             self.assertIs(type(actual), np.ndarray)
             self.assertEqual(actual.dtype, np.dtype(np.float32))
             self.assertEqual(actual.shape, tuple(tensor.shape))
+            expected_strides = (
+                (0,) * tensor.ndim
+                if tensor.numel() == 0
+                else tuple(stride * tensor.element_size() for stride in tensor.stride())
+            )
+            self.assertEqual(actual.strides, expected_strides)
             np.testing.assert_array_equal(actual, expected)
+            if actual.size:
+                self.assertEqual(actual.__array_interface__["data"][0], tensor.data_ptr())
 
         second = tensor.numpy(force=True)
-        with self.subTest(case=case, observation="independence"):
+        with self.subTest(case=case, observation="aliasing"):
             self.assertIsNot(actual, second)
-            self.assertFalse(np.shares_memory(actual, second))
-            before = tensor.tolist()
             if actual.size:
+                self.assertTrue(np.shares_memory(actual, second))
                 actual.flat[0] = np.float32(12345.0)
-                self.assertEqual(tensor.tolist(), before)
+                np.testing.assert_array_equal(np.asarray(tensor), actual)
+                self.assertEqual(second.flat[0], np.float32(12345.0))
 
-    def test_force_true_copies_scalar_empty_offset_strided_and_channel_last(self):
+    def test_force_true_shares_scalar_empty_offset_strided_and_channel_last(self):
         matrix_values = np.arange(12, dtype=np.float32).reshape(3, 4)
         matrix = torch.tensor(matrix_values.tolist())
         volume_values = np.arange(48, dtype=np.float32).reshape(2, 3, 4, 2)
@@ -74,7 +77,7 @@ class TensorNumpyTests(unittest.TestCase):
             ),
         )
         for case, tensor in cases:
-            self.assert_forced_copy(tensor, case=case)
+            self.assert_storage_export(tensor, case=case)
 
     def test_force_true_detaches_requires_grad_without_mutating_the_graph(self):
         leaf = torch.tensor(
@@ -88,29 +91,66 @@ class TensorNumpyTests(unittest.TestCase):
             np.array([[1.0, 3.0], [2.0, 4.0]], dtype=np.float32),
         )
         exported[0, 0] = np.float32(99.0)
-        self.assertEqual(leaf.tolist(), [[1.0, 2.0], [3.0, 4.0]])
+        self.assertEqual(leaf.tolist(), [[99.0, 2.0], [3.0, 4.0]])
         self.assertTrue(leaf.requires_grad)
         self.assertTrue(leaf.is_leaf)
 
         leaf.sum().backward()
         self.assertEqual(leaf.grad.tolist(), [[1.0, 1.0], [1.0, 1.0]])
 
-    def test_default_and_force_false_explicitly_require_zero_copy_support(self):
-        tensors = (
-            torch.tensor([1.0, 2.0]),
-            torch.tensor([1.0, 2.0], requires_grad=True),
+    def test_default_and_force_false_share_storage_and_check_grad_mode(self):
+        for case, export in (
+            ("default", lambda tensor: tensor.numpy()),
+            ("false", lambda tensor: tensor.numpy(force=False)),
+        ):
+            tensor = torch.tensor([1.0, 2.0])
+            array = export(tensor)
+            with self.subTest(case=case, requires_grad=False):
+                array[0] = np.float32(7.0)
+                self.assertEqual(tensor.tolist(), [7.0, 2.0])
+
+            leaf = torch.tensor([1.0, 2.0], requires_grad=True)
+            with self.subTest(case=case, requires_grad=True):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^Can't call numpy\(\) on Tensor that requires grad\. "
+                    r"Use tensor\.detach\(\)\.numpy\(\) instead\.$",
+                ):
+                    export(leaf)
+
+            with torch.no_grad():
+                array = export(leaf)
+            array[0] = np.float32(8.0)
+            self.assertEqual(leaf.tolist(), [8.0, 2.0])
+
+    def test_force_true_preserves_every_float32_bit(self):
+        bits = np.array(
+            [0x7FA00001, 0x7FC12345, 0x80000000, 0x00000001],
+            dtype=np.uint32,
         )
-        for tensor in tensors:
-            for case, call in (
-                ("default", lambda tensor=tensor: tensor.numpy()),
-                ("false", lambda tensor=tensor: tensor.numpy(force=False)),
-            ):
-                with self.subTest(case=case, requires_grad=tensor.requires_grad):
-                    with self.assertRaisesRegex(
-                        NotImplementedError,
-                        f"^{re.escape(UNSUPPORTED)}$",
-                    ):
-                        call()
+        tensor = torch.tensor(memoryview(bits.view(np.float32)))
+        exported = tensor.numpy(force=True)
+        np.testing.assert_array_equal(exported.view(np.uint32), bits)
+
+        exported.view(np.uint32)[0] = np.uint32(0x7FA12345)
+        self.assertEqual(
+            tensor.numpy(force=True).view(np.uint32)[0],
+            np.uint32(0x7FA12345),
+        )
+
+    def test_export_keeps_detached_storage_alive(self):
+        def export_view():
+            tensor = torch.tensor([[1.0, 2.0], [3.0, 4.0]]).transpose(0, 1)
+            return tensor.numpy(force=True)
+
+        exported = export_view()
+        gc.collect()
+        np.testing.assert_array_equal(
+            exported,
+            np.array([[1.0, 3.0], [2.0, 4.0]], dtype=np.float32),
+        )
+        exported[0, 0] = np.float32(9.0)
+        self.assertEqual(exported[0, 0], np.float32(9.0))
 
     def test_array_protocol_remains_copying_and_rejects_copy_false(self):
         tensor = torch.tensor([1.0, 2.0])

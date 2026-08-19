@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
-    PyTypeError, PyUserWarning, PyValueError,
+    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
+    PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -843,16 +843,19 @@ impl PyTensorBase {
             return Ok(result);
         }
 
-        if !force {
-            return Err(PyNotImplementedError::new_err(
-                "Tensor.numpy(force=False) requires zero-copy NumPy storage sharing; use force=True to export an independent copy",
-            ));
-        }
-
-        // The existing materialization helper reads logical values without
-        // retaining tensor storage or autograd state. That gives force=True
-        // the required detached, independent float32 ndarray for every layout.
-        tensor.try_borrow()?.numpy_array_copy(slf.py(), None)
+        let detached = {
+            let tensor = tensor.try_borrow()?;
+            if !force && is_grad_enabled() && tensor.inner.requires_grad() {
+                return Err(PyRuntimeError::new_err(
+                    "Can't call numpy() on Tensor that requires grad. Use tensor.detach().numpy() instead.",
+                ));
+            }
+            tensor
+                .inner
+                .detach()
+                .map_err(|error| tensor_error(&error))?
+        };
+        numpy_array_view(slf.py(), detached)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -4288,6 +4291,70 @@ impl PyTensor {
 
         Self::new(result.map_err(|error| tensor_error(&error))?).into_py_any(py)
     }
+}
+
+fn numpy_array_view(py: Python<'_>, tensor: CoreTensor) -> PyResult<Py<PyAny>> {
+    let shape = PyTuple::new(py, tensor.shape().iter().copied())?;
+    let element_size = tensor.element_size();
+    let mut byte_strides = try_size_vector(tensor.stride().len())?;
+    if tensor.numel() == 0 {
+        for _ in tensor.stride() {
+            try_push_size(&mut byte_strides, 0_usize)?;
+        }
+    } else {
+        for &stride in tensor.stride() {
+            let stride = stride.checked_mul(element_size).ok_or_else(|| {
+                PyOverflowError::new_err("NumPy export byte stride overflowed usize")
+            })?;
+            try_push_size(&mut byte_strides, stride)?;
+        }
+    }
+    let byte_strides = PyTuple::new(py, byte_strides)?;
+
+    let span_bytes = if tensor.numel() == 0 {
+        0
+    } else {
+        let mut final_offset = 0_usize;
+        for (&dimension, &stride) in tensor.shape().iter().zip(tensor.stride()) {
+            let extent = (dimension - 1).checked_mul(stride).ok_or_else(|| {
+                PyOverflowError::new_err("NumPy export storage span overflowed usize")
+            })?;
+            final_offset = final_offset.checked_add(extent).ok_or_else(|| {
+                PyOverflowError::new_err("NumPy export storage span overflowed usize")
+            })?;
+        }
+        final_offset
+            .checked_add(1)
+            .and_then(|elements| elements.checked_mul(element_size))
+            .ok_or_else(|| PyOverflowError::new_err("NumPy export storage span overflowed usize"))?
+    };
+    let pointer = tensor.data_ptr();
+    let owner = Py::new(py, PyTensor::new(tensor))?;
+
+    // ctypes creates a writable buffer over the stable native allocation
+    // without converting any element through a Python scalar. Retaining the
+    // detached tensor on that buffer keeps storage alive for every ndarray
+    // view derived from the result.
+    let ctypes = PyModule::import(py, "ctypes")?;
+    let buffer_type = ctypes
+        .getattr("c_ubyte")?
+        .call_method1("__mul__", (span_bytes,))?;
+    let buffer = if span_bytes == 0 {
+        buffer_type.call0()?
+    } else {
+        buffer_type.call_method1("from_address", (pointer,))?
+    };
+    buffer.setattr("_torch_rs_tensor", owner)?;
+
+    let numpy = PyModule::import(py, "numpy")?;
+    let arguments = PyDict::new(py);
+    arguments.set_item("dtype", numpy.getattr("float32")?)?;
+    arguments.set_item("buffer", buffer)?;
+    arguments.set_item("strides", byte_strides)?;
+    Ok(numpy
+        .getattr("ndarray")?
+        .call((shape,), Some(&arguments))?
+        .unbind())
 }
 
 impl BinaryOperation {
