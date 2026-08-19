@@ -2,9 +2,13 @@
 
 from collections.abc import Sequence
 
-from .overrides import _dispatch_unary_torch_function
+from .overrides import (
+    _dispatch_unary_torch_function,
+    _get_current_function_mode,
+)
 from .torch_rs import (
     Size,
+    Tensor,
     atleast_1d as _VF_atleast_1d,
     atleast_2d as _VF_atleast_2d,
     atleast_3d as _VF_atleast_3d,
@@ -12,6 +16,12 @@ from .torch_rs import (
 
 
 __all__ = ["atleast_1d", "atleast_2d", "atleast_3d", "broadcast_shapes"]
+
+
+_ATLEAST_1D_SEQUENCE_UNSUPPORTED = (
+    "atleast_1d() sequence inputs only support an exact tuple or list of "
+    "exact Tensors without __torch_function__ overrides"
+)
 
 
 def _atleast_1d_impl(input):
@@ -50,10 +60,19 @@ def atleast_1d(*tensors):
     """
     if len(tensors) != 1:
         raise TypeError("atleast_1d() only supports a single Tensor input")
+    input = tensors[0]
+    if isinstance(input, (tuple, list)):
+        if (
+            type(input) not in (tuple, list)
+            or _get_current_function_mode() is not None
+            or any(type(tensor) is not Tensor for tensor in input)
+        ):
+            raise TypeError(_ATLEAST_1D_SEQUENCE_UNSUPPORTED)
+        return tuple(_atleast_1d_impl(tensor) for tensor in input)
     return _dispatch_unary_torch_function(
         atleast_1d,
         _atleast_1d_impl,
-        tensors[0],
+        input,
         {},
     )
 
