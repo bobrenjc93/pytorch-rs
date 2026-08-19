@@ -3553,6 +3553,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 77
       }
+    },
+    {
+      "key": "pr:268",
+      "recordedAt": "2026-08-19T00:45:12.042Z",
+      "label": "PR #268",
+      "kind": "leaf",
+      "prNumber": 268,
+      "title": "Expose CPU-backend torch.cuda.is_available",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 73.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 56.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 77
+      }
     }
   ]
 }
