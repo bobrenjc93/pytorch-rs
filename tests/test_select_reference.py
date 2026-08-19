@@ -35,16 +35,21 @@ class TensorSelectReferenceTests(unittest.TestCase):
 
     def view_contract(self, module):
         source = self.source(module)
+        leading = source[1]
+        final = source.permute(2, 0, 1)[2]
         calls = (
-            source.select(0, 1),
-            source.select(0, index=1),
-            source.select(dim=0, index=1),
-            source.select(index=1, dim=0),
-            source.select(-3, -2),
+            (source.select(0, 1), leading),
+            (source.select(0, index=1), leading),
+            (source.select(dim=0, index=1), leading),
+            (source.select(index=1, dim=0), leading),
+            (source.select(-3, -2), leading),
+            (source.select(2, 2), final),
+            (source.select(-1, 2), final),
+            (source.select(index=2, dim=-1), final),
+            (source.select(2, -2), final),
         )
-        direct = source[1]
         rows = []
-        for selected in calls:
+        for selected, direct in calls:
             rows.append(
                 {
                     "values": selected.tolist(),
@@ -58,16 +63,20 @@ class TensorSelectReferenceTests(unittest.TestCase):
                     "same_device": selected.device == source.device,
                 }
             )
-        empty = module.zeros((2, 0, 3)).select(0, 1)
-        rows.append(
-            {
-                "empty_shape": tuple(empty.shape),
-                "empty_stride": empty.stride(),
-                "empty_offset": empty.storage_offset(),
-                "empty_data_ptr": empty.data_ptr(),
-                "empty_values": empty.tolist(),
-            }
-        )
+        empty_source = module.zeros((2, 0, 3))
+        for empty in (
+            empty_source.select(0, 1),
+            empty_source.select(-1, 1),
+        ):
+            rows.append(
+                {
+                    "empty_shape": tuple(empty.shape),
+                    "empty_stride": empty.stride(),
+                    "empty_offset": empty.storage_offset(),
+                    "empty_data_ptr": empty.data_ptr(),
+                    "empty_values": empty.tolist(),
+                }
+            )
         return rows
 
     def test_values_layout_aliasing_and_empties_match_pytorch_2_13(self):
@@ -81,7 +90,7 @@ class TensorSelectReferenceTests(unittest.TestCase):
             [float(value) for value in range(48)], requires_grad=True
         )
         source = (leaf * 2.0).reshape(2, 2, 3, 4)[1].transpose(0, 1)
-        selected = source.select(-3, 1)
+        selected = source.select(-1, 2)
         metadata = (
             selected.requires_grad,
             selected.is_leaf,
@@ -96,10 +105,11 @@ class TensorSelectReferenceTests(unittest.TestCase):
             [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
         )
         with module.no_grad():
-            untracked = no_grad_source.select(dim=0, index=1)
+            untracked = no_grad_source.select(dim=-1, index=1)
 
         empty = module.zeros((2, 0, 3), requires_grad=True)
-        empty.select(0, 1).sum().backward()
+        empty_selected = empty.select(-1, 1)
+        empty_selected.sum().backward()
         return {
             "metadata": metadata,
             "gradient": leaf.grad.tolist(),
@@ -110,6 +120,17 @@ class TensorSelectReferenceTests(unittest.TestCase):
                 tuple(untracked.shape),
                 untracked.stride(),
                 untracked.storage_offset(),
+                untracked.is_set_to(no_grad_source.permute(1, 0)[1]),
+            ),
+            "empty_metadata": (
+                empty_selected.requires_grad,
+                empty_selected.is_leaf,
+                empty_selected.output_nr,
+                tuple(empty_selected.shape),
+                empty_selected.stride(),
+                empty_selected.storage_offset(),
+                empty_selected.data_ptr(),
+                empty_selected.is_set_to(empty.permute(2, 0, 1)[1]),
             ),
             "empty_gradient_shape": tuple(empty.grad.shape),
             "empty_gradient": empty.grad.tolist(),
@@ -142,12 +163,16 @@ class TensorSelectReferenceTests(unittest.TestCase):
             self.error(lambda: tensor.select(0, 2**100)),
             self.error(lambda: tensor.select(0, 2)),
             self.error(lambda: tensor.select(-3, -3)),
+            self.error(lambda: tensor.select(2, 4)),
+            self.error(lambda: tensor.select(-1, -5)),
+            self.error(lambda: module.zeros((2, 3, 0)).select(-1, 0)),
             self.error(lambda: tensor.select(3, 0)),
             self.error(lambda: tensor.select(-4, 0)),
             self.error(lambda: scalar.select(0, 0)),
             self.error(lambda: scalar.select(-2, 99)),
             self.error(lambda: empty.select(0, 0)),
             tuple(tensor.select(np.int64(0), np.int32(1)).shape),
+            tuple(tensor.select(np.int64(-1), np.int32(1)).shape),
         )
 
     def test_supported_binding_bounds_and_scalar_errors_match_pytorch_2_13(self):
@@ -218,12 +243,12 @@ class TensorSelectReferenceTests(unittest.TestCase):
 
         positional = RecordingMode(marker)
         with positional:
-            positional_result = tensor.select(0, 1)
+            positional_result = tensor.select(2, 1)
         positional_call = positional.calls[0]
 
         keyword = RecordingMode(marker)
         with keyword:
-            keyword_result = tensor.select(index=1, dim=0)
+            keyword_result = tensor.select(index=1, dim=-1)
         keyword_call = keyword.calls[0]
 
         order = []
@@ -238,7 +263,7 @@ class TensorSelectReferenceTests(unittest.TestCase):
 
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = tensor.select(dim=-3, index=1)
+                forwarded = tensor.select(dim=-1, index=1)
 
         index_calls = []
 
@@ -290,6 +315,9 @@ class TensorSelectReferenceTests(unittest.TestCase):
             "forwarded_shape": tuple(forwarded.shape),
             "forwarded_stride": forwarded.stride(),
             "forwarded_offset": forwarded.storage_offset(),
+            "forwarded_is_set_to": forwarded.is_set_to(
+                tensor.permute(2, 0, 1)[1]
+            ),
             "deferred_result": deferred_result is marker,
             "deferred_calls": len(deferred.calls),
             "index_calls": index_calls,
@@ -320,7 +348,7 @@ class TensorSelectReferenceTests(unittest.TestCase):
                     calls.append("index")
                     return (0, 1, 0)[len(calls) - 1]
 
-            selected = module.zeros((2, 3)).select(0, StatefulIndex())
+            selected = module.zeros((2, 3)).select(-1, StatefulIndex())
             return calls, selected.storage_offset(), tuple(selected.shape)
 
         self.assertEqual(observation(torch), observation(reference_torch))

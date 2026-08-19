@@ -47,7 +47,7 @@ class TensorSelectTests(unittest.TestCase):
         self.assertIs(actual.dtype, expected.dtype)
         self.assertEqual(actual.device, expected.device)
 
-    def test_call_forms_reuse_native_leading_integer_index_views(self):
+    def test_call_forms_reuse_native_leading_and_final_integer_index_views(self):
         source = offset_noncontiguous_source()
         self.assertEqual(source.shape, (3, 2, 4))
         self.assertEqual(source.stride(), (4, 12, 1))
@@ -71,6 +71,25 @@ class TensorSelectTests(unittest.TestCase):
                     [[28.0, 29.0, 30.0, 31.0], [40.0, 41.0, 42.0, 43.0]],
                 )
 
+        expected = source.permute(2, 0, 1)[2]
+        calls = (
+            ("positive final dimension", lambda: source.select(2, 2)),
+            ("normalized final dimension", lambda: source.select(-1, 2)),
+            (
+                "reordered final-dimension keywords",
+                lambda: source.select(index=2, dim=-1),
+            ),
+            ("negative final index", lambda: source.select(dim=2, index=-2)),
+        )
+        for case, call in calls:
+            with self.subTest(case=case):
+                selected = call()
+                self.assert_same_view(selected, expected)
+                self.assertEqual(
+                    selected.tolist(),
+                    [[26.0, 38.0], [30.0, 42.0], [34.0, 46.0]],
+                )
+
         vector = torch.tensor([1.0, 2.0, 3.0])
         scalar = vector.select(-1, -1)
         self.assertEqual(scalar.shape, ())
@@ -88,6 +107,14 @@ class TensorSelectTests(unittest.TestCase):
         self.assertEqual(selected.data_ptr(), 0)
         self.assertEqual(selected.tolist(), [])
         self.assertTrue(selected.is_set_to(empty[1]))
+
+        selected_final = empty.select(-1, 1)
+        self.assertEqual(selected_final.shape, (2, 0))
+        self.assertEqual(selected_final.stride(), (3, 3))
+        self.assertEqual(selected_final.storage_offset(), 1)
+        self.assertEqual(selected_final.data_ptr(), 0)
+        self.assertEqual(selected_final.tolist(), [[], []])
+        self.assertTrue(selected_final.is_set_to(empty.permute(2, 0, 1)[1]))
 
         cases = (
             (
@@ -109,6 +136,21 @@ class TensorSelectTests(unittest.TestCase):
                 lambda: torch.zeros((2, 3, 4)).select(-3, -3),
                 IndexError,
                 "select(): index -3 out of range for tensor of size [2, 3, 4] at dimension 0",
+            ),
+            (
+                lambda: torch.zeros((2, 3, 4)).select(2, 4),
+                IndexError,
+                "select(): index 4 out of range for tensor of size [2, 3, 4] at dimension 2",
+            ),
+            (
+                lambda: torch.zeros((2, 3, 4)).select(-1, -5),
+                IndexError,
+                "select(): index -5 out of range for tensor of size [2, 3, 4] at dimension 2",
+            ),
+            (
+                lambda: torch.zeros((2, 3, 0)).select(-1, 0),
+                IndexError,
+                "select(): index 0 out of range for tensor of size [2, 3, 0] at dimension 2",
             ),
             (
                 lambda: torch.tensor(1.0).select(0, 0),
@@ -133,12 +175,12 @@ class TensorSelectTests(unittest.TestCase):
             (
                 lambda: torch.zeros((2, 3, 4)).select(1, 0),
                 RuntimeError,
-                "Tensor.select only supports dimension 0",
+                "Tensor.select only supports dimension 0 or the final dimension",
             ),
             (
                 lambda: torch.zeros((2, 3, 4)).select(-2, 0),
                 RuntimeError,
-                "Tensor.select only supports dimension 0",
+                "Tensor.select only supports dimension 0 or the final dimension",
             ),
         )
         for call, error_type, message in cases:
@@ -151,33 +193,46 @@ class TensorSelectTests(unittest.TestCase):
         self.assertIn("select", torch.__all__)
 
     def test_autograd_no_grad_and_downstream_operations(self):
-        leaf = torch.tensor([float(value) for value in range(48)], requires_grad=True)
-        source = (leaf * 2.0).reshape(2, 2, 3, 4)[1].transpose(0, 1)
-        selected = source.select(-3, 1)
+        cases = (
+            ("leading", -3, 1, (*range(28, 32), *range(40, 44))),
+            ("final", -1, 2, (26, 30, 34, 38, 42, 46)),
+        )
+        for case, dimension, index, gradient_indices in cases:
+            with self.subTest(case=case):
+                leaf = torch.tensor(
+                    [float(value) for value in range(48)], requires_grad=True
+                )
+                source = (leaf * 2.0).reshape(2, 2, 3, 4)[1].transpose(0, 1)
+                selected = source.select(dimension, index)
+                expected = (
+                    source[1]
+                    if dimension == -3
+                    else source.permute(2, 0, 1)[index]
+                )
 
-        self.assertTrue(selected.requires_grad)
-        self.assertFalse(selected.is_leaf)
-        self.assertEqual(selected.output_nr, 0)
-        self.assert_same_view(selected, source[1])
+                self.assertTrue(selected.requires_grad)
+                self.assertFalse(selected.is_leaf)
+                self.assertEqual(selected.output_nr, 0)
+                self.assert_same_view(selected, expected)
 
-        (selected.transpose(0, 1) * 3.0).sum().backward()
-        expected_gradient = [0.0] * 48
-        for index in (*range(28, 32), *range(40, 44)):
-            expected_gradient[index] = 6.0
-        self.assertEqual(leaf.grad.tolist(), expected_gradient)
+                (selected.transpose(0, 1) * 3.0).sum().backward()
+                expected_gradient = [0.0] * 48
+                for gradient_index in gradient_indices:
+                    expected_gradient[gradient_index] = 6.0
+                self.assertEqual(leaf.grad.tolist(), expected_gradient)
 
         no_grad_source = torch.tensor(
             [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
         )
         with torch.no_grad():
-            untracked = no_grad_source.select(dim=0, index=1)
+            untracked = no_grad_source.select(dim=-1, index=1)
         self.assertTrue(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
         self.assertEqual(untracked.output_nr, 0)
-        self.assertTrue(untracked.is_set_to(no_grad_source[1]))
+        self.assertTrue(untracked.is_set_to(no_grad_source.permute(1, 0)[1]))
 
         empty = torch.zeros((2, 0, 3), requires_grad=True)
-        empty.select(0, 1).sum().backward()
+        empty.select(-1, 1).sum().backward()
         self.assertEqual(empty.grad.shape, (2, 0, 3))
         self.assertEqual(empty.grad.tolist(), [[], []])
 
@@ -189,6 +244,7 @@ class TensorSelectTests(unittest.TestCase):
 
         self.assertEqual(tensor.select(IntegerSubclass(0), np.int64(1)).shape, (3,))
         self.assertEqual(tensor.select(np.int8(-2), np.uint32(0)).shape, (3,))
+        self.assertEqual(tensor.select(np.int8(-1), np.uint32(0)).shape, (2,))
 
         calls = []
 
@@ -291,6 +347,9 @@ class TensorSelectTests(unittest.TestCase):
         self.assertIs(torch.Tensor.select, descriptor)
         self.assertIs(descriptor.__get__(None, torch.Tensor), descriptor)
         self.assertTrue(descriptor(tensor, 0, 1).is_set_to(tensor[1]))
+        self.assertTrue(
+            descriptor(tensor, -1, 1).is_set_to(tensor.permute(1, 0)[1])
+        )
         for callable_object in (descriptor, bound):
             with self.assertRaises(ValueError):
                 inspect.signature(callable_object)
@@ -332,23 +391,23 @@ class TensorSelectTests(unittest.TestCase):
 
         positional = RecordingMode(marker)
         with positional:
-            positional_result = tensor.select(0, 1)
+            positional_result = tensor.select(2, 1)
         self.assertIs(positional_result, marker)
         function, dispatch_types, args, kwargs = positional.calls[0]
         self.assertIs(function, descriptor)
         self.assertEqual(dispatch_types, ())
-        self.assertEqual(args, (tensor, 0, 1))
+        self.assertEqual(args, (tensor, 2, 1))
         self.assertIsNone(kwargs)
 
         keyword = RecordingMode(marker)
         with keyword:
-            keyword_result = tensor.select(index=1, dim=0)
+            keyword_result = tensor.select(index=1, dim=-1)
         self.assertIs(keyword_result, marker)
         function, dispatch_types, args, kwargs = keyword.calls[0]
         self.assertIs(function, descriptor)
         self.assertEqual(dispatch_types, ())
         self.assertEqual(args, (tensor,))
-        self.assertEqual(kwargs, {"index": 1, "dim": 0})
+        self.assertEqual(kwargs, {"index": 1, "dim": -1})
 
         order = []
 
@@ -362,9 +421,9 @@ class TensorSelectTests(unittest.TestCase):
 
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = tensor.select(dim=-3, index=1)
+                forwarded = tensor.select(dim=-1, index=1)
         self.assertEqual(order, ["upper", "lower"])
-        self.assertTrue(forwarded.is_set_to(tensor[1]))
+        self.assertTrue(forwarded.is_set_to(tensor.permute(2, 0, 1)[1]))
 
         index_calls = []
 
@@ -613,7 +672,7 @@ class TensorSelectTests(unittest.TestCase):
         self.assertEqual(calls, ["index", "index", "index"])
         self.assertEqual(selected.storage_offset(), 0)
 
-        for dimension in (1, -2):
+        for dimension in (1, -2, 2, -1):
             with self.subTest(dimension=dimension), self.assertRaisesRegex(
                 RuntimeError, "^torch\\.select only supports dimension 0$"
             ):

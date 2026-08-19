@@ -306,7 +306,7 @@ impl PyTensorBase {
         // integer dimension. Keep that observable order after mode dispatch.
         let index = extract_select_index(&index.value)?;
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-        select_first_dimension(slf.py(), tensor, dimension, index, "Tensor.select")
+        select_tensor_method_dimension(slf.py(), tensor, dimension, index)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -2091,19 +2091,59 @@ fn select_first_dimension(
         )));
     }
 
-    let inner = tensor.inner.index_integer(index).map_err(|error| {
-        if let TensorError::IndexOutOfBounds {
-            index, dimension, ..
-        } = &error
-        {
-            PyIndexError::new_err(format!(
-                "select(): index {index} out of range for tensor of size {shape:?} at dimension {dimension}"
-            ))
-        } else {
-            tensor_error(&error)
-        }
-    })?;
+    let inner = tensor
+        .inner
+        .index_integer(index)
+        .map_err(|error| select_index_error(&error, shape, axis))?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn select_tensor_method_dimension(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    dimension: i64,
+    index: i64,
+) -> PyResult<Py<PyAny>> {
+    let tensor = tensor.try_borrow()?;
+    let shape = tensor.inner.shape();
+    if shape.is_empty() {
+        return Err(PyIndexError::new_err(
+            "select() cannot be applied to a 0-dim tensor.",
+        ));
+    }
+    let axis = normalize_dimension(dimension, shape.len())?;
+    let selected = if axis == 0 {
+        tensor.inner.index_integer(index)
+    } else if axis == shape.len() - 1 {
+        // Moving the final axis to the front leaves every surviving axis in
+        // its original order after the leading integer index removes it.
+        let mut dimensions = try_size_vector(shape.len())?;
+        try_push_size(&mut dimensions, axis)?;
+        for dimension in 0..axis {
+            try_push_size(&mut dimensions, dimension)?;
+        }
+        let permuted = tensor
+            .inner
+            .permute_axes(dimensions)
+            .map_err(|error| permute_error(&error))?;
+        permuted.index_integer(index)
+    } else {
+        return Err(PyRuntimeError::new_err(
+            "Tensor.select only supports dimension 0 or the final dimension",
+        ));
+    };
+    let inner = selected.map_err(|error| select_index_error(&error, shape, axis))?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn select_index_error(error: &TensorError, shape: &[usize], dimension: usize) -> PyErr {
+    if let TensorError::IndexOutOfBounds { index, .. } = error {
+        PyIndexError::new_err(format!(
+            "select(): index {index} out of range for tensor of size {shape:?} at dimension {dimension}"
+        ))
+    } else {
+        tensor_error(error)
+    }
 }
 
 fn dispatch_top_level_unbind(
