@@ -7,6 +7,29 @@ use pyo3::types::{PyAny, PyBool, PyDict, PyInt, PyModule, PyString, PyTuple};
 use crate::Device;
 
 const UNINDEXED_DEVICE: i8 = -1;
+const PYTORCH_DEVICE_TYPES: [&str; 20] = [
+    "cpu",
+    "cuda",
+    "ipu",
+    "xpu",
+    "mkldnn",
+    "opengl",
+    "opencl",
+    "ideep",
+    "hip",
+    "ve",
+    "fpga",
+    "maia",
+    "xla",
+    "lazy",
+    "vulkan",
+    "mps",
+    "meta",
+    "hpu",
+    "mtia",
+    "privateuseone",
+];
+const PYTORCH_DEVICE_TYPES_MESSAGE: &str = "cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone";
 
 fn normalize_device_index(index: i64) -> i8 {
     // PyTorch narrows Python's non-negative int64 index to its signed 8-bit
@@ -28,6 +51,18 @@ fn repr_device_index(index: i8) -> u16 {
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct PyDevice {
     inner: Device,
+    index: i8,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AsTensorDeviceTarget {
+    Identity,
+    IndexedCpu,
+    NonCpu,
+}
+
+struct ParsedDeviceString<'a> {
+    device_type: &'a str,
     index: i8,
 }
 
@@ -79,6 +114,16 @@ fn parse_device_descriptor(function: &str, device: &Bound<'_, PyAny>) -> PyResul
 }
 
 fn parse_device_string(function: &str, specification: &str) -> PyResult<PyDevice> {
+    let parsed = parse_device_string_parts(specification)?;
+    if parsed.device_type == "cpu" {
+        return Ok(PyDevice::from_index(Device::Cpu, parsed.index));
+    }
+    Err(PyRuntimeError::new_err(format!(
+        "{function}(): device '{specification}' is not supported; only 'cpu' is implemented"
+    )))
+}
+
+fn parse_device_string_parts(specification: &str) -> PyResult<ParsedDeviceString<'_>> {
     if specification.is_empty() {
         return Err(PyRuntimeError::new_err("Device string must not be empty"));
     }
@@ -118,12 +163,7 @@ fn parse_device_string(function: &str, specification: &str) -> PyResult<PyDevice
         )?,
     };
 
-    if device_type == "cpu" {
-        return Ok(PyDevice::from_index(Device::Cpu, index));
-    }
-    Err(PyRuntimeError::new_err(format!(
-        "{function}(): device '{specification}' is not supported; only 'cpu' is implemented"
-    )))
+    Ok(ParsedDeviceString { device_type, index })
 }
 
 pub(crate) fn device_argument_type_error(
@@ -139,6 +179,82 @@ pub(crate) fn device_argument_type_error(
     Ok(PyTypeError::new_err(format!(
         "{function}(): argument '{argument}' must be torch.device or str, not {type_name}"
     )))
+}
+
+fn is_numpy_integer(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(false);
+    };
+    Ok(value.is_instance(&numpy.getattr("integer")?)?
+        && !value.is_instance(&numpy.getattr("bool_")?)?)
+}
+
+fn is_as_tensor_device_value(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.cast::<PyDevice>().is_ok() || value.cast::<PyString>().is_ok() {
+        return Ok(true);
+    }
+    if !value.is_instance_of::<PyBool>() && value.is_instance_of::<PyInt>() {
+        return Ok(true);
+    }
+    is_numpy_integer(value)
+}
+
+pub(crate) fn validate_as_tensor_device_argument_type(
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if is_as_tensor_device_value(device)? {
+        return Ok(());
+    }
+
+    let type_name = constructor_type_name(device)?;
+    Err(PyTypeError::new_err(format!(
+        "as_tensor(): argument 'device' must be torch.device, not {type_name}"
+    )))
+}
+
+pub(crate) fn parse_as_tensor_device_target(
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<AsTensorDeviceTarget> {
+    let Some(device) = device else {
+        return Ok(AsTensorDeviceTarget::Identity);
+    };
+    if let Ok(device) = device.cast::<PyDevice>() {
+        return Ok(if device.try_borrow()?.has_index() {
+            AsTensorDeviceTarget::IndexedCpu
+        } else {
+            AsTensorDeviceTarget::Identity
+        });
+    }
+    if let Ok(device) = device.cast::<PyString>() {
+        let specification = device.to_str()?;
+        let parsed = parse_device_string_parts(specification)?;
+        if !PYTORCH_DEVICE_TYPES.contains(&parsed.device_type) {
+            return Err(PyRuntimeError::new_err(format!(
+                "Expected one of {PYTORCH_DEVICE_TYPES_MESSAGE} device type at start of device string: {specification}"
+            )));
+        }
+        return Ok(if parsed.device_type == "cpu" {
+            if parsed.index == UNINDEXED_DEVICE {
+                AsTensorDeviceTarget::Identity
+            } else {
+                AsTensorDeviceTarget::IndexedCpu
+            }
+        } else {
+            AsTensorDeviceTarget::NonCpu
+        });
+    }
+
+    debug_assert!(is_as_tensor_device_value(device)?);
+    let index = device
+        .extract::<i64>()
+        .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))?;
+    if index < 0 {
+        return Err(PyRuntimeError::new_err("Device index must not be negative"));
+    }
+    Ok(AsTensorDeviceTarget::NonCpu)
 }
 
 fn bind_device_constructor<'py>(

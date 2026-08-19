@@ -18,7 +18,10 @@ use pyo3::types::{
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, is_grad_enabled,
     python_cpython_compat as cpython_compat,
-    python_device::{PyDevice, device_argument_type_error, parse_device_value},
+    python_device::{
+        AsTensorDeviceTarget, PyDevice, device_argument_type_error, parse_as_tensor_device_target,
+        parse_device_value, validate_as_tensor_device_argument_type,
+    },
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
     python_finfo::finfo_type_object,
     python_grad_mode::add_no_grad,
@@ -1343,6 +1346,90 @@ pub(crate) fn get_device_variable_function(
         .expect("the get_device input type was checked while binding")
         .try_borrow()?;
     device_ordinal(tensor.inner.device())?.into_py_any(py)
+}
+
+pub(crate) fn as_tensor_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let AsTensorCallArguments {
+        data,
+        dtype,
+        device,
+        keyword_error,
+    } = bind_as_tensor_arguments(args, kwargs)?;
+    let Some(data) = data else {
+        return Err(PyTypeError::new_err(
+            "as_tensor() missing 1 required positional arguments: \"data\"",
+        ));
+    };
+
+    parse_dtype("as_tensor", dtype.as_ref())?;
+    validate_as_tensor_device_argument_type(device.as_ref())?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    dispatch_as_tensor(py, &data, device.as_ref(), args, kwargs)
+}
+
+fn dispatch_as_tensor(
+    py: Python<'_>,
+    data: &Bound<'_, PyAny>,
+    device: Option<&Bound<'_, PyAny>>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty() {
+        return as_tensor_identity(data, device);
+    }
+
+    let function = variable_function(py, "as_tensor")?;
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return as_tensor_identity(data, device);
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(result);
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        "torch.as_tensor",
+        Some(mode),
+        None,
+    )?)
+}
+
+fn as_tensor_identity(
+    data: &Bound<'_, PyAny>,
+    device: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    match parse_as_tensor_device_target(device)? {
+        AsTensorDeviceTarget::Identity => {}
+        AsTensorDeviceTarget::IndexedCpu => {
+            return Err(PyRuntimeError::new_err(
+                "as_tensor(): indexed CPU targets require a copy, but conversions are not supported",
+            ));
+        }
+        AsTensorDeviceTarget::NonCpu => {
+            return Err(PyRuntimeError::new_err(
+                "as_tensor(): non-CPU device targets require a copy, but conversions are not supported",
+            ));
+        }
+    }
+
+    if data.cast::<PyTensor>().is_err() {
+        let actual = python_type_name(data)?;
+        return Err(PyTypeError::new_err(format!(
+            "as_tensor(): only existing Tensor inputs are supported; conversion from {actual} is not implemented"
+        )));
+    }
+    Ok(data.clone().unbind())
 }
 
 pub(crate) fn scalar_tensor_variable_function(
@@ -3393,6 +3480,13 @@ struct ScalarTensorCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct AsTensorCallArguments<'py> {
+    data: Option<Bound<'py, PyAny>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 struct CreationCallArguments<'py> {
     size: Option<Bound<'py, PyAny>>,
     size_origin: Option<CreationSizeOrigin>,
@@ -4836,6 +4930,57 @@ fn bind_creation_arguments<'py>(
 
 fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
     if value.is_none() { None } else { Some(value) }
+}
+
+fn bind_as_tensor_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<AsTensorCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "as_tensor() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments = AsTensorCallArguments {
+        data: if positional.is_empty() {
+            None
+        } else {
+            Some(positional.get_item(0)?)
+        },
+        dtype: None,
+        device: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "data" => {
+                if arguments.data.is_some() {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("as_tensor() got multiple values for argument 'data'")
+                    });
+                } else {
+                    arguments.data = Some(value);
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "as_tensor() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
 }
 
 fn bind_scalar_tensor_arguments<'py>(
