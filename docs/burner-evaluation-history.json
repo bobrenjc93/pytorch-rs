@@ -3585,6 +3585,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 78
       }
+    },
+    {
+      "key": "pr:274",
+      "recordedAt": "2026-08-19T02:37:33.695Z",
+      "label": "PR #274",
+      "kind": "leaf",
+      "prNumber": 274,
+      "title": "Add rank-4 identity-only nn.functional.dropout2d",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 73.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 56.8,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 79
+      }
     }
   ]
 }
