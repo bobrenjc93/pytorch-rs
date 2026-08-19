@@ -37,6 +37,7 @@ assert torch.nn.functional.dropout3d(volumes, p=0, training=True) is volumes
 assert torch.is_signed(input=x)
 assert torch.get_device(input=x) == -1
 assert torch.cpu.is_available() is True
+assert torch.cpu.device_count() == 1
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
 assert torch.distributed.is_available() is False
@@ -112,7 +113,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.functional.broadcast_shapes` and its identical top-level `torch.broadcast_shapes` alias compute canonical `torch.Size` results directly from nonnegative Python integer, tuple, list, and `torch.Size` inputs without creating tensors. Symbolic dimensions, tracing, and `torch.broadcast_tensors` remain unsupported.
 
-`torch.cpu.is_available()` is the canonical device-agnostic CPU availability query and returns the exact `True` singleton without probing hardware or importing PyTorch. CPU device counts, streams, synchronization, AMP, and the rest of the `torch.cpu` namespace remain unsupported.
+`torch.cpu.is_available()` is the canonical device-agnostic CPU availability query and returns the exact `True` singleton, while `torch.cpu.device_count()` returns the exact integer `1`. Neither query probes hardware, environment variables, or PyTorch. CPU streams, synchronization, AMP, and the rest of the `torch.cpu` namespace remain unsupported.
 
 `torch.compiler.is_compiling()` and `torch.compiler.is_dynamo_compiling()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 
