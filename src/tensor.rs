@@ -15,6 +15,10 @@ const F32_SIGN_MASK: u32 = 0x8000_0000;
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
+// Depth-major outer products are faster than short column dots below these
+// empirically measured crossover points.
+const TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER: usize = 4;
+const VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER: usize = 32;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -2366,7 +2370,7 @@ impl Tensor {
             && let (Some(left_data), Some(right_data)) =
                 (self.storage.owned_values(), other.storage.owned_values())
         {
-            let used_validated_kernel = accumulate_validated_owned_strided_matmul(
+            if !accumulate_validated_owned_strided_matmul(
                 self,
                 other,
                 left_data,
@@ -2374,13 +2378,10 @@ impl Tensor {
                 &mut output,
                 inner,
                 columns,
-            );
-            if !used_validated_kernel || output.iter().any(|value| !value.is_finite()) {
-                // Iterator vectorization can select a different NaN operand.
-                // Reuse the speculative allocation while replaying the
-                // established checked kernel for observable non-finite bits and
-                // malformed layouts that fail the one-time bounds proof.
-                output.fill(0.0);
+            ) {
+                // Small-depth, non-finite, and malformed layouts take the
+                // established kernel once; the validated kernel never writes
+                // before returning false.
                 accumulate_checked_owned_strided_matmul(
                     self,
                     other,
@@ -2419,7 +2420,7 @@ impl Tensor {
         ))
     }
 
-    // Keep replay detection from perturbing the unchanged general kernels.
+    // Keep specialized layout detection out of the general kernel codegen.
     #[inline(never)]
     pub(crate) fn try_row_contiguous_transpose_rhs_matmul(
         &self,
@@ -2433,7 +2434,7 @@ impl Tensor {
         };
         if inner != other_inner
             || *rows == 0
-            || *inner <= 1
+            || *inner < TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER
             || *columns == 0
             || self.strides[1] != 1
         {
@@ -2444,6 +2445,11 @@ impl Tensor {
         let right_columns = other.transpose_contiguous_matrix_slice(right)?;
 
         Some((|| {
+            if !row_contiguous_matrix_values_are_finite(self, left, *rows, *inner)?
+                || !right_columns.iter().all(|value| value.is_finite())
+            {
+                return self.matmul_fallback(other);
+            }
             let mut output_shape = try_result_vector(2, 0)?;
             output_shape.push(*rows);
             output_shape.push(*columns);
@@ -2457,15 +2463,6 @@ impl Tensor {
                 *inner,
                 *columns,
             )?;
-            // Optimized dot-product code can select a different NaN operand
-            // than the established depth-major kernel. Replay non-finite
-            // results there to keep payloads independent of storage kind.
-            if output.iter().any(|value| !value.is_finite()) {
-                // Release the speculative result before the fallback allocates
-                // its replacement output.
-                drop(output);
-                return self.matmul_fallback(other);
-            }
             Ok(Self::from_owned_parts(
                 output,
                 output_shape,
@@ -3834,10 +3831,33 @@ fn accumulate_checked_owned_strided_matmul(
     Ok(())
 }
 
-// Prove both positive-stride matrix views fit their immutable owned storage
-// once, then preserve the established row/depth/column accumulation order with
-// simple strided iterators. This avoids repeating checked row arithmetic in the
-// hot loop without weakening malformed-layout errors.
+fn strided_matrix_values_are_finite(
+    values: &[f32],
+    mut row_base: usize,
+    rows: usize,
+    row_stride: usize,
+    column_stride: usize,
+    row_span_len: usize,
+) -> bool {
+    for row in 0..rows {
+        if !values[row_base..row_base + row_span_len]
+            .iter()
+            .step_by(column_stride)
+            .all(|value| value.is_finite())
+        {
+            return false;
+        }
+        if row + 1 != rows {
+            row_base += row_stride;
+        }
+    }
+    true
+}
+
+// Prove both positive-stride matrix views fit their immutable owned storage and
+// contain only finite values before writing output. Then preserve the established
+// row/depth/column accumulation order with simple strided iterators. Returning
+// false guarantees output is untouched, so callers can run the checked kernel once.
 #[allow(clippy::inline_always)]
 #[inline(always)]
 fn accumulate_validated_owned_strided_matmul(
@@ -3854,6 +3874,9 @@ fn accumulate_validated_owned_strided_matmul(
     debug_assert_eq!(output.len() % columns, 0);
     let rows = output.len() / columns;
     debug_assert_ne!(rows, 0);
+    if inner < VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER {
+        return false;
+    }
     let [left_row_stride, left_depth_stride] = left_tensor.strides.as_slice() else {
         return false;
     };
@@ -3905,6 +3928,24 @@ fn accumulate_validated_owned_strided_matmul(
         return false;
     };
     if right_last >= right.len() {
+        return false;
+    }
+
+    if !strided_matrix_values_are_finite(
+        left,
+        left_tensor.offset,
+        rows,
+        *left_row_stride,
+        *left_depth_stride,
+        left_span_len,
+    ) || !strided_matrix_values_are_finite(
+        right,
+        right_tensor.offset,
+        inner,
+        *right_depth_stride,
+        *right_column_stride,
+        right_span_len,
+    ) {
         return false;
     }
 
@@ -4129,6 +4170,23 @@ fn checked_contiguous_matrix_row<'a>(
     values
         .get(start..end)
         .ok_or(TensorError::IndexCalculationOverflow)
+}
+
+fn row_contiguous_matrix_values_are_finite(
+    tensor: &Tensor,
+    values: &[f32],
+    rows: usize,
+    columns: usize,
+) -> Result<bool, TensorError> {
+    for row in 0..rows {
+        if !checked_contiguous_matrix_row(tensor, values, row, columns)?
+            .iter()
+            .all(|value| value.is_finite())
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn checked_matrix_row_base(
@@ -4605,8 +4663,9 @@ mod tests {
 
     use super::{
         CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device,
-        F32_SIGN_MASK, SavedTensor, Tensor, TensorError, materialize_contiguous_trailing_broadcast,
-        try_result_vector,
+        F32_SIGN_MASK, SavedTensor, TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER, Tensor, TensorError,
+        VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER, accumulate_validated_owned_strided_matmul,
+        materialize_contiguous_trailing_broadcast, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -4955,35 +5014,81 @@ mod tests {
     }
 
     #[test]
-    fn transpose_contiguous_rhs_fast_path_skips_k1_outer_products() {
+    fn transpose_contiguous_rhs_fast_path_skips_small_inner_products() {
         let rows = 64;
         let columns = 64;
-        let left = Tensor::ones([rows, 1]).unwrap();
-        let right_bits = (0..columns)
-            .map(|column| f32::from(u8::try_from(column).unwrap()).to_bits())
-            .collect::<Vec<_>>();
-        let right = offset_transpose_contiguous_matrix(&right_bits, 1, columns);
+        for inner in 1..TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER {
+            let left = Tensor::ones([rows, inner]).unwrap();
+            let right_bits = vec![1.0_f32.to_bits(); inner * columns];
+            let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
 
-        assert!(left.is_contiguous());
-        assert!(right.is_contiguous());
-        assert_eq!(right.stride(), [1, 1]);
-        assert!(
-            left.try_row_contiguous_transpose_rhs_matmul(&right)
-                .is_none()
-        );
-
-        let output = left.matmul(&right).unwrap();
-        for row in output.as_slice().chunks_exact(columns) {
+            assert!(left.is_contiguous());
             assert!(
-                row.iter()
-                    .map(|value| value.to_bits())
-                    .eq(right_bits.iter().copied())
+                left.try_row_contiguous_transpose_rhs_matmul(&right)
+                    .is_none()
+            );
+
+            let expected = f32::from(u8::try_from(inner).unwrap()).to_bits();
+            assert!(
+                left.matmul(&right)
+                    .unwrap()
+                    .as_slice()
+                    .iter()
+                    .all(|value| value.to_bits() == expected)
             );
         }
     }
 
     #[test]
-    fn transpose_contiguous_rhs_matmul_replays_colliding_nan_payloads() {
+    fn validated_owned_strided_matmul_gates_small_inner_and_nonfinite_inputs() {
+        let rows = 2;
+        let columns = 3;
+        for inner in 1..=VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER {
+            let left_bits = vec![1.0_f32.to_bits(); rows * inner];
+            let right_bits = vec![1.0_f32.to_bits(); inner * columns];
+            let left = offset_padded_row_contiguous_matrix(&left_bits, rows, inner);
+            let right = offset_padded_row_contiguous_matrix(&right_bits, inner, columns);
+            let mut output = vec![0.0; rows * columns];
+
+            let used = accumulate_validated_owned_strided_matmul(
+                &left,
+                &right,
+                left.storage.owned_values().unwrap(),
+                right.storage.owned_values().unwrap(),
+                &mut output,
+                inner,
+                columns,
+            );
+            assert_eq!(used, inner == VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER);
+            let expected = if used {
+                f32::from(u8::try_from(inner).unwrap()).to_bits()
+            } else {
+                0.0_f32.to_bits()
+            };
+            assert!(output.iter().all(|value| value.to_bits() == expected));
+        }
+
+        let inner = VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER;
+        let left_bits = vec![1.0_f32.to_bits(); rows * inner];
+        let mut right_bits = vec![1.0_f32.to_bits(); inner * columns];
+        right_bits[0] = 0x7fc1_2345;
+        let left = offset_padded_row_contiguous_matrix(&left_bits, rows, inner);
+        let right = offset_padded_row_contiguous_matrix(&right_bits, inner, columns);
+        let mut output = vec![0.0; rows * columns];
+        assert!(!accumulate_validated_owned_strided_matmul(
+            &left,
+            &right,
+            left.storage.owned_values().unwrap(),
+            right.storage.owned_values().unwrap(),
+            &mut output,
+            inner,
+            columns,
+        ));
+        assert!(output.iter().all(|value| value.to_bits() == 0));
+    }
+
+    #[test]
+    fn transpose_contiguous_rhs_matmul_preserves_colliding_nan_payloads() {
         let nan_bits = [0xffc0_0001, 0x7fc1_2345];
         let assert_matches_fallback = |left: &Tensor, right: &Tensor| {
             let expected = left.matmul(&shared_gradient_copy(right)).unwrap();
@@ -5023,6 +5128,24 @@ mod tests {
         right_bits[..2].copy_from_slice(&nan_bits);
         let left = offset_padded_row_contiguous_matrix(&left_bits, rows, inner);
         let right = offset_transpose_contiguous_matrix(&right_bits, inner, columns);
+        assert_matches_fallback(&left, &right);
+
+        let maximum = f32::MAX.to_bits();
+        let left = offset_padded_row_contiguous_matrix(
+            &[maximum, maximum, 0.0_f32.to_bits(), 0.0_f32.to_bits()],
+            1,
+            TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER,
+        );
+        let right = offset_transpose_contiguous_matrix(
+            &[
+                2.0_f32.to_bits(),
+                (-2.0_f32).to_bits(),
+                0.0_f32.to_bits(),
+                0.0_f32.to_bits(),
+            ],
+            TRANSPOSE_CONTIGUOUS_RHS_MATMUL_MIN_INNER,
+            1,
+        );
         assert_matches_fallback(&left, &right);
     }
 
@@ -5170,6 +5293,16 @@ mod tests {
         assert_eq!(strided_left.stride(), [1, 2]);
         assert_eq!(strided_right.stride(), [1, 2]);
         assert_matches_fallback(&strided_left, &strided_right);
+
+        let inner = VALIDATED_OWNED_STRIDED_MATMUL_MIN_INNER;
+        let mut left_bits = vec![0.0_f32.to_bits(); inner];
+        left_bits[..2].fill(f32::MAX.to_bits());
+        let mut right_bits = vec![0.0_f32.to_bits(); inner];
+        right_bits[0] = 2.0_f32.to_bits();
+        right_bits[1] = (-2.0_f32).to_bits();
+        let finite_left = offset_padded_row_contiguous_matrix(&left_bits, 1, inner);
+        let finite_right = offset_padded_row_contiguous_matrix(&right_bits, inner, 1);
+        assert_matches_fallback(&finite_left, &finite_right);
     }
 
     #[test]
