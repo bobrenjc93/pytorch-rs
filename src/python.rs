@@ -1491,8 +1491,17 @@ pub(crate) fn exp_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let call = bind_exp_arguments(args, kwargs)?;
-    dispatch_top_level_exp(py, &call, args, kwargs)
+    unary_out_variable_function(UnaryOutOperation::EXP, py, args, kwargs)
+}
+
+fn unary_out_variable_function(
+    operation: UnaryOutOperation,
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = bind_unary_out_arguments(operation, args, kwargs)?;
+    dispatch_top_level_unary_out(operation, py, &call, args, kwargs)
 }
 
 pub(crate) fn is_conj_variable_function(
@@ -1775,7 +1784,30 @@ enum BoundTensorOrTorchFunction<'py> {
     Override(ProbedTorchFunctionOverride<'py>),
 }
 
-struct BoundExpCall<'py> {
+type UnaryOutApplication = fn(&CoreTensor) -> Result<CoreTensor, TensorError>;
+
+#[derive(Clone, Copy)]
+struct UnaryOutOperation {
+    name: &'static str,
+    qualified_name: &'static str,
+    dispatch_allocation_error: &'static str,
+    out_unsupported_error: &'static str,
+    autograd_unsupported_error: &'static str,
+    apply: UnaryOutApplication,
+}
+
+impl UnaryOutOperation {
+    const EXP: Self = Self {
+        name: "exp",
+        qualified_name: "torch.exp",
+        dispatch_allocation_error: "unable to allocate exp dispatch operands",
+        out_unsupported_error: "exp(): the 'out' argument is not supported",
+        autograd_unsupported_error: "exp(): autograd recording is not supported",
+        apply: CoreTensor::exp,
+    };
+}
+
+struct BoundUnaryOutCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
 }
@@ -2478,8 +2510,9 @@ fn dispatch_positive(
     }
 }
 
-fn ordered_exp_overrides<'py>(
-    call: &BoundExpCall<'py>,
+fn ordered_unary_out_overrides<'py>(
+    operation: UnaryOutOperation,
+    call: &BoundUnaryOutCall<'py>,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
     let input = match &call.input {
         BoundTensorOrTorchFunction::Override(probed) => Some(probed),
@@ -2489,21 +2522,22 @@ fn ordered_exp_overrides<'py>(
         Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
         Some(BoundTensorOrTorchFunction::Tensor(_)) | None => None,
     };
-    ordered_binary_overrides(input, out, "unable to allocate exp dispatch operands")
+    ordered_binary_overrides(input, out, operation.dispatch_allocation_error)
 }
 
-fn dispatch_top_level_exp(
+fn dispatch_top_level_unary_out(
+    operation: UnaryOutOperation,
     py: Python<'_>,
-    call: &BoundExpCall<'_>,
+    call: &BoundUnaryOutCall<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let overrides = ordered_exp_overrides(call)?;
+    let overrides = ordered_unary_out_overrides(operation, call)?;
     if torch_function_mode_stack::is_empty() && overrides.is_empty() {
-        return apply_top_level_exp(py, call);
+        return apply_top_level_unary_out(operation, py, call);
     }
 
-    let function = variable_function(py, "exp")?;
+    let function = variable_function(py, operation.name)?;
     let types = PyTuple::new(
         py,
         overrides.iter().map(|probed| probed.dispatch_type.clone()),
@@ -2531,29 +2565,32 @@ fn dispatch_top_level_exp(
 
     Err(torch_function_dispatch_error_for_overrides(
         py,
-        "torch.exp",
+        operation.qualified_name,
         active_mode.get(),
         &overrides,
     )?)
 }
 
-fn apply_top_level_exp(py: Python<'_>, call: &BoundExpCall<'_>) -> PyResult<Py<PyAny>> {
+fn apply_top_level_unary_out(
+    operation: UnaryOutOperation,
+    py: Python<'_>,
+    call: &BoundUnaryOutCall<'_>,
+) -> PyResult<Py<PyAny>> {
     if call.out.is_some() {
-        return Err(PyRuntimeError::new_err(
-            "exp(): the 'out' argument is not supported",
-        ));
+        return Err(PyRuntimeError::new_err(operation.out_unsupported_error));
     }
 
     let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
-        unreachable!("exp overrides were dispatched before the native path")
+        unreachable!("unary-out overrides were dispatched before the native path")
     };
     let input = input.try_borrow()?;
     if input.inner.requires_grad() && is_grad_enabled() {
         return Err(PyRuntimeError::new_err(
-            "exp(): autograd recording is not supported",
+            operation.autograd_unsupported_error,
         ));
     }
-    Ok(Py::new(py, input.exp()?)?.into_any())
+    let output = (operation.apply)(&input.inner).map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }
 
 fn dispatch_resolve_conj(
@@ -7720,19 +7757,20 @@ fn bind_legacy_single_tensor_or_override_argument<'py>(
     Ok(bound)
 }
 
-fn bind_exp_arguments<'py>(
+fn bind_unary_out_arguments<'py>(
+    operation: UnaryOutOperation,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<BoundExpCall<'py>> {
-    let selection = select_legacy_single_argument("exp", positional, keywords)?;
-    let input = parse_tensor_or_torch_function_argument("exp", "input", &selection.input)?;
+) -> PyResult<BoundUnaryOutCall<'py>> {
+    let selection = select_legacy_single_argument(operation.name, positional, keywords)?;
+    let input = parse_tensor_or_torch_function_argument(operation.name, "input", &selection.input)?;
     let out = match keywords
         .map(|values| values.get_item("out"))
         .transpose()?
         .flatten()
     {
         Some(out) if !out.is_none() => Some(parse_tensor_or_torch_function_argument(
-            "exp",
+            operation.name,
             "out",
             &ParsedCallArgument {
                 value: out,
@@ -7741,11 +7779,12 @@ fn bind_exp_arguments<'py>(
         )?),
         Some(_) | None => None,
     };
-    validate_exp_keywords(&selection, keywords)?;
-    Ok(BoundExpCall { input, out })
+    validate_unary_out_keywords(operation, &selection, keywords)?;
+    Ok(BoundUnaryOutCall { input, out })
 }
 
-fn validate_exp_keywords(
+fn validate_unary_out_keywords(
+    operation: UnaryOutOperation,
     selection: &LegacySingleArgumentSelection<'_>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<()> {
@@ -7768,14 +7807,16 @@ fn validate_exp_keywords(
         }
         if key == "input" {
             if selection.input.position.is_some() {
-                return Err(PyTypeError::new_err(
-                    "exp() got multiple values for argument 'input'",
-                ));
+                return Err(PyTypeError::new_err(format!(
+                    "{}() got multiple values for argument 'input'",
+                    operation.name
+                )));
             }
             continue;
         }
         return Err(PyTypeError::new_err(format!(
-            "exp() got an unexpected keyword argument '{key}'"
+            "{}() got an unexpected keyword argument '{key}'",
+            operation.name
         )));
     }
     Ok(())
