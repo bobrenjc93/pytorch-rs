@@ -218,6 +218,7 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
                 "is_available",
                 "is_initialized",
                 "is_nccl_available",
+                "is_torchelastic_launched",
             },
         )
         unsupported = expected_public - actual_public
