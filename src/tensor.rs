@@ -2346,9 +2346,9 @@ impl Tensor {
         };
         if inner != other_inner
             || *rows == 0
-            || *inner == 0
+            || *inner <= 1
             || *columns == 0
-            || (*inner != 1 && self.strides[1] != 1)
+            || self.strides[1] != 1
         {
             return None;
         }
@@ -2374,6 +2374,9 @@ impl Tensor {
             // than the established depth-major kernel. Replay non-finite
             // results there to keep payloads independent of storage kind.
             if output.iter().any(|value| !value.is_finite()) {
+                // Release the speculative result before the fallback allocates
+                // its replacement output.
+                drop(output);
                 return self.matmul_general(other);
             }
             Ok(Self::from_owned_parts(
@@ -4814,6 +4817,34 @@ mod tests {
                 .map(f32::to_bits)
                 .eq(expected.logical_values().map(f32::to_bits))
         );
+    }
+
+    #[test]
+    fn transpose_contiguous_rhs_fast_path_skips_k1_outer_products() {
+        let rows = 64;
+        let columns = 64;
+        let left = Tensor::ones([rows, 1]).unwrap();
+        let right_bits = (0..columns)
+            .map(|column| f32::from(u8::try_from(column).unwrap()).to_bits())
+            .collect::<Vec<_>>();
+        let right = offset_transpose_contiguous_matrix(&right_bits, 1, columns);
+
+        assert!(left.is_contiguous());
+        assert!(right.is_contiguous());
+        assert_eq!(right.stride(), [1, 1]);
+        assert!(
+            left.try_row_contiguous_transpose_rhs_matmul(&right)
+                .is_none()
+        );
+
+        let output = left.matmul(&right).unwrap();
+        for row in output.as_slice().chunks_exact(columns) {
+            assert!(
+                row.iter()
+                    .map(|value| value.to_bits())
+                    .eq(right_bits.iter().copied())
+            );
+        }
     }
 
     #[test]
