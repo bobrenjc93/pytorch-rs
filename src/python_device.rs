@@ -1,10 +1,14 @@
 //! Python bindings for native execution devices.
 
-use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyDict, PyInt, PyModule, PyString, PyTuple};
+use pyo3::types::{PyAny, PyBool, PyDict, PyInt, PyString, PyTuple};
 
-use crate::Device;
+use crate::{
+    Device,
+    python::python_type_name,
+    python_size::{has_numpy_integer_ancestry, unpack_long_long},
+};
 
 const UNINDEXED_DEVICE: i8 = -1;
 const PYTORCH_DEVICE_TYPES: [&str; 20] = [
@@ -181,14 +185,6 @@ pub(crate) fn device_argument_type_error(
     )))
 }
 
-fn is_numpy_integer(value: &Bound<'_, PyAny>) -> PyResult<bool> {
-    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
-        return Ok(false);
-    };
-    Ok(value.is_instance(&numpy.getattr("integer")?)?
-        && !value.is_instance(&numpy.getattr("bool_")?)?)
-}
-
 fn is_as_tensor_device_value(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     if value.cast::<PyDevice>().is_ok() || value.cast::<PyString>().is_ok() {
         return Ok(true);
@@ -196,7 +192,7 @@ fn is_as_tensor_device_value(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     if !value.is_instance_of::<PyBool>() && value.is_instance_of::<PyInt>() {
         return Ok(true);
     }
-    is_numpy_integer(value)
+    has_numpy_integer_ancestry(value.py(), value)
 }
 
 pub(crate) fn validate_as_tensor_device_argument_type(
@@ -209,7 +205,7 @@ pub(crate) fn validate_as_tensor_device_argument_type(
         return Ok(());
     }
 
-    let type_name = constructor_type_name(device)?;
+    let type_name = python_type_name(device)?;
     Err(PyTypeError::new_err(format!(
         "as_tensor(): argument 'device' must be torch.device, not {type_name}"
     )))
@@ -233,7 +229,8 @@ pub(crate) fn parse_as_tensor_device_target(
         let parsed = parse_device_string_parts(specification)?;
         if !PYTORCH_DEVICE_TYPES.contains(&parsed.device_type) {
             return Err(PyRuntimeError::new_err(format!(
-                "Expected one of {PYTORCH_DEVICE_TYPES_MESSAGE} device type at start of device string: {specification}"
+                "Expected one of {PYTORCH_DEVICE_TYPES_MESSAGE} device type at start of device string: {}",
+                parsed.device_type
             )));
         }
         return Ok(if parsed.device_type == "cpu" {
@@ -248,9 +245,7 @@ pub(crate) fn parse_as_tensor_device_target(
     }
 
     debug_assert!(is_as_tensor_device_value(device)?);
-    let index = device
-        .extract::<i64>()
-        .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))?;
+    let index = unpack_long_long(device.py(), device)?;
     if index < 0 {
         return Err(PyRuntimeError::new_err("Device index must not be negative"));
     }
@@ -347,17 +342,7 @@ fn invalid_device_constructor_arguments() -> PyErr {
 }
 
 fn constructor_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
-    if value.cast::<PyDevice>().is_ok() {
-        return Ok("torch.device".to_owned());
-    }
-    let value_type = value.get_type();
-    let name = value_type.name()?.to_string();
-    let module = value_type.getattr("__module__")?.extract::<String>()?;
-    Ok(if module == "numpy" {
-        format!("numpy.{name}")
-    } else {
-        name
-    })
+    python_type_name(value)
 }
 
 fn validate_device_index_type(
@@ -371,13 +356,7 @@ fn validate_device_index_type(
         return Ok(());
     }
     let integer = !index.is_instance_of::<PyBool>() && index.is_instance_of::<PyInt>();
-    let numpy_integer = if integer {
-        false
-    } else if let Ok(numpy) = PyModule::import(index.py(), "numpy") {
-        index.is_instance(&numpy.getattr("integer")?)?
-    } else {
-        false
-    };
+    let numpy_integer = !integer && has_numpy_integer_ancestry(index.py(), index)?;
     if integer || numpy_integer {
         return Ok(());
     }
@@ -396,9 +375,7 @@ fn parse_explicit_device_index(index: Option<&Bound<'_, PyAny>>) -> PyResult<i8>
     if index.is_none() {
         return Ok(UNINDEXED_DEVICE);
     }
-    let index = index
-        .extract::<i64>()
-        .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))?;
+    let index = unpack_long_long(index.py(), index)?;
     if index < 0 {
         return Err(PyRuntimeError::new_err("Device index must not be negative"));
     }

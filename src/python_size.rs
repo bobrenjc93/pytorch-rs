@@ -136,7 +136,10 @@ fn is_immutable_type(value_type: &Bound<'_, PyType>) -> bool {
     (unsafe { ffi::PyType_GetFlags(value_type.as_type_ptr()) }) & ffi::Py_TPFLAGS_IMMUTABLETYPE != 0
 }
 
-fn has_numpy_integer_ancestry(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
+pub(crate) fn has_numpy_integer_ancestry(
+    py: Python<'_>,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<bool> {
     // Calling type's base descriptor bypasses any metaclass override of
     // __getattribute__, and __mro__ itself is immutable.
     let mro = py
@@ -238,7 +241,7 @@ fn normalized_dimension(
     Ok(integer.into_any().unbind())
 }
 
-fn unpack_long_long(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<i64> {
+pub(crate) fn unpack_long_long(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<i64> {
     number_index(py, value)?
         .extract::<i64>()
         .map_err(|_| PyValueError::new_err("Overflow when unpacking long long"))

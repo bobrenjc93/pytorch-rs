@@ -194,6 +194,12 @@ class AsTensorTests(unittest.TestCase):
                 lambda: torch.as_tensor(tensor, device="cpu:-1"),
                 "Invalid device string: 'cpu:-1'",
             ),
+            (
+                lambda: torch.as_tensor(tensor, device="foo:0"),
+                "Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, "
+                "ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, "
+                "mtia, privateuseone device type at start of device string: foo",
+            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
@@ -235,6 +241,105 @@ class AsTensorTests(unittest.TestCase):
                     torch.as_tensor(tensor, device=device)
 
         self.assertIs(torch.as_tensor(tensor, device="cpu:255"), tensor)
+
+    def test_device_validation_uses_actual_numpy_ancestry_without_callbacks(self):
+        tensor = torch.tensor([1.0])
+        events = []
+
+        class NoisyMeta(type):
+            def __getattribute__(cls, name):
+                if name in {"__name__", "__module__", "__qualname__"}:
+                    events.append(("type metadata", name))
+                    raise AssertionError("device validation invoked type metadata")
+                return super().__getattribute__(name)
+
+        class Spoof(metaclass=NoisyMeta):
+            @property
+            def __class__(self):
+                return np.int64
+
+            def __index__(self):
+                events.append(("index", None))
+                return 0
+
+        spoof = Spoof()
+        expected = "as_tensor(): argument 'device' must be torch.device, not Spoof"
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(expected)}$"):
+            torch.as_tensor(tensor, device=spoof)
+        self.assertEqual(events, [])
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return object()
+
+        mode = RecordingMode()
+        with mode:
+            with self.assertRaisesRegex(TypeError, f"^{re.escape(expected)}$"):
+                torch.as_tensor(tensor, device=spoof)
+        self.assertEqual(events, [])
+        self.assertEqual(mode.calls, [])
+
+        original_integer = np.integer
+        np.integer = str
+        try:
+            with self.assertRaisesRegex(
+                RuntimeError, "^Device index must not be negative$"
+            ):
+                torch.as_tensor(tensor, device=np.int64(-1))
+
+            marker = object()
+
+            class AcceptingMode(torch.overrides.TorchFunctionMode):
+                def __init__(self):
+                    self.calls = []
+
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    self.calls.append((func, types, args, kwargs))
+                    return marker
+
+            mode = AcceptingMode()
+            device = np.int64(0)
+            with mode:
+                self.assertIs(torch.as_tensor(tensor, device=device), marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, torch.as_tensor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (tensor,))
+            self.assertEqual(kwargs, {"device": device})
+        finally:
+            np.integer = original_integer
+
+    def test_numpy_device_index_exceptions_are_preserved(self):
+        tensor = torch.tensor([1.0])
+        for exception in (
+            RuntimeError("runtime marker"),
+            MemoryError("memory marker"),
+            KeyboardInterrupt("keyboard marker"),
+            SystemExit("exit marker"),
+        ):
+            with self.subTest(exception=type(exception).__name__):
+
+                class RaisingIndex(np.int64):
+                    def __index__(self):
+                        raise exception
+
+                with self.assertRaises(type(exception)) as raised:
+                    torch.as_tensor(tensor, device=RaisingIndex(0))
+                self.assertIs(raised.exception, exception)
+
+        class OverflowingIndex(np.int64):
+            def __index__(self):
+                return 1 << 63
+
+        with self.assertRaisesRegex(
+            ValueError, "^Overflow when unpacking long long$"
+        ):
+            torch.as_tensor(tensor, device=OverflowingIndex(0))
 
     def test_non_tensor_torch_function_objects_do_not_dispatch(self):
         class Override:

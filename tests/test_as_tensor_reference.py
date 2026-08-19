@@ -223,6 +223,10 @@ class AsTensorReferenceTests(unittest.TestCase):
                 lambda: torch.as_tensor(actual, device="cpu:-1"),
                 lambda: reference_torch.as_tensor(expected, device="cpu:-1"),
             ),
+            (
+                lambda: torch.as_tensor(actual, device="foo:0"),
+                lambda: reference_torch.as_tensor(expected, device="foo:0"),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
@@ -290,6 +294,137 @@ class AsTensorReferenceTests(unittest.TestCase):
                 with ForwardingMode("upper"):
                     self.assertIs(module.as_tensor(tensor), tensor)
             self.assertEqual(order, ["upper", "lower"])
+
+    def spoofed_numpy_device_observation(self, module, use_mode):
+        tensor = module.tensor([1.0])
+        events = []
+
+        class NoisyMeta(type):
+            def __getattribute__(cls, name):
+                if name in {"__name__", "__module__", "__qualname__"}:
+                    events.append(("type metadata", name))
+                    raise AssertionError("device validation invoked type metadata")
+                return super().__getattribute__(name)
+
+        class Spoof(metaclass=NoisyMeta):
+            @property
+            def __class__(self):
+                return np.int64
+
+            def __index__(self):
+                events.append(("index", None))
+                return 0
+
+        mode_calls = []
+
+        class Mode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_calls.append((func, types, args, kwargs))
+                return object()
+
+        try:
+            if use_mode:
+                with Mode():
+                    module.as_tensor(tensor, device=Spoof())
+            else:
+                module.as_tensor(tensor, device=Spoof())
+        except BaseException as error:
+            error_outcome = type(error).__name__, str(error)
+        else:
+            error_outcome = None
+        return error_outcome, events, len(mode_calls)
+
+    def rebound_numpy_integer_observation(self, module):
+        tensor = module.tensor([1.0])
+        original_integer = np.integer
+        np.integer = str
+        try:
+            try:
+                module.as_tensor(tensor, device=np.int64(-1))
+            except BaseException as error:
+                direct_outcome = type(error).__name__, str(error)
+            else:
+                direct_outcome = None
+
+            marker = object()
+            calls = []
+
+            class Mode(module.overrides.TorchFunctionMode):
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    calls.append((func, types, args, kwargs))
+                    return marker
+
+            device = np.int64(0)
+            with Mode():
+                result = module.as_tensor(tensor, device=device)
+            function, dispatch_types, args, kwargs = calls[0]
+            mode_outcome = (
+                result is marker,
+                function is module.as_tensor,
+                dispatch_types,
+                args == (tensor,),
+                kwargs == {"device": device},
+                len(calls),
+            )
+        finally:
+            np.integer = original_integer
+        return direct_outcome, mode_outcome
+
+    def test_numpy_device_validation_matches_pytorch_2_13(self):
+        for use_mode in (False, True):
+            with self.subTest(use_mode=use_mode):
+                self.assertEqual(
+                    self.spoofed_numpy_device_observation(torch, use_mode),
+                    self.spoofed_numpy_device_observation(
+                        reference_torch, use_mode
+                    ),
+                )
+
+        self.assertEqual(
+            self.rebound_numpy_integer_observation(torch),
+            self.rebound_numpy_integer_observation(reference_torch),
+        )
+
+    def numpy_index_exception_observation(self, module, exception):
+        tensor = module.tensor([1.0])
+
+        class RaisingIndex(np.int64):
+            def __index__(self):
+                raise exception
+
+        try:
+            module.as_tensor(tensor, device=RaisingIndex(0))
+        except BaseException as error:
+            return type(error).__name__, str(error), error is exception
+        return None
+
+    def test_numpy_device_index_exceptions_match_pytorch_2_13(self):
+        for exception in (
+            RuntimeError("runtime marker"),
+            MemoryError("memory marker"),
+            KeyboardInterrupt("keyboard marker"),
+            SystemExit("exit marker"),
+        ):
+            with self.subTest(exception=type(exception).__name__):
+                self.assertEqual(
+                    self.numpy_index_exception_observation(torch, exception),
+                    self.numpy_index_exception_observation(
+                        reference_torch, exception
+                    ),
+                )
+
+        class OverflowingIndex(np.int64):
+            def __index__(self):
+                return 1 << 63
+
+        actual = torch.tensor([1.0])
+        expected = reference_torch.tensor([1.0])
+        self.assert_error_matches(
+            lambda: torch.as_tensor(actual, device=OverflowingIndex(0)),
+            lambda: reference_torch.as_tensor(
+                expected, device=OverflowingIndex(0)
+            ),
+        )
 
     def test_conversion_boundaries_are_explicit(self):
         for data in ([1.0], np.asarray([1.0], dtype=np.float32)):
