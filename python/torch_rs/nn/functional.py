@@ -31,6 +31,15 @@ def _dropout_impl(input, p, training, inplace):
     return _nn_functional_dropout("dropout", input, p, training, False)
 
 
+def _dropout1d_impl(input, p, training, inplace):
+    _validate_dropout_probability(p)
+    # Preserve PyTorch's pre-native invalid-input validation order.
+    input.dim()
+    if inplace:
+        return _nn_functional_dropout("dropout1d", input, p, training, True)
+    return _nn_functional_dropout("dropout1d", input, p, training, False)
+
+
 def _dropout2d_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
     # Preserve PyTorch's pre-native invalid-input validation order.
@@ -118,6 +127,34 @@ def dropout(
     return _dispatch_unary_torch_function(
         dropout,
         _dropout_impl,
+        input,
+        {"p": p, "training": training, "inplace": inplace},
+    )
+
+
+def dropout1d(
+    input: Tensor,
+    p: float = 0.5,
+    training: bool = True,
+    inplace: bool = False,
+) -> Tensor:
+    r"""Randomly zero out entire channels (a channel is a 1D feature map).
+
+    For example, the :math:`j`-th channel of the :math:`i`-th sample in the
+    batched input is a 1D tensor :math:`\text{input}[i, j]` of the input tensor.
+    Each channel will be zeroed out independently on every forward call with
+    probability :attr:`p` using samples from a Bernoulli distribution.
+
+    See :class:`~torch.nn.Dropout1d` for details.
+
+    Args:
+        p: probability of a channel to be zeroed. Default: 0.5
+        training: apply dropout if is ``True``. Default: ``True``
+        inplace: If set to ``True``, will do this operation in-place. Default: ``False``
+    """
+    return _dispatch_unary_torch_function(
+        dropout1d,
+        _dropout1d_impl,
         input,
         {"p": p, "training": training, "inplace": inplace},
     )
