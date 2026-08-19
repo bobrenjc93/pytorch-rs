@@ -3,6 +3,8 @@
 import types as _types
 import warnings
 
+import torch_rs as torch
+
 from .torch_rs import (
     Tensor,
     _get_function_stack_at,
@@ -10,6 +12,48 @@ from .torch_rs import (
     _pop_torch_function_stack,
     _push_on_torch_function_stack,
 )
+
+
+def is_tensor_like(inp):
+    """
+    Returns ``True`` if the passed-in input is a Tensor-like.
+
+    Currently, this occurs whenever there's a ``__torch_function__``
+    attribute on the type of the input.
+
+    Examples
+    --------
+    A subclass of tensor is generally a Tensor-like.
+
+    >>> class SubTensor(torch.Tensor): ...
+    >>> is_tensor_like(SubTensor([0]))
+    True
+
+    Built-in or user types aren't usually Tensor-like.
+
+    >>> is_tensor_like(6)
+    False
+    >>> is_tensor_like(None)
+    False
+    >>> class NotATensor: ...
+    >>> is_tensor_like(NotATensor())
+    False
+
+    But, they can be made Tensor-like by implementing __torch_function__.
+
+    >>> class TensorLike:
+    ...     @classmethod
+    ...     def __torch_function__(cls, func, types, args, kwargs):
+    ...         return -1
+    >>> is_tensor_like(TensorLike())
+    True
+    """
+    return (
+        inp is Tensor
+        or type(inp) is Tensor
+        or type(inp) is torch.Tensor
+        or hasattr(inp, "__torch_function__")
+    )
 
 
 class TorchFunctionMode:
@@ -165,4 +209,4 @@ def _dispatch_unary_torch_function(
     raise TypeError(message)
 
 
-__all__ = ["TorchFunctionMode"]
+__all__ = ["TorchFunctionMode", "is_tensor_like"]
