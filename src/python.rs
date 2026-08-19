@@ -310,6 +310,43 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nunsqueeze(dim) -> Tensor\n\nSee :func:`torch.unsqueeze`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn unsqueeze(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let ([dimension], keyword_error) =
+            bind_dimension_swap_arguments("unsqueeze", args, kwargs, ["dim"])?;
+        if let Some(keyword_error) = keyword_error {
+            return Err(keyword_error);
+        }
+        validate_dimension_swap_dimension(
+            "unsqueeze",
+            "dim",
+            dimension.position,
+            &dimension.value,
+        )?;
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "unsqueeze",
+            "torch.Tensor.unsqueeze",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+        unsqueeze_leading_dimension(slf.py(), tensor, dimension)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is stored on the CPU, ``False`` otherwise.\n"]
     #[getter]
     fn is_cpu(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2105,6 +2142,26 @@ fn select_first_dimension(
             tensor_error(&error)
         }
     })?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn unsqueeze_leading_dimension(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    dimension: i64,
+) -> PyResult<Py<PyAny>> {
+    let tensor = tensor.try_borrow()?;
+    let axis = normalize_unsqueeze_dimension(dimension, tensor.inner.shape().len())?;
+    if axis != 0 {
+        return Err(PyRuntimeError::new_err(
+            "Tensor.unsqueeze only supports dimension 0",
+        ));
+    }
+
+    let inner = tensor
+        .inner
+        .unsqueeze_front()
+        .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
@@ -9319,8 +9376,9 @@ fn bind_dimension_swap_arguments<'py, const N: usize>(
     names: [&str; N],
 ) -> PyResult<([ParsedCallArgument<'py>; N], Option<PyErr>)> {
     if positional.len() > N {
+        let argument = if N == 1 { "argument" } else { "arguments" };
         return Err(PyTypeError::new_err(format!(
-            "{operation}() takes {N} positional arguments but {} were given",
+            "{operation}() takes {N} positional {argument} but {} were given",
             positional.len()
         )));
     }
@@ -10052,6 +10110,27 @@ fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
     }
     usize::try_from(if dimension < 0 {
         dimension + rank
+    } else {
+        dimension
+    })
+    .map_err(|_| PyOverflowError::new_err("tensor dimension exceeds the platform limit"))
+}
+
+fn normalize_unsqueeze_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
+    let insertion_rank = rank
+        .checked_add(1)
+        .ok_or_else(|| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    let insertion_rank = i64::try_from(insertion_rank)
+        .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
+    if dimension < -insertion_rank || dimension >= insertion_rank {
+        return Err(PyIndexError::new_err(format!(
+            "Dimension out of range (expected to be in range of [{}, {}], but got {dimension})",
+            -insertion_rank,
+            insertion_rank - 1
+        )));
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + insertion_rank
     } else {
         dimension
     })
