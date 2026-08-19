@@ -19,14 +19,14 @@ use crate::python::{
     get_device_variable_function, is_conj_variable_function, is_inference_variable_function,
     matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
     mul_variable_function, multiply_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
-    unbind_variable_function,
+    positive_variable_function, promote_types_variable_function, ravel_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
+    select_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 22] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 23] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -42,6 +42,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 22] = [
     "unbind",
     "select",
     "permute",
+    "ravel",
     "movedim",
     "moveaxis",
     "matmul",
@@ -199,6 +200,8 @@ const UNBIND_DOC: &std::ffi::CStr = c"\nunbind(input, dim=0) -> seq\n\nRemoves a
 const SELECT_DOC: &std::ffi::CStr = c"\nselect(input, dim, index) -> Tensor\n\nSlices the :attr:`input` tensor along the selected dimension at the given index.\nThis function returns a view of the original tensor with the given dimension removed.\n\n.. note:: If :attr:`input` is a sparse tensor and returning a view of\n          the tensor is not possible, a RuntimeError exception is\n          raised. In this is the case, consider using\n          :func:`torch.select_copy` function.\n\nArgs:\n    input (Tensor): the input tensor.\n    dim (int): the dimension to slice\n    index (int): the index to select with\n\n.. note::\n\n    :meth:`select` is equivalent to slicing. For example,\n    ``tensor.select(0, index)`` is equivalent to ``tensor[index]`` and\n    ``tensor.select(2, index)`` is equivalent to ``tensor[:,:,index]``.\n";
 
 const PERMUTE_DOC: &std::ffi::CStr = c"\npermute(input, dims) -> Tensor\n\nReturns a view of the original tensor :attr:`input` with its dimensions permuted.\n\nArgs:\n    input (Tensor): the input tensor.\n    dims (torch.Size, tuple of int or list of int): the desired ordering of dimensions.\n\nExample:\n    >>> x = torch.randn(2, 3, 5)\n    >>> x.size()\n    torch.Size([2, 3, 5])\n    >>> torch.permute(x, (2, 0, 1)).size()\n    torch.Size([5, 2, 3])\n";
+
+const RAVEL_DOC: &std::ffi::CStr = c"\nravel(input) -> Tensor\n\nReturn a contiguous flattened tensor. A copy is made only if needed.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.tensor([[[1, 2],\n    ...                    [3, 4]],\n    ...                   [[5, 6],\n    ...                    [7, 8]]])\n    >>> torch.ravel(t)\n    tensor([1, 2, 3, 4, 5, 6, 7, 8])\n";
 
 const MOVEDIM_DOC: &std::ffi::CStr = cr"
 movedim(input, source, destination) -> Tensor
@@ -421,6 +424,7 @@ variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function)
 variable_function_callback!(unbind_callback, unbind_variable_function);
 variable_function_callback!(select_callback, select_variable_function);
 variable_function_callback!(permute_callback, permute_variable_function);
+variable_function_callback!(ravel_callback, ravel_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
@@ -464,6 +468,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"unbind", unbind_callback, UNBIND_DOC),
         variable_function_method!(c"select", select_callback, SELECT_DOC),
         variable_function_method!(c"permute", permute_callback, PERMUTE_DOC),
+        variable_function_method!(c"ravel", ravel_callback, RAVEL_DOC),
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
