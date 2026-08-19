@@ -3553,6 +3553,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 77
       }
+    },
+    {
+      "key": "pr:270",
+      "recordedAt": "2026-08-19T00:36:52.575Z",
+      "label": "PR #270",
+      "kind": "composite",
+      "prNumber": 270,
+      "title": "YOLO generation 8: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 73.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 56.8,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 77
+      }
     }
   ]
 }
