@@ -1415,7 +1415,7 @@ pub(crate) fn positive_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let input = bind_legacy_single_tensor_or_override_argument("positive", args, kwargs)?;
-    dispatch_positive(py, &input, args, kwargs)
+    dispatch_single_tensor(SingleTensorOperation::POSITIVE, py, &input, args, kwargs)
 }
 
 pub(crate) fn ravel_variable_function(
@@ -1424,7 +1424,7 @@ pub(crate) fn ravel_variable_function(
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
     let input = bind_legacy_single_tensor_or_override_argument("ravel", args, kwargs)?;
-    dispatch_ravel(py, &input, args, kwargs)
+    dispatch_single_tensor(SingleTensorOperation::RAVEL, py, &input, args, kwargs)
 }
 
 pub(crate) fn exp_variable_function(
@@ -1731,6 +1731,30 @@ struct ProbedTorchFunctionOverride<'py> {
 enum BoundTensorOrTorchFunction<'py> {
     Tensor(Bound<'py, PyTensor>),
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+type SingleTensorApplication =
+    for<'py> fn(Python<'py>, &Bound<'py, PyTensor>) -> PyResult<Py<PyAny>>;
+
+#[derive(Clone, Copy)]
+struct SingleTensorOperation {
+    name: &'static str,
+    qualified_name: &'static str,
+    apply: SingleTensorApplication,
+}
+
+impl SingleTensorOperation {
+    const POSITIVE: Self = Self {
+        name: "positive",
+        qualified_name: "torch.positive",
+        apply: apply_positive,
+    };
+
+    const RAVEL: Self = Self {
+        name: "ravel",
+        qualified_name: "torch.ravel",
+        apply: apply_ravel,
+    };
 }
 
 type UnaryOutApplication = fn(&CoreTensor) -> Result<CoreTensor, TensorError>;
@@ -2421,17 +2445,18 @@ fn apply_dtype_binary(
     }
 }
 
-fn dispatch_positive(
+fn dispatch_single_tensor(
+    operation: SingleTensorOperation,
     py: Python<'_>,
     input: &BoundTensorOrTorchFunction<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    let function = variable_function(py, "positive")?;
+    let function = variable_function(py, operation.name)?;
     let types = match input {
         BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
-        BoundTensorOrTorchFunction::Override(resolved) => {
-            PyTuple::new(py, [resolved.dispatch_type.clone()])?
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
         }
     };
 
@@ -2457,7 +2482,7 @@ fn dispatch_positive(
             }
             Err(torch_function_dispatch_error(
                 py,
-                "torch.positive",
+                operation.qualified_name,
                 active_mode.get(),
                 Some(probed.dispatch_type.as_unbound()),
             )?)
@@ -2466,74 +2491,28 @@ fn dispatch_positive(
             if active_mode.get().is_some() {
                 return Err(torch_function_dispatch_error(
                     py,
-                    "torch.positive",
+                    operation.qualified_name,
                     active_mode.get(),
                     None,
                 )?);
             }
-            Ok(tensor.clone().unbind().into_any())
+            (operation.apply)(py, tensor)
         }
     }
 }
 
-fn dispatch_ravel(
-    py: Python<'_>,
-    input: &BoundTensorOrTorchFunction<'_>,
-    args: &Bound<'_, PyTuple>,
-    kwargs: Option<&Bound<'_, PyDict>>,
-) -> PyResult<Py<PyAny>> {
-    let function = variable_function(py, "ravel")?;
-    let types = match input {
-        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
-        BoundTensorOrTorchFunction::Override(resolved) => {
-            PyTuple::new(py, [resolved.dispatch_type.clone()])?
-        }
-    };
+fn apply_positive(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    // Normalize the infallible identity result to the shared callback type.
+    tensor.clone().unbind().into_any().into_py_any(py)
+}
 
-    // PyTorch disables the top mode for the complete dispatch attempt. A mode
-    // can explicitly call `func(*args, **kwargs)` to reach the next mode.
-    let active_mode = torch_function_mode_stack::pop();
-    if let Some(mode) = active_mode.get() {
-        validate_torch_function_mode_handler(mode.bind(py))?;
-        let handler = mode.bind(py).getattr("__torch_function__")?;
-        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
-        if !is_not_implemented(py, &result) {
-            return Ok(result);
-        }
-    }
-
-    match input {
-        BoundTensorOrTorchFunction::Override(probed) => {
-            let handler = resolve_torch_function_override(py, probed)?;
-            let result =
-                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
-            if !is_not_implemented(py, &result) {
-                return Ok(result);
-            }
-            Err(torch_function_dispatch_error(
-                py,
-                "torch.ravel",
-                active_mode.get(),
-                Some(probed.dispatch_type.as_unbound()),
-            )?)
-        }
-        BoundTensorOrTorchFunction::Tensor(tensor) => {
-            if active_mode.get().is_some() {
-                return Err(torch_function_dispatch_error(
-                    py,
-                    "torch.ravel",
-                    active_mode.get(),
-                    None,
-                )?);
-            }
-            let inner = tensor
-                .try_borrow()?
-                .inner
-                .ravel()
-                .map_err(|error| tensor_error(&error))?;
-            Ok(Py::new(py, PyTensor::new(inner))?.into_any())
-        }
-    }
+fn apply_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    let inner = tensor
+        .try_borrow()?
+        .inner
+        .ravel()
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
 fn ordered_unary_out_overrides<'py>(
