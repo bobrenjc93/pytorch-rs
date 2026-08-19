@@ -340,6 +340,21 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nIs ``True`` if the Tensor is stored on the MPS device, ``False`` otherwise.\n"]
+    #[getter]
+    fn is_mps(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("is_mps"))?
+        {
+            return Ok(result);
+        }
+
+        tensor.try_borrow()?.inner.is_mps().into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is a meta tensor, ``False`` otherwise.  Meta tensors\nare like normal tensors, but they carry no data.\n"]
     #[getter]
     fn is_meta(slf: &Bound<'_, Self>) -> PyResult<bool> {
