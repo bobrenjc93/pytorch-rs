@@ -1,5 +1,6 @@
 import inspect
 import re
+import sys
 import types
 import unittest
 
@@ -77,6 +78,34 @@ class TensorUnsqueezeReferenceTests(unittest.TestCase):
                     self.view_contract(actual),
                     self.view_contract(expected),
                 )
+
+    def extreme_empty_contract(self, module):
+        maximum = sys.maxsize
+        source = module.zeros((maximum, 0, maximum))
+        result = source.unsqueeze(0)
+        repeated = source.unsqueeze(-(source.dim() + 1))
+        return {
+            "source": (
+                tuple(source.shape),
+                source.stride(),
+                source.storage_offset(),
+                source.numel(),
+            ),
+            "result": (
+                tuple(result.shape),
+                result.stride(),
+                result.storage_offset(),
+                result.numel(),
+                result.data_ptr() == source.data_ptr(),
+                result.is_set_to(repeated),
+            ),
+        }
+
+    def test_extreme_empty_wrapped_stride_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.extreme_empty_contract(torch),
+            self.extreme_empty_contract(reference_torch),
+        )
 
     def autograd_contract(self, module):
         leaf = module.tensor(

@@ -1176,10 +1176,10 @@ impl Tensor {
         shape.push(1);
         shape.extend_from_slice(&self.shape);
 
+        // PyTorch forms this metadata in signed 64-bit arithmetic: non-negative
+        // wrapping results remain valid, while wrapped negative strides fail.
         let leading_stride = match (self.shape.first(), self.strides.first()) {
-            (Some(dimension), Some(stride)) => dimension
-                .checked_mul(*stride)
-                .ok_or(TensorError::StrideCalculationOverflow)?,
+            (Some(dimension), Some(stride)) => signed_wrapping_stride_product(*stride, *dimension)?,
             (None, None) => 1,
             _ => unreachable!("validated tensor shape and stride ranks must match"),
         };

@@ -1,5 +1,6 @@
 import inspect
 import re
+import sys
 import types
 import unittest
 
@@ -75,6 +76,19 @@ class TensorUnsqueezeTests(unittest.TestCase):
         self.assertEqual(empty_offset.stride(), (0, 3, 3))
         self.assertEqual(empty_offset.storage_offset(), 1)
         self.assertEqual(empty_offset.numel(), 0)
+
+    def test_extreme_empty_leading_stride_uses_signed_wrapping(self):
+        maximum = sys.maxsize
+        source = torch.zeros((maximum, 0, maximum))
+        result = source.unsqueeze(0)
+
+        self.assertEqual(source.stride(), (maximum, maximum, 1))
+        self.assertEqual(result.shape, (1, maximum, 0, maximum))
+        self.assertEqual(result.stride(), (1, maximum, maximum, 1))
+        self.assertEqual(result.storage_offset(), 0)
+        self.assertEqual(result.numel(), 0)
+        self.assertEqual(result.data_ptr(), source.data_ptr())
+        self.assertTrue(result.is_set_to(source.unsqueeze(-4)))
 
     def test_autograd_no_grad_and_empty_gradients_use_the_view_engine(self):
         leaf = torch.tensor([float(value) for value in range(48)], requires_grad=True)
