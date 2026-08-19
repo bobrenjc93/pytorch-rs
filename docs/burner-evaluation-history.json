@@ -3825,6 +3825,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 83
       }
+    },
+    {
+      "key": "pr:330",
+      "recordedAt": "2026-08-19T18:54:44.676Z",
+      "label": "PR #330",
+      "kind": "leaf",
+      "prNumber": 330,
+      "title": "Isolate TensorBase device descriptors",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 74.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 58.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 83
+      }
     }
   ]
 }
