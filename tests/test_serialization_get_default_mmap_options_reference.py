@@ -2,6 +2,7 @@ import contextlib
 import copy
 import importlib
 import inspect
+import mmap
 import pickle
 import pickletools
 import sys
@@ -18,14 +19,17 @@ except ImportError:
     reference_torch = None
 
 
+PLATFORM_DEFAULT = getattr(mmap, "MAP_PRIVATE", None)
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
+class SerializationGetDefaultMmapOptionsReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "serialization.get_crc32_options differentials require pinned "
-                "PyTorch 2.13.0"
+                "serialization.get_default_mmap_options differentials require "
+                "pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -38,13 +42,13 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def supported_state_outcome(self, module):
-        function = module.serialization.get_crc32_options
+        function = module.serialization.get_default_mmap_options
 
         def query_outcome():
             before = module.is_grad_enabled()
             result = function()
             after = module.is_grad_enabled()
-            return before, result is True, after
+            return before, result, type(result), result is PLATFORM_DEFAULT, after
 
         states = [query_outcome()]
         with module.no_grad():
@@ -98,42 +102,54 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
             self.supported_state_outcome(torch),
             self.supported_state_outcome(reference_torch),
         )
-        self.assertIs(torch.serialization.get_crc32_options(), True)
-        self.assertIs(reference_torch.serialization.get_crc32_options(), True)
+        self.assertIs(
+            torch.serialization.get_default_mmap_options(), PLATFORM_DEFAULT
+        )
+        self.assertIs(
+            reference_torch.serialization.get_default_mmap_options(),
+            PLATFORM_DEFAULT,
+        )
 
-    def test_reference_only_mutation_bounds_the_unsupported_false_state(self):
+    @unittest.skipUnless(
+        hasattr(mmap, "MAP_PRIVATE") and hasattr(mmap, "MAP_SHARED"),
+        "mmap flag mutation is unavailable on this platform",
+    )
+    def test_reference_only_map_shared_mutation_bounds_unsupported_state(self):
         actual_serialization = torch.serialization
         expected_serialization = reference_torch.serialization
-        actual = actual_serialization.get_crc32_options
-        expected = expected_serialization.get_crc32_options
+        actual = actual_serialization.get_default_mmap_options
+        expected = expected_serialization.get_default_mmap_options
         original = expected()
 
         try:
-            expected_serialization.set_crc32_options(False)
+            expected_serialization.set_default_mmap_options(mmap.MAP_SHARED)
             actual_states = [actual()]
             expected_states = [expected()]
 
-            expected_serialization.set_crc32_options(True)
+            expected_serialization.set_default_mmap_options(mmap.MAP_PRIVATE)
             actual_states.append(actual())
             expected_states.append(expected())
 
-            expected_serialization.set_crc32_options(False)
+            expected_serialization.set_default_mmap_options(mmap.MAP_SHARED)
             actual_states.append(actual())
             expected_states.append(expected())
         finally:
-            expected_serialization.set_crc32_options(original)
+            expected_serialization.set_default_mmap_options(original)
 
         for state in actual_states:
-            self.assertIs(state, True)
-        self.assertEqual(expected_states, [False, True, False])
+            self.assertIs(state, mmap.MAP_PRIVATE)
+        self.assertEqual(
+            expected_states,
+            [mmap.MAP_SHARED, mmap.MAP_PRIVATE, mmap.MAP_SHARED],
+        )
         for state in expected_states:
-            self.assertIs(type(state), bool)
+            self.assertIs(type(state), int)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_serialization = importlib.import_module("torch_rs.serialization")
         expected_serialization = importlib.import_module("torch.serialization")
-        actual = actual_serialization.get_crc32_options
-        expected = expected_serialization.get_crc32_options
+        actual = actual_serialization.get_default_mmap_options
+        expected = expected_serialization.get_default_mmap_options
 
         self.assertIs(torch.serialization, actual_serialization)
         self.assertIs(reference_torch.serialization, expected_serialization)
@@ -165,8 +181,8 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
     def test_imports_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_serialization = torch.serialization
         expected_serialization = reference_torch.serialization
-        actual = actual_serialization.get_crc32_options
-        expected = expected_serialization.get_crc32_options
+        actual = actual_serialization.get_default_mmap_options
+        expected = expected_serialization.get_default_mmap_options
 
         self.assertIs(sys.modules["torch_rs.serialization"], actual_serialization)
         self.assertIs(sys.modules["torch.serialization"], expected_serialization)
@@ -183,8 +199,8 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("serialization"),
         )
         self.assertEqual(
-            torch.__all__.count("get_crc32_options"),
-            reference_torch.__all__.count("get_crc32_options"),
+            torch.__all__.count("get_default_mmap_options"),
+            reference_torch.__all__.count("get_default_mmap_options"),
         )
 
         actual_package_import = {}
@@ -199,15 +215,15 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
         actual_direct_import = {}
         expected_direct_import = {}
         exec(
-            "from torch_rs.serialization import get_crc32_options",
+            "from torch_rs.serialization import get_default_mmap_options",
             actual_direct_import,
         )
         exec(
-            "from torch.serialization import get_crc32_options",
+            "from torch.serialization import get_default_mmap_options",
             expected_direct_import,
         )
-        self.assertIs(actual_direct_import["get_crc32_options"], actual)
-        self.assertIs(expected_direct_import["get_crc32_options"], expected)
+        self.assertIs(actual_direct_import["get_default_mmap_options"], actual)
+        self.assertIs(expected_direct_import["get_default_mmap_options"], expected)
 
         for module, function in (
             (actual_serialization, actual),
@@ -215,13 +231,13 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["get_crc32_options"], function)
+            self.assertIs(namespace["get_default_mmap_options"], function)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("serialization", namespace)
-            self.assertNotIn("get_crc32_options", namespace)
+            self.assertNotIn("get_default_mmap_options", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -237,15 +253,15 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.serialization.get_crc32_options
-        expected = reference_torch.serialization.get_crc32_options
+        actual = torch.serialization.get_default_mmap_options
+        expected = reference_torch.serialization.get_default_mmap_options
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
+            (lambda: actual(flags=True), lambda: expected(flags=True)),
             (
-                lambda: actual(None, enabled=True),
-                lambda: expected(None, enabled=True),
+                lambda: actual(None, flags=True),
+                lambda: expected(None, flags=True),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
