@@ -220,7 +220,7 @@ class JitExportReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_jit.__all__
-                if name in {"annotate", "export", "unused"}
+                if name in {"annotate", "export", "ignore", "unused"}
             ],
         )
         self.assertEqual(
@@ -235,7 +235,7 @@ class JitExportReferenceTests(unittest.TestCase):
         exec("from torch.jit import *", expected_namespace)
         self.assertEqual(
             {name for name in actual_namespace if not name.startswith("__")},
-            {"annotate", "export", "unused"},
+            {"annotate", "export", "ignore", "unused"},
         )
         self.assertIs(actual_namespace["export"], actual)
         self.assertIs(expected_namespace["export"], expected)
@@ -311,10 +311,9 @@ class JitExportReferenceTests(unittest.TestCase):
         }
         self.assertEqual(
             {name for name in vars(torch.jit) if not name.startswith("_")},
-            {"annotate", "export", "unused"},
+            {"annotate", "export", "ignore", "unused"},
         )
         for name in (
-            "ignore",
             "script",
             "trace",
             "is_scripting",
