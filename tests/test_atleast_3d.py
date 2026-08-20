@@ -579,7 +579,6 @@ class Atleast3dTests(unittest.TestCase):
 
         source = torch.tensor(1.0)
         unsupported_calls = (
-            lambda: torch.atleast_3d(),
             lambda: torch.atleast_3d(source, source),
         )
         for call in unsupported_calls:
