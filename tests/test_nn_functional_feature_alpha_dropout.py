@@ -268,6 +268,97 @@ class FunctionalFeatureAlphaDropoutTests(unittest.TestCase):
                         )
                         self.assert_unchanged_identity(output, source, before)
 
+    def test_training_probability_one_returns_a_new_signed_zero_product(self):
+        cases = self.make_cases(requires_grad=False)
+        sources_and_bits = (
+            (cases[0], [0x80000000]),
+            (
+                cases[2],
+                [0x80000000, 0x00000000, 0x80000000, 0x00000000],
+            ),
+            (
+                cases[3],
+                [0x80000000, 0x80000000, 0x00000000, 0x00000000],
+            ),
+        )
+
+        for case, (source, expected_bits) in enumerate(sources_and_bits):
+            for probability in (
+                1.0,
+                True,
+                np.float32(1.0),
+                torch.tensor(1.0),
+            ):
+                before = self.snapshot(source)
+                output = functional.feature_alpha_dropout(
+                    source,
+                    p=probability,
+                    training=True,
+                    inplace=False,
+                )
+                with self.subTest(case=case, probability=type(probability)):
+                    self.assertIsNot(output, source)
+                    self.assertFalse(output.is_set_to(source))
+                    self.assertNotEqual(output.data_ptr(), source.data_ptr())
+                    self.assertEqual(output.shape, source.shape)
+                    self.assertEqual(output.stride(), source.stride())
+                    self.assertEqual(output.storage_offset(), 0)
+                    self.assertIs(output.dtype, source.dtype)
+                    self.assertEqual(output.device, source.device)
+                    self.assertFalse(output.requires_grad)
+                    self.assertTrue(output.is_leaf)
+                    self.assertEqual(output.output_nr, 0)
+                    np.testing.assert_array_equal(
+                        np.asarray(output).reshape(-1).view(np.uint32),
+                        expected_bits,
+                    )
+                    self.assertEqual(self.snapshot(source)[:-1], before[:-1])
+                    np.testing.assert_array_equal(
+                        self.snapshot(source)[-1], before[-1]
+                    )
+
+    def test_training_probability_one_autograd_and_no_grad(self):
+        leaf = torch.tensor(
+            [[-1.0, 2.0], [-0.0, 3.0]], requires_grad=True
+        )
+        source = leaf.transpose(0, 1)
+        before = np.asarray(source.detach()).copy().view(np.uint32)
+        output = functional.feature_alpha_dropout(
+            source,
+            p=torch.tensor(1.0),
+            training=True,
+            inplace=False,
+        )
+        self.assertIsNot(output, source)
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        self.assertEqual(output.output_nr, 0)
+        np.testing.assert_array_equal(
+            np.asarray(output.detach()).reshape(-1).view(np.uint32),
+            [0x80000000, 0x80000000, 0x00000000, 0x00000000],
+        )
+        weights = torch.tensor([[2.0, -3.0], [-5.0, 7.0]])
+        (output * weights).sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[0.0, 0.0], [0.0, 0.0]])
+        np.testing.assert_array_equal(
+            np.asarray(source.detach()).view(np.uint32), before
+        )
+
+        no_grad_leaf = torch.tensor(
+            [[-1.0, 2.0], [-0.0, 3.0]], requires_grad=True
+        )
+        no_grad_source = no_grad_leaf.transpose(0, 1)
+        with torch.no_grad():
+            untracked = functional.feature_alpha_dropout(
+                no_grad_source, p=1, training=True
+            )
+        self.assertIsNot(untracked, no_grad_source)
+        self.assertFalse(untracked.is_set_to(no_grad_source))
+        self.assertEqual(untracked.stride(), no_grad_source.stride())
+        self.assertFalse(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
+        self.assertIsNone(no_grad_leaf.grad)
+
     def test_probability_validation_and_native_schema_errors(self):
         source = torch.tensor([1.0, 2.0])
 
@@ -569,29 +660,41 @@ class FunctionalFeatureAlphaDropoutTests(unittest.TestCase):
         self.assertIs(forwarded, source)
         self.assertEqual(len(forwarding.calls), 1)
 
+        probability_one_forwarding = RecordingMode(forward=True)
+        with probability_one_forwarding:
+            probability_one = functional.feature_alpha_dropout(
+                source, p=1, training=True, inplace=False
+            )
+        self.assertIsNot(probability_one, source)
+        self.assertEqual(probability_one.tolist(), [0.0, 0.0])
+        self.assertEqual(len(probability_one_forwarding.calls), 1)
+
     def test_sampling_paths_are_explicitly_unsupported_and_non_mutating(self):
         leaf = torch.tensor([[9.0, 9.0, 9.0], [-1.0, 2.0, -0.0]], requires_grad=True)
         source = leaf[1]
 
-        for probability in (0.25, 1.0):
-            for inplace in (False, True):
-                before = self.snapshot(source)
-                with self.subTest(probability=probability, inplace=inplace):
-                    with self.assertRaisesRegex(
-                        NotImplementedError,
-                        "^torch_rs.nn.functional.feature_alpha_dropout "
-                        "does not support sampling$",
-                    ):
-                        functional.feature_alpha_dropout(
-                            source,
-                            p=probability,
-                            training=True,
-                            inplace=inplace,
-                        )
-                    after = self.snapshot(source)
-                    self.assertEqual(after[:-1], before[:-1])
-                    np.testing.assert_array_equal(after[-1], before[-1])
-                    self.assertIsNone(leaf.grad)
+        for probability, inplace in (
+            (0.25, False),
+            (0.25, True),
+            (1.0, True),
+        ):
+            before = self.snapshot(source)
+            with self.subTest(probability=probability, inplace=inplace):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    "^torch_rs.nn.functional.feature_alpha_dropout "
+                    "does not support sampling$",
+                ):
+                    functional.feature_alpha_dropout(
+                        source,
+                        p=probability,
+                        training=True,
+                        inplace=inplace,
+                    )
+                after = self.snapshot(source)
+                self.assertEqual(after[:-1], before[:-1])
+                np.testing.assert_array_equal(after[-1], before[-1])
+                self.assertIsNone(leaf.grad)
 
 
 if __name__ == "__main__":

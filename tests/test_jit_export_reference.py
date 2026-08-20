@@ -311,17 +311,18 @@ class JitExportReferenceTests(unittest.TestCase):
         }
         self.assertEqual(
             {name for name in vars(torch.jit) if not name.startswith("_")},
-            {"annotate", "export", "ignore", "unused"},
+            {"annotate", "export", "ignore", "is_scripting", "unused"},
         )
         for name in (
             "script",
             "trace",
-            "is_scripting",
             "is_tracing",
         ):
             with self.subTest(name=name):
                 self.assertIn(name, expected_public)
                 self.assertFalse(hasattr(torch.jit, name))
+
+        self.assertIs(torch.jit.is_scripting(), False)
 
         self.assertTrue(hasattr(reference_torch, "compile"))
         self.assertFalse(hasattr(torch, "compile"))

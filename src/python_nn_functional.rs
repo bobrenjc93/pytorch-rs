@@ -16,6 +16,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         operation: "dropout",
         inplace_operation: "dropout_",
         supports_tensor_probability: true,
+        supports_probability_one: true,
         required_rank: None,
     },
     DropoutMetadata {
@@ -23,6 +24,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         operation: "alpha_dropout",
         inplace_operation: "alpha_dropout_",
         supports_tensor_probability: false,
+        supports_probability_one: false,
         required_rank: None,
     },
     DropoutMetadata {
@@ -30,6 +32,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         operation: "feature_alpha_dropout",
         inplace_operation: "feature_alpha_dropout_",
         supports_tensor_probability: true,
+        supports_probability_one: true,
         required_rank: None,
     },
     DropoutMetadata {
@@ -37,6 +40,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         operation: "feature_dropout",
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
+        supports_probability_one: false,
         required_rank: Some(3),
     },
     DropoutMetadata {
@@ -44,6 +48,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         operation: "feature_dropout",
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
+        supports_probability_one: false,
         required_rank: Some(4),
     },
     DropoutMetadata {
@@ -51,6 +56,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         operation: "feature_dropout",
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
+        supports_probability_one: false,
         required_rank: Some(5),
     },
 ];
@@ -61,6 +67,7 @@ struct DropoutMetadata {
     operation: &'static str,
     inplace_operation: &'static str,
     supports_tensor_probability: bool,
+    supports_probability_one: bool,
     required_rank: Option<usize>,
 }
 
@@ -153,10 +160,7 @@ fn _nn_functional_dropout(
         return Ok(tensor.clone().unbind().into_any());
     }
 
-    if metadata.public_function == "dropout"
-        && !inplace
-        && probability.to_bits() == 1.0_f64.to_bits()
-    {
+    if metadata.supports_probability_one && !inplace && probability.to_bits() == 1.0_f64.to_bits() {
         let output = tensor
             .try_borrow()?
             .inner()

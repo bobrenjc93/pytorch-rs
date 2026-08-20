@@ -1,4 +1,4 @@
-from torch_rs._jit_internal import export, ignore, unused
+from torch_rs._jit_internal import export, ignore, is_scripting, unused
 
 
 __all__ = ["annotate", "export", "ignore", "unused"]

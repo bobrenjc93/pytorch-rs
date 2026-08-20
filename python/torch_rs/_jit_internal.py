@@ -14,6 +14,28 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
+def is_scripting() -> bool:
+    r"""
+    Function that returns True when in compilation and False otherwise. This
+    is useful especially with the @unused decorator to leave code in your
+    model that is not yet TorchScript compatible.
+    .. testcode::
+
+        import torch
+
+        @torch.jit.unused
+        def unsupported_linear_op(x):
+            return x
+
+        def linear(x):
+            if torch.jit.is_scripting():
+                return torch.linear(x)
+            else:
+                return unsupported_linear_op(x)
+    """
+    return False
+
+
 class FunctionModifiers:
     """
     Used to denote the behavior of a function in TorchScript. See export() and
