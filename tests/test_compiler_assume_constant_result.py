@@ -119,7 +119,7 @@ class CompilerAssumeConstantResultTests(unittest.TestCase):
     def test_invalid_targets_raise_attribute_assignment_errors(self):
         immutable_attribute_suffix = (
             " and no __dict__ for setting new attributes"
-            if sys.version_info >= (3, 14)
+            if sys.version_info >= (3, 13)
             else ""
         )
         cases = (
