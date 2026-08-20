@@ -228,6 +228,7 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
             "get_crc32_options": serialization.get_crc32_options,
             "set_crc32_options": serialization.set_crc32_options,
             "get_default_mmap_options": serialization.get_default_mmap_options,
+            "set_default_mmap_options": serialization.set_default_mmap_options,
         }
 
         self.assertEqual(serialization.__all__, list(functions))
@@ -239,7 +240,8 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "get_crc32_options, set_crc32_options, get_default_mmap_options",
+            "get_crc32_options, set_crc32_options, get_default_mmap_options, "
+            "set_default_mmap_options",
             direct_import,
         )
         for name, function in functions.items():
@@ -375,12 +377,12 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
                 "get_crc32_options",
                 "set_crc32_options",
                 "get_default_mmap_options",
+                "set_default_mmap_options",
             },
         )
         for name in (
             "get_default_load_endianness",
             "set_default_load_endianness",
-            "set_default_mmap_options",
             "save",
             "load",
         ):
@@ -439,13 +441,15 @@ assert serialization.__all__ == [
     "get_crc32_options",
     "set_crc32_options",
     "get_default_mmap_options",
+    "set_default_mmap_options",
 ]
 assert replacement.__all__ == [
     "get_crc32_options",
     "set_crc32_options",
     "get_default_mmap_options",
+    "set_default_mmap_options",
 ]
-assert not hasattr(replacement, "set_default_mmap_options")
+assert hasattr(replacement, "set_default_mmap_options")
 assert not hasattr(replacement, "save")
 assert not hasattr(replacement, "load")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)

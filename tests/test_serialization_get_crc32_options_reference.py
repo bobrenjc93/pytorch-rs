@@ -278,6 +278,7 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
             "get_crc32_options",
             "set_crc32_options",
             "get_default_mmap_options",
+            "set_default_mmap_options",
         )
 
         self.assertIs(sys.modules["torch_rs.serialization"], actual_serialization)
@@ -313,12 +314,14 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         expected_direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "get_crc32_options, set_crc32_options, get_default_mmap_options",
+            "get_crc32_options, set_crc32_options, get_default_mmap_options, "
+            "set_default_mmap_options",
             actual_direct_import,
         )
         exec(
             "from torch.serialization import "
-            "get_crc32_options, set_crc32_options, get_default_mmap_options",
+            "get_crc32_options, set_crc32_options, get_default_mmap_options, "
+            "set_default_mmap_options",
             expected_direct_import,
         )
         for name in supported_names:
@@ -416,6 +419,7 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
                 "get_crc32_options",
                 "set_crc32_options",
                 "get_default_mmap_options",
+                "set_default_mmap_options",
             },
         )
         unsupported = set(expected_serialization.__all__) - actual_public
@@ -423,7 +427,6 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
             {
                 "get_default_load_endianness",
                 "set_default_load_endianness",
-                "set_default_mmap_options",
                 "save",
                 "load",
             }.issubset(unsupported)

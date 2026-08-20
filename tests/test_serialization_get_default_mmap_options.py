@@ -24,6 +24,19 @@ GETTER_DOC = """
         default_mmap_options: int
     """
 
+SETTER_DOC = """
+    Context manager or function to set default mmap options for :func:`torch.load` with ``mmap=True`` to flags.
+
+    For now, only either ``mmap.MAP_PRIVATE`` or ``mmap.MAP_SHARED`` are supported.
+    Please open an issue if you need any other option to be added here.
+
+    .. note::
+        This feature is currently not supported for Windows.
+
+    Args:
+        flags: ``mmap.MAP_PRIVATE`` or ``mmap.MAP_SHARED``
+    """
+
 
 class SerializationDefaultMmapOptionsTests(unittest.TestCase):
     def test_platform_default_is_exact_and_preserves_grad_mode(self):
@@ -101,35 +114,74 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
 
     def test_signature_annotations_documentation_and_module_identity(self):
         serialization = importlib.import_module("torch_rs.serialization")
-        function = serialization.get_default_mmap_options
+        getter = serialization.get_default_mmap_options
+        setter = serialization.set_default_mmap_options
 
         self.assertIs(torch.serialization, serialization)
         self.assertIs(sys.modules["torch_rs.serialization"], serialization)
         self.assertIsNone(serialization.__doc__)
-        self.assertIs(type(function), types.FunctionType)
-        self.assertEqual(function.__module__, "torch_rs.serialization")
-        self.assertIs(inspect.getmodule(function), serialization)
-        self.assertIsNone(function.__defaults__)
-        self.assertIsNone(function.__kwdefaults__)
-        self.assertEqual(function.__dict__, {})
-        self.assertFalse(hasattr(function, "__text_signature__"))
-        self.assertEqual(str(inspect.signature(function)), "() -> int | None")
-        self.assertEqual(function.__annotations__, {"return": int | None})
-        self.assertEqual(typing.get_type_hints(function), {"return": int | None})
-        self.assertEqual(function.__name__, "get_default_mmap_options")
-        self.assertEqual(function.__qualname__, "get_default_mmap_options")
+        self.assertIs(type(getter), types.FunctionType)
+        self.assertEqual(getter.__module__, "torch_rs.serialization")
+        self.assertIs(inspect.getmodule(getter), serialization)
+        self.assertIsNone(getter.__defaults__)
+        self.assertIsNone(getter.__kwdefaults__)
+        self.assertEqual(getter.__dict__, {})
+        self.assertFalse(hasattr(getter, "__text_signature__"))
+        self.assertEqual(str(inspect.signature(getter)), "() -> int | None")
+        self.assertEqual(getter.__annotations__, {"return": int | None})
+        self.assertEqual(typing.get_type_hints(getter), {"return": int | None})
+        self.assertEqual(getter.__name__, "get_default_mmap_options")
+        self.assertEqual(getter.__qualname__, "get_default_mmap_options")
         self.assertEqual(
-            inspect.cleandoc(function.__doc__),
+            inspect.cleandoc(getter.__doc__),
             inspect.cleandoc(GETTER_DOC),
+        )
+
+        self.assertIs(type(setter), type)
+        self.assertEqual(setter.__module__, "torch_rs.serialization")
+        self.assertIs(inspect.getmodule(setter), serialization)
+        self.assertEqual(str(inspect.signature(setter)), "(flags: int) -> None")
+        self.assertEqual(setter.__annotations__, {})
+        self.assertEqual(typing.get_type_hints(setter), {})
+        self.assertEqual(setter.__name__, "set_default_mmap_options")
+        self.assertEqual(setter.__qualname__, "set_default_mmap_options")
+        self.assertEqual(
+            inspect.cleandoc(setter.__doc__),
+            inspect.cleandoc(SETTER_DOC),
+        )
+        self.assertEqual(
+            str(inspect.signature(setter.__init__)),
+            "(self, flags: int) -> None",
+        )
+        self.assertEqual(
+            setter.__init__.__annotations__,
+            {"flags": int, "return": None},
+        )
+        self.assertEqual(str(inspect.signature(setter.__enter__)), "(self) -> None")
+        self.assertEqual(setter.__enter__.__annotations__, {"return": None})
+        self.assertEqual(
+            str(inspect.signature(setter.__exit__)),
+            "(self, exc_type: Any, exc_value: Any, traceback: Any) -> None",
+        )
+        self.assertEqual(
+            setter.__exit__.__annotations__,
+            {
+                "exc_type": typing.Any,
+                "exc_value": typing.Any,
+                "traceback": typing.Any,
+                "return": None,
+            },
         )
 
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         serialization = torch.serialization
-        function = serialization.get_default_mmap_options
+        getter = serialization.get_default_mmap_options
+        setter = serialization.set_default_mmap_options
         exported_names = [
             "get_crc32_options",
             "set_crc32_options",
             "get_default_mmap_options",
+            "set_default_mmap_options",
         ]
 
         self.assertEqual(serialization.__all__, exported_names)
@@ -140,10 +192,12 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
 
         direct_import = {}
         exec(
-            "from torch_rs.serialization import get_default_mmap_options",
+            "from torch_rs.serialization import "
+            "get_default_mmap_options, set_default_mmap_options",
             direct_import,
         )
-        self.assertIs(direct_import["get_default_mmap_options"], function)
+        self.assertIs(direct_import["get_default_mmap_options"], getter)
+        self.assertIs(direct_import["set_default_mmap_options"], setter)
 
         serialization_namespace = {}
         exec("from torch_rs.serialization import *", serialization_namespace)
@@ -155,91 +209,279 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
             },
             set(exported_names),
         )
-        self.assertIs(serialization_namespace["get_default_mmap_options"], function)
+        self.assertIs(serialization_namespace["get_default_mmap_options"], getter)
+        self.assertIs(serialization_namespace["set_default_mmap_options"], setter)
 
         self.assertNotIn("serialization", torch.__all__)
         self.assertNotIn("get_default_mmap_options", torch.__all__)
+        self.assertNotIn("set_default_mmap_options", torch.__all__)
         self.assertFalse(hasattr(torch, "get_default_mmap_options"))
+        self.assertFalse(hasattr(torch, "set_default_mmap_options"))
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("serialization", top_level_namespace)
         self.assertNotIn("get_default_mmap_options", top_level_namespace)
+        self.assertNotIn("set_default_mmap_options", top_level_namespace)
 
-        self.assertIs(copy.copy(function), function)
-        self.assertIs(copy.deepcopy(function), function)
-        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-            with self.subTest(protocol=protocol):
-                payload = pickle.dumps(function, protocol=protocol)
-                self.assertIn(b"torch_rs.serialization", payload)
-                self.assertIs(pickle.loads(payload), function)
+        for value in (getter, setter):
+            self.assertIs(copy.copy(value), value)
+            self.assertIs(copy.deepcopy(value), value)
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(name=value.__name__, protocol=protocol):
+                    payload = pickle.dumps(value, protocol=protocol)
+                    self.assertIn(b"torch_rs.serialization", payload)
+                    self.assertIs(pickle.loads(payload), value)
 
     def test_argument_errors_match_pytorch_2_13(self):
-        function = torch.serialization.get_default_mmap_options
+        getter = torch.serialization.get_default_mmap_options
+        setter = torch.serialization.set_default_mmap_options
         cases = (
             (
-                lambda: function(None),
+                lambda: getter(None),
                 "get_default_mmap_options() takes 0 positional arguments but 1 "
                 "was given",
             ),
             (
-                lambda: function(None, None),
+                lambda: getter(None, None),
                 "get_default_mmap_options() takes 0 positional arguments but 2 "
                 "were given",
             ),
             (
-                lambda: function(enabled=True),
+                lambda: getter(enabled=True),
                 "get_default_mmap_options() got an unexpected keyword argument "
                 "'enabled'",
             ),
             (
-                lambda: function(None, enabled=True),
+                lambda: getter(None, enabled=True),
                 "get_default_mmap_options() got an unexpected keyword argument "
                 "'enabled'",
+            ),
+            (
+                lambda: setter(),
+                "set_default_mmap_options.__init__() missing 1 required positional "
+                "argument: 'flags'",
+            ),
+            (
+                lambda: setter(None, None),
+                "set_default_mmap_options.__init__() takes 2 positional arguments "
+                "but 3 were given",
+            ),
+            (
+                lambda: setter(enabled=True),
+                "set_default_mmap_options.__init__() got an unexpected keyword "
+                "argument 'enabled'",
+            ),
+            (
+                lambda: setter(None, flags=None),
+                "set_default_mmap_options.__init__() got multiple values for "
+                "argument 'flags'",
             ),
         )
         for call, message in cases:
             with self.subTest(message=message):
-                before = function()
+                before = getter()
                 with self.assertRaises(TypeError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
-                self.assertIs(function(), before)
+                self.assertIs(getter(), before)
 
-        self.assertIs(function(**{}), getattr(mmap, "MAP_PRIVATE", None))
+        self.assertIs(getter(**{}), getattr(mmap, "MAP_PRIVATE", None))
 
-    def test_reload_and_reimport_preserve_the_platform_default(self):
-        original_module = torch.serialization
-        original_function = original_module.get_default_mmap_options
-        module_name = original_module.__name__
-        expected = getattr(mmap, "MAP_PRIVATE", None)
+    def test_invalid_flags_raise_without_changing_state(self):
+        if sys.platform == "win32" or not all(
+            hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")
+        ):
+            self.skipTest("mmap option mutation is unsupported on Windows")
 
-        self.assertIs(importlib.reload(original_module), original_module)
-        self.assertIs(torch.serialization, original_module)
-        self.assertIs(original_function(), expected)
-        self.assertIs(original_module.get_default_mmap_options(), expected)
+        getter = torch.serialization.get_default_mmap_options
+        setter = torch.serialization.set_default_mmap_options
+        for flags in (0, None, "private", mmap.MAP_PRIVATE | mmap.MAP_SHARED):
+            with self.subTest(flags=flags):
+                before = getter()
+                message = (
+                    "Invalid argument in function set_default_mmap_options, "
+                    "expected mmap.MAP_PRIVATE or mmap.MAP_SHARED, "
+                    f"but got {flags}"
+                )
+                with self.assertRaises(ValueError) as raised:
+                    setter(flags)
+                self.assertEqual(str(raised.exception), message)
+                self.assertEqual(raised.exception.args, (message,))
+                self.assertIs(getter(), before)
+
+    def test_immediate_updates_nested_contexts_and_exceptions_restore_state(self):
+        if sys.platform == "win32" or not all(
+            hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")
+        ):
+            self.skipTest("mmap option mutation is unsupported on Windows")
+
+        getter = torch.serialization.get_default_mmap_options
+        setter = torch.serialization.set_default_mmap_options
+        private = mmap.MAP_PRIVATE
+        shared = mmap.MAP_SHARED
+        original = getter()
+
+        class ExpectedError(Exception):
+            pass
 
         try:
+            update = setter(shared)
+            self.assertIs(type(update), setter)
+            self.assertIs(update.prev, original)
+            self.assertIs(getter(), shared)
+
+            setter(private)
+            self.assertIs(getter(), private)
+            with setter(shared) as outer_value:
+                self.assertIsNone(outer_value)
+                self.assertIs(getter(), shared)
+                with setter(private) as inner_value:
+                    self.assertIsNone(inner_value)
+                    self.assertIs(getter(), private)
+                self.assertIs(getter(), shared)
+            self.assertIs(getter(), private)
+
+            with self.assertRaises(ExpectedError):
+                with setter(shared):
+                    self.assertIs(getter(), shared)
+                    raise ExpectedError("restore after exceptional exit")
+            self.assertIs(getter(), private)
+
+            keyword_update = setter(flags=shared)
+            self.assertIs(type(keyword_update), setter)
+            self.assertIs(getter(), shared)
+        finally:
+            setter(original)
+
+    def test_process_global_updates_are_visible_across_threads(self):
+        if sys.platform == "win32" or not all(
+            hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")
+        ):
+            self.skipTest("mmap option mutation is unsupported on Windows")
+
+        getter = torch.serialization.get_default_mmap_options
+        setter = torch.serialization.set_default_mmap_options
+        private = mmap.MAP_PRIVATE
+        shared = mmap.MAP_SHARED
+        original = getter()
+
+        def threaded_values():
+            worker_count = 8
+            barrier = threading.Barrier(worker_count)
+            values = [None] * worker_count
+            errors = []
+
+            def worker(index):
+                try:
+                    barrier.wait(timeout=10)
+                    values[index] = getter()
+                except BaseException as error:
+                    errors.append(error)
+
+            threads = [
+                threading.Thread(target=worker, args=(index,))
+                for index in range(worker_count)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+            self.assertEqual(errors, [])
+            return values
+
+        try:
+            setter(private)
+            with setter(shared):
+                self.assertEqual(threaded_values(), [shared] * 8)
+            self.assertEqual(threaded_values(), [private] * 8)
+        finally:
+            setter(original)
+
+    def test_reload_and_reimport_preserve_and_share_process_state(self):
+        if sys.platform == "win32" or not all(
+            hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")
+        ):
+            self.skipTest("mmap option mutation is unsupported on Windows")
+
+        original_module = torch.serialization
+        original_getter = original_module.get_default_mmap_options
+        original_setter = original_module.set_default_mmap_options
+        module_name = original_module.__name__
+        original = original_getter()
+        replacement_module = None
+
+        try:
+            original_setter(mmap.MAP_SHARED)
+            self.assertIs(importlib.reload(original_module), original_module)
+            self.assertIs(torch.serialization, original_module)
+            self.assertIs(original_getter(), mmap.MAP_SHARED)
+            self.assertIs(
+                original_module.get_default_mmap_options(),
+                mmap.MAP_SHARED,
+            )
+
             self.assertIs(sys.modules.pop(module_name), original_module)
             replacement_module = importlib.import_module(module_name)
 
             self.assertIsNot(replacement_module, original_module)
             self.assertIs(sys.modules[module_name], replacement_module)
             self.assertIs(torch.serialization, replacement_module)
-            self.assertIs(original_function(), expected)
-            self.assertIs(replacement_module.get_default_mmap_options(), expected)
+            self.assertIs(original_getter(), mmap.MAP_SHARED)
+            self.assertIs(
+                replacement_module.get_default_mmap_options(),
+                mmap.MAP_SHARED,
+            )
+
+            replacement_module.set_default_mmap_options(mmap.MAP_PRIVATE)
+            self.assertIs(original_getter(), mmap.MAP_PRIVATE)
+            with original_setter(mmap.MAP_SHARED):
+                self.assertIs(
+                    replacement_module.get_default_mmap_options(),
+                    mmap.MAP_SHARED,
+                )
+            self.assertIs(
+                replacement_module.get_default_mmap_options(),
+                mmap.MAP_PRIVATE,
+            )
         finally:
+            state_owner = replacement_module or original_module
+            state_owner.set_default_mmap_options(original)
             sys.modules[module_name] = original_module
             torch.serialization = original_module
 
-    def test_mmap_setter_save_and_load_remain_unsupported(self):
+    def test_save_and_load_remain_unsupported(self):
         serialization = torch.serialization
 
         self.assertTrue(hasattr(serialization, "get_default_mmap_options"))
-        for name in ("set_default_mmap_options", "save", "load"):
+        self.assertTrue(hasattr(serialization, "set_default_mmap_options"))
+        for name in ("save", "load"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(serialization, name))
                 self.assertNotIn(name, serialization.__all__)
+
+    def test_windows_platform_check_precedes_flag_validation(self):
+        serialization = torch.serialization
+        getter = serialization.get_default_mmap_options
+        setter = serialization.set_default_mmap_options
+        original_platform_flag = serialization._IS_WINDOWS
+        before = getter()
+        message = (
+            "Changing the default mmap options is currently not supported for Windows"
+        )
+
+        try:
+            serialization._IS_WINDOWS = True
+            for flags in (getattr(mmap, "MAP_PRIVATE", None), 0, None):
+                with self.subTest(flags=flags):
+                    with self.assertRaises(RuntimeError) as raised:
+                        setter(flags)
+                    self.assertEqual(str(raised.exception), message)
+                    self.assertEqual(raised.exception.args, (message,))
+                    self.assertIs(getter(), before)
+        finally:
+            serialization._IS_WINDOWS = original_platform_flag
 
     def test_unavailable_map_private_returns_none_without_importing_pytorch(self):
         script = r"""
@@ -262,7 +504,11 @@ serialization = torch.serialization
 assert serialization.get_default_mmap_options() is None
 assert importlib.reload(serialization) is serialization
 assert serialization.get_default_mmap_options() is None
-assert not hasattr(serialization, "set_default_mmap_options")
+with serialization.set_default_mmap_options(mmap.MAP_SHARED) as value:
+    assert value is None
+    assert serialization.get_default_mmap_options() == mmap.MAP_SHARED
+assert serialization.get_default_mmap_options() is None
+assert "set_default_mmap_options" in serialization.__all__
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
