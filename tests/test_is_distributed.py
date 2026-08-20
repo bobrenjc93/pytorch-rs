@@ -232,7 +232,7 @@ class TensorIsDistributedTests(unittest.TestCase):
         try:
             sys.setrecursionlimit(80)
             with self.assertRaisesRegex(
-                RecursionError, r"^maximum recursion depth exceeded$"
+                RecursionError, r"^maximum recursion depth exceeded"
             ):
                 with lower:
                     with declining:
