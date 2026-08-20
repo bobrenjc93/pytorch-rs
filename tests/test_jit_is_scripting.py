@@ -126,7 +126,10 @@ class JitIsScriptingTests(unittest.TestCase):
         jit = torch.jit
         function = jit.is_scripting
 
-        self.assertEqual(jit.__all__, ["annotate", "export", "ignore", "unused"])
+        self.assertEqual(
+            jit.__all__,
+            ["annotate", "export", "ignore", "script_if_tracing", "unused"],
+        )
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
             {
@@ -135,6 +138,7 @@ class JitIsScriptingTests(unittest.TestCase):
                 "ignore",
                 "is_scripting",
                 "is_tracing",
+                "script_if_tracing",
                 "unused",
             },
         )
@@ -147,7 +151,7 @@ class JitIsScriptingTests(unittest.TestCase):
         exec("from torch_rs.jit import *", wildcard_namespace)
         self.assertEqual(
             {name for name in wildcard_namespace if not name.startswith("__")},
-            {"annotate", "export", "ignore", "unused"},
+            {"annotate", "export", "ignore", "script_if_tracing", "unused"},
         )
         self.assertNotIn("is_scripting", wildcard_namespace)
 
@@ -200,7 +204,6 @@ class JitIsScriptingTests(unittest.TestCase):
             "ScriptFunction",
             "ScriptModule",
             "script",
-            "script_if_tracing",
             "script_method",
             "trace",
             "trace_module",

@@ -154,7 +154,13 @@ class JitIsTracingReferenceTests(unittest.TestCase):
         expected_trace = expected_jit._trace
         actual = actual_jit.is_tracing
         expected = expected_jit.is_tracing
-        wildcard_supported = {"annotate", "export", "ignore", "unused"}
+        wildcard_supported = {
+            "annotate",
+            "export",
+            "ignore",
+            "script_if_tracing",
+            "unused",
+        }
         public_supported = {
             *wildcard_supported,
             "is_scripting",
@@ -303,7 +309,6 @@ class JitIsTracingReferenceTests(unittest.TestCase):
             "ScriptFunction",
             "ScriptModule",
             "script",
-            "script_if_tracing",
             "script_method",
             "trace",
             "trace_module",
