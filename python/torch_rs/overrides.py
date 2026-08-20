@@ -6,10 +6,14 @@ import warnings
 from .torch_rs import (
     Tensor,
     _get_function_stack_at,
+    _has_torch_function,
     _len_torch_function_stack,
     _pop_torch_function_stack,
     _push_on_torch_function_stack,
 )
+
+
+has_torch_function = _has_torch_function
 
 
 class TorchFunctionMode:
@@ -165,4 +169,4 @@ def _dispatch_unary_torch_function(
     raise TypeError(message)
 
 
-__all__ = ["TorchFunctionMode"]
+__all__ = ["TorchFunctionMode", "has_torch_function"]
