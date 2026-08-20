@@ -227,6 +227,7 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         functions = {
             "get_crc32_options": serialization.get_crc32_options,
             "set_crc32_options": serialization.set_crc32_options,
+            "get_default_mmap_options": serialization.get_default_mmap_options,
         }
 
         self.assertEqual(serialization.__all__, list(functions))
@@ -238,7 +239,7 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "get_crc32_options, set_crc32_options",
+            "get_crc32_options, set_crc32_options, get_default_mmap_options",
             direct_import,
         )
         for name, function in functions.items():
@@ -370,12 +371,15 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
 
         self.assertEqual(
             {name for name in vars(serialization) if not name.startswith("_")},
-            {"get_crc32_options", "set_crc32_options"},
+            {
+                "get_crc32_options",
+                "set_crc32_options",
+                "get_default_mmap_options",
+            },
         )
         for name in (
             "get_default_load_endianness",
             "set_default_load_endianness",
-            "get_default_mmap_options",
             "set_default_mmap_options",
             "save",
             "load",
@@ -387,6 +391,7 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         for name in (
             "get_crc32_options",
             "set_crc32_options",
+            "get_default_mmap_options",
             "save",
             "load",
         ):
@@ -397,6 +402,7 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
     def test_importing_reloading_and_calling_does_not_import_pytorch(self):
         script = r"""
 import importlib
+import mmap
 import sys
 
 class RejectPytorchImport:
@@ -427,8 +433,20 @@ assert replacement.set_crc32_options("replacement") is None
 assert old_getter() == "replacement"
 assert old_setter(None) is None
 assert replacement.get_crc32_options() is None
-assert serialization.__all__ == ["get_crc32_options", "set_crc32_options"]
-assert replacement.__all__ == ["get_crc32_options", "set_crc32_options"]
+expected_mmap_options = getattr(mmap, "MAP_PRIVATE", None)
+assert serialization.get_default_mmap_options() is expected_mmap_options
+assert replacement.get_default_mmap_options() is expected_mmap_options
+assert serialization.__all__ == [
+    "get_crc32_options",
+    "set_crc32_options",
+    "get_default_mmap_options",
+]
+assert replacement.__all__ == [
+    "get_crc32_options",
+    "set_crc32_options",
+    "get_default_mmap_options",
+]
+assert not hasattr(replacement, "set_default_mmap_options")
 assert not hasattr(replacement, "save")
 assert not hasattr(replacement, "load")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
