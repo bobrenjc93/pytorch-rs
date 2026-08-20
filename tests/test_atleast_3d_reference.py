@@ -95,8 +95,7 @@ class Atleast3dReferenceTests(unittest.TestCase):
             ),
         )
 
-    def observe_layout(self, module, source):
-        result = module.atleast_3d(source)
+    def observe_result(self, module, source, result):
         repeated = module.atleast_3d(source)
         return (
             result is source,
@@ -114,6 +113,9 @@ class Atleast3dReferenceTests(unittest.TestCase):
             self.tensor_array(result, module).copy(),
         )
 
+    def observe_layout(self, module, source):
+        return self.observe_result(module, source, module.atleast_3d(source))
+
     def test_values_strides_offsets_aliasing_and_metadata_match_pytorch_2_13(self):
         actual_cases = self.make_layout_cases(torch)
         expected_cases = self.make_layout_cases(reference_torch)
@@ -126,6 +128,54 @@ class Atleast3dReferenceTests(unittest.TestCase):
                 expected = self.observe_layout(reference_torch, expected_source)
                 self.assertEqual(actual[:-1], expected[:-1])
                 np.testing.assert_array_equal(actual[-1], expected[-1])
+
+    def test_sequence_values_layouts_aliasing_and_empties_match_pytorch_2_13(self):
+        for sequence_type in (tuple, list):
+            actual_cases = self.make_layout_cases(torch)
+            expected_cases = self.make_layout_cases(reference_torch)
+            actual_results = torch.atleast_3d(
+                sequence_type(source for _, source in actual_cases)
+            )
+            expected_results = reference_torch.atleast_3d(
+                sequence_type(source for _, source in expected_cases)
+            )
+            with self.subTest(sequence_type=sequence_type.__name__):
+                self.assertIs(type(actual_results), tuple)
+                self.assertIs(type(expected_results), tuple)
+                self.assertEqual(len(actual_results), len(expected_results))
+
+            for (
+                (name, actual_source),
+                (expected_name, expected_source),
+                actual_result,
+                expected_result,
+            ) in zip(
+                actual_cases,
+                expected_cases,
+                actual_results,
+                expected_results,
+                strict=True,
+            ):
+                with self.subTest(
+                    sequence_type=sequence_type.__name__, case=name
+                ):
+                    self.assertEqual(name, expected_name)
+                    actual = self.observe_result(
+                        torch, actual_source, actual_result
+                    )
+                    expected = self.observe_result(
+                        reference_torch, expected_source, expected_result
+                    )
+                    self.assertEqual(actual[:-1], expected[:-1])
+                    np.testing.assert_array_equal(actual[-1], expected[-1])
+
+        for empty in ((), []):
+            actual = torch.atleast_3d(empty)
+            expected = reference_torch.atleast_3d(empty)
+            with self.subTest(empty_type=type(empty).__name__):
+                self.assertIs(type(actual), tuple)
+                self.assertIs(type(expected), tuple)
+                self.assertEqual(actual, expected)
 
     def autograd_outcome(self, module):
         scalar_leaf = module.tensor(
@@ -288,6 +338,159 @@ class Atleast3dReferenceTests(unittest.TestCase):
             ),
         )
 
+    def sequence_autograd_outcome(self, module, sequence_type):
+        scalar_leaf = module.tensor(
+            [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
+        )
+        scalar = scalar_leaf[1]
+        vector_leaf = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        vector = vector_leaf.transpose(0, 2)[3].transpose(0, 1)[1]
+        matrix_leaf = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        matrix = matrix_leaf[1].transpose(0, 1)
+        empty_vector_leaf = module.zeros(
+            (2, 0, 3), dtype=module.float32, requires_grad=True
+        )
+        empty_vector = (
+            empty_vector_leaf.transpose(0, 2)[1].transpose(0, 1)[1]
+        )
+        empty_matrix_leaf = module.zeros(
+            (2, 0, 3), dtype=module.float32, requires_grad=True
+        )
+        empty_matrix = empty_matrix_leaf.transpose(0, 2)[1]
+        rank_three_leaf = module.zeros(
+            (1, 2, 3), dtype=module.float32, requires_grad=True
+        )
+        rank_three = rank_three_leaf * 2.0
+
+        results = module.atleast_3d(
+            sequence_type(
+                (
+                    scalar,
+                    vector,
+                    matrix,
+                    empty_vector,
+                    empty_matrix,
+                    rank_three,
+                )
+            )
+        )
+        (
+            scalar_result,
+            vector_result,
+            matrix_result,
+            empty_vector_result,
+            empty_matrix_result,
+            rank_three_result,
+        ) = results
+
+        def view_metadata(result, source):
+            return (
+                tuple(result.shape),
+                result.stride(),
+                result.storage_offset(),
+                result.requires_grad,
+                result.is_leaf,
+                result.output_nr,
+                result.data_ptr() == source.data_ptr(),
+                result.is_set_to(module.atleast_3d(source)),
+            )
+
+        metadata = (
+            type(results) is tuple,
+            view_metadata(scalar_result, scalar),
+            view_metadata(vector_result, vector),
+            view_metadata(matrix_result, matrix),
+            view_metadata(empty_vector_result, empty_vector),
+            view_metadata(empty_matrix_result, empty_matrix),
+            (
+                rank_three_result is rank_three,
+                rank_three_result.requires_grad,
+                rank_three_result.is_leaf,
+                rank_three_result.output_nr,
+            ),
+        )
+
+        for result in (scalar_result, vector_result, matrix_result):
+            loss = result.sum()
+            loss.backward()
+            loss.backward()
+        empty_vector_result.sum().backward()
+        empty_matrix_result.sum().backward()
+        rank_three_result.sum().backward()
+
+        return (
+            metadata,
+            self.grad_list(scalar_leaf, module),
+            self.grad_list(vector_leaf, module),
+            self.grad_list(matrix_leaf, module),
+            self.grad_list(empty_vector_leaf, module),
+            self.grad_list(empty_matrix_leaf, module),
+            self.grad_list(rank_three_leaf, module),
+        )
+
+    def sequence_no_grad_outcome(self, module, sequence_type):
+        scalar = module.tensor(
+            3.0, dtype=module.float32, requires_grad=True
+        )
+        vector = module.tensor(
+            [1.0, 2.0], dtype=module.float32, requires_grad=True
+        )
+        matrix = module.tensor(
+            [[1.0, 2.0]], dtype=module.float32, requires_grad=True
+        )
+        empty = module.zeros(
+            (0,), dtype=module.float32, requires_grad=True
+        )
+        rank_three_leaf = module.zeros(
+            (1, 2, 3), dtype=module.float32, requires_grad=True
+        )
+        rank_three = rank_three_leaf * 2.0
+        with module.no_grad():
+            results = module.atleast_3d(
+                sequence_type((scalar, vector, matrix, empty, rank_three))
+            )
+
+        *view_results, rank_three_result = results
+        view_outcomes = []
+        for result, source in zip(
+            view_results, (scalar, vector, matrix, empty), strict=True
+        ):
+            (result * result).sum().backward()
+            view_outcomes.append(
+                (
+                    tuple(result.shape),
+                    result.stride(),
+                    result.storage_offset(),
+                    result.requires_grad,
+                    result.is_leaf,
+                    result.output_nr,
+                    result.data_ptr() == source.data_ptr(),
+                    self.grad_list(source, module),
+                    self.grad_list(result, module),
+                )
+            )
+
+        rank_three_result.sum().backward()
+        return (
+            type(results) is tuple,
+            tuple(view_outcomes),
+            (
+                rank_three_result is rank_three,
+                rank_three_result.requires_grad,
+                rank_three_result.is_leaf,
+                rank_three_result.output_nr,
+                self.grad_list(rank_three_leaf, module),
+            ),
+        )
+
     def test_autograd_repeated_backward_and_no_grad_match_pytorch_2_13(self):
         self.assertEqual(
             self.autograd_outcome(torch),
@@ -297,6 +500,22 @@ class Atleast3dReferenceTests(unittest.TestCase):
             self.no_grad_outcome(torch),
             self.no_grad_outcome(reference_torch),
         )
+
+    def test_sequence_autograd_and_no_grad_match_pytorch_2_13(self):
+        for sequence_type in (tuple, list):
+            with self.subTest(sequence_type=sequence_type.__name__):
+                self.assertEqual(
+                    self.sequence_autograd_outcome(torch, sequence_type),
+                    self.sequence_autograd_outcome(
+                        reference_torch, sequence_type
+                    ),
+                )
+                self.assertEqual(
+                    self.sequence_no_grad_outcome(torch, sequence_type),
+                    self.sequence_no_grad_outcome(
+                        reference_torch, sequence_type
+                    ),
+                )
 
     def mode_contract(self, module):
         function = module.atleast_3d
@@ -502,13 +721,11 @@ class Atleast3dReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_zero_sequence_and_multiple_forms_remain_unsupported(self):
+    def test_variadic_and_mixed_forms_remain_unsupported(self):
         source = torch.tensor(1.0)
         unsupported = (
             lambda: torch.atleast_3d(),
             lambda: torch.atleast_3d(source, source),
-            lambda: torch.atleast_3d((source,)),
-            lambda: torch.atleast_3d([source]),
         )
         for call in unsupported:
             with self.subTest(call=call), self.assertRaisesRegex(
@@ -521,6 +738,176 @@ class Atleast3dReferenceTests(unittest.TestCase):
         self.assertEqual(reference_torch.atleast_3d(), ())
         self.assertEqual(len(reference_torch.atleast_3d(expected, expected)), 2)
         self.assertEqual(len(reference_torch.atleast_3d((expected,))), 1)
+
+        sequence_error = (
+            "atleast_3d() sequence inputs only support an exact tuple or list "
+            "of exact Tensors"
+        )
+        mixed_sequences = (
+            (source, None),
+            [source, 1],
+            ((source,),),
+        )
+        for sequence in mixed_sequences:
+            with self.subTest(sequence=sequence), self.assertRaisesRegex(
+                TypeError, f"^{re.escape(sequence_error)}$"
+            ):
+                torch.atleast_3d(sequence)
+
+        with self.assertRaises(TypeError):
+            reference_torch.atleast_3d((expected, None))
+
+    def test_inner_overrides_remain_unsupported_and_outer_dispatch_matches(self):
+        sequence_error = (
+            "atleast_3d() sequence inputs only support an exact tuple or list "
+            "of exact Tensors"
+        )
+        actual_source = torch.tensor(1.0)
+
+        class ActualOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return object()
+
+        with self.assertRaisesRegex(
+            TypeError, f"^{re.escape(sequence_error)}$"
+        ):
+            torch.atleast_3d((actual_source, ActualOverride()))
+        self.assertEqual(ActualOverride.calls, [])
+
+        marker = object()
+
+        class ExpectedOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        expected_source = reference_torch.tensor(1.0)
+        self.assertIs(
+            reference_torch.atleast_3d(
+                (expected_source, ExpectedOverride())
+            ),
+            marker,
+        )
+        self.assertEqual(len(ExpectedOverride.calls), 1)
+
+        def outer_override_outcome(module, sequence_type):
+            function = module.atleast_3d
+            source = module.tensor(1.0, dtype=module.float32)
+            outer_marker = object()
+
+            class OuterOverride(sequence_type):
+                calls = []
+
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    cls.calls.append((func, types, args, kwargs))
+                    return outer_marker
+
+            sequence = OuterOverride((source,))
+            result = function(sequence)
+            func, dispatch_types, args, kwargs = OuterOverride.calls[0]
+            return (
+                result is outer_marker,
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                args == (sequence,),
+                kwargs,
+            )
+
+        for sequence_type in (tuple, list):
+            with self.subTest(outer_override=sequence_type.__name__):
+                self.assertEqual(
+                    outer_override_outcome(torch, sequence_type),
+                    outer_override_outcome(reference_torch, sequence_type),
+                )
+
+        def spoofed_sequence_outcome(module):
+            function = module.atleast_3d
+            spoofed_marker = object()
+
+            class SpoofedSequence:
+                calls = []
+
+                @property
+                def __class__(self):
+                    return tuple
+
+                @classmethod
+                def __torch_function__(cls, func, types, args=(), kwargs=None):
+                    cls.calls.append((func, types, args, kwargs))
+                    return spoofed_marker
+
+            value = SpoofedSequence()
+            result = function(value)
+            func, dispatch_types, args, kwargs = SpoofedSequence.calls[0]
+            return (
+                isinstance(value, tuple),
+                result is spoofed_marker,
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                args == (value,),
+                kwargs,
+            )
+
+        self.assertEqual(
+            spoofed_sequence_outcome(torch),
+            spoofed_sequence_outcome(reference_torch),
+        )
+
+        class ActualMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        actual_mode = ActualMode()
+        with actual_mode:
+            actual_result = torch.atleast_3d((actual_source,))
+        self.assertIs(actual_result, marker)
+        self.assertEqual(len(actual_mode.calls), 1)
+
+        class ExpectedMode(reference_torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        expected_mode = ExpectedMode()
+        with expected_mode:
+            expected_result = reference_torch.atleast_3d((expected_source,))
+        self.assertIs(expected_result, marker)
+        self.assertEqual(len(expected_mode.calls), 1)
+
+        def normalize_mode_call(call, function, source):
+            func, dispatch_types, args, kwargs = call
+            return (
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                args == ((source,),),
+                kwargs,
+            )
+
+        self.assertEqual(
+            normalize_mode_call(
+                actual_mode.calls[0], torch.atleast_3d, actual_source
+            ),
+            normalize_mode_call(
+                expected_mode.calls[0],
+                reference_torch.atleast_3d,
+                expected_source,
+            ),
+        )
 
 
 if __name__ == "__main__":
