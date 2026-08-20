@@ -171,7 +171,12 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_c10d.__all__
-                if name in {"is_initialized", "is_nccl_available"}
+                if name
+                in {
+                    "is_initialized",
+                    "is_nccl_available",
+                    "is_torchelastic_launched",
+                }
             ],
         )
         self.assertEqual(
@@ -254,13 +259,18 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 "is_available",
                 "is_initialized",
                 "is_nccl_available",
+                "is_torchelastic_launched",
             },
         )
         self.assertEqual(
             {
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
-            {"is_initialized", "is_nccl_available"},
+            {
+                "is_initialized",
+                "is_nccl_available",
+                "is_torchelastic_launched",
+            },
         )
         unsupported = expected_public - actual_public
         self.assertTrue(unsupported)
