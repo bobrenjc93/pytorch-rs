@@ -1623,7 +1623,7 @@ impl Tensor {
         Ok(output)
     }
 
-    fn metadata_alias(&self) -> Result<Self, TensorError> {
+    pub(crate) fn metadata_alias(&self) -> Result<Self, TensorError> {
         self.metadata_alias_with_grad_fn(AutogradNode::Alias)
     }
 

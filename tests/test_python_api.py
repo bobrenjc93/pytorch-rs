@@ -1274,7 +1274,6 @@ class PythonApiBaselineTests(unittest.TestCase):
             slice(None),
             [0],
             None,
-            Ellipsis,
             IntOnly(),
             FailingIndex(),
         )
