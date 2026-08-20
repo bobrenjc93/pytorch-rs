@@ -217,7 +217,8 @@ class JitUnusedReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_jit.__all__
-                if name in {"annotate", "export", "ignore", "unused"}
+                if name
+                in {"annotate", "export", "ignore", "script_if_tracing", "unused"}
             ],
         )
         self.assertEqual(
@@ -234,7 +235,7 @@ class JitUnusedReferenceTests(unittest.TestCase):
         exec("from torch.jit import *", expected_namespace)
         self.assertEqual(
             {name for name in actual_namespace if not name.startswith("__")},
-            {"annotate", "export", "ignore", "unused"},
+            {"annotate", "export", "ignore", "script_if_tracing", "unused"},
         )
         self.assertIs(actual_namespace["unused"], actual)
         self.assertIs(expected_namespace["unused"], expected)
@@ -304,6 +305,7 @@ class JitUnusedReferenceTests(unittest.TestCase):
                 "ignore",
                 "is_scripting",
                 "is_tracing",
+                "script_if_tracing",
                 "unused",
             },
         )
