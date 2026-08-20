@@ -218,6 +218,11 @@ class JitUnusedTests(unittest.TestCase):
 
     def test_rejects_invalid_calls_and_immutable_targets_with_exact_errors(self):
         function = torch.jit.unused
+        immutable_attribute_suffix = (
+            " and no __dict__ for setting new attributes"
+            if sys.version_info >= (3, 14)
+            else ""
+        )
 
         def target():
             return None
@@ -246,23 +251,26 @@ class JitUnusedTests(unittest.TestCase):
             (
                 lambda: function(None),
                 AttributeError,
-                "'NoneType' object has no attribute '_torchscript_modifier'",
+                "'NoneType' object has no attribute "
+                f"'_torchscript_modifier'{immutable_attribute_suffix}",
             ),
             (
                 lambda: function(1),
                 AttributeError,
-                "'int' object has no attribute '_torchscript_modifier'",
+                "'int' object has no attribute "
+                f"'_torchscript_modifier'{immutable_attribute_suffix}",
             ),
             (
                 lambda: function(len),
                 AttributeError,
                 "'builtin_function_or_method' object has no attribute "
-                "'_torchscript_modifier'",
+                f"'_torchscript_modifier'{immutable_attribute_suffix}",
             ),
             (
                 lambda: function(property()),
                 AttributeError,
-                "'NoneType' object has no attribute '_torchscript_modifier'",
+                "'NoneType' object has no attribute "
+                f"'_torchscript_modifier'{immutable_attribute_suffix}",
             ),
         )
         for call, exception_type, message in call_cases:
