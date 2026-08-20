@@ -1,4 +1,27 @@
-__all__ = ["is_compiling", "is_dynamo_compiling", "is_exporting"]
+__all__ = [
+    "assume_constant_result",
+    "is_compiling",
+    "is_dynamo_compiling",
+    "is_exporting",
+]
+
+
+def assume_constant_result(fn):
+    """
+    This function is used to mark a function `fn` as having a constant result.
+    This allows the compiler to optimize away your function.
+    Returns The same function `fn`
+
+    Args:
+        fn: The function to be marked as having a constant result.
+
+    .. warning::
+        `assume_constant_result` can if invalid cause safety and soundness issues, :func:`torch.compile`
+        will not attempt to validate whether the constant assumption is true or not
+
+    """
+    fn._dynamo_marked_constant = True
+    return fn
 
 
 def is_compiling() -> bool:
