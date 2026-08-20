@@ -19,12 +19,12 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
+class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.is_nccl_available differentials require pinned "
+                "distributed.is_mpi_available differentials require pinned "
                 "PyTorch 2.13.0"
             )
 
@@ -38,7 +38,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def threaded_outcome(self, module):
-        function = module.distributed.is_nccl_available
+        function = module.distributed.is_mpi_available
         baseline = function()
         worker_count = 8
         barrier = threading.Barrier(worker_count)
@@ -116,15 +116,15 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
-        actual = actual_distributed.is_nccl_available
-        expected = expected_distributed.is_nccl_available
+        actual = actual_distributed.is_mpi_available
+        expected = expected_distributed.is_mpi_available
 
         self.assertIs(torch.distributed, actual_distributed)
         self.assertIs(reference_torch.distributed, expected_distributed)
         self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
         self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-        self.assertIs(actual_c10d.is_nccl_available, actual)
-        self.assertIs(expected_c10d.is_nccl_available, expected)
+        self.assertIs(actual_c10d.is_mpi_available, actual)
+        self.assertIs(expected_c10d.is_mpi_available, expected)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -153,8 +153,8 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.is_nccl_available
-        expected = expected_distributed.is_nccl_available
+        actual = actual_distributed.is_mpi_available
+        expected = expected_distributed.is_mpi_available
 
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"], actual_c10d
@@ -184,8 +184,8 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("distributed"),
         )
         self.assertEqual(
-            torch.__all__.count("is_nccl_available"),
-            reference_torch.__all__.count("is_nccl_available"),
+            torch.__all__.count("is_mpi_available"),
+            reference_torch.__all__.count("is_mpi_available"),
         )
 
         for module, function in (
@@ -196,7 +196,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["is_nccl_available"], function)
+            self.assertIs(namespace["is_mpi_available"], function)
 
         actual_namespace = {}
         expected_namespace = {}
@@ -209,7 +209,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("distributed", namespace)
-            self.assertNotIn("is_nccl_available", namespace)
+            self.assertNotIn("is_mpi_available", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -225,8 +225,8 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.is_nccl_available
-        expected = reference_torch.distributed.is_nccl_available
+        actual = torch.distributed.is_mpi_available
+        expected = reference_torch.distributed.is_mpi_available
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
@@ -240,7 +240,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_nccl_execution_and_other_distributed_apis_remain_unsupported(self):
+    def test_mpi_execution_and_other_distributed_apis_remain_unsupported(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
@@ -290,13 +290,13 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
 
-        expected_nccl_available = expected_distributed.is_nccl_available()
-        self.assertIs(type(expected_nccl_available), bool)
-        if expected_nccl_available:
-            self.assertTrue(hasattr(expected_distributed, "ProcessGroupNCCL"))
-            self.assertTrue(hasattr(expected_c10d, "ProcessGroupNCCL"))
-        self.assertFalse(hasattr(actual_distributed, "ProcessGroupNCCL"))
-        self.assertFalse(hasattr(actual_c10d, "ProcessGroupNCCL"))
+        expected_mpi_available = expected_distributed.is_mpi_available()
+        self.assertIs(type(expected_mpi_available), bool)
+        if expected_mpi_available:
+            self.assertTrue(hasattr(expected_distributed, "ProcessGroupMPI"))
+            self.assertTrue(hasattr(expected_c10d, "ProcessGroupMPI"))
+        self.assertFalse(hasattr(actual_distributed, "ProcessGroupMPI"))
+        self.assertFalse(hasattr(actual_c10d, "ProcessGroupMPI"))
         self.assertIs(actual_distributed.is_initialized(), False)
         self.assertIs(expected_distributed.is_initialized(), False)
 

@@ -183,7 +183,12 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_c10d.__all__
-                if name in {"is_initialized", "is_nccl_available"}
+                if name
+                in {
+                    "is_initialized",
+                    "is_mpi_available",
+                    "is_nccl_available",
+                }
             ],
         )
         self.assertEqual(
@@ -265,6 +270,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                 "distributed_c10d",
                 "is_available",
                 "is_initialized",
+                "is_mpi_available",
                 "is_nccl_available",
             },
         )
@@ -272,7 +278,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
             {
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
-            {"is_initialized", "is_nccl_available"},
+            {"is_initialized", "is_mpi_available", "is_nccl_available"},
         )
         unsupported = expected_public - actual_public
         self.assertTrue(unsupported)

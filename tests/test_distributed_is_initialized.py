@@ -135,7 +135,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
         self.assertFalse(hasattr(distributed, "__all__"))
         self.assertEqual(
             distributed_c10d.__all__,
-            ["is_initialized", "is_nccl_available"],
+            ["is_initialized", "is_mpi_available", "is_nccl_available"],
         )
 
         package_import = {}
@@ -165,6 +165,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "distributed_c10d",
                 "is_available",
                 "is_initialized",
+                "is_mpi_available",
                 "is_nccl_available",
             },
         )
@@ -180,17 +181,19 @@ class DistributedIsInitializedTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in owner_namespace if not name.startswith("__")},
-            {"is_initialized", "is_nccl_available"},
+            {"is_initialized", "is_mpi_available", "is_nccl_available"},
         )
         self.assertIs(owner_namespace["is_initialized"], function)
 
         self.assertNotIn("distributed", torch.__all__)
         self.assertNotIn("is_initialized", torch.__all__)
+        self.assertNotIn("is_mpi_available", torch.__all__)
         self.assertNotIn("is_nccl_available", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("distributed", top_level_namespace)
         self.assertNotIn("is_initialized", top_level_namespace)
+        self.assertNotIn("is_mpi_available", top_level_namespace)
         self.assertNotIn("is_nccl_available", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
@@ -240,6 +243,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "distributed_c10d",
                 "is_available",
                 "is_initialized",
+                "is_mpi_available",
                 "is_nccl_available",
             },
         )
@@ -249,7 +253,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 for name in vars(distributed_c10d)
                 if not name.startswith("_")
             },
-            {"is_initialized", "is_nccl_available"},
+            {"is_initialized", "is_mpi_available", "is_nccl_available"},
         )
         for name in (
             "GroupMember",
@@ -264,6 +268,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 self.assertFalse(hasattr(distributed, name))
                 self.assertFalse(hasattr(distributed_c10d, name))
         self.assertFalse(hasattr(torch, "is_initialized"))
+        self.assertFalse(hasattr(torch, "is_mpi_available"))
         self.assertFalse(hasattr(torch, "is_nccl_available"))
 
     def test_importing_and_calling_does_not_import_pytorch(self):
