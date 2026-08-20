@@ -33,6 +33,14 @@ impl Device {
         }
     }
 
+    /// Reports whether this device executes on an Intel XPU accelerator.
+    #[must_use]
+    pub const fn is_xpu(self) -> bool {
+        match self {
+            Self::Cpu => false,
+        }
+    }
+
     /// Reports whether this device executes on an Apple MPS accelerator.
     #[must_use]
     pub const fn is_mps(self) -> bool {

@@ -18,6 +18,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
     assert_eq!(Device::Cpu.index(), None);
     assert!(Device::Cpu.is_cpu());
     assert!(!Device::Cpu.is_cuda());
+    assert!(!Device::Cpu.is_xpu());
     assert!(!Device::Cpu.is_mps());
     assert!(!Device::Cpu.is_meta());
     assert_eq!(MemoryFormat::Preserve.to_string(), "preserve_format");
@@ -38,6 +39,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
         assert_eq!(tensor.device().index(), None);
         assert!(tensor.is_cpu());
         assert!(!tensor.is_cuda());
+        assert!(!tensor.is_xpu());
         assert!(!tensor.is_mps());
         assert!(!tensor.is_meta());
         assert!(tensor.is_floating_point());
@@ -76,6 +78,7 @@ fn native_metadata_survives_views_kernels_and_reductions() {
         assert_eq!(output.device(), source.device());
         assert!(output.is_cpu());
         assert!(!output.is_cuda());
+        assert!(!output.is_xpu());
         assert!(!output.is_mps());
         assert!(!output.is_meta());
         assert!(output.is_floating_point());
