@@ -1350,6 +1350,15 @@ pub(crate) fn is_conj_variable_function(
     dispatch_is_conj(py, &input, args, kwargs)
 }
 
+pub(crate) fn is_neg_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("is_neg", args, kwargs)?;
+    dispatch_is_neg(py, &input, args, kwargs)
+}
+
 pub(crate) fn is_inference_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2602,6 +2611,64 @@ fn dispatch_is_conj(
 
             // Float32 is the only supported dtype and the native tensor model
             // has no conjugate views, so every reachable conjugate bit is clear.
+            false.into_py_any(py)
+        }
+    }
+}
+
+fn dispatch_is_neg(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let function = variable_function(py, "is_neg")?;
+    let types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(resolved) => {
+            PyTuple::new(py, [resolved.dispatch_type.clone()])?
+        }
+    };
+
+    // PyTorch disables the top mode for the complete dispatch attempt. A mode
+    // can explicitly call `func(*args, **kwargs)` to reach the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.is_neg",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(_) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.is_neg",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+
+            // Lazy negative views are unsupported, and eager negation does not
+            // set the negative bit. Every reachable native Tensor is clear.
             false.into_py_any(py)
         }
     }

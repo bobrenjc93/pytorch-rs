@@ -1,4 +1,6 @@
 import inspect
+import pickle
+import re
 import sys
 import types
 import unittest
@@ -48,6 +50,15 @@ class TensorIsNegTests(unittest.TestCase):
             ("detached autograd view", tracked.detach()),
         )
 
+    def top_level_calls(self, tensor):
+        return (
+            ("positional", torch.is_neg(tensor)),
+            ("input", torch.is_neg(input=tensor)),
+            ("x", torch.is_neg(x=tensor)),
+            ("a", torch.is_neg(a=tensor)),
+            ("x1", torch.is_neg(x1=tensor)),
+        )
+
     def test_supported_tensors_have_a_clear_negative_bit_without_mutation(self):
         leaf, tracked, cases = self.tensor_cases()
         for case, tensor in cases:
@@ -87,6 +98,49 @@ class TensorIsNegTests(unittest.TestCase):
         )
         self.assertIs(leaf.is_neg(), False)
         self.assertIs(tracked.is_neg(), False)
+
+    def test_top_level_supported_tensors_have_a_clear_bit_without_mutation(self):
+        leaf, tracked, cases = self.tensor_cases()
+        for case, tensor in cases:
+            metadata = (
+                tensor.shape,
+                tensor.stride(),
+                tensor.storage_offset(),
+                tensor.data_ptr(),
+                tensor.dtype,
+                tensor.device,
+                tensor.requires_grad,
+                tensor.is_leaf,
+            )
+            for form, result in self.top_level_calls(tensor):
+                with self.subTest(
+                    case=case,
+                    form=form,
+                    shape=tensor.shape,
+                    stride=tensor.stride(),
+                ):
+                    self.assertIs(type(result), bool)
+                    self.assertIs(result, False)
+                    self.assertEqual(
+                        (
+                            tensor.shape,
+                            tensor.stride(),
+                            tensor.storage_offset(),
+                            tensor.data_ptr(),
+                            tensor.dtype,
+                            tensor.device,
+                            tensor.requires_grad,
+                            tensor.is_leaf,
+                        ),
+                        metadata,
+                    )
+
+        tracked.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad), np.full((2, 2), 2.0, dtype=np.float32)
+        )
+        self.assertIs(torch.is_neg(leaf), False)
+        self.assertIs(torch.is_neg(tracked), False)
 
     def test_tensorbase_descriptor_metadata_matches_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
@@ -219,6 +273,240 @@ class TensorIsNegTests(unittest.TestCase):
                 forwarded = tensor.is_neg()
         self.assertEqual(order, ["upper", "lower"])
         self.assertIs(forwarded, False)
+
+    def test_top_level_callable_metadata_null_documentation_and_exports(self):
+        function = torch.is_neg
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "is_neg")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.is_neg")
+        self.assertEqual(function.__module__, "torch")
+        self.assertIsNone(function.__doc__)
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method is_neg of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.is_neg, function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)),
+                    function,
+                )
+
+        self.assertEqual(torch.__all__.count("is_neg"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["is_neg"], function)
+
+    def test_top_level_binding_and_type_error_precedence(self):
+        tensor = torch.tensor([1.0])
+        cases = (
+            (
+                lambda: torch.is_neg(),
+                'is_neg() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.is_neg(tensor, tensor),
+                "is_neg() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.is_neg(tensor, input=tensor),
+                "is_neg() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.is_neg(tensor, extra=True, input=tensor),
+                "is_neg() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.is_neg(tensor, input=tensor, extra=True),
+                "is_neg() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.is_neg(extra=tensor),
+                'is_neg() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.is_neg(1, extra=True),
+                "is_neg(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_neg(input=[]),
+                "is_neg(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.is_neg(a=1),
+                "is_neg(): argument 'input' must be Tensor, not int",
+            ),
+            (
+                lambda: torch.is_neg(x=[]),
+                "is_neg(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.is_neg(x1=None),
+                "is_neg(): argument 'input' must be Tensor, not NoneType",
+            ),
+            (
+                lambda: torch.is_neg(a=tensor, x=tensor),
+                "is_neg() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.is_neg(x=tensor, a=tensor),
+                "is_neg() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.is_neg(input=tensor, x1=tensor),
+                "is_neg() got an unexpected keyword argument 'x1'",
+            ),
+            (
+                lambda: torch.is_neg(x=tensor, x1=tensor),
+                "is_neg() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.is_neg(x1=tensor, x=tensor),
+                "is_neg() got an unexpected keyword argument 'x1'",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+
+    def test_top_level_torch_function_modes_and_overrides(self):
+        tensor = torch.tensor([1.0])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        calls = (
+            (None, lambda: torch.is_neg(tensor)),
+            ("input", lambda: torch.is_neg(input=tensor)),
+            ("x", lambda: torch.is_neg(x=tensor)),
+            ("a", lambda: torch.is_neg(a=tensor)),
+            ("x1", lambda: torch.is_neg(x1=tensor)),
+        )
+        for keyword, call in calls:
+            mode = RecordingMode()
+            with mode:
+                result = call()
+            self.assertIs(result, marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, torch.is_neg)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (tensor,) if keyword is None else ())
+            self.assertEqual(kwargs, None if keyword is None else {keyword: tensor})
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = torch.is_neg(a=tensor)
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertIs(forwarded, False)
+
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        value = Override()
+        self.assertIs(torch.is_neg(x=value), marker)
+        function, dispatch_types, args, kwargs = override_calls[0]
+        self.assertIs(function, torch.is_neg)
+        self.assertEqual(dispatch_types, (Override,))
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs, {"x": value})
+
+        fallback_order = []
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                fallback_order.append(("mode", func, types, args, kwargs))
+                return NotImplemented
+
+        class FallbackOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                fallback_order.append(("override", func, types, args, kwargs))
+                return marker
+
+        fallback = FallbackOverride()
+        with DecliningMode():
+            self.assertIs(torch.is_neg(input=fallback), marker)
+        self.assertEqual([entry[0] for entry in fallback_order], ["mode", "override"])
+        for _, function, dispatch_types, args, kwargs in fallback_order:
+            self.assertIs(function, torch.is_neg)
+            self.assertEqual(dispatch_types, (FallbackOverride,))
+            self.assertEqual(args, ())
+            self.assertEqual(kwargs, {"input": fallback})
+
+    def test_top_level_not_implemented_errors_match_variable_dispatch(self):
+        tensor = torch.tensor([1.0])
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        mode = DecliningMode()
+        message = (
+            "Multiple dispatch failed for 'torch.is_neg'; all "
+            "__torch_function__ handlers returned NotImplemented:\n\n"
+            f"  - mode object {mode!r}\n\n"
+            "For more information, try re-running with "
+            "TORCH_LOGS=not_implemented"
+        )
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+            with mode:
+                torch.is_neg(tensor)
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        message = (
+            "Multiple dispatch failed for 'torch.is_neg'; all "
+            "__torch_function__ handlers returned NotImplemented:\n\n"
+            f"  - tensor subclass {DecliningOverride!r}\n\n"
+            "For more information, try re-running with "
+            "TORCH_LOGS=not_implemented"
+        )
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+            torch.is_neg(DecliningOverride())
+
+        self.assertIs(torch.is_neg(tensor), False)
+
+    def test_top_level_scope_does_not_add_lazy_negative_views(self):
+        self.assertTrue(hasattr(torch, "is_neg"))
+        self.assertFalse(hasattr(torch, "_neg_view"))
 
 
 if __name__ == "__main__":

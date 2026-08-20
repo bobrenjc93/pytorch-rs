@@ -17,17 +17,17 @@ use crate::python::{
     adjoint_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, can_cast_variable_function, detach_variable_function,
     exp_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    permute_variable_function, positive_variable_function, promote_types_variable_function,
-    ravel_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
-    unbind_variable_function,
+    is_inference_variable_function, is_neg_variable_function, matmul_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, permute_variable_function, positive_variable_function,
+    promote_types_variable_function, ravel_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sin_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 25] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 26] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -40,6 +40,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 25] = [
     "exp",
     "sin",
     "is_conj",
+    "is_neg",
     "is_inference",
     "resolve_conj",
     "resolve_neg",
@@ -448,6 +449,7 @@ variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
+variable_function_callback!(is_neg_callback, is_neg_variable_function);
 variable_function_callback!(is_inference_callback, is_inference_variable_function);
 variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
 variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function);
@@ -494,6 +496,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
+        variable_function_method!(c"is_neg", is_neg_callback, c""),
         variable_function_method!(c"is_inference", is_inference_callback, IS_INFERENCE_DOC),
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
         variable_function_method!(c"resolve_neg", resolve_neg_callback, RESOLVE_NEG_DOC),
