@@ -4129,6 +4129,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90
       }
+    },
+    {
+      "key": "pr:418",
+      "recordedAt": "2026-08-20T10:01:50.611Z",
+      "label": "PR #418",
+      "kind": "composite",
+      "prNumber": 418,
+      "title": "YOLO generation 34: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 76.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 60.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90
+      }
     }
   ]
 }
