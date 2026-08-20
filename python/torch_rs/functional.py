@@ -29,12 +29,20 @@ _ATLEAST_3D_SEQUENCE_UNSUPPORTED = (
 )
 
 
-def _atleast_1d_impl(input):
+def _atleast_sequence(input, variable_function, unsupported):
     if type(input) in (tuple, list):
         if any(type(tensor) is not Tensor for tensor in input):
-            raise TypeError(_ATLEAST_1D_SEQUENCE_UNSUPPORTED)
-        return tuple(_VF_atleast_1d(tensor) for tensor in input)
-    return _VF_atleast_1d(input)
+            raise TypeError(unsupported)
+        return tuple(variable_function(tensor) for tensor in input)
+    return variable_function(input)
+
+
+def _atleast_1d_impl(input):
+    return _atleast_sequence(
+        input,
+        _VF_atleast_1d,
+        _ATLEAST_1D_SEQUENCE_UNSUPPORTED,
+    )
 
 
 def atleast_1d(*tensors):
@@ -78,11 +86,11 @@ def atleast_1d(*tensors):
 
 
 def _atleast_2d_impl(input):
-    if type(input) in (tuple, list):
-        if any(type(tensor) is not Tensor for tensor in input):
-            raise TypeError(_ATLEAST_2D_SEQUENCE_UNSUPPORTED)
-        return tuple(_VF_atleast_2d(tensor) for tensor in input)
-    return _VF_atleast_2d(input)
+    return _atleast_sequence(
+        input,
+        _VF_atleast_2d,
+        _ATLEAST_2D_SEQUENCE_UNSUPPORTED,
+    )
 
 
 def atleast_2d(*tensors):
@@ -128,11 +136,11 @@ def atleast_2d(*tensors):
 
 
 def _atleast_3d_impl(input):
-    if type(input) in (tuple, list):
-        if any(type(tensor) is not Tensor for tensor in input):
-            raise TypeError(_ATLEAST_3D_SEQUENCE_UNSUPPORTED)
-        return tuple(_VF_atleast_3d(tensor) for tensor in input)
-    return _VF_atleast_3d(input)
+    return _atleast_sequence(
+        input,
+        _VF_atleast_3d,
+        _ATLEAST_3D_SEQUENCE_UNSUPPORTED,
+    )
 
 
 def atleast_3d(*tensors):
