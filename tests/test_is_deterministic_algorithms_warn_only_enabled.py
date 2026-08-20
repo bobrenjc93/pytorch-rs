@@ -13,14 +13,15 @@ import unittest
 import torch_rs as torch
 
 
-FUNCTION_DOC = """Returns True if the global deterministic flag is turned on. Refer to
-    :func:`torch.use_deterministic_algorithms` documentation for more details.
+FUNCTION_DOC = """Returns True if the global deterministic flag is set to warn only.
+    Refer to :func:`torch.use_deterministic_algorithms` documentation for more
+    details.
     """
 
 
-class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
+class IsDeterministicAlgorithmsWarnOnlyEnabledTests(unittest.TestCase):
     def test_default_false_is_exact_and_preserves_grad_mode(self):
-        function = torch.are_deterministic_algorithms_enabled
+        function = torch.is_deterministic_algorithms_warn_only_enabled
         self.assertEqual(function.__code__.co_names, ())
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
@@ -39,7 +40,7 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
         assert_query_preserves_grad_mode(True)
 
     def test_default_false_is_stable_across_threads_and_grad_modes(self):
-        function = torch.are_deterministic_algorithms_enabled
+        function = torch.is_deterministic_algorithms_warn_only_enabled
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -88,7 +89,7 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
 
     def test_signature_annotations_documentation_and_module_identity(self):
         package = importlib.import_module("torch_rs")
-        function = package.are_deterministic_algorithms_enabled
+        function = package.is_deterministic_algorithms_warn_only_enabled
 
         self.assertIs(torch, package)
         self.assertIs(sys.modules["torch_rs"], package)
@@ -96,8 +97,14 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
         self.assertEqual(str(inspect.signature(function)), "() -> bool")
         self.assertEqual(function.__annotations__, {"return": bool})
         self.assertEqual(typing.get_type_hints(function), {"return": bool})
-        self.assertEqual(function.__name__, "are_deterministic_algorithms_enabled")
-        self.assertEqual(function.__qualname__, "are_deterministic_algorithms_enabled")
+        self.assertEqual(
+            function.__name__,
+            "is_deterministic_algorithms_warn_only_enabled",
+        )
+        self.assertEqual(
+            function.__qualname__,
+            "is_deterministic_algorithms_warn_only_enabled",
+        )
         self.assertEqual(function.__module__, "torch_rs")
         self.assertIs(inspect.getmodule(function), package)
         self.assertEqual(
@@ -110,15 +117,18 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
         self.assertFalse(hasattr(function, "__text_signature__"))
 
     def test_exports_copy_and_pickle_use_the_canonical_module(self):
-        function = torch.are_deterministic_algorithms_enabled
+        function = torch.is_deterministic_algorithms_warn_only_enabled
 
         self.assertEqual(
-            torch.__all__.count("are_deterministic_algorithms_enabled"),
+            torch.__all__.count("is_deterministic_algorithms_warn_only_enabled"),
             1,
         )
         namespace = {}
         exec("from torch_rs import *", namespace)
-        self.assertIs(namespace["are_deterministic_algorithms_enabled"], function)
+        self.assertIs(
+            namespace["is_deterministic_algorithms_warn_only_enabled"],
+            function,
+        )
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -129,27 +139,27 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.are_deterministic_algorithms_enabled
+        function = torch.is_deterministic_algorithms_warn_only_enabled
         cases = (
             (
                 lambda: function(None),
-                "are_deterministic_algorithms_enabled() takes 0 positional "
-                "arguments but 1 was given",
+                "is_deterministic_algorithms_warn_only_enabled() takes 0 "
+                "positional arguments but 1 was given",
             ),
             (
                 lambda: function(None, None),
-                "are_deterministic_algorithms_enabled() takes 0 positional "
-                "arguments but 2 were given",
+                "is_deterministic_algorithms_warn_only_enabled() takes 0 "
+                "positional arguments but 2 were given",
             ),
             (
                 lambda: function(enabled=True),
-                "are_deterministic_algorithms_enabled() got an unexpected "
-                "keyword argument 'enabled'",
+                "is_deterministic_algorithms_warn_only_enabled() got an "
+                "unexpected keyword argument 'enabled'",
             ),
             (
                 lambda: function(None, enabled=True),
-                "are_deterministic_algorithms_enabled() got an unexpected "
-                "keyword argument 'enabled'",
+                "is_deterministic_algorithms_warn_only_enabled() got an "
+                "unexpected keyword argument 'enabled'",
             ),
         )
         for call, message in cases:
@@ -159,7 +169,7 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_setters_and_debug_mode_remain_unsupported(self):
+    def test_deterministic_setters_and_debug_mode_remain_unsupported(self):
         unsupported = (
             "use_deterministic_algorithms",
             "set_deterministic_debug_mode",
@@ -183,7 +193,7 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
-assert torch.are_deterministic_algorithms_enabled() is False
+assert torch.is_deterministic_algorithms_warn_only_enabled() is False
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
