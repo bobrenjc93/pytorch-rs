@@ -122,23 +122,39 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
 
         self.assertEqual(
             compiler.__all__,
-            ["is_compiling", "is_dynamo_compiling", "is_exporting"],
+            [
+                "assume_constant_result",
+                "is_compiling",
+                "is_dynamo_compiling",
+                "is_exporting",
+            ],
         )
         compiler_namespace = {}
         exec("from torch_rs.compiler import *", compiler_namespace)
         self.assertEqual(
             {name for name in compiler_namespace if not name.startswith("__")},
-            {"is_compiling", "is_dynamo_compiling", "is_exporting"},
+            {
+                "assume_constant_result",
+                "is_compiling",
+                "is_dynamo_compiling",
+                "is_exporting",
+            },
+        )
+        self.assertIs(
+            compiler_namespace["assume_constant_result"],
+            compiler.assume_constant_result,
         )
         self.assertIs(compiler_namespace["is_dynamo_compiling"], function)
         self.assertIs(compiler_namespace["is_exporting"], compiler.is_exporting)
 
         self.assertNotIn("compiler", torch.__all__)
+        self.assertNotIn("assume_constant_result", torch.__all__)
         self.assertNotIn("is_dynamo_compiling", torch.__all__)
         self.assertNotIn("is_exporting", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("compiler", top_level_namespace)
+        self.assertNotIn("assume_constant_result", top_level_namespace)
         self.assertNotIn("is_dynamo_compiling", top_level_namespace)
         self.assertNotIn("is_exporting", top_level_namespace)
 

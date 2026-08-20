@@ -139,12 +139,22 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_compiler.__all__
-                if name in {"is_compiling", "is_dynamo_compiling", "is_exporting"}
+                if name
+                in {
+                    "assume_constant_result",
+                    "is_compiling",
+                    "is_dynamo_compiling",
+                    "is_exporting",
+                }
             ],
         )
         self.assertEqual(
             torch.__all__.count("compiler"),
             reference_torch.__all__.count("compiler"),
+        )
+        self.assertEqual(
+            torch.__all__.count("assume_constant_result"),
+            reference_torch.__all__.count("assume_constant_result"),
         )
         self.assertEqual(
             torch.__all__.count("is_exporting"),
@@ -155,6 +165,7 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
             (
                 actual_compiler,
                 (
+                    actual_compiler.assume_constant_result,
                     actual_compiler.is_compiling,
                     actual_compiler.is_dynamo_compiling,
                     actual,
@@ -163,6 +174,7 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
             (
                 expected_compiler,
                 (
+                    expected_compiler.assume_constant_result,
                     expected_compiler.is_compiling,
                     expected_compiler.is_dynamo_compiling,
                     expected,
@@ -178,6 +190,7 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
+            self.assertNotIn("assume_constant_result", namespace)
             self.assertNotIn("is_exporting", namespace)
 
         self.assertIs(copy.copy(actual), actual)
@@ -247,6 +260,7 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "is_exporting"))
 
         unsupported = set(reference_torch.compiler.__all__) - {
+            "assume_constant_result",
             "is_compiling",
             "is_dynamo_compiling",
             "is_exporting",
