@@ -20,6 +20,11 @@ assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 product = torch.matmul(input=x, other=y)
 assert product.tolist() == [[1.0, 1.0], [-1.0, -1.0]]
 assert torch.get_float32_matmul_precision() == "highest"
+assert torch.set_float32_matmul_precision("medium") is None
+assert torch.get_float32_matmul_precision() == "medium"
+# The CPU-only backend continues to use its existing float32 kernel.
+assert torch.matmul(input=x, other=y).tolist() == product.tolist()
+torch.set_float32_matmul_precision("highest")
 scaled = torch.multiply(input=2.0, other=x)
 assert scaled.tolist() == [[-2.0, 4.0], [6.0, -8.0]]
 exponential = torch.exp(input=x)
@@ -130,7 +135,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
 
-`torch.get_float32_matmul_precision()` reports the invariant string `"highest"`, reflecting that the native CPU float32 matrix-multiplication engine has no reduced-precision modes. The setter and its `"high"` and `"medium"` states remain unsupported, and the query does not change native matmul behavior.
+`torch.get_float32_matmul_precision()` and `torch.set_float32_matmul_precision(precision)` expose PyTorch-compatible process-global `"highest"`, `"high"`, and `"medium"` configuration state. The state is shared across threads and package reloads. The native CPU float32 matrix-multiplication engine has no reduced-precision kernels, so every setting continues to use the same values and existing autograd behavior.
 
 `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 

@@ -30,6 +30,8 @@ mod python_grad_mode;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_layout;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_matmul_precision;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_memory_format;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_nn_functional;
