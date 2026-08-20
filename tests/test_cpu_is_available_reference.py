@@ -173,6 +173,7 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
                     "current_device",
                     "device_count",
                     "is_available",
+                    "is_initialized",
                     "synchronize",
                 }
             ],
@@ -209,7 +210,13 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
         exec("from torch.cpu import *", expected_cpu_namespace)
         self.assertEqual(
             {name for name in actual_cpu_namespace if not name.startswith("__")},
-            {"current_device", "device_count", "is_available", "synchronize"},
+            {
+                "current_device",
+                "device_count",
+                "is_available",
+                "is_initialized",
+                "synchronize",
+            },
         )
         self.assertIs(
             actual_cpu_namespace["current_device"], actual_cpu.current_device
@@ -270,7 +277,13 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_public,
-            {"current_device", "device_count", "is_available", "synchronize"},
+            {
+                "current_device",
+                "device_count",
+                "is_available",
+                "is_initialized",
+                "synchronize",
+            },
         )
         unsupported = expected_public - actual_public
         self.assertTrue(
