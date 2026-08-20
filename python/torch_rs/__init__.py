@@ -40,6 +40,13 @@ def get_default_device() -> "torch.device":
     return torch.device("cpu")
 
 
+def get_float32_matmul_precision() -> str:
+    r"""Returns the current value of float32 matrix multiplication precision. Refer to
+    :func:`torch.set_float32_matmul_precision` documentation for more details.
+    """
+    return "highest"
+
+
 def set_default_dtype(d: "torch.dtype", /) -> None:
     r"""
 
@@ -121,6 +128,7 @@ __all__ = [
     "are_deterministic_algorithms_enabled",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
+    "get_float32_matmul_precision",
     "e",
     "pi",
     "nan",
