@@ -1,4 +1,6 @@
 import gc
+import inspect
+import types
 import unittest
 
 import numpy as np
@@ -94,6 +96,75 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         expected = np.zeros_like(values)
         expected[:, :, 1] = 2.0 * np.asarray(weights).T
         np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
+
+    def test_bare_ellipsis_dispatches_through_tensorbase_mode_before_parsing(self):
+        source = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func,
+                        dispatch_types,
+                        args,
+                        kwargs,
+                        tuple(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            result = source[...]
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [mode]
+            )
+
+        self.assertIs(result, marker)
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs, handler_stack = mode.calls[0]
+        descriptor = inspect.getattr_static(torch.Tensor, "__getitem__")
+        self.assertIs(type(function), types.WrapperDescriptorType)
+        self.assertIs(function, descriptor)
+        self.assertEqual(function.__qualname__, "TensorBase.__getitem__")
+        self.assertEqual(function.__objclass__.__name__, "TensorBase")
+        self.assertEqual(function.__objclass__.__module__, "torch._C")
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), 2)
+        self.assertIs(args[0], source)
+        self.assertIs(args[1], Ellipsis)
+        self.assertIsNone(kwargs)
+        self.assertEqual(handler_stack, ())
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        class IndexBomb:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                raise AssertionError("index parsing must be deferred")
+
+        bomb = IndexBomb()
+        mode.calls.clear()
+        with mode:
+            result = source[bomb]
+        self.assertIs(result, marker)
+        self.assertEqual(bomb.calls, 0)
+        self.assertEqual(len(mode.calls), 1)
+        self.assertIs(mode.calls[0][2][1], bomb)
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode():
+            forwarded = source[...]
+        self.assert_metadata_alias(source, forwarded)
 
     def test_integer_indexing_remains_supported_and_other_forms_stay_unsupported(self):
         tensor = torch.tensor(

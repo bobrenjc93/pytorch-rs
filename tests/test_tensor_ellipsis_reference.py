@@ -1,4 +1,5 @@
 import gc
+import inspect
 import unittest
 
 import numpy as np
@@ -152,6 +153,109 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
         expected_metadata, expected_gradient = self.lifetime_contract(reference_torch)
         self.assertEqual(actual_metadata, expected_metadata)
         np.testing.assert_array_equal(actual_gradient, expected_gradient)
+
+    def mode_dispatch_contract(self, module):
+        source = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=module.float32
+        )
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func,
+                        dispatch_types,
+                        args,
+                        kwargs,
+                        len(module.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            result = source[...]
+            context_depth = len(
+                module.overrides._get_current_function_mode_stack()
+            )
+        function, dispatch_types, args, kwargs, handler_depth = mode.calls[0]
+        descriptor = inspect.getattr_static(module.Tensor, "__getitem__")
+
+        class IndexBomb:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                raise AssertionError("index parsing must be deferred")
+
+        bomb = IndexBomb()
+        mode.calls.clear()
+        with mode:
+            bomb_result = source[bomb]
+        bomb_argument_preserved = mode.calls[0][2][1] is bomb
+
+        events = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label, replacement=None):
+                self.label = label
+                self.replacement = replacement
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                events.append(
+                    (
+                        self.label,
+                        func.__qualname__,
+                        dispatch_types == (),
+                        len(module.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                if self.replacement is not None:
+                    return self.replacement
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower", marker)
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = source[...]
+
+        return {
+            "replacement": result is marker,
+            "call_count": len(mode.calls),
+            "function_type": type(function).__name__,
+            "function_name": function.__name__,
+            "function_qualname": function.__qualname__,
+            "owner_name": function.__objclass__.__name__,
+            "owner_module": function.__objclass__.__module__,
+            "descriptor_identity": function is descriptor,
+            "dispatch_types_empty": dispatch_types == (),
+            "argument_count": len(args),
+            "receiver_identity": args[0] is source,
+            "ellipsis_identity": args[1] is Ellipsis,
+            "kwargs_none": kwargs is None,
+            "handler_depth": handler_depth,
+            "context_depth": context_depth,
+            "bomb_replaced": bomb_result is marker,
+            "bomb_calls": bomb.calls,
+            "bomb_argument_preserved": bomb_argument_preserved,
+            "forwarded_replacement": forwarded is marker,
+            "forwarding_events": tuple(events),
+            "final_stack_depth": len(
+                module.overrides._get_current_function_mode_stack()
+            ),
+        }
+
+    def test_tensorbase_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_contract(torch),
+            self.mode_dispatch_contract(reference_torch),
+        )
 
 
 if __name__ == "__main__":
