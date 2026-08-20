@@ -98,36 +98,46 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
             self.supported_state_outcome(reference_torch),
         )
 
-    def test_reference_only_mutation_bounds_the_unsupported_true_state(self):
+    def test_mutable_state_matches_pytorch_2_13(self):
         actual = torch.are_deterministic_algorithms_enabled
         expected = reference_torch.are_deterministic_algorithms_enabled
+        original_actual_enabled = actual()
+        original_actual_warn_only = (
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        )
         original_enabled = expected()
         original_warn_only = (
             reference_torch.is_deterministic_algorithms_warn_only_enabled()
         )
 
         try:
+            torch.use_deterministic_algorithms(False)
             reference_torch.use_deterministic_algorithms(False)
             actual_states = [actual()]
             expected_states = [expected()]
 
+            torch.use_deterministic_algorithms(True)
             reference_torch.use_deterministic_algorithms(True)
             actual_states.append(actual())
             expected_states.append(expected())
 
+            torch.use_deterministic_algorithms(False)
             reference_torch.use_deterministic_algorithms(False)
             actual_states.append(actual())
             expected_states.append(expected())
         finally:
+            torch.use_deterministic_algorithms(
+                original_actual_enabled,
+                warn_only=original_actual_warn_only,
+            )
             reference_torch.use_deterministic_algorithms(
                 original_enabled,
                 warn_only=original_warn_only,
             )
 
-        for state in actual_states:
-            self.assertIs(state, False)
-        self.assertEqual(expected_states, [False, True, False])
-        for state in expected_states:
+        self.assertEqual(actual_states, expected_states)
+        self.assertEqual(actual_states, [False, True, False])
+        for state in (*actual_states, *expected_states):
             self.assertIs(type(state), bool)
 
     def test_signature_annotations_documentation_and_identity_match(self):
@@ -203,9 +213,8 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_setters_and_debug_mode_remain_unsupported(self):
+    def test_debug_mode_remains_unsupported(self):
         unsupported = (
-            "use_deterministic_algorithms",
             "set_deterministic_debug_mode",
             "get_deterministic_debug_mode",
         )

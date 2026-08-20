@@ -20,6 +20,8 @@ mod python_argument_schema;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_cpython_compat;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_deterministic;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_device;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_dtype;

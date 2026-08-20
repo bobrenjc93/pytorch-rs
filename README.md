@@ -42,6 +42,9 @@ assert torch.cpu.device_count() == 1
 assert torch.cpu.synchronize() is None
 assert torch.get_num_threads() == 1
 assert torch.get_num_interop_threads() == 1
+assert torch.use_deterministic_algorithms(False, warn_only=True) is None
+assert torch.are_deterministic_algorithms_enabled() is False
+assert torch.is_deterministic_algorithms_warn_only_enabled() is True
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
 assert torch.compiler.is_exporting() is False
@@ -122,6 +125,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.cpu.is_available()` is the canonical device-agnostic CPU availability query and returns the exact `True` singleton. `torch.cpu.current_device()` returns the invariant string `"cpu"`, and `torch.cpu.device_count()` reports the single logical CPU device as the exact integer `1`. Because native CPU execution is eager, `torch.cpu.synchronize(device=None)` ignores any device value and returns the exact `None` singleton. These APIs do not probe hardware, environment variables, or PyTorch. CPU streams, events, device mutation, capabilities, AMP, and the rest of the `torch.cpu` namespace remain unsupported.
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
+
+`torch.use_deterministic_algorithms(mode, *, warn_only=False)` manages process-global deterministic-algorithm and warn-only flags, including an independent warn-only value while deterministic mode is disabled. The existing query functions expose changes across threads, while all currently supported CPU kernels remain deterministic in every mode. The alternate deterministic debug-mode APIs remain unsupported.
 
 `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 

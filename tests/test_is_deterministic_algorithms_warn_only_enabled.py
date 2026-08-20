@@ -20,9 +20,18 @@ FUNCTION_DOC = """Returns True if the global deterministic flag is set to warn o
 
 
 class IsDeterministicAlgorithmsWarnOnlyEnabledTests(unittest.TestCase):
+    def setUp(self):
+        torch.use_deterministic_algorithms(False, warn_only=False)
+
+    def tearDown(self):
+        torch.use_deterministic_algorithms(False, warn_only=False)
+
     def test_default_false_is_exact_and_preserves_grad_mode(self):
         function = torch.is_deterministic_algorithms_warn_only_enabled
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(
+            function.__code__.co_names,
+            ("_C", "_get_deterministic_algorithms_warn_only"),
+        )
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -169,9 +178,8 @@ class IsDeterministicAlgorithmsWarnOnlyEnabledTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_deterministic_setters_and_debug_mode_remain_unsupported(self):
+    def test_deterministic_debug_mode_remains_unsupported(self):
         unsupported = (
-            "use_deterministic_algorithms",
             "set_deterministic_debug_mode",
             "get_deterministic_debug_mode",
         )
@@ -194,6 +202,9 @@ sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
 assert torch.is_deterministic_algorithms_warn_only_enabled() is False
+assert torch.use_deterministic_algorithms(False, warn_only=True) is None
+assert torch.is_deterministic_algorithms_warn_only_enabled() is True
+torch.use_deterministic_algorithms(False)
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
