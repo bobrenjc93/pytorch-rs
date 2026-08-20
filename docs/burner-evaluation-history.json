@@ -4193,6 +4193,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90
       }
+    },
+    {
+      "key": "pr:437",
+      "recordedAt": "2026-08-20T13:40:19.275Z",
+      "label": "PR #437",
+      "kind": "leaf",
+      "prNumber": 437,
+      "title": "Add mutable serialization CRC32 state",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 77.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 60.9,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90
+      }
     }
   ]
 }
