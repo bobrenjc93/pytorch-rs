@@ -1,4 +1,5 @@
 import gc
+import sys
 import unittest
 
 import numpy as np
@@ -306,6 +307,30 @@ class CloneChannelsLastReferenceTests(unittest.TestCase):
                                 memory_format_name,
                             ),
                         )
+
+    def test_stride_overflow_precedes_rank_error_like_pytorch_2_13(self):
+        actual = torch.zeros((0,), dtype=torch.float32).reshape(
+            (0, sys.maxsize, 3, 1)
+        )
+        expected = reference_torch.zeros(
+            (0,), dtype=reference_torch.float32
+        ).reshape((0, sys.maxsize, 3, 1))
+        for functional in (False, True):
+            with self.subTest(functional=functional):
+                self.assert_error_matches(
+                    lambda functional=functional: self.clone(
+                        torch,
+                        actual,
+                        functional,
+                        "channels_last_3d",
+                    ),
+                    lambda functional=functional: self.clone(
+                        reference_torch,
+                        expected,
+                        functional,
+                        "channels_last_3d",
+                    ),
+                )
 
 
 if __name__ == "__main__":

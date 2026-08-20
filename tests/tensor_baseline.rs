@@ -2365,11 +2365,16 @@ fn clone_handles_scalars_and_extreme_empty_view_offsets() {
     );
     assert_eq!(
         extreme_shape.try_clone_with_memory_format(MemoryFormat::ChannelsLast),
-        Err(TensorError::ContiguousMemoryFormatRankMismatch {
-            memory_format: MemoryFormat::ChannelsLast,
-            expected_rank: 4,
-            actual_rank: 3,
-        })
+        Err(TensorError::StrideCalculationOverflow)
+    );
+
+    let extreme_rank_four = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3, 1])
+        .unwrap();
+    assert_eq!(
+        extreme_rank_four.try_clone_with_memory_format(MemoryFormat::ChannelsLast3d),
+        Err(TensorError::StrideCalculationOverflow)
     );
 }
 

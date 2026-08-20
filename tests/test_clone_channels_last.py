@@ -1,4 +1,5 @@
 import gc
+import sys
 import unittest
 
 import numpy as np
@@ -188,6 +189,17 @@ class CloneChannelsLastTests(unittest.TestCase):
                             f"{format_name} format",
                         ):
                             operation(source)
+
+    def test_stride_overflow_precedes_channels_last_3d_rank_error(self):
+        source = torch.zeros((0,)).reshape((0, sys.maxsize, 3, 1))
+        for operation_name, operation in self.clone_operations(
+            torch.channels_last_3d
+        ):
+            with self.subTest(operation=operation_name):
+                with self.assertRaisesRegex(
+                    RuntimeError, "^Stride calculation overflowed$"
+                ):
+                    operation(source)
 
 
 if __name__ == "__main__":

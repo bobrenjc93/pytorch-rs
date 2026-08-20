@@ -1487,6 +1487,11 @@ impl Tensor {
         if let Some(expected_rank) = expected_rank
             && self.shape.len() != expected_rank
         {
+            // PyTorch validates canonical destination metadata before
+            // reporting a channel-format rank mismatch. Preserve-format
+            // clones intentionally skip this preflight so representable
+            // extreme empty layouts can retain their source strides.
+            let _ = contiguous_strides(&self.shape, self.elements)?;
             return Err(TensorError::ContiguousMemoryFormatRankMismatch {
                 memory_format,
                 expected_rank,
