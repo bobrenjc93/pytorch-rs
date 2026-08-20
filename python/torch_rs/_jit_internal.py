@@ -29,6 +29,55 @@ class FunctionModifiers:
     _DROP = "_drop (function is fully ignored, declaration can be unscriptable)"
 
 
+def export(fn: Callable[_P, _R]) -> Callable[_P, _R]:
+    """
+    This decorator indicates that a method on an ``nn.Module`` is used as an entry point into a
+    :class:`ScriptModule` and should be compiled.
+
+    .. deprecated:: 2.5
+        Please use :func:`torch.compile` instead.
+
+    ``forward`` implicitly is assumed to be an entry point, so it does not need this decorator.
+    Functions and methods called from ``forward`` are compiled as they are seen
+    by the compiler, so they do not need this decorator either.
+
+    Example (using ``@torch.jit.export`` on a method):
+
+    .. testcode::
+
+        import torch
+        import torch.nn as nn
+
+        class MyModule(nn.Module):
+            def implicitly_compiled_method(self, x):
+                return x + 99
+
+            # `forward` is implicitly decorated with `@torch.jit.export`,
+            # so adding it here would have no effect
+            def forward(self, x):
+                return x + 10
+
+            @torch.jit.export
+            def another_forward(self, x):
+                # When the compiler sees this call, it will compile
+                # `implicitly_compiled_method`
+                return self.implicitly_compiled_method(x)
+
+            def unused_method(self, x):
+                return x - 20
+
+        # `m` will contain compiled methods:
+        #     `forward`
+        #     `another_forward`
+        #     `implicitly_compiled_method`
+        # `unused_method` will not be compiled since it was not called from
+        # any compiled methods and wasn't decorated with `@torch.jit.export`
+        m = torch.jit.script(MyModule())
+    """
+    fn._torchscript_modifier = FunctionModifiers.EXPORT  # type: ignore[attr-defined]
+    return fn
+
+
 def unused(fn: Callable[_P, _R]) -> Callable[_P, _R]:
     """
     This decorator indicates to the compiler that a function or method should

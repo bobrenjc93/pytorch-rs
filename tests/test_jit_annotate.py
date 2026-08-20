@@ -179,16 +179,16 @@ class JitAnnotateTests(unittest.TestCase):
         jit = torch.jit
         function = jit.annotate
 
-        self.assertEqual(jit.__all__, ["annotate", "unused"])
+        self.assertEqual(jit.__all__, ["annotate", "export", "unused"])
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
-            {"annotate", "unused"},
+            {"annotate", "export", "unused"},
         )
         jit_namespace = {}
         exec("from torch_rs.jit import *", jit_namespace)
         self.assertEqual(
             {name for name in jit_namespace if not name.startswith("__")},
-            {"annotate", "unused"},
+            {"annotate", "export", "unused"},
         )
         self.assertIs(jit_namespace["annotate"], function)
 

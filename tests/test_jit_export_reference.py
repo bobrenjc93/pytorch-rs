@@ -16,13 +16,20 @@ except ImportError:
     reference_torch = None
 
 
+def _actual_picklable_export_function(value):
+    return value
+
+
+torch.jit.export(_actual_picklable_export_function)
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class JitUnusedReferenceTests(unittest.TestCase):
+class JitExportReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "jit.unused differentials require pinned PyTorch 2.13.0"
+                "jit.export differentials require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -68,76 +75,100 @@ class JitUnusedReferenceTests(unittest.TestCase):
             return value, option
 
         function.custom_attribute = sentinel
-        result = module.jit.unused(function)
-        modifier = module._jit_internal.FunctionModifiers.UNUSED
+        before = (
+            function.__name__,
+            function.__qualname__,
+            function.__doc__,
+            function.__annotations__.copy(),
+            function.__defaults__,
+            function.__kwdefaults__.copy(),
+        )
+        result = module.jit.export(function)
+        modifier = module._jit_internal.FunctionModifiers.EXPORT
+        after = (
+            function.__name__,
+            function.__qualname__,
+            function.__doc__,
+            function.__annotations__,
+            function.__defaults__,
+            function.__kwdefaults__,
+        )
         return (
             result is function,
             function("value") == ("value", sentinel),
             function.custom_attribute is sentinel,
+            before == after,
             function._torchscript_modifier,
             function._torchscript_modifier is modifier,
             copy.copy(function) is function,
             copy.deepcopy(function) is function,
         )
 
-    def property_outcome(self, module):
-        def getter(instance):
-            return instance._value
+    def method_and_callable_outcome(self, module):
+        class Example:
+            @module.jit.export
+            def method(self, value):
+                return value + 1
 
-        def setter(instance, value):
-            instance._value = value
+        class CallableTarget:
+            def __call__(self, value):
+                return value * 2
 
-        def deleter(instance):
-            del instance._value
-
-        deleter._torchscript_modifier = "leave unchanged"
-        prop = property(getter, setter, deleter, "property documentation")
-        before = (prop.fget, prop.fset, prop.fdel, prop.__doc__)
-        result = module.jit.unused(prop)
-        modifier = module._jit_internal.FunctionModifiers.UNUSED
-
-        class Holder:
-            value = prop
-
-            def __init__(self):
-                self._value = 3
-
-        holder = Holder()
-        first = holder.value
-        holder.value = 7
-        second = holder.value
-        del holder.value
-
-        pickle_errors = []
-        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-            try:
-                pickle.dumps(prop, protocol=protocol)
-            except Exception as error:
-                pickle_errors.append(
-                    (type(error).__name__, str(error), error.args)
-                )
-
+        target = CallableTarget()
+        result = module.jit.export(target)
+        modifier = module._jit_internal.FunctionModifiers.EXPORT
+        raw_method = Example.__dict__["method"]
         return (
-            result is prop,
-            (prop.fget, prop.fset, prop.fdel, prop.__doc__) == before,
-            getter._torchscript_modifier is modifier,
-            setter._torchscript_modifier is modifier,
-            deleter._torchscript_modifier,
-            hasattr(prop, "_torchscript_modifier"),
-            (first, second, hasattr(holder, "_value")),
-            copy.copy(prop) is prop,
-            copy.deepcopy(prop) is prop,
-            pickle_errors,
+            Example.method is raw_method,
+            Example().method(4),
+            raw_method._torchscript_modifier,
+            raw_method._torchscript_modifier is modifier,
+            result is target,
+            target(6),
+            target._torchscript_modifier,
+            target._torchscript_modifier is modifier,
         )
 
-    def test_function_and_property_eager_semantics_match_pytorch_2_13(self):
+    def overwrite_outcome(self, module):
+        def function():
+            return "eager result"
+
+        function._torchscript_modifier = object()
+        first = module.jit.export(function)
+        export_modifier = module._jit_internal.FunctionModifiers.EXPORT
+        first_state = (
+            first is function,
+            function._torchscript_modifier,
+            function._torchscript_modifier is export_modifier,
+        )
+        module.jit.unused(function)
+        unused_modifier = module._jit_internal.FunctionModifiers.UNUSED
+        unused_state = (
+            function._torchscript_modifier,
+            function._torchscript_modifier is unused_modifier,
+        )
+        second = module.jit.export(function)
+        return (
+            first_state,
+            unused_state,
+            second is function,
+            function._torchscript_modifier,
+            function._torchscript_modifier is export_modifier,
+            function(),
+        )
+
+    def test_function_method_callable_and_overwrite_semantics_match(self):
         self.assertEqual(
             self.function_outcome(torch),
             self.function_outcome(reference_torch),
         )
         self.assertEqual(
-            self.property_outcome(torch),
-            self.property_outcome(reference_torch),
+            self.method_and_callable_outcome(torch),
+            self.method_and_callable_outcome(reference_torch),
+        )
+        self.assertEqual(
+            self.overwrite_outcome(torch),
+            self.overwrite_outcome(reference_torch),
         )
 
     def test_signature_annotations_documentation_and_ownership_match(self):
@@ -145,15 +176,15 @@ class JitUnusedReferenceTests(unittest.TestCase):
         expected_jit = importlib.import_module("torch.jit")
         actual_internal = importlib.import_module("torch_rs._jit_internal")
         expected_internal = importlib.import_module("torch._jit_internal")
-        actual = actual_jit.unused
-        expected = expected_jit.unused
+        actual = actual_jit.export
+        expected = expected_jit.export
 
         self.assertIs(torch.jit, actual_jit)
         self.assertIs(reference_torch.jit, expected_jit)
         self.assertIs(torch._jit_internal, actual_internal)
         self.assertIs(reference_torch._jit_internal, expected_internal)
-        self.assertIs(actual, actual_internal.unused)
-        self.assertIs(expected, expected_internal.unused)
+        self.assertIs(actual, actual_internal.export)
+        self.assertIs(expected, expected_internal.export)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -178,39 +209,11 @@ class JitUnusedReferenceTests(unittest.TestCase):
             hasattr(expected, "__text_signature__"),
         )
 
-        actual_modifiers = actual_internal.FunctionModifiers
-        expected_modifiers = expected_internal.FunctionModifiers
-        self.assertEqual(
-            actual_modifiers.__module__.replace("torch_rs", "torch"),
-            expected_modifiers.__module__,
-        )
-        self.assertEqual(actual_modifiers.__name__, expected_modifiers.__name__)
-        self.assertEqual(
-            actual_modifiers.__qualname__, expected_modifiers.__qualname__
-        )
-        self.assertEqual(actual_modifiers.__doc__, expected_modifiers.__doc__)
-        self.assertEqual(
-            actual_modifiers.__annotations__, expected_modifiers.__annotations__
-        )
-        for name in (
-            "UNUSED",
-            "IGNORE",
-            "EXPORT",
-            "DEFAULT",
-            "COPY_TO_SCRIPT_WRAPPER",
-            "_DROP",
-        ):
-            with self.subTest(modifier=name):
-                self.assertEqual(
-                    getattr(actual_modifiers, name),
-                    getattr(expected_modifiers, name),
-                )
-
     def test_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_jit = torch.jit
         expected_jit = reference_torch.jit
-        actual = actual_jit.unused
-        expected = expected_jit.unused
+        actual = actual_jit.export
+        expected = expected_jit.export
 
         self.assertEqual(
             actual_jit.__all__,
@@ -223,10 +226,8 @@ class JitUnusedReferenceTests(unittest.TestCase):
         self.assertEqual(
             torch.__all__.count("jit"), reference_torch.__all__.count("jit")
         )
-        self.assertEqual(
-            torch.__all__.count("unused"),
-            reference_torch.__all__.count("unused"),
-        )
+        self.assertEqual(torch.__all__.count("export"), 0)
+        self.assertEqual(reference_torch.__all__.count("export"), 1)
 
         actual_namespace = {}
         expected_namespace = {}
@@ -236,8 +237,8 @@ class JitUnusedReferenceTests(unittest.TestCase):
             {name for name in actual_namespace if not name.startswith("__")},
             {"annotate", "export", "unused"},
         )
-        self.assertIs(actual_namespace["unused"], actual)
-        self.assertIs(expected_namespace["unused"], expected)
+        self.assertIs(actual_namespace["export"], actual)
+        self.assertIs(expected_namespace["export"], expected)
 
         for actual_value, expected_value in (
             (actual, expected),
@@ -265,9 +266,21 @@ class JitUnusedReferenceTests(unittest.TestCase):
                         expected_value,
                     )
 
+        self.assertIs(
+            _actual_picklable_export_function._torchscript_modifier,
+            torch._jit_internal.FunctionModifiers.EXPORT,
+        )
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            self.assertIs(
+                pickle.loads(
+                    pickle.dumps(_actual_picklable_export_function, protocol)
+                ),
+                _actual_picklable_export_function,
+            )
+
     def test_call_and_invalid_target_errors_match_pytorch_2_13(self):
-        actual = torch.jit.unused
-        expected = reference_torch.jit.unused
+        actual = torch.jit.export
+        expected = reference_torch.jit.export
 
         class Example:
             def method(self):
@@ -313,6 +326,8 @@ class JitUnusedReferenceTests(unittest.TestCase):
 
         self.assertTrue(hasattr(reference_torch, "compile"))
         self.assertFalse(hasattr(torch, "compile"))
+        self.assertTrue(hasattr(reference_torch, "export"))
+        self.assertFalse(hasattr(torch, "export"))
 
         actual_value = object()
         expected_value = object()
@@ -320,6 +335,19 @@ class JitUnusedReferenceTests(unittest.TestCase):
         self.assertIs(
             reference_torch.jit.annotate(int, expected_value), expected_value
         )
+
+        def actual_function():
+            return "actual"
+
+        def expected_function():
+            return "expected"
+
+        self.assertIs(torch.jit.unused(actual_function), actual_function)
+        self.assertIs(
+            reference_torch.jit.unused(expected_function), expected_function
+        )
+        self.assertEqual(actual_function(), "actual")
+        self.assertEqual(expected_function(), "expected")
 
 
 if __name__ == "__main__":
