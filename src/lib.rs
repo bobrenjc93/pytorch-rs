@@ -50,6 +50,8 @@ mod python_tensor_lazy_bits;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_tensor_queries;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_tensor_shape;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_tensor_storage;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_torch_function_mode;
