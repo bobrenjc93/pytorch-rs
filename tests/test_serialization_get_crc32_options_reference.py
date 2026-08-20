@@ -19,14 +19,26 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
+class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "serialization.get_crc32_options differentials require pinned "
+                "serialization CRC32 option differentials require pinned "
                 "PyTorch 2.13.0"
             )
+
+    def setUp(self):
+        self.original_crc32_options = {
+            module: module.serialization.get_crc32_options()
+            for module in (torch, reference_torch)
+        }
+        for module in self.original_crc32_options:
+            module.serialization.set_crc32_options(True)
+
+    def tearDown(self):
+        for module, value in self.original_crc32_options.items():
+            module.serialization.set_crc32_options(value)
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -81,6 +93,35 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
         self.assertEqual(errors, [])
         return states, worker_states
 
+    def mutation_outcome(self, module, values):
+        setter = module.serialization.set_crc32_options
+        getter = module.serialization.get_crc32_options
+        outcomes = []
+        for value in values:
+            result = setter(value)
+            observed = getter()
+            outcomes.append(
+                (
+                    result is None,
+                    observed is value,
+                    type(observed).__module__,
+                    type(observed).__qualname__,
+                )
+            )
+
+        keyword_value = []
+        result = setter(compute_crc32=keyword_value)
+        observed = getter()
+        keyword_value.append("updated")
+        outcomes.append(
+            (
+                result is None,
+                observed is keyword_value,
+                observed == ["updated"],
+            )
+        )
+        return outcomes
+
     def pickle_shape(self, function, protocol):
         shape = []
         for opcode, argument, _ in pickletools.genops(
@@ -93,7 +134,7 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_supported_default_threaded_and_grad_states_match_pytorch_2_13(self):
+    def test_default_threaded_and_grad_states_match_pytorch_2_13(self):
         self.assertEqual(
             self.supported_state_outcome(torch),
             self.supported_state_outcome(reference_torch),
@@ -101,72 +142,77 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
         self.assertIs(torch.serialization.get_crc32_options(), True)
         self.assertIs(reference_torch.serialization.get_crc32_options(), True)
 
-    def test_reference_only_mutation_bounds_the_unsupported_false_state(self):
-        actual_serialization = torch.serialization
-        expected_serialization = reference_torch.serialization
-        actual = actual_serialization.get_crc32_options
-        expected = expected_serialization.get_crc32_options
-        original = expected()
+    def test_runtime_value_acceptance_and_identity_match_pytorch_2_13(self):
+        class RejectBoolConversion:
+            def __bool__(self):
+                raise AssertionError("set_crc32_options must not call bool")
 
-        try:
-            expected_serialization.set_crc32_options(False)
-            actual_states = [actual()]
-            expected_states = [expected()]
-
-            expected_serialization.set_crc32_options(True)
-            actual_states.append(actual())
-            expected_states.append(expected())
-
-            expected_serialization.set_crc32_options(False)
-            actual_states.append(actual())
-            expected_states.append(expected())
-        finally:
-            expected_serialization.set_crc32_options(original)
-
-        for state in actual_states:
-            self.assertIs(state, True)
-        self.assertEqual(expected_states, [False, True, False])
-        for state in expected_states:
-            self.assertIs(type(state), bool)
+        values = (
+            False,
+            True,
+            None,
+            0,
+            1,
+            2,
+            0.0,
+            float("nan"),
+            "",
+            "false",
+            [],
+            {},
+            object(),
+            RejectBoolConversion,
+            RejectBoolConversion(),
+        )
+        actual = self.mutation_outcome(torch, values)
+        expected = self.mutation_outcome(reference_torch, values)
+        self.assertEqual(actual, expected)
+        self.assertTrue(all(outcome[0] and outcome[1] for outcome in actual))
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_serialization = importlib.import_module("torch_rs.serialization")
         expected_serialization = importlib.import_module("torch.serialization")
-        actual = actual_serialization.get_crc32_options
-        expected = expected_serialization.get_crc32_options
 
         self.assertIs(torch.serialization, actual_serialization)
         self.assertIs(reference_torch.serialization, expected_serialization)
         self.assertIsNone(actual_serialization.__doc__)
         self.assertEqual(actual_serialization.__doc__, expected_serialization.__doc__)
-        self.assertIs(type(actual), types.FunctionType)
-        self.assertIs(type(expected), types.FunctionType)
-        self.assertEqual(
-            str(inspect.signature(actual)), str(inspect.signature(expected))
-        )
-        self.assertEqual(actual.__annotations__, expected.__annotations__)
-        self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
-        self.assertEqual(actual.__name__, expected.__name__)
-        self.assertEqual(actual.__qualname__, expected.__qualname__)
-        self.assertEqual(
-            actual.__module__.replace("torch_rs", "torch"), expected.__module__
-        )
-        self.assertIs(inspect.getmodule(actual), actual_serialization)
-        self.assertIs(inspect.getmodule(expected), expected_serialization)
-        self.assertEqual(actual.__doc__, expected.__doc__)
-        self.assertEqual(actual.__defaults__, expected.__defaults__)
-        self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
-        self.assertEqual(actual.__dict__, expected.__dict__)
-        self.assertEqual(
-            hasattr(actual, "__text_signature__"),
-            hasattr(expected, "__text_signature__"),
-        )
+        for name in ("get_crc32_options", "set_crc32_options"):
+            with self.subTest(name=name):
+                actual = getattr(actual_serialization, name)
+                expected = getattr(expected_serialization, name)
+                self.assertIs(type(actual), types.FunctionType)
+                self.assertIs(type(expected), types.FunctionType)
+                self.assertEqual(
+                    str(inspect.signature(actual)),
+                    str(inspect.signature(expected)),
+                )
+                self.assertEqual(actual.__annotations__, expected.__annotations__)
+                self.assertEqual(
+                    typing.get_type_hints(actual),
+                    typing.get_type_hints(expected),
+                )
+                self.assertEqual(actual.__name__, expected.__name__)
+                self.assertEqual(actual.__qualname__, expected.__qualname__)
+                self.assertEqual(
+                    actual.__module__.replace("torch_rs", "torch"),
+                    expected.__module__,
+                )
+                self.assertIs(inspect.getmodule(actual), actual_serialization)
+                self.assertIs(inspect.getmodule(expected), expected_serialization)
+                self.assertEqual(actual.__doc__, expected.__doc__)
+                self.assertEqual(actual.__defaults__, expected.__defaults__)
+                self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
+                self.assertEqual(actual.__dict__, expected.__dict__)
+                self.assertEqual(
+                    hasattr(actual, "__text_signature__"),
+                    hasattr(expected, "__text_signature__"),
+                )
 
     def test_imports_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_serialization = torch.serialization
         expected_serialization = reference_torch.serialization
-        actual = actual_serialization.get_crc32_options
-        expected = expected_serialization.get_crc32_options
+        supported_names = ("get_crc32_options", "set_crc32_options")
 
         self.assertIs(sys.modules["torch_rs.serialization"], actual_serialization)
         self.assertIs(sys.modules["torch.serialization"], expected_serialization)
@@ -175,17 +221,18 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_serialization.__all__
-                if name == "get_crc32_options"
+                if name in supported_names
             ],
         )
         self.assertEqual(
             torch.__all__.count("serialization"),
             reference_torch.__all__.count("serialization"),
         )
-        self.assertEqual(
-            torch.__all__.count("get_crc32_options"),
-            reference_torch.__all__.count("get_crc32_options"),
-        )
+        for name in supported_names:
+            self.assertEqual(
+                torch.__all__.count(name),
+                reference_torch.__all__.count(name),
+            )
 
         actual_package_import = {}
         expected_package_import = {}
@@ -199,71 +246,111 @@ class SerializationGetCrc32OptionsReferenceTests(unittest.TestCase):
         actual_direct_import = {}
         expected_direct_import = {}
         exec(
-            "from torch_rs.serialization import get_crc32_options",
+            "from torch_rs.serialization import "
+            "get_crc32_options, set_crc32_options",
             actual_direct_import,
         )
         exec(
-            "from torch.serialization import get_crc32_options",
+            "from torch.serialization import "
+            "get_crc32_options, set_crc32_options",
             expected_direct_import,
         )
-        self.assertIs(actual_direct_import["get_crc32_options"], actual)
-        self.assertIs(expected_direct_import["get_crc32_options"], expected)
+        for name in supported_names:
+            self.assertIs(
+                actual_direct_import[name],
+                getattr(actual_serialization, name),
+            )
+            self.assertIs(
+                expected_direct_import[name],
+                getattr(expected_serialization, name),
+            )
 
-        for module, function in (
-            (actual_serialization, actual),
-            (expected_serialization, expected),
-        ):
+        for module in (actual_serialization, expected_serialization):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["get_crc32_options"], function)
+            for name in supported_names:
+                self.assertIs(namespace[name], getattr(module, name))
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("serialization", namespace)
-            self.assertNotIn("get_crc32_options", namespace)
+            for name in supported_names:
+                self.assertNotIn(name, namespace)
 
-        self.assertIs(copy.copy(actual), actual)
-        self.assertIs(copy.copy(expected), expected)
-        self.assertIs(copy.deepcopy(actual), actual)
-        self.assertIs(copy.deepcopy(expected), expected)
-        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-            with self.subTest(protocol=protocol):
-                self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
-                self.assertIs(pickle.loads(pickle.dumps(expected, protocol)), expected)
-                self.assertEqual(
-                    self.pickle_shape(actual, protocol),
-                    self.pickle_shape(expected, protocol),
-                )
+        for name in supported_names:
+            actual = getattr(actual_serialization, name)
+            expected = getattr(expected_serialization, name)
+            self.assertIs(copy.copy(actual), actual)
+            self.assertIs(copy.copy(expected), expected)
+            self.assertIs(copy.deepcopy(actual), actual)
+            self.assertIs(copy.deepcopy(expected), expected)
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(name=name, protocol=protocol):
+                    self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
+                    self.assertIs(
+                        pickle.loads(pickle.dumps(expected, protocol)), expected
+                    )
+                    self.assertEqual(
+                        self.pickle_shape(actual, protocol),
+                        self.pickle_shape(expected, protocol),
+                    )
 
-    def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.serialization.get_crc32_options
-        expected = reference_torch.serialization.get_crc32_options
+    def test_argument_errors_and_state_preservation_match_pytorch_2_13(self):
+        actual_getter = torch.serialization.get_crc32_options
+        expected_getter = reference_torch.serialization.get_crc32_options
+        actual_setter = torch.serialization.set_crc32_options
+        expected_setter = reference_torch.serialization.set_crc32_options
         cases = (
-            (lambda: actual(None), lambda: expected(None)),
-            (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
+            (lambda: actual_getter(None), lambda: expected_getter(None)),
             (
-                lambda: actual(None, enabled=True),
-                lambda: expected(None, enabled=True),
+                lambda: actual_getter(None, None),
+                lambda: expected_getter(None, None),
+            ),
+            (
+                lambda: actual_getter(enabled=True),
+                lambda: expected_getter(enabled=True),
+            ),
+            (
+                lambda: actual_getter(None, enabled=True),
+                lambda: expected_getter(None, enabled=True),
+            ),
+            (lambda: actual_setter(), lambda: expected_setter()),
+            (
+                lambda: actual_setter(True, False),
+                lambda: expected_setter(True, False),
+            ),
+            (
+                lambda: actual_setter(enabled=True),
+                lambda: expected_setter(enabled=True),
+            ),
+            (
+                lambda: actual_setter(True, compute_crc32=False),
+                lambda: expected_setter(True, compute_crc32=False),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
+                actual_before = actual_getter()
+                expected_before = expected_getter()
                 self.assert_error_matches(actual_call, expected_call)
+                self.assertIs(actual_getter(), actual_before)
+                self.assertIs(expected_getter(), expected_before)
 
-    def test_setters_save_load_and_other_serialization_apis_remain_unsupported(self):
+    def test_save_load_and_other_serialization_apis_remain_unsupported(self):
         actual_serialization = torch.serialization
         expected_serialization = reference_torch.serialization
         actual_public = {
             name for name in vars(actual_serialization) if not name.startswith("_")
         }
 
-        self.assertEqual(actual_public, {"get_crc32_options"})
+        self.assertEqual(
+            actual_public,
+            {"get_crc32_options", "set_crc32_options"},
+        )
         unsupported = set(expected_serialization.__all__) - actual_public
         self.assertTrue(
             {
-                "set_crc32_options",
                 "get_default_load_endianness",
                 "set_default_load_endianness",
                 "get_default_mmap_options",
