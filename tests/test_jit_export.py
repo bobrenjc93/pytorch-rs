@@ -245,7 +245,7 @@ class JitExportTests(unittest.TestCase):
         function = torch.jit.export
         immutable_attribute_suffix = (
             " and no __dict__ for setting new attributes"
-            if sys.version_info >= (3, 14)
+            if sys.version_info >= (3, 13)
             else ""
         )
 
