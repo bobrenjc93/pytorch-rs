@@ -136,4 +136,4 @@ from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _builtins, _copyreg, _native, _sys
+del _copyreg, _native, _sys

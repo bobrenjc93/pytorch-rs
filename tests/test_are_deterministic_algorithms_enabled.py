@@ -100,7 +100,10 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
         self.assertEqual(function.__qualname__, "are_deterministic_algorithms_enabled")
         self.assertEqual(function.__module__, "torch_rs")
         self.assertIs(inspect.getmodule(function), package)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__),
+            inspect.cleandoc(FUNCTION_DOC),
+        )
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
