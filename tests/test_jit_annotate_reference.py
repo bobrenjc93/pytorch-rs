@@ -127,7 +127,7 @@ class JitAnnotateReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_jit.__all__
-                if name in {"annotate", "unused"}
+                if name in {"annotate", "export", "unused"}
             ],
         )
         self.assertEqual(
@@ -145,7 +145,7 @@ class JitAnnotateReferenceTests(unittest.TestCase):
         exec("from torch.jit import *", expected_namespace)
         self.assertEqual(
             {name for name in actual_namespace if not name.startswith("__")},
-            {"annotate", "unused"},
+            {"annotate", "export", "unused"},
         )
         self.assertIs(actual_namespace["annotate"], actual)
         self.assertIs(expected_namespace["annotate"], expected)
@@ -186,13 +186,13 @@ class JitAnnotateReferenceTests(unittest.TestCase):
                     lambda: call(expected),
                 )
 
-    def test_supported_boundary_is_eager_annotate_only(self):
+    def test_supported_boundary_is_eager_decorators_and_annotate_only(self):
         expected_public = {
             name for name in vars(reference_torch.jit) if not name.startswith("_")
         }
         self.assertEqual(
             {name for name in vars(torch.jit) if not name.startswith("_")},
-            {"annotate", "unused"},
+            {"annotate", "export", "unused"},
         )
         for name in ("ignore", "script", "trace", "is_scripting", "is_tracing"):
             with self.subTest(name=name):
