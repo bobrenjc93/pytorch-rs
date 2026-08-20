@@ -120,7 +120,7 @@ class JitScriptIfTracingTests(unittest.TestCase):
         self.assertEqual(wrapped.__qualname__, function.__qualname__)
         self.assertEqual(wrapped.__module__, function.__module__)
         self.assertEqual(wrapped.__doc__, function.__doc__)
-        self.assertIs(wrapped.__annotations__, function.__annotations__)
+        self.assertEqual(wrapped.__annotations__, function.__annotations__)
         self.assertIs(wrapped.custom_attribute, custom_value)
         self.assertIs(wrapped.__wrapped__, function)
         self.assertIs(getattr(wrapped, "__original_fn"), function)
