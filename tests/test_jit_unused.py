@@ -230,7 +230,9 @@ class JitUnusedTests(unittest.TestCase):
         self.assertEqual(return_type.__name__, "_R")
         self.assertEqual(return_type.__module__, "torch_rs._jit_internal")
         self.assertEqual(typing.get_type_hints(function), function.__annotations__)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
+        )
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
@@ -293,7 +295,7 @@ class JitUnusedTests(unittest.TestCase):
 
     def test_invalid_calls_and_targets_raise_pytorch_2_13_errors(self):
         function = torch.jit.unused
-        cases = (
+        call_cases = (
             (
                 lambda: function(),
                 TypeError,
@@ -319,34 +321,34 @@ class JitUnusedTests(unittest.TestCase):
                 TypeError,
                 "unused() got multiple values for argument 'fn'",
             ),
-            (
-                lambda: function(1),
-                AttributeError,
-                "'int' object has no attribute '_torchscript_modifier'",
-            ),
-            (
-                lambda: function(object()),
-                AttributeError,
-                "'object' object has no attribute '_torchscript_modifier'",
-            ),
-            (
-                lambda: function(len),
-                AttributeError,
-                "'builtin_function_or_method' object has no attribute "
-                "'_torchscript_modifier'",
-            ),
-            (
-                lambda: function(property()),
-                AttributeError,
-                "'NoneType' object has no attribute '_torchscript_modifier'",
-            ),
         )
-        for call, exception_type, message in cases:
+        for call, exception_type, message in call_cases:
             with self.subTest(message=message):
                 with self.assertRaises(exception_type) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
+
+        target_cases = (
+            ("int", 1, 1),
+            ("object", object(), object()),
+            ("builtin function", len, len),
+            ("property without getter", property(), None),
+        )
+        for name, target, expected_target in target_cases:
+            with self.subTest(target=name):
+                with self.assertRaises(AttributeError) as actual_raised:
+                    function(target)
+                with self.assertRaises(AttributeError) as expected_raised:
+                    setattr(
+                        expected_target, "_torchscript_modifier", UNUSED_MARKER
+                    )
+                self.assertEqual(
+                    str(actual_raised.exception), str(expected_raised.exception)
+                )
+                self.assertEqual(
+                    actual_raised.exception.args, expected_raised.exception.args
+                )
 
     def test_annotate_remains_unchanged_and_compilers_remain_unsupported(self):
         value = {"items": [1, 2]}
