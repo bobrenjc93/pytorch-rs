@@ -202,7 +202,12 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
         expected_cpu = reference_torch.cpu
         actual = actual_cpu.synchronize
         expected = expected_cpu.synchronize
-        supported = {"device_count", "is_available", "synchronize"}
+        supported = {
+            "current_device",
+            "device_count",
+            "is_available",
+            "synchronize",
+        }
 
         self.assertEqual(
             actual_cpu.__all__,
@@ -293,13 +298,13 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
         }
 
         self.assertEqual(
-            actual_public, {"device_count", "is_available", "synchronize"}
+            actual_public,
+            {"current_device", "device_count", "is_available", "synchronize"},
         )
         unsupported = expected_public - actual_public
         self.assertTrue(
             {
                 "amp",
-                "current_device",
                 "current_stream",
                 "Event",
                 "get_capabilities",
