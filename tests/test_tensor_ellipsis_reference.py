@@ -1,4 +1,5 @@
 import gc
+import re
 import unittest
 
 import numpy as np
@@ -168,3 +169,123 @@ class TensorBareEllipsisReferenceTests(unittest.TestCase):
         expected_metadata, expected_bits = self.no_grad_outcome(reference_torch)
         self.assertEqual(actual_metadata, expected_metadata)
         np.testing.assert_array_equal(actual_bits, expected_bits)
+
+    def mode_outcome(self, module):
+        tensor = module.tensor([[1.0, 2.0], [3.0, 4.0]])
+        descriptor = module.Tensor.__mro__[1].__getitem__
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        records = []
+        indices = (
+            Ellipsis,
+            1,
+            (1, 0),
+            slice(None),
+            None,
+            (Ellipsis,),
+        )
+        for index in indices:
+            mode = RecordingMode(marker)
+            with mode:
+                result = tensor[index]
+            func, types, args, kwargs = mode.calls[0]
+            records.append(
+                (
+                    result is marker,
+                    len(mode.calls),
+                    func is descriptor,
+                    type(func).__name__,
+                    repr(func),
+                    func.__name__,
+                    func.__qualname__,
+                    types,
+                    len(args),
+                    args[0] is tensor,
+                    args[1] is index,
+                    repr(args[1]),
+                    kwargs,
+                )
+            )
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(
+                    (
+                        self.label,
+                        func is descriptor,
+                        types,
+                        args[0] is tensor,
+                        args[1] is Ellipsis,
+                        kwargs,
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor[...]
+
+        conversions = []
+
+        class PoisonIndex:
+            def __index__(self):
+                conversions.append("index")
+                raise RuntimeError("index conversion must be deferred")
+
+        poison = PoisonIndex()
+        deferred = RecordingMode(marker)
+        with deferred:
+            deferred_result = tensor[poison]
+
+        declining = RecordingMode(NotImplemented)
+        try:
+            with declining:
+                tensor[...]
+        except Exception as error:
+            declining_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0xADDR", str(error)),
+            )
+        else:
+            self.fail(f"{module.__name__} accepted a declining mode")
+
+        return {
+            "records": tuple(records),
+            "forwarding": tuple(order),
+            "forwarded": (
+                tuple(forwarded.shape),
+                forwarded.stride(),
+                forwarded.storage_offset(),
+                forwarded.data_ptr() == tensor.data_ptr(),
+                forwarded.is_set_to(tensor),
+                forwarded is tensor,
+            ),
+            "deferred": (
+                deferred_result is marker,
+                len(deferred.calls),
+                deferred.calls[0][2][1] is poison,
+                tuple(conversions),
+            ),
+            "declining": declining_error,
+            "declining_calls": len(declining.calls),
+            "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+        }
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_outcome(torch), self.mode_outcome(reference_torch)
+        )
