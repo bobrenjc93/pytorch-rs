@@ -12,8 +12,14 @@ FUNCTION_NAMES = ("atleast_1d", "atleast_2d", "atleast_3d")
 
 
 class AtleastZeroInputTests(unittest.TestCase):
+    def native_function(self, module, name):
+        if module is reference_torch:
+            return getattr(module._C._VariableFunctions, name)
+        return getattr(module._C, name)
+
     def zero_input_contract(self, module, name):
         function = getattr(module, name)
+        native_function = self.native_function(module, name)
         direct = function()
         marker = object()
 
@@ -44,37 +50,67 @@ class AtleastZeroInputTests(unittest.TestCase):
             with ForwardingMode("upper"):
                 forwarded = function()
 
-        def normalize(call):
+        three_argument_calls = []
+
+        class ThreeArgumentMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=()):
+                three_argument_calls.append((func, types, args))
+                return marker
+
+        with ThreeArgumentMode():
+            three_argument_result = function()
+
+        def observe(call):
             func, types, args, kwargs = call
-            # PyTorch enters through its native callable with kwargs=None,
-            # while forwarding supplies an explicit empty dictionary.
-            return func.__name__, types, args, kwargs or {}
+            return (
+                func is native_function,
+                func is function,
+                types,
+                args,
+                kwargs,
+            )
+
+        def observe_three_argument(call):
+            func, types, args = call
+            return func is native_function, func is function, types, args
 
         return (
             (type(direct) is tuple, direct),
             (
                 accepting_result is marker,
-                tuple(normalize(call) for call in accepting.calls),
+                tuple(observe(call) for call in accepting.calls),
             ),
             tuple(
-                (label, *normalize((func, types, args, kwargs)))
+                (label, *observe((func, types, args, kwargs)))
                 for label, func, types, args, kwargs in calls
             ),
             (type(forwarded) is tuple, forwarded),
+            (
+                three_argument_result is marker,
+                tuple(
+                    observe_three_argument(call)
+                    for call in three_argument_calls
+                ),
+            ),
+            len(module.overrides._get_current_function_mode_stack()),
         )
 
     def test_zero_input_results_and_mode_dispatch(self):
         for name in FUNCTION_NAMES:
             with self.subTest(function=name):
-                expected_call = (name, (), ((),), {})
+                initial_call = (True, False, (), ((),), None)
+                forwarded_call = (True, False, (), ((),), {})
+                three_argument_call = (True, False, (), ((),))
                 expected = (
                     (True, ()),
-                    (True, (expected_call,)),
+                    (True, (initial_call,)),
                     (
-                        ("upper", *expected_call),
-                        ("lower", *expected_call),
+                        ("upper", *initial_call),
+                        ("lower", *forwarded_call),
                     ),
                     (True, ()),
+                    (True, (three_argument_call,)),
+                    0,
                 )
                 self.assertEqual(self.zero_input_contract(torch, name), expected)
 

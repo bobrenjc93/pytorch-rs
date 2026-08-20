@@ -1073,11 +1073,65 @@ pub(crate) fn scalar_tensor_variable_function(
         .unbind())
 }
 
+fn dispatch_empty_atleast_input(
+    py: Python<'_>,
+    name: &str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if args.len() != 1 || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
+        return Ok(None);
+    }
+
+    let input = args.get_item(0)?;
+    if !input.is_exact_instance_of::<PyTuple>() || !input.cast::<PyTuple>()?.is_empty() {
+        return Ok(None);
+    }
+    if torch_function_mode_stack::is_empty() {
+        return Ok(Some(input.unbind()));
+    }
+
+    let function = variable_function(py, name)?;
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(Some(input.unbind()));
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    // Generated variable functions omit kwargs on the initial call, while
+    // explicit forwarding with `**{}` supplies an observable empty dictionary.
+    let result = if kwargs.is_none() {
+        cpython_compat::call_torch_function_mode_handler(
+            py,
+            mode.bind(py),
+            &function,
+            &types,
+            args,
+        )?
+    } else {
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?
+    };
+    if !is_not_implemented(py, &result) {
+        return Ok(Some(result));
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        &format!("torch.{name}"),
+        Some(mode),
+        None,
+    )?)
+}
+
 pub(crate) fn atleast_1d_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    if let Some(result) = dispatch_empty_atleast_input(py, "atleast_1d", args, kwargs)? {
+        return Ok(result);
+    }
     if args.len() != 1 || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
         return Err(PyTypeError::new_err(
             "atleast_1d() only supports a single Tensor input",
@@ -1115,6 +1169,9 @@ pub(crate) fn atleast_2d_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    if let Some(result) = dispatch_empty_atleast_input(py, "atleast_2d", args, kwargs)? {
+        return Ok(result);
+    }
     if args.len() != 1 || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
         return Err(PyTypeError::new_err(
             "atleast_2d() only supports a single Tensor input",
@@ -1151,6 +1208,9 @@ pub(crate) fn atleast_3d_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
+    if let Some(result) = dispatch_empty_atleast_input(py, "atleast_3d", args, kwargs)? {
+        return Ok(result);
+    }
     if args.len() != 1 || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
         return Err(PyTypeError::new_err(
             "atleast_3d() only supports a single Tensor input",

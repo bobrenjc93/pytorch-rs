@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from .overrides import _dispatch_unary_torch_function
+from .overrides import _dispatch_unary_torch_function, _get_current_function_mode
 from .torch_rs import (
     Size,
     Tensor,
@@ -79,10 +79,14 @@ def atleast_1d(*tensors):
     """
     if len(tensors) > 1:
         raise TypeError("atleast_1d() only supports a single Tensor input")
+    if not tensors:
+        if _get_current_function_mode() is not None:
+            return _VF_atleast_1d(tensors)
+        return _atleast_1d_impl(tensors)
     return _dispatch_unary_torch_function(
         atleast_1d,
         _atleast_1d_impl,
-        tensors[0] if tensors else tensors,
+        tensors[0],
         {},
     )
 
@@ -131,10 +135,14 @@ def atleast_2d(*tensors):
     """
     if len(tensors) > 1:
         raise TypeError("atleast_2d() only supports a single Tensor input")
+    if not tensors:
+        if _get_current_function_mode() is not None:
+            return _VF_atleast_2d(tensors)
+        return _atleast_2d_impl(tensors)
     return _dispatch_unary_torch_function(
         atleast_2d,
         _atleast_2d_impl,
-        tensors[0] if tensors else tensors,
+        tensors[0],
         {},
     )
 
@@ -191,10 +199,14 @@ def atleast_3d(*tensors):
     """
     if len(tensors) > 1:
         raise TypeError("atleast_3d() only supports a single Tensor input")
+    if not tensors:
+        if _get_current_function_mode() is not None:
+            return _VF_atleast_3d(tensors)
+        return _atleast_3d_impl(tensors)
     return _dispatch_unary_torch_function(
         atleast_3d,
         _atleast_3d_impl,
-        tensors[0] if tensors else tensors,
+        tensors[0],
         {},
     )
 
