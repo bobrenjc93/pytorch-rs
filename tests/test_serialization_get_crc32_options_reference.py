@@ -235,7 +235,11 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         self.assertIs(reference_torch.serialization, expected_serialization)
         self.assertIsNone(actual_serialization.__doc__)
         self.assertEqual(actual_serialization.__doc__, expected_serialization.__doc__)
-        for name in ("get_crc32_options", "set_crc32_options"):
+        for name in (
+            "get_crc32_options",
+            "set_crc32_options",
+            "get_default_mmap_options",
+        ):
             with self.subTest(name=name):
                 actual = getattr(actual_serialization, name)
                 expected = getattr(expected_serialization, name)
@@ -270,7 +274,11 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
     def test_imports_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_serialization = torch.serialization
         expected_serialization = reference_torch.serialization
-        supported_names = ("get_crc32_options", "set_crc32_options")
+        supported_names = (
+            "get_crc32_options",
+            "set_crc32_options",
+            "get_default_mmap_options",
+        )
 
         self.assertIs(sys.modules["torch_rs.serialization"], actual_serialization)
         self.assertIs(sys.modules["torch.serialization"], expected_serialization)
@@ -305,12 +313,12 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         expected_direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "get_crc32_options, set_crc32_options",
+            "get_crc32_options, set_crc32_options, get_default_mmap_options",
             actual_direct_import,
         )
         exec(
             "from torch.serialization import "
-            "get_crc32_options, set_crc32_options",
+            "get_crc32_options, set_crc32_options, get_default_mmap_options",
             expected_direct_import,
         )
         for name in supported_names:
@@ -404,14 +412,17 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_public,
-            {"get_crc32_options", "set_crc32_options"},
+            {
+                "get_crc32_options",
+                "set_crc32_options",
+                "get_default_mmap_options",
+            },
         )
         unsupported = set(expected_serialization.__all__) - actual_public
         self.assertTrue(
             {
                 "get_default_load_endianness",
                 "set_default_load_endianness",
-                "get_default_mmap_options",
                 "set_default_mmap_options",
                 "save",
                 "load",
