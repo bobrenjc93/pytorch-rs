@@ -1,11 +1,6 @@
 __all__ = ["get_crc32_options", "set_crc32_options"]
 
-
-# Keep the option in the serialization module so every importer and thread in
-# this process observes the same value.  Preserve it when the module is
-# reloaded, matching the lifetime of PyTorch's backing serialization config.
-if "_compute_crc32" not in globals():
-    _compute_crc32 = True
+from . import _serialization_state as _state
 
 
 def get_crc32_options() -> bool:
@@ -14,7 +9,7 @@ def get_crc32_options() -> bool:
 
     Defaults to ``True``.
     """
-    return _compute_crc32
+    return _state.compute_crc32
 
 
 def set_crc32_options(compute_crc32: bool):
@@ -29,5 +24,4 @@ def set_crc32_options(compute_crc32: bool):
     Args:
         compute_crc32 (bool): set crc32 computation flag
     """
-    global _compute_crc32
-    _compute_crc32 = compute_crc32
+    _state.compute_crc32 = compute_crc32

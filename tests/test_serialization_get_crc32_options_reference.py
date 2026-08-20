@@ -122,6 +122,47 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         )
         return outcomes
 
+    def reimport_outcome(self, module):
+        original_module = module.serialization
+        original_getter = original_module.get_crc32_options
+        original_setter = original_module.set_crc32_options
+        module_name = original_module.__name__
+
+        original_setter(False)
+        try:
+            removed_module = sys.modules.pop(module_name)
+            replacement_module = importlib.import_module(module_name)
+            initial_state = (
+                original_getter() is False,
+                replacement_module.get_crc32_options() is False,
+            )
+
+            replacement_result = replacement_module.set_crc32_options("replacement")
+            replacement_state = (
+                replacement_result is None,
+                original_getter() == "replacement",
+                replacement_module.get_crc32_options() == "replacement",
+            )
+
+            original_result = original_setter(None)
+            original_state = (
+                original_result is None,
+                original_getter() is None,
+                replacement_module.get_crc32_options() is None,
+            )
+            return (
+                removed_module is original_module,
+                replacement_module is not original_module,
+                sys.modules[module_name] is replacement_module,
+                module.serialization is replacement_module,
+                initial_state,
+                replacement_state,
+                original_state,
+            )
+        finally:
+            sys.modules[module_name] = original_module
+            module.serialization = original_module
+
     def pickle_shape(self, function, protocol):
         shape = []
         for opcode, argument, _ in pickletools.genops(
@@ -168,6 +209,23 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         expected = self.mutation_outcome(reference_torch, values)
         self.assertEqual(actual, expected)
         self.assertTrue(all(outcome[0] and outcome[1] for outcome in actual))
+
+    def test_reimported_submodules_share_state_with_existing_functions(self):
+        actual = self.reimport_outcome(torch)
+        expected = self.reimport_outcome(reference_torch)
+        self.assertEqual(actual, expected)
+        self.assertEqual(
+            actual,
+            (
+                True,
+                True,
+                True,
+                True,
+                (True, True),
+                (True, True, True),
+                (True, True, True),
+            ),
+        )
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_serialization = importlib.import_module("torch_rs.serialization")

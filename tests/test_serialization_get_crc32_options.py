@@ -330,6 +330,41 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         self.assertIs(torch.serialization, serialization)
         self.assertIs(serialization.get_crc32_options(), value)
 
+    def test_reimported_submodule_shares_state_with_existing_functions(self):
+        original_module = torch.serialization
+        original_getter = original_module.get_crc32_options
+        original_setter = original_module.set_crc32_options
+        module_name = original_module.__name__
+        first_value = object()
+        replacement_value = object()
+
+        original_setter(first_value)
+        try:
+            self.assertIs(sys.modules.pop(module_name), original_module)
+            replacement_module = importlib.import_module(module_name)
+
+            self.assertIsNot(replacement_module, original_module)
+            self.assertIs(sys.modules[module_name], replacement_module)
+            self.assertIs(torch.serialization, replacement_module)
+            self.assertIs(original_getter(), first_value)
+            self.assertIs(replacement_module.get_crc32_options(), first_value)
+
+            self.assertIsNone(
+                replacement_module.set_crc32_options(replacement_value)
+            )
+            self.assertIs(original_getter(), replacement_value)
+            self.assertIs(
+                replacement_module.get_crc32_options(),
+                replacement_value,
+            )
+
+            self.assertIsNone(original_setter(None))
+            self.assertIsNone(original_getter())
+            self.assertIsNone(replacement_module.get_crc32_options())
+        finally:
+            sys.modules[module_name] = original_module
+            torch.serialization = original_module
+
     def test_save_load_and_other_serialization_apis_remain_unsupported(self):
         serialization = torch.serialization
 
@@ -380,9 +415,22 @@ assert serialization.get_crc32_options() is False
 assert importlib.import_module("torch_rs.serialization") is serialization
 assert importlib.reload(serialization) is serialization
 assert serialization.get_crc32_options() is False
+old_getter = serialization.get_crc32_options
+old_setter = serialization.set_crc32_options
+del sys.modules["torch_rs.serialization"]
+replacement = importlib.import_module("torch_rs.serialization")
+assert replacement is not serialization
+assert torch.serialization is replacement
+assert old_getter() is False
+assert replacement.get_crc32_options() is False
+assert replacement.set_crc32_options("replacement") is None
+assert old_getter() == "replacement"
+assert old_setter(None) is None
+assert replacement.get_crc32_options() is None
 assert serialization.__all__ == ["get_crc32_options", "set_crc32_options"]
-assert not hasattr(serialization, "save")
-assert not hasattr(serialization, "load")
+assert replacement.__all__ == ["get_crc32_options", "set_crc32_options"]
+assert not hasattr(replacement, "save")
+assert not hasattr(replacement, "load")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
