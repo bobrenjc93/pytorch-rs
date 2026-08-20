@@ -11,8 +11,8 @@ use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAny, PyBool, PyBytes, PyComplex, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView,
-    PyModule, PySequence, PyString, PyTuple, PyType,
+    PyAny, PyBool, PyBytes, PyComplex, PyDict, PyEllipsis, PyFloat, PyInt, PyList, PyMapping,
+    PyMemoryView, PyModule, PySequence, PyString, PyTuple, PyType,
 };
 
 use crate::{
@@ -3608,7 +3608,9 @@ impl PyTensor {
     }
 
     fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = if let Ok(indices) = index.cast::<PyTuple>() {
+        let inner = if index.is_instance_of::<PyEllipsis>() {
+            self.inner.metadata_alias()
+        } else if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() > self.inner.shape().len() {
                 return Err(too_many_indices(self.inner.shape().len()));
             }
