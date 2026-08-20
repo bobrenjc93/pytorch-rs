@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
-    PyValueError,
+    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
+    PyTypeError, PyUserWarning, PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -214,6 +214,38 @@ impl PyTensorBase {
             .inner
             .retains_grad()
             .into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nretain_grad() -> None\n\nEnables this Tensor to have their :attr:`grad` populated during\n:func:`backward`. This is a no-op for leaf tensors.\n"]
+    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
+    // derives `($self, /)` from that descriptor shape, while older runtimes
+    // leave `__text_signature__` unset; PyTorch follows the same split.
+    #[pyo3(text_signature = None)]
+    fn retain_grad(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_mode(
+            slf.py(),
+            tensor,
+            TensorBaseModeTarget::Method("retain_grad"),
+        )? {
+            return Ok(result);
+        }
+
+        let tensor = tensor.try_borrow()?;
+        if !tensor.inner.requires_grad() {
+            return Err(PyRuntimeError::new_err(
+                "can't retain_grad on Tensor that has requires_grad=False",
+            ));
+        }
+        if !tensor.inner.is_leaf() {
+            return Err(PyNotImplementedError::new_err(
+                "torch_rs.Tensor.retain_grad() only supports leaf tensors",
+            ));
+        }
+
+        Ok(slf.py().None())
     }
 
     #[getter]
