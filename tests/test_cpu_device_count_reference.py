@@ -172,11 +172,15 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_cpu.__all__
-                if name in {"device_count", "is_available"}
+                if name in {"current_device", "device_count", "is_available"}
             ],
         )
         self.assertEqual(
             torch.__all__.count("cpu"), reference_torch.__all__.count("cpu")
+        )
+        self.assertEqual(
+            torch.__all__.count("current_device"),
+            reference_torch.__all__.count("current_device"),
         )
         self.assertEqual(
             torch.__all__.count("device_count"),
@@ -203,15 +207,22 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
         exec("from torch.cpu import *", expected_cpu_namespace)
         self.assertEqual(
             {name for name in actual_cpu_namespace if not name.startswith("__")},
-            {"device_count", "is_available"},
+            {"current_device", "device_count", "is_available"},
+        )
+        self.assertIs(
+            actual_cpu_namespace["current_device"], actual_cpu.current_device
         )
         self.assertIs(actual_cpu_namespace["device_count"], actual)
+        self.assertIs(
+            expected_cpu_namespace["current_device"], expected_cpu.current_device
+        )
         self.assertIs(expected_cpu_namespace["device_count"], expected)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("cpu", namespace)
+            self.assertNotIn("current_device", namespace)
             self.assertNotIn("device_count", namespace)
 
         self.assertIs(copy.copy(actual), actual)
@@ -253,7 +264,9 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             name for name in vars(expected_cpu) if not name.startswith("_")
         }
 
-        self.assertEqual(actual_public, {"device_count", "is_available"})
+        self.assertEqual(
+            actual_public, {"current_device", "device_count", "is_available"}
+        )
         unsupported = expected_public - actual_public
         self.assertTrue(
             {
