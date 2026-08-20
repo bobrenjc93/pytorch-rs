@@ -639,6 +639,12 @@ impl Tensor {
         self.device().is_mps()
     }
 
+    /// Reports whether this tensor's device is an XPU accelerator.
+    #[must_use]
+    pub fn is_xpu(&self) -> bool {
+        self.device().is_xpu()
+    }
+
     /// Reports whether this tensor is stored on the metadata-only device.
     #[must_use]
     pub fn is_meta(&self) -> bool {

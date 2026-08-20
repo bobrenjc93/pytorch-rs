@@ -41,6 +41,14 @@ impl Device {
         }
     }
 
+    /// Reports whether this device executes on an XPU accelerator.
+    #[must_use]
+    pub const fn is_xpu(self) -> bool {
+        match self {
+            Self::Cpu => false,
+        }
+    }
+
     /// Reports whether this device represents metadata-only tensor storage.
     #[must_use]
     pub const fn is_meta(self) -> bool {
