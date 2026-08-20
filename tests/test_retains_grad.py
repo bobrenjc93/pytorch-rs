@@ -231,7 +231,11 @@ class TensorRetainsGradTests(unittest.TestCase):
             ),
             (
                 lambda: tensor.retain_grad(input=tensor),
-                "TensorBase.retain_grad() takes no keyword arguments",
+                (
+                    "Tensor.retain_grad() takes no keyword arguments"
+                    if sys.version_info < (3, 11)
+                    else "TensorBase.retain_grad() takes no keyword arguments"
+                ),
             ),
             (
                 lambda: descriptor(tensor, unexpected=True),
