@@ -14,3 +14,4 @@ def is_available() -> bool:
 
 from .distributed_c10d import is_initialized as is_initialized
 from .distributed_c10d import is_nccl_available as is_nccl_available
+from .distributed_c10d import is_torchelastic_launched as is_torchelastic_launched

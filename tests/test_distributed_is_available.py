@@ -150,6 +150,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
                 "is_available",
                 "is_initialized",
                 "is_nccl_available",
+                "is_torchelastic_launched",
             },
         )
         self.assertIs(distributed_namespace["is_available"], function)
@@ -158,12 +159,14 @@ class DistributedIsAvailableTests(unittest.TestCase):
         self.assertNotIn("is_available", torch.__all__)
         self.assertNotIn("is_initialized", torch.__all__)
         self.assertNotIn("is_nccl_available", torch.__all__)
+        self.assertNotIn("is_torchelastic_launched", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("distributed", top_level_namespace)
         self.assertNotIn("is_available", top_level_namespace)
         self.assertNotIn("is_initialized", top_level_namespace)
         self.assertNotIn("is_nccl_available", top_level_namespace)
+        self.assertNotIn("is_torchelastic_launched", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -210,11 +213,13 @@ class DistributedIsAvailableTests(unittest.TestCase):
                 "is_available",
                 "is_initialized",
                 "is_nccl_available",
+                "is_torchelastic_launched",
             },
         )
         self.assertFalse(hasattr(torch, "is_available"))
         self.assertFalse(hasattr(torch, "is_initialized"))
         self.assertFalse(hasattr(torch, "is_nccl_available"))
+        self.assertFalse(hasattr(torch, "is_torchelastic_launched"))
 
     def test_importing_and_calling_does_not_import_pytorch(self):
         script = r"""
