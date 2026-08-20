@@ -340,6 +340,7 @@ class Atleast2dTests(unittest.TestCase):
 
     def test_zero_input_modes_intercept_and_forward(self):
         marker = object()
+        native_function = torch._C._VariableFunctionsClass.atleast_2d
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
             def __init__(self):
@@ -347,7 +348,7 @@ class Atleast2dTests(unittest.TestCase):
 
             def __torch_function__(self, func, types, args=(), kwargs=None):
                 self.calls.append((func, types, args, kwargs))
-                return marker
+                return marker if func is native_function else NotImplemented
 
         mode = RecordingMode()
         with mode:
@@ -355,19 +356,29 @@ class Atleast2dTests(unittest.TestCase):
         self.assertIs(result, marker)
         self.assertEqual(
             mode.calls,
-            [(torch.atleast_2d, (), ((),), {})],
+            [(native_function, (), ((),), None)],
         )
 
         calls = []
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
             def __torch_function__(self, func, types, args=(), kwargs=None):
-                calls.append((func, types, args, kwargs))
+                calls.append((self.label, func, types, args, kwargs))
                 return func(*args, **(kwargs or {}))
 
-        with ForwardingMode():
-            result = torch.atleast_2d()
-        self.assertEqual(calls, [(torch.atleast_2d, (), ((),), {})])
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                result = torch.atleast_2d()
+        self.assertEqual(
+            calls,
+            [
+                ("upper", native_function, (), ((),), None),
+                ("lower", native_function, (), ((),), {}),
+            ],
+        )
         self.assertIs(type(result), tuple)
         self.assertEqual(result, ())
 

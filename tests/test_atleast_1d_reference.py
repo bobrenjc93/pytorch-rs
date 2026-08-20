@@ -488,6 +488,7 @@ class Atleast1dReferenceTests(unittest.TestCase):
 
         def mode_outcome(module, forwarding):
             function = module.atleast_1d
+            native_function = module._C._VariableFunctionsClass.atleast_1d
             marker = object()
             calls = []
 
@@ -496,7 +497,7 @@ class Atleast1dReferenceTests(unittest.TestCase):
                     calls.append((func, types, args, kwargs))
                     if forwarding:
                         return func(*args, **(kwargs or {}))
-                    return marker
+                    return marker if func is native_function else NotImplemented
 
             with Mode():
                 result = function()
@@ -504,10 +505,10 @@ class Atleast1dReferenceTests(unittest.TestCase):
             return (
                 len(calls),
                 result == () if forwarding else result is marker,
-                func.__name__,
+                func is native_function,
                 dispatch_types,
                 args,
-                kwargs or {},
+                kwargs,
             )
 
         for forwarding in (False, True):

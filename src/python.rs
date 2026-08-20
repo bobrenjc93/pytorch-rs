@@ -1148,6 +1148,38 @@ pub(crate) fn scalar_tensor_variable_function(
         .unbind())
 }
 
+fn empty_atleast_variable_function(
+    py: Python<'_>,
+    name: &'static str,
+    qualified_name: &'static str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(PyTuple::empty(py).into_any().unbind());
+    }
+
+    let function = variable_function(py, name)?;
+    let types = PyTuple::empty(py);
+    let active_mode = torch_function_mode_stack::pop();
+    let Some(mode) = active_mode.get() else {
+        return Ok(PyTuple::empty(py).into_any().unbind());
+    };
+    validate_torch_function_mode_handler(mode.bind(py))?;
+    let handler = mode.bind(py).getattr("__torch_function__")?;
+    let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+    if !is_not_implemented(py, &result) {
+        return Ok(result);
+    }
+
+    Err(torch_function_dispatch_error(
+        py,
+        qualified_name,
+        Some(mode),
+        None,
+    )?)
+}
+
 pub(crate) fn atleast_1d_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1160,6 +1192,9 @@ pub(crate) fn atleast_1d_variable_function(
     }
 
     let input = args.get_item(0)?;
+    if input.is_exact_instance_of::<PyTuple>() && input.cast::<PyTuple>()?.is_empty() {
+        return empty_atleast_variable_function(py, "atleast_1d", "torch.atleast_1d", args, kwargs);
+    }
     if input.is_instance_of::<PyTuple>() || input.is_instance_of::<PyList>() {
         return Err(PyTypeError::new_err(
             "atleast_1d() only supports a single Tensor input",
@@ -1197,6 +1232,9 @@ pub(crate) fn atleast_2d_variable_function(
     }
 
     let input = args.get_item(0)?;
+    if input.is_exact_instance_of::<PyTuple>() && input.cast::<PyTuple>()?.is_empty() {
+        return empty_atleast_variable_function(py, "atleast_2d", "torch.atleast_2d", args, kwargs);
+    }
     if input.is_instance_of::<PyTuple>() || input.is_instance_of::<PyList>() {
         return Err(PyTypeError::new_err(
             "atleast_2d() only supports a single Tensor input",
@@ -1233,6 +1271,9 @@ pub(crate) fn atleast_3d_variable_function(
     }
 
     let input = args.get_item(0)?;
+    if input.is_exact_instance_of::<PyTuple>() && input.cast::<PyTuple>()?.is_empty() {
+        return empty_atleast_variable_function(py, "atleast_3d", "torch.atleast_3d", args, kwargs);
+    }
     if input.is_instance_of::<PyTuple>() || input.is_instance_of::<PyList>() {
         return Err(PyTypeError::new_err(
             "atleast_3d() only supports a single Tensor input",

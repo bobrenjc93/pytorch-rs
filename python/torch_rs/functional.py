@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from .overrides import _dispatch_unary_torch_function
+from .overrides import _dispatch_unary_torch_function, _get_current_function_mode
 from .torch_rs import (
     Size,
     Tensor,
@@ -35,6 +35,21 @@ def _atleast_sequence(input, variable_function, unsupported):
             raise TypeError(unsupported)
         return tuple(variable_function(tensor) for tensor in input)
     return variable_function(input)
+
+
+def _dispatch_atleast(public_function, implementation, variable_function, tensors):
+    if not tensors:
+        # PyTorch leaves genuine zero-input mode dispatch to the native
+        # variable function, which preserves both its identity and kwargs=None.
+        if _get_current_function_mode() is not None:
+            return variable_function(tensors)
+        return implementation(tensors)
+    return _dispatch_unary_torch_function(
+        public_function,
+        implementation,
+        tensors[0],
+        {},
+    )
 
 
 def _atleast_1d_impl(input):
@@ -79,12 +94,11 @@ def atleast_1d(*tensors):
     """
     if len(tensors) > 1:
         raise TypeError("atleast_1d() only supports a single Tensor input")
-    input = tensors[0] if tensors else tensors
-    return _dispatch_unary_torch_function(
+    return _dispatch_atleast(
         atleast_1d,
         _atleast_1d_impl,
-        input,
-        {},
+        _VF_atleast_1d,
+        tensors,
     )
 
 
@@ -132,12 +146,11 @@ def atleast_2d(*tensors):
     """
     if len(tensors) > 1:
         raise TypeError("atleast_2d() only supports a single Tensor input")
-    input = tensors[0] if tensors else tensors
-    return _dispatch_unary_torch_function(
+    return _dispatch_atleast(
         atleast_2d,
         _atleast_2d_impl,
-        input,
-        {},
+        _VF_atleast_2d,
+        tensors,
     )
 
 
@@ -193,12 +206,11 @@ def atleast_3d(*tensors):
     """
     if len(tensors) > 1:
         raise TypeError("atleast_3d() only supports a single Tensor input")
-    input = tensors[0] if tensors else tensors
-    return _dispatch_unary_torch_function(
+    return _dispatch_atleast(
         atleast_3d,
         _atleast_3d_impl,
-        input,
-        {},
+        _VF_atleast_3d,
+        tensors,
     )
 
 
