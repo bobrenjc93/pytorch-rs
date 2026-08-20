@@ -117,18 +117,36 @@ class CompilerAssumeConstantResultTests(unittest.TestCase):
         self.assertEqual(function(), "eager")
 
     def test_invalid_targets_raise_attribute_assignment_errors(self):
+        immutable_attribute_suffix = (
+            " and no __dict__ for setting new attributes"
+            if sys.version_info >= (3, 14)
+            else ""
+        )
         cases = (
-            (None, "'NoneType' object has no attribute '_dynamo_marked_constant'"),
-            (1, "'int' object has no attribute '_dynamo_marked_constant'"),
-            ([], "'list' object has no attribute '_dynamo_marked_constant'"),
+            (
+                None,
+                "'NoneType' object has no attribute "
+                f"'_dynamo_marked_constant'{immutable_attribute_suffix}",
+            ),
+            (
+                1,
+                "'int' object has no attribute "
+                f"'_dynamo_marked_constant'{immutable_attribute_suffix}",
+            ),
+            (
+                [],
+                "'list' object has no attribute "
+                f"'_dynamo_marked_constant'{immutable_attribute_suffix}",
+            ),
             (
                 len,
                 "'builtin_function_or_method' object has no attribute "
-                "'_dynamo_marked_constant'",
+                f"'_dynamo_marked_constant'{immutable_attribute_suffix}",
             ),
             (
                 _SlotCallable(),
-                "'_SlotCallable' object has no attribute " "'_dynamo_marked_constant'",
+                "'_SlotCallable' object has no attribute "
+                f"'_dynamo_marked_constant'{immutable_attribute_suffix}",
             ),
         )
         for target, message in cases:
