@@ -140,7 +140,13 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_compiler.__all__
-                if name in {"is_compiling", "is_dynamo_compiling", "is_exporting"}
+                if name
+                in {
+                    "assume_constant_result",
+                    "is_compiling",
+                    "is_dynamo_compiling",
+                    "is_exporting",
+                }
             ],
         )
         self.assertEqual(

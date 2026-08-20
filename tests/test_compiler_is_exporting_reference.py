@@ -139,7 +139,13 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_compiler.__all__
-                if name in {"is_compiling", "is_dynamo_compiling", "is_exporting"}
+                if name
+                in {
+                    "assume_constant_result",
+                    "is_compiling",
+                    "is_dynamo_compiling",
+                    "is_exporting",
+                }
             ],
         )
         self.assertEqual(
@@ -247,6 +253,7 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "is_exporting"))
 
         unsupported = set(reference_torch.compiler.__all__) - {
+            "assume_constant_result",
             "is_compiling",
             "is_dynamo_compiling",
             "is_exporting",
