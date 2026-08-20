@@ -44,6 +44,7 @@ assert torch.get_num_threads() == 1
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
 assert torch.compiler.is_exporting() is False
+assert torch.serialization.get_crc32_options() is True
 assert torch.distributed.is_available() is False
 assert torch.distributed.is_initialized() is False
 assert torch.distributed.is_nccl_available() is False
@@ -122,6 +123,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`, without probing hardware, environment variables, or PyTorch. Thread setters, inter-op thread queries, and parallel execution remain unsupported.
 
 `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
+
+`torch.serialization.get_crc32_options()` exposes the default archive-record checksum setting as the exact `True` singleton without importing PyTorch. Checksum mutation, `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
 
 `torch.distributed.is_available()` and `torch.distributed.is_nccl_available()` are honest package and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All three return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Process-group creation, NCCL execution, collectives, and every other distributed API remain unsupported.
 
