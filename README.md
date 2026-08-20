@@ -40,6 +40,7 @@ assert torch.cpu.is_available() is True
 assert torch.cpu.current_device() == "cpu"
 assert torch.cpu.device_count() == 1
 assert torch.cpu.synchronize() is None
+assert torch.get_num_threads() == 1
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
 assert torch.compiler.is_exporting() is False
@@ -117,6 +118,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.functional.broadcast_shapes` and its identical top-level `torch.broadcast_shapes` alias compute canonical `torch.Size` results directly from nonnegative Python integer, tuple, list, and `torch.Size` inputs without creating tensors. Symbolic dimensions, tracing, and `torch.broadcast_tensors` remain unsupported.
 
 `torch.cpu.is_available()` is the canonical device-agnostic CPU availability query and returns the exact `True` singleton. `torch.cpu.current_device()` returns the invariant string `"cpu"`, and `torch.cpu.device_count()` reports the single logical CPU device as the exact integer `1`. Because native CPU execution is eager, `torch.cpu.synchronize(device=None)` ignores any device value and returns the exact `None` singleton. These APIs do not probe hardware, environment variables, or PyTorch. CPU streams, events, device mutation, capabilities, AMP, and the rest of the `torch.cpu` namespace remain unsupported.
+
+`torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`, without probing hardware, environment variables, or PyTorch. Thread setters, inter-op thread queries, and parallel execution remain unsupported.
 
 `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 
