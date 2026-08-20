@@ -12,7 +12,7 @@ use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyComplex, PyDict, PyEllipsis, PyFloat, PyInt, PyList, PyMapping,
-    PyMemoryView, PyModule, PySequence, PyString, PyTuple, PyType,
+    PyMemoryView, PyModule, PySequence, PySlice, PyString, PyTuple, PyType,
 };
 
 use crate::{
@@ -261,6 +261,11 @@ impl PyTensorBase {
         let tensor = tensor.try_borrow()?;
         let inner = if index.is_instance_of::<PyEllipsis>() {
             tensor.inner.metadata_alias()
+        } else if let Ok(slice) = index.cast::<PySlice>() {
+            if !is_exact_full_slice(slice)? {
+                return Err(invalid_index(index));
+            }
+            tensor.inner.full_slice()
         } else if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() > tensor.inner.shape().len() {
                 return Err(too_many_indices(tensor.inner.shape().len()));
@@ -9698,6 +9703,12 @@ fn is_fast_integer_index(index: &Bound<'_, PyAny>) -> PyResult<bool> {
         return Ok(false);
     };
     index.is_instance(&numpy.getattr("integer")?)
+}
+
+fn is_exact_full_slice(slice: &Bound<'_, PySlice>) -> PyResult<bool> {
+    Ok(slice.getattr("start")?.is_none()
+        && slice.getattr("stop")?.is_none()
+        && slice.getattr("step")?.is_none())
 }
 
 fn parse_integer_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {

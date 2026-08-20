@@ -1627,6 +1627,14 @@ impl Tensor {
         self.metadata_alias_with_grad_fn(AutogradNode::Alias)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn full_slice(&self) -> Result<Self, TensorError> {
+        if self.shape.is_empty() {
+            return Err(TensorError::InvalidScalarSlice);
+        }
+        self.metadata_alias_with_grad_fn(AutogradNode::Slice)
+    }
+
     fn metadata_alias_with_grad_fn(&self, node: AutogradNode) -> Result<Self, TensorError> {
         let mut output = self.metadata_alias_detached()?;
         self.record_view_transform(&mut output, TransformMapping::Identity, node)?;
