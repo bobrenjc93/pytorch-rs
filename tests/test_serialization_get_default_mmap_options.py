@@ -12,24 +12,33 @@ import unittest
 
 import torch_rs as torch
 
+try:
+    from mmap import MAP_PRIVATE
+except ImportError:
+    MAP_PRIVATE = None
+
 
 FUNCTION_DOC = """
-    Get whether :func:`torch.save` computes and writes crc32 for each record.
+    Get default mmap options for :func:`torch.load` with ``mmap=True``.
 
-    Defaults to ``True``.
+    Defaults to ``mmap.MAP_PRIVATE``.
+
+
+    Returns:
+        default_mmap_options: int
     """
 
 
-class SerializationGetCrc32OptionsTests(unittest.TestCase):
-    def test_default_true_is_exact_and_preserves_grad_mode(self):
-        function = torch.serialization.get_crc32_options
-        self.assertEqual(function.__code__.co_names, ())
+class SerializationGetDefaultMmapOptionsTests(unittest.TestCase):
+    def test_platform_default_is_exact_and_preserves_grad_mode(self):
+        function = torch.serialization.get_default_mmap_options
+        self.assertEqual(function.__code__.co_names, ("_DEFAULT_MMAP_OPTIONS",))
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
         def assert_query_preserves_grad_mode(expected_grad_state):
             self.assertIs(torch.is_grad_enabled(), expected_grad_state)
-            self.assertIs(function(), True)
+            self.assertIs(function(), MAP_PRIVATE)
             self.assertIs(torch.is_grad_enabled(), expected_grad_state)
 
         assert_query_preserves_grad_mode(True)
@@ -40,8 +49,8 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
             assert_query_preserves_grad_mode(False)
         assert_query_preserves_grad_mode(True)
 
-    def test_default_true_is_stable_across_threads_and_grad_modes(self):
-        function = torch.serialization.get_crc32_options
+    def test_platform_default_is_stable_across_threads_and_grad_modes(self):
+        function = torch.serialization.get_default_mmap_options
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -79,28 +88,28 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
                 result,
                 (
                     expected_grad_state,
-                    True,
+                    MAP_PRIVATE,
                     expected_grad_state,
-                    True,
+                    MAP_PRIVATE,
                     expected_grad_state,
                 ),
             )
-            self.assertIs(result[1], True)
-            self.assertIs(result[3], True)
+            self.assertIs(result[1], MAP_PRIVATE)
+            self.assertIs(result[3], MAP_PRIVATE)
 
     def test_signature_annotations_documentation_and_module_identity(self):
         serialization = importlib.import_module("torch_rs.serialization")
-        function = serialization.get_crc32_options
+        function = serialization.get_default_mmap_options
 
         self.assertIs(torch.serialization, serialization)
         self.assertIs(sys.modules["torch_rs.serialization"], serialization)
         self.assertIsNone(serialization.__doc__)
         self.assertIs(type(function), types.FunctionType)
-        self.assertEqual(str(inspect.signature(function)), "() -> bool")
-        self.assertEqual(function.__annotations__, {"return": bool})
-        self.assertEqual(typing.get_type_hints(function), {"return": bool})
-        self.assertEqual(function.__name__, "get_crc32_options")
-        self.assertEqual(function.__qualname__, "get_crc32_options")
+        self.assertEqual(str(inspect.signature(function)), "() -> int | None")
+        self.assertEqual(function.__annotations__, {"return": int | None})
+        self.assertEqual(typing.get_type_hints(function), {"return": int | None})
+        self.assertEqual(function.__name__, "get_default_mmap_options")
+        self.assertEqual(function.__qualname__, "get_default_mmap_options")
         self.assertEqual(function.__module__, "torch_rs.serialization")
         self.assertIs(inspect.getmodule(function), serialization)
         self.assertEqual(
@@ -113,7 +122,7 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
 
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         serialization = torch.serialization
-        function = serialization.get_crc32_options
+        function = serialization.get_default_mmap_options
 
         self.assertEqual(
             serialization.__all__,
@@ -125,8 +134,11 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
         self.assertIs(package_import["serialization"], serialization)
 
         direct_import = {}
-        exec("from torch_rs.serialization import get_crc32_options", direct_import)
-        self.assertIs(direct_import["get_crc32_options"], function)
+        exec(
+            "from torch_rs.serialization import get_default_mmap_options",
+            direct_import,
+        )
+        self.assertIs(direct_import["get_default_mmap_options"], function)
 
         serialization_namespace = {}
         exec("from torch_rs.serialization import *", serialization_namespace)
@@ -138,14 +150,16 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
             },
             {"get_crc32_options", "get_default_mmap_options"},
         )
-        self.assertIs(serialization_namespace["get_crc32_options"], function)
+        self.assertIs(
+            serialization_namespace["get_default_mmap_options"], function
+        )
 
         self.assertNotIn("serialization", torch.__all__)
-        self.assertNotIn("get_crc32_options", torch.__all__)
+        self.assertNotIn("get_default_mmap_options", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("serialization", top_level_namespace)
-        self.assertNotIn("get_crc32_options", top_level_namespace)
+        self.assertNotIn("get_default_mmap_options", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -156,23 +170,23 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.serialization.get_crc32_options
+        function = torch.serialization.get_default_mmap_options
         cases = (
             (
                 lambda: function(None),
-                "get_crc32_options() takes 0 positional arguments but 1 was given",
+                "get_default_mmap_options() takes 0 positional arguments but 1 was given",
             ),
             (
                 lambda: function(None, None),
-                "get_crc32_options() takes 0 positional arguments but 2 were given",
+                "get_default_mmap_options() takes 0 positional arguments but 2 were given",
             ),
             (
-                lambda: function(enabled=True),
-                "get_crc32_options() got an unexpected keyword argument 'enabled'",
+                lambda: function(flags=1),
+                "get_default_mmap_options() got an unexpected keyword argument 'flags'",
             ),
             (
-                lambda: function(None, enabled=True),
-                "get_crc32_options() got an unexpected keyword argument 'enabled'",
+                lambda: function(None, flags=1),
+                "get_default_mmap_options() got an unexpected keyword argument 'flags'",
             ),
         )
         for call, message in cases:
@@ -202,8 +216,6 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
                 self.assertNotIn(name, serialization.__all__)
 
         for name in (
-            "get_crc32_options",
-            "set_crc32_options",
             "get_default_mmap_options",
             "set_default_mmap_options",
             "save",
@@ -217,6 +229,11 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
         script = r"""
 import sys
 
+try:
+    from mmap import MAP_PRIVATE
+except ImportError:
+    MAP_PRIVATE = None
+
 class RejectPytorchImport:
     def find_spec(self, fullname, path=None, target=None):
         if fullname == "torch" or fullname.startswith("torch."):
@@ -226,14 +243,41 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
-function = torch.serialization.get_crc32_options
-assert function.__code__.co_names == ()
-assert function() is True
+function = torch.serialization.get_default_mmap_options
+assert function.__code__.co_names == ("_DEFAULT_MMAP_OPTIONS",)
+assert function() is MAP_PRIVATE
 assert torch.serialization.__all__ == [
     "get_crc32_options",
     "get_default_mmap_options",
 ]
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
+    def test_missing_platform_flag_falls_back_to_none(self):
+        script = r"""
+import sys
+
+class RejectMmapImport:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "mmap":
+            raise ModuleNotFoundError("mmap is unavailable")
+        return None
+
+sys.meta_path.insert(0, RejectMmapImport())
+import torch_rs as torch
+
+assert torch.serialization.get_default_mmap_options() is None
 """
         completed = subprocess.run(
             [sys.executable, "-c", script],

@@ -9,6 +9,8 @@ The project is improved through [Burner](https://github.com/bobrenjc93/burner): 
 Python package names may contain a hyphen, but Python identifiers may not. The package is therefore installed as `torch-rs` and imported as `torch_rs`, conventionally aliased to `torch` for drop-in-style code:
 
 ```python
+import mmap
+
 import torch_rs as torch
 
 x = torch.tensor([[-1.0, 2.0], [3.0, -4.0]])
@@ -47,6 +49,7 @@ assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
 assert torch.compiler.is_exporting() is False
 assert torch.serialization.get_crc32_options() is True
+assert torch.serialization.get_default_mmap_options() == getattr(mmap, "MAP_PRIVATE", None)
 assert torch.distributed.is_available() is False
 assert torch.distributed.is_initialized() is False
 assert torch.distributed.is_nccl_available() is False
@@ -126,7 +129,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 
-`torch.serialization.get_crc32_options()` exposes the default archive-record checksum setting as the exact `True` singleton without importing PyTorch. Checksum mutation, `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
+`torch.serialization.get_crc32_options()` exposes the default archive-record checksum setting as the exact `True` singleton, and `torch.serialization.get_default_mmap_options()` returns `mmap.MAP_PRIVATE` where that flag is available or `None` otherwise. Neither query imports PyTorch. Serialization option mutation, `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
 
 `torch.distributed.is_available()` and `torch.distributed.is_nccl_available()` are honest package and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All three return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Process-group creation, NCCL execution, collectives, and every other distributed API remain unsupported.
 
