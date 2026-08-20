@@ -4,12 +4,14 @@ import inspect
 import pickle
 import subprocess
 import sys
+import textwrap
 import threading
 import types
 import typing
 import unittest
 import warnings
 
+import numpy as np
 import torch_rs as torch
 
 
@@ -257,21 +259,24 @@ class Float32MatmulPrecisionTests(unittest.TestCase):
                 return "medium"
 
         torch.set_float32_matmul_precision("medium")
-        for value in (
-            None,
-            True,
-            1,
-            1.5,
-            bytearray(b"high"),
-            memoryview(b"high"),
-            [],
-            {},
-            StringConvertible(),
+        for value, type_name in (
+            (None, "NoneType"),
+            (True, "bool"),
+            (1, "int"),
+            (1.5, "float"),
+            (bytearray(b"high"), "bytearray"),
+            (memoryview(b"high"), "memoryview"),
+            ([], "list"),
+            ({}, "dict"),
+            (StringConvertible(), "StringConvertible"),
+            (torch.float32, "torch.dtype"),
+            (torch.device("cpu"), "torch.device"),
+            (np.array([1.0], dtype=np.float32), "numpy.ndarray"),
         ):
-            with self.subTest(type=type(value).__name__):
+            with self.subTest(type=type_name):
                 message = (
                     "set_float32_matmul_precision expects a str, but got "
-                    f"{type(value).__name__}"
+                    f"{type_name}"
                 )
                 with self.assertRaises(RuntimeError) as raised:
                     torch.set_float32_matmul_precision(value)
@@ -287,6 +292,50 @@ class Float32MatmulPrecisionTests(unittest.TestCase):
         with self.assertRaises(UnicodeDecodeError):
             torch.set_float32_matmul_precision(b"\xff")
         self.assertEqual(torch.get_float32_matmul_precision(), "medium")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_invalid_precision_raises_bad_alloc_instead_of_aborting(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+
+            import torch_rs as torch
+
+            precision = b"x" * (64 * 1024 * 1024)
+            torch.set_float32_matmul_precision("medium")
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 8 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            try:
+                torch.set_float32_matmul_precision(precision)
+            except RuntimeError as error:
+                assert str(error) == "std::bad_alloc", repr(error)
+            else:
+                raise AssertionError("the constrained call unexpectedly succeeded")
+            assert torch.get_float32_matmul_precision() == "medium"
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode == 77:
+            self.skipTest("process hard address-space limit is too low")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_signature_annotations_documentation_and_module_identity(self):
         package = importlib.import_module("torch_rs")

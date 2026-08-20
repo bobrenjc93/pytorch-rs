@@ -10,6 +10,7 @@ import typing
 import unittest
 import warnings
 
+import numpy as np
 import torch_rs as torch
 
 try:
@@ -155,7 +156,7 @@ class Float32MatmulPrecisionReferenceTests(unittest.TestCase):
             def __str__(self):
                 return "high"
 
-        values = (
+        common_values = (
             None,
             True,
             1,
@@ -169,14 +170,27 @@ class Float32MatmulPrecisionReferenceTests(unittest.TestCase):
             "\ud800",
             b"\xff",
         )
-        for value in values:
-            with self.subTest(type=type(value).__name__, value=ascii(value)):
+        value_pairs = [(value, value) for value in common_values] + [
+            (torch.float32, reference_torch.float32),
+            (torch.device("cpu"), reference_torch.device("cpu")),
+            (
+                np.array([1.0], dtype=np.float32),
+                np.array([1.0], dtype=np.float32),
+            ),
+        ]
+        for actual_value, expected_value in value_pairs:
+            with self.subTest(
+                actual_type=type(actual_value).__name__,
+                expected_type=type(expected_value).__name__,
+            ):
                 torch.set_float32_matmul_precision("medium")
                 reference_torch.set_float32_matmul_precision("medium")
                 self.assert_error_matches(
-                    lambda value=value: torch.set_float32_matmul_precision(value),
-                    lambda value=value: reference_torch.set_float32_matmul_precision(
+                    lambda value=actual_value: torch.set_float32_matmul_precision(
                         value
+                    ),
+                    lambda value=expected_value: (
+                        reference_torch.set_float32_matmul_precision(value)
                     ),
                 )
                 self.assertEqual(torch.get_float32_matmul_precision(), "medium")
