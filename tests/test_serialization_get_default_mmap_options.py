@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import copy
 import importlib
@@ -292,7 +293,7 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
         if sys.platform == "win32" or not all(
             hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")
         ):
-            self.skipTest("mmap option mutation is unsupported on Windows")
+            self.skipTest("mmap option mutation is unavailable")
 
         getter = torch.serialization.get_default_mmap_options
         setter = torch.serialization.set_default_mmap_options
@@ -314,7 +315,7 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
         if sys.platform == "win32" or not all(
             hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")
         ):
-            self.skipTest("mmap option mutation is unsupported on Windows")
+            self.skipTest("mmap option mutation is unavailable")
 
         getter = torch.serialization.get_default_mmap_options
         setter = torch.serialization.set_default_mmap_options
@@ -354,11 +355,90 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
         finally:
             setter(original)
 
-    def test_process_global_updates_are_visible_across_threads(self):
+    def test_overlapping_thread_contexts_are_isolated(self):
         if sys.platform == "win32" or not all(
             hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")
         ):
-            self.skipTest("mmap option mutation is unsupported on Windows")
+            self.skipTest("mmap option mutation is unavailable")
+
+        getter = torch.serialization.get_default_mmap_options
+        setter = torch.serialization.set_default_mmap_options
+        private = mmap.MAP_PRIVATE
+        shared = mmap.MAP_SHARED
+        original = getter()
+        first_entered = threading.Event()
+        second_entered = threading.Event()
+        first_exited = threading.Event()
+        observations = {}
+        errors = []
+
+        def first_worker():
+            try:
+                with setter(shared):
+                    observations["first_enter"] = getter()
+                    first_entered.set()
+                    if not second_entered.wait(timeout=10):
+                        raise TimeoutError("second worker did not enter")
+                    observations["first_before_exit"] = getter()
+                observations["first_after_exit"] = getter()
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                first_entered.set()
+                first_exited.set()
+
+        def second_worker():
+            try:
+                if not first_entered.wait(timeout=10):
+                    raise TimeoutError("first worker did not enter")
+                context = setter(private)
+                observations["second_previous"] = context.prev
+                with context:
+                    observations["second_enter"] = getter()
+                    second_entered.set()
+                    if not first_exited.wait(timeout=10):
+                        raise TimeoutError("first worker did not exit")
+                    observations["second_after_first_exit"] = getter()
+                observations["second_after_exit"] = getter()
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                second_entered.set()
+
+        try:
+            setter(private)
+            threads = [
+                threading.Thread(target=first_worker),
+                threading.Thread(target=second_worker),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+            self.assertEqual(errors, [])
+            self.assertEqual(
+                observations,
+                {
+                    "first_enter": shared,
+                    "first_before_exit": shared,
+                    "first_after_exit": private,
+                    "second_previous": private,
+                    "second_enter": private,
+                    "second_after_first_exit": private,
+                    "second_after_exit": private,
+                },
+            )
+            self.assertIs(getter(), private)
+        finally:
+            setter(original)
+
+    def test_overlapping_async_task_contexts_are_isolated(self):
+        if sys.platform == "win32" or not all(
+            hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")
+        ):
+            self.skipTest("mmap option mutation is unavailable")
 
         getter = torch.serialization.get_default_mmap_options
         setter = torch.serialization.set_default_mmap_options
@@ -366,44 +446,62 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
         shared = mmap.MAP_SHARED
         original = getter()
 
-        def threaded_values():
-            worker_count = 8
-            barrier = threading.Barrier(worker_count)
-            values = [None] * worker_count
-            errors = []
+        async def scenario():
+            first_entered = asyncio.Event()
+            second_entered = asyncio.Event()
+            first_exited = asyncio.Event()
+            observations = {}
 
-            def worker(index):
-                try:
-                    barrier.wait(timeout=10)
-                    values[index] = getter()
-                except BaseException as error:
-                    errors.append(error)
+            async def first_task():
+                with setter(shared):
+                    observations["first_enter"] = getter()
+                    first_entered.set()
+                    await asyncio.wait_for(second_entered.wait(), timeout=10)
+                    observations["first_before_exit"] = getter()
+                observations["first_after_exit"] = getter()
+                first_exited.set()
 
-            threads = [
-                threading.Thread(target=worker, args=(index,))
-                for index in range(worker_count)
-            ]
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join(timeout=10)
-            self.assertFalse(any(thread.is_alive() for thread in threads))
-            self.assertEqual(errors, [])
-            return values
+            async def second_task():
+                await asyncio.wait_for(first_entered.wait(), timeout=10)
+                context = setter(private)
+                observations["second_previous"] = context.prev
+                with context:
+                    observations["second_enter"] = getter()
+                    second_entered.set()
+                    await asyncio.wait_for(first_exited.wait(), timeout=10)
+                    observations["second_after_first_exit"] = getter()
+                observations["second_after_exit"] = getter()
+
+            first = asyncio.create_task(first_task())
+            second = asyncio.create_task(second_task())
+            await asyncio.gather(first, second)
+            return observations, getter()
 
         try:
             setter(private)
-            with setter(shared):
-                self.assertEqual(threaded_values(), [shared] * 8)
-            self.assertEqual(threaded_values(), [private] * 8)
+            observations, final_value = asyncio.run(scenario())
+            self.assertEqual(
+                observations,
+                {
+                    "first_enter": shared,
+                    "first_before_exit": shared,
+                    "first_after_exit": private,
+                    "second_previous": private,
+                    "second_enter": private,
+                    "second_after_first_exit": private,
+                    "second_after_exit": private,
+                },
+            )
+            self.assertIs(final_value, private)
+            self.assertIs(getter(), private)
         finally:
             setter(original)
 
-    def test_reload_and_reimport_preserve_and_share_process_state(self):
+    def test_reload_and_reimport_preserve_and_share_context_state(self):
         if sys.platform == "win32" or not all(
             hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")
         ):
-            self.skipTest("mmap option mutation is unsupported on Windows")
+            self.skipTest("mmap option mutation is unavailable")
 
         original_module = torch.serialization
         original_getter = original_module.get_default_mmap_options
@@ -483,7 +581,10 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
         finally:
             serialization._IS_WINDOWS = original_platform_flag
 
-    def test_unavailable_map_private_returns_none_without_importing_pytorch(self):
+    def test_unavailable_mmap_constants_are_not_valid_flags(self):
+        if not all(hasattr(mmap, name) for name in ("MAP_PRIVATE", "MAP_SHARED")):
+            self.skipTest("mmap constants are unavailable on this platform")
+
         script = r"""
 import importlib
 import mmap
@@ -495,33 +596,54 @@ class RejectPytorchImport:
             raise RuntimeError(f"PyTorch import was attempted: {fullname}")
         return None
 
-if hasattr(mmap, "MAP_PRIVATE"):
-    del mmap.MAP_PRIVATE
+missing_name = sys.argv[1]
+available_name = (
+    "MAP_SHARED" if missing_name == "MAP_PRIVATE" else "MAP_PRIVATE"
+)
+delattr(mmap, missing_name)
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
 serialization = torch.serialization
-assert serialization.get_default_mmap_options() is None
+initial = getattr(mmap, "MAP_PRIVATE", None)
+assert serialization.get_default_mmap_options() == initial
 assert importlib.reload(serialization) is serialization
-assert serialization.get_default_mmap_options() is None
-with serialization.set_default_mmap_options(mmap.MAP_SHARED) as value:
+assert serialization.get_default_mmap_options() == initial
+
+message = (
+    "Invalid argument in function set_default_mmap_options, "
+    "expected mmap.MAP_PRIVATE or mmap.MAP_SHARED, but got None"
+)
+try:
+    serialization.set_default_mmap_options(None)
+except ValueError as error:
+    assert str(error) == message
+    assert error.args == (message,)
+else:
+    raise AssertionError(f"None was accepted without {missing_name}")
+assert serialization.get_default_mmap_options() == initial
+
+available = getattr(mmap, available_name)
+with serialization.set_default_mmap_options(available) as value:
     assert value is None
-    assert serialization.get_default_mmap_options() == mmap.MAP_SHARED
-assert serialization.get_default_mmap_options() is None
+    assert serialization.get_default_mmap_options() == available
+assert serialization.get_default_mmap_options() == initial
 assert "set_default_mmap_options" in serialization.__all__
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
-        completed = subprocess.run(
-            [sys.executable, "-c", script],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(
-            completed.returncode,
-            0,
-            msg=completed.stdout + completed.stderr,
-        )
+        for missing_name in ("MAP_PRIVATE", "MAP_SHARED"):
+            with self.subTest(missing_name=missing_name):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, missing_name],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=completed.stdout + completed.stderr,
+                )
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import copy
 import importlib
@@ -241,21 +242,174 @@ class SerializationDefaultMmapOptionsReferenceTests(unittest.TestCase):
             setter(original)
         return original, inside, after
 
-    def test_process_global_thread_visibility_is_explicit(self):
+    def test_fresh_thread_contexts_match_pytorch_2_13(self):
         actual = self.threaded_mutation_outcome(torch)
         expected = self.threaded_mutation_outcome(reference_torch)
 
-        self.assertEqual(actual[0], expected[0])
+        self.assertEqual(actual, expected)
         private = getattr(mmap, "MAP_PRIVATE", None)
         shared = getattr(mmap, "MAP_SHARED", None)
         if private is not None and shared is not None:
-            self.assertEqual(actual[1], [shared] * 8)
+            self.assertEqual(actual[1], [private] * 8)
             self.assertEqual(actual[2], [private] * 8)
-            # PyTorch 2.13 stores this config in a ContextVar, so a fresh
-            # thread sees the default. torch_rs intentionally keeps the
-            # documented process-global behavior in its persistent state.
-            self.assertEqual(expected[1], [private] * 8)
-            self.assertEqual(expected[2], [private] * 8)
+
+    def overlapping_thread_outcome(self, module):
+        getter = module.serialization.get_default_mmap_options
+        setter = module.serialization.set_default_mmap_options
+        private = getattr(mmap, "MAP_PRIVATE", None)
+        shared = getattr(mmap, "MAP_SHARED", None)
+        if private is None or shared is None or sys.platform == "win32":
+            return getter(), {}, []
+
+        original = getter()
+        first_entered = threading.Event()
+        second_entered = threading.Event()
+        first_exited = threading.Event()
+        observations = {}
+        errors = []
+
+        def first_worker():
+            try:
+                with setter(shared):
+                    observations["first_enter"] = getter()
+                    first_entered.set()
+                    if not second_entered.wait(timeout=10):
+                        raise TimeoutError("second worker did not enter")
+                    observations["first_before_exit"] = getter()
+                observations["first_after_exit"] = getter()
+            except BaseException as error:
+                errors.append((type(error).__name__, str(error)))
+            finally:
+                first_entered.set()
+                first_exited.set()
+
+        def second_worker():
+            try:
+                if not first_entered.wait(timeout=10):
+                    raise TimeoutError("first worker did not enter")
+                context = setter(private)
+                observations["second_previous"] = context.prev
+                with context:
+                    observations["second_enter"] = getter()
+                    second_entered.set()
+                    if not first_exited.wait(timeout=10):
+                        raise TimeoutError("first worker did not exit")
+                    observations["second_after_first_exit"] = getter()
+                observations["second_after_exit"] = getter()
+            except BaseException as error:
+                errors.append((type(error).__name__, str(error)))
+            finally:
+                second_entered.set()
+
+        try:
+            setter(private)
+            threads = [
+                threading.Thread(target=first_worker),
+                threading.Thread(target=second_worker),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+            return getter(), observations, errors
+        finally:
+            setter(original)
+
+    def test_overlapping_thread_contexts_match_pytorch_2_13(self):
+        actual = self.overlapping_thread_outcome(torch)
+        expected = self.overlapping_thread_outcome(reference_torch)
+
+        self.assertEqual(actual, expected)
+        private = getattr(mmap, "MAP_PRIVATE", None)
+        shared = getattr(mmap, "MAP_SHARED", None)
+        if private is not None and shared is not None and sys.platform != "win32":
+            self.assertEqual(
+                actual,
+                (
+                    private,
+                    {
+                        "first_enter": shared,
+                        "first_before_exit": shared,
+                        "first_after_exit": private,
+                        "second_previous": private,
+                        "second_enter": private,
+                        "second_after_first_exit": private,
+                        "second_after_exit": private,
+                    },
+                    [],
+                ),
+            )
+
+    def overlapping_task_outcome(self, module):
+        getter = module.serialization.get_default_mmap_options
+        setter = module.serialization.set_default_mmap_options
+        private = getattr(mmap, "MAP_PRIVATE", None)
+        shared = getattr(mmap, "MAP_SHARED", None)
+        if private is None or shared is None or sys.platform == "win32":
+            return getter(), {}
+
+        async def scenario():
+            first_entered = asyncio.Event()
+            second_entered = asyncio.Event()
+            first_exited = asyncio.Event()
+            observations = {}
+
+            async def first_task():
+                with setter(shared):
+                    observations["first_enter"] = getter()
+                    first_entered.set()
+                    await asyncio.wait_for(second_entered.wait(), timeout=10)
+                    observations["first_before_exit"] = getter()
+                observations["first_after_exit"] = getter()
+                first_exited.set()
+
+            async def second_task():
+                await asyncio.wait_for(first_entered.wait(), timeout=10)
+                context = setter(private)
+                observations["second_previous"] = context.prev
+                with context:
+                    observations["second_enter"] = getter()
+                    second_entered.set()
+                    await asyncio.wait_for(first_exited.wait(), timeout=10)
+                    observations["second_after_first_exit"] = getter()
+                observations["second_after_exit"] = getter()
+
+            first = asyncio.create_task(first_task())
+            second = asyncio.create_task(second_task())
+            await asyncio.gather(first, second)
+            return getter(), observations
+
+        original = getter()
+        try:
+            setter(private)
+            return asyncio.run(scenario())
+        finally:
+            setter(original)
+
+    def test_overlapping_async_task_contexts_match_pytorch_2_13(self):
+        actual = self.overlapping_task_outcome(torch)
+        expected = self.overlapping_task_outcome(reference_torch)
+
+        self.assertEqual(actual, expected)
+        private = getattr(mmap, "MAP_PRIVATE", None)
+        shared = getattr(mmap, "MAP_SHARED", None)
+        if private is not None and shared is not None and sys.platform != "win32":
+            self.assertEqual(
+                actual,
+                (
+                    private,
+                    {
+                        "first_enter": shared,
+                        "first_before_exit": shared,
+                        "first_after_exit": private,
+                        "second_previous": private,
+                        "second_enter": private,
+                        "second_after_first_exit": private,
+                        "second_after_exit": private,
+                    },
+                ),
+            )
 
     def reload_outcome(self, module):
         private = getattr(mmap, "MAP_PRIVATE", None)

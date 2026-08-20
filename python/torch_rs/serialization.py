@@ -13,11 +13,13 @@ from . import _serialization_state as _state
 
 
 _IS_WINDOWS = _sys.platform == "win32"
+_MISSING_MMAP_FLAG = object()
 if _IS_WINDOWS:
-    _MAP_SHARED, _MAP_PRIVATE = None, None
+    _MAP_SHARED = _MISSING_MMAP_FLAG
+    _MAP_PRIVATE = _MISSING_MMAP_FLAG
 else:
-    _MAP_PRIVATE = getattr(_mmap, "MAP_PRIVATE", None)
-    _MAP_SHARED = getattr(_mmap, "MAP_SHARED", None)
+    _MAP_PRIVATE = getattr(_mmap, "MAP_PRIVATE", _MISSING_MMAP_FLAG)
+    _MAP_SHARED = getattr(_mmap, "MAP_SHARED", _MISSING_MMAP_FLAG)
 
 
 def get_crc32_options() -> bool:
@@ -54,7 +56,7 @@ def get_default_mmap_options() -> int | None:
     Returns:
         default_mmap_options: int
     """
-    return _state.default_mmap_options
+    return _state.default_mmap_options.get()
 
 
 class set_default_mmap_options:
@@ -76,13 +78,16 @@ class set_default_mmap_options:
             raise RuntimeError(
                 "Changing the default mmap options is currently not supported for Windows"
             )
-        if flags != _MAP_PRIVATE and flags != _MAP_SHARED:
+        if (
+            (_MAP_PRIVATE is _MISSING_MMAP_FLAG or flags != _MAP_PRIVATE)
+            and (_MAP_SHARED is _MISSING_MMAP_FLAG or flags != _MAP_SHARED)
+        ):
             raise ValueError(
                 "Invalid argument in function set_default_mmap_options, "
                 f"expected mmap.MAP_PRIVATE or mmap.MAP_SHARED, but got {flags}"
             )
-        self.prev = _state.default_mmap_options
-        _state.default_mmap_options = flags
+        self.prev = _state.default_mmap_options.get()
+        _state.default_mmap_options.set(flags)
 
     def __enter__(self) -> None:
         pass
@@ -90,4 +95,4 @@ class set_default_mmap_options:
     def __exit__(
         self, exc_type: _Any, exc_value: _Any, traceback: _Any
     ) -> None:
-        _state.default_mmap_options = self.prev
+        _state.default_mmap_options.set(self.prev)
