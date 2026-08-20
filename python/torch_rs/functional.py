@@ -77,12 +77,13 @@ def atleast_1d(*tensors):
         >>> torch.atleast_1d()
         ()
     """
-    if len(tensors) != 1:
+    if len(tensors) > 1:
         raise TypeError("atleast_1d() only supports a single Tensor input")
+    input = tensors[0] if tensors else tensors
     return _dispatch_unary_torch_function(
         atleast_1d,
         _atleast_1d_impl,
-        tensors[0],
+        input,
         {},
     )
 
@@ -129,12 +130,13 @@ def atleast_2d(*tensors):
         >>> torch.atleast_2d()
         ()
     """
-    if len(tensors) != 1:
+    if len(tensors) > 1:
         raise TypeError("atleast_2d() only supports a single Tensor input")
+    input = tensors[0] if tensors else tensors
     return _dispatch_unary_torch_function(
         atleast_2d,
         _atleast_2d_impl,
-        tensors[0],
+        input,
         {},
     )
 
@@ -189,12 +191,13 @@ def atleast_3d(*tensors):
         >>> torch.atleast_3d()
         ()
     """
-    if len(tensors) != 1:
+    if len(tensors) > 1:
         raise TypeError("atleast_3d() only supports a single Tensor input")
+    input = tensors[0] if tensors else tensors
     return _dispatch_unary_torch_function(
         atleast_3d,
         _atleast_3d_impl,
-        tensors[0],
+        input,
         {},
     )
 

@@ -88,6 +88,10 @@ class Atleast1dTests(unittest.TestCase):
                 self.assertIs(type(result), tuple)
                 self.assertEqual(result, ())
 
+        result = torch.atleast_1d()
+        self.assertIs(type(result), tuple)
+        self.assertEqual(result, ())
+
     def test_autograd_repeated_backward_and_no_grad(self):
         leaf = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
         source = leaf[1]
@@ -184,6 +188,39 @@ class Atleast1dTests(unittest.TestCase):
         self.assertTrue(all(call[4] == {} for call in calls))
         self.assertEqual(result.shape, (1,))
         self.assertEqual(result.data_ptr(), source.data_ptr())
+
+    def test_zero_input_modes_intercept_and_forward(self):
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            result = torch.atleast_1d()
+        self.assertIs(result, marker)
+        self.assertEqual(
+            mode.calls,
+            [(torch.atleast_1d, (), ((),), {})],
+        )
+
+        calls = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append((func, types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode():
+            result = torch.atleast_1d()
+        self.assertEqual(calls, [(torch.atleast_1d, (), ((),), {})])
+        self.assertIs(type(result), tuple)
+        self.assertEqual(result, ())
 
     def test_inner_sequence_override_dispatch_is_explicitly_unsupported(self):
         source = torch.tensor(2.0)
@@ -330,7 +367,6 @@ class Atleast1dTests(unittest.TestCase):
 
         source = torch.tensor(1.0)
         unsupported_calls = (
-            lambda: torch.atleast_1d(),
             lambda: torch.atleast_1d(source, source),
         )
         for call in unsupported_calls:

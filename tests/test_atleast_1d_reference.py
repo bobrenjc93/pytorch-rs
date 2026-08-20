@@ -479,10 +479,47 @@ class Atleast1dReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_variadic_and_mixed_forms_remain_unsupported(self):
+    def test_zero_input_results_and_modes_match_pytorch_2_13(self):
+        actual = torch.atleast_1d()
+        expected = reference_torch.atleast_1d()
+        self.assertIs(type(actual), tuple)
+        self.assertIs(type(expected), tuple)
+        self.assertEqual(actual, expected)
+
+        def mode_outcome(module, forwarding):
+            function = module.atleast_1d
+            marker = object()
+            calls = []
+
+            class Mode(module.overrides.TorchFunctionMode):
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    calls.append((func, types, args, kwargs))
+                    if forwarding:
+                        return func(*args, **(kwargs or {}))
+                    return marker
+
+            with Mode():
+                result = function()
+            func, dispatch_types, args, kwargs = calls[0]
+            return (
+                len(calls),
+                result == () if forwarding else result is marker,
+                func.__name__,
+                dispatch_types,
+                args,
+                kwargs or {},
+            )
+
+        for forwarding in (False, True):
+            with self.subTest(forwarding=forwarding):
+                self.assertEqual(
+                    mode_outcome(torch, forwarding),
+                    mode_outcome(reference_torch, forwarding),
+                )
+
+    def test_multiple_positional_and_mixed_forms_remain_unsupported(self):
         source = torch.tensor(1.0)
         unsupported = (
-            lambda: torch.atleast_1d(),
             lambda: torch.atleast_1d(source, source),
         )
         for call in unsupported:
@@ -493,7 +530,6 @@ class Atleast1dReferenceTests(unittest.TestCase):
                 call()
 
         expected = reference_torch.tensor(1.0)
-        self.assertEqual(reference_torch.atleast_1d(), ())
         self.assertEqual(len(reference_torch.atleast_1d(expected, expected)), 2)
 
         sequence_error = (
