@@ -217,6 +217,7 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
                 "distributed_c10d",
                 "is_available",
                 "is_initialized",
+                "is_mpi_available",
                 "is_nccl_available",
             },
         )

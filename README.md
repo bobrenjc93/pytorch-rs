@@ -19,6 +19,7 @@ result = torch.relu(x + y)
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 product = torch.matmul(input=x, other=y)
 assert product.tolist() == [[1.0, 1.0], [-1.0, -1.0]]
+assert torch.get_float32_matmul_precision() == "highest"
 scaled = torch.multiply(input=2.0, other=x)
 assert scaled.tolist() == [[-2.0, 4.0], [6.0, -8.0]]
 exponential = torch.exp(input=x)
@@ -53,6 +54,7 @@ assert torch.serialization.get_default_mmap_options() == getattr(
 )
 assert torch.distributed.is_available() is False
 assert torch.distributed.is_initialized() is False
+assert torch.distributed.is_mpi_available() is False
 assert torch.distributed.is_nccl_available() is False
 assert torch.float32.to_real() is torch.float32
 limits = torch.finfo()
@@ -128,11 +130,13 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
 
+`torch.get_float32_matmul_precision()` reports the invariant string `"highest"`, reflecting that the native CPU float32 matrix-multiplication engine has no reduced-precision modes. The setter and its `"high"` and `"medium"` states remain unsupported, and the query does not change native matmul behavior.
+
 `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 
 `torch.serialization.get_crc32_options()` and `torch.serialization.set_crc32_options(compute_crc32)` expose mutable process-global archive-record checksum state without importing PyTorch. The state starts as the exact `True` singleton, the setter returns `None`, and the getter returns the most recently supplied value. `torch.serialization.get_default_mmap_options()` reports the platform default used by PyTorch for memory-mapped loads: `mmap.MAP_PRIVATE` on supported POSIX platforms and `None` where that option is unavailable. The mmap setter, `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
 
-`Tensor.is_distributed()` returns the exact `False` singleton for every supported local CPU tensor without inspecting or changing storage, layout, or autograd state. `torch.distributed.is_available()` and `torch.distributed.is_nccl_available()` are honest package and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All three package queries also return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Distributed tensor types, process-group creation, NCCL execution, collectives, and every other distributed API remain unsupported.
+`Tensor.is_distributed()` returns the exact `False` singleton for every supported local CPU tensor without inspecting or changing storage, layout, or autograd state. `torch.distributed.is_available()`, `torch.distributed.is_mpi_available()`, and `torch.distributed.is_nccl_available()` are honest package, MPI, and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All four package queries return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Distributed tensor types, MPI initialization, process-group creation, backend execution, collectives, and every other distributed API remain unsupported.
 
 ## Non-negotiable evaluation rules
 
