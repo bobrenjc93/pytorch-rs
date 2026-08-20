@@ -1,5 +1,6 @@
 """PyTorch-compatible public package backed by the native extension."""
 
+import builtins as _builtins
 import copyreg as _copyreg
 import sys as _sys
 from math import e, inf, nan, pi
@@ -17,6 +18,13 @@ _sys.modules[f"{__name__}._C"] = _C
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
 # from this package without adding ``torch`` to wildcard imports.
 torch = _sys.modules[__name__]
+
+
+def are_deterministic_algorithms_enabled() -> _builtins.bool:
+    r"""Returns True if the global deterministic flag is turned on. Refer to
+    :func:`torch.use_deterministic_algorithms` documentation for more details.
+    """
+    return False
 
 
 def get_default_device() -> "torch.device":
@@ -100,7 +108,15 @@ __doc__ = _native.__doc__
 # numeric constants live on ``torch`` rather than ``torch._C``.  A separate
 # list also keeps reloading safe: the native wildcard import must only name
 # attributes that the extension itself owns.
-__all__ = [*_native.__all__, "get_default_device", "e", "pi", "nan", "inf"]
+__all__ = [
+    *_native.__all__,
+    "are_deterministic_algorithms_enabled",
+    "get_default_device",
+    "e",
+    "pi",
+    "nan",
+    "inf",
+]
 # PyTorch lists ``matmul`` once among its hand-written package exports and once
 # among generated variable functions. Preserve that observable duplicate while
 # the native module continues to own the callable itself.
@@ -120,4 +136,4 @@ from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _copyreg, _native, _sys
+del _builtins, _copyreg, _native, _sys
