@@ -35,6 +35,13 @@ def is_deterministic_algorithms_warn_only_enabled() -> _builtins.bool:
     return False
 
 
+def get_float32_matmul_precision() -> _builtins.str:
+    r"""Returns the current value of float32 matrix multiplication precision. Refer to
+    :func:`torch.set_float32_matmul_precision` documentation for more details.
+    """
+    return "highest"
+
+
 def get_default_device() -> "torch.device":
     r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
     return torch.device("cpu")
@@ -120,6 +127,7 @@ __all__ = [
     *_native.__all__,
     "are_deterministic_algorithms_enabled",
     "is_deterministic_algorithms_warn_only_enabled",
+    "get_float32_matmul_precision",
     "get_default_device",
     "e",
     "pi",

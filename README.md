@@ -19,6 +19,7 @@ result = torch.relu(x + y)
 assert result.tolist() == [[0.0, 3.0], [4.0, 0.0]]
 product = torch.matmul(input=x, other=y)
 assert product.tolist() == [[1.0, 1.0], [-1.0, -1.0]]
+assert torch.get_float32_matmul_precision() == "highest"
 scaled = torch.multiply(input=2.0, other=x)
 assert scaled.tolist() == [[-2.0, 4.0], [6.0, -8.0]]
 exponential = torch.exp(input=x)
@@ -119,6 +120,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `Tensor.ravel()` and top-level `torch.ravel()` share the native view-or-copy path: row-contiguous inputs alias storage through a new one-dimensional wrapper, while other layouts are materialized.
 
 `Tensor.exp()` and inference-only `torch.exp()` share the native float32 CPU kernel. Top-level calls accept `out=None`; concrete output tensors and calls that would record an autograd edge remain explicitly unsupported.
+
+`torch.get_float32_matmul_precision()` returns the invariant string `"highest"`, reflecting that the native CPU float32 matrix-multiplication kernel has no reduced-precision mode. The setter and its `"high"` and `"medium"` states remain unsupported, and querying the setting does not change matrix-multiplication behavior.
 
 `torch.can_cast` and `torch.promote_types` accept the existing `torch.float32`/`torch.float` singleton aliases in positional or canonical keyword forms. Casting between the supported aliases returns `True`, while promotion returns the same canonical singleton. No additional dtype, casting pair, or promotion pair is exposed.
 
