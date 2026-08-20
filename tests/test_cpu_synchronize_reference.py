@@ -206,6 +206,7 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
             "current_device",
             "device_count",
             "is_available",
+            "is_initialized",
             "synchronize",
         }
 
@@ -299,7 +300,13 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_public,
-            {"current_device", "device_count", "is_available", "synchronize"},
+            {
+                "current_device",
+                "device_count",
+                "is_available",
+                "is_initialized",
+                "synchronize",
+            },
         )
         unsupported = expected_public - actual_public
         self.assertTrue(
@@ -308,7 +315,6 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
                 "current_stream",
                 "Event",
                 "get_capabilities",
-                "is_initialized",
                 "set_device",
                 "Stream",
                 "StreamContext",
