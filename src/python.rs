@@ -243,16 +243,19 @@ impl PyTensorBase {
 
     fn __getitem__(slf: &Bound<'_, Self>, index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        let args = PyTuple::new(slf.py(), [index.clone()])?;
-        if let Some(result) = dispatch_tensorbase_method_mode(
-            slf.py(),
-            tensor,
-            "__getitem__",
-            "torch.Tensor.__getitem__",
-            &args,
-            None,
-        )? {
-            return Ok(result);
+        // Keep the common integer-index path allocation-free when no mode is active.
+        if !torch_function_mode_stack::is_empty() {
+            let args = PyTuple::new(slf.py(), [index.clone()])?;
+            if let Some(result) = dispatch_tensorbase_method_mode(
+                slf.py(),
+                tensor,
+                "__getitem__",
+                "torch.Tensor.__getitem__",
+                &args,
+                None,
+            )? {
+                return Ok(result);
+            }
         }
 
         let tensor = tensor.try_borrow()?;
