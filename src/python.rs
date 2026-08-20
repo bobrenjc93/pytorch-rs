@@ -519,15 +519,6 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
-    #[doc = "\nAlias for :meth:`~Tensor.element_size()`\n"]
-    #[getter]
-    fn itemsize(slf: &Bound<'_, Self>) -> PyResult<usize> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        Ok(tensor.inner.dtype().element_size())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
     #[doc = "\nReturns a view of a matrix (2-D tensor) conjugated and transposed.\n\n``x.H`` is equivalent to ``x.transpose(0, 1).conj()`` for complex matrices and\n``x.transpose(0, 1)`` for real matrices.\n\n.. seealso::\n\n        :attr:`~.Tensor.mH`: An attribute that also works on batches of matrices.\n"]
     #[getter(H)]
     fn conjugate_transpose(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -615,15 +606,6 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
-    #[doc = "\nelement_size() -> int\n\nReturns the size in bytes of an individual element.\n\nExample::\n\n    >>> torch.tensor([]).element_size()\n    4\n    >>> torch.tensor([], dtype=torch.uint8).element_size()\n    1\n\n"]
-    #[pyo3(text_signature = None)]
-    fn element_size(slf: &Bound<'_, Self>) -> PyResult<usize> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        Ok(tensor.inner.element_size())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
     #[doc = "\nReturns true if this tensor resides in pinned memory.\nBy default, the device pinned memory on will be the current :ref:`accelerator<accelerators>`.\n"]
     // PyTorch retains a variadic native descriptor for its deprecated device
     // argument. Match that descriptor metadata while exposing only the stable
@@ -678,15 +660,6 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
-    #[doc = "\nis_complex() -> bool\n\nReturns True if the data type of :attr:`self` is a complex data type.\n"]
-    #[pyo3(text_signature = None)]
-    fn is_complex(slf: &Bound<'_, Self>) -> PyResult<bool> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        Ok(tensor.inner.is_complex())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
     #[doc = "\nis_inference() -> bool\n\nSee :func:`torch.is_inference`\n"]
     // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
     // derives `($self, /)` from that descriptor shape, while older runtimes
@@ -704,15 +677,6 @@ impl PyTensorBase {
 
         let result = tensor.try_borrow()?.inner.is_inference();
         result.into_py_any(slf.py())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nis_signed() -> bool\n\nReturns True if the data type of :attr:`self` is a signed data type.\n"]
-    #[pyo3(text_signature = None)]
-    fn is_signed(slf: &Bound<'_, Self>) -> PyResult<bool> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        Ok(tensor.inner.is_signed())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -3362,11 +3326,6 @@ impl PyTensor {
     }
 
     #[getter]
-    fn dtype(&self, py: Python<'_>) -> PyResult<Py<PyDType>> {
-        Ok(dtype_object(py, self.inner.dtype())?.clone_ref(py))
-    }
-
-    #[getter]
     fn device(&self) -> PyDevice {
         PyDevice::from_device(self.inner.device())
     }
@@ -3693,14 +3652,6 @@ impl PyTensor {
     #[pyo3(text_signature = None)]
     fn numel(&self) -> usize {
         self.inner.numel()
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nis_floating_point() -> bool\n\nReturns True if the data type of :attr:`self` is a floating point data type.\n"]
-    #[pyo3(text_signature = None)]
-    fn is_floating_point(&self) -> bool {
-        self.inner.is_floating_point()
     }
 
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
