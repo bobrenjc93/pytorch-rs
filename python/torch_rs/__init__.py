@@ -128,8 +128,10 @@ from . import compiler as compiler
 from . import cpu as cpu
 from . import distributed as distributed
 from . import functional as functional
+from . import jit as jit
 from . import nn as nn
 from . import overrides as overrides
+from . import serialization as serialization
 from . import utils as utils
 from .functional import atleast_1d as atleast_1d
 from .functional import atleast_2d as atleast_2d
