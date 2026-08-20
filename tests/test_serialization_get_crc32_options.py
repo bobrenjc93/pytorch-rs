@@ -13,17 +13,35 @@ import unittest
 import torch_rs as torch
 
 
-FUNCTION_DOC = """
+GETTER_DOC = """
     Get whether :func:`torch.save` computes and writes crc32 for each record.
 
     Defaults to ``True``.
     """
 
+SETTER_DOC = """
+    Set whether :func:`torch.save` computes and writes crc32 for each record.
 
-class SerializationGetCrc32OptionsTests(unittest.TestCase):
+    .. note::
+        Setting this to ``False`` may make unzipping of the ``torch.save`` output
+        fail or warn due to corrupted CRC32. However ``torch.load`` will be
+        able to load the file.
+
+    Args:
+        compute_crc32 (bool): set crc32 computation flag
+    """
+
+
+class SerializationCrc32OptionsTests(unittest.TestCase):
+    def setUp(self):
+        self.original_crc32_option = torch.serialization.get_crc32_options()
+        torch.serialization.set_crc32_options(True)
+
+    def tearDown(self):
+        torch.serialization.set_crc32_options(self.original_crc32_option)
+
     def test_default_true_is_exact_and_preserves_grad_mode(self):
         function = torch.serialization.get_crc32_options
-        self.assertEqual(function.__code__.co_names, ())
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -40,8 +58,92 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
             assert_query_preserves_grad_mode(False)
         assert_query_preserves_grad_mode(True)
 
-    def test_default_true_is_stable_across_threads_and_grad_modes(self):
+    def test_setter_stores_every_runtime_value_without_coercion(self):
+        class RejectBoolConversion:
+            def __bool__(self):
+                raise AssertionError("set_crc32_options must not call bool")
+
+        mutable = []
+        marker = object()
+        values = (
+            False,
+            True,
+            None,
+            0,
+            1,
+            2,
+            0.0,
+            float("nan"),
+            "",
+            "false",
+            mutable,
+            {},
+            marker,
+            RejectBoolConversion,
+            RejectBoolConversion(),
+        )
+        for value in values:
+            with self.subTest(type=type(value).__name__, value=repr(value)):
+                self.assertIsNone(torch.serialization.set_crc32_options(value))
+                self.assertIs(torch.serialization.get_crc32_options(), value)
+
+        self.assertIsNone(
+            torch.serialization.set_crc32_options(compute_crc32=mutable)
+        )
+        self.assertIs(torch.serialization.get_crc32_options(), mutable)
+        mutable.append("updated")
+        self.assertEqual(torch.serialization.get_crc32_options(), ["updated"])
+
+    def test_updates_are_process_global_and_visible_across_threads(self):
+        serialization = torch.serialization
+        initial = object()
+        updated = object()
+        worker_ready = threading.Event()
+        read_updated = threading.Event()
+        observations = []
+        errors = []
+
+        serialization.set_crc32_options(initial)
+
+        def observer():
+            try:
+                observations.append(serialization.get_crc32_options() is initial)
+                worker_ready.set()
+                if not read_updated.wait(timeout=10):
+                    raise RuntimeError("timed out waiting for the updated state")
+                observations.append(serialization.get_crc32_options() is updated)
+            except BaseException as error:
+                errors.append(error)
+
+        thread = threading.Thread(target=observer)
+        thread.start()
+        self.assertTrue(worker_ready.wait(timeout=10))
+        serialization.set_crc32_options(updated)
+        read_updated.set()
+        thread.join(timeout=10)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(observations, [True, True])
+
+        worker_value = object()
+        worker_results = []
+
+        def writer():
+            worker_results.append(serialization.set_crc32_options(worker_value))
+            worker_results.append(serialization.get_crc32_options() is worker_value)
+
+        thread = threading.Thread(target=writer)
+        thread.start()
+        thread.join(timeout=10)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(worker_results, [None, True])
+        self.assertIs(serialization.get_crc32_options(), worker_value)
+
+    def test_state_is_stable_across_threads_and_grad_modes(self):
         function = torch.serialization.get_crc32_options
+        value = object()
+        torch.serialization.set_crc32_options(value)
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -54,9 +156,9 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
                     barrier.wait(timeout=10)
                     results[index] = (
                         torch.is_grad_enabled(),
-                        function(),
+                        function() is value,
                         torch.is_grad_enabled(),
-                        function(),
+                        function() is value,
                         torch.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -85,45 +187,62 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
                     expected_grad_state,
                 ),
             )
-            self.assertIs(result[1], True)
-            self.assertIs(result[3], True)
 
     def test_signature_annotations_documentation_and_module_identity(self):
         serialization = importlib.import_module("torch_rs.serialization")
-        function = serialization.get_crc32_options
+        getter = serialization.get_crc32_options
+        setter = serialization.set_crc32_options
 
         self.assertIs(torch.serialization, serialization)
         self.assertIs(sys.modules["torch_rs.serialization"], serialization)
         self.assertIsNone(serialization.__doc__)
-        self.assertIs(type(function), types.FunctionType)
-        self.assertEqual(str(inspect.signature(function)), "() -> bool")
-        self.assertEqual(function.__annotations__, {"return": bool})
-        self.assertEqual(typing.get_type_hints(function), {"return": bool})
-        self.assertEqual(function.__name__, "get_crc32_options")
-        self.assertEqual(function.__qualname__, "get_crc32_options")
-        self.assertEqual(function.__module__, "torch_rs.serialization")
-        self.assertIs(inspect.getmodule(function), serialization)
+        for function in (getter, setter):
+            self.assertIs(type(function), types.FunctionType)
+            self.assertEqual(function.__module__, "torch_rs.serialization")
+            self.assertIs(inspect.getmodule(function), serialization)
+            self.assertIsNone(function.__defaults__)
+            self.assertIsNone(function.__kwdefaults__)
+            self.assertEqual(function.__dict__, {})
+            self.assertFalse(hasattr(function, "__text_signature__"))
+
+        self.assertEqual(str(inspect.signature(getter)), "() -> bool")
+        self.assertEqual(getter.__annotations__, {"return": bool})
+        self.assertEqual(typing.get_type_hints(getter), {"return": bool})
+        self.assertEqual(getter.__name__, "get_crc32_options")
+        self.assertEqual(getter.__qualname__, "get_crc32_options")
+        self.assertEqual(inspect.cleandoc(getter.__doc__), inspect.cleandoc(GETTER_DOC))
+
+        self.assertEqual(str(inspect.signature(setter)), "(compute_crc32: bool)")
+        self.assertEqual(setter.__annotations__, {"compute_crc32": bool})
         self.assertEqual(
-            inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
+            typing.get_type_hints(setter),
+            {"compute_crc32": bool},
         )
-        self.assertIsNone(function.__defaults__)
-        self.assertIsNone(function.__kwdefaults__)
-        self.assertEqual(function.__dict__, {})
-        self.assertFalse(hasattr(function, "__text_signature__"))
+        self.assertEqual(setter.__name__, "set_crc32_options")
+        self.assertEqual(setter.__qualname__, "set_crc32_options")
+        self.assertEqual(inspect.cleandoc(setter.__doc__), inspect.cleandoc(SETTER_DOC))
 
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         serialization = torch.serialization
-        function = serialization.get_crc32_options
+        functions = {
+            "get_crc32_options": serialization.get_crc32_options,
+            "set_crc32_options": serialization.set_crc32_options,
+        }
 
-        self.assertEqual(serialization.__all__, ["get_crc32_options"])
+        self.assertEqual(serialization.__all__, list(functions))
 
         package_import = {}
         exec("from torch_rs import serialization", package_import)
         self.assertIs(package_import["serialization"], serialization)
 
         direct_import = {}
-        exec("from torch_rs.serialization import get_crc32_options", direct_import)
-        self.assertIs(direct_import["get_crc32_options"], function)
+        exec(
+            "from torch_rs.serialization import "
+            "get_crc32_options, set_crc32_options",
+            direct_import,
+        )
+        for name, function in functions.items():
+            self.assertIs(direct_import[name], function)
 
         serialization_namespace = {}
         exec("from torch_rs.serialization import *", serialization_namespace)
@@ -133,61 +252,127 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
                 for name in serialization_namespace
                 if not name.startswith("__")
             },
-            {"get_crc32_options"},
+            set(functions),
         )
-        self.assertIs(serialization_namespace["get_crc32_options"], function)
+        for name, function in functions.items():
+            self.assertIs(serialization_namespace[name], function)
 
         self.assertNotIn("serialization", torch.__all__)
-        self.assertNotIn("get_crc32_options", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
-        self.assertNotIn("serialization", top_level_namespace)
-        self.assertNotIn("get_crc32_options", top_level_namespace)
+        for name in ("serialization", *functions):
+            self.assertNotIn(name, torch.__all__)
+            self.assertNotIn(name, top_level_namespace)
 
-        self.assertIs(copy.copy(function), function)
-        self.assertIs(copy.deepcopy(function), function)
-        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-            with self.subTest(protocol=protocol):
-                payload = pickle.dumps(function, protocol=protocol)
-                self.assertIn(b"torch_rs.serialization", payload)
-                self.assertIs(pickle.loads(payload), function)
+        for name, function in functions.items():
+            self.assertIs(copy.copy(function), function)
+            self.assertIs(copy.deepcopy(function), function)
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(name=name, protocol=protocol):
+                    payload = pickle.dumps(function, protocol=protocol)
+                    self.assertIn(b"torch_rs.serialization", payload)
+                    self.assertIs(pickle.loads(payload), function)
 
-    def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.serialization.get_crc32_options
+    def test_argument_errors_match_pytorch_2_13(self):
+        getter = torch.serialization.get_crc32_options
+        setter = torch.serialization.set_crc32_options
         cases = (
             (
-                lambda: function(None),
+                lambda: getter(None),
                 "get_crc32_options() takes 0 positional arguments but 1 was given",
             ),
             (
-                lambda: function(None, None),
+                lambda: getter(None, None),
                 "get_crc32_options() takes 0 positional arguments but 2 were given",
             ),
             (
-                lambda: function(enabled=True),
+                lambda: getter(enabled=True),
                 "get_crc32_options() got an unexpected keyword argument 'enabled'",
             ),
             (
-                lambda: function(None, enabled=True),
+                lambda: getter(None, enabled=True),
                 "get_crc32_options() got an unexpected keyword argument 'enabled'",
+            ),
+            (
+                lambda: setter(),
+                "set_crc32_options() missing 1 required positional argument: "
+                "'compute_crc32'",
+            ),
+            (
+                lambda: setter(True, False),
+                "set_crc32_options() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: setter(enabled=True),
+                "set_crc32_options() got an unexpected keyword argument 'enabled'",
+            ),
+            (
+                lambda: setter(True, compute_crc32=False),
+                "set_crc32_options() got multiple values for argument "
+                "'compute_crc32'",
             ),
         )
         for call, message in cases:
             with self.subTest(message=message):
+                before = getter()
                 with self.assertRaises(TypeError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
+                self.assertIs(getter(), before)
 
-    def test_mutation_save_load_and_other_serialization_apis_remain_unsupported(self):
+    def test_reload_preserves_the_process_state(self):
+        serialization = torch.serialization
+        value = object()
+        serialization.set_crc32_options(value)
+
+        self.assertIs(importlib.reload(serialization), serialization)
+        self.assertIs(torch.serialization, serialization)
+        self.assertIs(serialization.get_crc32_options(), value)
+
+    def test_reimported_submodule_shares_state_with_existing_functions(self):
+        original_module = torch.serialization
+        original_getter = original_module.get_crc32_options
+        original_setter = original_module.set_crc32_options
+        module_name = original_module.__name__
+        first_value = object()
+        replacement_value = object()
+
+        original_setter(first_value)
+        try:
+            self.assertIs(sys.modules.pop(module_name), original_module)
+            replacement_module = importlib.import_module(module_name)
+
+            self.assertIsNot(replacement_module, original_module)
+            self.assertIs(sys.modules[module_name], replacement_module)
+            self.assertIs(torch.serialization, replacement_module)
+            self.assertIs(original_getter(), first_value)
+            self.assertIs(replacement_module.get_crc32_options(), first_value)
+
+            self.assertIsNone(
+                replacement_module.set_crc32_options(replacement_value)
+            )
+            self.assertIs(original_getter(), replacement_value)
+            self.assertIs(
+                replacement_module.get_crc32_options(),
+                replacement_value,
+            )
+
+            self.assertIsNone(original_setter(None))
+            self.assertIsNone(original_getter())
+            self.assertIsNone(replacement_module.get_crc32_options())
+        finally:
+            sys.modules[module_name] = original_module
+            torch.serialization = original_module
+
+    def test_save_load_and_other_serialization_apis_remain_unsupported(self):
         serialization = torch.serialization
 
         self.assertEqual(
             {name for name in vars(serialization) if not name.startswith("_")},
-            {"get_crc32_options"},
+            {"get_crc32_options", "set_crc32_options"},
         )
         for name in (
-            "set_crc32_options",
             "get_default_load_endianness",
             "set_default_load_endianness",
             "get_default_mmap_options",
@@ -199,13 +384,19 @@ class SerializationGetCrc32OptionsTests(unittest.TestCase):
                 self.assertFalse(hasattr(serialization, name))
                 self.assertNotIn(name, serialization.__all__)
 
-        for name in ("get_crc32_options", "set_crc32_options", "save", "load"):
+        for name in (
+            "get_crc32_options",
+            "set_crc32_options",
+            "save",
+            "load",
+        ):
             with self.subTest(top_level_name=name):
                 self.assertFalse(hasattr(torch, name))
                 self.assertNotIn(name, torch.__all__)
 
-    def test_importing_and_calling_does_not_import_pytorch(self):
+    def test_importing_reloading_and_calling_does_not_import_pytorch(self):
         script = r"""
+import importlib
 import sys
 
 class RejectPytorchImport:
@@ -217,10 +408,29 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
-function = torch.serialization.get_crc32_options
-assert function.__code__.co_names == ()
-assert function() is True
-assert torch.serialization.__all__ == ["get_crc32_options"]
+serialization = torch.serialization
+assert serialization.get_crc32_options() is True
+assert serialization.set_crc32_options(False) is None
+assert serialization.get_crc32_options() is False
+assert importlib.import_module("torch_rs.serialization") is serialization
+assert importlib.reload(serialization) is serialization
+assert serialization.get_crc32_options() is False
+old_getter = serialization.get_crc32_options
+old_setter = serialization.set_crc32_options
+del sys.modules["torch_rs.serialization"]
+replacement = importlib.import_module("torch_rs.serialization")
+assert replacement is not serialization
+assert torch.serialization is replacement
+assert old_getter() is False
+assert replacement.get_crc32_options() is False
+assert replacement.set_crc32_options("replacement") is None
+assert old_getter() == "replacement"
+assert old_setter(None) is None
+assert replacement.get_crc32_options() is None
+assert serialization.__all__ == ["get_crc32_options", "set_crc32_options"]
+assert replacement.__all__ == ["get_crc32_options", "set_crc32_options"]
+assert not hasattr(replacement, "save")
+assert not hasattr(replacement, "load")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
