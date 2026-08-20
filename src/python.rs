@@ -1315,6 +1315,21 @@ pub(crate) fn ravel_variable_function(
     )
 }
 
+pub(crate) fn relu_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("relu", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::RELU,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn exp_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1653,6 +1668,12 @@ impl SingleTensorOverrideOperation {
         name: "ravel",
         qualified_name: "torch.ravel",
         apply_native: apply_top_level_ravel,
+    };
+
+    const RELU: Self = Self {
+        name: "relu",
+        qualified_name: "torch.relu",
+        apply_native: apply_top_level_relu,
     };
 
     const DETACH: Self = Self {
@@ -2440,6 +2461,11 @@ fn apply_top_level_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResu
         .ravel()
         .map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn apply_top_level_relu(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    let output = tensor.try_borrow()?.relu()?;
+    Ok(Py::new(py, output)?.into_any())
 }
 
 fn apply_top_level_detach(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
@@ -4156,16 +4182,6 @@ fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult
         .try_clone_with_memory_format(memory_format)
         .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
-}
-
-#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
-fn relu(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
-    let input = bind_legacy_single_tensor_argument("relu", args, kwargs)?;
-    let tensor = input
-        .value
-        .cast::<PyTensor>()
-        .expect("the relu input type was checked while binding");
-    tensor.try_borrow()?.relu()
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
@@ -10525,7 +10541,6 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     torch_function_mode_stack::add_torch_function_mode_stack(module)?;
     add_variable_functions(module)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
-    module.add_function(wrap_pyfunction!(relu, module)?)?;
     add_nn_functional_bridges(module)?;
     module.add_function(wrap_pyfunction!(is_same_size, module)?)?;
     module.add_function(wrap_pyfunction!(equal, module)?)?;

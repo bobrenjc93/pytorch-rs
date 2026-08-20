@@ -1,4 +1,6 @@
 import inspect
+import pickle
+import re
 import types
 import unittest
 
@@ -488,20 +490,234 @@ class ReluReferenceTests(unittest.TestCase):
                     actual_no_grad[5], actual_method_no_grad[5]
                 )
 
+    def dispatch_contract(self, module):
+        marker = object()
+        override_observations = []
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                cls.calls.append((func, dispatch_types, args, kwargs))
+                return marker
+
+        for form, call in (
+            ("positional", lambda value: module.relu(value)),
+            ("input", lambda value: module.relu(input=value)),
+            ("x", lambda value: module.relu(x=value)),
+            ("a", lambda value: module.relu(a=value)),
+            ("x1", lambda value: module.relu(x1=value)),
+        ):
+            value = Override()
+            Override.calls.clear()
+            result = call(value)
+            function, dispatch_types, args, kwargs = Override.calls[0]
+            override_observations.append(
+                (
+                    form,
+                    result is marker,
+                    function is module.relu,
+                    tuple(item.__name__ for item in dispatch_types),
+                    len(args),
+                    kwargs is None,
+                    None if kwargs is None else tuple(kwargs),
+                )
+            )
+
+        mode_observations = []
+
+        class Mode(module.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return self.result
+
+        tensor = module.tensor([-1.0, 0.0, 2.0], requires_grad=True)
+        for form, call in (
+            ("positional", lambda: module.relu(tensor)),
+            ("input", lambda: module.relu(input=tensor)),
+            ("x", lambda: module.relu(x=tensor)),
+            ("a", lambda: module.relu(a=tensor)),
+            ("x1", lambda: module.relu(x1=tensor)),
+        ):
+            mode = Mode()
+            with mode:
+                result = call()
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            mode_observations.append(
+                (
+                    form,
+                    result is marker,
+                    function is module.relu,
+                    tuple(item.__name__ for item in dispatch_types),
+                    len(args),
+                    kwargs is None,
+                    None if kwargs is None else tuple(kwargs),
+                )
+            )
+
+        forwarding_observations = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                forwarding_observations.append(
+                    (
+                        self.label,
+                        func is module.relu,
+                        tuple(item.__name__ for item in dispatch_types),
+                        len(args),
+                        kwargs is None,
+                        None if kwargs is None else tuple(kwargs),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = module.relu(x=tensor)
+
+        precedence = []
+
+        class OrderedOverride:
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                precedence.append("override")
+                return marker
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                precedence.append("mode")
+                return NotImplemented
+
+        with DecliningMode():
+            ordered_result = module.relu(OrderedOverride())
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                return NotImplemented
+
+        class NamedDecliningMode(module.overrides.TorchFunctionMode):
+            def __repr__(self):
+                return "declining-relu-mode"
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                return NotImplemented
+
+        decline_errors = []
+        for mode, value in (
+            (None, DecliningOverride()),
+            (NamedDecliningMode(), tensor),
+            (NamedDecliningMode(), DecliningOverride()),
+        ):
+            try:
+                if mode is None:
+                    module.relu(value)
+                else:
+                    with mode:
+                        module.relu(value)
+            except Exception as error:
+                decline_errors.append((type(error).__name__, str(error)))
+            else:
+                decline_errors.append(None)
+
+        binding_observations = []
+        Override.calls.clear()
+        try:
+            module.relu(Override(), extra=True)
+        except Exception as error:
+            binding_observations.append(
+                (type(error).__name__, str(error), len(Override.calls))
+            )
+        else:
+            binding_observations.append(None)
+
+        mode = Mode()
+        try:
+            with mode:
+                module.relu(tensor, tensor)
+        except Exception as error:
+            binding_observations.append(
+                (type(error).__name__, str(error), len(mode.calls))
+            )
+        else:
+            binding_observations.append(None)
+
+        return {
+            "override_observations": override_observations,
+            "mode_observations": mode_observations,
+            "forwarding_observations": forwarding_observations,
+            "forwarded_values": forwarded.tolist(),
+            "forwarded_shape": tuple(forwarded.shape),
+            "forwarded_stride": forwarded.stride(),
+            "forwarded_requires_grad": forwarded.requires_grad,
+            "precedence": precedence,
+            "ordered_result": ordered_result is marker,
+            "decline_errors": decline_errors,
+            "binding_observations": binding_observations,
+        }
+
+    def test_top_level_modes_subclasses_forwarding_and_diagnostics_match_pytorch_2_13(
+        self,
+    ):
+        self.assertEqual(
+            self.dispatch_contract(torch),
+            self.dispatch_contract(reference_torch),
+        )
+
     def test_top_level_callable_metadata_and_export_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual = torch.relu
         expected = reference_torch.relu
+        actual_owner = actual.__reduce__()[1][0]
+        expected_owner = expected.__reduce__()[1][0]
 
         self.assertIs(type(actual), types.BuiltinFunctionType)
         self.assertIs(type(expected), types.BuiltinFunctionType)
         self.assertEqual(actual.__name__, expected.__name__)
+        self.assertEqual(actual.__qualname__, expected.__qualname__)
         self.assertEqual(actual.__text_signature__, expected.__text_signature__)
         self.assertEqual(actual.__doc__, expected.__doc__)
-        self.assertEqual(actual.__module__, torch.tensor.__module__)
-        self.assertEqual(expected.__module__, reference_torch.tensor.__module__)
+        self.assertEqual(actual.__module__, expected.__module__)
+        self.assertEqual(
+            re.sub(r"0x[0-9a-f]+", "0x...", repr(actual)),
+            re.sub(r"0x[0-9a-f]+", "0x...", repr(expected)),
+        )
+        self.assertEqual(actual_owner.__name__, expected_owner.__name__)
+        self.assertEqual(actual_owner.__qualname__, expected_owner.__qualname__)
+        self.assertEqual(
+            actual_owner.__module__.replace("torch_rs._C", "torch._C"),
+            expected_owner.__module__,
+        )
+        self.assertIs(actual_owner, torch._C._VariableFunctionsClass)
+        self.assertIs(expected_owner, reference_torch._C._VariableFunctionsClass)
+        self.assertIs(actual_owner.relu, actual)
+        self.assertIs(expected_owner.relu, expected)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(actual, protocol=protocol)), actual
+                )
+                self.assertIs(
+                    pickle.loads(pickle.dumps(expected, protocol=protocol)), expected
+                )
         self.assertEqual(torch.__all__.count("relu"), 1)
         self.assertEqual(reference_torch.__all__.count("relu"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        actual_wildcard = {}
+        expected_wildcard = {}
+        exec("from torch_rs import *", actual_wildcard)
+        exec("from torch import *", expected_wildcard)
+        self.assertIs(actual_wildcard["relu"], actual)
+        self.assertIs(expected_wildcard["relu"], expected)
         for function in (actual, expected):
             with self.assertRaises(ValueError):
                 inspect.signature(function)

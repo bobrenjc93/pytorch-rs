@@ -20,14 +20,14 @@ use crate::python::{
     is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
     movedim_variable_function, mul_variable_function, multiply_variable_function,
     permute_variable_function, positive_variable_function, promote_types_variable_function,
-    ravel_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
-    unbind_variable_function,
+    ravel_variable_function, relu_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sin_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 25] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 26] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -37,6 +37,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 25] = [
     "positive",
     "detach",
     "ravel",
+    "relu",
     "exp",
     "sin",
     "is_conj",
@@ -443,6 +444,7 @@ variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(detach_callback, detach_variable_function);
 variable_function_callback!(ravel_callback, ravel_variable_function);
+variable_function_callback!(relu_callback, relu_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
@@ -489,6 +491,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
         variable_function_method!(c"detach", detach_callback, c""),
         variable_function_method!(c"ravel", ravel_callback, RAVEL_DOC),
+        variable_function_method!(c"relu", relu_callback, c""),
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
