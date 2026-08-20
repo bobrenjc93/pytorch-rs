@@ -3,6 +3,9 @@ import importlib
 import inspect
 import pickle
 import pickletools
+import subprocess
+import sys
+import textwrap
 import threading
 import types
 import typing
@@ -15,6 +18,10 @@ try:
     import torch as reference_torch
 except ImportError:
     reference_torch = None
+
+
+def without_internal_source_location(message):
+    return message.split(" (Triggered internally at ", 1)[0]
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -67,12 +74,17 @@ class Float32MatmulPrecisionReferenceTests(unittest.TestCase):
             try:
                 result = module.set_float32_matmul_precision(precision)
             except BaseException as error:
+                error_args = error.args
+                if isinstance(error, UnicodeDecodeError):
+                    encoding, value, start, end, reason = error.args
+                    value = value.split(b" (Triggered internally at ", 1)[0]
+                    error_args = (encoding, value, start, end, reason)
                 call = (
                     "error",
                     type(error).__module__,
                     type(error).__qualname__,
                     str(error),
-                    error.args,
+                    error_args,
                 )
             else:
                 call = ("return", result is None)
@@ -85,7 +97,7 @@ class Float32MatmulPrecisionReferenceTests(unittest.TestCase):
                     item.category.__qualname__,
                     type(item.message).__module__,
                     type(item.message).__qualname__,
-                    str(item.message),
+                    without_internal_source_location(str(item.message)),
                 )
                 for item in caught
             ),
@@ -326,6 +338,48 @@ class Float32MatmulPrecisionReferenceTests(unittest.TestCase):
                     self.warning_outcome(reference_torch, value),
                 )
 
+        native_values = (
+            (torch.float32, reference_torch.float32),
+            (torch.tensor(1.0), reference_torch.tensor(1.0)),
+            (torch.device("cpu"), reference_torch.device("cpu")),
+        )
+        for case, (actual_value, expected_value) in enumerate(native_values):
+            with self.subTest(native_case=case):
+                self.assertEqual(
+                    self.warning_outcome(torch, actual_value),
+                    self.warning_outcome(reference_torch, expected_value),
+                )
+
+    def test_invalid_type_names_do_not_dispatch_metaclass_hooks(self):
+        def contract(module):
+            metadata_reads = []
+
+            class HostileMeta(type):
+                def __getattribute__(cls, name):
+                    if name in {"__name__", "__module__", "__qualname__"}:
+                        metadata_reads.append(name)
+                        module.set_float32_matmul_precision("high")
+                        raise RuntimeError(f"metaclass hook invoked for {name}")
+                    return super().__getattribute__(name)
+
+            class InvalidPrecision(metaclass=HostileMeta):
+                pass
+
+            module.set_float32_matmul_precision("medium")
+            try:
+                module.set_float32_matmul_precision(InvalidPrecision())
+            except BaseException as error:
+                outcome = (type(error).__name__, str(error), error.args)
+            else:
+                outcome = None
+            return (
+                outcome,
+                tuple(metadata_reads),
+                module.get_float32_matmul_precision(),
+            )
+
+        self.assertEqual(contract(torch), contract(reference_torch))
+
     def test_invalid_string_warnings_and_noops_match_pytorch_2_13(self):
         for precision in (
             "HIGH",
@@ -342,6 +396,59 @@ class Float32MatmulPrecisionReferenceTests(unittest.TestCase):
                 self.assertEqual(
                     self.warning_outcome(torch, precision),
                     self.warning_outcome(reference_torch, precision),
+                )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_invalid_precision_allocation_failure_matches_pytorch_2_13(self):
+        script = textwrap.dedent(
+            """\
+            import importlib
+            import os
+            import resource
+            import sys
+            import warnings
+
+            module = importlib.import_module(sys.argv[1])
+            precision = b"x" * (64 * 1024 * 1024)
+            module.set_float32_matmul_precision("medium")
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 8 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            with warnings.catch_warnings(record=True):
+                warnings.simplefilter("always")
+                try:
+                    module.set_float32_matmul_precision(precision)
+                except RuntimeError as error:
+                    assert str(error) == "std::bad_alloc", repr(error)
+                    assert module.get_float32_matmul_precision() == "medium"
+                else:
+                    raise AssertionError("the constrained call unexpectedly succeeded")
+            """
+        )
+        for module_name in ("torch_rs", "torch"):
+            with self.subTest(module=module_name):
+                completed = subprocess.run(
+                    [sys.executable, "-I", "-c", script, module_name],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=60,
+                )
+                if completed.returncode == 77:
+                    self.skipTest("process hard address-space limit is too low")
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=(
+                        f"stdout:\n{completed.stdout}\n"
+                        f"stderr:\n{completed.stderr}"
+                    ),
                 )
 
     def test_cpu_matmul_values_and_each_implementations_gradients_ignore_modes(self):

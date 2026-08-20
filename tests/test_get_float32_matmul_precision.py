@@ -4,6 +4,7 @@ import inspect
 import pickle
 import subprocess
 import sys
+import textwrap
 import threading
 import types
 import typing
@@ -17,11 +18,14 @@ GETTER_DOC = """Returns the current value of float32 matrix multiplication preci
     :func:`torch.set_float32_matmul_precision` documentation for more details.
     """
 
-INVALID_PRECISION_WARNING_SUFFIX = (
+INVALID_PRECISION_WARNING = (
     " is not one of 'highest', 'high', or 'medium'; the "
-    "currentsetFloat32MatmulPrecision call has no effect. (Triggered internally at "
-    "/__w/pytorch/pytorch/aten/src/ATen/Context.cpp:458.)"
+    "currentsetFloat32MatmulPrecision call has no effect."
 )
+
+
+def without_internal_source_location(message):
+    return message.split(" (Triggered internally at ", 1)[0]
 
 
 class Float32MatmulPrecisionTests(unittest.TestCase):
@@ -272,22 +276,25 @@ class Float32MatmulPrecisionTests(unittest.TestCase):
             pass
 
         invalid_values = (
-            None,
-            True,
-            1,
-            1.0,
-            object(),
-            [],
-            bytearray(b"high"),
-            memoryview(b"high"),
-            CustomPrecision(),
+            (None, "NoneType"),
+            (True, "bool"),
+            (1, "int"),
+            (1.0, "float"),
+            (object(), "object"),
+            ([], "list"),
+            (bytearray(b"high"), "bytearray"),
+            (memoryview(b"high"), "memoryview"),
+            (CustomPrecision(), "CustomPrecision"),
+            (torch.float32, "torch.dtype"),
+            (torch.tensor(1.0), "Tensor"),
+            (torch.device("cpu"), "torch.device"),
         )
-        for value in invalid_values:
-            with self.subTest(value_type=type(value).__name__):
+        for value, type_name in invalid_values:
+            with self.subTest(type_name=type_name):
                 torch.set_float32_matmul_precision("medium")
                 message = (
                     "set_float32_matmul_precision expects a str, but got "
-                    f"{type(value).__name__}"
+                    f"{type_name}"
                 )
                 with self.assertRaises(RuntimeError) as raised:
                     torch.set_float32_matmul_precision(value)
@@ -301,12 +308,36 @@ class Float32MatmulPrecisionTests(unittest.TestCase):
             torch.set_float32_matmul_precision("\ud800")
         self.assertEqual(torch.get_float32_matmul_precision(), "medium")
 
+    def test_invalid_type_name_does_not_dispatch_metaclass_hooks(self):
+        metadata_reads = []
+
+        class HostileMeta(type):
+            def __getattribute__(cls, name):
+                if name in {"__name__", "__module__", "__qualname__"}:
+                    metadata_reads.append(name)
+                    torch.set_float32_matmul_precision("high")
+                    raise RuntimeError(f"metaclass hook invoked for {name}")
+                return super().__getattribute__(name)
+
+        class InvalidPrecision(metaclass=HostileMeta):
+            pass
+
+        torch.set_float32_matmul_precision("medium")
+        with self.assertRaises(RuntimeError) as raised:
+            torch.set_float32_matmul_precision(InvalidPrecision())
+        self.assertEqual(
+            str(raised.exception),
+            "set_float32_matmul_precision expects a str, but got InvalidPrecision",
+        )
+        self.assertEqual(metadata_reads, [])
+        self.assertEqual(torch.get_float32_matmul_precision(), "medium")
+
     def test_invalid_strings_warn_and_are_noops(self):
         cases = (
-            ("HIGH", "HIGH" + INVALID_PRECISION_WARNING_SUFFIX),
-            ("", INVALID_PRECISION_WARNING_SUFFIX),
-            (" medium ", " medium " + INVALID_PRECISION_WARNING_SUFFIX),
-            (b"low", "low" + INVALID_PRECISION_WARNING_SUFFIX),
+            ("HIGH", "HIGH" + INVALID_PRECISION_WARNING),
+            ("", INVALID_PRECISION_WARNING),
+            (" medium ", " medium " + INVALID_PRECISION_WARNING),
+            (b"low", "low" + INVALID_PRECISION_WARNING),
             ("highest\0ignored", "highest"),
             ("\0medium", ""),
         )
@@ -321,7 +352,10 @@ class Float32MatmulPrecisionTests(unittest.TestCase):
                 self.assertEqual(len(caught), 1)
                 self.assertIs(caught[0].category, UserWarning)
                 self.assertIs(type(caught[0].message), UserWarning)
-                self.assertEqual(str(caught[0].message), message)
+                self.assertEqual(
+                    without_internal_source_location(str(caught[0].message)),
+                    message,
+                )
 
         torch.set_float32_matmul_precision("high")
         with warnings.catch_warnings():
@@ -329,9 +363,57 @@ class Float32MatmulPrecisionTests(unittest.TestCase):
             with self.assertRaises(UserWarning) as raised:
                 torch.set_float32_matmul_precision("invalid")
         self.assertEqual(
-            str(raised.exception), "invalid" + INVALID_PRECISION_WARNING_SUFFIX
+            without_internal_source_location(str(raised.exception)),
+            "invalid" + INVALID_PRECISION_WARNING,
         )
         self.assertEqual(torch.get_float32_matmul_precision(), "high")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_invalid_precision_raises_bad_alloc_instead_of_aborting(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+            import warnings
+
+            import torch_rs as torch
+
+            precision = b"x" * (64 * 1024 * 1024)
+            torch.set_float32_matmul_precision("medium")
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 8 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            with warnings.catch_warnings(record=True):
+                warnings.simplefilter("always")
+                try:
+                    torch.set_float32_matmul_precision(precision)
+                except RuntimeError as error:
+                    assert str(error) == "std::bad_alloc", repr(error)
+                    assert torch.get_float32_matmul_precision() == "medium"
+                else:
+                    raise AssertionError("the constrained call unexpectedly succeeded")
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode == 77:
+            self.skipTest("process hard address-space limit is too low")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_importing_reloading_and_calling_does_not_import_pytorch(self):
         script = r"""

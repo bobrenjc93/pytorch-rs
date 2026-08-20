@@ -7,9 +7,12 @@ use pyo3::exceptions::{PyRuntimeError, PyUserWarning};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBytes, PyModule, PyString};
 
+use crate::python::python_type_name;
+
 const HIGHEST: u8 = 0;
 const HIGH: u8 = 1;
 const MEDIUM: u8 = 2;
+const INVALID_PRECISION_TYPE_PREFIX: &str = "set_float32_matmul_precision expects a str, but got ";
 const INVALID_PRECISION_WARNING_SUFFIX: &[u8] = b" is not one of 'highest', 'high', or 'medium'; the currentsetFloat32MatmulPrecision call has no effect.";
 #[cfg(target_os = "macos")]
 const INVALID_PRECISION_WARNING_LOCATION: &[u8] =
@@ -24,6 +27,10 @@ const INVALID_PRECISION_WARNING_LOCATION: &[u8] =
     b" (Triggered internally at aten/src/ATen/Context.cpp:458.)";
 
 static FLOAT32_MATMUL_PRECISION: AtomicU8 = AtomicU8::new(HIGHEST);
+
+fn allocation_error() -> PyErr {
+    PyRuntimeError::new_err("std::bad_alloc")
+}
 
 #[pyfunction]
 fn _get_float32_matmul_precision() -> &'static str {
@@ -46,19 +53,31 @@ fn precision_bytes<'a>(precision: &'a Bound<'_, PyAny>) -> PyResult<&'a [u8]> {
         return Ok(precision.as_bytes());
     }
 
-    let type_name = precision.get_type().name()?;
-    Err(PyRuntimeError::new_err(format!(
-        "set_float32_matmul_precision expects a str, but got {type_name}"
-    )))
+    let type_name = python_type_name(precision)?;
+    let capacity = INVALID_PRECISION_TYPE_PREFIX
+        .len()
+        .checked_add(type_name.len())
+        .ok_or_else(allocation_error)?;
+    let mut message = String::new();
+    message
+        .try_reserve_exact(capacity)
+        .map_err(|_| allocation_error())?;
+    message.push_str(INVALID_PRECISION_TYPE_PREFIX);
+    message.push_str(&type_name);
+    Err(PyRuntimeError::new_err(message))
 }
 
 fn warn_invalid_precision(py: Python<'_>, precision: &[u8]) -> PyResult<()> {
-    let mut message = Vec::with_capacity(
-        precision
-            .len()
-            .saturating_add(INVALID_PRECISION_WARNING_SUFFIX.len())
-            .saturating_add(INVALID_PRECISION_WARNING_LOCATION.len()),
-    );
+    let capacity = precision
+        .len()
+        .checked_add(INVALID_PRECISION_WARNING_SUFFIX.len())
+        .and_then(|length| length.checked_add(INVALID_PRECISION_WARNING_LOCATION.len()))
+        .and_then(|length| length.checked_add(1))
+        .ok_or_else(allocation_error)?;
+    let mut message = Vec::new();
+    message
+        .try_reserve_exact(capacity)
+        .map_err(|_| allocation_error())?;
     message.extend_from_slice(precision);
     message.extend_from_slice(INVALID_PRECISION_WARNING_SUFFIX);
     message.extend_from_slice(INVALID_PRECISION_WARNING_LOCATION);
