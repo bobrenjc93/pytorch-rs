@@ -40,6 +40,8 @@ mod python_scalar_conversions;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_size;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_tensor_alternate_layout;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_tensor_devices;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_tensor_errors;
