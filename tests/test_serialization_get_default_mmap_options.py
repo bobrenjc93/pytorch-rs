@@ -130,6 +130,7 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
             "get_crc32_options",
             "set_crc32_options",
             "get_default_mmap_options",
+            "set_default_mmap_options",
         ]
 
         self.assertEqual(serialization.__all__, exported_names)
@@ -232,11 +233,12 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
             sys.modules[module_name] = original_module
             torch.serialization = original_module
 
-    def test_mmap_setter_save_and_load_remain_unsupported(self):
+    def test_save_and_load_remain_unsupported(self):
         serialization = torch.serialization
 
         self.assertTrue(hasattr(serialization, "get_default_mmap_options"))
-        for name in ("set_default_mmap_options", "save", "load"):
+        self.assertTrue(hasattr(serialization, "set_default_mmap_options"))
+        for name in ("save", "load"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(serialization, name))
                 self.assertNotIn(name, serialization.__all__)
@@ -262,7 +264,17 @@ serialization = torch.serialization
 assert serialization.get_default_mmap_options() is None
 assert importlib.reload(serialization) is serialization
 assert serialization.get_default_mmap_options() is None
-assert not hasattr(serialization, "set_default_mmap_options")
+assert hasattr(serialization, "set_default_mmap_options")
+try:
+    serialization.set_default_mmap_options(None)
+except ValueError:
+    pass
+else:
+    raise AssertionError("None must not stand in for an unavailable mmap flag")
+if hasattr(mmap, "MAP_SHARED"):
+    with serialization.set_default_mmap_options(mmap.MAP_SHARED):
+        assert serialization.get_default_mmap_options() == mmap.MAP_SHARED
+    assert serialization.get_default_mmap_options() is None
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
