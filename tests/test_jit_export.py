@@ -205,16 +205,16 @@ class JitExportTests(unittest.TestCase):
         function = jit.export
         internal = torch._jit_internal
 
-        self.assertEqual(jit.__all__, ["annotate", "export", "unused"])
+        self.assertEqual(jit.__all__, ["annotate", "export", "ignore", "unused"])
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
-            {"annotate", "export", "unused"},
+            {"annotate", "export", "ignore", "unused"},
         )
         jit_namespace = {}
         exec("from torch_rs.jit import *", jit_namespace)
         self.assertEqual(
             {name for name in jit_namespace if not name.startswith("__")},
-            {"annotate", "export", "unused"},
+            {"annotate", "export", "ignore", "unused"},
         )
         self.assertIs(jit_namespace["export"], function)
 
@@ -317,7 +317,6 @@ class JitExportTests(unittest.TestCase):
             "CompilationUnit",
             "ScriptFunction",
             "ScriptModule",
-            "ignore",
             "is_scripting",
             "is_tracing",
             "script",

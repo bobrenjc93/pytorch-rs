@@ -225,16 +225,16 @@ class JitUnusedTests(unittest.TestCase):
         function = jit.unused
         internal = torch._jit_internal
 
-        self.assertEqual(jit.__all__, ["annotate", "export", "unused"])
+        self.assertEqual(jit.__all__, ["annotate", "export", "ignore", "unused"])
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
-            {"annotate", "export", "unused"},
+            {"annotate", "export", "ignore", "unused"},
         )
         jit_namespace = {}
         exec("from torch_rs.jit import *", jit_namespace)
         self.assertEqual(
             {name for name in jit_namespace if not name.startswith("__")},
-            {"annotate", "export", "unused"},
+            {"annotate", "export", "ignore", "unused"},
         )
         self.assertIs(jit_namespace["unused"], function)
 
@@ -345,12 +345,11 @@ class JitUnusedTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_ignore_scripting_tracing_and_compilation_remain_unsupported(self):
+    def test_scripting_tracing_and_compilation_remain_unsupported(self):
         for name in (
             "CompilationUnit",
             "ScriptFunction",
             "ScriptModule",
-            "ignore",
             "is_scripting",
             "is_tracing",
             "script",
@@ -396,7 +395,7 @@ class Example:
         return 3
 
 assert Example().value == 3
-assert not hasattr(torch.jit, "ignore")
+assert hasattr(torch.jit, "ignore")
 assert torch.jit.annotate(int, decorated) is decorated
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
