@@ -2,7 +2,6 @@ import contextlib
 import copy
 import importlib
 import inspect
-import os
 import pickle
 import pickletools
 import sys
@@ -10,7 +9,6 @@ import threading
 import types
 import typing
 import unittest
-from unittest import mock
 
 import torch_rs as torch
 
@@ -21,12 +19,13 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedIsInitializedReferenceTests(unittest.TestCase):
+class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.is_initialized differentials require pinned PyTorch 2.13.0"
+                "distributed.is_mpi_available differentials require pinned "
+                "PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -39,7 +38,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def threaded_outcome(self, module):
-        function = module.distributed.is_initialized
+        function = module.distributed.is_mpi_available
         baseline = function()
         worker_count = 8
         barrier = threading.Barrier(worker_count)
@@ -86,38 +85,24 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_uninitialized_default_state_matches_across_environments_and_threads(self):
-        actual = torch.distributed.is_initialized
-        expected = reference_torch.distributed.is_initialized
-        expected_c10d = importlib.import_module(
-            "torch.distributed.distributed_c10d"
-        )
-
-        self.assertIs(expected_c10d.GroupMember.WORLD, None)
-        environments = (
-            {},
-            {"USE_DISTRIBUTED": "0"},
-            {"USE_DISTRIBUTED": "1"},
-            {
-                "CUDA_VISIBLE_DEVICES": "0",
-                "MASTER_ADDR": "127.0.0.1",
-                "MASTER_PORT": "29500",
-                "RANK": "0",
-                "WORLD_SIZE": "1",
-            },
-        )
-        for environment in environments:
-            with self.subTest(environment=environment):
-                with mock.patch.dict(os.environ, environment, clear=True):
-                    self.assertIs(actual(), False)
-                    self.assertIs(expected(), False)
-
+    def test_false_is_stable_while_reference_capability_varies_by_build(self):
         actual_baseline, actual_workers = self.threaded_outcome(torch)
         expected_baseline, expected_workers = self.threaded_outcome(reference_torch)
+
         self.assertIs(actual_baseline, False)
-        self.assertIs(expected_baseline, False)
-        self.assertEqual(actual_workers, expected_workers)
-        self.assertIs(expected_c10d.GroupMember.WORLD, None)
+        self.assertIs(type(expected_baseline), bool)
+        for baseline, worker_states in (
+            (actual_baseline, actual_workers),
+            (expected_baseline, expected_workers),
+        ):
+            self.assertIs(type(baseline), bool)
+            for index, state in enumerate(worker_states):
+                expected_grad_state = index % 2 == 0
+                self.assertIs(state[0], expected_grad_state)
+                self.assertIs(state[1], baseline)
+                self.assertIs(state[2], expected_grad_state)
+                self.assertIs(state[3], baseline)
+                self.assertIs(state[4], expected_grad_state)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_distributed = importlib.import_module("torch_rs.distributed")
@@ -128,15 +113,15 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
-        actual = actual_distributed.is_initialized
-        expected = expected_distributed.is_initialized
+        actual = actual_distributed.is_mpi_available
+        expected = expected_distributed.is_mpi_available
 
         self.assertIs(torch.distributed, actual_distributed)
         self.assertIs(reference_torch.distributed, expected_distributed)
         self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
         self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-        self.assertIs(actual_c10d.is_initialized, actual)
-        self.assertIs(expected_c10d.is_initialized, expected)
+        self.assertIs(actual_c10d.is_mpi_available, actual)
+        self.assertIs(expected_c10d.is_mpi_available, expected)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -165,8 +150,8 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.is_initialized
-        expected = expected_distributed.is_initialized
+        actual = actual_distributed.is_mpi_available
+        expected = expected_distributed.is_mpi_available
 
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"], actual_c10d
@@ -192,8 +177,8 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("distributed"),
         )
         self.assertEqual(
-            torch.__all__.count("is_initialized"),
-            reference_torch.__all__.count("is_initialized"),
+            torch.__all__.count("is_mpi_available"),
+            reference_torch.__all__.count("is_mpi_available"),
         )
 
         for module, function in (
@@ -204,7 +189,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["is_initialized"], function)
+            self.assertIs(namespace["is_mpi_available"], function)
 
         actual_namespace = {}
         expected_namespace = {}
@@ -217,7 +202,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("distributed", namespace)
-            self.assertNotIn("is_initialized", namespace)
+            self.assertNotIn("is_mpi_available", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -233,8 +218,8 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.is_initialized
-        expected = reference_torch.distributed.is_initialized
+        actual = torch.distributed.is_mpi_available
+        expected = reference_torch.distributed.is_mpi_available
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
@@ -248,7 +233,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_process_group_and_all_other_distributed_apis_remain_unsupported(self):
+    def test_mpi_execution_and_other_distributed_apis_remain_unsupported(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
@@ -283,6 +268,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                 self.assertFalse(hasattr(actual_distributed, name))
 
         for name in (
+            "Backend",
             "GroupMember",
             "ProcessGroup",
             "all_reduce",
@@ -290,12 +276,27 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
             "get_rank",
             "get_world_size",
             "init_process_group",
+            "new_group",
         ):
             with self.subTest(name=name):
                 self.assertTrue(hasattr(expected_distributed, name))
                 self.assertTrue(hasattr(expected_c10d, name))
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
+
+        expected_mpi_available = expected_distributed.is_mpi_available()
+        self.assertIs(type(expected_mpi_available), bool)
+        if expected_mpi_available:
+            self.assertTrue(hasattr(expected_distributed, "ProcessGroupMPI"))
+            self.assertTrue(hasattr(expected_c10d, "ProcessGroupMPI"))
+        self.assertFalse(hasattr(actual_distributed, "ProcessGroupMPI"))
+        self.assertFalse(hasattr(actual_c10d, "ProcessGroupMPI"))
+        self.assertIs(actual_distributed.is_available(), False)
+        self.assertIs(actual_distributed.is_initialized(), False)
+        self.assertIs(actual_distributed.is_nccl_available(), False)
+        self.assertIs(type(expected_distributed.is_available()), bool)
+        self.assertIs(type(expected_distributed.is_initialized()), bool)
+        self.assertIs(type(expected_distributed.is_nccl_available()), bool)
 
 
 if __name__ == "__main__":
