@@ -81,6 +81,27 @@ fn get_default_dtype(
     Ok(dtype_object(py, DType::Float32)?.clone_ref(py))
 }
 
+// Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+#[allow(clippy::doc_markdown)]
+#[doc = "\nget_num_threads() -> int\n\nReturns the number of threads used for parallelizing CPU operations\n"]
+fn get_num_threads(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<usize> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch.get_num_threads() takes no keyword arguments",
+        ));
+    }
+    if !args.is_empty() {
+        return Err(PyTypeError::new_err(format!(
+            "torch.get_num_threads() takes no arguments ({} given)",
+            args.len()
+        )));
+    }
+    Ok(1)
+}
+
 const IS_GRAD_ENABLED_DOC: &CStr =
     c"\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n";
 const IS_GRAD_ENABLED_SIGNATURE_DOC: &CStr = c"is_grad_enabled($self, /)\n--\n\n\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n";
@@ -88,6 +109,8 @@ const IS_INFERENCE_MODE_ENABLED_DOC: &CStr = c"\nis_inference_mode_enabled() -> 
 const IS_INFERENCE_MODE_ENABLED_SIGNATURE_DOC: &CStr = c"is_inference_mode_enabled($self, /)\n--\n\n\nis_inference_mode_enabled() -> (bool)\n\nReturns True if inference mode is currently enabled.\n";
 const GET_DEFAULT_DTYPE_DOC: &CStr = c"\nget_default_dtype() -> torch.dtype\n\nGet the current default floating point :class:`torch.dtype`.\n\nExample::\n\n    >>> torch.get_default_dtype()  # initial default for floating point is torch.float32\n    torch.float32\n    >>> torch.set_default_dtype(torch.float64)\n    >>> torch.get_default_dtype()  # default is now changed to torch.float64\n    torch.float64\n\n";
 const GET_DEFAULT_DTYPE_SIGNATURE_DOC: &CStr = c"get_default_dtype($self, /)\n--\n\n\nget_default_dtype() -> torch.dtype\n\nGet the current default floating point :class:`torch.dtype`.\n\nExample::\n\n    >>> torch.get_default_dtype()  # initial default for floating point is torch.float32\n    torch.float32\n    >>> torch.set_default_dtype(torch.float64)\n    >>> torch.get_default_dtype()  # default is now changed to torch.float64\n    torch.float64\n\n";
+const GET_NUM_THREADS_DOC: &CStr = c"\nget_num_threads() -> int\n\nReturns the number of threads used for parallelizing CPU operations\n";
+const GET_NUM_THREADS_SIGNATURE_DOC: &CStr = c"get_num_threads($self, /)\n--\n\n\nget_num_threads() -> int\n\nReturns the number of threads used for parallelizing CPU operations\n";
 
 #[allow(
     unsafe_code,
@@ -157,22 +180,45 @@ unsafe fn get_default_dtype_callback(
     get_default_dtype(py, &args, kwargs.as_ref()).map(Py::into_ptr)
 }
 
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn get_num_threads_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    get_num_threads(&args, kwargs.as_ref())?
+        .into_py_any(py)
+        .map(Py::into_ptr)
+}
+
 pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
-    let (is_grad_enabled_doc, is_inference_mode_enabled_doc, get_default_dtype_doc) =
-        if py.version_info() >= (3, 13) {
-            (
-                IS_GRAD_ENABLED_SIGNATURE_DOC,
-                IS_INFERENCE_MODE_ENABLED_SIGNATURE_DOC,
-                GET_DEFAULT_DTYPE_SIGNATURE_DOC,
-            )
-        } else {
-            (
-                IS_GRAD_ENABLED_DOC,
-                IS_INFERENCE_MODE_ENABLED_DOC,
-                GET_DEFAULT_DTYPE_DOC,
-            )
-        };
+    let (
+        is_grad_enabled_doc,
+        is_inference_mode_enabled_doc,
+        get_default_dtype_doc,
+        get_num_threads_doc,
+    ) = if py.version_info() >= (3, 13) {
+        (
+            IS_GRAD_ENABLED_SIGNATURE_DOC,
+            IS_INFERENCE_MODE_ENABLED_SIGNATURE_DOC,
+            GET_DEFAULT_DTYPE_SIGNATURE_DOC,
+            GET_NUM_THREADS_SIGNATURE_DOC,
+        )
+    } else {
+        (
+            IS_GRAD_ENABLED_DOC,
+            IS_INFERENCE_MODE_ENABLED_DOC,
+            GET_DEFAULT_DTYPE_DOC,
+            GET_NUM_THREADS_DOC,
+        )
+    };
     module.add_function(PyCFunction::new_with_keywords(
         py,
         pyo3::impl_::trampoline::get_trampoline_function!(
@@ -201,6 +247,16 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         ),
         c"get_default_dtype",
         get_default_dtype_doc,
+        Some(module),
+    )?)?;
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            get_num_threads_callback
+        ),
+        c"get_num_threads",
+        get_num_threads_doc,
         Some(module),
     )?)?;
     Ok(())
