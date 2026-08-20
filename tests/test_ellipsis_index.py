@@ -1,4 +1,5 @@
 import gc
+import inspect
 import unittest
 
 import numpy as np
@@ -127,6 +128,41 @@ class TensorBareEllipsisIndexTests(unittest.TestCase):
             with self.subTest(index=index):
                 with self.assertRaisesRegex(IndexError, "only integers"):
                     tensor[index]
+
+    def test_tensorbase_descriptor_dispatches_mode_before_parsing(self):
+        tensor = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        descriptor = inspect.getattr_static(torch.Tensor, "__getitem__")
+        self.assertEqual(descriptor.__qualname__, "TensorBase.__getitem__")
+        self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
+        self.assertEqual(descriptor.__text_signature__, "($self, key, /)")
+
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return marker
+
+        mode = RecordingMode()
+        with mode:
+            result = tensor[...]
+        self.assertIs(result, marker)
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), 2)
+        self.assertIs(args[0], tensor)
+        self.assertIs(args[1], Ellipsis)
+        self.assertIsNone(kwargs)
+
+        deferred = RecordingMode()
+        with deferred:
+            self.assertIs(tensor[slice(None)], marker)
+        self.assertEqual(len(deferred.calls), 1)
 
 
 if __name__ == "__main__":

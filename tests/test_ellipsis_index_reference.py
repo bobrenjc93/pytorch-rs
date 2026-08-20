@@ -1,4 +1,6 @@
 import gc
+import inspect
+import re
 import unittest
 
 import numpy as np
@@ -149,6 +151,104 @@ class TensorBareEllipsisIndexReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.lifetime_contract(torch),
             self.lifetime_contract(reference_torch),
+        )
+
+    def mode_contract(self, module):
+        tensor = module.tensor([[1.0, 2.0], [3.0, 4.0]])
+        descriptor = inspect.getattr_static(module.Tensor, "__getitem__")
+        marker = object()
+
+        def normalized_call(call):
+            function, dispatch_types, args, kwargs = call
+            return (
+                function is descriptor,
+                function.__qualname__,
+                tuple(item.__name__ for item in dispatch_types),
+                len(args),
+                args[0] is tensor,
+                args[1] is Ellipsis,
+                kwargs,
+            )
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return self.result
+
+        replacing = RecordingMode(marker)
+        with replacing:
+            result = tensor[...]
+
+        deferred = RecordingMode(marker)
+        with deferred:
+            deferred_result = tensor[slice(None)]
+
+        order = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                call = normalized_call((func, dispatch_types, args, kwargs))
+                order.append((self.label, call))
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor[...]
+
+        declining = RecordingMode(NotImplemented)
+        try:
+            with declining:
+                tensor[...]
+        except Exception as error:
+            declining_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0x<address>", str(error)),
+            )
+        else:
+            self.fail(f"{module.__name__} accepted a declining mode")
+
+        return {
+            "descriptor": (
+                type(descriptor).__name__,
+                descriptor.__name__,
+                descriptor.__qualname__,
+                descriptor.__objclass__.__name__,
+                descriptor.__text_signature__,
+                repr(descriptor),
+            ),
+            "replacing": (
+                result is marker,
+                tuple(map(normalized_call, replacing.calls)),
+            ),
+            "deferred": (
+                deferred_result is marker,
+                len(deferred.calls),
+                isinstance(deferred.calls[0][2][1], slice),
+            ),
+            "forwarding": tuple(order),
+            "forwarded": (
+                forwarded is tensor,
+                forwarded.is_set_to(tensor),
+                tuple(forwarded.shape),
+                forwarded.stride(),
+                forwarded.storage_offset(),
+            ),
+            "declining": declining_error,
+            "declining_calls": tuple(map(normalized_call, declining.calls)),
+            "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+        }
+
+    def test_tensorbase_descriptor_and_mode_dispatch_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_contract(torch),
+            self.mode_contract(reference_torch),
         )
 
 

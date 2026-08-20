@@ -241,6 +241,49 @@ impl PyTensorBase {
         tensor.try_borrow()?.inner.output_nr().into_py_any(slf.py())
     }
 
+    fn __getitem__(slf: &Bound<'_, Self>, key: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        let py = slf.py();
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if !torch_function_mode_stack::is_empty() {
+            let arguments = PyTuple::new(py, [key.clone()])?;
+            if let Some(result) = dispatch_tensorbase_method_mode(
+                py,
+                tensor,
+                "__getitem__",
+                "torch.Tensor.__getitem__",
+                &arguments,
+                None,
+            )? {
+                return Ok(result);
+            }
+        }
+
+        let tensor = tensor.try_borrow()?;
+        let inner = if key.is_instance_of::<PyEllipsis>() {
+            tensor.inner.metadata_alias()
+        } else if let Ok(indices) = key.cast::<PyTuple>() {
+            if indices.len() > tensor.inner.shape().len() {
+                return Err(too_many_indices(tensor.inner.shape().len()));
+            }
+            let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
+            tensor.inner.index(indices)
+        } else if is_fast_integer_index(key)? {
+            let index = parse_integer_index(key)?;
+            tensor.inner.index_integer(index)
+        } else {
+            if tensor.inner.shape().is_empty() {
+                return Err(too_many_indices(0));
+            }
+            let index = parse_integer_index(key)?;
+            tensor.inner.index([index])
+        };
+        Ok(Py::new(
+            py,
+            PyTensor::new(inner.map_err(|error| tensor_error(&error))?),
+        )?
+        .into_any())
+    }
+
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nunbind(dim=0) -> seq\n\nSee :func:`torch.unbind`\n"]
@@ -3605,28 +3648,6 @@ impl PyTensor {
             .getattr("unbind")?
             .call1((slf.clone(), 0_i64))?;
         Ok(outputs.try_iter()?.into_any().unbind())
-    }
-
-    fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = if index.is_instance_of::<PyEllipsis>() {
-            self.inner.metadata_alias()
-        } else if let Ok(indices) = index.cast::<PyTuple>() {
-            if indices.len() > self.inner.shape().len() {
-                return Err(too_many_indices(self.inner.shape().len()));
-            }
-            let indices = parse_integer_indices(&self.inner, indices.len(), indices.iter())?;
-            self.inner.index(indices)
-        } else if is_fast_integer_index(index)? {
-            let index = parse_integer_index(index)?;
-            self.inner.index_integer(index)
-        } else {
-            if self.inner.shape().is_empty() {
-                return Err(too_many_indices(0));
-            }
-            let index = parse_integer_index(index)?;
-            self.inner.index([index])
-        };
-        inner.map(Self::new).map_err(|error| tensor_error(&error))
     }
 
     #[pyo3(signature = (*shape_dimensions, shape=None))]
