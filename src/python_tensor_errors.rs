@@ -38,6 +38,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::DoesNotRequireGrad
         | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
+        | TensorError::SliceCannotApplyToScalar
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
         | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),

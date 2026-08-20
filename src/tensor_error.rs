@@ -25,6 +25,7 @@ pub enum TensorError {
         elements: usize,
     },
     InvalidScalarIndex,
+    SliceCannotApplyToScalar,
     TooManyIndices {
         dimensions: usize,
     },
@@ -121,6 +122,9 @@ impl Display for TensorError {
                 formatter,
                 "invalid index of a 0-dim tensor. Use `tensor.item()` in Python or `tensor.item<T>()` in C++ to convert a 0-dim tensor to a number"
             ),
+            Self::SliceCannotApplyToScalar => {
+                formatter.write_str("slice() cannot be applied to a 0-dim tensor.")
+            }
             Self::TooManyIndices { dimensions } => {
                 write!(
                     formatter,

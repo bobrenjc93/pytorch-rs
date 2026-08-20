@@ -12,7 +12,7 @@ use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyComplex, PyDict, PyEllipsis, PyFloat, PyInt, PyList, PyMapping,
-    PyMemoryView, PyModule, PySequence, PyString, PyTuple, PyType,
+    PyMemoryView, PyModule, PySequence, PySlice, PyString, PyTuple, PyType,
 };
 
 use crate::{
@@ -267,6 +267,8 @@ impl PyTensorBase {
             }
             let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
             tensor.inner.index(indices)
+        } else if is_exact_full_slice(index)? {
+            tensor.inner.index_full_slice()
         } else if is_fast_integer_index(index)? {
             let index = parse_integer_index(index)?;
             tensor.inner.index_integer(index)
@@ -9698,6 +9700,15 @@ fn is_fast_integer_index(index: &Bound<'_, PyAny>) -> PyResult<bool> {
         return Ok(false);
     };
     index.is_instance(&numpy.getattr("integer")?)
+}
+
+fn is_exact_full_slice(index: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let Ok(slice) = index.cast::<PySlice>() else {
+        return Ok(false);
+    };
+    Ok(slice.getattr("start")?.is_none()
+        && slice.getattr("stop")?.is_none()
+        && slice.getattr("step")?.is_none())
 }
 
 fn parse_integer_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
