@@ -16,12 +16,12 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class JitAnnotateReferenceTests(unittest.TestCase):
+class JitUnusedReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "jit.annotate differentials require pinned PyTorch 2.13.0"
+                "jit.unused differentials require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -45,67 +45,86 @@ class JitAnnotateReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def tensor_outcome(self, module):
-        leaf = module.tensor(
-            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
-        )
-        view = (leaf * 3.0).transpose(0, 1)[1]
-        before = (
-            tuple(view.shape),
-            view.stride(),
-            view.storage_offset(),
-            view.data_ptr(),
-            view.requires_grad,
-            view.is_leaf,
-        )
-        result = module.jit.annotate(str, view)
-        after = (
-            tuple(result.shape),
-            result.stride(),
-            result.storage_offset(),
-            result.data_ptr(),
-            result.requires_grad,
-            result.is_leaf,
-        )
-        result.sum().backward()
-        return result is view, before == after, leaf.grad.tolist()
+    def function_outcome(self, module):
+        def target(value, *, offset=1):
+            """target documentation"""
+            return value + offset
 
-    def value_outcome(self, module):
-        values = ([], {}, ({"nested": []},), object(), None)
-        type_hints = (dict[str, int], module.Tensor, int, "wrong", object())
-        return tuple(
-            module.jit.annotate(type_hint, value) is value
-            for type_hint, value in zip(type_hints, values, strict=True)
+        result = module.jit.unused(target)
+        return (
+            result is target,
+            result(4, offset=3),
+            result.__name__,
+            result.__qualname__.rsplit(".", 1)[-1],
+            result.__doc__,
+            dict(result.__dict__),
         )
 
-    def test_tensor_view_autograd_container_and_mismatch_semantics_match(self):
+    def property_outcome(self, module):
+        def getter(instance):
+            return instance._value
+
+        def setter(instance, value):
+            instance._value = value
+
+        def deleter(instance):
+            del instance._value
+
+        prop = property(getter, setter, deleter, "property documentation")
+        result = module.jit.unused(prop)
+        return (
+            result is prop,
+            result.fget is getter,
+            result.fset is setter,
+            result.fdel is deleter,
+            result.__doc__,
+            dict(getter.__dict__),
+            dict(setter.__dict__),
+            dict(deleter.__dict__),
+        )
+
+    def test_function_and_property_semantics_match(self):
         self.assertEqual(
-            self.tensor_outcome(torch), self.tensor_outcome(reference_torch)
+            self.function_outcome(torch), self.function_outcome(reference_torch)
         )
-        self.assertEqual(self.value_outcome(torch), self.value_outcome(reference_torch))
+        self.assertEqual(
+            self.property_outcome(torch), self.property_outcome(reference_torch)
+        )
 
-    def test_signature_documentation_and_identity_match(self):
-        actual_jit = importlib.import_module("torch_rs.jit")
-        expected_jit = importlib.import_module("torch.jit")
-        actual = actual_jit.annotate
-        expected = expected_jit.annotate
+    def test_signature_annotations_documentation_and_ownership_match(self):
+        actual_internal = importlib.import_module("torch_rs._jit_internal")
+        expected_internal = importlib.import_module("torch._jit_internal")
+        actual = torch.jit.unused
+        expected = reference_torch.jit.unused
 
-        self.assertIs(torch.jit, actual_jit)
-        self.assertIs(reference_torch.jit, expected_jit)
+        self.assertIs(torch.jit.unused, actual_internal.unused)
+        self.assertIs(reference_torch.jit.unused, expected_internal.unused)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
             str(inspect.signature(actual)), str(inspect.signature(expected))
         )
-        self.assertEqual(actual.__annotations__, expected.__annotations__)
-        self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
+        self.assertEqual(
+            {name: repr(value) for name, value in actual.__annotations__.items()},
+            {name: repr(value) for name, value in expected.__annotations__.items()},
+        )
+        self.assertEqual(
+            {
+                name: repr(value)
+                for name, value in typing.get_type_hints(actual).items()
+            },
+            {
+                name: repr(value)
+                for name, value in typing.get_type_hints(expected).items()
+            },
+        )
         self.assertEqual(actual.__name__, expected.__name__)
         self.assertEqual(actual.__qualname__, expected.__qualname__)
         self.assertEqual(
             actual.__module__.replace("torch_rs", "torch"), expected.__module__
         )
-        self.assertIs(inspect.getmodule(actual), actual_jit)
-        self.assertIs(inspect.getmodule(expected), expected_jit)
+        self.assertIs(inspect.getmodule(actual), actual_internal)
+        self.assertIs(inspect.getmodule(expected), expected_internal)
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(actual.__defaults__, expected.__defaults__)
         self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
@@ -114,13 +133,37 @@ class JitAnnotateReferenceTests(unittest.TestCase):
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
         )
-        self.assertEqual(actual_jit.__doc__, expected_jit.__doc__)
+
+        modifier_names = (
+            "UNUSED",
+            "IGNORE",
+            "EXPORT",
+            "DEFAULT",
+            "COPY_TO_SCRIPT_WRAPPER",
+            "_DROP",
+        )
+        self.assertEqual(
+            {
+                name: getattr(actual_internal.FunctionModifiers, name)
+                for name in modifier_names
+            },
+            {
+                name: getattr(expected_internal.FunctionModifiers, name)
+                for name in modifier_names
+            },
+        )
+        self.assertEqual(
+            actual_internal.FunctionModifiers.__module__.replace(
+                "torch_rs", "torch"
+            ),
+            expected_internal.FunctionModifiers.__module__,
+        )
 
     def test_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_jit = torch.jit
         expected_jit = reference_torch.jit
-        actual = actual_jit.annotate
-        expected = expected_jit.annotate
+        actual = actual_jit.unused
+        expected = expected_jit.unused
 
         self.assertEqual(
             actual_jit.__all__,
@@ -131,12 +174,8 @@ class JitAnnotateReferenceTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            torch.__all__.count("jit"),
-            reference_torch.__all__.count("jit"),
-        )
-        self.assertEqual(
-            torch.__all__.count("annotate"),
-            reference_torch.__all__.count("annotate"),
+            torch.__all__.count("unused"),
+            reference_torch.__all__.count("unused"),
         )
 
         actual_namespace = {}
@@ -147,8 +186,8 @@ class JitAnnotateReferenceTests(unittest.TestCase):
             {name for name in actual_namespace if not name.startswith("__")},
             {"annotate", "unused"},
         )
-        self.assertIs(actual_namespace["annotate"], actual)
-        self.assertIs(expected_namespace["annotate"], expected)
+        self.assertIs(actual_namespace["unused"], actual)
+        self.assertIs(expected_namespace["unused"], expected)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -167,17 +206,22 @@ class JitAnnotateReferenceTests(unittest.TestCase):
                     pickle.loads(pickle.dumps(expected, protocol=protocol)), expected
                 )
 
-    def test_call_errors_match_pytorch_2_13(self):
-        actual = torch.jit.annotate
-        expected = reference_torch.jit.annotate
+    def test_call_and_target_errors_match_pytorch_2_13(self):
+        actual = torch.jit.unused
+        expected = reference_torch.jit.unused
+
+        def target():
+            return None
+
         cases = (
-            (lambda function: function()),
-            (lambda function: function(int)),
-            (lambda function: function(the_value=1)),
-            (lambda function: function(int, 1, 2)),
-            (lambda function: function(type=int, the_value=1)),
-            (lambda function: function(int, 1, the_type=str)),
-            (lambda function: function(int, 1, the_value=2)),
+            lambda function: function(),
+            lambda function: function(target, target),
+            lambda function: function(function=target),
+            lambda function: function(target, fn=target),
+            lambda function: function(None),
+            lambda function: function(1),
+            lambda function: function(len),
+            lambda function: function(property()),
         )
         for call in cases:
             with self.subTest(call=call):
@@ -186,7 +230,7 @@ class JitAnnotateReferenceTests(unittest.TestCase):
                     lambda: call(expected),
                 )
 
-    def test_supported_boundary_is_eager_annotate_only(self):
+    def test_supported_boundary_adds_only_eager_unused(self):
         expected_public = {
             name for name in vars(reference_torch.jit) if not name.startswith("_")
         }
@@ -201,6 +245,10 @@ class JitAnnotateReferenceTests(unittest.TestCase):
 
         self.assertTrue(hasattr(reference_torch, "compile"))
         self.assertFalse(hasattr(torch, "compile"))
+        self.assertEqual(
+            str(inspect.signature(torch.jit.annotate)),
+            str(inspect.signature(reference_torch.jit.annotate)),
+        )
 
 
 if __name__ == "__main__":

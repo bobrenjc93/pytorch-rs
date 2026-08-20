@@ -1,4 +1,7 @@
-__all__ = ["annotate"]
+from .._jit_internal import unused
+
+
+__all__ = ["annotate", "unused"]
 
 
 def annotate(the_type, the_value):
