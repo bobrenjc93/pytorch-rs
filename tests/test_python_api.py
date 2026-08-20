@@ -1271,7 +1271,6 @@ class PythonApiBaselineTests(unittest.TestCase):
             np.bool_(True),
             1.0,
             np.float64(1.0),
-            slice(None),
             [0],
             None,
             IntOnly(),

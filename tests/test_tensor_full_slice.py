@@ -7,12 +7,12 @@ import numpy as np
 import torch_rs as torch
 
 
-class TensorEllipsisIndexTests(unittest.TestCase):
+class TensorFullSliceIndexTests(unittest.TestCase):
     def layout_cases(self):
         values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
         base = torch.tensor(values.tolist())
         return (
-            ("scalar", torch.tensor(-0.0)),
+            ("vector", torch.tensor([-0.0, 1.0])),
             ("empty", torch.zeros((2, 0, 3))),
             ("offset", base[1]),
             ("offset-noncontiguous", base.transpose(0, 3)[1]),
@@ -29,18 +29,26 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         self.assertEqual(alias.device, source.device)
         self.assertEqual(alias.tolist(), source.tolist())
 
-    def test_bare_ellipsis_returns_a_distinct_exact_metadata_alias(self):
+    def test_full_slice_returns_a_distinct_exact_metadata_alias(self):
         for case, source in self.layout_cases():
             with self.subTest(case=case):
-                alias = source[...]
+                alias = source[:]
                 self.assert_metadata_alias(source, alias)
 
-        scalar = torch.tensor(-0.0)[...]
-        self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0x8000_0000)
+        signed_zero = torch.tensor([-0.0])[:]
+        self.assertEqual(np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000)
 
-    def test_alias_autograd_gradient_and_no_grad_leaf_status(self):
+    def test_scalar_full_slice_raises_the_exact_pytorch_error(self):
+        with self.assertRaises(IndexError) as raised:
+            torch.tensor(-0.0)[:]
+        self.assertEqual(
+            str(raised.exception),
+            "slice() cannot be applied to a 0-dim tensor.",
+        )
+
+    def test_slice_autograd_gradient_node_and_no_grad_leaf_status(self):
         leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
-        alias = leaf[...]
+        alias = leaf[:]
         self.assert_metadata_alias(leaf, alias)
         self.assertTrue(alias.requires_grad)
         self.assertFalse(alias.is_leaf)
@@ -52,10 +60,10 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError,
             r"^dropout probability has to be between 0 and 1, but got "
-            r"tensor\(\[2\.\], grad_fn=<AliasBackward0>\)$",
+            r"tensor\(\[2\.\], grad_fn=<SliceBackward0>\)$",
         ):
             torch.nn.functional.dropout(
-                None, p=diagnostic_leaf[...], training=False
+                None, p=diagnostic_leaf[:], training=False
             )
 
         no_grad_leaf = torch.tensor(
@@ -63,18 +71,18 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         )
         no_grad_source = no_grad_leaf.transpose(0, 1)
         with torch.no_grad():
-            no_grad_alias = no_grad_source[...]
+            no_grad_alias = no_grad_source[:]
         self.assert_metadata_alias(no_grad_source, no_grad_alias)
         self.assertTrue(no_grad_alias.requires_grad)
         self.assertTrue(no_grad_alias.is_leaf)
         self.assertIsNone(no_grad_leaf.grad)
 
-    def test_alias_storage_and_autograd_survive_source_lifetime(self):
+    def test_slice_storage_and_autograd_survive_source_lifetime(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
 
         def retained_view():
             source = torch.tensor(values.tolist()).transpose(0, 2)[1]
-            return source[...]
+            return source[:]
 
         surviving = retained_view()
         gc.collect()
@@ -87,7 +95,7 @@ class TensorEllipsisIndexTests(unittest.TestCase):
 
         def retained_autograd_view():
             source = (leaf * 2.0).transpose(0, 2)[1]
-            return source[...]
+            return source[:]
 
         tracked = retained_autograd_view()
         gc.collect()
@@ -97,7 +105,7 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         expected[:, :, 1] = 2.0 * np.asarray(weights).T
         np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
 
-    def test_bare_ellipsis_dispatches_through_tensorbase_mode_before_parsing(self):
+    def test_full_slice_dispatches_through_tensorbase_mode_before_indexing(self):
         source = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
         marker = object()
 
@@ -117,9 +125,10 @@ class TensorEllipsisIndexTests(unittest.TestCase):
                 )
                 return marker
 
+        index = slice(None)
         mode = RecordingMode()
         with mode:
-            result = source[...]
+            result = source[index]
             self.assertEqual(
                 torch.overrides._get_current_function_mode_stack(), [mode]
             )
@@ -136,37 +145,27 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         self.assertEqual(dispatch_types, ())
         self.assertEqual(len(args), 2)
         self.assertIs(args[0], source)
-        self.assertIs(args[1], Ellipsis)
+        self.assertIs(args[1], index)
         self.assertIsNone(kwargs)
         self.assertEqual(handler_stack, ())
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
-        class IndexBomb:
-            def __init__(self):
-                self.calls = 0
-
-            def __index__(self):
-                self.calls += 1
-                raise AssertionError("index parsing must be deferred")
-
-        bomb = IndexBomb()
+        scalar = torch.tensor(1.0)
         mode.calls.clear()
         with mode:
-            result = source[bomb]
-        self.assertIs(result, marker)
-        self.assertEqual(bomb.calls, 0)
+            scalar_result = scalar[index]
+        self.assertIs(scalar_result, marker)
         self.assertEqual(len(mode.calls), 1)
-        self.assertIs(mode.calls[0][2][1], bomb)
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):
             def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
                 return func(*args, **(kwargs or {}))
 
         with ForwardingMode():
-            forwarded = source[...]
+            forwarded = source[index]
         self.assert_metadata_alias(source, forwarded)
 
-    def test_integer_indexing_remains_supported_and_other_forms_stay_unsupported(self):
+    def test_existing_indices_and_unsupported_slice_forms_are_unchanged(self):
         tensor = torch.tensor(
             [
                 [[0.0, 1.0], [2.0, 3.0]],
@@ -177,13 +176,17 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         self.assertEqual(indexed.tolist(), [4.0, 5.0])
         self.assertEqual(indexed.stride(), (1,))
         self.assertEqual(indexed.storage_offset(), 4)
+        self.assert_metadata_alias(tensor, tensor[...])
 
         unsupported = (
+            slice(1, None),
+            slice(None, -1),
+            slice(None, None, 1),
+            slice(None, None, 2),
+            (slice(None),),
+            (slice(None), 0),
+            (0, slice(None)),
             None,
-            (Ellipsis,),
-            (Ellipsis, 0),
-            (0, Ellipsis),
-            (slice(None), Ellipsis),
         )
         for index in unsupported:
             with self.subTest(index=repr(index)):

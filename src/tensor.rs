@@ -1627,6 +1627,24 @@ impl Tensor {
         self.metadata_alias_with_grad_fn(AutogradNode::Alias)
     }
 
+    /// Applies an exact full slice to the leading dimension.
+    ///
+    /// For rank-one-or-higher tensors this is a metadata-only identity view
+    /// with the slice-specific autograd node. Scalars preserve `PyTorch`'s
+    /// dedicated indexing diagnostic.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for scalar tensors or if result metadata allocation
+    /// fails.
+    #[cfg_attr(not(any(feature = "python-bindings", test)), allow(dead_code))]
+    pub(crate) fn index_full_slice(&self) -> Result<Self, TensorError> {
+        if self.shape.is_empty() {
+            return Err(TensorError::SliceCannotApplyToScalar);
+        }
+        self.metadata_alias_with_grad_fn(AutogradNode::Slice)
+    }
+
     fn metadata_alias_with_grad_fn(&self, node: AutogradNode) -> Result<Self, TensorError> {
         let mut output = self.metadata_alias_detached()?;
         self.record_view_transform(&mut output, TransformMapping::Identity, node)?;
@@ -4325,6 +4343,24 @@ mod tests {
             view_requires_grad: false,
             autograd: None,
         }
+    }
+
+    #[test]
+    fn full_slice_is_an_identity_view_and_rejects_scalars() {
+        let source = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+        let alias = source.index_full_slice().unwrap();
+
+        assert!(alias.shares_storage_with(&source));
+        assert_eq!(alias.shape(), source.shape());
+        assert_eq!(alias.stride(), source.stride());
+        assert_eq!(alias.storage_offset(), source.storage_offset());
+        assert_eq!(alias.try_to_vec().unwrap(), source.try_to_vec().unwrap());
+
+        let scalar = Tensor::from_vec(vec![1.0], []).unwrap();
+        assert_eq!(
+            scalar.index_full_slice(),
+            Err(TensorError::SliceCannotApplyToScalar)
+        );
     }
 
     #[test]
