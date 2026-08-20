@@ -245,14 +245,18 @@ class JitIgnoreReferenceTests(unittest.TestCase):
     def test_exports_copy_and_pickle_match_supported_scope(self):
         actual = torch.jit.ignore
         expected = reference_torch.jit.ignore
-        supported = {"annotate", "export", "ignore", "unused"}
+        wildcard_supported = {"annotate", "export", "ignore", "unused"}
         self.assertEqual(
             torch.jit.__all__,
-            [name for name in reference_torch.jit.__all__ if name in supported],
+            [
+                name
+                for name in reference_torch.jit.__all__
+                if name in wildcard_supported
+            ],
         )
         self.assertEqual(
             {name for name in vars(torch.jit) if not name.startswith("_")},
-            supported,
+            {*wildcard_supported, "is_scripting"},
         )
 
         actual_namespace = {}
@@ -261,7 +265,7 @@ class JitIgnoreReferenceTests(unittest.TestCase):
         exec("from torch.jit import *", expected_namespace)
         self.assertEqual(
             {name for name in actual_namespace if not name.startswith("__")},
-            supported,
+            wildcard_supported,
         )
         self.assertIs(actual_namespace["ignore"], actual)
         self.assertIs(expected_namespace["ignore"], expected)
@@ -343,10 +347,12 @@ class JitIgnoreReferenceTests(unittest.TestCase):
         expected_public = {
             name for name in vars(reference_torch.jit) if not name.startswith("_")
         }
-        for name in ("script", "trace", "is_scripting", "is_tracing"):
+        for name in ("script", "trace", "is_tracing"):
             with self.subTest(name=name):
                 self.assertIn(name, expected_public)
                 self.assertFalse(hasattr(torch.jit, name))
+
+        self.assertIs(torch.jit.is_scripting(), False)
 
         self.assertTrue(hasattr(reference_torch, "compile"))
         self.assertFalse(hasattr(torch, "compile"))
