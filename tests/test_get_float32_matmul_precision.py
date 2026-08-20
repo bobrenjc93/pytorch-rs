@@ -13,9 +13,11 @@ import unittest
 import torch_rs as torch
 
 
-FUNCTION_DOC = """Returns the current value of float32 matrix multiplication precision. Refer to
+FUNCTION_DOC = inspect.cleandoc(
+    """Returns the current value of float32 matrix multiplication precision. Refer to
     :func:`torch.set_float32_matmul_precision` documentation for more details.
     """
+)
 
 
 class GetFloat32MatmulPrecisionTests(unittest.TestCase):
@@ -102,7 +104,7 @@ class GetFloat32MatmulPrecisionTests(unittest.TestCase):
         self.assertEqual(function.__qualname__, "get_float32_matmul_precision")
         self.assertEqual(function.__module__, "torch_rs")
         self.assertIs(inspect.getmodule(function), package)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(inspect.cleandoc(function.__doc__), FUNCTION_DOC)
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
