@@ -125,7 +125,9 @@ class CpuIsAvailableTests(unittest.TestCase):
         cpu = torch.cpu
         function = cpu.is_available
 
-        self.assertEqual(cpu.__all__, ["is_available", "device_count"])
+        self.assertEqual(
+            cpu.__all__, ["is_available", "synchronize", "device_count"]
+        )
 
         package_import = {}
         exec("from torch_rs import cpu", package_import)
@@ -139,19 +141,22 @@ class CpuIsAvailableTests(unittest.TestCase):
         exec("from torch_rs.cpu import *", cpu_namespace)
         self.assertEqual(
             {name for name in cpu_namespace if not name.startswith("__")},
-            {"device_count", "is_available"},
+            {"device_count", "is_available", "synchronize"},
         )
         self.assertIs(cpu_namespace["is_available"], function)
         self.assertIs(cpu_namespace["device_count"], cpu.device_count)
+        self.assertIs(cpu_namespace["synchronize"], cpu.synchronize)
 
         self.assertNotIn("cpu", torch.__all__)
         self.assertNotIn("device_count", torch.__all__)
         self.assertNotIn("is_available", torch.__all__)
+        self.assertNotIn("synchronize", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("cpu", top_level_namespace)
         self.assertNotIn("device_count", top_level_namespace)
         self.assertNotIn("is_available", top_level_namespace)
+        self.assertNotIn("synchronize", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -188,12 +193,12 @@ class CpuIsAvailableTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_other_cpu_apis_remain_unsupported(self):
+    def test_streams_events_device_mutation_and_other_cpu_apis_remain_unsupported(self):
         cpu = torch.cpu
 
         self.assertEqual(
             {name for name in vars(cpu) if not name.startswith("_")},
-            {"device_count", "is_available"},
+            {"device_count", "is_available", "synchronize"},
         )
         for name in (
             "amp",
@@ -206,7 +211,6 @@ class CpuIsAvailableTests(unittest.TestCase):
             "Stream",
             "StreamContext",
             "stream",
-            "synchronize",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cpu, name))

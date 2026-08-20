@@ -172,7 +172,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_cpu.__all__
-                if name in {"device_count", "is_available"}
+                if name in {"device_count", "is_available", "synchronize"}
             ],
         )
         self.assertEqual(
@@ -203,9 +203,10 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
         exec("from torch.cpu import *", expected_cpu_namespace)
         self.assertEqual(
             {name for name in actual_cpu_namespace if not name.startswith("__")},
-            {"device_count", "is_available"},
+            {"device_count", "is_available", "synchronize"},
         )
         self.assertIs(actual_cpu_namespace["device_count"], actual)
+        self.assertIs(actual_cpu_namespace["synchronize"], actual_cpu.synchronize)
         self.assertIs(expected_cpu_namespace["device_count"], expected)
 
         for module in (torch, reference_torch):
@@ -243,7 +244,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_streams_synchronization_amp_and_other_cpu_apis_remain_unsupported(self):
+    def test_streams_events_device_mutation_and_other_cpu_apis_remain_unsupported(self):
         actual_cpu = torch.cpu
         expected_cpu = reference_torch.cpu
         actual_public = {
@@ -253,7 +254,9 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             name for name in vars(expected_cpu) if not name.startswith("_")
         }
 
-        self.assertEqual(actual_public, {"device_count", "is_available"})
+        self.assertEqual(
+            actual_public, {"device_count", "is_available", "synchronize"}
+        )
         unsupported = expected_public - actual_public
         self.assertTrue(
             {
@@ -263,7 +266,6 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                 "Stream",
                 "StreamContext",
                 "stream",
-                "synchronize",
             }.issubset(unsupported)
         )
         for name in unsupported:
