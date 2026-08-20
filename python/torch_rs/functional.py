@@ -38,6 +38,8 @@ def _atleast_sequence(input, variable_function, unsupported):
 
 
 def _atleast_1d_impl(input):
+    if type(input) is Tensor:
+        return _VF_atleast_1d(input)
     return _atleast_sequence(
         input,
         _VF_atleast_1d,
@@ -86,6 +88,8 @@ def atleast_1d(*tensors):
 
 
 def _atleast_2d_impl(input):
+    if type(input) is Tensor:
+        return _VF_atleast_2d(input)
     return _atleast_sequence(
         input,
         _VF_atleast_2d,
@@ -136,6 +140,8 @@ def atleast_2d(*tensors):
 
 
 def _atleast_3d_impl(input):
+    if type(input) is Tensor:
+        return _VF_atleast_3d(input)
     return _atleast_sequence(
         input,
         _VF_atleast_3d,
