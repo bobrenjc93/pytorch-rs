@@ -206,6 +206,7 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
             "current_device",
             "device_count",
             "is_available",
+            "is_initialized",
             "synchronize",
         }
 
@@ -213,7 +214,13 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
             actual_cpu.__all__,
             [name for name in expected_cpu.__all__ if name in supported],
         )
-        for name in ("cpu", "device_count", "is_available", "synchronize"):
+        for name in (
+            "cpu",
+            "device_count",
+            "is_available",
+            "is_initialized",
+            "synchronize",
+        ):
             with self.subTest(top_level_export=name):
                 self.assertEqual(
                     torch.__all__.count(name), reference_torch.__all__.count(name)
@@ -299,7 +306,13 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_public,
-            {"current_device", "device_count", "is_available", "synchronize"},
+            {
+                "current_device",
+                "device_count",
+                "is_available",
+                "is_initialized",
+                "synchronize",
+            },
         )
         unsupported = expected_public - actual_public
         self.assertTrue(
@@ -308,7 +321,6 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
                 "current_stream",
                 "Event",
                 "get_capabilities",
-                "is_initialized",
                 "set_device",
                 "Stream",
                 "StreamContext",
