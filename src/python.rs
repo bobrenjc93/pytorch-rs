@@ -23,6 +23,7 @@ use crate::{
     python_finfo::finfo_type_object,
     python_grad_mode::add_no_grad,
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
+    python_matmul_precision::add_float32_matmul_precision,
     python_memory_format::{PyMemoryFormat, memory_format_object},
     python_nn_functional::add_nn_functional_bridges,
     python_no_argument_builtins::add_no_argument_builtins,
@@ -10520,6 +10521,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDType>()?;
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
     add_default_dtype_validator(module)?;
+    add_float32_matmul_precision(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     add_no_grad(module)?;
