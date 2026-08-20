@@ -11,8 +11,8 @@ use pyo3::ffi;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{
-    PyAny, PyBool, PyBytes, PyComplex, PyDict, PyFloat, PyInt, PyList, PyMapping, PyMemoryView,
-    PyModule, PySequence, PyString, PyTuple, PyType,
+    PyAny, PyBool, PyBytes, PyComplex, PyDict, PyEllipsis, PyFloat, PyInt, PyList, PyMapping,
+    PyMemoryView, PyModule, PySequence, PyString, PyTuple, PyType,
 };
 
 use crate::{
@@ -239,6 +239,46 @@ impl PyTensorBase {
         }
 
         tensor.try_borrow()?.inner.output_nr().into_py_any(slf.py())
+    }
+
+    fn __getitem__(slf: &Bound<'_, Self>, index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        // Keep the common integer-index path allocation-free when no mode is active.
+        if !torch_function_mode_stack::is_empty() {
+            let args = PyTuple::new(slf.py(), [index.clone()])?;
+            if let Some(result) = dispatch_tensorbase_method_mode(
+                slf.py(),
+                tensor,
+                "__getitem__",
+                "torch.Tensor.__getitem__",
+                &args,
+                None,
+            )? {
+                return Ok(result);
+            }
+        }
+
+        let tensor = tensor.try_borrow()?;
+        let inner = if index.is_instance_of::<PyEllipsis>() {
+            tensor.inner.metadata_alias()
+        } else if let Ok(indices) = index.cast::<PyTuple>() {
+            if indices.len() > tensor.inner.shape().len() {
+                return Err(too_many_indices(tensor.inner.shape().len()));
+            }
+            let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
+            tensor.inner.index(indices)
+        } else if is_fast_integer_index(index)? {
+            let index = parse_integer_index(index)?;
+            tensor.inner.index_integer(index)
+        } else {
+            if tensor.inner.shape().is_empty() {
+                return Err(too_many_indices(0));
+            }
+            let index = parse_integer_index(index)?;
+            tensor.inner.index([index])
+        }
+        .map_err(|error| tensor_error(&error))?;
+        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -3605,26 +3645,6 @@ impl PyTensor {
             .getattr("unbind")?
             .call1((slf.clone(), 0_i64))?;
         Ok(outputs.try_iter()?.into_any().unbind())
-    }
-
-    fn __getitem__(&self, index: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let inner = if let Ok(indices) = index.cast::<PyTuple>() {
-            if indices.len() > self.inner.shape().len() {
-                return Err(too_many_indices(self.inner.shape().len()));
-            }
-            let indices = parse_integer_indices(&self.inner, indices.len(), indices.iter())?;
-            self.inner.index(indices)
-        } else if is_fast_integer_index(index)? {
-            let index = parse_integer_index(index)?;
-            self.inner.index_integer(index)
-        } else {
-            if self.inner.shape().is_empty() {
-                return Err(too_many_indices(0));
-            }
-            let index = parse_integer_index(index)?;
-            self.inner.index([index])
-        };
-        inner.map(Self::new).map_err(|error| tensor_error(&error))
     }
 
     #[pyo3(signature = (*shape_dimensions, shape=None))]
