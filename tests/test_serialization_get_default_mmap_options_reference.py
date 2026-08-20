@@ -113,10 +113,11 @@ class SerializationDefaultMmapOptionsReferenceTests(unittest.TestCase):
             expected,
         )
 
-    def test_reference_only_map_shared_mutation_bounds_unsupported_state(self):
+    def test_map_private_and_map_shared_mutation_match_pytorch_2_13(self):
         actual = torch.serialization.get_default_mmap_options
         expected = reference_torch.serialization.get_default_mmap_options
-        setter = reference_torch.serialization.set_default_mmap_options
+        actual_setter = torch.serialization.set_default_mmap_options
+        expected_setter = reference_torch.serialization.set_default_mmap_options
         private = getattr(mmap, "MAP_PRIVATE", None)
         shared = getattr(mmap, "MAP_SHARED", None)
 
@@ -125,23 +126,28 @@ class SerializationDefaultMmapOptionsReferenceTests(unittest.TestCase):
             self.assertIs(expected(), None)
             return
 
-        original = expected()
+        actual_original = actual()
+        expected_original = expected()
         try:
-            setter(private)
+            actual_setter(private)
+            expected_setter(private)
             actual_states = [actual()]
             expected_states = [expected()]
 
-            setter(shared)
+            actual_setter(shared)
+            expected_setter(shared)
             actual_states.append(actual())
             expected_states.append(expected())
 
-            setter(private)
+            actual_setter(private)
+            expected_setter(private)
             actual_states.append(actual())
             expected_states.append(expected())
         finally:
-            setter(original)
+            actual_setter(actual_original)
+            expected_setter(expected_original)
 
-        self.assertEqual(actual_states, [private, private, private])
+        self.assertEqual(actual_states, [private, shared, private])
         self.assertEqual(expected_states, [private, shared, private])
         self.assertIs(torch.is_grad_enabled(), True)
         self.assertIs(reference_torch.is_grad_enabled(), True)
@@ -190,6 +196,7 @@ class SerializationDefaultMmapOptionsReferenceTests(unittest.TestCase):
             "get_crc32_options",
             "set_crc32_options",
             "get_default_mmap_options",
+            "set_default_mmap_options",
         )
 
         self.assertEqual(
@@ -263,11 +270,14 @@ class SerializationDefaultMmapOptionsReferenceTests(unittest.TestCase):
 
         self.assertEqual(actual(**{}), expected(**{}))
 
-    def test_setter_save_and_load_remain_unsupported(self):
+    def test_setter_is_supported_while_save_and_load_remain_unsupported(self):
         actual_module = torch.serialization
         expected_module = reference_torch.serialization
 
-        for name in ("set_default_mmap_options", "save", "load"):
+        self.assertTrue(hasattr(expected_module, "set_default_mmap_options"))
+        self.assertTrue(hasattr(actual_module, "set_default_mmap_options"))
+        self.assertIn("set_default_mmap_options", actual_module.__all__)
+        for name in ("save", "load"):
             with self.subTest(name=name):
                 self.assertTrue(hasattr(expected_module, name))
                 self.assertFalse(hasattr(actual_module, name))
