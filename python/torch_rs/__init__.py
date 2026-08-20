@@ -27,6 +27,14 @@ def are_deterministic_algorithms_enabled() -> _builtins.bool:
     return False
 
 
+def is_deterministic_algorithms_warn_only_enabled() -> _builtins.bool:
+    r"""Returns True if the global deterministic flag is set to warn only.
+    Refer to :func:`torch.use_deterministic_algorithms` documentation for more
+    details.
+    """
+    return False
+
+
 def get_default_device() -> "torch.device":
     r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
     return torch.device("cpu")
@@ -111,6 +119,7 @@ __doc__ = _native.__doc__
 __all__ = [
     *_native.__all__,
     "are_deterministic_algorithms_enabled",
+    "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
     "e",
     "pi",

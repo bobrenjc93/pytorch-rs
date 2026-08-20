@@ -18,13 +18,13 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
+class IsDeterministicAlgorithmsWarnOnlyEnabledReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "are_deterministic_algorithms_enabled differentials require "
-                "pinned PyTorch 2.13.0"
+                "is_deterministic_algorithms_warn_only_enabled differentials "
+                "require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -37,7 +37,7 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def supported_state_outcome(self, module):
-        function = module.are_deterministic_algorithms_enabled
+        function = module.is_deterministic_algorithms_warn_only_enabled
 
         def query_outcome():
             before = module.is_grad_enabled()
@@ -99,25 +99,32 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
         )
 
     def test_reference_only_mutation_bounds_the_unsupported_true_state(self):
-        actual = torch.are_deterministic_algorithms_enabled
-        expected = reference_torch.are_deterministic_algorithms_enabled
-        original_enabled = expected()
-        original_warn_only = (
-            reference_torch.is_deterministic_algorithms_warn_only_enabled()
-        )
+        actual = torch.is_deterministic_algorithms_warn_only_enabled
+        expected = reference_torch.is_deterministic_algorithms_warn_only_enabled
+        original_enabled = reference_torch.are_deterministic_algorithms_enabled()
+        original_warn_only = expected()
 
         try:
-            reference_torch.use_deterministic_algorithms(False)
+            reference_torch.use_deterministic_algorithms(False, warn_only=False)
             actual_states = [actual()]
             expected_states = [expected()]
+            expected_enabled_states = [
+                reference_torch.are_deterministic_algorithms_enabled()
+            ]
 
-            reference_torch.use_deterministic_algorithms(True)
+            reference_torch.use_deterministic_algorithms(True, warn_only=True)
             actual_states.append(actual())
             expected_states.append(expected())
+            expected_enabled_states.append(
+                reference_torch.are_deterministic_algorithms_enabled()
+            )
 
-            reference_torch.use_deterministic_algorithms(False)
+            reference_torch.use_deterministic_algorithms(True, warn_only=False)
             actual_states.append(actual())
             expected_states.append(expected())
+            expected_enabled_states.append(
+                reference_torch.are_deterministic_algorithms_enabled()
+            )
         finally:
             reference_torch.use_deterministic_algorithms(
                 original_enabled,
@@ -127,14 +134,15 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
         for state in actual_states:
             self.assertIs(state, False)
         self.assertEqual(expected_states, [False, True, False])
-        for state in expected_states:
+        self.assertEqual(expected_enabled_states, [False, True, True])
+        for state in (*expected_states, *expected_enabled_states):
             self.assertIs(type(state), bool)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_module = importlib.import_module("torch_rs")
         expected_module = importlib.import_module("torch")
-        actual = actual_module.are_deterministic_algorithms_enabled
-        expected = expected_module.are_deterministic_algorithms_enabled
+        actual = actual_module.is_deterministic_algorithms_warn_only_enabled
+        expected = expected_module.is_deterministic_algorithms_warn_only_enabled
 
         self.assertIs(torch, actual_module)
         self.assertIs(reference_torch, expected_module)
@@ -164,17 +172,22 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
         )
 
     def test_exports_copy_and_pickle_match_pytorch_2_13(self):
-        actual = torch.are_deterministic_algorithms_enabled
-        expected = reference_torch.are_deterministic_algorithms_enabled
+        actual = torch.is_deterministic_algorithms_warn_only_enabled
+        expected = reference_torch.is_deterministic_algorithms_warn_only_enabled
 
         self.assertEqual(
-            torch.__all__.count("are_deterministic_algorithms_enabled"),
-            reference_torch.__all__.count("are_deterministic_algorithms_enabled"),
+            torch.__all__.count("is_deterministic_algorithms_warn_only_enabled"),
+            reference_torch.__all__.count(
+                "is_deterministic_algorithms_warn_only_enabled"
+            ),
         )
         for module, function in ((torch, actual), (reference_torch, expected)):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["are_deterministic_algorithms_enabled"], function)
+            self.assertIs(
+                namespace["is_deterministic_algorithms_warn_only_enabled"],
+                function,
+            )
             self.assertIs(copy.copy(function), function)
             self.assertIs(copy.deepcopy(function), function)
 
@@ -188,8 +201,8 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.are_deterministic_algorithms_enabled
-        expected = reference_torch.are_deterministic_algorithms_enabled
+        actual = torch.is_deterministic_algorithms_warn_only_enabled
+        expected = reference_torch.is_deterministic_algorithms_warn_only_enabled
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
@@ -203,7 +216,7 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_setters_and_debug_mode_remain_unsupported(self):
+    def test_deterministic_setters_and_debug_mode_remain_unsupported(self):
         unsupported = (
             "use_deterministic_algorithms",
             "set_deterministic_debug_mode",
