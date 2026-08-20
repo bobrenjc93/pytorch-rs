@@ -165,12 +165,16 @@ class GetNumThreadsReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_only_the_read_only_intraop_query_is_exposed(self):
-        for name in (
-            "set_num_threads",
-            "get_num_interop_threads",
-            "set_num_interop_threads",
-        ):
+    def test_read_only_thread_queries_are_exposed_without_setters(self):
+        name = "get_num_interop_threads"
+        self.assertTrue(hasattr(torch, name))
+        self.assertTrue(hasattr(torch._C, name))
+        self.assertIn(name, torch.__all__)
+        self.assertTrue(hasattr(reference_torch, name))
+        self.assertTrue(hasattr(reference_torch._C, name))
+        self.assertIn(name, reference_torch.__all__)
+
+        for name in ("set_num_threads", "set_num_interop_threads"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch, name))
                 self.assertFalse(hasattr(torch._C, name))

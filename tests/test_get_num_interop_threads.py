@@ -17,15 +17,16 @@ else:
 
 
 FUNCTION_DOC = """
-get_num_threads() -> int
+get_num_interop_threads() -> int
 
-Returns the number of threads used for parallelizing CPU operations
+Returns the number of threads used for inter-op parallelism on CPU
+(e.g. in JIT interpreter)
 """
 
 
-class GetNumThreadsTests(unittest.TestCase):
+class GetNumInteropThreadsTests(unittest.TestCase):
     def test_returns_exact_one_without_runtime_probes(self):
-        function = torch.get_num_threads
+        function = torch.get_num_interop_threads
         environments = (
             {},
             {"OMP_NUM_THREADS": "64"},
@@ -49,7 +50,7 @@ class GetNumThreadsTests(unittest.TestCase):
                 self.assertIs(result, 1)
 
     def test_one_is_stable_across_threads_and_grad_modes(self):
-        function = torch.get_num_threads
+        function = torch.get_num_interop_threads
 
         def query():
             before = torch.is_grad_enabled()
@@ -107,21 +108,23 @@ class GetNumThreadsTests(unittest.TestCase):
             self.assertIs(type(result[3]), int)
 
     def test_builtin_ownership_documentation_exports_and_pickling(self):
-        function = torch.get_num_threads
+        function = torch.get_num_interop_threads
         self.assertIs(type(function), types.BuiltinFunctionType)
-        self.assertEqual(function.__name__, "get_num_threads")
-        self.assertEqual(function.__qualname__, "get_num_threads")
+        self.assertEqual(function.__name__, "get_num_interop_threads")
+        self.assertEqual(function.__qualname__, "get_num_interop_threads")
         self.assertEqual(function.__module__, torch.tensor.__module__)
         self.assertEqual(function.__doc__, FUNCTION_DOC)
-        self.assertEqual(repr(function), "<built-in function get_num_threads>")
+        self.assertEqual(
+            repr(function), "<built-in function get_num_interop_threads>"
+        )
         self.assertIs(function.__self__, torch._C)
-        self.assertIs(torch._C.get_num_threads, function)
+        self.assertIs(torch._C.get_num_interop_threads, function)
         assert_no_argument_signature(self, function, "()")
 
-        self.assertEqual(torch.__all__.count("get_num_threads"), 1)
+        self.assertEqual(torch.__all__.count("get_num_interop_threads"), 1)
         wildcard_namespace = {}
         exec("from torch_rs import *", wildcard_namespace)
-        self.assertIs(wildcard_namespace["get_num_threads"], function)
+        self.assertIs(wildcard_namespace["get_num_interop_threads"], function)
 
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
@@ -129,23 +132,23 @@ class GetNumThreadsTests(unittest.TestCase):
                 self.assertIs(restored, function)
 
     def test_rejects_all_arguments_with_pytorch_2_13_errors(self):
-        function = torch.get_num_threads
+        function = torch.get_num_interop_threads
         cases = (
             (
                 lambda: function(None),
-                "torch.get_num_threads() takes no arguments (1 given)",
+                "torch.get_num_interop_threads() takes no arguments (1 given)",
             ),
             (
                 lambda: function(None, None),
-                "torch.get_num_threads() takes no arguments (2 given)",
+                "torch.get_num_interop_threads() takes no arguments (2 given)",
             ),
             (
                 lambda: function(threads=None),
-                "torch.get_num_threads() takes no keyword arguments",
+                "torch.get_num_interop_threads() takes no keyword arguments",
             ),
             (
                 lambda: function(None, threads=None),
-                "torch.get_num_threads() takes no keyword arguments",
+                "torch.get_num_interop_threads() takes no keyword arguments",
             ),
         )
         for call, message in cases:
@@ -155,11 +158,14 @@ class GetNumThreadsTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_thread_setters_remain_unsupported(self):
-        unsupported = (
-            "set_num_threads",
-            "set_num_interop_threads",
-        )
+        self.assertIs(function(**{}), 1)
+
+    def test_thread_setters_stay_absent_and_intraop_query_is_unchanged(self):
+        self.assertIs(torch.get_num_threads(), 1)
+        self.assertIs(torch.get_num_interop_threads(), 1)
+        self.assertIs(torch.get_num_threads(), 1)
+
+        unsupported = ("set_num_threads", "set_num_interop_threads")
         for name in unsupported:
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch, name))
@@ -185,12 +191,10 @@ sys.meta_path.insert(0, RejectPytorchImport())
 os.environ.update(OMP_NUM_THREADS="64", MKL_NUM_THREADS="32")
 import torch_rs as torch
 
-result = torch.get_num_threads()
+result = torch.get_num_interop_threads()
 assert type(result) is int
 assert result == 1
-interop_result = torch.get_num_interop_threads()
-assert type(interop_result) is int
-assert interop_result == 1
+assert torch.get_num_threads() == 1
 assert not hasattr(torch, "set_num_threads")
 assert not hasattr(torch, "set_num_interop_threads")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
