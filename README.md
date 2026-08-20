@@ -48,6 +48,13 @@ assert torch.get_num_interop_threads() == 1
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
 assert torch.compiler.is_exporting() is False
+
+@torch.compiler.assume_constant_result
+def constant_answer():
+    return 42
+
+assert constant_answer._dynamo_marked_constant is True
+assert constant_answer() == 42
 assert torch.serialization.get_crc32_options() is True
 assert torch.serialization.get_default_mmap_options() == getattr(
     mmap, "MAP_PRIVATE", None
@@ -132,7 +139,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.get_float32_matmul_precision()` reports the invariant string `"highest"`, reflecting that the native CPU float32 matrix-multiplication engine has no reduced-precision modes. The setter and its `"high"` and `"medium"` states remain unsupported, and the query does not change native matmul behavior.
 
-`torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
+`torch.compiler.assume_constant_result(fn)` eagerly sets `fn._dynamo_marked_constant` to the exact `True` singleton and returns the same object without wrapping or memoizing it. `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` remain eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, graph execution, and the rest of the compiler namespace remain unsupported.
 
 `torch.serialization.get_crc32_options()` and `torch.serialization.set_crc32_options(compute_crc32)` expose mutable process-global archive-record checksum state without importing PyTorch. The state starts as the exact `True` singleton, the setter returns `None`, and the getter returns the most recently supplied value. `torch.serialization.get_default_mmap_options()` reports the process-global default used by PyTorch for memory-mapped loads: `mmap.MAP_PRIVATE` initially on supported POSIX platforms. `torch.serialization.set_default_mmap_options(flags)` immediately selects `mmap.MAP_PRIVATE` or `mmap.MAP_SHARED` and also acts as a context manager that restores the prior setting on exit. The setter is unavailable on Windows, while `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
 

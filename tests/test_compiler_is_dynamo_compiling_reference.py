@@ -140,12 +140,22 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_compiler.__all__
-                if name in {"is_compiling", "is_dynamo_compiling", "is_exporting"}
+                if name
+                in {
+                    "assume_constant_result",
+                    "is_compiling",
+                    "is_dynamo_compiling",
+                    "is_exporting",
+                }
             ],
         )
         self.assertEqual(
             torch.__all__.count("compiler"),
             reference_torch.__all__.count("compiler"),
+        )
+        self.assertEqual(
+            torch.__all__.count("assume_constant_result"),
+            reference_torch.__all__.count("assume_constant_result"),
         )
         self.assertEqual(
             torch.__all__.count("is_dynamo_compiling"),
@@ -162,6 +172,10 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
+            self.assertIs(
+                namespace["assume_constant_result"],
+                module.assume_constant_result,
+            )
             self.assertIs(namespace["is_dynamo_compiling"], function)
             self.assertIs(namespace["is_exporting"], module.is_exporting)
 
@@ -169,6 +183,7 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
+            self.assertNotIn("assume_constant_result", namespace)
             self.assertNotIn("is_dynamo_compiling", namespace)
             self.assertNotIn("is_exporting", namespace)
 
@@ -203,9 +218,7 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
 
     def test_reference_eager_backend_compile_bounds_the_true_state(self):
         actual_is_dynamo_compiling = torch.compiler.is_dynamo_compiling
-        expected_is_dynamo_compiling = (
-            reference_torch.compiler.is_dynamo_compiling
-        )
+        expected_is_dynamo_compiling = reference_torch.compiler.is_dynamo_compiling
         actual_states = [actual_is_dynamo_compiling()]
         expected_states = [expected_is_dynamo_compiling()]
 
@@ -221,13 +234,9 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
             backend="eager",
             fullgraph=True,
         )
-        result, expected_inside, actual_inside = compiled(
-            reference_torch.tensor(1.0)
-        )
+        result, expected_inside, actual_inside = compiled(reference_torch.tensor(1.0))
         actual_states.extend((actual_inside, actual_is_dynamo_compiling()))
-        expected_states.extend(
-            (expected_inside, expected_is_dynamo_compiling())
-        )
+        expected_states.extend((expected_inside, expected_is_dynamo_compiling()))
 
         self.assertEqual(result.item(), 2.0)
         for state in actual_states:
