@@ -4081,6 +4081,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90
       }
+    },
+    {
+      "key": "pr:404",
+      "recordedAt": "2026-08-20T07:43:00.000Z",
+      "label": "PR #404",
+      "kind": "composite",
+      "prNumber": 404,
+      "title": "YOLO generation 32: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 76.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 60,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90
+      }
     }
   ]
 }
