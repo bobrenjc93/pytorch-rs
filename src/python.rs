@@ -27,7 +27,7 @@ use crate::{
     python_nn_functional::add_nn_functional_bridges,
     python_no_argument_builtins::add_no_argument_builtins,
     python_scalar_conversions::register_scalar_conversions,
-    python_size::{construct_size, size_type_object},
+    python_size::size_type_object,
     python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_tensor_queries::add_tensor_queries,
     python_torch_function_mode as torch_function_mode_stack,
@@ -164,25 +164,6 @@ pub(crate) struct PyTensorBase;
 
 #[pymethods]
 impl PyTensorBase {
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nshape() -> torch.Size\n\nReturns the size of the :attr:`self` tensor. Alias for :attr:`size`.\n\nSee also :meth:`Tensor.size`.\n\nExample::\n\n    >>> t = torch.empty(3, 4, 5)\n    >>> t.size()\n    torch.Size([3, 4, 5])\n    >>> t.shape\n    torch.Size([3, 4, 5])\n\n"]
-    #[getter]
-    fn shape(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
-        let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) =
-            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("shape"))?
-        {
-            return Ok(result);
-        }
-
-        let dimensions = {
-            let tensor = tensor.try_borrow()?;
-            PyTuple::new(slf.py(), tensor.inner.shape().iter().copied())?
-        };
-        construct_size(slf.py(), dimensions.as_any())
-    }
-
     #[getter]
     fn layout(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
         let tensor = slf.as_any().cast::<PyTensor>()?;
@@ -258,26 +239,6 @@ impl PyTensorBase {
         }
 
         tensor.try_borrow()?.inner.output_nr().into_py_any(slf.py())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\ndim() -> int\n\nReturns the number of dimensions of :attr:`self` tensor.\n"]
-    #[pyo3(text_signature = None)]
-    fn dim(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
-        let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) =
-            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::Method("dim"))?
-        {
-            return Ok(result);
-        }
-
-        tensor
-            .try_borrow()?
-            .inner
-            .shape()
-            .len()
-            .into_py_any(slf.py())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -512,42 +473,6 @@ impl PyTensorBase {
     fn get_device(slf: &Bound<'_, Self>) -> PyResult<i64> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         device_ordinal(tensor.inner.device())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nsize(dim=None) -> torch.Size or int\n\nReturns the size of the :attr:`self` tensor. If ``dim`` is not specified,\nthe returned value is a :class:`torch.Size`, a subclass of :class:`tuple`.\nIf ``dim`` is specified, returns an int holding the size of that dimension.\n\nArgs:\n  dim (int, optional): The dimension for which to retrieve the size.\n\nExample::\n\n    >>> t = torch.empty(3, 4, 5)\n    >>> t.size()\n    torch.Size([3, 4, 5])\n    >>> t.size(dim=1)\n    4\n\n"]
-    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn size(
-        slf: &Bound<'_, Self>,
-        args: &Bound<'_, PyTuple>,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<Py<PyAny>> {
-        let dimension = bind_size_dimension(args, kwargs)?;
-        let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) = dispatch_tensorbase_method_mode(
-            slf.py(),
-            tensor,
-            "size",
-            "torch.Tensor.size",
-            args,
-            kwargs,
-        )? {
-            return Ok(result);
-        }
-
-        let Some(dimension) = dimension else {
-            let dimensions = {
-                let tensor = tensor.try_borrow()?;
-                PyTuple::new(slf.py(), tensor.inner.shape().iter().copied())?
-            };
-            return construct_size(slf.py(), dimensions.as_any());
-        };
-
-        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
-        let tensor = tensor.try_borrow()?;
-        let axis = normalize_dimension(dimension, tensor.inner.shape().len())?;
-        tensor.inner.shape()[axis].into_py_any(slf.py())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -2184,7 +2109,7 @@ fn dispatch_top_level_select(
     }
 }
 
-fn dispatch_tensorbase_method_mode(
+pub(crate) fn dispatch_tensorbase_method_mode(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
     method: &'static str,
@@ -5701,7 +5626,7 @@ fn extract_select_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
     extract_dimension_swap_dimension(&concrete)
 }
 
-fn bind_size_dimension<'py>(
+pub(crate) fn bind_size_dimension<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<Option<ParsedCallArgument<'py>>> {
@@ -5830,7 +5755,7 @@ fn parse_dimension_swap_dimensions(
     Ok([dim0, dim1])
 }
 
-fn extract_dimension_swap_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
+pub(crate) fn extract_dimension_swap_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<i64> {
     dimension.extract::<i64>().map_err(|error| {
         let py = dimension.py();
         // PyLong_AsLongLong reports a traceback-free range error with this
@@ -9732,7 +9657,7 @@ fn too_many_indices(dimensions: usize) -> PyErr {
     PyIndexError::new_err(TensorError::TooManyIndices { dimensions }.to_string())
 }
 
-fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
+pub(crate) fn normalize_dimension(dimension: i64, rank: usize) -> PyResult<usize> {
     let rank = i64::try_from(rank)
         .map_err(|_| PyOverflowError::new_err("tensor rank exceeds the platform limit"))?;
     if rank == 0 {
