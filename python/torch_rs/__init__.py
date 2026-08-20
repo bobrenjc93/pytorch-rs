@@ -128,6 +128,7 @@ from . import compiler as compiler
 from . import cpu as cpu
 from . import distributed as distributed
 from . import functional as functional
+from . import jit as jit
 from . import nn as nn
 from . import overrides as overrides
 from . import utils as utils
