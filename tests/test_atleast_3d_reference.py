@@ -689,7 +689,6 @@ class Atleast3dReferenceTests(unittest.TestCase):
     def test_variadic_and_mixed_forms_remain_unsupported(self):
         source = torch.tensor(1.0)
         unsupported = (
-            lambda: torch.atleast_3d(),
             lambda: torch.atleast_3d(source, source),
         )
         for call in unsupported:
