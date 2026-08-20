@@ -13,54 +13,59 @@ import torch_rs as torch
 
 
 FUNCTION_DOC = """
-    This decorator indicates to the compiler that a function or method should
-    be ignored and replaced with the raising of an exception. This allows you
-    to leave code in your model that is not yet TorchScript compatible and still
-    export your model.
+    This decorator indicates that a method on an ``nn.Module`` is used as an entry point into a
+    :class:`ScriptModule` and should be compiled.
 
-        Example (using ``@torch.jit.unused`` on a method)::
+    .. deprecated:: 2.5
+        Please use :func:`torch.compile` instead.
 
-            import torch
-            import torch.nn as nn
+    ``forward`` implicitly is assumed to be an entry point, so it does not need this decorator.
+    Functions and methods called from ``forward`` are compiled as they are seen
+    by the compiler, so they do not need this decorator either.
 
+    Example (using ``@torch.jit.export`` on a method):
 
-            class MyModule(nn.Module):
-                def __init__(self, use_memory_efficient):
-                    super().__init__()
-                    self.use_memory_efficient = use_memory_efficient
+    .. testcode::
 
-                @torch.jit.unused
-                def memory_efficient(self, x):
-                    import pdb
+        import torch
+        import torch.nn as nn
 
-                    pdb.set_trace()
-                    return x + 10
+        class MyModule(nn.Module):
+            def implicitly_compiled_method(self, x):
+                return x + 99
 
-                def forward(self, x):
-                    # Use not-yet-scriptable memory efficient mode
-                    if self.use_memory_efficient:
-                        return self.memory_efficient(x)
-                    else:
-                        return x + 10
+            # `forward` is implicitly decorated with `@torch.jit.export`,
+            # so adding it here would have no effect
+            def forward(self, x):
+                return x + 10
 
+            @torch.jit.export
+            def another_forward(self, x):
+                # When the compiler sees this call, it will compile
+                # `implicitly_compiled_method`
+                return self.implicitly_compiled_method(x)
 
-            m = torch.jit.script(MyModule(use_memory_efficient=False))
-            m.save("m.pt")
+            def unused_method(self, x):
+                return x - 20
 
-            m = torch.jit.script(MyModule(use_memory_efficient=True))
-            # exception raised
-            m(torch.rand(100))
+        # `m` will contain compiled methods:
+        #     `forward`
+        #     `another_forward`
+        #     `implicitly_compiled_method`
+        # `unused_method` will not be compiled since it was not called from
+        # any compiled methods and wasn't decorated with `@torch.jit.export`
+        m = torch.jit.script(MyModule())
     """
 
 
-def _picklable_unused_function(value):
+def _picklable_export_function(value):
     return value
 
 
-torch.jit.unused(_picklable_unused_function)
+torch.jit.export(_picklable_export_function)
 
 
-class JitUnusedTests(unittest.TestCase):
+class JitExportTests(unittest.TestCase):
     def test_function_is_marked_in_place_without_changing_eager_behavior(self):
         sentinel = object()
 
@@ -78,7 +83,7 @@ class JitUnusedTests(unittest.TestCase):
             function.__kwdefaults__.copy(),
         )
 
-        result = torch.jit.unused(function)
+        result = torch.jit.export(function)
 
         self.assertIs(result, function)
         self.assertEqual(
@@ -98,76 +103,60 @@ class JitUnusedTests(unittest.TestCase):
         internal = importlib.import_module("torch_rs._jit_internal")
         self.assertIs(
             function._torchscript_modifier,
-            internal.FunctionModifiers.UNUSED,
+            internal.FunctionModifiers.EXPORT,
         )
         self.assertEqual(
             function._torchscript_modifier,
-            "unused (ignored and replaced with raising of an exception)",
+            "export (compile this function even if nothing calls it)",
         )
+
+    def test_methods_and_callable_objects_keep_their_eager_behavior(self):
+        class Example:
+            @torch.jit.export
+            def method(self, value):
+                return value + 1
+
+        raw_method = Example.__dict__["method"]
+        self.assertIs(Example.method, raw_method)
+        self.assertEqual(Example().method(4), 5)
+
+        class CallableTarget:
+            def __call__(self, value):
+                return value * 2
+
+        target = CallableTarget()
+        self.assertIs(torch.jit.export(target), target)
+        self.assertEqual(target(6), 12)
+
+        modifier = torch._jit_internal.FunctionModifiers.EXPORT
+        self.assertIs(raw_method._torchscript_modifier, modifier)
+        self.assertIs(target._torchscript_modifier, modifier)
+
+    def test_existing_modifiers_are_overwritten(self):
+        internal = torch._jit_internal
+
+        def function():
+            return "eager result"
 
         previous_modifier = object()
         function._torchscript_modifier = previous_modifier
+        self.assertIs(torch.jit.export(function), function)
+        self.assertIs(function._torchscript_modifier, internal.FunctionModifiers.EXPORT)
+
         self.assertIs(torch.jit.unused(function), function)
-        self.assertIs(
-            function._torchscript_modifier,
-            internal.FunctionModifiers.UNUSED,
-        )
-
-    def test_property_marks_getter_and_setter_and_returns_exact_property(self):
-        def getter(instance):
-            return instance._value
-
-        def setter(instance, value):
-            instance._value = value
-
-        def deleter(instance):
-            del instance._value
-
-        deleter._torchscript_modifier = "leave unchanged"
-        prop = property(getter, setter, deleter, "property documentation")
-        before = (prop.fget, prop.fset, prop.fdel, prop.__doc__)
-
-        result = torch.jit.unused(prop)
-
-        self.assertIs(result, prop)
-        self.assertEqual((prop.fget, prop.fset, prop.fdel, prop.__doc__), before)
-        self.assertFalse(hasattr(prop, "_torchscript_modifier"))
-
-        modifier = importlib.import_module(
-            "torch_rs._jit_internal"
-        ).FunctionModifiers.UNUSED
-        self.assertIs(getter._torchscript_modifier, modifier)
-        self.assertIs(setter._torchscript_modifier, modifier)
-        self.assertEqual(deleter._torchscript_modifier, "leave unchanged")
-
-        class Holder:
-            value = prop
-
-            def __init__(self):
-                self._value = 3
-
-        holder = Holder()
-        self.assertEqual(holder.value, 3)
-        holder.value = 7
-        self.assertEqual(holder.value, 7)
-        del holder.value
-        self.assertFalse(hasattr(holder, "_value"))
-
-        def read_only_getter(instance):
-            return 11
-
-        read_only = property(read_only_getter)
-        self.assertIs(torch.jit.unused(read_only), read_only)
-        self.assertIs(read_only_getter._torchscript_modifier, modifier)
+        self.assertIs(function._torchscript_modifier, internal.FunctionModifiers.UNUSED)
+        self.assertIs(torch.jit.export(function), function)
+        self.assertIs(function._torchscript_modifier, internal.FunctionModifiers.EXPORT)
+        self.assertEqual(function(), "eager result")
 
     def test_signature_annotations_documentation_and_internal_ownership(self):
         jit = importlib.import_module("torch_rs.jit")
         internal = importlib.import_module("torch_rs._jit_internal")
-        function = jit.unused
+        function = jit.export
 
         self.assertIs(torch.jit, jit)
         self.assertIs(torch._jit_internal, internal)
-        self.assertIs(function, internal.unused)
+        self.assertIs(function, internal.export)
         self.assertIs(type(function), types.FunctionType)
         self.assertEqual(
             str(inspect.signature(function)),
@@ -190,8 +179,8 @@ class JitUnusedTests(unittest.TestCase):
         self.assertEqual(internal._R.__name__, "_R")
         self.assertEqual(internal._R.__module__, "torch_rs._jit_internal")
         self.assertEqual(typing.get_type_hints(function), function.__annotations__)
-        self.assertEqual(function.__name__, "unused")
-        self.assertEqual(function.__qualname__, "unused")
+        self.assertEqual(function.__name__, "export")
+        self.assertEqual(function.__qualname__, "export")
         self.assertEqual(function.__module__, "torch_rs._jit_internal")
         self.assertIs(inspect.getmodule(function), internal)
         self.assertEqual(
@@ -202,27 +191,18 @@ class JitUnusedTests(unittest.TestCase):
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
 
-        modifiers = internal.FunctionModifiers
-        self.assertEqual(modifiers.__module__, "torch_rs._jit_internal")
-        self.assertEqual(modifiers.__qualname__, "FunctionModifiers")
-        self.assertEqual(modifiers.__annotations__, {})
-        self.assertEqual(
-            modifiers.UNUSED,
-            "unused (ignored and replaced with raising of an exception)",
-        )
-
         def keyword_target():
             return None
 
         self.assertIs(function(fn=keyword_target), keyword_target)
         self.assertIs(
             keyword_target._torchscript_modifier,
-            modifiers.UNUSED,
+            internal.FunctionModifiers.EXPORT,
         )
 
     def test_exports_copy_and_pickle_use_the_canonical_internal_module(self):
         jit = torch.jit
-        function = jit.unused
+        function = jit.export
         internal = torch._jit_internal
 
         self.assertEqual(jit.__all__, ["annotate", "export", "unused"])
@@ -236,19 +216,19 @@ class JitUnusedTests(unittest.TestCase):
             {name for name in jit_namespace if not name.startswith("__")},
             {"annotate", "export", "unused"},
         )
-        self.assertIs(jit_namespace["unused"], function)
+        self.assertIs(jit_namespace["export"], function)
 
         self.assertNotIn("jit", torch.__all__)
-        self.assertNotIn("unused", torch.__all__)
+        self.assertNotIn("export", torch.__all__)
         self.assertNotIn("_jit_internal", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("jit", top_level_namespace)
-        self.assertNotIn("unused", top_level_namespace)
+        self.assertNotIn("export", top_level_namespace)
         self.assertNotIn("_jit_internal", top_level_namespace)
-        self.assertFalse(hasattr(torch, "unused"))
+        self.assertFalse(hasattr(torch, "export"))
 
-        for value in (function, internal.FunctionModifiers, _picklable_unused_function):
+        for value in (function, internal.FunctionModifiers, _picklable_export_function):
             with self.subTest(value=value):
                 self.assertIs(copy.copy(value), value)
                 self.assertIs(copy.deepcopy(value), value)
@@ -261,21 +241,8 @@ class JitUnusedTests(unittest.TestCase):
                 payload = pickle.dumps(function, protocol=protocol)
                 self.assertIn(b"torch_rs._jit_internal", payload)
 
-        def getter(instance):
-            return instance
-
-        prop = torch.jit.unused(property(getter))
-        self.assertIs(copy.copy(prop), prop)
-        self.assertIs(copy.deepcopy(prop), prop)
-        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-            with self.subTest(property_protocol=protocol):
-                with self.assertRaisesRegex(
-                    TypeError, "^cannot pickle 'property' object$"
-                ):
-                    pickle.dumps(prop, protocol=protocol)
-
     def test_rejects_invalid_calls_with_pytorch_2_13_errors(self):
-        function = torch.jit.unused
+        function = torch.jit.export
         immutable_attribute_suffix = (
             " and no __dict__ for setting new attributes"
             if sys.version_info >= (3, 14)
@@ -290,22 +257,22 @@ class JitUnusedTests(unittest.TestCase):
             (
                 lambda: function(),
                 TypeError,
-                "unused() missing 1 required positional argument: 'fn'",
+                "export() missing 1 required positional argument: 'fn'",
             ),
             (
                 lambda: function(lambda: None, lambda: None),
                 TypeError,
-                "unused() takes 1 positional argument but 2 were given",
+                "export() takes 1 positional argument but 2 were given",
             ),
             (
                 lambda: function(function=lambda: None),
                 TypeError,
-                "unused() got an unexpected keyword argument 'function'",
+                "export() got an unexpected keyword argument 'function'",
             ),
             (
                 lambda: function(lambda: None, fn=lambda: None),
                 TypeError,
-                "unused() got multiple values for argument 'fn'",
+                "export() got multiple values for argument 'fn'",
             ),
             (
                 lambda: function(None),
@@ -334,7 +301,7 @@ class JitUnusedTests(unittest.TestCase):
             (
                 lambda: function(property()),
                 AttributeError,
-                "'NoneType' object has no attribute "
+                "'property' object has no attribute "
                 f"'_torchscript_modifier'{immutable_attribute_suffix}",
             ),
         )
@@ -345,7 +312,7 @@ class JitUnusedTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_ignore_scripting_tracing_and_compilation_remain_unsupported(self):
+    def test_scripting_tracing_and_compilation_remain_unsupported(self):
         for name in (
             "CompilationUnit",
             "ScriptFunction",
@@ -366,6 +333,12 @@ class JitUnusedTests(unittest.TestCase):
         value = {"items": [1, 2]}
         self.assertIs(torch.jit.annotate(list[int], value), value)
 
+        def function():
+            return "unchanged"
+
+        self.assertIs(torch.jit.unused(function), function)
+        self.assertEqual(function(), "unchanged")
+
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""
 import sys
@@ -382,22 +355,23 @@ import torch_rs as torch
 def function(value):
     return value
 
-decorated = torch.jit.unused(function)
+decorated = torch.jit.export(function)
 assert decorated is function
 assert decorated("value") == "value"
 assert decorated._torchscript_modifier == (
-    "unused (ignored and replaced with raising of an exception)"
+    "export (compile this function even if nothing calls it)"
 )
 
 class Example:
-    @torch.jit.unused
-    @property
-    def value(self):
-        return 3
+    @torch.jit.export
+    def method(self, value):
+        return value + 1
 
-assert Example().value == 3
-assert not hasattr(torch.jit, "ignore")
+assert Example().method(2) == 3
 assert torch.jit.annotate(int, decorated) is decorated
+assert not hasattr(torch.jit, "script")
+assert not hasattr(torch.jit, "trace")
+assert not hasattr(torch, "compile")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

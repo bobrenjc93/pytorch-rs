@@ -1,7 +1,7 @@
-from torch_rs._jit_internal import unused
+from torch_rs._jit_internal import export, unused
 
 
-__all__ = ["annotate", "unused"]
+__all__ = ["annotate", "export", "unused"]
 
 
 def annotate(the_type, the_value):
