@@ -256,7 +256,7 @@ class JitIgnoreReferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(torch.jit) if not name.startswith("_")},
-            {*wildcard_supported, "is_scripting"},
+            {*wildcard_supported, "is_scripting", "is_tracing"},
         )
 
         actual_namespace = {}
@@ -347,7 +347,7 @@ class JitIgnoreReferenceTests(unittest.TestCase):
         expected_public = {
             name for name in vars(reference_torch.jit) if not name.startswith("_")
         }
-        for name in ("script", "trace", "is_tracing"):
+        for name in ("script", "trace"):
             with self.subTest(name=name):
                 self.assertIn(name, expected_public)
                 self.assertFalse(hasattr(torch.jit, name))
