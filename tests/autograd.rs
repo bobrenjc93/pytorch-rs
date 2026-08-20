@@ -902,6 +902,35 @@ fn channels_last_clone_records_identity_gradients_and_obeys_no_grad() {
 }
 
 #[test]
+fn channels_last_3d_clone_records_identity_gradients_and_obeys_no_grad() {
+    let leaf = Tensor::from_vec((1_u16..=240).map(f32::from).collect(), [2, 3, 2, 4, 5])
+        .unwrap()
+        .with_requires_grad(true);
+    let source = leaf.transpose(0, 4).unwrap();
+    let cloned = source
+        .try_clone_with_memory_format(MemoryFormat::ChannelsLast3d)
+        .unwrap();
+    assert_eq!(cloned.stride(), [48, 1, 24, 6, 3]);
+    assert!(cloned.requires_grad());
+    assert!(!cloned.is_leaf());
+    assert!(!cloned.shares_storage_with(&source));
+    drop(source);
+
+    cloned.sum().backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), vec![1.0; 240]);
+
+    let no_grad_source = leaf.transpose(0, 4).unwrap();
+    let _guard = no_grad();
+    let no_grad_clone = no_grad_source
+        .try_clone_with_memory_format(MemoryFormat::ChannelsLast3d)
+        .unwrap();
+    assert_eq!(no_grad_clone.stride(), [48, 1, 24, 6, 3]);
+    assert!(!no_grad_clone.requires_grad());
+    assert!(no_grad_clone.is_leaf());
+    assert!(!no_grad_clone.shares_storage_with(&no_grad_source));
+}
+
+#[test]
 fn ravel_records_view_and_copy_gradients_and_obeys_no_grad() {
     let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
         .unwrap()

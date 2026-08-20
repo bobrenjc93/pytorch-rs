@@ -2434,12 +2434,78 @@ fn clone_materializes_explicit_channels_last_storage() {
             expected_bits
         );
     }
+}
 
-    let rank_five = Tensor::zeros([1, 2, 3, 4, 5]).unwrap();
+#[test]
+fn clone_materializes_explicit_channels_last_3d_storage() {
+    let bit_patterns = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0001,
+        0x8000_0001,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc5_4321,
+        0x3f80_0000,
+    ];
+
+    let volume_values = (0..720)
+        .map(|index| f32::from_bits(bit_patterns[index % bit_patterns.len()]))
+        .collect::<Vec<_>>();
+    let contiguous = Tensor::from_vec(volume_values[..240].to_vec(), [2, 3, 2, 4, 5]).unwrap();
+    let offset = Tensor::from_vec(volume_values, [3, 2, 3, 2, 4, 5])
+        .unwrap()
+        .index_integer(1)
+        .unwrap();
+    let strided = Tensor::from_vec(
+        (0..240)
+            .map(|index| f32::from_bits(bit_patterns[index % bit_patterns.len()]))
+            .collect(),
+        [2, 3, 2, 4, 5],
+    )
+    .unwrap()
+    .transpose(0, 4)
+    .unwrap();
+    let empty = Tensor::zeros([2, 0, 4, 5, 6]).unwrap();
+
+    for (source, expected_strides) in [
+        (contiguous, [120, 1, 60, 15, 3]),
+        (offset, [120, 1, 60, 15, 3]),
+        (strided, [48, 1, 24, 6, 3]),
+        (empty, [0, 1, 0, 0, 0]),
+    ] {
+        let expected_bits = source
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>();
+        let copied = source
+            .try_clone_with_memory_format(MemoryFormat::ChannelsLast3d)
+            .unwrap();
+
+        assert_eq!(copied.shape(), source.shape());
+        assert_eq!(copied.stride(), expected_strides);
+        assert_eq!(copied.storage_offset(), 0);
+        assert_eq!(copied.dtype(), source.dtype());
+        assert_eq!(copied.device(), source.device());
+        assert!(copied.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast3d));
+        assert!(!copied.shares_storage_with(&source));
+        assert_eq!(
+            copied
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            expected_bits
+        );
+    }
+
+    let rank_four = Tensor::zeros([1, 2, 3, 4]).unwrap();
     assert_eq!(
-        rank_five.try_clone_with_memory_format(MemoryFormat::ChannelsLast3d),
-        Err(TensorError::UnsupportedMemoryFormat {
+        rank_four.try_clone_with_memory_format(MemoryFormat::ChannelsLast3d),
+        Err(TensorError::ContiguousMemoryFormatRankMismatch {
             memory_format: MemoryFormat::ChannelsLast3d,
+            expected_rank: 5,
+            actual_rank: 4,
         })
     );
 }
