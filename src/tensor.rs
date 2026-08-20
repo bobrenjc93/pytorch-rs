@@ -710,9 +710,10 @@ impl Tensor {
 
     /// Returns whether gradients are retained for this non-leaf tensor.
     ///
-    /// The native engine does not expose `retain_grad`, so every reachable
+    /// The native engine does not retain non-leaf gradients, so every reachable
     /// tensor reports `false`. Leaf tensors can still have a live gradient
-    /// through [`Self::grad`] without retaining non-leaf gradients.
+    /// through [`Self::grad`]; the Python leaf-only `retain_grad()` binding is a
+    /// no-op and does not change this metadata.
     #[must_use]
     pub const fn retains_grad(&self) -> bool {
         false
