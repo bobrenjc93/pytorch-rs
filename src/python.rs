@@ -216,6 +216,38 @@ impl PyTensorBase {
             .into_py_any(slf.py())
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nretain_grad() -> None\n\nEnables this Tensor to have their :attr:`grad` populated during\n:func:`backward`. This is a no-op for leaf tensors.\n"]
+    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
+    // derives `($self, /)` from that descriptor shape, while older runtimes
+    // leave `__text_signature__` unset; PyTorch follows the same split.
+    #[pyo3(text_signature = None)]
+    fn retain_grad(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_mode(
+            slf.py(),
+            tensor,
+            TensorBaseModeTarget::Method("retain_grad"),
+        )? {
+            return Ok(result);
+        }
+
+        let tensor = tensor.try_borrow()?;
+        if !tensor.inner.requires_grad() {
+            return Err(PyRuntimeError::new_err(
+                "can't retain_grad on Tensor that has requires_grad=False",
+            ));
+        }
+        if !tensor.inner.is_leaf() {
+            return Err(PyRuntimeError::new_err(
+                "retain_grad(): retaining gradients for non-leaf tensors is not supported",
+            ));
+        }
+
+        Ok(slf.py().None())
+    }
+
     #[getter]
     fn output_nr(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
         let tensor = slf.as_any().cast::<PyTensor>()?;
@@ -316,88 +348,6 @@ impl PyTensorBase {
     fn is_quantized(slf: &Bound<'_, Self>) -> PyResult<bool> {
         let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
         Ok(tensor.inner.is_quantized())
-    }
-
-    #[getter]
-    fn is_mkldnn(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
-        let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) =
-            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("is_mkldnn"))?
-        {
-            return Ok(result);
-        }
-
-        tensor.try_borrow()?.inner.is_mkldnn().into_py_any(slf.py())
-    }
-
-    #[getter]
-    fn is_nested(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
-        let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) =
-            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("is_nested"))?
-        {
-            return Ok(result);
-        }
-
-        tensor.try_borrow()?.inner.is_nested().into_py_any(slf.py())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nIs ``True`` if the Tensor uses sparse COO storage layout, ``False`` otherwise.\n"]
-    #[getter]
-    fn is_sparse(slf: &Bound<'_, Self>) -> PyResult<bool> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        Ok(tensor.inner.is_sparse())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nIs ``True`` if the Tensor uses sparse CSR storage layout, ``False`` otherwise.\n"]
-    #[getter]
-    fn is_sparse_csr(slf: &Bound<'_, Self>) -> PyResult<bool> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        Ok(tensor.inner.is_sparse_csr())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\ndense_dim() -> int\n\nReturn the number of dense dimensions in a :ref:`sparse tensor <sparse-docs>` :attr:`self`.\n\n.. note::\n  Returns ``len(self.shape)`` if :attr:`self` is not a sparse tensor.\n\nSee also :meth:`Tensor.sparse_dim` and :ref:`hybrid tensors <sparse-hybrid-coo-docs>`.\n"]
-    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
-    // derives `($self, /)` from that descriptor shape, while older runtimes
-    // leave `__text_signature__` unset; PyTorch follows the same split.
-    #[pyo3(text_signature = None)]
-    fn dense_dim(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
-        let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) =
-            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::Method("dense_dim"))?
-        {
-            return Ok(result);
-        }
-
-        tensor.try_borrow()?.inner.dense_dim().into_py_any(slf.py())
-    }
-
-    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
-    #[allow(clippy::doc_markdown)]
-    #[doc = "\nsparse_dim() -> int\n\nReturn the number of sparse dimensions in a :ref:`sparse tensor <sparse-docs>` :attr:`self`.\n\n.. note::\n  Returns ``0`` if :attr:`self` is not a sparse tensor.\n\nSee also :meth:`Tensor.dense_dim` and :ref:`hybrid tensors <sparse-hybrid-coo-docs>`.\n"]
-    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
-    // derives `($self, /)` from that descriptor shape, while older runtimes
-    // leave `__text_signature__` unset; PyTorch follows the same split.
-    #[pyo3(text_signature = None)]
-    fn sparse_dim(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
-        let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) =
-            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::Method("sparse_dim"))?
-        {
-            return Ok(result);
-        }
-
-        tensor
-            .try_borrow()?
-            .inner
-            .sparse_dim()
-            .into_py_any(slf.py())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
