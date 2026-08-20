@@ -5,7 +5,13 @@ to facilitate writing device-agnostic code.
 
 from .. import device as _device
 
-__all__ = ["is_available", "synchronize", "current_device", "device_count"]
+__all__ = [
+    "is_available",
+    "is_initialized",
+    "synchronize",
+    "current_device",
+    "device_count",
+]
 
 
 def is_available() -> bool:
@@ -13,6 +19,14 @@ def is_available() -> bool:
 
     N.B. This function only exists to facilitate device-agnostic code
 
+    """
+    return True
+
+
+def is_initialized() -> bool:
+    r"""Returns True if the CPU is initialized. Always True.
+
+    N.B. This function only exists to facilitate device-agnostic code
     """
     return True
 

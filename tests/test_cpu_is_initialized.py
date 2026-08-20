@@ -15,15 +15,15 @@ from unittest import mock
 import torch_rs as torch
 
 
-FUNCTION_DOC = """Returns number of CPU devices (not cores). Always 1.
+FUNCTION_DOC = """Returns True if the CPU is initialized. Always True.
 
     N.B. This function only exists to facilitate device-agnostic code
     """
 
 
-class CpuDeviceCountTests(unittest.TestCase):
-    def test_returns_exact_one_without_runtime_probes(self):
-        function = torch.cpu.device_count
+class CpuIsInitializedTests(unittest.TestCase):
+    def test_returns_exact_true_without_runtime_probes(self):
+        function = torch.cpu.is_initialized
 
         self.assertEqual(function.__code__.co_names, ())
         self.assertEqual(function.__code__.co_freevars, ())
@@ -46,12 +46,10 @@ class CpuDeviceCountTests(unittest.TestCase):
                         "os.cpu_count",
                         side_effect=AssertionError("CPU hardware was probed"),
                     ):
-                        result = function()
-                self.assertIs(type(result), int)
-                self.assertEqual(result, 1)
+                        self.assertIs(function(), True)
 
-    def test_one_is_stable_across_threads_and_grad_modes(self):
-        function = torch.cpu.device_count
+    def test_true_is_stable_across_threads_and_grad_modes(self):
+        function = torch.cpu.is_initialized
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -89,27 +87,27 @@ class CpuDeviceCountTests(unittest.TestCase):
                 result,
                 (
                     expected_grad_state,
-                    1,
+                    True,
                     expected_grad_state,
-                    1,
+                    True,
                     expected_grad_state,
                 ),
             )
-            self.assertIs(type(result[1]), int)
-            self.assertIs(type(result[3]), int)
+            self.assertIs(result[1], True)
+            self.assertIs(result[3], True)
 
     def test_signature_annotations_documentation_and_module_identity(self):
         cpu = importlib.import_module("torch_rs.cpu")
-        function = cpu.device_count
+        function = cpu.is_initialized
 
         self.assertIs(torch.cpu, cpu)
         self.assertIs(sys.modules["torch_rs.cpu"], cpu)
         self.assertIs(type(function), types.FunctionType)
-        self.assertEqual(str(inspect.signature(function)), "() -> int")
-        self.assertEqual(function.__annotations__, {"return": int})
-        self.assertEqual(typing.get_type_hints(function), {"return": int})
-        self.assertEqual(function.__name__, "device_count")
-        self.assertEqual(function.__qualname__, "device_count")
+        self.assertEqual(str(inspect.signature(function)), "() -> bool")
+        self.assertEqual(function.__annotations__, {"return": bool})
+        self.assertEqual(typing.get_type_hints(function), {"return": bool})
+        self.assertEqual(function.__name__, "is_initialized")
+        self.assertEqual(function.__qualname__, "is_initialized")
         self.assertEqual(function.__module__, "torch_rs.cpu")
         self.assertIs(inspect.getmodule(function), cpu)
         self.assertEqual(
@@ -122,7 +120,14 @@ class CpuDeviceCountTests(unittest.TestCase):
 
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         cpu = torch.cpu
-        function = cpu.device_count
+        function = cpu.is_initialized
+        supported = {
+            "current_device",
+            "device_count",
+            "is_available",
+            "is_initialized",
+            "synchronize",
+        }
 
         self.assertEqual(
             cpu.__all__,
@@ -140,33 +145,25 @@ class CpuDeviceCountTests(unittest.TestCase):
         self.assertIs(package_import["cpu"], cpu)
 
         direct_import = {}
-        exec("from torch_rs.cpu import device_count", direct_import)
-        self.assertIs(direct_import["device_count"], function)
+        exec("from torch_rs.cpu import is_initialized", direct_import)
+        self.assertIs(direct_import["is_initialized"], function)
 
         cpu_namespace = {}
         exec("from torch_rs.cpu import *", cpu_namespace)
         self.assertEqual(
             {name for name in cpu_namespace if not name.startswith("__")},
-            {
-                "current_device",
-                "device_count",
-                "is_available",
-                "is_initialized",
-                "synchronize",
-            },
+            supported,
         )
-        self.assertIs(cpu_namespace["current_device"], cpu.current_device)
-        self.assertIs(cpu_namespace["device_count"], function)
-        self.assertIs(cpu_namespace["is_available"], cpu.is_available)
-        self.assertIs(cpu_namespace["is_initialized"], cpu.is_initialized)
-        self.assertIs(cpu_namespace["synchronize"], cpu.synchronize)
+        for name in supported:
+            with self.subTest(cpu_export=name):
+                self.assertIs(cpu_namespace[name], getattr(cpu, name))
 
         self.assertNotIn("cpu", torch.__all__)
-        self.assertNotIn("device_count", torch.__all__)
+        self.assertNotIn("is_initialized", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("cpu", top_level_namespace)
-        self.assertNotIn("device_count", top_level_namespace)
+        self.assertNotIn("is_initialized", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -177,23 +174,23 @@ class CpuDeviceCountTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.cpu.device_count
+        function = torch.cpu.is_initialized
         cases = (
             (
                 lambda: function(None),
-                "device_count() takes 0 positional arguments but 1 was given",
+                "is_initialized() takes 0 positional arguments but 1 was given",
             ),
             (
                 lambda: function(None, None),
-                "device_count() takes 0 positional arguments but 2 were given",
+                "is_initialized() takes 0 positional arguments but 2 were given",
             ),
             (
                 lambda: function(device=True),
-                "device_count() got an unexpected keyword argument 'device'",
+                "is_initialized() got an unexpected keyword argument 'device'",
             ),
             (
                 lambda: function(None, device=True),
-                "device_count() got an unexpected keyword argument 'device'",
+                "is_initialized() got an unexpected keyword argument 'device'",
             ),
         )
         for call, message in cases:
@@ -203,7 +200,7 @@ class CpuDeviceCountTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_streams_events_device_mutation_and_other_cpu_apis_remain_unsupported(self):
+    def test_streams_events_capabilities_and_device_mutation_remain_unsupported(self):
         cpu = torch.cpu
 
         self.assertEqual(
@@ -231,7 +228,7 @@ class CpuDeviceCountTests(unittest.TestCase):
 
         with self.assertRaises(ModuleNotFoundError):
             importlib.import_module("torch_rs.cpu.amp")
-        self.assertFalse(hasattr(torch, "device_count"))
+        self.assertFalse(hasattr(torch, "is_initialized"))
 
     def test_importing_and_calling_does_not_import_pytorch(self):
         script = r"""
@@ -251,11 +248,9 @@ os.environ.update(
 )
 import torch_rs as torch
 
-function = torch.cpu.device_count
+function = torch.cpu.is_initialized
 assert function.__code__.co_names == ()
-result = function()
-assert type(result) is int
-assert result == 1
+assert function() is True
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
