@@ -382,6 +382,20 @@ class TensorIsNegTests(unittest.TestCase):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
 
+    def test_top_level_legacy_keyword_lookup_suppresses_equality_errors(self):
+        class RaisingKey(str):
+            def __eq__(self, other):
+                raise RuntimeError("keyword equality exploded")
+
+            __hash__ = str.__hash__
+
+        message = 'is_neg() missing 1 required positional arguments: "input"'
+        for alias in ("input", "x", "a", "x1"):
+            with self.subTest(alias=alias):
+                key = RaisingKey(alias)
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    torch.is_neg(**{key: torch.tensor([1.0])})
+
     def test_top_level_torch_function_modes_and_overrides(self):
         tensor = torch.tensor([1.0])
         marker = object()

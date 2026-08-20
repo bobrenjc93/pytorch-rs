@@ -1,6 +1,8 @@
 import inspect
+import json
 import pickle
 import re
+import subprocess
 import sys
 import types
 import unittest
@@ -327,6 +329,115 @@ class TensorIsNegReferenceTests(unittest.TestCase):
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assertEqual(self.error(actual_call), self.error(expected_call))
+
+    def keyword_lookup_observation(self, module):
+        class RaisingKey(str):
+            def __eq__(self, other):
+                raise RuntimeError("keyword equality exploded")
+
+            __hash__ = str.__hash__
+
+        outcomes = []
+        for alias in ("input", "x", "a", "x1"):
+            key = RaisingKey(alias)
+            outcomes.append(
+                self.error(
+                    lambda key=key: module.is_neg(
+                        **{key: module.tensor([1.0], dtype=module.float32)}
+                    )
+                )
+            )
+        return outcomes
+
+    def test_legacy_keyword_lookup_suppression_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.keyword_lookup_observation(torch),
+            self.keyword_lookup_observation(reference_torch),
+        )
+
+    def disabled_override_observation(self, module_name):
+        source = r'''
+import importlib
+import json
+
+import torch as reference_torch
+
+module = importlib.import_module(MODULE)
+
+class Disabled:
+    __torch_function__ = reference_torch._C._disabled_torch_function_impl
+
+class InstanceDisabled:
+    pass
+
+instance_disabled = InstanceDisabled()
+instance_disabled.__torch_function__ = (
+    reference_torch._C._disabled_torch_function_impl
+)
+
+class PropertyDisabled:
+    @property
+    def __torch_function__(self):
+        return reference_torch._C._disabled_torch_function_impl
+
+def error(action):
+    try:
+        action()
+    except Exception as exception:
+        return [type(exception).__name__, str(exception)]
+    return None
+
+forms = [
+    error(lambda: module.is_neg(Disabled())),
+    error(lambda: module.is_neg(input=Disabled())),
+    error(lambda: module.is_neg(x=Disabled())),
+    error(lambda: module.is_neg(a=Disabled())),
+    error(lambda: module.is_neg(x1=Disabled())),
+    error(lambda: module.is_neg(Disabled)),
+    error(lambda: module.is_neg(instance_disabled)),
+    error(lambda: module.is_neg(PropertyDisabled())),
+]
+
+class RecordingMode(module.overrides.TorchFunctionMode):
+    def __init__(self):
+        self.calls = 0
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls += 1
+        return object()
+
+mode = RecordingMode()
+with mode:
+    mode_error = error(lambda: module.is_neg(Disabled()))
+
+print(json.dumps({
+    "forms": forms,
+    "mode_error": mode_error,
+    "mode_calls": mode.calls,
+}))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=(
+                f"{module_name} disabled override subprocess exited with "
+                f"{result.returncode}: stdout={result.stdout!r}, "
+                f"stderr={result.stderr!r}"
+            ),
+        )
+        return json.loads(result.stdout)
+
+    def test_disabled_override_sentinel_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.disabled_override_observation("torch_rs"),
+            self.disabled_override_observation("torch"),
+        )
 
     def mode_dispatch_contract(self, module):
         tensor = module.tensor([1.0], dtype=module.float32)

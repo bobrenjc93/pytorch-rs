@@ -1800,6 +1800,59 @@ enum TensorBaseModeTarget {
     GetSet(&'static str),
 }
 
+fn loaded_disabled_torch_function_impl(py: Python<'_>) -> Option<Bound<'_, PyAny>> {
+    let modules = PyModule::import(py, "sys")
+        .ok()?
+        .getattr("modules")
+        .ok()?
+        .cast_into::<PyDict>()
+        .ok()?;
+    let torch_c = legacy_dict_get_item_string(&modules, c"torch._C")?;
+    let torch_c_dictionary = torch_c
+        .getattr("__dict__")
+        .ok()?
+        .cast_into::<PyDict>()
+        .ok()?;
+    legacy_dict_get_item_string(&torch_c_dictionary, c"_disabled_torch_function_impl")
+}
+
+enum TorchFunctionProbe {
+    Missing,
+    Override,
+    Disabled,
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyTorch's legacy override probe suppresses every attribute lookup error"
+)]
+fn probe_torch_function_attribute(value: &Bound<'_, PyAny>) -> TorchFunctionProbe {
+    // Use the same lookup that PyObject_HasAttrString performs so the resolved
+    // object can be compared with PyTorch's standard opt-out sentinel without
+    // adding a descriptor access. The owned result is discarded after the
+    // probe; a real override is deliberately resolved again only after the
+    // active mode has declined.
+    // SAFETY: `value` is live and the attribute name is static and NUL-terminated.
+    let attribute =
+        unsafe { ffi::PyObject_GetAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) };
+    if attribute.is_null() {
+        // PyObject_HasAttrString suppresses all lookup errors. Match that
+        // legacy behavior rather than leaking a hostile descriptor exception.
+        // SAFETY: the GIL is held and clearing no pending exception is valid.
+        unsafe { ffi::PyErr_Clear() };
+        return TorchFunctionProbe::Missing;
+    }
+    // SAFETY: PyObject_GetAttrString returned a new owned reference.
+    let attribute = unsafe { Bound::<PyAny>::from_owned_ptr(value.py(), attribute) };
+    if loaded_disabled_torch_function_impl(value.py())
+        .is_some_and(|disabled| attribute.is(&disabled))
+    {
+        TorchFunctionProbe::Disabled
+    } else {
+        TorchFunctionProbe::Override
+    }
+}
+
 #[allow(
     unsafe_code,
     reason = "PyTorch binding parity requires CPython's exception-suppressing legacy attribute probe"
@@ -1807,38 +1860,28 @@ enum TensorBaseModeTarget {
 fn probe_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
-    // PyTorch's argument parser uses the legacy, exception-suppressing
-    // PyObject_HasAttr API here. If the initial probe fails, its tensor-type
-    // fallback retries once before rejecting the input. The actual callable is
-    // deliberately resolved only after the active mode has declined.
-    // SAFETY: `value` is live for this call and the attribute name is a static,
-    // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
-    let has_override =
-        unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
-    let has_override = has_override
-        || unsafe {
-            ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0
-        };
-    if !has_override {
-        return None;
+    // PyTorch's tensor parser retries a failed legacy probe once before type
+    // rejection. The disabled sentinel is an explicit opt-out and never
+    // reaches mode or override dispatch.
+    match probe_torch_function_attribute(value) {
+        TorchFunctionProbe::Override => Some(probed_torch_function_override(value)),
+        TorchFunctionProbe::Disabled => None,
+        TorchFunctionProbe::Missing => match probe_torch_function_attribute(value) {
+            TorchFunctionProbe::Override => Some(probed_torch_function_override(value)),
+            TorchFunctionProbe::Missing | TorchFunctionProbe::Disabled => None,
+        },
     }
-    Some(probed_torch_function_override(value))
 }
 
-#[allow(
-    unsafe_code,
-    reason = "dtype argument parity requires CPython's one-shot exception-suppressing attribute probe"
-)]
 fn probe_dtype_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
     // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
     // __torch_function__ lookup through a tensor-type fallback.
-    // SAFETY: `value` is live for this call and the attribute name is a static,
-    // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
-    let has_override =
-        unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
-    has_override.then(|| probed_torch_function_override(value))
+    match probe_torch_function_attribute(value) {
+        TorchFunctionProbe::Override => Some(probed_torch_function_override(value)),
+        TorchFunctionProbe::Missing | TorchFunctionProbe::Disabled => None,
+    }
 }
 
 fn probed_torch_function_override<'py>(
@@ -7546,13 +7589,13 @@ fn select_legacy_single_argument<'py>(
     // PyTorch's legacy parser resolves `input`, `x`, `a`, then `x1` for type checking.
     let (keyword_input, keyword_alias) = match keywords {
         Some(values) => {
-            if let Some(input) = values.get_item("input")? {
+            if let Some(input) = legacy_dict_get_item_string(values, c"input") {
                 (Some(input), None)
-            } else if let Some(input) = values.get_item("x")? {
+            } else if let Some(input) = legacy_dict_get_item_string(values, c"x") {
                 (Some(input), Some("x"))
-            } else if let Some(input) = values.get_item("a")? {
+            } else if let Some(input) = legacy_dict_get_item_string(values, c"a") {
                 (Some(input), Some("a"))
-            } else if let Some(input) = values.get_item("x1")? {
+            } else if let Some(input) = legacy_dict_get_item_string(values, c"x1") {
                 (Some(input), Some("x1"))
             } else {
                 (None, None)
