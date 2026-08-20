@@ -4145,6 +4145,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90
       }
+    },
+    {
+      "key": "pr:421",
+      "recordedAt": "2026-08-20T11:01:14.012Z",
+      "label": "PR #421",
+      "kind": "leaf",
+      "prNumber": 421,
+      "title": "Expose single-worker torch.get_num_interop_threads",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 77,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 60.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90
+      }
     }
   ]
 }
