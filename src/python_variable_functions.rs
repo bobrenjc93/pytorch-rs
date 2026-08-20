@@ -15,18 +15,19 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     adjoint_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
-    atleast_3d_variable_function, can_cast_variable_function, exp_variable_function,
-    get_device_variable_function, is_conj_variable_function, is_inference_variable_function,
-    matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
-    mul_variable_function, multiply_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sin_variable_function, unbind_variable_function,
+    atleast_3d_variable_function, can_cast_variable_function, detach_variable_function,
+    exp_variable_function, get_device_variable_function, is_conj_variable_function,
+    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
+    movedim_variable_function, mul_variable_function, multiply_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 24] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 25] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -34,6 +35,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 24] = [
     "atleast_3d",
     "adjoint",
     "positive",
+    "detach",
     "ravel",
     "exp",
     "sin",
@@ -439,6 +441,7 @@ variable_function_callback!(atleast_2d_callback, atleast_2d_variable_function);
 variable_function_callback!(atleast_3d_callback, atleast_3d_variable_function);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
+variable_function_callback!(detach_callback, detach_variable_function);
 variable_function_callback!(ravel_callback, ravel_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
@@ -484,6 +487,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
+        variable_function_method!(c"detach", detach_callback, c""),
         variable_function_method!(c"ravel", ravel_callback, RAVEL_DOC),
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),

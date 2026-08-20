@@ -3921,6 +3921,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 86
       }
+    },
+    {
+      "key": "pr:360",
+      "recordedAt": "2026-08-20T00:05:13.754Z",
+      "label": "PR #360",
+      "kind": "leaf",
+      "prNumber": 360,
+      "title": "Migrate top-level torch.detach to shared override dispatch",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 75.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 58.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 87
+      }
     }
   ]
 }
