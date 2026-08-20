@@ -140,12 +140,22 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_compiler.__all__
-                if name in {"is_compiling", "is_dynamo_compiling", "is_exporting"}
+                if name
+                in {
+                    "assume_constant_result",
+                    "is_compiling",
+                    "is_dynamo_compiling",
+                    "is_exporting",
+                }
             ],
         )
         self.assertEqual(
             torch.__all__.count("compiler"),
             reference_torch.__all__.count("compiler"),
+        )
+        self.assertEqual(
+            torch.__all__.count("assume_constant_result"),
+            reference_torch.__all__.count("assume_constant_result"),
         )
         self.assertEqual(
             torch.__all__.count("is_dynamo_compiling"),
@@ -162,6 +172,10 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
+            self.assertIs(
+                namespace["assume_constant_result"],
+                module.assume_constant_result,
+            )
             self.assertIs(namespace["is_dynamo_compiling"], function)
             self.assertIs(namespace["is_exporting"], module.is_exporting)
 
@@ -169,6 +183,7 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
+            self.assertNotIn("assume_constant_result", namespace)
             self.assertNotIn("is_dynamo_compiling", namespace)
             self.assertNotIn("is_exporting", namespace)
 
