@@ -125,7 +125,8 @@ class CpuDeviceCountTests(unittest.TestCase):
         function = cpu.device_count
 
         self.assertEqual(
-            cpu.__all__, ["is_available", "synchronize", "device_count"]
+            cpu.__all__,
+            ["is_available", "synchronize", "current_device", "device_count"],
         )
 
         package_import = {}
@@ -140,9 +141,10 @@ class CpuDeviceCountTests(unittest.TestCase):
         exec("from torch_rs.cpu import *", cpu_namespace)
         self.assertEqual(
             {name for name in cpu_namespace if not name.startswith("__")},
-            {"device_count", "is_available", "synchronize"},
+            {"current_device", "device_count", "is_available", "synchronize"},
         )
         self.assertIs(cpu_namespace["device_count"], function)
+        self.assertIs(cpu_namespace["current_device"], cpu.current_device)
         self.assertIs(cpu_namespace["is_available"], cpu.is_available)
         self.assertIs(cpu_namespace["synchronize"], cpu.synchronize)
 
@@ -193,11 +195,10 @@ class CpuDeviceCountTests(unittest.TestCase):
 
         self.assertEqual(
             {name for name in vars(cpu) if not name.startswith("_")},
-            {"device_count", "is_available", "synchronize"},
+            {"current_device", "device_count", "is_available", "synchronize"},
         )
         for name in (
             "amp",
-            "current_device",
             "current_stream",
             "Event",
             "get_capabilities",

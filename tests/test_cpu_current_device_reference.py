@@ -19,12 +19,12 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CpuIsAvailableReferenceTests(unittest.TestCase):
+class CpuCurrentDeviceReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "cpu.is_available differentials require pinned PyTorch 2.13.0"
+                "cpu.current_device differentials require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -37,7 +37,7 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def threaded_outcome(self, module):
-        function = module.cpu.is_available
+        function = module.cpu.current_device
         baseline = function()
         worker_count = 8
         barrier = threading.Barrier(worker_count)
@@ -88,23 +88,32 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
         actual_baseline, actual_workers = self.threaded_outcome(torch)
         expected_baseline, expected_workers = self.threaded_outcome(reference_torch)
 
-        self.assertIs(actual_baseline, True)
-        self.assertIs(expected_baseline, True)
+        self.assertIs(type(actual_baseline), str)
+        self.assertIs(type(expected_baseline), str)
+        self.assertEqual(actual_baseline, "cpu")
+        self.assertEqual(actual_baseline, expected_baseline)
         self.assertEqual(actual_workers, expected_workers)
         for baseline, worker_states in (
             (actual_baseline, actual_workers),
             (expected_baseline, expected_workers),
         ):
-            self.assertIs(type(baseline), bool)
+            self.assertIs(type(baseline), str)
             for index, state in enumerate(worker_states):
                 expected_grad_state = index % 2 == 0
-                self.assertIs(state[0], expected_grad_state)
-                self.assertIs(state[1], baseline)
-                self.assertIs(state[2], expected_grad_state)
-                self.assertIs(state[3], baseline)
-                self.assertIs(state[4], expected_grad_state)
+                self.assertEqual(
+                    state,
+                    (
+                        expected_grad_state,
+                        "cpu",
+                        expected_grad_state,
+                        "cpu",
+                        expected_grad_state,
+                    ),
+                )
+                self.assertIs(type(state[1]), str)
+                self.assertIs(type(state[3]), str)
 
-    def test_cuda_visible_h100_reference_keeps_cpu_available(self):
+    def test_cuda_visible_h100_keeps_current_cpu_device_invariant(self):
         if not reference_torch.cuda.is_available():
             self.skipTest("requires a CUDA-visible reference PyTorch build")
 
@@ -114,20 +123,20 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
 
         self.assertGreaterEqual(reference_torch.cuda.device_count(), 1)
         self.assertIn("H100", device_name)
-        self.assertIs(reference_torch.cpu.is_available(), True)
-        self.assertIs(torch.cpu.is_available(), True)
+        self.assertEqual(reference_torch.cpu.current_device(), "cpu")
+        self.assertEqual(torch.cpu.current_device(), "cpu")
 
         probe = reference_torch.ones(1, device=reference_torch.device("cuda", 0))
         self.assertEqual(probe.item(), 1.0)
         reference_torch.cuda.synchronize(0)
-        self.assertIs(reference_torch.cpu.is_available(), True)
-        self.assertIs(torch.cpu.is_available(), True)
+        self.assertEqual(reference_torch.cpu.current_device(), "cpu")
+        self.assertEqual(torch.cpu.current_device(), "cpu")
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_cpu = importlib.import_module("torch_rs.cpu")
         expected_cpu = importlib.import_module("torch.cpu")
-        actual = actual_cpu.is_available
-        expected = expected_cpu.is_available
+        actual = actual_cpu.current_device
+        expected = expected_cpu.current_device
 
         self.assertIs(torch.cpu, actual_cpu)
         self.assertIs(reference_torch.cpu, expected_cpu)
@@ -160,34 +169,30 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
     def test_imports_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_cpu = torch.cpu
         expected_cpu = reference_torch.cpu
-        actual = actual_cpu.is_available
-        expected = expected_cpu.is_available
+        actual = actual_cpu.current_device
+        expected = expected_cpu.current_device
+        supported = {
+            "current_device",
+            "device_count",
+            "is_available",
+            "synchronize",
+        }
 
         self.assertEqual(
             actual_cpu.__all__,
-            [
-                name
-                for name in expected_cpu.__all__
-                if name
-                in {
-                    "current_device",
-                    "device_count",
-                    "is_available",
-                    "synchronize",
-                }
-            ],
+            [name for name in expected_cpu.__all__ if name in supported],
         )
-        self.assertEqual(
-            torch.__all__.count("cpu"), reference_torch.__all__.count("cpu")
-        )
-        self.assertEqual(
-            torch.__all__.count("device_count"),
-            reference_torch.__all__.count("device_count"),
-        )
-        self.assertEqual(
-            torch.__all__.count("is_available"),
-            reference_torch.__all__.count("is_available"),
-        )
+        for name in (
+            "cpu",
+            "current_device",
+            "device_count",
+            "is_available",
+            "synchronize",
+        ):
+            with self.subTest(top_level_export=name):
+                self.assertEqual(
+                    torch.__all__.count(name), reference_torch.__all__.count(name)
+                )
 
         actual_package_import = {}
         expected_package_import = {}
@@ -198,10 +203,10 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
 
         actual_direct_import = {}
         expected_direct_import = {}
-        exec("from torch_rs.cpu import is_available", actual_direct_import)
-        exec("from torch.cpu import is_available", expected_direct_import)
-        self.assertIs(actual_direct_import["is_available"], actual)
-        self.assertIs(expected_direct_import["is_available"], expected)
+        exec("from torch_rs.cpu import current_device", actual_direct_import)
+        exec("from torch.cpu import current_device", expected_direct_import)
+        self.assertIs(actual_direct_import["current_device"], actual)
+        self.assertIs(expected_direct_import["current_device"], expected)
 
         actual_cpu_namespace = {}
         expected_cpu_namespace = {}
@@ -209,22 +214,19 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
         exec("from torch.cpu import *", expected_cpu_namespace)
         self.assertEqual(
             {name for name in actual_cpu_namespace if not name.startswith("__")},
-            {"current_device", "device_count", "is_available", "synchronize"},
+            supported,
         )
-        self.assertIs(actual_cpu_namespace["device_count"], actual_cpu.device_count)
-        self.assertIs(actual_cpu_namespace["is_available"], actual)
-        self.assertIs(actual_cpu_namespace["synchronize"], actual_cpu.synchronize)
-        self.assertIs(
-            expected_cpu_namespace["device_count"], expected_cpu.device_count
-        )
-        self.assertIs(expected_cpu_namespace["is_available"], expected)
+        for name in supported:
+            with self.subTest(cpu_export=name):
+                self.assertIs(actual_cpu_namespace[name], getattr(actual_cpu, name))
+                self.assertIs(expected_cpu_namespace[name], getattr(expected_cpu, name))
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("cpu", namespace)
-            self.assertNotIn("device_count", namespace)
-            self.assertNotIn("is_available", namespace)
+            self.assertNotIn("current_device", namespace)
+            self.assertFalse(hasattr(module, "current_device"))
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -240,22 +242,22 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.cpu.is_available
-        expected = reference_torch.cpu.is_available
+        actual = torch.cpu.current_device
+        expected = reference_torch.cpu.current_device
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
+            (lambda: actual(device=True), lambda: expected(device=True)),
             (
-                lambda: actual(None, enabled=True),
-                lambda: expected(None, enabled=True),
+                lambda: actual(None, device=True),
+                lambda: expected(None, device=True),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_streams_events_device_mutation_and_other_cpu_apis_remain_unsupported(self):
+    def test_streams_device_mutation_capabilities_and_other_apis_are_unsupported(self):
         actual_cpu = torch.cpu
         expected_cpu = reference_torch.cpu
         actual_public = {
@@ -275,6 +277,9 @@ class CpuIsAvailableReferenceTests(unittest.TestCase):
                 "amp",
                 "current_stream",
                 "Event",
+                "get_capabilities",
+                "is_initialized",
+                "set_device",
                 "Stream",
                 "StreamContext",
                 "stream",

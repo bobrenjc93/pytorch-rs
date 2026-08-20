@@ -5,7 +5,7 @@ to facilitate writing device-agnostic code.
 
 from .. import device as _device
 
-__all__ = ["is_available", "synchronize", "device_count"]
+__all__ = ["is_available", "synchronize", "current_device", "device_count"]
 
 
 def is_available() -> bool:
@@ -25,6 +25,14 @@ def synchronize(device: _device | str | int | None = None) -> None:
 
     N.B. This function only exists to facilitate device-agnostic code.
     """
+
+
+def current_device() -> str:
+    r"""Returns current device for cpu. Always 'cpu'.
+
+    N.B. This function only exists to facilitate device-agnostic code
+    """
+    return "cpu"
 
 
 def device_count() -> int:
