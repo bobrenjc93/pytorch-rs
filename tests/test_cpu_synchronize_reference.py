@@ -19,12 +19,12 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CpuDeviceCountReferenceTests(unittest.TestCase):
+class CpuSynchronizeReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "cpu.device_count differentials require pinned PyTorch 2.13.0"
+                "cpu.synchronize differentials require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -37,9 +37,19 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def threaded_outcome(self, module):
-        function = module.cpu.device_count
-        baseline = function()
-        worker_count = 8
+        function = module.cpu.synchronize
+        devices = (
+            None,
+            0,
+            -1,
+            "cpu",
+            "cuda:0",
+            module.device("cpu"),
+            module.tensor(1.0),
+            object(),
+        )
+        baseline = tuple(function(device) for device in devices)
+        worker_count = len(devices)
         barrier = threading.Barrier(worker_count)
         worker_states = [None] * worker_count
         errors = []
@@ -51,9 +61,9 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                     barrier.wait(timeout=10)
                     worker_states[index] = (
                         module.is_grad_enabled(),
-                        function(),
+                        function(devices[index]),
                         module.is_grad_enabled(),
-                        function(),
+                        function(device=devices[-index - 1]),
                         module.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -84,31 +94,36 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_eager_threaded_and_grad_states_match_pytorch_2_13(self):
+    def normalized_annotation(self, annotation):
+        return str(annotation).replace("torch_rs", "torch")
+
+    def test_ignored_devices_threading_and_grad_states_match_pytorch_2_13(self):
         actual_baseline, actual_workers = self.threaded_outcome(torch)
         expected_baseline, expected_workers = self.threaded_outcome(reference_torch)
 
-        self.assertIs(type(actual_baseline), int)
-        self.assertIs(type(expected_baseline), int)
-        self.assertEqual(actual_baseline, 1)
         self.assertEqual(actual_baseline, expected_baseline)
         self.assertEqual(actual_workers, expected_workers)
         for baseline, worker_states in (
             (actual_baseline, actual_workers),
             (expected_baseline, expected_workers),
         ):
-            self.assertIs(type(baseline), int)
+            self.assertEqual(baseline, (None,) * 8)
             for index, state in enumerate(worker_states):
                 expected_grad_state = index % 2 == 0
-                self.assertIs(state[0], expected_grad_state)
-                self.assertIs(type(state[1]), int)
-                self.assertEqual(state[1], baseline)
-                self.assertIs(state[2], expected_grad_state)
-                self.assertIs(type(state[3]), int)
-                self.assertEqual(state[3], baseline)
-                self.assertIs(state[4], expected_grad_state)
+                self.assertEqual(
+                    state,
+                    (
+                        expected_grad_state,
+                        None,
+                        expected_grad_state,
+                        None,
+                        expected_grad_state,
+                    ),
+                )
+                self.assertIs(state[1], None)
+                self.assertIs(state[3], None)
 
-    def test_cuda_visible_h100_keeps_cpu_device_count_at_one(self):
+    def test_cuda_visible_h100_devices_and_tensors_are_ignored(self):
         if not reference_torch.cuda.is_available():
             self.skipTest("requires a CUDA-visible reference PyTorch build")
 
@@ -118,20 +133,26 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
 
         self.assertGreaterEqual(reference_torch.cuda.device_count(), 1)
         self.assertIn("H100", device_name)
-        self.assertEqual(reference_torch.cpu.device_count(), 1)
-        self.assertEqual(torch.cpu.device_count(), 1)
+        current_device = reference_torch.cuda.current_device()
+        cuda_device = reference_torch.device("cuda", current_device)
+        cuda_tensor = reference_torch.arange(4, device=cuda_device)
 
-        probe = reference_torch.ones(1, device=reference_torch.device("cuda", 0))
-        self.assertEqual(probe.item(), 1.0)
-        reference_torch.cuda.synchronize(0)
-        self.assertEqual(reference_torch.cpu.device_count(), 1)
-        self.assertEqual(torch.cpu.device_count(), 1)
+        for case, device in enumerate(
+            (cuda_device, cuda_tensor, "cuda:0", current_device, object())
+        ):
+            with self.subTest(case=case):
+                self.assertIs(reference_torch.cpu.synchronize(device), None)
+                self.assertIs(torch.cpu.synchronize(device), None)
+                self.assertEqual(reference_torch.cuda.current_device(), current_device)
+
+        reference_torch.cuda.synchronize(current_device)
+        self.assertEqual(cuda_tensor.cpu().tolist(), [0, 1, 2, 3])
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_cpu = importlib.import_module("torch_rs.cpu")
         expected_cpu = importlib.import_module("torch.cpu")
-        actual = actual_cpu.device_count
-        expected = expected_cpu.device_count
+        actual = actual_cpu.synchronize
+        expected = expected_cpu.synchronize
 
         self.assertIs(torch.cpu, actual_cpu)
         self.assertIs(reference_torch.cpu, expected_cpu)
@@ -141,10 +162,25 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
-            str(inspect.signature(actual)), str(inspect.signature(expected))
+            str(inspect.signature(actual)).replace("torch_rs", "torch"),
+            str(inspect.signature(expected)),
         )
-        self.assertEqual(actual.__annotations__, expected.__annotations__)
-        self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
+        self.assertEqual(actual.__annotations__.keys(), expected.__annotations__.keys())
+        for name in actual.__annotations__:
+            with self.subTest(annotation=name):
+                self.assertEqual(
+                    self.normalized_annotation(actual.__annotations__[name]),
+                    self.normalized_annotation(expected.__annotations__[name]),
+                )
+        actual_hints = typing.get_type_hints(actual)
+        expected_hints = typing.get_type_hints(expected)
+        self.assertEqual(actual_hints.keys(), expected_hints.keys())
+        for name in actual_hints:
+            with self.subTest(type_hint=name):
+                self.assertEqual(
+                    self.normalized_annotation(actual_hints[name]),
+                    self.normalized_annotation(expected_hints[name]),
+                )
         self.assertEqual(actual.__name__, expected.__name__)
         self.assertEqual(actual.__qualname__, expected.__qualname__)
         self.assertEqual(
@@ -164,24 +200,19 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
     def test_imports_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_cpu = torch.cpu
         expected_cpu = reference_torch.cpu
-        actual = actual_cpu.device_count
-        expected = expected_cpu.device_count
+        actual = actual_cpu.synchronize
+        expected = expected_cpu.synchronize
+        supported = {"device_count", "is_available", "synchronize"}
 
         self.assertEqual(
             actual_cpu.__all__,
-            [
-                name
-                for name in expected_cpu.__all__
-                if name in {"device_count", "is_available", "synchronize"}
-            ],
+            [name for name in expected_cpu.__all__ if name in supported],
         )
-        self.assertEqual(
-            torch.__all__.count("cpu"), reference_torch.__all__.count("cpu")
-        )
-        self.assertEqual(
-            torch.__all__.count("device_count"),
-            reference_torch.__all__.count("device_count"),
-        )
+        for name in ("cpu", "device_count", "is_available", "synchronize"):
+            with self.subTest(top_level_export=name):
+                self.assertEqual(
+                    torch.__all__.count(name), reference_torch.__all__.count(name)
+                )
 
         actual_package_import = {}
         expected_package_import = {}
@@ -192,10 +223,10 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
 
         actual_direct_import = {}
         expected_direct_import = {}
-        exec("from torch_rs.cpu import device_count", actual_direct_import)
-        exec("from torch.cpu import device_count", expected_direct_import)
-        self.assertIs(actual_direct_import["device_count"], actual)
-        self.assertIs(expected_direct_import["device_count"], expected)
+        exec("from torch_rs.cpu import synchronize", actual_direct_import)
+        exec("from torch.cpu import synchronize", expected_direct_import)
+        self.assertIs(actual_direct_import["synchronize"], actual)
+        self.assertIs(expected_direct_import["synchronize"], expected)
 
         actual_cpu_namespace = {}
         expected_cpu_namespace = {}
@@ -203,17 +234,18 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
         exec("from torch.cpu import *", expected_cpu_namespace)
         self.assertEqual(
             {name for name in actual_cpu_namespace if not name.startswith("__")},
-            {"device_count", "is_available", "synchronize"},
+            supported,
         )
-        self.assertIs(actual_cpu_namespace["device_count"], actual)
-        self.assertIs(actual_cpu_namespace["synchronize"], actual_cpu.synchronize)
-        self.assertIs(expected_cpu_namespace["device_count"], expected)
+        for name in supported:
+            with self.subTest(cpu_export=name):
+                self.assertIs(actual_cpu_namespace[name], getattr(actual_cpu, name))
+                self.assertIs(expected_cpu_namespace[name], getattr(expected_cpu, name))
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("cpu", namespace)
-            self.assertNotIn("device_count", namespace)
+            self.assertNotIn("synchronize", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -229,22 +261,28 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.cpu.device_count
-        expected = reference_torch.cpu.device_count
+        actual = torch.cpu.synchronize
+        expected = reference_torch.cpu.synchronize
         cases = (
-            (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(device=True), lambda: expected(device=True)),
             (
-                lambda: actual(None, device=True),
-                lambda: expected(None, device=True),
+                lambda: actual(None, None, None),
+                lambda: expected(None, None, None),
+            ),
+            (
+                lambda: actual(unexpected=True),
+                lambda: expected(unexpected=True),
+            ),
+            (
+                lambda: actual(None, device=None),
+                lambda: expected(None, device=None),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_streams_events_device_mutation_and_other_cpu_apis_remain_unsupported(self):
+    def test_streams_events_and_device_mutation_remain_unsupported(self):
         actual_cpu = torch.cpu
         expected_cpu = reference_torch.cpu
         actual_public = {
@@ -261,8 +299,12 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
         self.assertTrue(
             {
                 "amp",
+                "current_device",
                 "current_stream",
                 "Event",
+                "get_capabilities",
+                "is_initialized",
+                "set_device",
                 "Stream",
                 "StreamContext",
                 "stream",
