@@ -13,29 +13,27 @@ import unittest
 import torch_rs as torch
 
 
-FUNCTION_DOC = """
-    Function that returns True when in compilation and False otherwise. This
-    is useful especially with the @unused decorator to leave code in your
-    model that is not yet TorchScript compatible.
-    .. testcode::
+TRACE_MODULE_DOC = """Tracing.
 
-        import torch
+This module contains functionality to support the JIT's tracing frontend, notably:
+    * torch.jit.trace
+    * torch.jit.trace_module
 
-        @torch.jit.unused
-        def unsupported_linear_op(x):
-            return x
+This is not intended to be imported directly; please use the exposed
+functionalities in `torch.jit`.
+"""
 
-        def linear(x):
-            if torch.jit.is_scripting():
-                return torch.linear(x)
-            else:
-                return unsupported_linear_op(x)
+
+FUNCTION_DOC = """Return a boolean value.
+
+    Returns ``True`` in tracing (if a function is called during the
+    tracing of code with ``torch.jit.trace``) and ``False`` otherwise.
     """
 
 
-class JitIsScriptingTests(unittest.TestCase):
+class JitIsTracingTests(unittest.TestCase):
     def test_eager_false_is_exact_and_preserves_grad_mode(self):
-        function = torch.jit.is_scripting
+        function = torch.jit.is_tracing
 
         def assert_query_preserves_grad_mode(expected_grad_state):
             self.assertIs(torch.is_grad_enabled(), expected_grad_state)
@@ -51,7 +49,7 @@ class JitIsScriptingTests(unittest.TestCase):
         assert_query_preserves_grad_mode(True)
 
     def test_eager_false_is_stable_across_threads_and_grad_modes(self):
-        function = torch.jit.is_scripting
+        function = torch.jit.is_tracing
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -98,33 +96,34 @@ class JitIsScriptingTests(unittest.TestCase):
             self.assertIs(result[1], False)
             self.assertIs(result[3], False)
 
-    def test_signature_annotations_documentation_and_internal_ownership(self):
+    def test_signature_documentation_and_trace_module_ownership(self):
         jit = importlib.import_module("torch_rs.jit")
-        internal = importlib.import_module("torch_rs._jit_internal")
-        function = jit.is_scripting
+        trace = importlib.import_module("torch_rs.jit._trace")
+        function = jit.is_tracing
 
         self.assertIs(torch.jit, jit)
-        self.assertIs(torch._jit_internal, internal)
-        self.assertIs(function, internal.is_scripting)
+        self.assertIs(jit._trace, trace)
+        self.assertIs(sys.modules["torch_rs.jit._trace"], trace)
+        self.assertIs(function, trace.is_tracing)
         self.assertIs(type(function), types.FunctionType)
-        self.assertEqual(str(inspect.signature(function)), "() -> bool")
-        self.assertEqual(function.__annotations__, {"return": bool})
-        self.assertEqual(typing.get_type_hints(function), {"return": bool})
-        self.assertEqual(function.__name__, "is_scripting")
-        self.assertEqual(function.__qualname__, "is_scripting")
-        self.assertEqual(function.__module__, "torch_rs._jit_internal")
-        self.assertIs(inspect.getmodule(function), internal)
-        self.assertEqual(
-            inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
-        )
+        self.assertEqual(str(inspect.signature(function)), "()")
+        self.assertEqual(function.__annotations__, {})
+        self.assertEqual(typing.get_type_hints(function), {})
+        self.assertEqual(function.__name__, "is_tracing")
+        self.assertEqual(function.__qualname__, "is_tracing")
+        self.assertEqual(function.__module__, "torch_rs.jit._trace")
+        self.assertIs(inspect.getmodule(function), trace)
+        self.assertEqual(trace.__doc__, TRACE_MODULE_DOC)
+        self.assertEqual(function.__doc__, FUNCTION_DOC)
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
 
-    def test_exports_copy_and_pickle_use_the_canonical_internal_module(self):
+    def test_imports_exports_copy_and_pickle_use_the_canonical_trace_module(self):
         jit = torch.jit
-        function = jit.is_scripting
+        trace = jit._trace
+        function = jit.is_tracing
 
         self.assertEqual(jit.__all__, ["annotate", "export", "ignore", "unused"])
         self.assertEqual(
@@ -138,53 +137,74 @@ class JitIsScriptingTests(unittest.TestCase):
                 "unused",
             },
         )
-
-        explicit_namespace = {}
-        exec("from torch_rs.jit import is_scripting", explicit_namespace)
-        self.assertIs(explicit_namespace["is_scripting"], function)
-
-        wildcard_namespace = {}
-        exec("from torch_rs.jit import *", wildcard_namespace)
+        self.assertFalse(hasattr(trace, "__all__"))
         self.assertEqual(
-            {name for name in wildcard_namespace if not name.startswith("__")},
+            {name for name in vars(trace) if not name.startswith("_")},
+            {"is_tracing"},
+        )
+
+        package_namespace = {}
+        exec("from torch_rs.jit import is_tracing", package_namespace)
+        self.assertIs(package_namespace["is_tracing"], function)
+
+        module_namespace = {}
+        exec("from torch_rs.jit._trace import is_tracing", module_namespace)
+        self.assertIs(module_namespace["is_tracing"], function)
+
+        trace_wildcard_namespace = {}
+        exec("from torch_rs.jit._trace import *", trace_wildcard_namespace)
+        self.assertEqual(
+            {
+                name
+                for name in trace_wildcard_namespace
+                if not name.startswith("__")
+            },
+            {"is_tracing"},
+        )
+        self.assertIs(trace_wildcard_namespace["is_tracing"], function)
+
+        jit_wildcard_namespace = {}
+        exec("from torch_rs.jit import *", jit_wildcard_namespace)
+        self.assertEqual(
+            {name for name in jit_wildcard_namespace if not name.startswith("__")},
             {"annotate", "export", "ignore", "unused"},
         )
-        self.assertNotIn("is_scripting", wildcard_namespace)
+        self.assertNotIn("is_tracing", jit_wildcard_namespace)
 
         self.assertNotIn("jit", torch.__all__)
-        self.assertNotIn("is_scripting", torch.__all__)
+        self.assertNotIn("is_tracing", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("jit", top_level_namespace)
-        self.assertNotIn("is_scripting", top_level_namespace)
-        self.assertFalse(hasattr(torch, "is_scripting"))
+        self.assertNotIn("is_tracing", top_level_namespace)
+        self.assertFalse(hasattr(torch, "is_tracing"))
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
                 payload = pickle.dumps(function, protocol=protocol)
-                self.assertIn(b"torch_rs._jit_internal", payload)
+                self.assertIn(b"torch_rs.jit._trace", payload)
                 self.assertIs(pickle.loads(payload), function)
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.jit.is_scripting
+        function = torch.jit.is_tracing
         cases = (
             (
                 lambda: function(None),
-                "is_scripting() takes 0 positional arguments but 1 was given",
+                "is_tracing() takes 0 positional arguments but 1 was given",
             ),
             (
                 lambda: function(None, None),
-                "is_scripting() takes 0 positional arguments but 2 were given",
+                "is_tracing() takes 0 positional arguments but 2 were given",
             ),
             (
                 lambda: function(enabled=True),
-                "is_scripting() got an unexpected keyword argument 'enabled'",
+                "is_tracing() got an unexpected keyword argument 'enabled'",
             ),
             (
                 lambda: function(None, enabled=True),
-                "is_scripting() got an unexpected keyword argument 'enabled'",
+                "is_tracing() got an unexpected keyword argument 'enabled'",
             ),
         )
         for call, message in cases:
@@ -194,7 +214,7 @@ class JitIsScriptingTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_scripting_tracing_and_compilation_remain_unsupported(self):
+    def test_tracing_scripting_and_compilation_remain_unsupported(self):
         for name in (
             "CompilationUnit",
             "ScriptFunction",
@@ -207,27 +227,14 @@ class JitIsScriptingTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.jit, name))
+        self.assertFalse(hasattr(torch.jit._trace, "trace"))
+        self.assertFalse(hasattr(torch.jit._trace, "trace_module"))
         self.assertFalse(hasattr(torch, "compile"))
-
-        def exported():
-            return "exported"
-
-        def ignored():
-            return "ignored"
-
-        def unused():
-            return "unused"
-
-        self.assertIs(torch.jit.export(exported), exported)
-        self.assertIs(torch.jit.ignore(ignored), ignored)
-        self.assertIs(torch.jit.unused(unused), unused)
-        self.assertEqual(
-            (exported(), ignored(), unused()),
-            ("exported", "ignored", "unused"),
-        )
+        self.assertIs(torch.jit.is_scripting(), False)
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""
+import importlib
 import sys
 import threading
 
@@ -240,13 +247,15 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
-assert torch.jit.is_scripting is torch._jit_internal.is_scripting
-assert torch.jit.is_scripting() is False
+trace = importlib.import_module("torch_rs.jit._trace")
+assert torch.jit._trace is trace
+assert torch.jit.is_tracing is trace.is_tracing
+assert torch.jit.is_tracing() is False
 with torch.no_grad():
-    assert torch.jit.is_scripting() is False
+    assert torch.jit.is_tracing() is False
 
 results = []
-thread = threading.Thread(target=lambda: results.append(torch.jit.is_scripting()))
+thread = threading.Thread(target=lambda: results.append(torch.jit.is_tracing()))
 thread.start()
 thread.join(timeout=10)
 assert not thread.is_alive()

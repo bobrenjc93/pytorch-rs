@@ -4,6 +4,7 @@ import importlib
 import inspect
 import pickle
 import pickletools
+import sys
 import threading
 import types
 import typing
@@ -18,17 +19,13 @@ except ImportError:
     reference_torch = None
 
 
-def _reference_scripting_probe():
-    return reference_torch.jit.is_scripting()
-
-
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class JitIsScriptingReferenceTests(unittest.TestCase):
+class JitIsTracingReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "jit.is_scripting differentials require pinned PyTorch 2.13.0"
+                "jit.is_tracing differentials require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -41,7 +38,7 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def supported_state_outcome(self, module):
-        function = module.jit.is_scripting
+        function = module.jit.is_tracing
 
         def query_outcome():
             before = module.is_grad_enabled()
@@ -102,20 +99,31 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
             self.supported_state_outcome(reference_torch),
         )
 
-    def test_signature_annotations_documentation_and_identity_match(self):
+    def test_signature_documentation_and_trace_module_identity_match(self):
         actual_jit = importlib.import_module("torch_rs.jit")
         expected_jit = importlib.import_module("torch.jit")
-        actual_internal = importlib.import_module("torch_rs._jit_internal")
-        expected_internal = importlib.import_module("torch._jit_internal")
-        actual = actual_jit.is_scripting
-        expected = expected_jit.is_scripting
+        actual_trace = importlib.import_module("torch_rs.jit._trace")
+        expected_trace = importlib.import_module("torch.jit._trace")
+        actual = actual_jit.is_tracing
+        expected = expected_jit.is_tracing
 
         self.assertIs(torch.jit, actual_jit)
         self.assertIs(reference_torch.jit, expected_jit)
-        self.assertIs(torch._jit_internal, actual_internal)
-        self.assertIs(reference_torch._jit_internal, expected_internal)
-        self.assertIs(actual, actual_internal.is_scripting)
-        self.assertIs(expected, expected_internal.is_scripting)
+        self.assertIs(actual_jit._trace, actual_trace)
+        self.assertIs(expected_jit._trace, expected_trace)
+        self.assertIs(sys.modules["torch_rs.jit._trace"], actual_trace)
+        self.assertIs(sys.modules["torch.jit._trace"], expected_trace)
+        self.assertIs(actual, actual_trace.is_tracing)
+        self.assertIs(expected, expected_trace.is_tracing)
+        self.assertEqual(actual_trace.__doc__, expected_trace.__doc__)
+        self.assertEqual(
+            actual_trace.__name__.replace("torch_rs", "torch"),
+            expected_trace.__name__,
+        )
+        self.assertEqual(
+            actual_trace.__package__.replace("torch_rs", "torch"),
+            expected_trace.__package__,
+        )
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -128,8 +136,8 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
         self.assertEqual(
             actual.__module__.replace("torch_rs", "torch"), expected.__module__
         )
-        self.assertIs(inspect.getmodule(actual), actual_internal)
-        self.assertIs(inspect.getmodule(expected), expected_internal)
+        self.assertIs(inspect.getmodule(actual), actual_trace)
+        self.assertIs(inspect.getmodule(expected), expected_trace)
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(actual.__defaults__, expected.__defaults__)
         self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
@@ -139,13 +147,19 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
             hasattr(expected, "__text_signature__"),
         )
 
-    def test_exports_copy_and_pickle_match_the_supported_scope(self):
+    def test_imports_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_jit = torch.jit
         expected_jit = reference_torch.jit
-        actual = actual_jit.is_scripting
-        expected = expected_jit.is_scripting
+        actual_trace = actual_jit._trace
+        expected_trace = expected_jit._trace
+        actual = actual_jit.is_tracing
+        expected = expected_jit.is_tracing
         wildcard_supported = {"annotate", "export", "ignore", "unused"}
-        public_supported = {*wildcard_supported, "is_scripting", "is_tracing"}
+        public_supported = {
+            *wildcard_supported,
+            "is_scripting",
+            "is_tracing",
+        }
 
         self.assertEqual(
             actual_jit.__all__,
@@ -155,19 +169,40 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
                 if name in wildcard_supported
             ],
         )
-        self.assertNotIn("is_scripting", actual_jit.__all__)
-        self.assertNotIn("is_scripting", expected_jit.__all__)
+        self.assertNotIn("is_tracing", actual_jit.__all__)
+        self.assertNotIn("is_tracing", expected_jit.__all__)
         self.assertEqual(
             {name for name in vars(actual_jit) if not name.startswith("_")},
             public_supported,
         )
+        self.assertFalse(hasattr(actual_trace, "__all__"))
+        self.assertFalse(hasattr(expected_trace, "__all__"))
+        self.assertEqual(
+            {name for name in vars(actual_trace) if not name.startswith("_")},
+            {"is_tracing"},
+        )
+        self.assertIn("is_tracing", vars(expected_trace))
         self.assertEqual(
             torch.__all__.count("jit"), reference_torch.__all__.count("jit")
         )
         self.assertEqual(
-            torch.__all__.count("is_scripting"),
-            reference_torch.__all__.count("is_scripting"),
+            torch.__all__.count("is_tracing"),
+            reference_torch.__all__.count("is_tracing"),
         )
+
+        actual_package_import = {}
+        expected_package_import = {}
+        exec("from torch_rs.jit import is_tracing", actual_package_import)
+        exec("from torch.jit import is_tracing", expected_package_import)
+        self.assertIs(actual_package_import["is_tracing"], actual)
+        self.assertIs(expected_package_import["is_tracing"], expected)
+
+        actual_module_import = {}
+        expected_module_import = {}
+        exec("from torch_rs.jit._trace import is_tracing", actual_module_import)
+        exec("from torch.jit._trace import is_tracing", expected_module_import)
+        self.assertIs(actual_module_import["is_tracing"], actual)
+        self.assertIs(expected_module_import["is_tracing"], expected)
 
         actual_namespace = {}
         expected_namespace = {}
@@ -177,22 +212,30 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
             {name for name in actual_namespace if not name.startswith("__")},
             wildcard_supported,
         )
-        self.assertNotIn("is_scripting", actual_namespace)
-        self.assertNotIn("is_scripting", expected_namespace)
+        self.assertNotIn("is_tracing", actual_namespace)
+        self.assertNotIn("is_tracing", expected_namespace)
 
-        actual_explicit = {}
-        expected_explicit = {}
-        exec("from torch_rs.jit import is_scripting", actual_explicit)
-        exec("from torch.jit import is_scripting", expected_explicit)
-        self.assertIs(actual_explicit["is_scripting"], actual)
-        self.assertIs(expected_explicit["is_scripting"], expected)
+        actual_trace_namespace = {}
+        expected_trace_namespace = {}
+        exec("from torch_rs.jit._trace import *", actual_trace_namespace)
+        exec("from torch.jit._trace import *", expected_trace_namespace)
+        self.assertEqual(
+            {
+                name
+                for name in actual_trace_namespace
+                if not name.startswith("__")
+            },
+            {"is_tracing"},
+        )
+        self.assertIs(actual_trace_namespace["is_tracing"], actual)
+        self.assertIs(expected_trace_namespace["is_tracing"], expected)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("jit", namespace)
-            self.assertNotIn("is_scripting", namespace)
-            self.assertFalse(hasattr(module, "is_scripting"))
+            self.assertNotIn("is_tracing", namespace)
+            self.assertFalse(hasattr(module, "is_tracing"))
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -208,8 +251,8 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.jit.is_scripting
-        expected = reference_torch.jit.is_scripting
+        actual = torch.jit.is_tracing
+        expected = reference_torch.jit.is_tracing
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
@@ -223,27 +266,37 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_reference_script_bounds_the_unsupported_true_state(self):
-        actual_is_scripting = torch.jit.is_scripting
-        expected_is_scripting = reference_torch.jit.is_scripting
-        actual_states = [actual_is_scripting()]
-        expected_states = [expected_is_scripting()]
+    def test_reference_trace_bounds_the_unsupported_true_state(self):
+        actual_is_tracing = torch.jit.is_tracing
+        expected_is_tracing = reference_torch.jit.is_tracing
+        actual_states = [actual_is_tracing()]
+        expected_states = [expected_is_tracing()]
+
+        def probe(value):
+            actual_states.append(actual_is_tracing())
+            expected_states.append(expected_is_tracing())
+            return value + 1
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            scripted = reference_torch.jit.script(_reference_scripting_probe)
-        actual_states.extend((actual_is_scripting(), actual_is_scripting()))
-        expected_states.extend((scripted(), expected_is_scripting()))
+            traced = reference_torch.jit.trace(
+                probe,
+                reference_torch.tensor(1.0),
+                check_trace=False,
+            )
+        result = traced(reference_torch.tensor(2.0))
+        actual_states.append(actual_is_tracing())
+        expected_states.append(expected_is_tracing())
 
-        for state in actual_states:
-            self.assertIs(state, False)
+        self.assertEqual(result.item(), 3.0)
+        self.assertEqual(actual_states, [False, False, False])
         self.assertEqual(expected_states, [False, True, False])
-        for state in expected_states:
+        for state in (*actual_states, *expected_states):
             self.assertIs(type(state), bool)
 
-    def test_scripting_tracing_and_compilation_remain_unsupported(self):
-        self.assertTrue(callable(reference_torch.jit.script))
+    def test_tracing_scripting_and_compilation_remain_unsupported(self):
         self.assertTrue(callable(reference_torch.jit.trace))
+        self.assertTrue(callable(reference_torch.jit.script))
         self.assertFalse(hasattr(torch, "compile"))
         for name in (
             "CompilationUnit",
@@ -257,42 +310,8 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.jit, name))
-
-        def actual_exported():
-            return "actual exported"
-
-        def expected_exported():
-            return "expected exported"
-
-        def actual_ignored():
-            return "actual ignored"
-
-        def expected_ignored():
-            return "expected ignored"
-
-        def actual_unused():
-            return "actual unused"
-
-        def expected_unused():
-            return "expected unused"
-
-        for decorator, actual_function, expected_function in (
-            ("export", actual_exported, expected_exported),
-            ("ignore", actual_ignored, expected_ignored),
-            ("unused", actual_unused, expected_unused),
-        ):
-            with self.subTest(decorator=decorator):
-                self.assertIs(
-                    getattr(torch.jit, decorator)(actual_function), actual_function
-                )
-                self.assertIs(
-                    getattr(reference_torch.jit, decorator)(expected_function),
-                    expected_function,
-                )
-                self.assertEqual(
-                    actual_function._torchscript_modifier,
-                    expected_function._torchscript_modifier,
-                )
+        self.assertFalse(hasattr(torch.jit._trace, "trace"))
+        self.assertFalse(hasattr(torch.jit._trace, "trace_module"))
 
 
 if __name__ == "__main__":

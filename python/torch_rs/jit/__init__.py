@@ -1,4 +1,5 @@
 from torch_rs._jit_internal import export, ignore, is_scripting, unused
+from torch_rs.jit._trace import is_tracing
 
 
 __all__ = ["annotate", "export", "ignore", "unused"]
