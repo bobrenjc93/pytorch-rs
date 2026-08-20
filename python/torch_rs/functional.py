@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from .overrides import _dispatch_unary_torch_function
 from .torch_rs import (
     Size,
+    Tensor,
     atleast_1d as _VF_atleast_1d,
     atleast_2d as _VF_atleast_2d,
     atleast_3d as _VF_atleast_3d,
@@ -14,7 +15,17 @@ from .torch_rs import (
 __all__ = ["atleast_1d", "atleast_2d", "atleast_3d", "broadcast_shapes"]
 
 
+_ATLEAST_1D_SEQUENCE_UNSUPPORTED = (
+    "atleast_1d() sequence inputs only support an exact tuple or list of "
+    "exact Tensors"
+)
+
+
 def _atleast_1d_impl(input):
+    if type(input) in (tuple, list):
+        if any(type(tensor) is not Tensor for tensor in input):
+            raise TypeError(_ATLEAST_1D_SEQUENCE_UNSUPPORTED)
+        return tuple(_VF_atleast_1d(tensor) for tensor in input)
     return _VF_atleast_1d(input)
 
 
