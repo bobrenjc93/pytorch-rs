@@ -1274,7 +1274,6 @@ class PythonApiBaselineTests(unittest.TestCase):
             slice(None),
             [0],
             None,
-            Ellipsis,
             IntOnly(),
             FailingIndex(),
         )
@@ -1285,6 +1284,10 @@ class PythonApiBaselineTests(unittest.TestCase):
 
         with self.assertRaisesRegex(IndexError, "only integers"):
             tensor[0, True]
+        for index in ((Ellipsis,), (Ellipsis, 0), (0, Ellipsis)):
+            with self.subTest(index=repr(index)):
+                with self.assertRaisesRegex(IndexError, "only integers"):
+                    tensor[index]
         for index in (1 << 100, -(1 << 100), np.uint64(2**64 - 1)):
             with self.subTest(index=index):
                 with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
