@@ -19,12 +19,12 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class IsAnomalyEnabledReferenceTests(unittest.TestCase):
+class IsAnomalyCheckNanEnabledReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "is_anomaly_enabled differentials require pinned PyTorch 2.13.0"
+                "is_anomaly_check_nan_enabled differentials require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -37,7 +37,7 @@ class IsAnomalyEnabledReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def supported_state_outcome(self, module):
-        function = module.is_anomaly_enabled
+        function = module.is_anomaly_check_nan_enabled
 
         def query_outcome():
             before = module.is_grad_enabled()
@@ -47,9 +47,9 @@ class IsAnomalyEnabledReferenceTests(unittest.TestCase):
             after = module.is_grad_enabled()
             return (
                 before,
-                first is False,
+                first is True,
                 middle,
-                second is False,
+                second is True,
                 after,
             )
 
@@ -94,39 +94,33 @@ class IsAnomalyEnabledReferenceTests(unittest.TestCase):
             self.supported_state_outcome(reference_torch),
         )
 
-    def test_reference_only_activation_bounds_the_unsupported_true_state(self):
-        actual_function = torch.is_anomaly_enabled
-        expected_function = reference_torch.is_anomaly_enabled
+    def test_reference_only_mutation_bounds_the_unsupported_false_state(self):
+        actual_function = torch.is_anomaly_check_nan_enabled
+        expected_function = reference_torch.is_anomaly_check_nan_enabled
 
         actual_states = [actual_function()]
         expected_states = [expected_function()]
-        expected_check_nan_states = [
-            reference_torch.is_anomaly_check_nan_enabled()
-        ]
+        expected_anomaly_states = [reference_torch.is_anomaly_enabled()]
         with reference_torch.autograd.set_detect_anomaly(True, check_nan=False):
             actual_states.append(actual_function())
             expected_states.append(expected_function())
-            expected_check_nan_states.append(
-                reference_torch.is_anomaly_check_nan_enabled()
-            )
+            expected_anomaly_states.append(reference_torch.is_anomaly_enabled())
             self.assertIs(torch.is_grad_enabled(), True)
             self.assertIs(reference_torch.is_grad_enabled(), True)
         actual_states.append(actual_function())
         expected_states.append(expected_function())
-        expected_check_nan_states.append(
-            reference_torch.is_anomaly_check_nan_enabled()
-        )
+        expected_anomaly_states.append(reference_torch.is_anomaly_enabled())
 
         for state in actual_states:
-            self.assertIs(state, False)
-        self.assertEqual(expected_states, [False, True, False])
-        self.assertEqual(expected_check_nan_states, [True, False, True])
+            self.assertIs(state, True)
+        self.assertEqual(expected_states, [True, False, True])
+        self.assertEqual(expected_anomaly_states, [False, True, False])
         self.assertIs(torch.is_grad_enabled(), True)
         self.assertIs(reference_torch.is_grad_enabled(), True)
 
     def test_builtin_contract_matches_pytorch_2_13(self):
-        actual = torch.is_anomaly_enabled
-        expected = reference_torch.is_anomaly_enabled
+        actual = torch.is_anomaly_check_nan_enabled
+        expected = reference_torch.is_anomaly_check_nan_enabled
 
         self.assertIs(type(actual), types.BuiltinFunctionType)
         self.assertIs(type(expected), types.BuiltinFunctionType)
@@ -147,21 +141,23 @@ class IsAnomalyEnabledReferenceTests(unittest.TestCase):
         self.assertEqual(repr(actual), repr(expected))
         self.assertIs(actual.__self__, torch._C)
         self.assertIs(expected.__self__, reference_torch._C)
-        self.assertIs(torch._C.is_anomaly_enabled, actual)
-        self.assertIs(reference_torch._C.is_anomaly_enabled, expected)
+        self.assertIs(torch._C.is_anomaly_check_nan_enabled, actual)
+        self.assertIs(reference_torch._C.is_anomaly_check_nan_enabled, expected)
         for function in (actual, expected):
             assert_no_argument_signature(self, function, "()")
             self.assertIs(copy.copy(function), function)
             self.assertIs(copy.deepcopy(function), function)
 
         self.assertEqual(
-            torch.__all__.count("is_anomaly_enabled"),
-            reference_torch.__all__.count("is_anomaly_enabled"),
+            torch.__all__.count("is_anomaly_check_nan_enabled"),
+            reference_torch.__all__.count("is_anomaly_check_nan_enabled"),
         )
         for module, function in ((torch, actual), (reference_torch, expected)):
             wildcard_namespace = {}
             exec(f"from {module.__name__} import *", wildcard_namespace)
-            self.assertIs(wildcard_namespace["is_anomaly_enabled"], function)
+            self.assertIs(
+                wildcard_namespace["is_anomaly_check_nan_enabled"], function
+            )
             for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
                 with self.subTest(module=module.__name__, protocol=protocol):
                     restored = pickle.loads(pickle.dumps(function, protocol=protocol))
@@ -170,28 +166,30 @@ class IsAnomalyEnabledReferenceTests(unittest.TestCase):
     def test_no_argument_errors_match_pytorch_2_13(self):
         cases = (
             (
-                lambda: torch.is_anomaly_enabled(None),
-                lambda: reference_torch.is_anomaly_enabled(None),
+                lambda: torch.is_anomaly_check_nan_enabled(None),
+                lambda: reference_torch.is_anomaly_check_nan_enabled(None),
             ),
             (
-                lambda: torch.is_anomaly_enabled(None, None),
-                lambda: reference_torch.is_anomaly_enabled(None, None),
+                lambda: torch.is_anomaly_check_nan_enabled(None, None),
+                lambda: reference_torch.is_anomaly_check_nan_enabled(None, None),
             ),
             (
-                lambda: torch.is_anomaly_enabled(enabled=True),
-                lambda: reference_torch.is_anomaly_enabled(enabled=True),
+                lambda: torch.is_anomaly_check_nan_enabled(enabled=True),
+                lambda: reference_torch.is_anomaly_check_nan_enabled(enabled=True),
             ),
             (
-                lambda: torch.is_anomaly_enabled(None, enabled=True),
-                lambda: reference_torch.is_anomaly_enabled(None, enabled=True),
+                lambda: torch.is_anomaly_check_nan_enabled(None, enabled=True),
+                lambda: reference_torch.is_anomaly_check_nan_enabled(
+                    None, enabled=True
+                ),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-        self.assertIs(torch.is_anomaly_enabled(**{}), False)
-        self.assertIs(reference_torch.is_anomaly_enabled(**{}), False)
+        self.assertIs(torch.is_anomaly_check_nan_enabled(**{}), True)
+        self.assertIs(reference_torch.is_anomaly_check_nan_enabled(**{}), True)
 
     def test_mutation_and_detection_surfaces_stay_deliberately_absent(self):
         top_level_names = ("set_anomaly_enabled",)

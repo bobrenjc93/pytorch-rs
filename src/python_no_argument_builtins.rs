@@ -73,6 +73,24 @@ fn is_anomaly_enabled(
     Ok(false)
 }
 
+fn is_anomaly_check_nan_enabled(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch.is_anomaly_check_nan_enabled() takes no keyword arguments",
+        ));
+    }
+    if !args.is_empty() {
+        return Err(PyTypeError::new_err(format!(
+            "torch.is_anomaly_check_nan_enabled() takes no arguments ({} given)",
+            args.len()
+        )));
+    }
+    Ok(true)
+}
+
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
 #[allow(clippy::doc_markdown)]
 #[cfg_attr(
@@ -146,11 +164,13 @@ const IS_GRAD_ENABLED_DOC: &CStr =
 const IS_GRAD_ENABLED_SIGNATURE_DOC: &CStr = c"is_grad_enabled($self, /)\n--\n\n\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n";
 const IS_INFERENCE_MODE_ENABLED_DOC: &CStr = c"\nis_inference_mode_enabled() -> (bool)\n\nReturns True if inference mode is currently enabled.\n";
 const IS_INFERENCE_MODE_ENABLED_SIGNATURE_DOC: &CStr = c"is_inference_mode_enabled($self, /)\n--\n\n\nis_inference_mode_enabled() -> (bool)\n\nReturns True if inference mode is currently enabled.\n";
-// PyTorch leaves this built-in's documentation null. On CPython 3.13+ its
-// METH_NOARGS definition nevertheless exposes the synthesized `($self, /)`
-// signature; a signature-only internal doc reproduces both observations while
+// PyTorch leaves these built-ins' documentation null. On CPython 3.13+ their
+// METH_NOARGS definitions nevertheless expose the synthesized `($self, /)`
+// signature; signature-only internal docs reproduce both observations while
 // retaining the custom PyTorch-qualified argument diagnostics below.
 const IS_ANOMALY_ENABLED_SIGNATURE_DOC: &CStr = c"is_anomaly_enabled($self, /)\n--\n\n";
+const IS_ANOMALY_CHECK_NAN_ENABLED_SIGNATURE_DOC: &CStr =
+    c"is_anomaly_check_nan_enabled($self, /)\n--\n\n";
 const GET_DEFAULT_DTYPE_DOC: &CStr = c"\nget_default_dtype() -> torch.dtype\n\nGet the current default floating point :class:`torch.dtype`.\n\nExample::\n\n    >>> torch.get_default_dtype()  # initial default for floating point is torch.float32\n    torch.float32\n    >>> torch.set_default_dtype(torch.float64)\n    >>> torch.get_default_dtype()  # default is now changed to torch.float64\n    torch.float64\n\n";
 const GET_DEFAULT_DTYPE_SIGNATURE_DOC: &CStr = c"get_default_dtype($self, /)\n--\n\n\nget_default_dtype() -> torch.dtype\n\nGet the current default floating point :class:`torch.dtype`.\n\nExample::\n\n    >>> torch.get_default_dtype()  # initial default for floating point is torch.float32\n    torch.float32\n    >>> torch.set_default_dtype(torch.float64)\n    >>> torch.get_default_dtype()  # default is now changed to torch.float64\n    torch.float64\n\n";
 const GET_NUM_THREADS_DOC: &CStr = c"\nget_num_threads() -> int\n\nReturns the number of threads used for parallelizing CPU operations\n";
@@ -232,6 +252,23 @@ unsafe fn is_anomaly_enabled_callback(
     unsafe_code,
     reason = "the callback is entered through PyO3's panic-safe C trampoline"
 )]
+unsafe fn is_anomaly_check_nan_enabled_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    is_anomaly_check_nan_enabled(&args, kwargs.as_ref())?
+        .into_py_any(py)
+        .map(Py::into_ptr)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
 unsafe fn get_default_dtype_callback(
     py: Python<'_>,
     _module: *mut ffi::PyObject,
@@ -277,12 +314,42 @@ unsafe fn get_num_interop_threads_callback(
         .map(Py::into_ptr)
 }
 
+fn add_anomaly_builtins(
+    module: &Bound<'_, PyModule>,
+    is_anomaly_enabled_doc: &'static CStr,
+    is_anomaly_check_nan_enabled_doc: &'static CStr,
+) -> PyResult<()> {
+    let py = module.py();
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            is_anomaly_enabled_callback
+        ),
+        c"is_anomaly_enabled",
+        is_anomaly_enabled_doc,
+        Some(module),
+    )?)?;
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            is_anomaly_check_nan_enabled_callback
+        ),
+        c"is_anomaly_check_nan_enabled",
+        is_anomaly_check_nan_enabled_doc,
+        Some(module),
+    )?)?;
+    Ok(())
+}
+
 pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     let (
         is_grad_enabled_doc,
         is_inference_mode_enabled_doc,
         is_anomaly_enabled_doc,
+        is_anomaly_check_nan_enabled_doc,
         get_default_dtype_doc,
         get_num_threads_doc,
         get_num_interop_threads_doc,
@@ -291,6 +358,7 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
             IS_GRAD_ENABLED_SIGNATURE_DOC,
             IS_INFERENCE_MODE_ENABLED_SIGNATURE_DOC,
             IS_ANOMALY_ENABLED_SIGNATURE_DOC,
+            IS_ANOMALY_CHECK_NAN_ENABLED_SIGNATURE_DOC,
             GET_DEFAULT_DTYPE_SIGNATURE_DOC,
             GET_NUM_THREADS_SIGNATURE_DOC,
             GET_NUM_INTEROP_THREADS_SIGNATURE_DOC,
@@ -299,6 +367,7 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         (
             IS_GRAD_ENABLED_DOC,
             IS_INFERENCE_MODE_ENABLED_DOC,
+            c"",
             c"",
             GET_DEFAULT_DTYPE_DOC,
             GET_NUM_THREADS_DOC,
@@ -325,16 +394,11 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         is_inference_mode_enabled_doc,
         Some(module),
     )?)?;
-    module.add_function(PyCFunction::new_with_keywords(
-        py,
-        pyo3::impl_::trampoline::get_trampoline_function!(
-            cfunction_with_keywords,
-            is_anomaly_enabled_callback
-        ),
-        c"is_anomaly_enabled",
+    add_anomaly_builtins(
+        module,
         is_anomaly_enabled_doc,
-        Some(module),
-    )?)?;
+        is_anomaly_check_nan_enabled_doc,
+    )?;
     module.add_function(PyCFunction::new_with_keywords(
         py,
         pyo3::impl_::trampoline::get_trampoline_function!(
