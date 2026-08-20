@@ -124,7 +124,11 @@ class JitAnnotateReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_jit.__all__,
-            [name for name in expected_jit.__all__ if name == "annotate"],
+            [
+                name
+                for name in expected_jit.__all__
+                if name in {"annotate", "unused"}
+            ],
         )
         self.assertEqual(
             torch.__all__.count("jit"),
@@ -141,7 +145,7 @@ class JitAnnotateReferenceTests(unittest.TestCase):
         exec("from torch.jit import *", expected_namespace)
         self.assertEqual(
             {name for name in actual_namespace if not name.startswith("__")},
-            {"annotate"},
+            {"annotate", "unused"},
         )
         self.assertIs(actual_namespace["annotate"], actual)
         self.assertIs(expected_namespace["annotate"], expected)
@@ -188,9 +192,9 @@ class JitAnnotateReferenceTests(unittest.TestCase):
         }
         self.assertEqual(
             {name for name in vars(torch.jit) if not name.startswith("_")},
-            {"annotate"},
+            {"annotate", "unused"},
         )
-        for name in ("script", "trace", "is_scripting", "is_tracing"):
+        for name in ("ignore", "script", "trace", "is_scripting", "is_tracing"):
             with self.subTest(name=name):
                 self.assertIn(name, expected_public)
                 self.assertFalse(hasattr(torch.jit, name))
