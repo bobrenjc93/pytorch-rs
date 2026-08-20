@@ -9,6 +9,8 @@ The project is improved through [Burner](https://github.com/bobrenjc93/burner): 
 Python package names may contain a hyphen, but Python identifiers may not. The package is therefore installed as `torch-rs` and imported as `torch_rs`, conventionally aliased to `torch` for drop-in-style code:
 
 ```python
+import os
+
 import torch_rs as torch
 
 x = torch.tensor([[-1.0, 2.0], [3.0, -4.0]])
@@ -43,6 +45,9 @@ assert torch.compiler.is_exporting() is False
 assert torch.distributed.is_available() is False
 assert torch.distributed.is_initialized() is False
 assert torch.distributed.is_nccl_available() is False
+assert torch.distributed.is_torchelastic_launched() is (
+    "TORCHELASTIC_RUN_ID" in os.environ
+)
 assert torch.float32.to_real() is torch.float32
 limits = torch.finfo()
 assert limits == torch.finfo(torch.float)
@@ -117,7 +122,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` are eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, and the rest of the compiler namespace remain unsupported.
 
-`torch.distributed.is_available()` and `torch.distributed.is_nccl_available()` are honest package and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All three return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Process-group creation, NCCL execution, collectives, and every other distributed API remain unsupported.
+`torch.distributed.is_available()` and `torch.distributed.is_nccl_available()` are honest package and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. Those three return the exact `False` singleton without probing hardware, environment variables, or PyTorch. `torch.distributed.is_torchelastic_launched()` returns an exact bool based solely on whether `TORCHELASTIC_RUN_ID` is present in the environment, including when its value is empty. It does not launch elastic workers or initialize a process group. Elastic launching, process-group creation, NCCL execution, collectives, and every other distributed API remain unsupported.
 
 ## Non-negotiable evaluation rules
 
