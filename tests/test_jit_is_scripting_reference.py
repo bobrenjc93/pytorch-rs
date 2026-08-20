@@ -144,7 +144,13 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
         expected_jit = reference_torch.jit
         actual = actual_jit.is_scripting
         expected = expected_jit.is_scripting
-        wildcard_supported = {"annotate", "export", "ignore", "unused"}
+        wildcard_supported = {
+            "annotate",
+            "export",
+            "ignore",
+            "script_if_tracing",
+            "unused",
+        }
         public_supported = {*wildcard_supported, "is_scripting", "is_tracing"}
 
         self.assertEqual(
@@ -250,7 +256,6 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
             "ScriptFunction",
             "ScriptModule",
             "script",
-            "script_if_tracing",
             "script_method",
             "trace",
             "trace_module",
