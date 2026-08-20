@@ -1025,7 +1025,7 @@ class PythonApiBaselineTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             extreme.clone(memory_format=torch.contiguous_format)
 
-    def test_clone_rejects_rank_mismatches_and_unsupported_formats(self):
+    def test_clone_rejects_rank_mismatches_and_invalid_formats(self):
         tensor = torch.tensor([1.0])
         for operation in (
             lambda: tensor.clone(memory_format=torch.channels_last),
@@ -1047,7 +1047,7 @@ class PythonApiBaselineTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(
                     RuntimeError,
-                    "clone with memory format torch.channels_last_3d is not supported",
+                    "required rank 5 tensor to use channels_last_3d format",
                 ):
                     operation()
 

@@ -1466,22 +1466,35 @@ impl Tensor {
     /// [`MemoryFormat::Preserve`] retains dense strides and packs non-dense
     /// views in the same dimension order. [`MemoryFormat::Contiguous`]
     /// recalculates canonical row-major strides. [`MemoryFormat::ChannelsLast`]
-    /// recalculates canonical channel-last strides for rank-four tensors.
-    /// Preserve clones retain an existing dense channel-last layout.
+    /// and [`MemoryFormat::ChannelsLast3d`] recalculate canonical channel-last
+    /// strides for rank-four and rank-five tensors, respectively. Preserve
+    /// clones retain an existing dense channel-last layout.
     ///
     /// # Errors
     ///
     /// Returns an error when result metadata or storage allocation fails,
-    /// stride calculation overflows, a channel-last request has the wrong
-    /// rank, or the requested format is not supported.
+    /// stride calculation overflows, or a channel-last request has the wrong
+    /// rank.
     pub fn try_clone_with_memory_format(
         &self,
         memory_format: MemoryFormat,
     ) -> Result<Self, TensorError> {
-        if memory_format == MemoryFormat::ChannelsLast && self.shape.len() != 4 {
+        let expected_rank = match memory_format {
+            MemoryFormat::ChannelsLast => Some(4),
+            MemoryFormat::ChannelsLast3d => Some(5),
+            MemoryFormat::Preserve | MemoryFormat::Contiguous => None,
+        };
+        if let Some(expected_rank) = expected_rank
+            && self.shape.len() != expected_rank
+        {
+            // PyTorch validates canonical destination metadata before
+            // reporting a channel-format rank mismatch. Preserve-format
+            // clones intentionally skip this preflight so representable
+            // extreme empty layouts can retain their source strides.
+            let _ = contiguous_strides(&self.shape, self.elements)?;
             return Err(TensorError::ContiguousMemoryFormatRankMismatch {
                 memory_format,
-                expected_rank: 4,
+                expected_rank,
                 actual_rank: self.shape.len(),
             });
         }
@@ -1499,9 +1512,7 @@ impl Tensor {
             )?,
             MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast => channels_last_strides(&shape, elements)?,
-            MemoryFormat::ChannelsLast3d => {
-                return Err(TensorError::UnsupportedMemoryFormat { memory_format });
-            }
+            MemoryFormat::ChannelsLast3d => channels_last_3d_strides(&shape, elements)?,
         };
         let data = self.materialize_with_strides(&strides, |value| value)?;
         let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());

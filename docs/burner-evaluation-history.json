@@ -4001,6 +4001,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 89
       }
+    },
+    {
+      "key": "pr:384",
+      "recordedAt": "2026-08-20T03:56:36.085Z",
+      "label": "PR #384",
+      "kind": "leaf",
+      "prNumber": 384,
+      "title": "Support channels-last-3d clone format",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 75.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 59.3,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90
+      }
     }
   ]
 }
