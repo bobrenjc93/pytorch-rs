@@ -1,4 +1,4 @@
-__all__ = ["is_compiling", "is_dynamo_compiling"]
+__all__ = ["is_compiling", "is_dynamo_compiling", "is_exporting"]
 
 
 def is_compiling() -> bool:
@@ -32,6 +32,24 @@ def is_dynamo_compiling() -> bool:
         >>> def forward(self, x):
         >>>     if not torch.compiler.is_dynamo_compiling():
         >>>        pass # ...logic that is not needed in a TorchDynamo-traced graph...
+        >>>
+        >>>     # ...rest of the function...
+    """
+    return False
+
+
+def is_exporting() -> bool:
+    """
+    Indicated whether we're under exporting.
+
+    It's stricter than is_compiling() flag, as it would only be set to True when
+    torch.export is used.
+
+    Example::
+
+        >>> def forward(self, x):
+        >>>     if not torch.compiler.is_exporting():
+        >>>        pass # ...logic that is not needed in export...
         >>>
         >>>     # ...rest of the function...
     """
