@@ -286,6 +286,7 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
             "get_crc32_options",
             "set_crc32_options",
             "get_default_load_endianness",
+            "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
         )
@@ -306,12 +307,14 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
         expected_direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "LoadEndianness, get_default_load_endianness",
+            "LoadEndianness, get_default_load_endianness, "
+            "set_default_load_endianness",
             actual_direct_import,
         )
         exec(
             "from torch.serialization import "
-            "LoadEndianness, get_default_load_endianness",
+            "LoadEndianness, get_default_load_endianness, "
+            "set_default_load_endianness",
             expected_direct_import,
         )
         self.assertIs(
@@ -330,6 +333,14 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
             expected_direct_import["get_default_load_endianness"],
             expected_module.get_default_load_endianness,
         )
+        self.assertIs(
+            actual_direct_import["set_default_load_endianness"],
+            actual_module.set_default_load_endianness,
+        )
+        self.assertIs(
+            expected_direct_import["set_default_load_endianness"],
+            expected_module.set_default_load_endianness,
+        )
 
         for module in (actual_module, expected_module):
             namespace = {}
@@ -339,12 +350,20 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
                 namespace["get_default_load_endianness"],
                 module.get_default_load_endianness,
             )
+            self.assertIs(
+                namespace["set_default_load_endianness"],
+                module.set_default_load_endianness,
+            )
 
         object_pairs = (
             (actual_module.LoadEndianness, expected_module.LoadEndianness),
             (
                 actual_module.get_default_load_endianness,
                 expected_module.get_default_load_endianness,
+            ),
+            (
+                actual_module.set_default_load_endianness,
+                expected_module.set_default_load_endianness,
             ),
             *zip(actual_module.LoadEndianness, expected_module.LoadEndianness),
         )
@@ -370,6 +389,7 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("LoadEndianness", namespace)
             self.assertNotIn("get_default_load_endianness", namespace)
+            self.assertNotIn("set_default_load_endianness", namespace)
 
     def test_getter_and_enum_argument_errors_match_pytorch_2_13(self):
         actual_getter = torch.serialization.get_default_load_endianness
@@ -415,40 +435,27 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
         self.assertIsNone(actual_getter(**{}))
         self.assertIsNone(expected_getter(**{}))
 
-    def test_reference_only_setter_bounds_unsupported_nondefault_states(self):
+    def test_setter_updates_getter_for_supported_values(self):
         actual_module = torch.serialization
         expected_module = reference_torch.serialization
         actual_getter = actual_module.get_default_load_endianness
         expected_getter = expected_module.get_default_load_endianness
-        setter = expected_module.set_default_load_endianness
-        original = expected_getter()
+        actual_setter = actual_module.set_default_load_endianness
+        expected_setter = expected_module.set_default_load_endianness
 
-        self.assertFalse(hasattr(actual_module, "set_default_load_endianness"))
-        self.assertIsNone(actual_getter())
         try:
-            self.assertIsNone(setter(None))
-            self.assertIsNone(expected_getter())
-            for member in expected_module.LoadEndianness:
-                with self.subTest(member=member.name):
-                    self.assertIsNone(setter(member))
-                    self.assertIs(expected_getter(), member)
-                    self.assertIsNone(actual_getter())
-
-            for value in (1, 2, 3, "native", "little", "big", True, object()):
-                with self.subTest(invalid=repr(value)):
-                    before = expected_getter()
-                    with self.assertRaises(TypeError) as raised:
-                        setter(value)
-                    message = (
-                        "Invalid argument type in function "
-                        "set_default_load_endianness"
-                    )
-                    self.assertEqual(str(raised.exception), message)
-                    self.assertEqual(raised.exception.args, (message,))
-                    self.assertIs(expected_getter(), before)
-                    self.assertIsNone(actual_getter())
+            for actual_value, expected_value in (
+                (None, None),
+                *zip(actual_module.LoadEndianness, expected_module.LoadEndianness),
+            ):
+                with self.subTest(value=repr(actual_value)):
+                    self.assertIsNone(actual_setter(actual_value))
+                    self.assertIsNone(expected_setter(expected_value))
+                    self.assertIs(actual_getter(), actual_value)
+                    self.assertIs(expected_getter(), expected_value)
         finally:
-            setter(original)
+            actual_setter(None)
+            expected_setter(None)
 
     def test_reload_and_reimport_behavior_matches_pytorch_2_13(self):
         self.assertEqual(
@@ -456,7 +463,7 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
             self.reload_outcome(reference_torch),
         )
 
-    def test_setter_save_and_load_remain_unsupported(self):
+    def test_setter_is_supported_while_save_and_load_remain_unsupported(self):
         actual_module = torch.serialization
         expected_module = reference_torch.serialization
         actual_public = {
@@ -470,17 +477,21 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
                 "get_crc32_options",
                 "set_crc32_options",
                 "get_default_load_endianness",
+                "set_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
             },
         )
-        self.assertTrue(hasattr(expected_module, "set_default_load_endianness"))
-        for name in ("set_default_load_endianness", "save", "load"):
+        for name in ("save", "load"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(actual_module, name))
                 self.assertNotIn(name, actual_module.__all__)
 
-        for name in ("LoadEndianness", "get_default_load_endianness"):
+        for name in (
+            "LoadEndianness",
+            "get_default_load_endianness",
+            "set_default_load_endianness",
+        ):
             with self.subTest(top_level_name=name):
                 self.assertFalse(hasattr(torch, name))
                 self.assertFalse(hasattr(reference_torch, name))

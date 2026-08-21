@@ -178,11 +178,13 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
         serialization = torch.serialization
         load_endianness = serialization.LoadEndianness
         function = serialization.get_default_load_endianness
+        setter = serialization.set_default_load_endianness
         exported_names = [
             "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",
             "get_default_load_endianness",
+            "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
         ]
@@ -196,11 +198,13 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
         direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "LoadEndianness, get_default_load_endianness",
+            "LoadEndianness, get_default_load_endianness, "
+            "set_default_load_endianness",
             direct_import,
         )
         self.assertIs(direct_import["LoadEndianness"], load_endianness)
         self.assertIs(direct_import["get_default_load_endianness"], function)
+        self.assertIs(direct_import["set_default_load_endianness"], setter)
 
         namespace = {}
         exec("from torch_rs.serialization import *", namespace)
@@ -210,17 +214,18 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
         )
         self.assertIs(namespace["LoadEndianness"], load_endianness)
         self.assertIs(namespace["get_default_load_endianness"], function)
+        self.assertIs(namespace["set_default_load_endianness"], setter)
 
         self.assertNotIn("serialization", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("serialization", top_level_namespace)
-        for name in ("LoadEndianness", function.__name__):
+        for name in ("LoadEndianness", function.__name__, setter.__name__):
             self.assertFalse(hasattr(torch, name))
             self.assertNotIn(name, torch.__all__)
             self.assertNotIn(name, top_level_namespace)
 
-        objects = (load_endianness, function, *tuple(load_endianness))
+        objects = (load_endianness, function, setter, *tuple(load_endianness))
         for value in objects:
             self.assertIs(copy.copy(value), value)
             self.assertIs(copy.deepcopy(value), value)
@@ -341,7 +346,7 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
             sys.modules[module_name] = original_module
             torch.serialization = original_module
 
-    def test_setter_save_and_load_remain_unsupported(self):
+    def test_setter_is_supported_while_save_and_load_remain_unsupported(self):
         serialization = torch.serialization
 
         self.assertEqual(
@@ -351,11 +356,12 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
                 "get_crc32_options",
                 "set_crc32_options",
                 "get_default_load_endianness",
+                "set_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
             },
         )
-        for name in ("set_default_load_endianness", "save", "load"):
+        for name in ("save", "load"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(serialization, name))
                 self.assertNotIn(name, serialization.__all__)
@@ -379,11 +385,15 @@ import torch_rs as torch
 serialization = torch.serialization
 load_endianness = serialization.LoadEndianness
 getter = serialization.get_default_load_endianness
+setter = serialization.set_default_load_endianness
 members = tuple(load_endianness)
 assert [member.name for member in members] == ["NATIVE", "LITTLE", "BIG"]
 assert [member.value for member in members] == [1, 2, 3]
 assert getter() is None
-for value in (load_endianness, getter, *members):
+assert setter(load_endianness.LITTLE) is None
+assert getter() is load_endianness.LITTLE
+assert setter(None) is None
+for value in (load_endianness, getter, setter, *members):
     assert copy.copy(value) is value
     assert copy.deepcopy(value) is value
     assert pickle.loads(pickle.dumps(value)) is value
@@ -400,7 +410,11 @@ assert replacement.LoadEndianness is not serialization.LoadEndianness
 assert getter() is None
 assert old_reloaded_getter() is None
 assert replacement.get_default_load_endianness() is None
-assert not hasattr(replacement, "set_default_load_endianness")
+assert replacement.set_default_load_endianness(
+    replacement.LoadEndianness.BIG
+) is None
+assert getter() is replacement.LoadEndianness.BIG
+assert replacement.set_default_load_endianness(None) is None
 assert not hasattr(replacement, "save")
 assert not hasattr(replacement, "load")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)

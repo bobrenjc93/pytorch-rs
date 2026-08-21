@@ -279,6 +279,7 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
             "get_crc32_options",
             "set_crc32_options",
             "get_default_load_endianness",
+            "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
         )
@@ -317,15 +318,15 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         exec(
             "from torch_rs.serialization import "
             "LoadEndianness, get_crc32_options, set_crc32_options, "
-            "get_default_load_endianness, get_default_mmap_options, "
-            "set_default_mmap_options",
+            "get_default_load_endianness, set_default_load_endianness, "
+            "get_default_mmap_options, set_default_mmap_options",
             actual_direct_import,
         )
         exec(
             "from torch.serialization import "
             "LoadEndianness, get_crc32_options, set_crc32_options, "
-            "get_default_load_endianness, get_default_mmap_options, "
-            "set_default_mmap_options",
+            "get_default_load_endianness, set_default_load_endianness, "
+            "get_default_mmap_options, set_default_mmap_options",
             expected_direct_import,
         )
         for name in supported_names:
@@ -424,18 +425,13 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
                 "get_crc32_options",
                 "set_crc32_options",
                 "get_default_load_endianness",
+                "set_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
             },
         )
         unsupported = set(expected_serialization.__all__) - actual_public
-        self.assertTrue(
-            {
-                "set_default_load_endianness",
-                "save",
-                "load",
-            }.issubset(unsupported)
-        )
+        self.assertTrue({"save", "load"}.issubset(unsupported))
         for name in unsupported:
             with self.subTest(name=name):
                 self.assertFalse(hasattr(actual_serialization, name))
@@ -450,6 +446,7 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
             "get_crc32_options",
             "set_crc32_options",
             "get_default_load_endianness",
+            "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
         ):
