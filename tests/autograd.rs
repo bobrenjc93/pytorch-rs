@@ -1,8 +1,20 @@
-use pytorch_rs::{MemoryFormat, Tensor, TensorError, is_grad_enabled, no_grad};
+use pytorch_rs::{MemoryFormat, NoGradGuard, Tensor, TensorError, is_grad_enabled, no_grad};
 use std::{
+    cell::RefCell,
+    env,
+    process::Command,
     sync::{Arc, Barrier},
     thread,
 };
+
+const NO_GRAD_TLS_TEARDOWN_CHILD: &str = "PYTORCH_RS_NO_GRAD_TLS_TEARDOWN_CHILD";
+const NO_GRAD_TLS_TEARDOWN_SUCCESS: &str = "no-grad TLS teardown completed";
+
+thread_local! {
+    static TEARDOWN_NO_GRAD_GUARD: RefCell<Option<NoGradGuard>> = const {
+        RefCell::new(None)
+    };
+}
 
 fn values(tensor: &Tensor) -> Vec<f32> {
     tensor.try_to_vec().unwrap()
@@ -960,6 +972,52 @@ fn no_grad_guards_remain_disabled_until_every_guard_is_dropped() {
 
     drop(inner);
     assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
+}
+
+#[test]
+fn many_no_grad_guards_can_be_dropped_in_creation_order() {
+    let guards = (0..50_000).map(|_| no_grad()).collect::<Vec<_>>();
+    assert!(!is_grad_enabled());
+
+    for guard in guards {
+        drop(guard);
+    }
+
+    assert!(is_grad_enabled());
+}
+
+#[test]
+fn no_grad_guard_drop_is_safe_during_thread_local_teardown() {
+    if env::var_os(NO_GRAD_TLS_TEARDOWN_CHILD).is_some() {
+        thread::spawn(|| {
+            TEARDOWN_NO_GRAD_GUARD.with(|slot| {
+                assert!(slot.borrow().is_none());
+                slot.replace(Some(no_grad()));
+            });
+        })
+        .join()
+        .unwrap();
+        eprintln!("{NO_GRAD_TLS_TEARDOWN_SUCCESS}");
+        return;
+    }
+
+    let output = Command::new(env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "no_grad_guard_drop_is_safe_during_thread_local_teardown",
+            "--nocapture",
+        ])
+        .env(NO_GRAD_TLS_TEARDOWN_CHILD, "1")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success()
+            && (stdout.contains(NO_GRAD_TLS_TEARDOWN_SUCCESS)
+                || stderr.contains(NO_GRAD_TLS_TEARDOWN_SUCCESS)),
+        "child process failed during thread-local teardown:\nstdout:\n{stdout}\nstderr:\n{stderr}",
+    );
 }
 
 #[test]

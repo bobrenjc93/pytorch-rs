@@ -6,7 +6,6 @@ thread_local! {
     static GRAD_MODE_STATE: RefCell<GradModeState> = const {
         RefCell::new(GradModeState {
             enabled: true,
-            next_guard_id: 0,
             no_grad_guards: Vec::new(),
         })
     };
@@ -14,19 +13,17 @@ thread_local! {
 
 struct GradModeState {
     enabled: bool,
-    next_guard_id: usize,
     no_grad_guards: Vec<NoGradEntry>,
 }
 
 struct NoGradEntry {
-    id: usize,
     previous: bool,
     active: bool,
 }
 
 #[derive(Clone, Copy)]
 struct NoGradToken {
-    id: usize,
+    index: usize,
 }
 
 /// A thread-local guard which disables eager graph recording until dropped.
@@ -72,29 +69,23 @@ pub(crate) fn set_grad_enabled(enabled: bool) {
 fn enter_no_grad() -> NoGradToken {
     GRAD_MODE_STATE.with(|state| {
         let mut state = state.borrow_mut();
-        let id = state.next_guard_id;
-        state.next_guard_id = state
-            .next_guard_id
-            .checked_add(1)
-            .expect("no-grad guard identifier overflowed usize");
+        let index = state.no_grad_guards.len();
         let previous = state.enabled;
         state.enabled = false;
         state.no_grad_guards.push(NoGradEntry {
-            id,
             previous,
             active: true,
         });
-        NoGradToken { id }
+        NoGradToken { index }
     })
 }
 
 fn exit_no_grad(token: NoGradToken) {
-    GRAD_MODE_STATE.with(|state| {
+    let _ = GRAD_MODE_STATE.try_with(|state| {
         let mut state = state.borrow_mut();
         let entry = state
             .no_grad_guards
-            .iter_mut()
-            .find(|entry| entry.id == token.id)
+            .get_mut(token.index)
             .expect("no-grad guard exited without a matching entry");
         assert!(entry.active, "no-grad guard exited more than once");
         entry.active = false;

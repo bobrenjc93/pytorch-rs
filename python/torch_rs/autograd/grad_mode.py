@@ -133,4 +133,9 @@ class enable_grad(_NoParamDecoratorContextManager):
         _C._set_grad_enabled(self.prev)
 
 
+def _legacy_rebuild_no_grad(context_type):
+    """Rebuild no-grad instances written by torch-rs protocol-0/1 pickles."""
+    return no_grad.__new__(context_type)
+
+
 __all__ = ["no_grad", "enable_grad"]

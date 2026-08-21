@@ -88,6 +88,14 @@ else:
 
 
 class NoGradNamespaceTests(unittest.TestCase):
+    # Frozen payloads emitted by the pre-enable_grad implementation.
+    LEGACY_PICKLES = (
+        b"ctorch_rs.autograd.grad_mode\n_legacy_rebuild_no_grad\np0\n"
+        b"(ctorch_rs.autograd.grad_mode\nno_grad\np1\ntp2\nRp3\n.",
+        b"ctorch_rs.autograd.grad_mode\n_legacy_rebuild_no_grad\nq\x00"
+        b"(ctorch_rs.autograd.grad_mode\nno_grad\nq\x01tq\x02Rq\x03.",
+    )
+
     def test_canonical_imports_are_identical_and_minimal(self):
         autograd = importlib.import_module("torch_rs.autograd")
         grad_mode = importlib.import_module("torch_rs.autograd.grad_mode")
@@ -143,6 +151,15 @@ class NoGradNamespaceTests(unittest.TestCase):
                 restored = pickle.loads(payload)
                 self.assertIsNot(restored, instance)
                 self.assertIs(type(restored), context_type)
+                with restored:
+                    self.assertFalse(torch.is_grad_enabled())
+                self.assertTrue(torch.is_grad_enabled())
+
+    def test_legacy_protocol_zero_and_one_pickles_still_load(self):
+        for protocol, payload in enumerate(self.LEGACY_PICKLES):
+            with self.subTest(protocol=protocol):
+                restored = pickle.loads(payload)
+                self.assertIs(type(restored), torch.no_grad)
                 with restored:
                     self.assertFalse(torch.is_grad_enabled())
                 self.assertTrue(torch.is_grad_enabled())
