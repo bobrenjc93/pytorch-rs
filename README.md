@@ -10,6 +10,7 @@ Python package names may contain a hyphen, but Python identifiers may not. The p
 
 ```python
 import mmap
+import typing
 
 import torch_rs as torch
 
@@ -48,6 +49,7 @@ assert torch.get_num_interop_threads() == 1
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
 assert torch.compiler.is_exporting() is False
+assert torch.jit.Final is typing.Final
 assert torch.jit.isinstance([1, 2], list[int]) is True
 assert torch.jit.isinstance(None, int | None) is True
 
@@ -158,7 +160,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.compiler.assume_constant_result(fn)` eagerly sets `fn._dynamo_marked_constant` to the exact `True` singleton and returns the same object without wrapping or memoizing it. `torch.compiler.get_default_backend()` reports the invariant initial backend string `"inductor"` without importing PyTorch or initializing a compiler registry. `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` remain eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compiler.set_default_backend`, `torch.compile`, `torch.export`, graph execution, and the rest of the compiler namespace remain unsupported.
 
-`torch.jit.Attribute(value, type)` is the same two-field tuple carrier exposed from `torch.jit._script.Attribute`, preserving both supplied objects exactly in eager execution. `torch.jit.isinstance(obj, target_type)` provides PyTorch-compatible eager checks for ordinary types, tuples of candidate types, parameterized lists and dictionaries, fixed-length typed tuples, `Optional`, and `Union`. Empty containers retain PyTorch's eager ambiguity warning, and raw container annotations are rejected with the same guidance to add contained types. This does not enable TorchScript: `ScriptModule`, scripting, interfaces, tracing, compilation, and graph execution remain unsupported, while the existing eager JIT decorators and state queries are unchanged.
+`torch.jit.Final` is the exact `typing.Final` marker exposed by PyTorch for eager annotations and remains excluded from wildcard exports. `torch.jit.Attribute(value, type)` is the same two-field tuple carrier exposed from `torch.jit._script.Attribute`, preserving both supplied objects exactly in eager execution. `torch.jit.isinstance(obj, target_type)` provides PyTorch-compatible eager checks for ordinary types, tuples of candidate types, parameterized lists and dictionaries, fixed-length typed tuples, `Optional`, and `Union`. Empty containers retain PyTorch's eager ambiguity warning, and raw container annotations are rejected with the same guidance to add contained types. This does not enable TorchScript: `ScriptModule`, scripting, interfaces, tracing, compilation, and graph execution remain unsupported, while the existing eager JIT decorators and state queries are unchanged.
 
 `torch.serialization.LoadEndianness` exposes PyTorch's `NATIVE`, `LITTLE`, and `BIG` load-byte-order choices. `torch.serialization.get_default_load_endianness()` reports the exact default `None` state, and `torch.serialization.set_default_load_endianness(endianness)` updates that process-global fallback to `None` or a current enum member. `torch.serialization.get_crc32_options()` and `torch.serialization.set_crc32_options(compute_crc32)` expose mutable process-global archive-record checksum state without importing PyTorch. The state starts as the exact `True` singleton, the setter returns `None`, and the getter returns the most recently supplied value. `torch.serialization.get_default_mmap_options()` reports the process-global default used by PyTorch for memory-mapped loads: `mmap.MAP_PRIVATE` initially on supported POSIX platforms. `torch.serialization.set_default_mmap_options(flags)` immediately selects `mmap.MAP_PRIVATE` or `mmap.MAP_SHARED` and also acts as a context manager that restores the prior setting on exit. The mmap setter is unavailable on Windows, while `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
 
