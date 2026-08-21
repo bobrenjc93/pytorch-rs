@@ -222,6 +222,7 @@ class JitExportReferenceTests(unittest.TestCase):
                 for name in expected_jit.__all__
                 if name
                 in {
+                    "Attribute",
                     "annotate",
                     "export",
                     "ignore",
@@ -244,6 +245,7 @@ class JitExportReferenceTests(unittest.TestCase):
         self.assertEqual(
             {name for name in actual_namespace if not name.startswith("__")},
             {
+                "Attribute",
                 "annotate",
                 "export",
                 "ignore",
@@ -327,6 +329,7 @@ class JitExportReferenceTests(unittest.TestCase):
         self.assertEqual(
             {name for name in vars(torch.jit) if not name.startswith("_")},
             {
+                "Attribute",
                 "annotate",
                 "export",
                 "ignore",

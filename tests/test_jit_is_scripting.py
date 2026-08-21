@@ -129,6 +129,7 @@ class JitIsScriptingTests(unittest.TestCase):
         self.assertEqual(
             jit.__all__,
             [
+                "Attribute",
                 "annotate",
                 "export",
                 "ignore",
@@ -140,6 +141,7 @@ class JitIsScriptingTests(unittest.TestCase):
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
             {
+                "Attribute",
                 "annotate",
                 "export",
                 "ignore",
@@ -160,6 +162,7 @@ class JitIsScriptingTests(unittest.TestCase):
         self.assertEqual(
             {name for name in wildcard_namespace if not name.startswith("__")},
             {
+                "Attribute",
                 "annotate",
                 "export",
                 "ignore",
