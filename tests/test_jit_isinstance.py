@@ -281,7 +281,7 @@ class JitIsinstanceTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
-            {*supported, "is_scripting", "is_tracing"},
+            {*supported, "Final", "is_scripting", "is_tracing"},
         )
         jit_namespace = {}
         exec("from torch_rs.jit import *", jit_namespace)

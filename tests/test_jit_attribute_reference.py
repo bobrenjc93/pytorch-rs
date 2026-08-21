@@ -175,7 +175,7 @@ class JitAttributeReferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(actual_jit) if not name.startswith("_")},
-            {*wildcard_supported, "is_scripting", "is_tracing"},
+            {*wildcard_supported, "Final", "is_scripting", "is_tracing"},
         )
         actual_namespace = {}
         expected_namespace = {}
@@ -255,6 +255,7 @@ class JitAttributeReferenceTests(unittest.TestCase):
             {name for name in vars(torch.jit) if not name.startswith("_")},
             {
                 "Attribute",
+                "Final",
                 "annotate",
                 "export",
                 "ignore",

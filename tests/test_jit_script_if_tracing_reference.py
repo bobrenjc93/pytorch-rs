@@ -300,7 +300,12 @@ class JitScriptIfTracingReferenceTests(unittest.TestCase):
             "script_if_tracing",
             "unused",
         }
-        public_supported = {*wildcard_supported, "is_scripting", "is_tracing"}
+        public_supported = {
+            *wildcard_supported,
+            "Final",
+            "is_scripting",
+            "is_tracing",
+        }
 
         self.assertEqual(
             actual_jit.__all__,

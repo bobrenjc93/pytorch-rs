@@ -165,6 +165,7 @@ class JitIsTracingReferenceTests(unittest.TestCase):
         }
         public_supported = {
             *wildcard_supported,
+            "Final",
             "is_scripting",
             "is_tracing",
         }
