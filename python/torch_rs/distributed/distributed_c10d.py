@@ -1,6 +1,16 @@
 """Distributed Collective Communication (c10d)."""
 
-__all__ = ["is_initialized", "is_mpi_available", "is_nccl_available"]
+__all__ = [
+    "is_gloo_available",
+    "is_initialized",
+    "is_mpi_available",
+    "is_nccl_available",
+]
+
+
+def is_gloo_available() -> bool:
+    """Check if the Gloo backend is available."""
+    return False
 
 
 def is_initialized() -> bool:
