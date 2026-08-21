@@ -4561,6 +4561,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.7
       }
+    },
+    {
+      "key": "pr:536",
+      "recordedAt": "2026-08-21T09:15:08.169Z",
+      "label": "PR #536",
+      "kind": "leaf",
+      "prNumber": 536,
+      "title": "Expose torch.distributed.is_ucc_available",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 80.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 63.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.7
+      }
     }
   ]
 }
