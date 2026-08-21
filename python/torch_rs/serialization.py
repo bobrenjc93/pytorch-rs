@@ -3,6 +3,7 @@ __all__ = [
     "get_crc32_options",
     "set_crc32_options",
     "get_default_load_endianness",
+    "set_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
 ]
@@ -37,7 +38,23 @@ def get_default_load_endianness() -> LoadEndianness | None:
     Returns:
         default_load_endian: Optional[LoadEndianness]
     """
-    return None
+    return _state.default_load_endianness
+
+
+def set_default_load_endianness(endianness):
+    """
+    Set fallback byte order for loading files
+
+    If byteorder mark is not present in saved checkpoint,
+    this byte order is used as fallback.
+    By default, it's "native" byte order.
+
+    Args:
+        endianness: the new fallback byte order
+    """
+    if not isinstance(endianness, LoadEndianness) and endianness is not None:
+        raise TypeError("Invalid argument type in function set_default_load_endianness")
+    _state.default_load_endianness = endianness
 
 
 def get_crc32_options() -> bool:

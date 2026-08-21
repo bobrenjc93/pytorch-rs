@@ -4481,6 +4481,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.7
       }
+    },
+    {
+      "key": "pr:514",
+      "recordedAt": "2026-08-21T05:38:35.214Z",
+      "label": "PR #514",
+      "kind": "leaf",
+      "prNumber": 514,
+      "title": "Add mutable serialization load-endianness state",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 79.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 62.8,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.7
+      }
     }
   ]
 }

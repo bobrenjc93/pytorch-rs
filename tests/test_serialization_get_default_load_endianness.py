@@ -183,6 +183,7 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
             "get_crc32_options",
             "set_crc32_options",
             "get_default_load_endianness",
+            "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
         ]
@@ -341,7 +342,7 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
             sys.modules[module_name] = original_module
             torch.serialization = original_module
 
-    def test_setter_save_and_load_remain_unsupported(self):
+    def test_save_and_load_remain_unsupported(self):
         serialization = torch.serialization
 
         self.assertEqual(
@@ -351,11 +352,12 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
                 "get_crc32_options",
                 "set_crc32_options",
                 "get_default_load_endianness",
+                "set_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
             },
         )
-        for name in ("set_default_load_endianness", "save", "load"):
+        for name in ("save", "load"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(serialization, name))
                 self.assertNotIn(name, serialization.__all__)
@@ -400,7 +402,7 @@ assert replacement.LoadEndianness is not serialization.LoadEndianness
 assert getter() is None
 assert old_reloaded_getter() is None
 assert replacement.get_default_load_endianness() is None
-assert not hasattr(replacement, "set_default_load_endianness")
+assert hasattr(replacement, "set_default_load_endianness")
 assert not hasattr(replacement, "save")
 assert not hasattr(replacement, "load")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
