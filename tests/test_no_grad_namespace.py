@@ -100,12 +100,12 @@ class NoGradNamespaceTests(unittest.TestCase):
         self.assertIs(torch.no_grad, grad_mode.no_grad)
         self.assertIs(torch.no_grad, autograd_no_grad)
         self.assertIs(torch.no_grad, grad_mode_no_grad)
-        self.assertEqual(autograd.__all__, ["grad_mode", "no_grad"])
-        self.assertEqual(grad_mode.__all__, ["no_grad"])
+        self.assertEqual(autograd.__all__, ["grad_mode", "enable_grad", "no_grad"])
+        self.assertEqual(grad_mode.__all__, ["no_grad", "enable_grad"])
         self.assertNotIn("autograd", torch.__all__)
 
         for module in (autograd, grad_mode):
-            for unsupported in ("enable_grad", "grad", "backward"):
+            for unsupported in ("set_grad_enabled", "inference_mode", "grad", "backward"):
                 with self.subTest(module=module.__name__, unsupported=unsupported):
                     self.assertFalse(hasattr(module, unsupported))
 

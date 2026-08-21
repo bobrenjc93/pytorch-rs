@@ -67,9 +67,6 @@ mod storage;
 mod tensor;
 mod tensor_error;
 
-#[cfg(feature = "python-bindings")]
-pub(crate) use grad_mode::{enter_no_grad, exit_no_grad};
-
 pub use device::Device;
 pub use dtype::{DType, FloatingPointInfo};
 pub use grad_mode::{NoGradGuard, is_grad_enabled, no_grad};

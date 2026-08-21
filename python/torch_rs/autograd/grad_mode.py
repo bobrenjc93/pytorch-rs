@@ -1,81 +1,136 @@
 """Gradient-mode context managers."""
 
-import copyreg as _copyreg
+from typing import Any as _Any
 
-from ..torch_rs import no_grad as no_grad
-
-
-def _legacy_rebuild_no_grad(context_type):
-    return no_grad.__new__(context_type)
-
-
-def _no_grad_state(context):
-    getstate = getattr(context, "__getstate__", None)
-    if getstate is not None:
-        return getstate()
-
-    instance_state = getattr(context, "__dict__", None)
-    slot_state = {}
-    for name in _copyreg._slotnames(type(context)) or ():
-        try:
-            slot_state[name] = getattr(context, name)
-        except AttributeError:
-            pass
-    if slot_state:
-        return instance_state, slot_state
-    return instance_state
+from .. import torch_rs as _C
+from ..utils._contextlib import (
+    _NoParamDecoratorContextManager as _NoParamDecoratorContextManager,
+)
 
 
-def _no_grad_newobj(context):
-    context_type = type(context)
-    getnewargs_ex = getattr(context, "__getnewargs_ex__", None)
-    if getnewargs_ex is not None:
-        newargs_ex = getnewargs_ex()
-        if not isinstance(newargs_ex, tuple):
-            raise TypeError(
-                "__getnewargs_ex__ should return a tuple, "
-                f"not '{type(newargs_ex).__name__}'"
-            )
-        if len(newargs_ex) != 2:
-            raise ValueError(
-                "__getnewargs_ex__ should return a tuple of length 2, "
-                f"not {len(newargs_ex)}"
-            )
-        newargs, newkwargs = newargs_ex
-        if not isinstance(newargs, tuple):
-            raise TypeError(
-                "first item of the tuple returned by __getnewargs_ex__ "
-                f"must be a tuple, not '{type(newargs).__name__}'"
-            )
-        if not isinstance(newkwargs, dict):
-            raise TypeError(
-                "second item of the tuple returned by __getnewargs_ex__ "
-                f"must be a dict, not '{type(newkwargs).__name__}'"
-            )
-        return _copyreg.__newobj_ex__, (context_type, newargs, newkwargs)
+class no_grad(_NoParamDecoratorContextManager):
+    r"""Context-manager that disables gradient calculation.
 
-    getnewargs = getattr(context, "__getnewargs__", None)
-    if getnewargs is not None:
-        newargs = getnewargs()
-        if not isinstance(newargs, tuple):
-            raise TypeError(
-                "__getnewargs__ should return a tuple, "
-                f"not '{type(newargs).__name__}'"
-            )
-        return _copyreg.__newobj__, (context_type, *newargs)
+    Disabling gradient calculation is useful for inference, when you are sure
+    that you will not call :meth:`Tensor.backward()`. It will reduce memory
+    consumption for computations that would otherwise have `requires_grad=True`.
 
-    return _copyreg.__newobj__, (context_type,)
+    In this mode, the result of every computation will have
+    `requires_grad=False`, even when the inputs have `requires_grad=True`.
+    There is an exception! All factory functions, or functions that create
+    a new Tensor and take a requires_grad kwarg, will NOT be affected by
+    this mode.
+
+    This context manager is thread local; it will not affect computation
+    in other threads.
+
+    Also functions as a decorator.
+
+    .. note::
+        No-grad is one of several mechanisms that can enable or
+        disable gradients locally see :ref:`locally-disable-grad-doc` for
+        more information on how they compare.
+
+    .. note::
+        This API does not apply to :ref:`forward-mode AD <forward-mode-ad>`.
+        If you want to disable forward AD for a computation, you can unpack
+        your dual tensors.
+
+    Example::
+        >>> # xdoctest: +SKIP
+        >>> x = torch.tensor([1.], requires_grad=True)
+        >>> with torch.no_grad():
+        ...     y = x * 2
+        >>> y.requires_grad
+        False
+        >>> @torch.no_grad()
+        ... def doubler(x):
+        ...     return x * 2
+        >>> z = doubler(x)
+        >>> z.requires_grad
+        False
+        >>> @torch.no_grad()
+        ... def tripler(x):
+        ...     return x * 3
+        >>> z = tripler(x)
+        >>> z.requires_grad
+        False
+        >>> # factory function exception
+        >>> with torch.no_grad():
+        ...     a = torch.nn.Parameter(torch.rand(10))
+        >>> a.requires_grad
+        True
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.prev = False
+
+    def __enter__(self) -> None:
+        self.prev = _C.is_grad_enabled()
+        _C._set_grad_enabled(False)
+
+    def __exit__(
+        self, exc_type: _Any, exc_value: _Any, traceback: _Any
+    ) -> None:
+        _C._set_grad_enabled(self.prev)
 
 
-def _reduce_no_grad(context, protocol):
-    if protocol < 2:
-        return (
-            _legacy_rebuild_no_grad,
-            (type(context),),
-            _no_grad_state(context),
-        )
-    newobj, newargs = _no_grad_newobj(context)
-    return newobj, newargs, _no_grad_state(context)
+class enable_grad(_NoParamDecoratorContextManager):
+    r"""Context-manager that enables gradient calculation.
+
+    Enables gradient calculation, if it has been disabled via :class:`~no_grad`
+    or :class:`~set_grad_enabled`.
+
+    This context manager is thread local; it will not affect computation
+    in other threads.
+
+    Also functions as a decorator.
+
+    .. note::
+        enable_grad is one of several mechanisms that can enable or
+        disable gradients locally see :ref:`locally-disable-grad-doc` for
+        more information on how they compare.
+
+    .. note::
+        This API does not apply to :ref:`forward-mode AD <forward-mode-ad>`.
+
+    Example::
+        >>> # xdoctest: +SKIP
+        >>> x = torch.tensor([1.], requires_grad=True)
+        >>> with torch.no_grad():
+        ...     with torch.enable_grad():
+        ...         y = x * 2
+        >>> y.requires_grad
+        True
+        >>> y.backward()
+        >>> x.grad
+        tensor([2.])
+        >>> @torch.enable_grad()
+        ... def doubler(x):
+        ...     return x * 2
+        >>> with torch.no_grad():
+        ...     z = doubler(x)
+        >>> z.requires_grad
+        True
+        >>> @torch.enable_grad()
+        ... def tripler(x):
+        ...     return x * 3
+        >>> with torch.no_grad():
+        ...     z = tripler(x)
+        >>> z.requires_grad
+        True
+
+    """
+
+    def __enter__(self) -> None:
+        self.prev = _C.is_grad_enabled()
+        _C._set_grad_enabled(True)
+
+    def __exit__(
+        self, exc_type: _Any, exc_value: _Any, traceback: _Any
+    ) -> None:
+        _C._set_grad_enabled(self.prev)
 
 
-__all__ = ["no_grad"]
+__all__ = ["no_grad", "enable_grad"]

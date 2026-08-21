@@ -185,6 +185,8 @@ if "matmul" in _native.__all__:
     __all__.insert(0, "matmul")
 
 from . import autograd as autograd
+from .autograd.grad_mode import enable_grad as enable_grad
+from .autograd.grad_mode import no_grad as no_grad
 from . import compiler as compiler
 from . import cpu as cpu
 from . import distributed as distributed
@@ -199,5 +201,7 @@ from .functional import atleast_1d as atleast_1d
 from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
+
+__all__.extend(["no_grad", "enable_grad"])
 
 del _copyreg, _functools, _native, _sys
