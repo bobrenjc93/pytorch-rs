@@ -55,6 +55,12 @@ def constant_answer():
 
 assert constant_answer._dynamo_marked_constant is True
 assert constant_answer() == 42
+assert list(torch.serialization.LoadEndianness) == [
+    torch.serialization.LoadEndianness.NATIVE,
+    torch.serialization.LoadEndianness.LITTLE,
+    torch.serialization.LoadEndianness.BIG,
+]
+assert torch.serialization.get_default_load_endianness() is None
 assert torch.serialization.get_crc32_options() is True
 assert torch.serialization.get_default_mmap_options() == getattr(
     mmap, "MAP_PRIVATE", None
@@ -141,7 +147,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.compiler.assume_constant_result(fn)` eagerly sets `fn._dynamo_marked_constant` to the exact `True` singleton and returns the same object without wrapping or memoizing it. `torch.compiler.is_compiling()`, `torch.compiler.is_dynamo_compiling()`, and `torch.compiler.is_exporting()` remain eager-state compatibility queries that return the exact `False` singleton without importing PyTorch. `torch.compile`, `torch.export`, graph execution, and the rest of the compiler namespace remain unsupported.
 
-`torch.serialization.get_crc32_options()` and `torch.serialization.set_crc32_options(compute_crc32)` expose mutable process-global archive-record checksum state without importing PyTorch. The state starts as the exact `True` singleton, the setter returns `None`, and the getter returns the most recently supplied value. `torch.serialization.get_default_mmap_options()` reports the process-global default used by PyTorch for memory-mapped loads: `mmap.MAP_PRIVATE` initially on supported POSIX platforms. `torch.serialization.set_default_mmap_options(flags)` immediately selects `mmap.MAP_PRIVATE` or `mmap.MAP_SHARED` and also acts as a context manager that restores the prior setting on exit. The setter is unavailable on Windows, while `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
+`torch.serialization.LoadEndianness` exposes PyTorch's exact `NATIVE`, `LITTLE`, and `BIG` fallback-byte-order choices, while `torch.serialization.get_default_load_endianness()` reports the exact default-state `None` sentinel. Changing that state remains unsupported. `torch.serialization.get_crc32_options()` and `torch.serialization.set_crc32_options(compute_crc32)` expose mutable process-global archive-record checksum state without importing PyTorch. The state starts as the exact `True` singleton, the setter returns `None`, and the getter returns the most recently supplied value. `torch.serialization.get_default_mmap_options()` reports the process-global default used by PyTorch for memory-mapped loads: `mmap.MAP_PRIVATE` initially on supported POSIX platforms. `torch.serialization.set_default_mmap_options(flags)` immediately selects `mmap.MAP_PRIVATE` or `mmap.MAP_SHARED` and also acts as a context manager that restores the prior setting on exit. The mmap setter is unavailable on Windows, while `torch.save`, `torch.load`, load-endianness mutation, and the rest of the serialization namespace remain unsupported.
 
 `Tensor.is_distributed()` returns the exact `False` singleton for every supported local CPU tensor without inspecting or changing storage, layout, or autograd state. `torch.distributed.is_available()`, `torch.distributed.is_mpi_available()`, and `torch.distributed.is_nccl_available()` are honest package, MPI, and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All four package queries return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Distributed tensor types, MPI initialization, process-group creation, backend execution, collectives, and every other distributed API remain unsupported.
 

@@ -1,10 +1,13 @@
 __all__ = [
+    "LoadEndianness",
     "get_crc32_options",
     "set_crc32_options",
+    "get_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
 ]
 
+from enum import Enum as _Enum
 import mmap as _mmap
 import sys as _sys
 from typing import Any as _Any
@@ -15,6 +18,26 @@ from . import _serialization_state as _state
 _IS_WINDOWS = _sys.platform == "win32"
 _MAP_PRIVATE = getattr(_mmap, "MAP_PRIVATE", None)
 _MAP_SHARED = getattr(_mmap, "MAP_SHARED", None)
+
+
+class LoadEndianness(_Enum):
+    NATIVE = 1
+    LITTLE = 2
+    BIG = 3
+
+
+def get_default_load_endianness() -> LoadEndianness | None:
+    """
+    Get fallback byte order for loading files
+
+    If byteorder mark is not present in saved checkpoint,
+    this byte order is used as fallback.
+    By default, it's "native" byte order.
+
+    Returns:
+        default_load_endian: Optional[LoadEndianness]
+    """
+    return None
 
 
 def get_crc32_options() -> bool:

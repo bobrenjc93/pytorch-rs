@@ -225,8 +225,12 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         serialization = torch.serialization
         functions = {
+            "LoadEndianness": serialization.LoadEndianness,
             "get_crc32_options": serialization.get_crc32_options,
             "set_crc32_options": serialization.set_crc32_options,
+            "get_default_load_endianness": (
+                serialization.get_default_load_endianness
+            ),
             "get_default_mmap_options": serialization.get_default_mmap_options,
             "set_default_mmap_options": serialization.set_default_mmap_options,
         }
@@ -240,7 +244,8 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "get_crc32_options, set_crc32_options, get_default_mmap_options, "
+            "LoadEndianness, get_crc32_options, set_crc32_options, "
+            "get_default_load_endianness, get_default_mmap_options, "
             "set_default_mmap_options",
             direct_import,
         )
@@ -374,14 +379,15 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         self.assertEqual(
             {name for name in vars(serialization) if not name.startswith("_")},
             {
+                "LoadEndianness",
                 "get_crc32_options",
                 "set_crc32_options",
+                "get_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
             },
         )
         for name in (
-            "get_default_load_endianness",
             "set_default_load_endianness",
             "save",
             "load",
@@ -439,14 +445,18 @@ assert (
     == replacement.get_default_mmap_options()
 )
 assert serialization.__all__ == [
+    "LoadEndianness",
     "get_crc32_options",
     "set_crc32_options",
+    "get_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
 ]
 assert replacement.__all__ == [
+    "LoadEndianness",
     "get_crc32_options",
     "set_crc32_options",
+    "get_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
 ]
