@@ -9,6 +9,7 @@ import types
 import typing
 import warnings
 from typing import Callable, TypeVar, Union, get_args, get_origin
+from typing import Final as Final
 
 from typing_extensions import ParamSpec
 

@@ -1,3 +1,4 @@
+from torch_rs._jit_internal import Final as Final
 from torch_rs._jit_internal import _isinstance, export, ignore, is_scripting, unused
 from torch_rs.jit._script import Attribute
 from torch_rs.jit._trace import _script_if_tracing, is_tracing
