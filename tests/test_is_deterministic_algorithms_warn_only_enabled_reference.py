@@ -216,11 +216,10 @@ class IsDeterministicAlgorithmsWarnOnlyEnabledReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_deterministic_setters_and_debug_mode_remain_unsupported(self):
+    def test_deterministic_setters_remain_unsupported(self):
         unsupported = (
             "use_deterministic_algorithms",
             "set_deterministic_debug_mode",
-            "get_deterministic_debug_mode",
         )
         for name in unsupported:
             with self.subTest(name=name):

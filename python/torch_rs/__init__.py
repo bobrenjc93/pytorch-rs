@@ -27,6 +27,14 @@ def are_deterministic_algorithms_enabled() -> _builtins.bool:
     return False
 
 
+def get_deterministic_debug_mode() -> _builtins.int:
+    r"""Returns the current value of the debug mode for deterministic
+    operations. Refer to :func:`torch.set_deterministic_debug_mode`
+    documentation for more details.
+    """
+    return 0
+
+
 def is_deterministic_algorithms_warn_only_enabled() -> _builtins.bool:
     r"""Returns True if the global deterministic flag is set to warn only.
     Refer to :func:`torch.use_deterministic_algorithms` documentation for more
@@ -133,6 +141,7 @@ __doc__ = _native.__doc__
 __all__ = [
     *_native.__all__,
     "are_deterministic_algorithms_enabled",
+    "get_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
     "get_float32_matmul_precision",

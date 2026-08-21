@@ -159,11 +159,10 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_setters_and_debug_mode_remain_unsupported(self):
+    def test_deterministic_setters_remain_unsupported(self):
         unsupported = (
             "use_deterministic_algorithms",
             "set_deterministic_debug_mode",
-            "get_deterministic_debug_mode",
         )
         for name in unsupported:
             with self.subTest(name=name):
