@@ -103,7 +103,57 @@ class TensorSqrtTests(unittest.TestCase):
             stride=(1,),
         )
 
-    def test_grad_recording_is_rejected_and_no_grad_is_supported(self):
+    def test_grad_recording_uses_sqrt_backward_and_no_grad_is_supported(self):
+        scalar = torch.tensor(4.0, requires_grad=True)
+        scalar_output = scalar.sqrt()
+        self.assertTrue(scalar_output.requires_grad)
+        self.assertFalse(scalar_output.is_leaf)
+        scalar_output.backward()
+        self.assertEqual(scalar.grad.item(), 0.25)
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        empty_output = empty.sqrt()
+        self.assertTrue(empty_output.requires_grad)
+        self.assertEqual(empty_output.shape, (2, 0, 3))
+        self.assertEqual(empty_output.stride(), (3, 3, 1))
+        empty_output.sum().backward()
+        self.assertEqual(empty.grad.shape, (2, 0, 3))
+        self.assertEqual(empty.grad.numel(), 0)
+
+        leaf = torch.tensor(
+            np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            requires_grad=True,
+        )
+        view = leaf.transpose(0, 2)[1]
+        output = view.sqrt()
+        self.assertTrue(output.requires_grad)
+        self.assertEqual(output.shape, (3, 2))
+        self.assertEqual(output.stride(), (1, 3))
+        self.assertEqual(output.storage_offset(), 0)
+        weights = torch.tensor(
+            np.arange(1, 7, dtype=np.float32).reshape(3, 2).tolist()
+        )
+        loss = (output * weights).sum()
+        loss.backward()
+        expected = np.zeros((2, 3, 4), dtype=np.float32)
+        expected[:, :, 1] = (
+            np.asarray(weights)
+            / (np.float32(2.0) * np.sqrt(np.asarray(view, dtype=np.float32)))
+        ).transpose(1, 0)
+        np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            loss.backward()
+
+        accumulated = torch.tensor([1.0, 4.0, 9.0], requires_grad=True)
+        accumulated.sqrt().sum().backward()
+        accumulated.sqrt().sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(accumulated.grad),
+            np.asarray([1.0, 0.5, np.float32(1.0 / 3.0)], dtype=np.float32),
+        )
+
         def make_cases():
             scalar = torch.tensor(4.0, requires_grad=True)
             empty = torch.zeros((2, 0, 3), requires_grad=True).transpose(0, 2)[1]
@@ -115,13 +165,6 @@ class TensorSqrtTests(unittest.TestCase):
             return (scalar, empty, strided[1], strided)
 
         for case, source in enumerate(make_cases()):
-            with self.subTest(case=case, mode="recording"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^sqrt\(\): autograd recording is not supported$",
-                ):
-                    source.sqrt()
-
             with self.subTest(case=case, mode="no_grad"):
                 expected = source.detach().sqrt()
                 with torch.no_grad():

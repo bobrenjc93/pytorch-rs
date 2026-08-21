@@ -2335,7 +2335,8 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn sqrt(&self) -> Result<Self, TensorError> {
-        self.unary_map(sqrt_value)
+        let output = self.unary_map(sqrt_value)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Sqrt, apply_sqrt_vjp)
     }
 
     #[must_use]
@@ -3110,6 +3111,15 @@ fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
             .iter()
             .enumerate()
             .map(|(index, value)| value * input.value_at_linear_index(index).cos()),
+    );
+}
+
+fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    gradient.extend(
+        upstream
+            .iter()
+            .enumerate()
+            .map(|(index, &value)| value / (2.0 * sqrt_value(input.value_at_linear_index(index)))),
     );
 }
 
@@ -4549,6 +4559,7 @@ mod tests {
 
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
+        assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
     }
 
     fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {
