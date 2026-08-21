@@ -4385,6 +4385,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.5
       }
+    },
+    {
+      "key": "pr:489",
+      "recordedAt": "2026-08-21T00:18:05.588Z",
+      "label": "PR #489",
+      "kind": "leaf",
+      "prNumber": 489,
+      "title": "Add eager torch.jit.script_if_tracing",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 78.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 62.3,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.5
+      }
     }
   ]
 }
