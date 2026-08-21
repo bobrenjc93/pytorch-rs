@@ -50,6 +50,8 @@ mod python_tensor_errors;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_tensor_lazy_bits;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_tensor_leaf_grad;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_tensor_queries;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_tensor_shape;

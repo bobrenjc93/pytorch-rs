@@ -1053,6 +1053,10 @@ impl PyTensor {
     pub(crate) const fn inner(&self) -> &CoreTensor {
         &self.inner
     }
+
+    pub(crate) const fn grad_cache(&self) -> &PyOnceLock<Py<PyTensor>> {
+        &self.grad_cache
+    }
 }
 
 pub(crate) fn get_device_variable_function(
@@ -3328,34 +3332,6 @@ impl PyTensor {
     #[getter]
     fn device(&self) -> PyDevice {
         PyDevice::from_device(self.inner.device())
-    }
-
-    #[getter]
-    fn requires_grad(&self) -> bool {
-        self.inner.requires_grad()
-    }
-
-    #[getter]
-    fn is_leaf(&self) -> bool {
-        self.inner.is_leaf()
-    }
-
-    #[getter]
-    fn grad(&self, py: Python<'_>) -> PyResult<Option<Py<Self>>> {
-        if let Some(gradient) = self.grad_cache.get(py) {
-            return Ok(Some(gradient.clone_ref(py)));
-        }
-        let Some(inner) = self
-            .inner
-            .live_grad()
-            .map_err(|error| tensor_error(&error))?
-        else {
-            return Ok(None);
-        };
-        let gradient = self
-            .grad_cache
-            .get_or_try_init(py, || Py::new(py, Self::new(inner)))?;
-        Ok(Some(gradient.clone_ref(py)))
     }
 
     /// NumPy-style transpose view with every dimension reversed.
