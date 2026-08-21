@@ -4417,6 +4417,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.5
       }
+    },
+    {
+      "key": "pr:498",
+      "recordedAt": "2026-08-21T01:50:00.271Z",
+      "label": "PR #498",
+      "kind": "composite",
+      "prNumber": 498,
+      "title": "YOLO generation 50: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 78.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 62.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.6
+      }
     }
   ]
 }
