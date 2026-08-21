@@ -292,6 +292,7 @@ class JitScriptIfTracingReferenceTests(unittest.TestCase):
         actual_trace = actual_jit._trace
         expected_trace = expected_jit._trace
         wildcard_supported = {
+            "Attribute",
             "annotate",
             "export",
             "ignore",

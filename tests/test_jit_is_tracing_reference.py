@@ -155,6 +155,7 @@ class JitIsTracingReferenceTests(unittest.TestCase):
         actual = actual_jit.is_tracing
         expected = expected_jit.is_tracing
         wildcard_supported = {
+            "Attribute",
             "annotate",
             "export",
             "ignore",

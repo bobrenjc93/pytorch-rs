@@ -258,6 +258,7 @@ class JitIsinstanceTests(unittest.TestCase):
         jit = torch.jit
         function = jit.isinstance
         supported = {
+            "Attribute",
             "annotate",
             "export",
             "ignore",
@@ -269,6 +270,7 @@ class JitIsinstanceTests(unittest.TestCase):
         self.assertEqual(
             jit.__all__,
             [
+                "Attribute",
                 "annotate",
                 "export",
                 "ignore",
