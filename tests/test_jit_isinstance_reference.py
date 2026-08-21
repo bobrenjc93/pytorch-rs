@@ -261,6 +261,7 @@ class JitIsinstanceReferenceTests(unittest.TestCase):
         actual = actual_jit.isinstance
         expected = expected_jit.isinstance
         wildcard_supported = {
+            "Attribute",
             "annotate",
             "export",
             "ignore",

@@ -246,6 +246,7 @@ class JitIgnoreReferenceTests(unittest.TestCase):
         actual = torch.jit.ignore
         expected = reference_torch.jit.ignore
         wildcard_supported = {
+            "Attribute",
             "annotate",
             "export",
             "ignore",

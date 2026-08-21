@@ -145,6 +145,7 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
         actual = actual_jit.is_scripting
         expected = expected_jit.is_scripting
         wildcard_supported = {
+            "Attribute",
             "annotate",
             "export",
             "ignore",
