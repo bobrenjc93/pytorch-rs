@@ -48,7 +48,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         operation: "feature_dropout",
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
-        supports_probability_one: false,
+        supports_probability_one: true,
         required_rank: Some(4),
     },
     DropoutMetadata {
