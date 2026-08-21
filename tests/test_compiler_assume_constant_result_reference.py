@@ -201,6 +201,7 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
         expected = expected_compiler.assume_constant_result
         supported = {
             "assume_constant_result",
+            "get_default_backend",
             "is_compiling",
             "is_dynamo_compiling",
             "is_exporting",

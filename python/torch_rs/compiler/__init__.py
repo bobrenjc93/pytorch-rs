@@ -1,5 +1,10 @@
+from collections.abc import Callable
+from typing import Any
+
+
 __all__ = [
     "assume_constant_result",
+    "get_default_backend",
     "is_compiling",
     "is_dynamo_compiling",
     "is_exporting",
@@ -22,6 +27,15 @@ def assume_constant_result(fn):
     """
     fn._dynamo_marked_constant = True
     return fn
+
+
+def get_default_backend() -> str | Callable[..., Any]:
+    """Return the current default backend for ``torch.compile``.
+
+    Returns:
+        The current default backend (string or callable). Initially ``"inductor"``.
+    """
+    return "inductor"
 
 
 def is_compiling() -> bool:
