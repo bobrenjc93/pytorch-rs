@@ -178,6 +178,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                     "is_initialized",
                     "is_mpi_available",
                     "is_nccl_available",
+                    "is_ucc_available",
                 }
             ],
         )
@@ -264,6 +265,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         self.assertEqual(
@@ -276,6 +278,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         unsupported = expected_public - actual_public

@@ -15,12 +15,12 @@ from unittest import mock
 import torch_rs as torch
 
 
-FUNCTION_DOC = "Check if the NCCL backend is available."
+FUNCTION_DOC = "Check if the UCC backend is available."
 
 
-class DistributedIsNcclAvailableTests(unittest.TestCase):
+class DistributedIsUccAvailableTests(unittest.TestCase):
     def test_returns_exact_false_without_runtime_probes(self):
-        function = torch.distributed.is_nccl_available
+        function = torch.distributed.is_ucc_available
         distributed_c10d = importlib.import_module(
             "torch_rs.distributed.distributed_c10d"
         )
@@ -28,20 +28,20 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
         self.assertEqual(function.__code__.co_names, ())
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
-        self.assertFalse(hasattr(distributed_c10d, "ProcessGroupNCCL"))
+        self.assertFalse(hasattr(distributed_c10d, "ProcessGroupUCC"))
 
         environments = (
             {},
-            {"USE_DISTRIBUTED": "0", "USE_NCCL": "0"},
-            {"USE_DISTRIBUTED": "1", "USE_NCCL": "1"},
+            {"USE_DISTRIBUTED": "0", "USE_UCC": "0"},
+            {"USE_DISTRIBUTED": "1", "USE_UCC": "1"},
             {
                 "CUDA_VISIBLE_DEVICES": "0",
                 "MASTER_ADDR": "127.0.0.1",
                 "MASTER_PORT": "29500",
-                "NCCL_DEBUG": "INFO",
+                "UCC_DEBUG": "INFO",
                 "RANK": "0",
                 "USE_DISTRIBUTED": "1",
-                "USE_NCCL": "1",
+                "USE_UCC": "1",
                 "WORLD_SIZE": "1",
             },
         )
@@ -51,7 +51,7 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
                     self.assertIs(function(), False)
 
     def test_false_is_stable_across_threads_and_grad_modes(self):
-        function = torch.distributed.is_nccl_available
+        function = torch.distributed.is_ucc_available
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -103,11 +103,11 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
         distributed_c10d = importlib.import_module(
             "torch_rs.distributed.distributed_c10d"
         )
-        function = distributed.is_nccl_available
+        function = distributed.is_ucc_available
 
         self.assertIs(torch.distributed, distributed)
         self.assertIs(distributed.distributed_c10d, distributed_c10d)
-        self.assertIs(distributed_c10d.is_nccl_available, function)
+        self.assertIs(distributed_c10d.is_ucc_available, function)
         self.assertIs(sys.modules["torch_rs.distributed"], distributed)
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"],
@@ -117,8 +117,8 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
         self.assertEqual(str(inspect.signature(function)), "() -> bool")
         self.assertEqual(function.__annotations__, {"return": bool})
         self.assertEqual(typing.get_type_hints(function), {"return": bool})
-        self.assertEqual(function.__name__, "is_nccl_available")
-        self.assertEqual(function.__qualname__, "is_nccl_available")
+        self.assertEqual(function.__name__, "is_ucc_available")
+        self.assertEqual(function.__qualname__, "is_ucc_available")
         self.assertEqual(
             function.__module__, "torch_rs.distributed.distributed_c10d"
         )
@@ -132,7 +132,7 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
     def test_imports_copy_wildcards_and_pickle_use_the_canonical_module(self):
         distributed = torch.distributed
         distributed_c10d = distributed.distributed_c10d
-        function = distributed.is_nccl_available
+        function = distributed.is_ucc_available
 
         self.assertFalse(hasattr(distributed, "__all__"))
         self.assertEqual(
@@ -152,16 +152,16 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
         self.assertIs(package_import["distributed"], distributed)
 
         direct_import = {}
-        exec("from torch_rs.distributed import is_nccl_available", direct_import)
-        self.assertIs(direct_import["is_nccl_available"], function)
+        exec("from torch_rs.distributed import is_ucc_available", direct_import)
+        self.assertIs(direct_import["is_ucc_available"], function)
 
         owner_import = {}
         exec(
             "from torch_rs.distributed.distributed_c10d import "
-            "is_nccl_available",
+            "is_ucc_available",
             owner_import,
         )
-        self.assertIs(owner_import["is_nccl_available"], function)
+        self.assertIs(owner_import["is_ucc_available"], function)
 
         distributed_namespace = {}
         exec("from torch_rs.distributed import *", distributed_namespace)
@@ -182,7 +182,7 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
                 "is_ucc_available",
             },
         )
-        self.assertIs(distributed_namespace["is_nccl_available"], function)
+        self.assertIs(distributed_namespace["is_ucc_available"], function)
         self.assertIs(
             distributed_namespace["distributed_c10d"], distributed_c10d
         )
@@ -203,16 +203,16 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
                 "is_ucc_available",
             },
         )
-        self.assertIs(owner_namespace["is_nccl_available"], function)
+        self.assertIs(owner_namespace["is_ucc_available"], function)
 
         self.assertNotIn("distributed", torch.__all__)
         self.assertNotIn("get_pg_count", torch.__all__)
-        self.assertNotIn("is_nccl_available", torch.__all__)
+        self.assertNotIn("is_ucc_available", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("distributed", top_level_namespace)
         self.assertNotIn("get_pg_count", top_level_namespace)
-        self.assertNotIn("is_nccl_available", top_level_namespace)
+        self.assertNotIn("is_ucc_available", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -225,23 +225,23 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.distributed.is_nccl_available
+        function = torch.distributed.is_ucc_available
         cases = (
             (
                 lambda: function(None),
-                "is_nccl_available() takes 0 positional arguments but 1 was given",
+                "is_ucc_available() takes 0 positional arguments but 1 was given",
             ),
             (
                 lambda: function(None, None),
-                "is_nccl_available() takes 0 positional arguments but 2 were given",
+                "is_ucc_available() takes 0 positional arguments but 2 were given",
             ),
             (
                 lambda: function(enabled=True),
-                "is_nccl_available() got an unexpected keyword argument 'enabled'",
+                "is_ucc_available() got an unexpected keyword argument 'enabled'",
             ),
             (
                 lambda: function(None, enabled=True),
-                "is_nccl_available() got an unexpected keyword argument 'enabled'",
+                "is_ucc_available() got an unexpected keyword argument 'enabled'",
             ),
         )
         for call, message in cases:
@@ -251,7 +251,7 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_nccl_execution_and_other_distributed_apis_remain_unsupported(self):
+    def test_ucc_execution_and_other_distributed_apis_remain_unsupported(self):
         distributed = torch.distributed
         distributed_c10d = distributed.distributed_c10d
 
@@ -287,7 +287,7 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
             "Backend",
             "GroupMember",
             "ProcessGroup",
-            "ProcessGroupNCCL",
+            "ProcessGroupUCC",
             "all_reduce",
             "destroy_process_group",
             "get_rank",
@@ -298,7 +298,7 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(distributed, name))
                 self.assertFalse(hasattr(distributed_c10d, name))
-        self.assertFalse(hasattr(torch, "is_nccl_available"))
+        self.assertFalse(hasattr(torch, "is_ucc_available"))
 
     def test_importing_and_calling_does_not_import_pytorch(self):
         script = r"""
@@ -314,24 +314,26 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 os.environ.update(
     USE_DISTRIBUTED="1",
-    USE_NCCL="1",
+    USE_UCC="1",
     MASTER_ADDR="127.0.0.1",
     MASTER_PORT="29500",
     RANK="0",
     WORLD_SIZE="1",
     CUDA_VISIBLE_DEVICES="0",
-    NCCL_DEBUG="INFO",
+    UCC_DEBUG="INFO",
 )
 import torch_rs as torch
 
-function = torch.distributed.is_nccl_available
+function = torch.distributed.is_ucc_available
 assert function.__code__.co_names == ()
 assert function() is False
 assert torch.distributed.is_available() is False
 assert torch.distributed.get_pg_count() == 0
 assert torch.distributed.is_gloo_available() is False
 assert torch.distributed.is_initialized() is False
-assert not hasattr(torch.distributed, "ProcessGroupNCCL")
+assert torch.distributed.is_mpi_available() is False
+assert torch.distributed.is_nccl_available() is False
+assert not hasattr(torch.distributed, "ProcessGroupUCC")
 assert not hasattr(torch.distributed, "init_process_group")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
@@ -350,3 +352,4 @@ assert not any(name == "torch" or name.startswith("torch.") for name in sys.modu
 
 if __name__ == "__main__":
     unittest.main()
+

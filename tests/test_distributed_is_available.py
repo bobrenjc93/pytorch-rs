@@ -153,6 +153,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         self.assertIs(distributed_namespace["is_available"], function)
@@ -222,6 +223,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         self.assertFalse(hasattr(torch, "get_pg_count"))

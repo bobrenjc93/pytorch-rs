@@ -145,6 +145,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             ],
         )
 
@@ -180,6 +181,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         self.assertIs(distributed_namespace["is_mpi_available"], function)
@@ -200,6 +202,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         self.assertIs(owner_namespace["is_mpi_available"], function)
@@ -269,6 +272,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         self.assertEqual(
@@ -283,6 +287,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         for name in (
