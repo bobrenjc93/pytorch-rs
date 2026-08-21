@@ -18,6 +18,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: true,
         required_rank: None,
+        optional_unbatched_rank: None,
     },
     DropoutMetadata {
         public_function: "alpha_dropout",
@@ -26,6 +27,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: false,
         supports_probability_one: false,
         required_rank: None,
+        optional_unbatched_rank: None,
     },
     DropoutMetadata {
         public_function: "feature_alpha_dropout",
@@ -34,6 +36,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: true,
         required_rank: None,
+        optional_unbatched_rank: None,
     },
     DropoutMetadata {
         public_function: "dropout1d",
@@ -42,6 +45,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: false,
         required_rank: Some(3),
+        optional_unbatched_rank: None,
     },
     DropoutMetadata {
         public_function: "dropout2d",
@@ -50,6 +54,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: false,
         required_rank: Some(4),
+        optional_unbatched_rank: None,
     },
     DropoutMetadata {
         public_function: "dropout3d",
@@ -58,6 +63,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: true,
         required_rank: Some(5),
+        optional_unbatched_rank: Some(4),
     },
 ];
 
@@ -69,6 +75,7 @@ struct DropoutMetadata {
     supports_tensor_probability: bool,
     supports_probability_one: bool,
     required_rank: Option<usize>,
+    optional_unbatched_rank: Option<usize>,
 }
 
 struct DropoutSchema {
@@ -146,26 +153,50 @@ fn _nn_functional_dropout(
         )));
     }
 
+    let (input_rank, input_is_empty) = {
+        let tensor = tensor.try_borrow()?;
+        (tensor.inner().shape().len(), tensor.inner().numel() == 0)
+    };
+    let is_optional_unbatched = metadata.optional_unbatched_rank == Some(input_rank);
     if let Some(required_rank) = metadata.required_rank
-        && tensor.try_borrow()?.inner().shape().len() != required_rank
+        && input_rank != required_rank
+        && !is_optional_unbatched
     {
+        let supported_ranks = metadata.optional_unbatched_rank.map_or_else(
+            || format!("rank-{required_rank}"),
+            |unbatched_rank| format!("rank-{unbatched_rank} or rank-{required_rank}"),
+        );
         return Err(PyNotImplementedError::new_err(format!(
-            "torch_rs.nn.functional.{} only supports rank-{required_rank} inputs",
+            "torch_rs.nn.functional.{} only supports {supported_ranks} inputs",
             metadata.public_function
         )));
     }
 
-    let input_is_empty = tensor.try_borrow()?.inner().numel() == 0;
     if !training || probability == 0.0 || input_is_empty {
+        if is_optional_unbatched && !inplace {
+            let output = tensor
+                .try_borrow()?
+                .inner()
+                .unsqueeze_front()
+                .and_then(|input| input.squeeze_dim(0))
+                .map_err(|error| tensor_error(&error))?;
+            return PyTensor::new(output).into_py_any(py);
+        }
         return Ok(tensor.clone().unbind().into_any());
     }
 
     if metadata.supports_probability_one && !inplace && probability.to_bits() == 1.0_f64.to_bits() {
-        let output = tensor
-            .try_borrow()?
-            .inner()
-            .mul_scalar(0.0)
-            .map_err(|error| tensor_error(&error))?;
+        let output = if is_optional_unbatched {
+            tensor
+                .try_borrow()?
+                .inner()
+                .unsqueeze_front()
+                .and_then(|input| input.mul_scalar(0.0))
+                .and_then(|output| output.squeeze_dim(0))
+        } else {
+            tensor.try_borrow()?.inner().mul_scalar(0.0)
+        }
+        .map_err(|error| tensor_error(&error))?;
         return PyTensor::new(output).into_py_any(py);
     }
 
