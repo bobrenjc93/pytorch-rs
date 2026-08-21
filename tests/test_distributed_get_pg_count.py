@@ -15,7 +15,7 @@ from unittest import mock
 import torch_rs as torch
 
 
-FUNCTION_DOC = "\nReturn the number of process groups.\n\n"
+FUNCTION_DOC = "Return the number of process groups."
 
 
 class DistributedGetPgCountTests(unittest.TestCase):
@@ -124,7 +124,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
             function.__module__, "torch_rs.distributed.distributed_c10d"
         )
         self.assertIs(inspect.getmodule(function), distributed_c10d)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(inspect.getdoc(function), FUNCTION_DOC)
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
