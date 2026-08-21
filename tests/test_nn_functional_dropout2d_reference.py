@@ -72,6 +72,41 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
             return leaf, offset
         return leaf, offset.transpose(2, 3)
 
+    def make_probability_one_case(self, module, case, *, requires_grad):
+        values = [
+            [
+                [
+                    [-1.0, 2.0, -0.0, 0.0],
+                    [
+                        float("nan"),
+                        -float("nan"),
+                        float("inf"),
+                        -float("inf"),
+                    ],
+                ]
+            ]
+        ]
+        if case == "contiguous":
+            leaf = module.tensor(
+                values,
+                dtype=module.float32,
+                requires_grad=requires_grad,
+            )
+            return leaf, leaf
+
+        leaf = module.tensor(
+            [
+                [[[[9.0, 9.0, 9.0, 9.0], [9.0, 9.0, 9.0, 9.0]]]],
+                values,
+            ],
+            dtype=module.float32,
+            requires_grad=requires_grad,
+        )
+        offset = leaf[1]
+        if case == "offset":
+            return leaf, offset
+        return leaf, offset.transpose(2, 3)
+
     def assert_metadata_matches(self, actual, expected, *, case):
         with self.subTest(case=case):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -226,6 +261,133 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
                         self.assertTrue(expected.is_set_to(expected_input))
                     self.assert_metadata_matches(actual, expected, case=invocation)
                     self.assert_values_match(actual, expected, case=invocation)
+
+    def test_training_probability_one_matches_native_zero_multiplication(self):
+        for requires_grad in (False, True):
+            for case in ("contiguous", "offset", "strided"):
+                _, actual_input = self.make_probability_one_case(
+                    torch, case, requires_grad=requires_grad
+                )
+                _, expected_input = self.make_probability_one_case(
+                    reference_torch, case, requires_grad=requires_grad
+                )
+                probabilities = (
+                    (1.0, 1.0),
+                    (True, True),
+                    (np.float32(1.0), np.float32(1.0)),
+                    (
+                        torch.tensor(1.0),
+                        reference_torch.tensor(
+                            1.0, dtype=reference_torch.float32
+                        ),
+                    ),
+                )
+                for probability_case, (
+                    actual_probability,
+                    expected_probability,
+                ) in enumerate(probabilities):
+                    expected_rng = reference_torch.get_rng_state().clone()
+                    actual = functional.dropout2d(
+                        actual_input,
+                        p=actual_probability,
+                        training=True,
+                        inplace=False,
+                    )
+                    expected = reference_functional.dropout2d(
+                        expected_input,
+                        p=expected_probability,
+                        training=True,
+                        inplace=False,
+                    )
+                    invocation = (
+                        requires_grad,
+                        case,
+                        probability_case,
+                    )
+                    with self.subTest(case=invocation):
+                        self.assertIsNot(actual, actual_input)
+                        self.assertIsNot(expected, expected_input)
+                        self.assertFalse(actual.is_set_to(actual_input))
+                        self.assertFalse(expected.is_set_to(expected_input))
+                        self.assertNotEqual(
+                            actual.data_ptr(), actual_input.data_ptr()
+                        )
+                        self.assertNotEqual(
+                            expected.data_ptr(), expected_input.data_ptr()
+                        )
+                        self.assertTrue(
+                            reference_torch.equal(
+                                expected_rng,
+                                reference_torch.get_rng_state(),
+                            )
+                        )
+                    self.assert_metadata_matches(
+                        actual, expected, case=invocation
+                    )
+                    self.assert_values_match(actual, expected, case=invocation)
+
+    def test_probability_one_backward_and_no_grad_match(self):
+        actual_leaf = torch.tensor(
+            [[[[-1.0, 2.0], [-0.0, 3.0]]]], requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            [[[[-1.0, 2.0], [-0.0, 3.0]]]], requires_grad=True
+        )
+        actual_input = actual_leaf.transpose(2, 3)
+        expected_input = expected_leaf.transpose(2, 3)
+        actual_output = functional.dropout2d(
+            actual_input,
+            p=torch.tensor(1.0),
+            training=True,
+            inplace=False,
+        )
+        expected_output = reference_functional.dropout2d(
+            expected_input,
+            p=reference_torch.tensor(1.0),
+            training=True,
+            inplace=False,
+        )
+        self.assert_metadata_matches(
+            actual_output, expected_output, case="probability-one output"
+        )
+        self.assert_values_match(
+            actual_output, expected_output, case="probability-one output"
+        )
+        actual_weights = torch.tensor([[[[2.0, -3.0], [-5.0, 7.0]]]])
+        expected_weights = reference_torch.tensor(
+            [[[[2.0, -3.0], [-5.0, 7.0]]]]
+        )
+        (actual_output * actual_weights).sum().backward()
+        (expected_output * expected_weights).sum().backward()
+        self.assert_metadata_matches(
+            actual_leaf.grad, expected_leaf.grad, case="probability-one gradient"
+        )
+        self.assert_values_match(
+            actual_leaf.grad, expected_leaf.grad, case="probability-one gradient"
+        )
+
+        actual_leaf = torch.tensor(
+            [[[[-1.0, 2.0], [-0.0, 3.0]]]], requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            [[[[-1.0, 2.0], [-0.0, 3.0]]]], requires_grad=True
+        )
+        with torch.no_grad():
+            actual_output = functional.dropout2d(
+                actual_leaf, p=1, training=True
+            )
+        with reference_torch.no_grad():
+            expected_output = reference_functional.dropout2d(
+                expected_leaf, p=1, training=True
+            )
+        self.assertIsNot(actual_output, actual_leaf)
+        self.assertIsNot(expected_output, expected_leaf)
+        self.assert_metadata_matches(
+            actual_output, expected_output, case="probability-one no_grad"
+        )
+        self.assert_values_match(
+            actual_output, expected_output, case="probability-one no_grad"
+        )
 
     def test_backward_no_grad_and_empty_training_match(self):
         actual_leaf = torch.tensor(
@@ -564,27 +726,51 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
         self.assertIs(expected_output, expected_input)
         self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
 
+        actual_mode = ActualMode(forward=True)
+        expected_mode = ExpectedMode(forward=True)
+        with actual_mode:
+            actual_output = functional.dropout2d(
+                actual_input, p=1, training=True, inplace=False
+            )
+        with expected_mode:
+            expected_output = reference_functional.dropout2d(
+                expected_input, p=1, training=True, inplace=False
+            )
+        self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
+        self.assert_metadata_matches(
+            actual_output, expected_output, case="probability-one mode"
+        )
+        self.assert_values_match(
+            actual_output, expected_output, case="probability-one mode"
+        )
+
     def test_sampling_and_deprecated_non_rank_four_forms_stay_unsupported(self):
         actual_input = torch.zeros((1, 2, 3, 4), requires_grad=True)
         before = np.asarray(actual_input.detach()).copy().view(np.uint32)
-        for probability in (0.25, 1.0):
-            for inplace in (False, True):
-                with self.subTest(probability=probability, inplace=inplace):
-                    with self.assertRaisesRegex(
-                        NotImplementedError,
-                        "^torch_rs.nn.functional.dropout2d does not support "
-                        "sampling$",
-                    ):
-                        functional.dropout2d(
-                            actual_input,
-                            p=probability,
-                            training=True,
-                            inplace=inplace,
-                        )
-                    np.testing.assert_array_equal(
-                        np.asarray(actual_input.detach()).view(np.uint32), before
+        for probability, inplace in (
+            (0.25, False),
+            (0.25, True),
+            (torch.tensor(0.25), False),
+            (torch.tensor(0.25), True),
+            (1.0, True),
+            (torch.tensor(1.0), True),
+        ):
+            with self.subTest(probability=probability, inplace=inplace):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    "^torch_rs.nn.functional.dropout2d does not support "
+                    "sampling$",
+                ):
+                    functional.dropout2d(
+                        actual_input,
+                        p=probability,
+                        training=True,
+                        inplace=inplace,
                     )
-                    self.assertIsNone(actual_input.grad)
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input.detach()).view(np.uint32), before
+                )
+                self.assertIsNone(actual_input.grad)
 
         for shape in ((), (2, 3, 4), (2, 3, 4, 5, 6), (2, 0, 3)):
             actual_input = torch.zeros(shape)
@@ -610,6 +796,31 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
                 )
                 self.assertEqual(actual_warnings, [])
                 self.assertIs(expected_output, expected_input)
+                self.assertGreaterEqual(len(expected_warnings), 1)
+
+            with warnings.catch_warnings(record=True) as actual_warnings:
+                warnings.simplefilter("always")
+                actual_error = self.capture_error(
+                    lambda: functional.dropout2d(
+                        actual_input, p=1.0, training=True
+                    )
+                )
+            with warnings.catch_warnings(record=True) as expected_warnings:
+                warnings.simplefilter("always")
+                expected_output = reference_functional.dropout2d(
+                    expected_input, p=1.0, training=True
+                )
+            with self.subTest(
+                rank=len(shape), empty=0 in shape, probability=1.0
+            ):
+                self.assertIs(actual_error[0], NotImplementedError)
+                self.assertEqual(
+                    actual_error[1],
+                    "torch_rs.nn.functional.dropout2d only supports rank-4 "
+                    "inputs",
+                )
+                self.assertEqual(actual_warnings, [])
+                self.assertEqual(expected_output.shape, expected_input.shape)
                 self.assertGreaterEqual(len(expected_warnings), 1)
 
 
