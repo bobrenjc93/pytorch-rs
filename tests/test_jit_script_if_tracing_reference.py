@@ -298,6 +298,7 @@ class JitScriptIfTracingReferenceTests(unittest.TestCase):
             "ignore",
             "isinstance",
             "script_if_tracing",
+            "strict_fusion",
             "unused",
         }
         public_supported = {*wildcard_supported, "is_scripting", "is_tracing"}
