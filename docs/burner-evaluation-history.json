@@ -4801,6 +4801,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 91.8
       }
+    },
+    {
+      "key": "pr:602",
+      "recordedAt": "2026-08-21T23:31:10.424Z",
+      "label": "PR #602",
+      "kind": "leaf",
+      "prNumber": 602,
+      "title": "Expose the distinct top-level torch.negative builtin",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 81.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 65.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 91.9
+      }
     }
   ]
 }
