@@ -8,7 +8,7 @@ import collections
 import types
 import typing
 import warnings
-from typing import Callable, TypeVar, Union, get_args, get_origin
+from typing import Callable, Final, TypeVar, Union, get_args, get_origin
 
 from typing_extensions import ParamSpec
 
