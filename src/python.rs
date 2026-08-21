@@ -10311,13 +10311,36 @@ fn flatten_buffer(
     output.try_reserve_exact(elements).map_err(|_| {
         PyMemoryError::new_err("unable to allocate native tensor storage for buffer")
     })?;
+    let flush_float32_denormals = format == b'f' && current_thread_flushes_denormals();
     for item in bytes.chunks_exact(item_size) {
         let Some(converted) = buffer_item_as_f32(format, item) else {
             return Err(buffer_shape_error(value)?);
         };
-        output.push(converted);
+        output.push(if flush_float32_denormals {
+            flush_subnormal_to_signed_zero(converted)
+        } else {
+            converted
+        });
     }
     Ok(Some((output, vec![elements])))
+}
+
+fn current_thread_flushes_denormals() -> bool {
+    // Keep both operands opaque so the probe executes under the live
+    // floating-point control state instead of being folded by the compiler.
+    let subnormal = std::hint::black_box(f32::from_bits(1));
+    let one = std::hint::black_box(1.0_f32);
+    (subnormal * one).to_bits() == 0
+}
+
+fn flush_subnormal_to_signed_zero(value: f32) -> f32 {
+    let bits = value.to_bits();
+    let magnitude = bits & 0x7fff_ffff;
+    if magnitude != 0 && magnitude < f32::MIN_POSITIVE.to_bits() {
+        f32::from_bits(bits & 0x8000_0000)
+    } else {
+        value
+    }
 }
 
 fn buffer_shape_error(value: &Bound<'_, PyAny>) -> PyResult<PyErr> {

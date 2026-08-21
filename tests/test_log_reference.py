@@ -166,23 +166,49 @@ class TensorLogReferenceTests(unittest.TestCase):
         values = memoryview(subnormal_bits.view(np.float32))
 
         reference_torch.set_flush_denormal(False)
+        preserved_actual_input = torch.tensor(values)
+        preserved_expected_input = reference_torch.tensor(values)
         try:
             self.assertTrue(reference_torch.set_flush_denormal(True))
-            actual_input = torch.tensor(values)
-            expected_input = reference_torch.tensor(values)
-            actual_output = actual_input.log()
-            expected_output = expected_input.log()
+            flushed_actual_input = torch.tensor(values)
+            flushed_expected_input = reference_torch.tensor(values)
+            preserved_actual_output = preserved_actual_input.log()
+            preserved_expected_output = preserved_expected_input.log()
+            flushed_actual_output = flushed_actual_input.log()
+            flushed_expected_output = flushed_expected_input.log()
         finally:
             reference_torch.set_flush_denormal(False)
 
         self.assert_tensor_matches(
-            actual_output,
-            expected_output,
-            case="denormal flushing",
+            preserved_actual_output,
+            preserved_expected_output,
+            case="stored before enabling denormal flushing",
             exact_bits=True,
         )
         np.testing.assert_array_equal(
-            np.asarray(actual_output).view(np.uint32),
+            np.asarray(preserved_actual_output).view(np.uint32),
+            np.resize(
+                np.asarray(
+                    (0xC2CE_8ED0, 0x7FC0_0000, 0xC2AE_AC50, 0x7FC0_0000),
+                    dtype=np.uint32,
+                ),
+                subnormal_bits.shape,
+            ),
+        )
+        self.assert_tensor_matches(
+            flushed_actual_input,
+            flushed_expected_input,
+            case="constructed with denormal flushing",
+            exact_bits=True,
+        )
+        self.assert_tensor_matches(
+            flushed_actual_output,
+            flushed_expected_output,
+            case="logged after construction with denormal flushing",
+            exact_bits=True,
+        )
+        np.testing.assert_array_equal(
+            np.asarray(flushed_actual_output).view(np.uint32),
             np.full(subnormal_bits.shape, 0xFF80_0000, dtype=np.uint32),
         )
 

@@ -2335,8 +2335,7 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn log(&self) -> Result<Self, TensorError> {
-        let flush_denormals = denormals_are_flushed();
-        self.unary_map(|value| log_value(value, flush_denormals))
+        self.unary_map(log_value)
     }
 
     /// Computes the nonnegative square root of every element.
@@ -4295,28 +4294,22 @@ fn relu_value(value: f32) -> f32 {
     }
 }
 
-fn denormals_are_flushed() -> bool {
-    // `torch.set_flush_denormal` changes the current thread's floating-point
-    // control state. Keep both operands opaque so this multiplication executes
-    // under that live state instead of being folded by the compiler.
-    let subnormal = std::hint::black_box(f32::from_bits(1));
-    let one = std::hint::black_box(1.0_f32);
-    (subnormal * one).to_bits() == 0
-}
-
-fn log_value(value: f32, flush_denormals: bool) -> f32 {
+#[allow(clippy::cast_possible_truncation)]
+fn log_value(value: f32) -> f32 {
     // PyTorch canonicalizes domain errors to a positive quiet NaN while
-    // preserving negative zero and the payload and sign of NaN inputs. When
-    // FTZ/DAZ is active, both signs of subnormal input behave as signed zero.
+    // preserving negative zero and the payload and sign of NaN inputs.
     let bits = value.to_bits();
     let magnitude = bits & !F32_SIGN_MASK;
-    if flush_denormals && magnitude != 0 && magnitude < f32::MIN_POSITIVE.to_bits() {
-        return f32::NEG_INFINITY;
-    }
     let is_nan = magnitude > f32::INFINITY.to_bits();
     let is_negative_nonzero = bits & F32_SIGN_MASK != 0 && magnitude != 0;
     if is_negative_nonzero && !is_nan {
         f32::NAN
+    } else if magnitude != 0 && magnitude < f32::MIN_POSITIVE.to_bits() {
+        // Avoid passing a subnormal operand to the platform logf routine: its
+        // result can otherwise change when the caller enables FTZ/DAZ after
+        // the tensor was created. Compute the bit-derived identity in f64 and
+        // round once so the result matches PyTorch's float32 logf output.
+        (f64::from(magnitude).ln() - 149.0_f64 * std::f64::consts::LN_2) as f32
     } else {
         value.ln()
     }
@@ -4498,15 +4491,9 @@ mod tests {
         ];
 
         assert_eq!(
-            inputs.map(|bits| log_value(f32::from_bits(bits), false).to_bits()),
+            inputs.map(|bits| log_value(f32::from_bits(bits)).to_bits()),
             expected
         );
-        for bits in [0x0000_0001, 0x8000_0001, 0x007f_ffff, 0x807f_ffff] {
-            assert_eq!(
-                log_value(f32::from_bits(bits), true).to_bits(),
-                f32::NEG_INFINITY.to_bits()
-            );
-        }
     }
 
     #[test]
