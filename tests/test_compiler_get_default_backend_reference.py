@@ -18,12 +18,13 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CompilerIsExportingReferenceTests(unittest.TestCase):
+class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "compiler.is_exporting differentials require pinned PyTorch 2.13.0"
+                "compiler.get_default_backend differentials require pinned "
+                "PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -36,13 +37,23 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def supported_state_outcome(self, module):
-        function = module.compiler.is_exporting
+        function = module.compiler.get_default_backend
 
         def query_outcome():
             before = module.is_grad_enabled()
-            result = function()
+            first = function()
+            middle = module.is_grad_enabled()
+            second = function()
             after = module.is_grad_enabled()
-            return before, result is False, after
+            return (
+                before,
+                type(first) is str,
+                first,
+                middle,
+                type(second) is str,
+                second,
+                after,
+            )
 
         states = [query_outcome()]
         with module.no_grad():
@@ -91,31 +102,76 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_supported_eager_threaded_and_grad_states_match_pytorch_2_13(self):
-        self.assertEqual(
-            self.supported_state_outcome(torch),
-            self.supported_state_outcome(reference_torch),
-        )
+    def test_supported_default_threaded_and_grad_states_match_pytorch_2_13(self):
+        getter = reference_torch.compiler.get_default_backend
+        setter = reference_torch.compiler.set_default_backend
+        original_backend = getter()
+
+        try:
+            setter(None)
+            self.assertEqual(
+                self.supported_state_outcome(torch),
+                self.supported_state_outcome(reference_torch),
+            )
+        finally:
+            setter(original_backend)
+
+        self.assertEqual(torch.compiler.get_default_backend(), "inductor")
+        self.assertIs(getter(), original_backend)
+
+    def test_reference_only_setter_bounds_alternate_string_and_callable_states(self):
+        actual = torch.compiler.get_default_backend
+        expected = reference_torch.compiler.get_default_backend
+        setter = reference_torch.compiler.set_default_backend
+        original_backend = expected()
+        alternate_name = "".join(("ea", "ger"))
+
+        def alternate_callable(graph_module, example_inputs):
+            return graph_module.forward
+
+        try:
+            self.assertIs(setter(None), None)
+            self.assertEqual(actual(), "inductor")
+            self.assertEqual(expected(), "inductor")
+
+            self.assertIs(setter(alternate_name), None)
+            self.assertEqual(actual(), "inductor")
+            self.assertIs(expected(), alternate_name)
+
+            self.assertIs(setter(alternate_callable), None)
+            self.assertEqual(actual(), "inductor")
+            self.assertIs(expected(), alternate_callable)
+
+            self.assertIs(setter(None), None)
+            self.assertEqual(actual(), "inductor")
+            self.assertEqual(expected(), "inductor")
+        finally:
+            setter(original_backend)
+
+        self.assertEqual(actual(), "inductor")
+        self.assertIs(expected(), original_backend)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")
         expected_compiler = importlib.import_module("torch.compiler")
-        actual = actual_compiler.is_exporting
-        expected = expected_compiler.is_exporting
+        actual = actual_compiler.get_default_backend
+        expected = expected_compiler.get_default_backend
 
         self.assertIs(torch.compiler, actual_compiler)
         self.assertIs(reference_torch.compiler, expected_compiler)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
-            str(inspect.signature(actual)), str(inspect.signature(expected))
+            str(inspect.signature(actual)),
+            str(inspect.signature(expected)),
         )
         self.assertEqual(actual.__annotations__, expected.__annotations__)
         self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
         self.assertEqual(actual.__name__, expected.__name__)
         self.assertEqual(actual.__qualname__, expected.__qualname__)
         self.assertEqual(
-            actual.__module__.replace("torch_rs", "torch"), expected.__module__
+            actual.__module__.replace("torch_rs", "torch"),
+            expected.__module__,
         )
         self.assertIs(inspect.getmodule(actual), actual_compiler)
         self.assertIs(inspect.getmodule(expected), expected_compiler)
@@ -128,76 +184,47 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
             hasattr(expected, "__text_signature__"),
         )
 
-    def test_exports_copy_and_pickle_match_the_supported_scope(self):
+    def test_exports_copy_and_pickle_match_pytorch_2_13(self):
         actual_compiler = torch.compiler
         expected_compiler = reference_torch.compiler
-        actual = actual_compiler.is_exporting
-        expected = expected_compiler.is_exporting
+        actual = actual_compiler.get_default_backend
+        expected = expected_compiler.get_default_backend
+        supported = {
+            "assume_constant_result",
+            "get_default_backend",
+            "is_compiling",
+            "is_dynamo_compiling",
+            "is_exporting",
+        }
 
         self.assertEqual(
             actual_compiler.__all__,
-            [
-                name
-                for name in expected_compiler.__all__
-                if name
-                in {
-                    "assume_constant_result",
-                    "get_default_backend",
-                    "is_compiling",
-                    "is_dynamo_compiling",
-                    "is_exporting",
-                }
-            ],
+            [name for name in expected_compiler.__all__ if name in supported],
         )
         self.assertEqual(
             torch.__all__.count("compiler"),
             reference_torch.__all__.count("compiler"),
         )
         self.assertEqual(
-            torch.__all__.count("assume_constant_result"),
-            reference_torch.__all__.count("assume_constant_result"),
-        )
-        self.assertEqual(
-            torch.__all__.count("is_exporting"),
-            reference_torch.__all__.count("is_exporting"),
+            torch.__all__.count("get_default_backend"),
+            reference_torch.__all__.count("get_default_backend"),
         )
 
-        for module, functions in (
-            (
-                actual_compiler,
-                (
-                    actual_compiler.assume_constant_result,
-                    actual_compiler.is_compiling,
-                    actual_compiler.is_dynamo_compiling,
-                    actual,
-                ),
-            ),
-            (
-                expected_compiler,
-                (
-                    expected_compiler.assume_constant_result,
-                    expected_compiler.is_compiling,
-                    expected_compiler.is_dynamo_compiling,
-                    expected,
-                ),
-            ),
-        ):
+        for module in (actual_compiler, expected_compiler):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            for function in functions:
-                self.assertIs(namespace[function.__name__], function)
+            for name in supported:
+                self.assertIs(namespace[name], getattr(module, name))
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
-            self.assertNotIn("assume_constant_result", namespace)
-            self.assertNotIn("is_exporting", namespace)
+            self.assertNotIn("get_default_backend", namespace)
 
-        self.assertIs(copy.copy(actual), actual)
-        self.assertIs(copy.copy(expected), expected)
-        self.assertIs(copy.deepcopy(actual), actual)
-        self.assertIs(copy.deepcopy(expected), expected)
+        for function in (actual, expected):
+            self.assertIs(copy.copy(function), function)
+            self.assertIs(copy.deepcopy(function), function)
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
                 self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
@@ -208,69 +235,34 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.compiler.is_exporting
-        expected = reference_torch.compiler.is_exporting
+        actual = torch.compiler.get_default_backend
+        expected = reference_torch.compiler.get_default_backend
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
             (
-                lambda: actual(None, enabled=True),
-                lambda: expected(None, enabled=True),
+                lambda: actual(backend=None),
+                lambda: expected(backend=None),
+            ),
+            (
+                lambda: actual(None, backend=None),
+                lambda: expected(None, backend=None),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_reference_export_bounds_the_true_state(self):
-        actual_is_exporting = torch.compiler.is_exporting
-        expected_is_exporting = reference_torch.compiler.is_exporting
-        actual_states = [actual_is_exporting()]
-        expected_states = [expected_is_exporting()]
+    def test_setter_and_compilation_remain_deliberately_unsupported(self):
+        self.assertTrue(hasattr(reference_torch.compiler, "set_default_backend"))
+        self.assertIn("set_default_backend", reference_torch.compiler.__all__)
+        self.assertFalse(hasattr(torch.compiler, "set_default_backend"))
+        self.assertNotIn("set_default_backend", torch.compiler.__all__)
 
-        class ExportProbe(reference_torch.nn.Module):
-            def forward(self, value):
-                return (
-                    value + 1,
-                    expected_is_exporting(),
-                    actual_is_exporting(),
-                )
-
-        exported = reference_torch.export.export(
-            ExportProbe(),
-            (reference_torch.tensor(1.0),),
-        )
-        result, expected_inside, actual_inside = exported.module()(
-            reference_torch.tensor(1.0)
-        )
-        actual_states.extend((actual_inside, actual_is_exporting()))
-        expected_states.extend((expected_inside, expected_is_exporting()))
-
-        self.assertEqual(result.item(), 2.0)
-        for state in actual_states:
-            self.assertIs(state, False)
-        self.assertEqual(expected_states, [False, True, False])
-        for state in expected_states:
-            self.assertIs(type(state), bool)
-
-    def test_export_and_other_compiler_apis_remain_unsupported(self):
-        self.assertTrue(callable(reference_torch.export.export))
+        self.assertTrue(callable(reference_torch.compile))
+        self.assertTrue(callable(reference_torch.compiler.compile))
         self.assertFalse(hasattr(torch, "compile"))
-        self.assertFalse(hasattr(torch, "export"))
-        self.assertFalse(hasattr(torch, "is_exporting"))
-
-        unsupported = set(reference_torch.compiler.__all__) - {
-            "assume_constant_result",
-            "get_default_backend",
-            "is_compiling",
-            "is_dynamo_compiling",
-            "is_exporting",
-        }
-        self.assertTrue(unsupported)
-        for name in unsupported:
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(torch.compiler, name))
+        self.assertFalse(hasattr(torch.compiler, "compile"))
 
 
 if __name__ == "__main__":
