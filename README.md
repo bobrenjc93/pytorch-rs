@@ -78,6 +78,8 @@ assert torch.broadcast_shapes((2,), [3, 1]) == torch.Size([3, 2])
 assert x.dense_dim() == x.ndim
 assert x.sparse_dim() == 0
 assert x.is_pinned() is False
+assert x.is_shared() is False
+# Shared-memory mutation and storage-object APIs remain unsupported.
 assert x.output_nr == 0
 
 # Transposes are native shared-storage views. Tensor.T reverses every dimension,
