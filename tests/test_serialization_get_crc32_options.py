@@ -231,6 +231,9 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
             "get_default_load_endianness": (
                 serialization.get_default_load_endianness
             ),
+            "set_default_load_endianness": (
+                serialization.set_default_load_endianness
+            ),
             "get_default_mmap_options": serialization.get_default_mmap_options,
             "set_default_mmap_options": serialization.set_default_mmap_options,
         }
@@ -245,7 +248,8 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         exec(
             "from torch_rs.serialization import "
             "LoadEndianness, get_crc32_options, set_crc32_options, "
-            "get_default_load_endianness, get_default_mmap_options, "
+            "get_default_load_endianness, set_default_load_endianness, "
+            "get_default_mmap_options, "
             "set_default_mmap_options",
             direct_import,
         )
@@ -383,15 +387,12 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
                 "get_crc32_options",
                 "set_crc32_options",
                 "get_default_load_endianness",
+                "set_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
             },
         )
-        for name in (
-            "set_default_load_endianness",
-            "save",
-            "load",
-        ):
+        for name in ("save", "load"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(serialization, name))
                 self.assertNotIn(name, serialization.__all__)
@@ -401,6 +402,7 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
             "set_crc32_options",
             "LoadEndianness",
             "get_default_load_endianness",
+            "set_default_load_endianness",
             "save",
             "load",
         ):
@@ -453,6 +455,7 @@ assert serialization.__all__ == [
     "get_crc32_options",
     "set_crc32_options",
     "get_default_load_endianness",
+    "set_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
 ]
@@ -461,11 +464,12 @@ assert replacement.__all__ == [
     "get_crc32_options",
     "set_crc32_options",
     "get_default_load_endianness",
+    "set_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
 ]
 assert replacement.get_default_load_endianness() is None
-assert not hasattr(replacement, "set_default_load_endianness")
+assert hasattr(replacement, "set_default_load_endianness")
 if hasattr(mmap, "MAP_PRIVATE") and hasattr(mmap, "MAP_SHARED"):
     replacement.set_default_mmap_options(mmap.MAP_SHARED)
     assert old_getter() is None
