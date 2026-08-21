@@ -1,12 +1,14 @@
 """Distributed Collective Communication (c10d)."""
 
 import os as _os
+import sys as _sys
 
 __all__ = [
     "get_pg_count",
     "is_gloo_available",
     "is_initialized",
     "is_mpi_available",
+    "is_backend_available",
     "is_nccl_available",
     "is_ucc_available",
     "is_xccl_available",
@@ -35,6 +37,36 @@ def is_initialized() -> bool:
 def is_mpi_available() -> bool:
     """Check if the MPI backend is available."""
     return False
+
+
+def _check_single_backend_availability(backend_name: str) -> bool:
+    """Check whether one of the supported built-in backends is available."""
+    backend_name = str(backend_name).lower()
+    if backend_name not in ("gloo", "mpi", "nccl", "ucc", "xccl"):
+        return False
+    available_func = getattr(
+        _sys.modules[__package__], f"is_{backend_name}_available", None
+    )
+    if available_func:
+        return available_func()
+    return False
+
+
+def is_backend_available(backend: str) -> bool:
+    """
+    Check backend availability.
+
+    Checks if the given backend is available and supports the built-in backends or
+    third-party backends through function ``Backend.register_backend``.
+
+    Args:
+        backend (str): Backend name.
+    Returns:
+        bool: Returns true if the backend is available otherwise false.
+    """
+    if ":" in backend.lower():
+        return False
+    return _check_single_backend_availability(backend)
 
 
 def is_nccl_available() -> bool:

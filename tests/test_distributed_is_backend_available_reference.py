@@ -1,14 +1,14 @@
-import contextlib
 import copy
 import importlib
 import inspect
 import pickle
 import pickletools
 import sys
-import threading
 import types
 import typing
 import unittest
+from contextlib import ExitStack
+from unittest import mock
 
 import torch_rs as torch
 
@@ -18,13 +18,22 @@ except ImportError:
     reference_torch = None
 
 
+BACKEND_QUERIES = {
+    "gloo": "is_gloo_available",
+    "mpi": "is_mpi_available",
+    "nccl": "is_nccl_available",
+    "ucc": "is_ucc_available",
+    "xccl": "is_xccl_available",
+}
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
+class DistributedIsBackendAvailableReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.is_nccl_available differentials require pinned "
+                "distributed.is_backend_available differentials require pinned "
                 "PyTorch 2.13.0"
             )
 
@@ -36,42 +45,6 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
-
-    def threaded_outcome(self, module):
-        function = module.distributed.is_nccl_available
-        baseline = function()
-        worker_count = 8
-        barrier = threading.Barrier(worker_count)
-        worker_states = [None] * worker_count
-        errors = []
-
-        def worker(index):
-            try:
-                context = module.no_grad() if index % 2 else contextlib.nullcontext()
-                with context:
-                    barrier.wait(timeout=10)
-                    worker_states[index] = (
-                        module.is_grad_enabled(),
-                        function(),
-                        module.is_grad_enabled(),
-                        function(),
-                        module.is_grad_enabled(),
-                    )
-            except BaseException as error:
-                errors.append((type(error).__name__, str(error)))
-
-        threads = [
-            threading.Thread(target=worker, args=(index,))
-            for index in range(worker_count)
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=10)
-
-        self.assertFalse(any(thread.is_alive() for thread in threads))
-        self.assertEqual(errors, [])
-        return baseline, worker_states
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -85,27 +58,55 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_false_is_stable_while_reference_capability_varies_by_build(self):
-        actual_baseline, actual_workers = self.threaded_outcome(torch)
-        expected_baseline, expected_workers = self.threaded_outcome(reference_torch)
+    def test_builtin_results_follow_each_modules_existing_queries(self):
+        for module in (torch, reference_torch):
+            distributed = module.distributed
+            for backend, query_name in BACKEND_QUERIES.items():
+                expected = getattr(distributed, query_name)()
+                self.assertIs(type(expected), bool)
+                for spelling in (backend, backend.upper(), backend.title()):
+                    with self.subTest(module=module.__name__, spelling=spelling):
+                        self.assertIs(
+                            distributed.is_backend_available(spelling), expected
+                        )
 
-        self.assertIs(actual_baseline, False)
-        self.assertIs(type(expected_baseline), bool)
-        for baseline, worker_states in (
-            (actual_baseline, actual_workers),
-            (expected_baseline, expected_workers),
-        ):
-            self.assertIs(type(baseline), bool)
-            for index, state in enumerate(worker_states):
-                expected_grad_state = index % 2 == 0
-                self.assertIs(state[0], expected_grad_state)
-                self.assertIs(state[1], baseline)
-                self.assertIs(state[2], expected_grad_state)
-                self.assertIs(state[3], baseline)
-                self.assertIs(state[4], expected_grad_state)
+    def test_builtin_dispatch_matches_under_patched_queries(self):
+        for module in (torch, reference_torch):
+            distributed = module.distributed
+            for backend, query_name in BACKEND_QUERIES.items():
+                with self.subTest(module=module.__name__, backend=backend):
+                    with ExitStack() as stack:
+                        queries = {
+                            name: stack.enter_context(
+                                mock.patch.object(
+                                    distributed,
+                                    name,
+                                    return_value=name == query_name,
+                                )
+                            )
+                            for name in BACKEND_QUERIES.values()
+                        }
+                        self.assertIs(
+                            distributed.is_backend_available(backend.upper()), True
+                        )
+                    queries[query_name].assert_called_once_with()
+                    for other_name, query in queries.items():
+                        if other_name != query_name:
+                            query.assert_not_called()
 
-        self.assertIs(torch.distributed.is_initialized(), False)
-        self.assertIs(reference_torch.distributed.is_initialized(), False)
+    def test_unknown_simple_names_match_and_composites_remain_unsupported(self):
+        actual = torch.distributed.is_backend_available
+        expected = reference_torch.distributed.is_backend_available
+
+        for backend in ("", "bogus", "cpu", "cuda", " gloo "):
+            with self.subTest(backend=backend):
+                self.assertIs(actual(backend), expected(backend))
+                self.assertIs(actual(backend), False)
+
+        for backend in ("gloo:foo", "cpu:gloo,cuda:nccl"):
+            with self.subTest(backend=backend):
+                self.assertIs(actual(backend), False)
+                self.assertIs(type(expected(backend)), bool)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_distributed = importlib.import_module("torch_rs.distributed")
@@ -116,15 +117,15 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
-        actual = actual_distributed.is_nccl_available
-        expected = expected_distributed.is_nccl_available
+        actual = actual_distributed.is_backend_available
+        expected = expected_distributed.is_backend_available
 
         self.assertIs(torch.distributed, actual_distributed)
         self.assertIs(reference_torch.distributed, expected_distributed)
         self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
         self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-        self.assertIs(actual_c10d.is_nccl_available, actual)
-        self.assertIs(expected_c10d.is_nccl_available, expected)
+        self.assertIs(actual_c10d.is_backend_available, actual)
+        self.assertIs(expected_c10d.is_backend_available, expected)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -153,8 +154,8 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.is_nccl_available
-        expected = expected_distributed.is_nccl_available
+        actual = actual_distributed.is_backend_available
+        expected = expected_distributed.is_backend_available
 
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"], actual_c10d
@@ -166,32 +167,20 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             hasattr(actual_distributed, "__all__"),
             hasattr(expected_distributed, "__all__"),
         )
+        supported = {
+            "get_pg_count",
+            "is_gloo_available",
+            "is_initialized",
+            "is_mpi_available",
+            "is_backend_available",
+            "is_nccl_available",
+            "is_ucc_available",
+            "is_xccl_available",
+            "get_node_local_rank",
+        }
         self.assertEqual(
             actual_c10d.__all__,
-            [
-                name
-                for name in expected_c10d.__all__
-                if name
-                in {
-                    "get_pg_count",
-                    "is_gloo_available",
-                    "is_initialized",
-                    "is_mpi_available",
-                    "is_backend_available",
-                    "is_nccl_available",
-                    "is_ucc_available",
-                    "is_xccl_available",
-                    "get_node_local_rank",
-                }
-            ],
-        )
-        self.assertEqual(
-            torch.__all__.count("distributed"),
-            reference_torch.__all__.count("distributed"),
-        )
-        self.assertEqual(
-            torch.__all__.count("is_nccl_available"),
-            reference_torch.__all__.count("is_nccl_available"),
+            [name for name in expected_c10d.__all__ if name in supported],
         )
 
         for module, function in (
@@ -202,20 +191,12 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["is_nccl_available"], function)
-
-        actual_namespace = {}
-        expected_namespace = {}
-        exec("from torch_rs.distributed import *", actual_namespace)
-        exec("from torch.distributed import *", expected_namespace)
-        self.assertIs(actual_namespace["distributed_c10d"], actual_c10d)
-        self.assertIs(expected_namespace["distributed_c10d"], expected_c10d)
+            self.assertIs(namespace["is_backend_available"], function)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertNotIn("distributed", namespace)
-            self.assertNotIn("is_nccl_available", namespace)
+            self.assertNotIn("is_backend_available", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -231,26 +212,31 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.is_nccl_available
-        expected = reference_torch.distributed.is_nccl_available
+        actual = torch.distributed.is_backend_available
+        expected = reference_torch.distributed.is_backend_available
         cases = (
-            (lambda: actual(None), lambda: expected(None)),
-            (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
+            (lambda: actual(), lambda: expected()),
+            (lambda: actual("gloo", "nccl"), lambda: expected("gloo", "nccl")),
+            (lambda: actual(name="gloo"), lambda: expected(name="gloo")),
             (
-                lambda: actual(None, enabled=True),
-                lambda: expected(None, enabled=True),
+                lambda: actual("gloo", backend="nccl"),
+                lambda: expected("gloo", backend="nccl"),
             ),
+            (lambda: actual(None), lambda: expected(None)),
+            (lambda: actual(1), lambda: expected(1)),
+            (lambda: actual(b"gloo"), lambda: expected(b"gloo")),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_nccl_execution_and_other_distributed_apis_remain_unsupported(self):
+        self.assertIs(actual(backend="gloo"), False)
+        self.assertIs(type(expected(backend="gloo")), bool)
+
+    def test_process_groups_and_registration_remain_unsupported(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
-        expected_c10d = expected_distributed.distributed_c10d
         actual_public = {
             name for name in vars(actual_distributed) if not name.startswith("_")
         }
@@ -274,30 +260,10 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 "get_node_local_rank",
             },
         )
-        self.assertEqual(
-            {
-                name for name in vars(actual_c10d) if not name.startswith("_")
-            },
-            {
-                "get_pg_count",
-                "is_gloo_available",
-                "is_initialized",
-                "is_mpi_available",
-                "is_backend_available",
-                "is_nccl_available",
-                "is_ucc_available",
-                "is_xccl_available",
-                "get_node_local_rank",
-            },
-        )
-        unsupported = expected_public - actual_public
-        self.assertTrue(unsupported)
-        for name in unsupported:
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(actual_distributed, name))
-
+        self.assertTrue(expected_public - actual_public)
         for name in (
             "Backend",
+            "BackendConfig",
             "GroupMember",
             "ProcessGroup",
             "all_reduce",
@@ -311,16 +277,6 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 self.assertTrue(hasattr(expected_distributed, name))
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
-
-        expected_nccl_available = expected_distributed.is_nccl_available()
-        self.assertIs(type(expected_nccl_available), bool)
-        if expected_nccl_available:
-            self.assertTrue(hasattr(expected_distributed, "ProcessGroupNCCL"))
-            self.assertTrue(hasattr(expected_c10d, "ProcessGroupNCCL"))
-        self.assertFalse(hasattr(actual_distributed, "ProcessGroupNCCL"))
-        self.assertFalse(hasattr(actual_c10d, "ProcessGroupNCCL"))
-        self.assertIs(actual_distributed.is_initialized(), False)
-        self.assertIs(expected_distributed.is_initialized(), False)
 
 
 if __name__ == "__main__":
