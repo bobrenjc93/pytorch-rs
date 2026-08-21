@@ -45,6 +45,18 @@ struct SavedTensor {
     autograd: Option<Arc<AutogradMeta>>,
 }
 
+// Keep dynamic dispatch at node granularity so each operation's element loop
+// can inline and vectorize its scalar VJP.
+type UnaryVjpKernel = fn(&SavedTensor, &[f32], &mut Vec<f32>);
+
+#[derive(Clone)]
+struct SavedInputUnaryNode {
+    input: SavedTensor,
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    identity: AutogradNode,
+    vjp: UnaryVjpKernel,
+}
+
 #[derive(Clone)]
 enum GradFn {
     Multiply {
@@ -62,12 +74,7 @@ enum GradFn {
         #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
         node: AutogradNode,
     },
-    Relu {
-        input: SavedTensor,
-    },
-    Sin {
-        input: SavedTensor,
-    },
+    SavedInputUnary(SavedInputUnaryNode),
     Sum {
         input: SavedTensor,
     },
@@ -113,11 +120,10 @@ impl GradFn {
             }
             Self::MultiplyScalar { input, .. }
             | Self::Negate { input, .. }
-            | Self::Relu { input }
-            | Self::Sin { input }
             | Self::Sum { input }
             | Self::Transform { input, .. }
             | Self::Unbind { input, .. } => input.take_parent(pending),
+            Self::SavedInputUnary(node) => node.input.take_parent(pending),
         }
     }
 
@@ -135,8 +141,8 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
-            Self::Relu { input } | Self::Sin { input } => {
-                if input.storage.is_none() {
+            Self::SavedInputUnary(node) => {
+                if node.input.storage.is_none() {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
@@ -156,7 +162,7 @@ impl GradFn {
                 right.storage = None;
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
-            Self::Relu { input } | Self::Sin { input } => input.storage = None,
+            Self::SavedInputUnary(node) => node.input.storage = None,
             Self::Negate { .. }
             | Self::Sum { .. }
             | Self::Transform { .. }
@@ -703,8 +709,7 @@ impl Tensor {
         let node = match grad_fn.as_ref()? {
             GradFn::Multiply { .. } | GradFn::MultiplyScalar { .. } => AutogradNode::Multiply,
             GradFn::Negate { node, .. } | GradFn::Transform { node, .. } => *node,
-            GradFn::Relu { .. } => AutogradNode::Relu,
-            GradFn::Sin { .. } => AutogradNode::Sin,
+            GradFn::SavedInputUnary(node) => node.identity,
             GradFn::Sum { .. } => AutogradNode::Sum,
             GradFn::Unbind { .. } => AutogradNode::Unbind,
         };
@@ -934,26 +939,20 @@ impl Tensor {
         Ok(output)
     }
 
-    fn finish_sin_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
+    fn finish_saved_input_unary_vjp(
+        &self,
+        mut output: Self,
+        identity: AutogradNode,
+        vjp: UnaryVjpKernel,
+    ) -> Result<Self, TensorError> {
         if self.records_grad() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Sin {
+                    grad_fn: Mutex::new(Some(GradFn::SavedInputUnary(SavedInputUnaryNode {
                         input: SavedTensor::try_from_tensor(self, true)?,
-                    })),
-                },
-            }));
-        }
-        Ok(output)
-    }
-
-    fn finish_relu_vjp(&self, mut output: Self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            output.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::NonLeaf {
-                    grad_fn: Mutex::new(Some(GradFn::Relu {
-                        input: SavedTensor::try_from_tensor(self, true)?,
-                    })),
+                        identity,
+                        vjp,
+                    }))),
                 },
             }));
         }
@@ -2308,7 +2307,7 @@ impl Tensor {
     /// Returns an error when result metadata or storage allocation fails.
     pub fn relu(&self) -> Result<Self, TensorError> {
         let output = self.unary_map(relu_value)?;
-        self.finish_relu_vjp(output)
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Relu, apply_relu_vjp)
     }
 
     /// Computes the sine of every element in radians.
@@ -2318,7 +2317,7 @@ impl Tensor {
     /// Returns an error when result metadata or storage allocation fails.
     pub fn sin(&self) -> Result<Self, TensorError> {
         let output = self.unary_map(f32::sin)?;
-        self.finish_sin_vjp(output)
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Sin, apply_sin_vjp)
     }
 
     /// Computes the base-e exponential of every element.
@@ -2907,12 +2906,13 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         }
                         GradFn::MultiplyScalar { input, .. }
                         | GradFn::Negate { input, .. }
-                        | GradFn::Relu { input }
-                        | GradFn::Sin { input }
                         | GradFn::Sum { input }
                         | GradFn::Transform { input, .. }
                         | GradFn::Unbind { input, .. } => {
                             push_saved_parent(&mut stack, input);
+                        }
+                        GradFn::SavedInputUnary(node) => {
+                            push_saved_parent(&mut stack, &node.input);
                         }
                     }
                 }
@@ -2956,8 +2956,7 @@ fn apply_grad_fn(
                 add_gradient(gradients, meta, input.output_nr, gradient);
             }
         }
-        GradFn::Relu { input } => apply_relu_grad_fn(input, upstream, gradients)?,
-        GradFn::Sin { input } => apply_sin_grad_fn(input, upstream, gradients)?,
+        GradFn::SavedInputUnary(node) => apply_saved_input_unary(node, upstream, gradients)?,
         GradFn::Multiply {
             left,
             right,
@@ -3072,16 +3071,23 @@ fn apply_unbind_grad_fn(
     Ok(())
 }
 
-fn apply_relu_grad_fn(
-    input: &SavedTensor,
+fn apply_saved_input_unary(
+    node: &SavedInputUnaryNode,
     upstream: &[f32],
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
+    let input = &node.input;
     let Some(meta) = &input.autograd else {
         return Ok(());
     };
     debug_assert_eq!(input.elements, upstream.len());
     let mut gradient = try_result_vector(input.elements, input.elements)?;
+    (node.vjp)(input, upstream, &mut gradient);
+    add_gradient(gradients, meta, input.output_nr, gradient);
+    Ok(())
+}
+
+fn apply_relu_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
     // Borrow one exact saved range for row-contiguous layouts, including
     // nonzero-offset views, instead of resolving layout and storage per value.
     if let Some(saved_values) = input.contiguous_slice() {
@@ -3096,28 +3102,15 @@ fn apply_relu_grad_fn(
             }),
         );
     }
-    add_gradient(gradients, meta, input.output_nr, gradient);
-    Ok(())
 }
 
-fn apply_sin_grad_fn(
-    input: &SavedTensor,
-    upstream: &[f32],
-    gradients: &mut Gradients,
-) -> Result<(), TensorError> {
-    let Some(meta) = &input.autograd else {
-        return Ok(());
-    };
-    debug_assert_eq!(input.elements, upstream.len());
-    let mut gradient = try_result_vector(input.elements, input.elements)?;
+fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
     gradient.extend(
         upstream
             .iter()
             .enumerate()
             .map(|(index, value)| value * input.value_at_linear_index(index).cos()),
     );
-    add_gradient(gradients, meta, input.output_nr, gradient);
-    Ok(())
 }
 
 struct GradientAccumulator {
@@ -4306,6 +4299,7 @@ fn sqrt_value(value: f32) -> f32 {
     }
 }
 
+#[inline]
 fn relu_backward_value(input: f32, upstream: f32) -> f32 {
     let bits = input.to_bits();
     let magnitude = bits & !F32_SIGN_MASK;
@@ -4544,6 +4538,17 @@ mod tests {
                 .map(|index| saved_strided.value_at_linear_index(index))
                 .eq([8.0, 12.0, 9.0, 13.0, 10.0, 14.0, 11.0, 15.0])
         );
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn saved_input_unary_nodes_preserve_operation_specific_python_names() {
+        let source = Tensor::from_vec(vec![-1.0, 0.5], [2])
+            .unwrap()
+            .with_requires_grad(true);
+
+        assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
+        assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
     }
 
     fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {

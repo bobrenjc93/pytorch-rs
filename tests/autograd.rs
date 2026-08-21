@@ -538,6 +538,21 @@ fn sine_obeys_detach_no_grad_and_freed_graph_boundaries() {
 }
 
 #[test]
+fn saved_input_unary_nodes_compose_and_release_their_saved_values() {
+    let leaf = Tensor::from_vec(vec![-1.0, 0.5, 2.0, 4.0], [4])
+        .unwrap()
+        .with_requires_grad(true);
+    let loss = leaf.sin().unwrap().relu().unwrap().sum();
+
+    loss.backward().unwrap();
+    assert_eq!(
+        values(&leaf.grad().unwrap().unwrap()),
+        [0.0, 0.5_f32.cos(), 2.0_f32.cos(), 0.0]
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
 fn scalar_addition_records_reusable_identity_gradients() {
     let leaf = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2])
         .unwrap()
