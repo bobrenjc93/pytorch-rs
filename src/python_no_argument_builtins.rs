@@ -55,6 +55,26 @@ fn is_inference_mode_enabled(
     Ok(false)
 }
 
+fn is_multithreading_enabled(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch._C._is_multithreading_enabled() takes no keyword arguments",
+        ));
+    }
+    if !args.is_empty() {
+        return Err(PyTypeError::new_err(format!(
+            "torch._C._is_multithreading_enabled() takes no arguments ({} given)",
+            args.len()
+        )));
+    }
+    // Expose PyTorch's supported default without adding its setter or a
+    // parallel backward scheduler to the native engine.
+    Ok(true)
+}
+
 fn is_autocast_cache_enabled(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
@@ -200,6 +220,10 @@ const IS_GRAD_ENABLED_DOC: &CStr =
 const IS_GRAD_ENABLED_SIGNATURE_DOC: &CStr = c"is_grad_enabled($self, /)\n--\n\n\nis_grad_enabled() -> (bool)\n\nReturns True if grad mode is currently enabled.\n";
 const IS_INFERENCE_MODE_ENABLED_DOC: &CStr = c"\nis_inference_mode_enabled() -> (bool)\n\nReturns True if inference mode is currently enabled.\n";
 const IS_INFERENCE_MODE_ENABLED_SIGNATURE_DOC: &CStr = c"is_inference_mode_enabled($self, /)\n--\n\n\nis_inference_mode_enabled() -> (bool)\n\nReturns True if inference mode is currently enabled.\n";
+const IS_MULTITHREADING_ENABLED_DOC: &CStr =
+    c"Returns True if multithreading is currently enabled.";
+const IS_MULTITHREADING_ENABLED_SIGNATURE_DOC: &CStr =
+    c"_is_multithreading_enabled($self, /)\n--\n\nReturns True if multithreading is currently enabled.";
 const IS_VIEW_REPLAY_ENABLED_DOC: &CStr = c"Returns True if view-replay is currently enabled.";
 const IS_VIEW_REPLAY_ENABLED_SIGNATURE_DOC: &CStr =
     c"_is_view_replay_enabled($self, /)\n--\n\nReturns True if view-replay is currently enabled.";
@@ -268,6 +292,23 @@ unsafe fn is_inference_mode_enabled_callback(
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
     let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
     is_inference_mode_enabled(&args, kwargs.as_ref())?
+        .into_py_any(py)
+        .map(Py::into_ptr)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn is_multithreading_enabled_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    is_multithreading_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
 }
@@ -407,6 +448,27 @@ fn add_autocast_cache_builtin(
     Ok(())
 }
 
+fn add_multithreading_builtin(
+    module: &Bound<'_, PyModule>,
+    is_multithreading_enabled_doc: &'static CStr,
+) -> PyResult<()> {
+    let py = module.py();
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            is_multithreading_enabled_callback
+        ),
+        c"_is_multithreading_enabled",
+        is_multithreading_enabled_doc,
+        Some(module),
+    )?)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_is_multithreading_enabled",))?;
+    Ok(())
+}
+
 fn add_view_replay_builtin(
     module: &Bound<'_, PyModule>,
     is_view_replay_enabled_doc: &'static CStr,
@@ -463,6 +525,7 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         is_grad_enabled_doc,
         is_inference_mode_enabled_doc,
         is_autocast_cache_enabled_doc,
+        is_multithreading_enabled_doc,
         is_view_replay_enabled_doc,
         is_anomaly_enabled_doc,
         is_anomaly_check_nan_enabled_doc,
@@ -474,6 +537,7 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
             IS_GRAD_ENABLED_SIGNATURE_DOC,
             IS_INFERENCE_MODE_ENABLED_SIGNATURE_DOC,
             IS_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC,
+            IS_MULTITHREADING_ENABLED_SIGNATURE_DOC,
             IS_VIEW_REPLAY_ENABLED_SIGNATURE_DOC,
             IS_ANOMALY_ENABLED_SIGNATURE_DOC,
             IS_ANOMALY_CHECK_NAN_ENABLED_SIGNATURE_DOC,
@@ -486,6 +550,7 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
             IS_GRAD_ENABLED_DOC,
             IS_INFERENCE_MODE_ENABLED_DOC,
             c"",
+            IS_MULTITHREADING_ENABLED_DOC,
             IS_VIEW_REPLAY_ENABLED_DOC,
             c"",
             c"",
@@ -515,6 +580,7 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         Some(module),
     )?)?;
     add_autocast_cache_builtin(module, is_autocast_cache_enabled_doc)?;
+    add_multithreading_builtin(module, is_multithreading_enabled_doc)?;
     add_view_replay_builtin(module, is_view_replay_enabled_doc)?;
     add_anomaly_builtins(
         module,
