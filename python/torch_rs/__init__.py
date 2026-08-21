@@ -2,6 +2,7 @@
 
 import builtins as _builtins
 import copyreg as _copyreg
+import functools as _functools
 import sys as _sys
 from math import e, inf, nan, pi
 
@@ -46,6 +47,31 @@ def is_deterministic_algorithms_warn_only_enabled() -> _builtins.bool:
 def get_default_device() -> "torch.device":
     r"""Gets the default ``torch.Tensor`` to be allocated on ``device``"""
     return torch.device("cpu")
+
+
+@_functools.cache
+def get_device_module(device: torch.device | str | None = None):
+    """
+    Returns the module associated with a given device(e.g., torch.device('cuda'), "mtia:0", "xpu", ...).
+    If no device is given, return the module for the current accelerator or CPU if none is present.
+    """
+    if isinstance(device, torch.device):
+        device_module_name = device.type
+    elif isinstance(device, str):
+        device_module_name = torch.device(device).type
+    elif device is None:
+        # CPU is the only execution device implemented by the native backend.
+        device_module_name = "cpu"
+    else:
+        raise RuntimeError(
+            f"Invalid value of device '{device}', expect torch.device, str, or None"
+        )
+    device_module = getattr(torch, device_module_name, None)
+    if device_module is None:
+        raise RuntimeError(
+            f"Device '{device_module_name}' does not have a corresponding module registered as 'torch.{device_module_name}'."
+        )
+    return device_module
 
 
 def get_float32_matmul_precision() -> str:
@@ -144,6 +170,7 @@ __all__ = [
     "get_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
+    "get_device_module",
     "get_float32_matmul_precision",
     "is_warn_always_enabled",
     "e",
@@ -173,4 +200,4 @@ from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _copyreg, _native, _sys
+del _copyreg, _functools, _native, _sys
