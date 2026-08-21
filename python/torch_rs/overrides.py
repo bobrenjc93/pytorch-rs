@@ -6,6 +6,7 @@ import warnings
 from .torch_rs import (
     Tensor,
     _get_function_stack_at,
+    _has_torch_function_unary as has_torch_function_unary,
     _len_torch_function_stack,
     _pop_torch_function_stack,
     _push_on_torch_function_stack,
@@ -80,21 +81,6 @@ def _overloaded_unary_arguments(input, include_tensor):
     return []
 
 
-def _has_unary_torch_function(input):
-    # PyTorch's C-level unary probe treats the Tensor type object as
-    # overridable, excludes an ordinary exact Tensor, and suppresses errors
-    # raised while looking up user-defined override descriptors.
-    if input is Tensor:
-        return True
-    if type(input) is Tensor:
-        return False
-    try:
-        handler = input.__torch_function__
-    except BaseException:
-        return False
-    return not _is_disabled_torch_function_impl(handler)
-
-
 def _dispatch_unary_torch_function(
     public_function,
     implementation,
@@ -102,10 +88,10 @@ def _dispatch_unary_torch_function(
     keyword_arguments,
     include_tensor=True,
 ):
-    mode = _get_current_function_mode()
-    if mode is None and not _has_unary_torch_function(input):
+    if not has_torch_function_unary(input):
         return implementation(input, **keyword_arguments)
 
+    mode = _get_current_function_mode()
     overloaded_args = _overloaded_unary_arguments(input, include_tensor)
     types = tuple(type(argument) for argument in overloaded_args)
     if mode is not None:
