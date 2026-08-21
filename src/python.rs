@@ -262,11 +262,14 @@ impl PyTensorBase {
         let inner = if index.is_instance_of::<PyEllipsis>() {
             tensor.inner.metadata_alias()
         } else if let Ok(indices) = index.cast::<PyTuple>() {
-            if indices.len() > tensor.inner.shape().len() {
+            if indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>() {
+                tensor.inner.metadata_alias()
+            } else if indices.len() > tensor.inner.shape().len() {
                 return Err(too_many_indices(tensor.inner.shape().len()));
+            } else {
+                let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
+                tensor.inner.index(indices)
             }
-            let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
-            tensor.inner.index(indices)
         } else if is_exact_full_slice(index)? {
             tensor.inner.index_full_slice()
         } else if is_fast_integer_index(index)? {
@@ -1052,6 +1055,10 @@ impl PyTensor {
 
     pub(crate) const fn inner(&self) -> &CoreTensor {
         &self.inner
+    }
+
+    pub(crate) const fn grad_cache(&self) -> &PyOnceLock<Py<PyTensor>> {
+        &self.grad_cache
     }
 }
 
@@ -3328,34 +3335,6 @@ impl PyTensor {
     #[getter]
     fn device(&self) -> PyDevice {
         PyDevice::from_device(self.inner.device())
-    }
-
-    #[getter]
-    fn requires_grad(&self) -> bool {
-        self.inner.requires_grad()
-    }
-
-    #[getter]
-    fn is_leaf(&self) -> bool {
-        self.inner.is_leaf()
-    }
-
-    #[getter]
-    fn grad(&self, py: Python<'_>) -> PyResult<Option<Py<Self>>> {
-        if let Some(gradient) = self.grad_cache.get(py) {
-            return Ok(Some(gradient.clone_ref(py)));
-        }
-        let Some(inner) = self
-            .inner
-            .live_grad()
-            .map_err(|error| tensor_error(&error))?
-        else {
-            return Ok(None);
-        };
-        let gradient = self
-            .grad_cache
-            .get_or_try_init(py, || Py::new(py, Self::new(inner)))?;
-        Ok(Some(gradient.clone_ref(py)))
     }
 
     /// NumPy-style transpose view with every dimension reversed.
