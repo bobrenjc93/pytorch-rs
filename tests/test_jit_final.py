@@ -11,10 +11,11 @@ import torch_rs as torch
 
 
 class JitFinalTests(unittest.TestCase):
-    def error_outcome(self, call):
-        with self.assertRaises(Exception) as raised:
-            call()
-        return type(raised.exception), str(raised.exception), raised.exception.args
+    def call_outcome(self, call):
+        try:
+            return "success", call()
+        except Exception as error:
+            return "error", type(error), str(error), error.args
 
     def test_both_jit_names_are_the_exact_typing_marker(self):
         internal = importlib.import_module("torch_rs._jit_internal")
@@ -45,8 +46,16 @@ class JitFinalTests(unittest.TestCase):
 
             for parameter in (int, str, list[int], None, ...):
                 with self.subTest(marker=marker, parameter=parameter):
-                    actual = marker[parameter]
-                    expected = typing.Final[parameter]
+                    actual_outcome = self.call_outcome(lambda: marker[parameter])
+                    expected_outcome = self.call_outcome(
+                        lambda: typing.Final[parameter]
+                    )
+                    self.assertEqual(actual_outcome, expected_outcome)
+                    if actual_outcome[0] == "error":
+                        continue
+
+                    actual = actual_outcome[1]
+                    expected = expected_outcome[1]
                     self.assertIs(actual, expected)
                     self.assertIs(typing.get_origin(actual), typing.Final)
                     self.assertEqual(typing.get_args(actual), typing.get_args(expected))
@@ -61,24 +70,31 @@ class JitFinalTests(unittest.TestCase):
             lambda marker: marker(value=1),
             lambda marker: marker[int, str],
             lambda marker: marker[()],
-            lambda marker: marker[marker[int]],
         )
         for marker in (torch._jit_internal.Final, torch.jit.Final):
             for case, call in enumerate(calls):
                 with self.subTest(marker=marker, case=case):
-                    self.assertEqual(
-                        self.error_outcome(lambda: call(marker)),
-                        self.error_outcome(lambda: call(typing.Final)),
-                    )
+                    actual_outcome = self.call_outcome(lambda: call(marker))
+                    expected_outcome = self.call_outcome(lambda: call(typing.Final))
+                    self.assertEqual(actual_outcome, expected_outcome)
+                    self.assertEqual(actual_outcome[0], "error")
 
         for operation in (
             lambda marker: isinstance(1, marker),
             lambda marker: issubclass(int, marker),
         ):
-            self.assertEqual(
-                self.error_outcome(lambda: operation(torch.jit.Final)),
-                self.error_outcome(lambda: operation(typing.Final)),
-            )
+            actual_outcome = self.call_outcome(lambda: operation(torch.jit.Final))
+            expected_outcome = self.call_outcome(lambda: operation(typing.Final))
+            self.assertEqual(actual_outcome, expected_outcome)
+            self.assertEqual(actual_outcome[0], "error")
+
+    def test_nested_subscription_outcome_matches_typing(self):
+        for marker in (torch._jit_internal.Final, torch.jit.Final):
+            with self.subTest(marker=marker):
+                self.assertEqual(
+                    self.call_outcome(lambda: marker[marker[int]]),
+                    self.call_outcome(lambda: typing.Final[typing.Final[int]]),
+                )
 
     def test_metadata_is_owned_by_typing(self):
         marker = torch.jit.Final

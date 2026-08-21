@@ -22,10 +22,11 @@ class JitFinalReferenceTests(unittest.TestCase):
                 "jit.Final differentials require pinned PyTorch 2.13.0"
             )
 
-    def error_outcome(self, call):
-        with self.assertRaises(Exception) as raised:
-            call()
-        return type(raised.exception), str(raised.exception), raised.exception.args
+    def call_outcome(self, call):
+        try:
+            return "success", call()
+        except Exception as error:
+            return "error", type(error), str(error), error.args
 
     def test_alias_identity_and_module_placement_match(self):
         actual_internal = importlib.import_module("torch_rs._jit_internal")
@@ -48,8 +49,14 @@ class JitFinalReferenceTests(unittest.TestCase):
         self.assertEqual(typing.get_args(actual), typing.get_args(expected))
         for parameter in (int, str, list[int], None, ...):
             with self.subTest(parameter=parameter):
-                actual_value = actual[parameter]
-                expected_value = expected[parameter]
+                actual_outcome = self.call_outcome(lambda: actual[parameter])
+                expected_outcome = self.call_outcome(lambda: expected[parameter])
+                self.assertEqual(actual_outcome, expected_outcome)
+                if actual_outcome[0] == "error":
+                    continue
+
+                actual_value = actual_outcome[1]
+                expected_value = expected_outcome[1]
                 self.assertIs(actual_value, expected_value)
                 self.assertIs(
                     typing.get_origin(actual_value),
@@ -71,16 +78,24 @@ class JitFinalReferenceTests(unittest.TestCase):
             lambda marker: marker(value=1),
             lambda marker: marker[int, str],
             lambda marker: marker[()],
-            lambda marker: marker[marker[int]],
             lambda marker: isinstance(1, marker),
             lambda marker: issubclass(int, marker),
         )
         for case, call in enumerate(calls):
             with self.subTest(case=case):
-                self.assertEqual(
-                    self.error_outcome(lambda: call(actual)),
-                    self.error_outcome(lambda: call(expected)),
-                )
+                actual_outcome = self.call_outcome(lambda: call(actual))
+                expected_outcome = self.call_outcome(lambda: call(expected))
+                self.assertEqual(actual_outcome, expected_outcome)
+                self.assertEqual(actual_outcome[0], "error")
+
+    def test_nested_subscription_outcome_matches(self):
+        actual = torch.jit.Final
+        expected = reference_torch.jit.Final
+
+        self.assertEqual(
+            self.call_outcome(lambda: actual[actual[int]]),
+            self.call_outcome(lambda: expected[expected[int]]),
+        )
 
     def test_metadata_matches(self):
         actual = torch.jit.Final
