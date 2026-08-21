@@ -2,6 +2,7 @@ import contextlib
 import copy
 import importlib
 import inspect
+import os
 import pickle
 import pickletools
 import sys
@@ -9,6 +10,7 @@ import threading
 import types
 import typing
 import unittest
+from unittest import mock
 
 import torch_rs as torch
 
@@ -19,12 +21,12 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
+class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.is_gloo_available differentials require pinned "
+                "distributed.get_node_local_rank differentials require pinned "
                 "PyTorch 2.13.0"
             )
 
@@ -38,8 +40,7 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def threaded_outcome(self, module):
-        function = module.distributed.is_gloo_available
-        baseline = function()
+        function = module.distributed.get_node_local_rank
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         worker_states = [None] * worker_count
@@ -52,9 +53,8 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
                     barrier.wait(timeout=10)
                     worker_states[index] = (
                         module.is_grad_enabled(),
-                        function(),
-                        module.is_grad_enabled(),
-                        function(),
+                        type(function(index)).__name__,
+                        function(index),
                         module.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -71,7 +71,7 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
 
         self.assertFalse(any(thread.is_alive() for thread in threads))
         self.assertEqual(errors, [])
-        return baseline, worker_states
+        return worker_states
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -85,27 +85,92 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_false_is_stable_while_reference_capability_varies_by_build(self):
-        actual_baseline, actual_workers = self.threaded_outcome(torch)
-        expected_baseline, expected_workers = self.threaded_outcome(reference_torch)
+    def test_environment_and_fallback_conversion_match(self):
+        actual = torch.distributed.get_node_local_rank
+        expected = reference_torch.distributed.get_node_local_rank
+        environment_cases = (
+            ("0", None),
+            ("-2", 99),
+            ("+7", "unused"),
+            (" 03 ", object()),
+            ("1_024", []),
+        )
+        for value, fallback in environment_cases:
+            with self.subTest(value=value, fallback=fallback):
+                with mock.patch.dict(
+                    os.environ,
+                    {
+                        "LOCAL_RANK": value,
+                        "RANK": "23",
+                        "WORLD_SIZE": "32",
+                    },
+                    clear=True,
+                ):
+                    environment = dict(os.environ)
+                    actual_result = actual(fallback)
+                    self.assertEqual(dict(os.environ), environment)
+                    expected_result = expected(fallback)
+                    self.assertEqual(dict(os.environ), environment)
+                    self.assertIs(type(actual_result), int)
+                    self.assertIs(type(expected_result), int)
+                    self.assertEqual(actual_result, expected_result)
 
-        self.assertIs(actual_baseline, False)
-        self.assertIs(type(expected_baseline), bool)
-        for baseline, worker_states in (
-            (actual_baseline, actual_workers),
-            (expected_baseline, expected_workers),
-        ):
-            self.assertIs(type(baseline), bool)
-            for index, state in enumerate(worker_states):
-                expected_grad_state = index % 2 == 0
-                self.assertIs(state[0], expected_grad_state)
-                self.assertIs(state[1], baseline)
-                self.assertIs(state[2], expected_grad_state)
-                self.assertIs(state[3], baseline)
-                self.assertIs(state[4], expected_grad_state)
+        fallback_cases = (0, -1, True, False, 2.8, "4", b"5")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            environment = dict(os.environ)
+            for fallback in fallback_cases:
+                with self.subTest(fallback=fallback):
+                    actual_result = actual(fallback)
+                    self.assertEqual(dict(os.environ), environment)
+                    expected_result = expected(fallback)
+                    self.assertEqual(dict(os.environ), environment)
+                    self.assertIs(type(actual_result), int)
+                    self.assertIs(type(expected_result), int)
+                    self.assertEqual(actual_result, expected_result)
 
-        self.assertIs(torch.distributed.is_initialized(), False)
-        self.assertIs(reference_torch.distributed.is_initialized(), False)
+    def test_missing_environment_conversion_and_argument_errors_match(self):
+        actual = torch.distributed.get_node_local_rank
+        expected = reference_torch.distributed.get_node_local_rank
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            cases = (
+                (lambda: actual(), lambda: expected()),
+                (lambda: actual("abc"), lambda: expected("abc")),
+                (lambda: actual([]), lambda: expected([])),
+                (lambda: actual(None, None), lambda: expected(None, None)),
+                (lambda: actual(other=1), lambda: expected(other=1)),
+                (
+                    lambda: actual(1, fallback_rank=2),
+                    lambda: expected(1, fallback_rank=2),
+                ),
+            )
+            for case, (actual_call, expected_call) in enumerate(cases):
+                with self.subTest(case=case):
+                    self.assert_error_matches(actual_call, expected_call)
+
+        for value in ("", "abc", "1.5"):
+            with self.subTest(environment_value=value):
+                with mock.patch.dict(
+                    os.environ, {"LOCAL_RANK": value}, clear=True
+                ):
+                    environment = dict(os.environ)
+                    self.assert_error_matches(
+                        lambda: actual(9), lambda: expected(9)
+                    )
+                    self.assertEqual(dict(os.environ), environment)
+
+    def test_threading_and_grad_mode_independence_match(self):
+        for environment_values in ({"LOCAL_RANK": "17"}, {}):
+            with self.subTest(environment=environment_values):
+                with mock.patch.dict(
+                    os.environ, environment_values, clear=True
+                ):
+                    environment = dict(os.environ)
+                    actual = self.threaded_outcome(torch)
+                    self.assertEqual(dict(os.environ), environment)
+                    expected = self.threaded_outcome(reference_torch)
+                    self.assertEqual(dict(os.environ), environment)
+                self.assertEqual(actual, expected)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_distributed = importlib.import_module("torch_rs.distributed")
@@ -116,15 +181,15 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
-        actual = actual_distributed.is_gloo_available
-        expected = expected_distributed.is_gloo_available
+        actual = actual_distributed.get_node_local_rank
+        expected = expected_distributed.get_node_local_rank
 
         self.assertIs(torch.distributed, actual_distributed)
         self.assertIs(reference_torch.distributed, expected_distributed)
         self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
         self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-        self.assertIs(actual_c10d.is_gloo_available, actual)
-        self.assertIs(expected_c10d.is_gloo_available, expected)
+        self.assertIs(actual_c10d.get_node_local_rank, actual)
+        self.assertIs(expected_c10d.get_node_local_rank, expected)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -148,13 +213,22 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
             hasattr(expected, "__text_signature__"),
         )
 
-    def test_imports_copy_wildcards_and_pickle_match_the_supported_scope(self):
+    def test_imports_copy_wildcards_and_pickle_match(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.is_gloo_available
-        expected = expected_distributed.is_gloo_available
+        actual = actual_distributed.get_node_local_rank
+        expected = expected_distributed.get_node_local_rank
+        supported = {
+            "get_node_local_rank",
+            "get_pg_count",
+            "is_gloo_available",
+            "is_initialized",
+            "is_mpi_available",
+            "is_nccl_available",
+            "is_ucc_available",
+        }
 
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"], actual_c10d
@@ -168,28 +242,11 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             actual_c10d.__all__,
-            [
-                name
-                for name in expected_c10d.__all__
-                if name
-                in {
-                    "get_pg_count",
-                    "is_gloo_available",
-                    "is_initialized",
-                    "is_mpi_available",
-                    "is_nccl_available",
-                    "is_ucc_available",
-                    "get_node_local_rank",
-                }
-            ],
+            [name for name in expected_c10d.__all__ if name in supported],
         )
         self.assertEqual(
-            torch.__all__.count("distributed"),
-            reference_torch.__all__.count("distributed"),
-        )
-        self.assertEqual(
-            torch.__all__.count("is_gloo_available"),
-            reference_torch.__all__.count("is_gloo_available"),
+            torch.__all__.count("get_node_local_rank"),
+            reference_torch.__all__.count("get_node_local_rank"),
         )
 
         for module, function in (
@@ -200,20 +257,12 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["is_gloo_available"], function)
-
-        actual_namespace = {}
-        expected_namespace = {}
-        exec("from torch_rs.distributed import *", actual_namespace)
-        exec("from torch.distributed import *", expected_namespace)
-        self.assertIs(actual_namespace["distributed_c10d"], actual_c10d)
-        self.assertIs(expected_namespace["distributed_c10d"], expected_c10d)
+            self.assertIs(namespace["get_node_local_rank"], function)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertNotIn("distributed", namespace)
-            self.assertNotIn("is_gloo_available", namespace)
+            self.assertNotIn("get_node_local_rank", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -228,70 +277,22 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
                     self.pickle_shape(expected, protocol),
                 )
 
-    def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.is_gloo_available
-        expected = reference_torch.distributed.is_gloo_available
-        cases = (
-            (lambda: actual(None), lambda: expected(None)),
-            (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
-            (
-                lambda: actual(None, enabled=True),
-                lambda: expected(None, enabled=True),
-            ),
-        )
-        for case, (actual_call, expected_call) in enumerate(cases):
-            with self.subTest(case=case):
-                self.assert_error_matches(actual_call, expected_call)
-
-    def test_gloo_execution_and_other_distributed_apis_remain_unsupported(self):
+    def test_lookup_does_not_initialize_or_expand_distributed_execution(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
-        expected_c10d = expected_distributed.distributed_c10d
-        actual_public = {
-            name for name in vars(actual_distributed) if not name.startswith("_")
-        }
-        expected_public = {
-            name for name in vars(expected_distributed) if not name.startswith("_")
-        }
 
-        self.assertEqual(
-            actual_public,
-            {
-                "distributed_c10d",
-                "get_pg_count",
-                "is_available",
-                "is_gloo_available",
-                "is_initialized",
-                "is_mpi_available",
-                "is_nccl_available",
-                "is_ucc_available",
-                "get_node_local_rank",
-            },
-        )
-        self.assertEqual(
-            {
-                name for name in vars(actual_c10d) if not name.startswith("_")
-            },
-            {
-                "get_pg_count",
-                "is_gloo_available",
-                "is_initialized",
-                "is_mpi_available",
-                "is_nccl_available",
-                "is_ucc_available",
-                "get_node_local_rank",
-            },
-        )
-        unsupported = expected_public - actual_public
-        self.assertTrue(unsupported)
-        for name in unsupported:
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(actual_distributed, name))
+        with mock.patch.dict(os.environ, {"LOCAL_RANK": "3"}, clear=True):
+            environment = dict(os.environ)
+            self.assertEqual(actual_distributed.get_node_local_rank(), 3)
+            self.assertEqual(expected_distributed.get_node_local_rank(), 3)
+            self.assertEqual(dict(os.environ), environment)
 
+        self.assertIs(actual_distributed.is_initialized(), False)
+        self.assertIs(expected_distributed.is_initialized(), False)
+        self.assertEqual(actual_distributed.get_pg_count(), 0)
+        self.assertEqual(expected_distributed.get_pg_count(), 0)
         for name in (
-            "Backend",
             "GroupMember",
             "ProcessGroup",
             "all_reduce",
@@ -305,22 +306,6 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
                 self.assertTrue(hasattr(expected_distributed, name))
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
-
-        expected_gloo_available = expected_distributed.is_gloo_available()
-        self.assertIs(type(expected_gloo_available), bool)
-        if expected_gloo_available:
-            self.assertTrue(hasattr(expected_distributed, "ProcessGroupGloo"))
-            self.assertTrue(hasattr(expected_c10d, "ProcessGroupGloo"))
-        self.assertFalse(hasattr(actual_distributed, "ProcessGroupGloo"))
-        self.assertFalse(hasattr(actual_c10d, "ProcessGroupGloo"))
-        self.assertIs(actual_distributed.is_available(), False)
-        self.assertIs(actual_distributed.is_initialized(), False)
-        self.assertIs(actual_distributed.is_mpi_available(), False)
-        self.assertIs(actual_distributed.is_nccl_available(), False)
-        self.assertIs(type(expected_distributed.is_available()), bool)
-        self.assertIs(expected_distributed.is_initialized(), False)
-        self.assertIs(type(expected_distributed.is_mpi_available()), bool)
-        self.assertIs(type(expected_distributed.is_nccl_available()), bool)
 
 
 if __name__ == "__main__":

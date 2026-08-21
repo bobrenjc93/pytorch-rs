@@ -196,6 +196,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                     "is_mpi_available",
                     "is_nccl_available",
                     "is_ucc_available",
+                    "get_node_local_rank",
                 }
             ],
         )
@@ -283,6 +284,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "get_node_local_rank",
             },
         )
         self.assertEqual(
@@ -296,6 +298,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "get_node_local_rank",
             },
         )
         for name in (
