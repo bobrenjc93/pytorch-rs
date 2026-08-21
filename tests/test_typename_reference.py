@@ -25,6 +25,30 @@ def example_function():
     return None
 
 
+VARIABLE_FUNCTION_NAMES = (
+    "tensor",
+    "clone",
+    "relu",
+    "is_same_size",
+    "equal",
+    "t",
+    "transpose",
+    "swapdims",
+    "swapaxes",
+    "squeeze",
+    "flatten",
+    "numel",
+    "is_nonzero",
+    "is_complex",
+    "is_floating_point",
+    "is_signed",
+    "zeros",
+    "ones",
+    "eye",
+    "full",
+)
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TypenameReferenceTests(unittest.TestCase):
     @classmethod
@@ -82,6 +106,107 @@ class TypenameReferenceTests(unittest.TestCase):
                 expected_result = reference_torch.typename(expected)
                 self.assertIs(type(actual_result), type(expected_result))
                 self.assertEqual(actual_result, expected_result)
+
+    def test_tensor_type_mode_dispatch_matches_pytorch_2_13(self):
+        def recording_contract(module):
+            class RecordingMode(module.overrides.TorchFunctionMode):
+                def __init__(self):
+                    self.calls = []
+
+                def __torch_function__(
+                    self, function, dispatch_types, args=(), kwargs=None
+                ):
+                    self.calls.append((function, dispatch_types, args, kwargs))
+                    return "intercepted"
+
+            tensor = module.tensor([1.0])
+            mode = RecordingMode()
+            with mode:
+                result = module.typename(tensor)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertEqual(len(args), 1)
+            self.assertIs(args[0], tensor)
+            return (
+                result,
+                type(function),
+                function.__name__,
+                function.__qualname__,
+                hasattr(function, "__module__"),
+                function.__objclass__.__name__,
+                function.__objclass__.__module__,
+                function.__doc__,
+                function.__text_signature__,
+                dispatch_types,
+                kwargs,
+            )
+
+        self.assertEqual(recording_contract(torch), recording_contract(reference_torch))
+
+        def forwarding_contract(module):
+            class ForwardingMode(module.overrides.TorchFunctionMode):
+                def __init__(self):
+                    self.calls = []
+
+                def __torch_function__(
+                    self, function, dispatch_types, args=(), kwargs=None
+                ):
+                    self.calls.append((function, dispatch_types, args, kwargs))
+                    return function(*args, **({} if kwargs is None else kwargs))
+
+            mode = ForwardingMode()
+            tensor = module.tensor([1.0])
+            with mode:
+                result = module.typename(tensor)
+            return result, len(mode.calls)
+
+        self.assertEqual(forwarding_contract(torch), forwarding_contract(reference_torch))
+
+        def declining_contract(module):
+            class DecliningMode(module.overrides.TorchFunctionMode):
+                def __torch_function__(
+                    self, function, dispatch_types, args=(), kwargs=None
+                ):
+                    return NotImplemented
+
+            mode = DecliningMode()
+            tensor = module.tensor([1.0])
+            try:
+                with mode:
+                    module.typename(tensor)
+            except Exception as error:
+                return type(error), str(error).replace(repr(mode), "<mode>")
+            self.fail(f"{module.__name__}.typename accepted a declining mode")
+
+        self.assertEqual(declining_contract(torch), declining_contract(reference_torch))
+
+    def test_live_tensor_rebinding_matches_pytorch_2_13(self):
+        class CompatibleTensor:
+            def __init__(self):
+                self.calls = 0
+
+            def type(self):
+                self.calls += 1
+                return "custom.tensor.Type"
+
+        def contract(module):
+            native_tensor_type = module.Tensor
+            value = CompatibleTensor()
+            try:
+                module.Tensor = CompatibleTensor
+                return module.typename(value), value.calls
+            finally:
+                module.Tensor = native_tensor_type
+
+        self.assertEqual(contract(torch), contract(reference_torch))
+
+    def test_supported_native_function_names_match_pytorch_2_13(self):
+        for name in VARIABLE_FUNCTION_NAMES:
+            with self.subTest(name=name):
+                self.assertEqual(
+                    torch.typename(getattr(torch, name)),
+                    reference_torch.typename(getattr(reference_torch, name)),
+                )
 
     def test_generic_object_results_match_pytorch_2_13(self):
         instance = ExampleClass()

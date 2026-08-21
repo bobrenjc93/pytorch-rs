@@ -21,6 +21,37 @@ _sys.modules[f"{__name__}._C"] = _C
 # from this package without adding ``torch`` to wildcard imports.
 torch = _sys.modules[__name__]
 
+_TYPENAME_NATIVE_TENSOR = _native.Tensor
+_TYPENAME_TENSOR = _native._typename_tensor
+# These native entry points correspond to PyTorch's generated variable
+# functions even though torch-rs still implements them as direct extension
+# functions. Preserve their observable owner names for typename().
+_TYPENAME_VARIABLE_FUNCTIONS = tuple(
+    (getattr(_native, name), name)
+    for name in (
+        "tensor",
+        "clone",
+        "relu",
+        "is_same_size",
+        "equal",
+        "t",
+        "transpose",
+        "swapdims",
+        "swapaxes",
+        "squeeze",
+        "flatten",
+        "numel",
+        "is_nonzero",
+        "is_complex",
+        "is_floating_point",
+        "is_signed",
+        "zeros",
+        "ones",
+        "eye",
+        "full",
+    )
+)
+
 
 def typename(obj: _Any, /) -> str:
     """
@@ -39,9 +70,15 @@ def typename(obj: _Any, /) -> str:
         'torch.nn.parameter.Parameter'
     """
     if isinstance(obj, torch.Tensor):
-        # Float32 on CPU is the only supported tensor type. Return PyTorch's
-        # legacy display name without exposing Tensor.type() or FloatTensor.
-        return "torch.FloatTensor"
+        if isinstance(obj, _TYPENAME_NATIVE_TENSOR):
+            # Preserve Tensor.type()'s mode dispatch without publishing the
+            # otherwise unsupported conversion method on Tensor itself.
+            return _TYPENAME_TENSOR(obj)
+        return obj.type()
+
+    for function, name in _TYPENAME_VARIABLE_FUNCTIONS:
+        if obj is function:
+            return f"torch._VariableFunctionsClass.{name}"
 
     module = getattr(obj, "__module__", "") or ""
     qualname = ""

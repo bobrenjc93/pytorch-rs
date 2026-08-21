@@ -35,6 +35,7 @@ use crate::{
 };
 
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
+static TENSOR_TYPE_DESCRIPTOR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static H_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -82,6 +83,8 @@ if _TypeIs is not None:
     }
 is_tensor.__module__ = "torch_rs"
 "#;
+
+const TENSOR_TYPE_DOC: &CStr = c"\ntype(dtype=None, non_blocking=False, **kwargs) -> str or Tensor\nReturns the type if `dtype` is not provided, else casts this object to\nthe specified type.\n\nIf this is already of the correct type, no copy is performed and the\noriginal object is returned.\n\nArgs:\n    dtype (dtype or string): The desired type\n    non_blocking (bool): If ``True``, and the source is in pinned memory\n        and destination is on the GPU or vice versa, the copy is performed\n        asynchronously with respect to the host. Otherwise, the argument\n        has no effect.\n    **kwargs: For compatibility, may contain the key ``async`` in place of\n        the ``non_blocking`` argument. The ``async`` arg is deprecated.\n";
 
 #[cfg(target_os = "macos")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4317.)";
@@ -1060,6 +1063,79 @@ impl PyTensor {
     pub(crate) const fn grad_cache(&self) -> &PyOnceLock<Py<PyTensor>> {
         &self.grad_cache
     }
+}
+
+#[allow(
+    unsafe_code,
+    reason = "CPython supplies a borrowed Tensor instance to the panic-safe PyO3 trampoline"
+)]
+unsafe fn tensor_type_name_callback(
+    py: Python<'_>,
+    value: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: a method descriptor owned by TensorBase supplies a live Tensor
+    // instance for the duration of this callback.
+    let value = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, value) };
+    let tensor = value.cast::<PyTensor>()?;
+    // SAFETY: the C method callback contract supplies a live positional tuple
+    // and either a null keyword pointer or a live dictionary.
+    let args = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, args) }.cast_into::<PyTuple>()?;
+    let kwargs = unsafe { Bound::<PyAny>::from_borrowed_ptr_or_opt(py, kwargs) }
+        .map(Bound::cast_into::<PyDict>)
+        .transpose()?;
+    if let Some(result) = dispatch_tensorbase_method_mode_with_function(
+        py,
+        tensor,
+        tensor_type_descriptor(py)?,
+        "type",
+        "torch.Tensor.type",
+        &args,
+        kwargs.as_ref(),
+    )? {
+        return Ok(result.into_ptr());
+    }
+    if !args.is_empty() || kwargs.as_ref().is_some_and(|kwargs| !kwargs.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "Tensor.type() conversion is not supported",
+        ));
+    }
+    "torch.FloatTensor".into_py_any(py).map(Py::into_ptr)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyDescr_NewMethod creates a private TensorBase descriptor from a static method definition"
+)]
+fn tensor_type_descriptor(py: Python<'_>) -> PyResult<&Py<PyAny>> {
+    TENSOR_TYPE_DESCRIPTOR.get_or_try_init(py, || {
+        let method = Box::leak(Box::new(
+            pyo3::impl_::pymethods::PyMethodDef::cfunction_with_keywords(
+                c"type",
+                pyo3::impl_::trampoline::get_trampoline_function!(
+                    cfunction_with_keywords,
+                    tensor_type_name_callback
+                ),
+                TENSOR_TYPE_DOC,
+            )
+            .into_raw(),
+        ));
+        // SAFETY: TensorBase and the leaked method definition remain live for
+        // the descriptor's lifetime, and CPython returns a new reference.
+        let descriptor = unsafe {
+            Bound::<PyAny>::from_owned_ptr_or_err(
+                py,
+                ffi::PyDescr_NewMethod(py.get_type::<PyTensorBase>().as_type_ptr(), method),
+            )?
+        };
+        Ok(descriptor.unbind())
+    })
+}
+
+#[pyfunction]
+fn _typename_tensor(py: Python<'_>, obj: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    Ok(tensor_type_descriptor(py)?.bind(py).call1((obj,))?.unbind())
 }
 
 pub(crate) fn get_device_variable_function(
@@ -2195,6 +2271,30 @@ pub(crate) fn dispatch_tensorbase_method_mode(
     }
 
     let function = py.get_type::<PyTensorBase>().getattr(method)?.unbind();
+    dispatch_tensorbase_method_mode_with_function(
+        py,
+        tensor,
+        &function,
+        method,
+        qualified_method,
+        args,
+        kwargs,
+    )
+}
+
+fn dispatch_tensorbase_method_mode_with_function(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    function: &Py<PyAny>,
+    method: &'static str,
+    qualified_method: &'static str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() {
+        return Ok(None);
+    }
+
     // Parsed method arguments are metadata or options rather than overloaded
     // tensor operands, so PyTorch supplies no dispatch types even though the
     // receiver remains in args.
@@ -2220,7 +2320,7 @@ pub(crate) fn dispatch_tensorbase_method_mode(
     };
     validate_torch_function_mode_handler(mode.bind(py))?;
     let handler = mode.bind(py).getattr("__torch_function__")?;
-    let result = call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+    let result = call_torch_function_handler(py, &handler, function, &types, &call_args, kwargs)?;
     if !is_not_implemented(py, &result) {
         return Ok(Some(result));
     }
@@ -10442,6 +10542,12 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
         is_tensor_helpers.setattr("torch", module)?;
     }
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
+    let typename_tensor = wrap_pyfunction!(_typename_tensor, module)?;
+    let typename_tensor_name = typename_tensor.getattr("__name__")?;
+    module.add_function(typename_tensor)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", (typename_tensor_name,))?;
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     torch_function_mode_stack::add_torch_function_mode_stack(module)?;

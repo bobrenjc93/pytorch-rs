@@ -28,6 +28,11 @@ FUNCTION_DOC = """
         'torch.nn.parameter.Parameter'
     """
 
+if sys.version_info >= (3, 13):
+    # CPython 3.13+ cleans function docstring indentation while preserving
+    # its initial blank line and terminating newline; PyTorch follows that rule.
+    FUNCTION_DOC = "\n" + inspect.cleandoc(FUNCTION_DOC) + "\n"
+
 
 class ExampleClass:
     class NestedClass:
@@ -39,6 +44,30 @@ class ExampleClass:
 
 def example_function():
     return None
+
+
+VARIABLE_FUNCTION_NAMES = (
+    "tensor",
+    "clone",
+    "relu",
+    "is_same_size",
+    "equal",
+    "t",
+    "transpose",
+    "swapdims",
+    "swapaxes",
+    "squeeze",
+    "flatten",
+    "numel",
+    "is_nonzero",
+    "is_complex",
+    "is_floating_point",
+    "is_signed",
+    "zeros",
+    "ones",
+    "eye",
+    "full",
+)
 
 
 class TypenameTests(unittest.TestCase):
@@ -61,6 +90,102 @@ class TypenameTests(unittest.TestCase):
                 result = torch.typename(tensor)
                 self.assertIs(type(result), str)
                 self.assertEqual(result, "torch.FloatTensor")
+
+    def test_tensor_type_dispatches_through_torch_function_modes(self):
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(
+                self, function, dispatch_types, args=(), kwargs=None
+            ):
+                self.calls.append((function, dispatch_types, args, kwargs))
+                return self.result
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(
+                self, function, dispatch_types, args=(), kwargs=None
+            ):
+                self.calls.append((function, dispatch_types, args, kwargs))
+                return function(*args, **({} if kwargs is None else kwargs))
+
+        tensor = torch.tensor([1.0])
+        mode = RecordingMode("intercepted")
+        with mode:
+            self.assertEqual(torch.typename(tensor), "intercepted")
+
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(type(function), types.MethodDescriptorType)
+        self.assertEqual(function.__name__, "type")
+        self.assertEqual(function.__qualname__, "TensorBase.type")
+        self.assertFalse(hasattr(function, "__module__"))
+        self.assertEqual(function.__objclass__.__name__, "TensorBase")
+        self.assertEqual(function.__objclass__.__module__, "torch._C")
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], tensor)
+        self.assertIsNone(kwargs)
+
+        forwarding_mode = ForwardingMode()
+        with forwarding_mode:
+            self.assertEqual(torch.typename(tensor), "torch.FloatTensor")
+        self.assertEqual(len(forwarding_mode.calls), 1)
+
+    def test_declining_torch_function_mode_raises_the_type_dispatch_error(self):
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(
+                self, function, dispatch_types, args=(), kwargs=None
+            ):
+                return NotImplemented
+
+        mode = DecliningMode()
+        message = (
+            "Multiple dispatch failed for 'torch.Tensor.type'; all "
+            "__torch_function__ handlers returned NotImplemented:\n\n"
+            f"  - mode object {mode!r}\n\n"
+            "For more information, try re-running with "
+            "TORCH_LOGS=not_implemented"
+        )
+        with mode:
+            with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                torch.typename(torch.tensor([1.0]))
+
+    def test_live_tensor_binding_calls_a_compatible_objects_type_method(self):
+        class CompatibleTensor:
+            def __init__(self):
+                self.calls = 0
+
+            def type(self):
+                self.calls += 1
+                return "custom.tensor.Type"
+
+        native_tensor_type = torch.Tensor
+        value = CompatibleTensor()
+        try:
+            torch.Tensor = CompatibleTensor
+            self.assertEqual(torch.typename(value), "custom.tensor.Type")
+            self.assertEqual(value.calls, 1)
+        finally:
+            torch.Tensor = native_tensor_type
+
+    def test_supported_native_functions_use_variable_function_owner_names(self):
+        for name in VARIABLE_FUNCTION_NAMES:
+            with self.subTest(name=name):
+                function = getattr(torch, name)
+                self.assertEqual(
+                    torch.typename(function),
+                    f"torch._VariableFunctionsClass.{name}",
+                )
+
+        self.assertEqual(
+            torch.typename(torch.is_grad_enabled),
+            "torch_rs.torch_rs.is_grad_enabled",
+        )
 
     def test_builtins_classes_functions_and_instances_are_qualified(self):
         instance = ExampleClass()
@@ -159,6 +284,8 @@ class TypenameTests(unittest.TestCase):
 
         self.assertEqual(torch.__all__.count("typename"), 1)
         self.assertNotIn("typename", torch._C.__all__)
+        self.assertFalse(hasattr(torch, "_typename_tensor"))
+        self.assertNotIn("_typename_tensor", torch._C.__all__)
         namespace = {}
         exec("from torch_rs import *", namespace)
         self.assertIs(namespace["typename"], function)
