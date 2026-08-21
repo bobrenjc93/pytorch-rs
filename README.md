@@ -86,6 +86,7 @@ assert torch.broadcast_shapes((2,), [3, 1]) == torch.Size([3, 2])
 assert x.dense_dim() == x.ndim
 assert x.sparse_dim() == 0
 assert x.is_pinned() is False
+assert x.is_shared() is False
 assert x.output_nr == 0
 
 # Transposes are native shared-storage views. Tensor.T reverses every dimension,
@@ -157,6 +158,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.jit.isinstance(obj, target_type)` provides PyTorch-compatible eager checks for ordinary types, tuples of candidate types, parameterized lists and dictionaries, fixed-length typed tuples, `Optional`, and `Union`. Empty containers retain PyTorch's eager ambiguity warning, and raw container annotations are rejected with the same guidance to add contained types. This does not enable TorchScript: scripting, tracing, compilation, and graph execution remain unsupported, while the existing eager JIT decorators and state queries are unchanged.
 
 `torch.serialization.LoadEndianness` exposes PyTorch's `NATIVE`, `LITTLE`, and `BIG` load-byte-order choices. `torch.serialization.get_default_load_endianness()` reports the exact default `None` state, and `torch.serialization.set_default_load_endianness(endianness)` updates that process-global fallback to `None` or a current enum member. `torch.serialization.get_crc32_options()` and `torch.serialization.set_crc32_options(compute_crc32)` expose mutable process-global archive-record checksum state without importing PyTorch. The state starts as the exact `True` singleton, the setter returns `None`, and the getter returns the most recently supplied value. `torch.serialization.get_default_mmap_options()` reports the process-global default used by PyTorch for memory-mapped loads: `mmap.MAP_PRIVATE` initially on supported POSIX platforms. `torch.serialization.set_default_mmap_options(flags)` immediately selects `mmap.MAP_PRIVATE` or `mmap.MAP_SHARED` and also acts as a context manager that restores the prior setting on exit. The mmap setter is unavailable on Windows, while `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
+
+`Tensor.is_shared()` returns the exact `False` singleton for every supported CPU tensor, including views, empty tensors, and accumulated gradients, because ordinary and mutex-backed gradient storage are process-local. Shared-memory mutation and storage-object APIs remain unsupported.
 
 `Tensor.is_distributed()` returns the exact `False` singleton for every supported local CPU tensor without inspecting or changing storage, layout, or autograd state. `torch.distributed.is_available()`, `torch.distributed.is_gloo_available()`, `torch.distributed.is_mpi_available()`, and `torch.distributed.is_nccl_available()` are honest package, Gloo, MPI, and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All five package queries return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Distributed tensor types, Gloo or MPI initialization, process-group creation, backend execution, collectives, and every other distributed API remain unsupported.
 
