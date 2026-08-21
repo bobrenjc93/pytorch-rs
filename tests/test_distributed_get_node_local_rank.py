@@ -219,7 +219,9 @@ class DistributedGetNodeLocalRankTests(unittest.TestCase):
             function.__module__, "torch_rs.distributed.distributed_c10d"
         )
         self.assertIs(inspect.getmodule(function), distributed_c10d)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.getdoc(function), inspect.cleandoc(FUNCTION_DOC)
+        )
         self.assertEqual(function.__defaults__, (None,))
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
