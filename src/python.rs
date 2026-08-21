@@ -1750,7 +1750,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.sqrt",
         dispatch_allocation_error: "unable to allocate sqrt dispatch operands",
         out_unsupported_error: "sqrt(): the 'out' argument is not supported",
-        autograd_unsupported_error: Some("sqrt(): autograd recording is not supported"),
+        autograd_unsupported_error: None,
         apply: CoreTensor::sqrt,
     };
 }

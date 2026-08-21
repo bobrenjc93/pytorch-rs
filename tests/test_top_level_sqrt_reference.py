@@ -29,6 +29,14 @@ class TopLevelSqrtReferenceTests(unittest.TestCase):
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
+    @staticmethod
+    def error(action):
+        try:
+            action()
+        except Exception as error:
+            return type(error).__name__, str(error)
+        raise AssertionError("torch.sqrt unexpectedly accepted an invalid call")
+
     def assert_matches(self, actual, expected, *, case, exact_bits=False):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -109,6 +117,38 @@ class TopLevelSqrtReferenceTests(unittest.TestCase):
             return module.sqrt(x=tensor, out=None)
         return module.sqrt(**{form: tensor})
 
+    @staticmethod
+    def make_autograd_case(module, case):
+        if case == "scalar":
+            leaf = module.tensor(4.0, dtype=module.float32, requires_grad=True)
+            return leaf, leaf, None
+        if case == "empty":
+            leaf = module.zeros(
+                (2, 0, 3), dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf.transpose(0, 2)[1], None
+
+        leaf = module.tensor(
+            np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        if case == "offset":
+            source = leaf[1]
+            weights = module.tensor(
+                np.arange(1, 13, dtype=np.float32).reshape(3, 4).tolist(),
+                dtype=module.float32,
+            )
+            return leaf, source, weights
+        if case == "noncontiguous":
+            source = leaf.transpose(0, 2)[1]
+            weights = module.tensor(
+                np.arange(1, 7, dtype=np.float32).reshape(3, 2).tolist(),
+                dtype=module.float32,
+            )
+            return leaf, source, weights
+        raise AssertionError(f"unknown sqrt autograd case: {case}")
+
     def test_scalar_empty_offset_strided_and_edge_results_match_pytorch_2_13(self):
         actual_cases = self.make_cases(torch)
         expected_cases = self.make_cases(reference_torch)
@@ -134,6 +174,141 @@ class TopLevelSqrtReferenceTests(unittest.TestCase):
                     case=(case, form),
                     exact_bits=case == "numerical edges",
                 )
+
+    def test_autograd_scalar_empty_offset_and_noncontiguous_match_pytorch_2_13(
+        self,
+    ):
+        forms = (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
+        )
+        for case in ("scalar", "empty", "offset", "noncontiguous"):
+            for form in forms:
+                actual_leaf, actual_input, actual_weights = self.make_autograd_case(
+                    torch, case
+                )
+                expected_leaf, expected_input, expected_weights = (
+                    self.make_autograd_case(reference_torch, case)
+                )
+                actual_output = self.call_sqrt(torch, actual_input, form)
+                expected_output = self.call_sqrt(
+                    reference_torch, expected_input, form
+                )
+                self.assert_matches(
+                    actual_output,
+                    expected_output,
+                    case=(case, form, "forward"),
+                )
+
+                if actual_weights is None:
+                    actual_loss = (
+                        actual_output if case == "scalar" else actual_output.sum()
+                    )
+                    expected_loss = (
+                        expected_output if case == "scalar" else expected_output.sum()
+                    )
+                else:
+                    actual_loss = (actual_output * actual_weights).sum()
+                    expected_loss = (expected_output * expected_weights).sum()
+                actual_loss.backward()
+                expected_loss.backward()
+                self.assert_matches(
+                    actual_leaf.grad,
+                    expected_leaf.grad,
+                    case=(case, form, "gradient"),
+                )
+
+    def test_autograd_special_values_match_pytorch_2_13_bitwise(self):
+        input_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x0080_0000,
+                0x8080_0000,
+                0x3E80_0000,
+                0x3F80_0000,
+                0x4000_0000,
+                0x4080_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7F81_2345,
+                0xFF81_2345,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        weight_bits = np.asarray(
+            (
+                0x3F80_0000,
+                0xBF80_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F00_0000,
+                0xBF00_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7FC0_1234,
+                0xFFC0_5678,
+            ),
+            dtype=np.uint32,
+        )
+        tensors = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                memoryview(input_bits.view(np.float32)), requires_grad=True
+            )
+            weights = module.tensor(memoryview(weight_bits.view(np.float32)))
+            output = module.sqrt(leaf, out=None)
+            (output * weights).sum().backward()
+            tensors.append((output, leaf.grad))
+
+        self.assert_matches(
+            tensors[0][0], tensors[1][0], case="special forward", exact_bits=True
+        )
+        self.assert_matches(
+            tensors[0][1], tensors[1][1], case="special gradient", exact_bits=True
+        )
+
+    def test_autograd_accumulation_and_graph_freeing_match_pytorch_2_13(self):
+        snapshots = []
+        for module in (torch, reference_torch):
+            accumulated = module.tensor(
+                [1.0, 4.0, 9.0], dtype=module.float32, requires_grad=True
+            )
+            module.sqrt(accumulated).sum().backward()
+            first = np.asarray(accumulated.grad).copy()
+            module.sqrt(input=accumulated).sum().backward()
+            second = np.asarray(accumulated.grad).copy()
+
+            freed = module.tensor(
+                [1.0, 4.0, 9.0], dtype=module.float32, requires_grad=True
+            )
+            loss = module.sqrt(freed, out=None).sum()
+            loss.backward()
+            second_backward_error = self.error(loss.backward)
+            snapshots.append((first, second, second_backward_error))
+
+        np.testing.assert_array_equal(snapshots[0][0], snapshots[1][0])
+        np.testing.assert_array_equal(snapshots[0][1], snapshots[1][1])
+        self.assertEqual(snapshots[0][2], snapshots[1][2])
 
     def test_requires_grad_inputs_match_inside_no_grad(self):
         actual_leaf = torch.tensor(
@@ -197,7 +372,7 @@ class TopLevelSqrtReferenceTests(unittest.TestCase):
         )
 
     def dispatch_observation(self, module):
-        tensor = module.tensor([4.0])
+        tensor = module.tensor([4.0], requires_grad=True)
         destination = module.tensor([0.0])
         function = module.sqrt
         marker = object()
@@ -304,6 +479,16 @@ class TopLevelSqrtReferenceTests(unittest.TestCase):
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
                 forwarded = function(input=tensor, out=None)
+        forwarded.sum().backward()
+        forwarded_observation = (
+            forwarded.requires_grad,
+            forwarded.is_leaf,
+            tuple(forwarded.shape),
+            forwarded.stride(),
+            forwarded.storage_offset(),
+            tuple(np.asarray(forwarded.detach()).reshape(-1)),
+            tuple(np.asarray(tensor.grad).reshape(-1)),
+        )
 
         fallback_events = []
 
@@ -340,7 +525,7 @@ class TopLevelSqrtReferenceTests(unittest.TestCase):
             subclass_result is marker,
             subclass_order,
             forward_order,
-            tuple(np.asarray(forwarded).reshape(-1)),
+            forwarded_observation,
             fallback_result is marker,
             len(declining_mode.calls),
             fallback_events,

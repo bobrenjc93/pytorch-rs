@@ -4785,6 +4785,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 91.7
       }
+    },
+    {
+      "key": "pr:598",
+      "recordedAt": "2026-08-21T22:54:53.327Z",
+      "label": "PR #598",
+      "kind": "leaf",
+      "prNumber": 598,
+      "title": "Make top-level torch.sqrt differentiable",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 81.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 65.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 91.8
+      }
     }
   ]
 }
