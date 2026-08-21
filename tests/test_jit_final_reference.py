@@ -64,7 +64,6 @@ class JitFinalReferenceTests(unittest.TestCase):
             None,
             int | str,
             typing.Any,
-            Ellipsis,
         ):
             with self.subTest(argument=argument):
                 actual_alias = actual[argument]

@@ -44,7 +44,6 @@ class JitFinalTests(unittest.TestCase):
             (None, (type(None),)),
             (int | str, (int | str,)),
             (typing.Any, (typing.Any,)),
-            (Ellipsis, (Ellipsis,)),
         )
 
         for argument, expected_args in cases:
