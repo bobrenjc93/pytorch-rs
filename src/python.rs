@@ -262,11 +262,15 @@ impl PyTensorBase {
         let inner = if index.is_instance_of::<PyEllipsis>() {
             tensor.inner.metadata_alias()
         } else if let Ok(indices) = index.cast::<PyTuple>() {
-            if indices.len() > tensor.inner.shape().len() {
-                return Err(too_many_indices(tensor.inner.shape().len()));
+            if indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>() {
+                tensor.inner.metadata_alias()
+            } else {
+                if indices.len() > tensor.inner.shape().len() {
+                    return Err(too_many_indices(tensor.inner.shape().len()));
+                }
+                let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
+                tensor.inner.index(indices)
             }
-            let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
-            tensor.inner.index(indices)
         } else if is_exact_full_slice(index)? {
             tensor.inner.index_full_slice()
         } else if is_fast_integer_index(index)? {

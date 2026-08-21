@@ -17,8 +17,11 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "bare-Ellipsis indexing differentials require pinned PyTorch 2.13.0"
+                "Ellipsis indexing differentials require pinned PyTorch 2.13.0"
             )
+
+    def ellipsis_indices(self):
+        return (("bare", Ellipsis), ("singleton-tuple", (Ellipsis,)))
 
     def layout_cases(self, module):
         values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
@@ -30,8 +33,8 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
             base.transpose(0, 3)[1],
         )
 
-    def alias_contract(self, source):
-        alias = source[...]
+    def alias_contract(self, source, index):
+        alias = source[index]
         values = np.asarray(alias.detach(), dtype=np.float32).reshape(-1)
         return {
             "distinct_wrapper": alias is not source,
@@ -48,24 +51,26 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
         }
 
     def test_scalar_empty_offset_and_noncontiguous_aliases_match_pytorch_2_13(self):
-        actual_cases = self.layout_cases(torch)
-        expected_cases = self.layout_cases(reference_torch)
-        for case, (actual, expected) in enumerate(
-            zip(actual_cases, expected_cases, strict=True)
-        ):
-            with self.subTest(case=case):
-                self.assertEqual(
-                    self.alias_contract(actual), self.alias_contract(expected)
-                )
+        for syntax, index in self.ellipsis_indices():
+            actual_cases = self.layout_cases(torch)
+            expected_cases = self.layout_cases(reference_torch)
+            for case, (actual, expected) in enumerate(
+                zip(actual_cases, expected_cases, strict=True)
+            ):
+                with self.subTest(syntax=syntax, case=case):
+                    self.assertEqual(
+                        self.alias_contract(actual, index),
+                        self.alias_contract(expected, index),
+                    )
 
-    def autograd_contract(self, module):
+    def autograd_contract(self, module, index):
         leaf = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]],
             dtype=module.float32,
             requires_grad=True,
         )
         source = (leaf * 2.0).transpose(0, 1)
-        alias = source[...]
+        alias = source[index]
         metadata = (
             alias is not source,
             alias.is_set_to(source),
@@ -81,15 +86,15 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
         (alias * weights).sum().backward()
         return metadata, np.asarray(leaf.grad).copy()
 
-    def alias_node_diagnostic(self, module):
+    def alias_node_diagnostic(self, module, index):
         leaf = module.tensor([2.0], dtype=module.float32, requires_grad=True)
         try:
-            module.nn.functional.dropout(None, p=leaf[...], training=False)
+            module.nn.functional.dropout(None, p=leaf[index], training=False)
         except ValueError as error:
             return str(error)
         self.fail("dropout unexpectedly accepted an out-of-range tensor probability")
 
-    def no_grad_contract(self, module):
+    def no_grad_contract(self, module, index):
         leaf = module.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
             dtype=module.float32,
@@ -97,7 +102,7 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
         )
         source = leaf.transpose(0, 1)
         with module.no_grad():
-            alias = source[...]
+            alias = source[index]
         return (
             alias is not source,
             alias.is_set_to(source),
@@ -110,19 +115,26 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
         )
 
     def test_alias_autograd_and_no_grad_status_match_pytorch_2_13(self):
-        actual_metadata, actual_gradient = self.autograd_contract(torch)
-        expected_metadata, expected_gradient = self.autograd_contract(reference_torch)
-        self.assertEqual(actual_metadata, expected_metadata)
-        np.testing.assert_array_equal(actual_gradient, expected_gradient)
-        self.assertEqual(
-            self.alias_node_diagnostic(torch),
-            self.alias_node_diagnostic(reference_torch),
-        )
-        self.assertEqual(
-            self.no_grad_contract(torch), self.no_grad_contract(reference_torch)
-        )
+        for syntax, index in self.ellipsis_indices():
+            with self.subTest(syntax=syntax):
+                actual_metadata, actual_gradient = self.autograd_contract(
+                    torch, index
+                )
+                expected_metadata, expected_gradient = self.autograd_contract(
+                    reference_torch, index
+                )
+                self.assertEqual(actual_metadata, expected_metadata)
+                np.testing.assert_array_equal(actual_gradient, expected_gradient)
+                self.assertEqual(
+                    self.alias_node_diagnostic(torch, index),
+                    self.alias_node_diagnostic(reference_torch, index),
+                )
+                self.assertEqual(
+                    self.no_grad_contract(torch, index),
+                    self.no_grad_contract(reference_torch, index),
+                )
 
-    def lifetime_contract(self, module):
+    def lifetime_contract(self, module, index):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         leaf = module.tensor(
             values.tolist(), dtype=module.float32, requires_grad=True
@@ -130,7 +142,7 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
 
         def make_alias():
             source = (leaf * 2.0).transpose(0, 2)[1]
-            return source[...]
+            return source[index]
 
         alias = make_alias()
         gc.collect()
@@ -149,12 +161,18 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
         return metadata, np.asarray(leaf.grad).copy()
 
     def test_source_lifetime_matches_pytorch_2_13(self):
-        actual_metadata, actual_gradient = self.lifetime_contract(torch)
-        expected_metadata, expected_gradient = self.lifetime_contract(reference_torch)
-        self.assertEqual(actual_metadata, expected_metadata)
-        np.testing.assert_array_equal(actual_gradient, expected_gradient)
+        for syntax, index in self.ellipsis_indices():
+            with self.subTest(syntax=syntax):
+                actual_metadata, actual_gradient = self.lifetime_contract(
+                    torch, index
+                )
+                expected_metadata, expected_gradient = self.lifetime_contract(
+                    reference_torch, index
+                )
+                self.assertEqual(actual_metadata, expected_metadata)
+                np.testing.assert_array_equal(actual_gradient, expected_gradient)
 
-    def mode_dispatch_contract(self, module):
+    def mode_dispatch_contract(self, module, index):
         source = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]], dtype=module.float32
         )
@@ -178,7 +196,7 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
 
         mode = RecordingMode()
         with mode:
-            result = source[...]
+            result = source[index]
             context_depth = len(
                 module.overrides._get_current_function_mode_stack()
             )
@@ -223,7 +241,7 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
         upper = ForwardingMode("upper")
         with lower:
             with upper:
-                forwarded = source[...]
+                forwarded = source[index]
 
         return {
             "replacement": result is marker,
@@ -237,7 +255,7 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
             "dispatch_types_empty": dispatch_types == (),
             "argument_count": len(args),
             "receiver_identity": args[0] is source,
-            "ellipsis_identity": args[1] is Ellipsis,
+            "index_identity": args[1] is index,
             "kwargs_none": kwargs is None,
             "handler_depth": handler_depth,
             "context_depth": context_depth,
@@ -252,10 +270,12 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
         }
 
     def test_tensorbase_mode_dispatch_matches_pytorch_2_13(self):
-        self.assertEqual(
-            self.mode_dispatch_contract(torch),
-            self.mode_dispatch_contract(reference_torch),
-        )
+        for syntax, index in self.ellipsis_indices():
+            with self.subTest(syntax=syntax):
+                self.assertEqual(
+                    self.mode_dispatch_contract(torch, index),
+                    self.mode_dispatch_contract(reference_torch, index),
+                )
 
 
 if __name__ == "__main__":
