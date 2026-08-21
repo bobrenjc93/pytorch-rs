@@ -5,6 +5,7 @@ import copyreg as _copyreg
 import functools as _functools
 import sys as _sys
 from math import e, inf, nan, pi
+from typing import Any as _Any
 
 from . import torch_rs as _native
 from .torch_rs import *
@@ -19,6 +20,43 @@ _sys.modules[f"{__name__}._C"] = _C
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
 # from this package without adding ``torch`` to wildcard imports.
 torch = _sys.modules[__name__]
+
+
+def typename(obj: _Any, /) -> str:
+    """
+    String representation of the type of an object.
+
+    This function returns a fully qualified string representation of an object's type.
+    Args:
+        obj (object): The object whose type to represent
+    Returns:
+        str: the type of the object `o`
+    Example:
+        >>> x = torch.tensor([1, 2, 3])
+        >>> torch.typename(x)
+        'torch.LongTensor'
+        >>> torch.typename(torch.nn.Parameter)
+        'torch.nn.parameter.Parameter'
+    """
+    if isinstance(obj, torch.Tensor):
+        # Float32 on CPU is the only supported tensor type. Return PyTorch's
+        # legacy display name without exposing Tensor.type() or FloatTensor.
+        return "torch.FloatTensor"
+
+    module = getattr(obj, "__module__", "") or ""
+    qualname = ""
+
+    if hasattr(obj, "__qualname__"):
+        qualname = obj.__qualname__
+    elif hasattr(obj, "__name__"):
+        qualname = obj.__name__
+    else:
+        module = obj.__class__.__module__ or ""
+        qualname = obj.__class__.__qualname__
+
+    if module in {"", "builtins"}:
+        return qualname
+    return f"{module}.{qualname}"
 
 
 def are_deterministic_algorithms_enabled() -> _builtins.bool:
@@ -173,6 +211,7 @@ __all__ = [
     "get_device_module",
     "get_float32_matmul_precision",
     "is_warn_always_enabled",
+    "typename",
     "e",
     "pi",
     "nan",
