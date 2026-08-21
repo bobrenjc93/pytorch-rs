@@ -264,6 +264,7 @@ class JitIsinstanceTests(unittest.TestCase):
             "ignore",
             "isinstance",
             "script_if_tracing",
+            "strict_fusion",
             "unused",
         }
 
@@ -276,6 +277,7 @@ class JitIsinstanceTests(unittest.TestCase):
                 "ignore",
                 "isinstance",
                 "script_if_tracing",
+                "strict_fusion",
                 "unused",
             ],
         )
