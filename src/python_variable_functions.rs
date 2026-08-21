@@ -22,12 +22,12 @@ use crate::python::{
     permute_variable_function, positive_variable_function, promote_types_variable_function,
     ravel_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
     scalar_tensor_variable_function, select_variable_function, sin_variable_function,
-    unbind_variable_function,
+    sqrt_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 25] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 26] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -39,6 +39,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 25] = [
     "ravel",
     "exp",
     "sin",
+    "sqrt",
     "is_conj",
     "is_inference",
     "resolve_conj",
@@ -126,6 +127,29 @@ Example::
     tensor([-0.5461,  0.1347, -2.7266, -0.2746])
     >>> torch.sin(a)
     tensor([-0.5194,  0.1343, -0.4032, -0.2711])
+";
+
+const SQRT_DOC: &std::ffi::CStr = cr"
+sqrt(input, *, out=None) -> Tensor
+
+Returns a new tensor with the square-root of the elements of :attr:`input`.
+
+.. math::
+    \text{out}_{i} = \sqrt{\text{input}_{i}}
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.randn(4)
+    >>> a
+    tensor([-2.0755,  1.0226,  0.0831,  0.4806])
+    >>> torch.sqrt(a)
+    tensor([    nan,  1.0112,  0.2883,  0.6933])
 ";
 
 const MUL_DOC: &std::ffi::CStr = cr"
@@ -445,6 +469,7 @@ variable_function_callback!(detach_callback, detach_variable_function);
 variable_function_callback!(ravel_callback, ravel_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
+variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
@@ -491,6 +516,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"ravel", ravel_callback, RAVEL_DOC),
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
+        variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
