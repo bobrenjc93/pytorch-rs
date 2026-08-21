@@ -2330,6 +2330,15 @@ impl Tensor {
         self.unary_map(f32::exp)
     }
 
+    /// Computes the nonnegative square root of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn sqrt(&self) -> Result<Self, TensorError> {
+        self.unary_map(sqrt_value)
+    }
+
     #[must_use]
     pub fn sum(&self) -> Self {
         let mut output = Self::from_owned_parts(
@@ -4283,6 +4292,20 @@ fn relu_value(value: f32) -> f32 {
     }
 }
 
+fn sqrt_value(value: f32) -> f32 {
+    // PyTorch canonicalizes domain errors to a positive quiet NaN while
+    // preserving signed zero and the payload and sign of NaN inputs.
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    let is_nan = magnitude > f32::INFINITY.to_bits();
+    let is_negative_nonzero = bits & F32_SIGN_MASK != 0 && magnitude != 0;
+    if is_negative_nonzero && !is_nan {
+        f32::NAN
+    } else {
+        value.sqrt()
+    }
+}
+
 fn relu_backward_value(input: f32, upstream: f32) -> f32 {
     let bits = input.to_bits();
     let magnitude = bits & !F32_SIGN_MASK;
@@ -4331,7 +4354,7 @@ mod tests {
     use super::{
         CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device,
         F32_SIGN_MASK, SavedTensor, Tensor, TensorError, materialize_contiguous_trailing_broadcast,
-        try_result_vector,
+        sqrt_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -4349,6 +4372,53 @@ mod tests {
             view_requires_grad: false,
             autograd: None,
         }
+    }
+
+    #[test]
+    fn square_root_matches_pytorch_float32_edge_bits() {
+        let inputs = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x0080_0000,
+            0x8080_0000,
+            0x3f80_0000,
+            0x4000_0000,
+            0x4080_0000,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xff81_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let expected = [
+            0x0000_0000,
+            0x8000_0000,
+            0x1a35_04f3,
+            0x7fc0_0000,
+            0x2000_0000,
+            0x7fc0_0000,
+            0x3f80_0000,
+            0x3fb5_04f3,
+            0x4000_0000,
+            0x5f7f_ffff,
+            0x7fc0_0000,
+            0x7f80_0000,
+            0x7fc0_0000,
+            0x7fc1_2345,
+            0xffc1_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+
+        assert_eq!(
+            inputs.map(|bits| sqrt_value(f32::from_bits(bits)).to_bits()),
+            expected
+        );
     }
 
     #[test]
@@ -5111,6 +5181,7 @@ mod tests {
             (tensor.relu().unwrap(), shared.relu().unwrap()),
             (tensor.sin().unwrap(), shared.sin().unwrap()),
             (tensor.exp().unwrap(), shared.exp().unwrap()),
+            (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
             (
                 tensor.add_scalar(1.25).unwrap(),
                 shared.add_scalar(1.25).unwrap(),
@@ -5353,7 +5424,7 @@ mod tests {
     }
 
     #[test]
-    fn exponential_propagates_result_allocation_overflow() {
+    fn inference_unary_functions_propagate_result_allocation_overflow() {
         let elements = usize::MAX;
         // Failure injection deliberately bypasses the validated constructors:
         // no real tensor can own this many f32 values, so the kernel must fail
@@ -5371,6 +5442,10 @@ mod tests {
 
         assert_eq!(
             tensor.exp(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.sqrt(),
             Err(TensorError::AllocationFailed { elements })
         );
     }

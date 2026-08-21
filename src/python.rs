@@ -684,6 +684,28 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nsqrt() -> Tensor\n\nSee :func:`torch.sqrt`\n"]
+    #[pyo3(text_signature = None)]
+    fn sqrt(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "sqrt")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            if tensor.inner.requires_grad() && is_grad_enabled() {
+                return Err(PyRuntimeError::new_err(
+                    "sqrt(): autograd recording is not supported",
+                ));
+            }
+            tensor.inner.sqrt().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\npositive() -> Tensor\n\nSee :func:`torch.positive`\n"]
     #[pyo3(text_signature = None)]
     fn positive(slf: &Bound<'_, Self>) -> PyResult<Py<PyTensor>> {
