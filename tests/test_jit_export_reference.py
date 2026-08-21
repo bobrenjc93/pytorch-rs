@@ -330,6 +330,7 @@ class JitExportReferenceTests(unittest.TestCase):
             {name for name in vars(torch.jit) if not name.startswith("_")},
             {
                 "Attribute",
+                "Final",
                 "annotate",
                 "export",
                 "ignore",
