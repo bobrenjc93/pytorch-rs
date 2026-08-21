@@ -1,8 +1,8 @@
 from torch_rs._jit_internal import export, ignore, is_scripting, unused
-from torch_rs.jit._trace import is_tracing
+from torch_rs.jit._trace import _script_if_tracing, is_tracing
 
 
-__all__ = ["annotate", "export", "ignore", "unused"]
+__all__ = ["annotate", "export", "ignore", "script_if_tracing", "unused"]
 
 
 def annotate(the_type, the_value):
@@ -54,3 +54,27 @@ def annotate(the_type, the_value):
         `the_value` is passed back as return value.
     """
     return the_value
+
+
+def script_if_tracing(fn):
+    """
+    Compiles ``fn`` when it is first called during tracing.
+
+    .. deprecated:: 2.5
+        TorchScript is deprecated, please use ``torch.compile`` instead.
+
+    ``torch.jit.script`` has a non-negligible start up time when it is first called due to
+    lazy-initializations of many compiler builtins. Therefore you should not use
+    it in library code. However, you may want to have parts of your library work
+    in tracing even if they use control flow. In these cases, you should use
+    ``@torch.jit.script_if_tracing`` to substitute for
+    ``torch.jit.script``.
+
+    Args:
+        fn: A function to compile.
+
+    Returns:
+        If called during tracing, a :class:`ScriptFunction` created by `torch.jit.script` is returned.
+        Otherwise, the original function `fn` is returned.
+    """
+    return _script_if_tracing(fn)

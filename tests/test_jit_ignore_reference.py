@@ -245,7 +245,13 @@ class JitIgnoreReferenceTests(unittest.TestCase):
     def test_exports_copy_and_pickle_match_supported_scope(self):
         actual = torch.jit.ignore
         expected = reference_torch.jit.ignore
-        wildcard_supported = {"annotate", "export", "ignore", "unused"}
+        wildcard_supported = {
+            "annotate",
+            "export",
+            "ignore",
+            "script_if_tracing",
+            "unused",
+        }
         self.assertEqual(
             torch.jit.__all__,
             [
