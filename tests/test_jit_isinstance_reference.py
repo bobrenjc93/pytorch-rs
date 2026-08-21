@@ -280,7 +280,7 @@ class JitIsinstanceReferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(actual_jit) if not name.startswith("_")},
-            {*wildcard_supported, "is_scripting", "is_tracing"},
+            {*wildcard_supported, "Final", "is_scripting", "is_tracing"},
         )
         self.assertEqual(
             torch.__all__.count("isinstance"),
