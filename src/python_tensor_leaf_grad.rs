@@ -1,10 +1,16 @@
 //! Python leaf-gradient descriptors for native tensors.
 
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::{
+    exceptions::{PyAttributeError, PyNotImplementedError, PyRuntimeError},
+    prelude::*,
+};
 
 use crate::{
-    python::{PyTensor, PyTensorBase, dispatch_tensorbase_getset_mode},
-    python_dtype::dtype_object,
+    DType,
+    python::{
+        PyTensor, PyTensorBase, dispatch_tensorbase_getset_mode, dispatch_tensorbase_set_mode,
+    },
+    python_dtype::{PyDType, dtype_object},
     python_tensor_errors::tensor_error,
 };
 
@@ -32,6 +38,49 @@ impl PyTensorBase {
         Ok(dtype_object(slf.py(), dtype)?
             .clone_ref(slf.py())
             .into_any())
+    }
+
+    #[setter(grad_dtype)]
+    fn set_grad_dtype(slf: &Bound<'_, Self>, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if dispatch_tensorbase_set_mode(slf.py(), tensor, "grad_dtype", value)?.is_some() {
+            return Ok(());
+        }
+
+        let requested_dtype = if value.is_none() {
+            None
+        } else if let Ok(dtype) = value.cast::<PyDType>() {
+            Some(dtype.try_borrow()?.inner())
+        } else {
+            let type_name = value.get_type().name()?;
+            return Err(PyRuntimeError::new_err(format!(
+                "grad_dtype must be a torch.dtype or None, but got {type_name}"
+            )));
+        };
+
+        if !tensor.try_borrow()?.inner().is_leaf() {
+            return Err(PyRuntimeError::new_err(
+                "grad_dtype can only be set on leaf tensors.",
+            ));
+        }
+
+        if requested_dtype != Some(DType::Float32) {
+            return Err(PyNotImplementedError::new_err(
+                "torch_rs only supports setting grad_dtype to torch.float32",
+            ));
+        }
+
+        // Float32 is already the native accumulator dtype. Accepting this
+        // assignment is therefore a metadata no-op and does not require a
+        // second dtype field that later configurable-dtype work must unwind.
+        Ok(())
+    }
+
+    #[deleter(grad_dtype)]
+    fn delete_grad_dtype(_slf: &Bound<'_, Self>) -> PyResult<()> {
+        Err(PyAttributeError::new_err(
+            "attribute 'grad_dtype' of 'torch._C.TensorBase' objects is not writable",
+        ))
     }
 }
 

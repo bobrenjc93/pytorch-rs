@@ -1843,6 +1843,7 @@ fn matrix_adjoint(
 enum TensorBaseModeTarget {
     Method(&'static str),
     GetSet(&'static str),
+    Set(&'static str),
 }
 
 #[allow(
@@ -1978,6 +1979,15 @@ fn dispatch_tensorbase_mode(
     tensor: &Bound<'_, PyTensor>,
     target: TensorBaseModeTarget,
 ) -> PyResult<Option<Py<PyAny>>> {
+    dispatch_tensorbase_mode_with_value(py, tensor, target, None)
+}
+
+fn dispatch_tensorbase_mode_with_value(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    target: TensorBaseModeTarget,
+    value: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<Py<PyAny>>> {
     if torch_function_mode_stack::is_empty() {
         return Ok(None);
     }
@@ -1988,9 +1998,14 @@ fn dispatch_tensorbase_mode(
         TensorBaseModeTarget::GetSet(name) => {
             tensor_base.getattr(name)?.getattr("__get__")?.unbind()
         }
+        TensorBaseModeTarget::Set(name) => tensor_base.getattr(name)?.getattr("__set__")?.unbind(),
     };
     let types = PyTuple::new(py, [tensor.get_type().into_any()])?;
-    let args = PyTuple::new(py, [tensor.clone().into_any()])?;
+    let args = if let Some(value) = value {
+        PyTuple::new(py, [tensor.clone().into_any(), value.clone()])?
+    } else {
+        PyTuple::new(py, [tensor.clone().into_any()])?
+    };
 
     let mut active_mode = torch_function_mode_stack::pop();
     let Some(mode) = active_mode.get() else {
@@ -2036,6 +2051,20 @@ pub(crate) fn dispatch_tensorbase_getset_mode(
     property: &'static str,
 ) -> PyResult<Option<Py<PyAny>>> {
     dispatch_tensorbase_mode(py, tensor, TensorBaseModeTarget::GetSet(property))
+}
+
+pub(crate) fn dispatch_tensorbase_set_mode(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    property: &'static str,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<Option<Py<PyAny>>> {
+    dispatch_tensorbase_mode_with_value(
+        py,
+        tensor,
+        TensorBaseModeTarget::Set(property),
+        Some(value),
+    )
 }
 
 pub(crate) fn dispatch_tensorbase_no_argument_mode(
