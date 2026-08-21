@@ -19,12 +19,12 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
+class DistributedIsXcclAvailableReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.is_gloo_available differentials require pinned "
+                "distributed.is_xccl_available differentials require pinned "
                 "PyTorch 2.13.0"
             )
 
@@ -38,7 +38,7 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def threaded_outcome(self, module):
-        function = module.distributed.is_gloo_available
+        function = module.distributed.is_xccl_available
         baseline = function()
         worker_count = 8
         barrier = threading.Barrier(worker_count)
@@ -116,15 +116,15 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
-        actual = actual_distributed.is_gloo_available
-        expected = expected_distributed.is_gloo_available
+        actual = actual_distributed.is_xccl_available
+        expected = expected_distributed.is_xccl_available
 
         self.assertIs(torch.distributed, actual_distributed)
         self.assertIs(reference_torch.distributed, expected_distributed)
         self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
         self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-        self.assertIs(actual_c10d.is_gloo_available, actual)
-        self.assertIs(expected_c10d.is_gloo_available, expected)
+        self.assertIs(actual_c10d.is_xccl_available, actual)
+        self.assertIs(expected_c10d.is_xccl_available, expected)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -153,8 +153,8 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.is_gloo_available
-        expected = expected_distributed.is_gloo_available
+        actual = actual_distributed.is_xccl_available
+        expected = expected_distributed.is_xccl_available
 
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"], actual_c10d
@@ -189,8 +189,8 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("distributed"),
         )
         self.assertEqual(
-            torch.__all__.count("is_gloo_available"),
-            reference_torch.__all__.count("is_gloo_available"),
+            torch.__all__.count("is_xccl_available"),
+            reference_torch.__all__.count("is_xccl_available"),
         )
 
         for module, function in (
@@ -201,7 +201,7 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["is_gloo_available"], function)
+            self.assertIs(namespace["is_xccl_available"], function)
 
         actual_namespace = {}
         expected_namespace = {}
@@ -214,7 +214,7 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("distributed", namespace)
-            self.assertNotIn("is_gloo_available", namespace)
+            self.assertNotIn("is_xccl_available", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -230,8 +230,8 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.is_gloo_available
-        expected = reference_torch.distributed.is_gloo_available
+        actual = torch.distributed.is_xccl_available
+        expected = reference_torch.distributed.is_xccl_available
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
@@ -245,7 +245,7 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_gloo_execution_and_other_distributed_apis_remain_unsupported(self):
+    def test_xccl_execution_and_other_distributed_apis_remain_unsupported(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
@@ -309,21 +309,15 @@ class DistributedIsGlooAvailableReferenceTests(unittest.TestCase):
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
 
-        expected_gloo_available = expected_distributed.is_gloo_available()
-        self.assertIs(type(expected_gloo_available), bool)
-        if expected_gloo_available:
-            self.assertTrue(hasattr(expected_distributed, "ProcessGroupGloo"))
-            self.assertTrue(hasattr(expected_c10d, "ProcessGroupGloo"))
-        self.assertFalse(hasattr(actual_distributed, "ProcessGroupGloo"))
-        self.assertFalse(hasattr(actual_c10d, "ProcessGroupGloo"))
-        self.assertIs(actual_distributed.is_available(), False)
+        expected_xccl_available = expected_distributed.is_xccl_available()
+        self.assertIs(type(expected_xccl_available), bool)
+        if expected_xccl_available:
+            self.assertTrue(hasattr(expected_distributed, "ProcessGroupXCCL"))
+            self.assertTrue(hasattr(expected_c10d, "ProcessGroupXCCL"))
+        self.assertFalse(hasattr(actual_distributed, "ProcessGroupXCCL"))
+        self.assertFalse(hasattr(actual_c10d, "ProcessGroupXCCL"))
         self.assertIs(actual_distributed.is_initialized(), False)
-        self.assertIs(actual_distributed.is_mpi_available(), False)
-        self.assertIs(actual_distributed.is_nccl_available(), False)
-        self.assertIs(type(expected_distributed.is_available()), bool)
         self.assertIs(expected_distributed.is_initialized(), False)
-        self.assertIs(type(expected_distributed.is_mpi_available()), bool)
-        self.assertIs(type(expected_distributed.is_nccl_available()), bool)
 
 
 if __name__ == "__main__":
