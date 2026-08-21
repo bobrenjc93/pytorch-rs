@@ -16,20 +16,21 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 use crate::python::{
     adjoint_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, can_cast_variable_function, detach_variable_function,
-    exp_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    permute_variable_function, positive_variable_function, promote_types_variable_function,
-    ravel_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
-    sqrt_variable_function, unbind_variable_function,
+    empty_variable_function, exp_variable_function, get_device_variable_function,
+    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, permute_variable_function, positive_variable_function,
+    promote_types_variable_function, ravel_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sin_variable_function, sqrt_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 26] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 27] = [
     "get_device",
     "scalar_tensor",
+    "empty",
     "atleast_1d",
     "atleast_2d",
     "atleast_3d",
@@ -238,6 +239,48 @@ Example::
     torch.float32
     >>> torch.promote_types(torch.uint8, torch.long)
     torch.long
+";
+
+const EMPTY_DOC: &std::ffi::CStr = cr"
+empty(*size, *, out=None, dtype=None, layout=torch.strided, device=None, requires_grad=False, pin_memory=False, memory_format=torch.contiguous_format) -> Tensor
+
+Returns a tensor filled with uninitialized data. The shape of the tensor is
+defined by the variable argument :attr:`size`.
+
+.. note::
+    If :func:`torch.use_deterministic_algorithms()` and
+    :attr:`torch.utils.deterministic.fill_uninitialized_memory` are both set to
+    ``True``, the output tensor is initialized to prevent any possible
+    nondeterministic behavior from using the data as an input to an operation.
+    Floating point and complex tensors are filled with NaN, and integer tensors
+    are filled with the maximum value.
+
+Args:
+    size (int...): a sequence of integers defining the shape of the output tensor.
+        Can be a variable number of arguments or a collection like a list or tuple.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+    dtype (:class:`torch.dtype`, optional): the desired data type of returned tensor.
+        Default: if ``None``, uses a global default (see :func:`torch.set_default_dtype`).
+    layout (:class:`torch.layout`, optional): the desired layout of returned Tensor.
+        Default: ``torch.strided``.
+    device (:class:`torch.device`, optional): the desired device of returned tensor.
+        Default: if ``None``, uses the current device for the default tensor type
+        (see :func:`torch.set_default_device`). :attr:`device` will be the CPU
+        for CPU tensor types and the current CUDA device for CUDA tensor types.
+    requires_grad (bool, optional): If autograd should record operations on the
+        returned tensor. Default: ``False``.
+    pin_memory (bool, optional): If set, returned tensor would be allocated in
+        the pinned memory. Works only for CPU tensors. Default: ``False``.
+    memory_format (:class:`torch.memory_format`, optional): the desired memory format of
+        returned Tensor. Default: ``torch.contiguous_format``.
+
+Example::
+
+    >>> torch.empty((2,3), dtype=torch.int64)
+    tensor([[ 9.4064e+13,  2.8000e+01,  9.3493e+13],
+            [ 7.5751e+18,  7.1428e+18,  7.5955e+18]])
 ";
 
 const IS_CONJ_DOC: &std::ffi::CStr = c"\nis_conj(input) -> (bool)\n\nReturns True if the :attr:`input` is a conjugated tensor, i.e. its conjugate bit is set to `True`.\n\nArgs:\n    input (Tensor): the input tensor.\n";
@@ -460,6 +503,7 @@ macro_rules! variable_function_callback {
 
 variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
+variable_function_callback!(empty_callback, empty_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
 variable_function_callback!(atleast_2d_callback, atleast_2d_variable_function);
 variable_function_callback!(atleast_3d_callback, atleast_3d_variable_function);
@@ -507,6 +551,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
     let methods = Box::leak(Box::new([
         variable_function_method!(c"get_device", get_device_callback, c""),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
+        variable_function_method!(c"empty", empty_callback, EMPTY_DOC),
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
