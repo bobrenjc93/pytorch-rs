@@ -34,15 +34,16 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
             ("LITTLE", 2),
             ("BIG", 3),
         )
+        reference_enum = enum.Enum("LoadEndianness", dict(expected))
         members = tuple(load_endianness)
 
-        self.assertIs(type(load_endianness), enum.EnumType)
+        self.assertIs(type(load_endianness), enum.EnumMeta)
         self.assertEqual(load_endianness.__bases__, (enum.Enum,))
         self.assertEqual(load_endianness.__name__, "LoadEndianness")
         self.assertEqual(load_endianness.__qualname__, "LoadEndianness")
         self.assertEqual(load_endianness.__module__, "torch_rs.serialization")
         self.assertIs(inspect.getmodule(load_endianness), torch.serialization)
-        self.assertIsNone(load_endianness.__doc__)
+        self.assertEqual(load_endianness.__doc__, reference_enum.__doc__)
         self.assertEqual(load_endianness.__annotations__, {})
 
         self.assertEqual(len(load_endianness), 3)
@@ -267,17 +268,25 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
             (4, "4 is not a valid LoadEndianness"),
             (None, "None is not a valid LoadEndianness"),
             ("NATIVE", "'NATIVE' is not a valid LoadEndianness"),
-            ((1, 2), "(1, 2) is not a valid LoadEndianness"),
         )
         for value, message in invalid_values:
             with self.subTest(value=value):
                 with self.assertRaises(ValueError) as raised:
-                    if isinstance(value, tuple):
-                        load_endianness(*value)
-                    else:
-                        load_endianness(value)
+                    load_endianness(value)
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
+
+        reference_enum = enum.Enum(
+            "LoadEndianness",
+            {"NATIVE": 1, "LITTLE": 2, "BIG": 3},
+        )
+        with self.assertRaises(Exception) as raised:
+            load_endianness(1, 2)
+        with self.assertRaises(Exception) as expected_raised:
+            reference_enum(1, 2)
+        self.assertIs(type(raised.exception), type(expected_raised.exception))
+        self.assertEqual(str(raised.exception), str(expected_raised.exception))
+        self.assertEqual(raised.exception.args, expected_raised.exception.args)
 
         with self.assertRaises(KeyError) as raised:
             load_endianness["native"]

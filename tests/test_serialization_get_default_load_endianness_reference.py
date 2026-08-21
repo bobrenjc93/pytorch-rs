@@ -197,7 +197,7 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
         self.assertEqual(actual[16], 3)
         self.assertIs(
             type(torch.serialization.LoadEndianness),
-            enum.EnumType,
+            enum.EnumMeta,
         )
 
     def test_default_threaded_and_grad_states_match_pytorch_2_13(self):
