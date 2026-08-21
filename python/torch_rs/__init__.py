@@ -47,6 +47,13 @@ def get_float32_matmul_precision() -> str:
     return "highest"
 
 
+def is_warn_always_enabled() -> _builtins.bool:
+    r"""Returns True if the global warn_always flag is turned on. Refer to
+    :func:`torch.set_warn_always` documentation for more details.
+    """
+    return False
+
+
 def set_default_dtype(d: "torch.dtype", /) -> None:
     r"""
 
@@ -129,6 +136,7 @@ __all__ = [
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
     "get_float32_matmul_precision",
+    "is_warn_always_enabled",
     "e",
     "pi",
     "nan",
