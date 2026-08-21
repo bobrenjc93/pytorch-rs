@@ -191,6 +191,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                     "is_mpi_available",
                     "is_nccl_available",
                     "is_ucc_available",
+                    "get_node_local_rank",
                 }
             ],
         )
@@ -278,6 +279,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "get_node_local_rank",
             },
         )
         self.assertEqual(
@@ -291,6 +293,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "get_node_local_rank",
             },
         )
         unsupported = expected_public - actual_public
