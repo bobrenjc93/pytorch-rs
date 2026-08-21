@@ -11,7 +11,7 @@ use pyo3::types::{PyAny, PyModule, PyTuple};
 static TORCH_FUNCTION_DESCRIPTOR_CALLER: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
 thread_local! {
-    static CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static TENSORBASE_LEGACY_REDISPATCH_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
 const TORCH_FUNCTION_DESCRIPTOR_CALLER_SOURCE: &CStr = cr"
@@ -75,28 +75,28 @@ pub(crate) fn uses_legacy_tensorbase_redispatch(py: Python<'_>) -> bool {
     py.version_info() < (3, 12)
 }
 
-pub(crate) struct ConstDataPtrLegacyRedispatchGuard;
+pub(crate) struct TensorBaseLegacyRedispatchGuard;
 
-pub(crate) fn enter_const_data_ptr_legacy_redispatch() -> ConstDataPtrLegacyRedispatchGuard {
-    CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH.with(|depth| depth.set(depth.get() + 1));
-    ConstDataPtrLegacyRedispatchGuard
+pub(crate) fn enter_tensorbase_legacy_redispatch() -> TensorBaseLegacyRedispatchGuard {
+    TENSORBASE_LEGACY_REDISPATCH_DEPTH.with(|depth| depth.set(depth.get() + 1));
+    TensorBaseLegacyRedispatchGuard
 }
 
-impl Drop for ConstDataPtrLegacyRedispatchGuard {
+impl Drop for TensorBaseLegacyRedispatchGuard {
     fn drop(&mut self) {
-        CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH.with(|depth| depth.set(depth.get() - 1));
+        TENSORBASE_LEGACY_REDISPATCH_DEPTH.with(|depth| depth.set(depth.get() - 1));
     }
 }
 
-fn const_data_ptr_legacy_redispatch_depth() -> usize {
-    CONST_DATA_PTR_LEGACY_REDISPATCH_DEPTH.with(Cell::get)
+fn tensorbase_legacy_redispatch_depth() -> usize {
+    TENSORBASE_LEGACY_REDISPATCH_DEPTH.with(Cell::get)
 }
 
 #[allow(
     unsafe_code,
     reason = "CPython 3.10 and 3.11 TensorBase parity requires probing legacy recursive dispatch boundaries"
 )]
-pub(crate) fn probe_const_data_ptr_legacy_redispatch(py: Python<'_>) -> PyResult<()> {
+pub(crate) fn probe_tensorbase_legacy_redispatch(py: Python<'_>) -> PyResult<()> {
     // The Python helper retains the recursive fallback frame, while the native
     // PyTorch path also crosses alternating subclass and callable recursion
     // checks before retrying the descriptor. Probe those checks only after the
@@ -109,7 +109,7 @@ pub(crate) fn probe_const_data_ptr_legacy_redispatch(py: Python<'_>) -> PyResult
         c" in __subclasscheck__",
         c" while calling a Python object",
     ];
-    let redispatch_depth = const_data_ptr_legacy_redispatch_depth();
+    let redispatch_depth = tensorbase_legacy_redispatch_depth();
     let python_311_contexts = [
         c" while calling a Python object",
         c" in __subclasscheck__",
