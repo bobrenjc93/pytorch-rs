@@ -1,3 +1,7 @@
+import warnings as _warnings
+from typing import Any as _Any
+
+import torch_rs._jit_internal as _jit_internal
 from torch_rs._jit_internal import _isinstance, export, ignore, is_scripting, unused
 from torch_rs.jit._script import Attribute
 from torch_rs.jit._trace import _script_if_tracing, is_tracing
@@ -10,8 +14,39 @@ __all__ = [
     "ignore",
     "isinstance",
     "script_if_tracing",
+    "strict_fusion",
     "unused",
 ]
+
+
+class strict_fusion:
+    """
+    Give errors if not all nodes have been fused in inference, or symbolically differentiated in training.
+
+    .. deprecated:: 2.5
+        TorchScript is deprecated, please use ``torch.compile`` instead.
+
+    Example:
+    Forcing fusion of additions.
+
+    .. code-block:: python
+
+        @torch.jit.script
+        def foo(x):
+            with torch.jit.strict_fusion():
+                return x + x + x
+
+    """
+
+    def __init__(self) -> None:
+        if not _jit_internal.is_scripting():
+            _warnings.warn("Only works in script mode", stacklevel=2)
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, type: _Any, value: _Any, tb: _Any) -> None:
+        pass
 
 
 def annotate(the_type, the_value):
