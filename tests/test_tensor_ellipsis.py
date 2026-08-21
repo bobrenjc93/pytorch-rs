@@ -38,9 +38,18 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         scalar = torch.tensor(-0.0)[...]
         self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0x8000_0000)
 
-    def test_alias_autograd_gradient_and_no_grad_leaf_status(self):
+    def test_singleton_tuple_ellipsis_returns_a_distinct_exact_metadata_alias(self):
+        for case, source in self.layout_cases():
+            with self.subTest(case=case):
+                alias = source[(Ellipsis,)]
+                self.assert_metadata_alias(source, alias)
+
+        scalar = torch.tensor(-0.0)[(Ellipsis,)]
+        self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0x8000_0000)
+
+    def assert_alias_autograd_gradient_and_no_grad_leaf_status(self, index):
         leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
-        alias = leaf[...]
+        alias = leaf[index]
         self.assert_metadata_alias(leaf, alias)
         self.assertTrue(alias.requires_grad)
         self.assertFalse(alias.is_leaf)
@@ -55,7 +64,7 @@ class TensorEllipsisIndexTests(unittest.TestCase):
             r"tensor\(\[2\.\], grad_fn=<AliasBackward0>\)$",
         ):
             torch.nn.functional.dropout(
-                None, p=diagnostic_leaf[...], training=False
+                None, p=diagnostic_leaf[index], training=False
             )
 
         no_grad_leaf = torch.tensor(
@@ -63,18 +72,24 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         )
         no_grad_source = no_grad_leaf.transpose(0, 1)
         with torch.no_grad():
-            no_grad_alias = no_grad_source[...]
+            no_grad_alias = no_grad_source[index]
         self.assert_metadata_alias(no_grad_source, no_grad_alias)
         self.assertTrue(no_grad_alias.requires_grad)
         self.assertTrue(no_grad_alias.is_leaf)
         self.assertIsNone(no_grad_leaf.grad)
 
-    def test_alias_storage_and_autograd_survive_source_lifetime(self):
+    def test_bare_ellipsis_alias_autograd_gradient_and_no_grad_leaf_status(self):
+        self.assert_alias_autograd_gradient_and_no_grad_leaf_status(Ellipsis)
+
+    def test_singleton_tuple_alias_autograd_gradient_and_no_grad_leaf_status(self):
+        self.assert_alias_autograd_gradient_and_no_grad_leaf_status((Ellipsis,))
+
+    def assert_alias_storage_and_autograd_survive_source_lifetime(self, index):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
 
         def retained_view():
             source = torch.tensor(values.tolist()).transpose(0, 2)[1]
-            return source[...]
+            return source[index]
 
         surviving = retained_view()
         gc.collect()
@@ -87,7 +102,7 @@ class TensorEllipsisIndexTests(unittest.TestCase):
 
         def retained_autograd_view():
             source = (leaf * 2.0).transpose(0, 2)[1]
-            return source[...]
+            return source[index]
 
         tracked = retained_autograd_view()
         gc.collect()
@@ -97,7 +112,13 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         expected[:, :, 1] = 2.0 * np.asarray(weights).T
         np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
 
-    def test_bare_ellipsis_dispatches_through_tensorbase_mode_before_parsing(self):
+    def test_bare_ellipsis_alias_survives_source_lifetime(self):
+        self.assert_alias_storage_and_autograd_survive_source_lifetime(Ellipsis)
+
+    def test_singleton_tuple_alias_survives_source_lifetime(self):
+        self.assert_alias_storage_and_autograd_survive_source_lifetime((Ellipsis,))
+
+    def assert_dispatches_through_tensorbase_mode_before_parsing(self, index):
         source = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
         marker = object()
 
@@ -119,7 +140,7 @@ class TensorEllipsisIndexTests(unittest.TestCase):
 
         mode = RecordingMode()
         with mode:
-            result = source[...]
+            result = source[index]
             self.assertEqual(
                 torch.overrides._get_current_function_mode_stack(), [mode]
             )
@@ -136,7 +157,7 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         self.assertEqual(dispatch_types, ())
         self.assertEqual(len(args), 2)
         self.assertIs(args[0], source)
-        self.assertIs(args[1], Ellipsis)
+        self.assertIs(args[1], index)
         self.assertIsNone(kwargs)
         self.assertEqual(handler_stack, ())
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
@@ -163,8 +184,15 @@ class TensorEllipsisIndexTests(unittest.TestCase):
                 return func(*args, **(kwargs or {}))
 
         with ForwardingMode():
-            forwarded = source[...]
+            forwarded = source[index]
         self.assert_metadata_alias(source, forwarded)
+
+    def test_bare_ellipsis_dispatches_through_tensorbase_mode_before_parsing(self):
+        self.assert_dispatches_through_tensorbase_mode_before_parsing(Ellipsis)
+
+    def test_singleton_tuple_dispatches_with_the_original_index(self):
+        index = (Ellipsis,)
+        self.assert_dispatches_through_tensorbase_mode_before_parsing(index)
 
     def test_integer_indexing_remains_supported_and_other_forms_stay_unsupported(self):
         tensor = torch.tensor(
@@ -180,10 +208,10 @@ class TensorEllipsisIndexTests(unittest.TestCase):
 
         unsupported = (
             None,
-            (Ellipsis,),
             (Ellipsis, 0),
             (0, Ellipsis),
             (slice(None), Ellipsis),
+            (Ellipsis, Ellipsis),
         )
         for index in unsupported:
             with self.subTest(index=repr(index)):
