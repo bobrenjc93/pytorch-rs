@@ -9,6 +9,7 @@ __all__ = [
     "is_mpi_available",
     "is_nccl_available",
     "is_ucc_available",
+    "is_xccl_available",
     "get_node_local_rank",
 ]
 
@@ -43,6 +44,11 @@ def is_nccl_available() -> bool:
 
 def is_ucc_available() -> bool:
     """Check if the UCC backend is available."""
+    return False
+
+
+def is_xccl_available() -> bool:
+    """Check if the XCCL backend is available."""
     return False
 
 

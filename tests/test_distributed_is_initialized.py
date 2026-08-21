@@ -142,6 +142,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "is_xccl_available",
                 "get_node_local_rank",
             ],
         )
@@ -178,6 +179,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "is_xccl_available",
                 "get_node_local_rank",
             },
         )
@@ -200,6 +202,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "is_xccl_available",
                 "get_node_local_rank",
             },
         )
@@ -272,6 +275,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "is_xccl_available",
                 "get_node_local_rank",
             },
         )
@@ -288,6 +292,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "is_xccl_available",
                 "get_node_local_rank",
             },
         )
