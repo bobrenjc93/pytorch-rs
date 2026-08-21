@@ -77,8 +77,23 @@ class JitFinalReferenceTests(unittest.TestCase):
         expected = reference_torch.jit.Final
         for argument in (int, list[str], int | str, ..., "ForwardDeclared", [int]):
             with self.subTest(argument=argument):
+                try:
+                    expected_value = expected[argument]
+                except Exception as expected_error:
+                    with self.assertRaises(type(expected_error)) as actual_raised:
+                        actual[argument]
+                    self.assertIs(
+                        type(actual_raised.exception), type(expected_error)
+                    )
+                    self.assertEqual(
+                        str(actual_raised.exception), str(expected_error)
+                    )
+                    self.assertEqual(
+                        actual_raised.exception.args, expected_error.args
+                    )
+                    continue
+
                 actual_value = actual[argument]
-                expected_value = expected[argument]
                 self.assertEqual(actual_value, expected_value)
                 self.assertIs(
                     typing.get_origin(actual_value),

@@ -46,8 +46,23 @@ class JitFinalTests(unittest.TestCase):
         )
         for argument in cases:
             with self.subTest(argument=argument):
+                try:
+                    expected = typing.Final[argument]
+                except Exception as expected_error:
+                    with self.assertRaises(type(expected_error)) as actual_raised:
+                        marker[argument]
+                    self.assertIs(
+                        type(actual_raised.exception), type(expected_error)
+                    )
+                    self.assertEqual(
+                        str(actual_raised.exception), str(expected_error)
+                    )
+                    self.assertEqual(
+                        actual_raised.exception.args, expected_error.args
+                    )
+                    continue
+
                 actual = marker[argument]
-                expected = typing.Final[argument]
                 self.assertEqual(actual, expected)
                 self.assertIs(typing.get_origin(actual), typing.Final)
                 self.assertEqual(typing.get_args(actual), typing.get_args(expected))
