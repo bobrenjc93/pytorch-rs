@@ -13,6 +13,7 @@ def is_available() -> bool:
 
 
 from .distributed_c10d import get_pg_count as get_pg_count
+from .distributed_c10d import get_node_local_rank as get_node_local_rank
 from .distributed_c10d import is_gloo_available as is_gloo_available
 from .distributed_c10d import is_initialized as is_initialized
 from .distributed_c10d import is_mpi_available as is_mpi_available
