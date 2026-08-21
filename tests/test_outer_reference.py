@@ -103,18 +103,49 @@ class OuterReferenceTests(unittest.TestCase):
                     case=(name, form),
                 )
 
-    def test_paired_nan_prefers_vec2_payload_like_pytorch_2_13(self):
-        left_bits = np.asarray((0x7FC1_2345,), dtype=np.uint32)
-        right_bits = np.asarray((0xFFC5_4321,), dtype=np.uint32)
-        actual = torch.outer(
-            torch.tensor(memoryview(left_bits.view(np.float32))),
-            torch.tensor(memoryview(right_bits.view(np.float32))),
+    def test_paired_nan_payloads_match_pytorch_2_13_across_lanes(self):
+        cases = (
+            ("single lane", (0x7FC1_2345,), (0xFFC5_4321,), 1, 1),
+            ("two quiet lanes", (0x7FC1_2345,), (0xFFC5_4321,) * 2, 1, 1),
+            ("two signaling lanes", (0x7F81_2345,), (0xFF85_4321,) * 2, 1, 1),
+            (
+                "scalar tail",
+                (0x7FC1_2345, 0x7F81_2345),
+                (0xFFC5_4321,) * 4,
+                1,
+                1,
+            ),
+            ("vector boundary", (0x7FC1_2345,), (0xFF85_4321,) * 16, 1, 1),
+            ("post-vector tail", (0x7F81_2345,), (0xFFC5_4321,) * 18, 1, 1),
+            ("single column", (0x7FC1_2345,) * 6, (0xFF85_4321,), 1, 1),
+            (
+                "strided vec2",
+                (0x7FC1_2345, 0x7F81_2345),
+                (0xFFC5_4321, 0xFF85_4321) * 3,
+                1,
+                2,
+            ),
+            ("strided single column", (0x7FC1_2345,) * 6, (0xFF85_4321,), 2, 1),
         )
-        expected = reference_torch.outer(
-            reference_torch.tensor(memoryview(left_bits.view(np.float32))),
-            reference_torch.tensor(memoryview(right_bits.view(np.float32))),
-        )
-        self.assert_matches(actual, expected, case="paired NaN payload precedence")
+
+        def make_vector(module, values, stride):
+            bits = np.full(len(values) * stride, 0x3F80_0000, dtype=np.uint32)
+            bits[::stride] = values
+            vector = module.tensor(memoryview(bits.view(np.float32)))
+            if stride == 1:
+                return vector
+            return vector.reshape((len(values), stride)).transpose(0, 1)[0]
+
+        for name, left_values, right_values, left_stride, right_stride in cases:
+            actual = torch.outer(
+                make_vector(torch, left_values, left_stride),
+                make_vector(torch, right_values, right_stride),
+            )
+            expected = reference_torch.outer(
+                make_vector(reference_torch, left_values, left_stride),
+                make_vector(reference_torch, right_values, right_stride),
+            )
+            self.assert_matches(actual, expected, case=name)
 
     @staticmethod
     def make_autograd_inputs(module):

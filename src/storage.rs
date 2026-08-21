@@ -36,6 +36,14 @@ impl StorageData<f32> {
         }
     }
 
+    #[cfg(feature = "python-bindings")]
+    fn owned_values_mut(&mut self) -> Option<&mut [f32]> {
+        match self {
+            Self::Owned(values) => Some(values),
+            Self::SharedGradient(_) => None,
+        }
+    }
+
     fn value(&self, index: usize) -> Option<f32> {
         self.with_values(|values| values.get(index).copied())
     }
@@ -160,6 +168,13 @@ impl Storage {
     pub(crate) fn owned_values(&self) -> Option<&[f32]> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.owned_values(),
+        }
+    }
+
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn owned_values_mut(&mut self) -> Option<&mut [f32]> {
+        match &mut self.payload {
+            StoragePayload::CpuFloat32(data) => data.owned_values_mut(),
         }
     }
 

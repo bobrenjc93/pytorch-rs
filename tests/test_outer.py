@@ -104,16 +104,38 @@ class OuterTests(unittest.TestCase):
                 self.assertEqual(actual.storage_offset(), 0)
                 self.assertTrue(actual.is_contiguous())
 
-        paired_nan_left = torch.tensor(
-            memoryview(np.asarray((0x7FC1_2345,), dtype=np.uint32).view(np.float32))
+        paired_nan_cases = (
+            (
+                "single lane",
+                (0x7FC1_2345,),
+                (0xFFC5_4321,),
+                ((0xFFC5_4321,),),
+            ),
+            (
+                "two quiet lanes",
+                (0x7FC1_2345,),
+                (0xFFC5_4321, 0xFFC5_4321),
+                ((0x7FC1_2345, 0xFFC5_4321),),
+            ),
+            (
+                "two signaling lanes",
+                (0x7F81_2345,),
+                (0xFF85_4321, 0xFF85_4321),
+                ((0x7FC1_2345, 0xFFC5_4321),),
+            ),
         )
-        paired_nan_right = torch.tensor(
-            memoryview(np.asarray((0xFFC5_4321,), dtype=np.uint32).view(np.float32))
-        )
-        np.testing.assert_array_equal(
-            np.asarray(torch.outer(paired_nan_left, paired_nan_right)).view(np.uint32),
-            np.asarray(((0xFFC5_4321,),), dtype=np.uint32),
-        )
+        for name, left_bits, right_bits, expected_bits in paired_nan_cases:
+            left = torch.tensor(
+                memoryview(np.asarray(left_bits, dtype=np.uint32).view(np.float32))
+            )
+            right = torch.tensor(
+                memoryview(np.asarray(right_bits, dtype=np.uint32).view(np.float32))
+            )
+            with self.subTest(case=name):
+                np.testing.assert_array_equal(
+                    np.asarray(torch.outer(left, right)).view(np.uint32),
+                    np.asarray(expected_bits, dtype=np.uint32),
+                )
 
     def test_autograd_shared_operands_empty_vectors_and_no_grad(self):
         actual_left_leaf = torch.tensor(

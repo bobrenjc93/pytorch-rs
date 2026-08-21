@@ -15,6 +15,10 @@ const F32_SIGN_MASK: u32 = 0x8000_0000;
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_OUTER_VECTOR_BLOCK: usize = 16;
+#[cfg(feature = "python-bindings")]
+const PYTORCH_OUTER_SCALAR_TAIL_BLOCK: usize = 4;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -2189,6 +2193,65 @@ impl Tensor {
         Ok(output)
     }
 
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn mul_for_outer(&self, other: &Self) -> Result<Self, TensorError> {
+        let mut output = self.mul(other)?;
+        if output.elements == 0 {
+            return Ok(output);
+        }
+
+        debug_assert_eq!(self.shape.len(), 2);
+        debug_assert_eq!(other.shape.len(), 2);
+        debug_assert_eq!(self.shape[1], 1);
+        debug_assert_eq!(other.shape[0], 1);
+        let rows = self.shape[0];
+        let columns = other.shape[1];
+        debug_assert_eq!(output.shape, [rows, columns]);
+        debug_assert!(output.is_contiguous());
+
+        let right_tail = if columns > 1 && other.strides[1] == 1 {
+            outer_paired_nan_scalar_tail(columns)
+        } else {
+            0
+        };
+        let left_tail = if columns == 1 && self.strides[0] == 1 {
+            outer_paired_nan_scalar_tail(rows)
+        } else {
+            0
+        };
+        let output_values = Arc::get_mut(&mut output.storage)
+            .and_then(Storage::owned_values_mut)
+            .expect("outer multiplication must produce unique owned storage");
+
+        for row in 0..rows {
+            let left = self.value_at_linear_index(row);
+            if !left.is_nan() {
+                continue;
+            }
+            for column in 0..columns {
+                let right = other.value_at_linear_index(column);
+                if !right.is_nan() {
+                    continue;
+                }
+
+                // PyTorch's float32 TensorIterator multiplication uses its
+                // broadcast operand for vector lanes and its varying operand
+                // for the final scalar lanes. Arbitrary-stride loops select
+                // vec2 for every paired-NaN lane.
+                let select_right = if columns == 1 {
+                    self.strides[0] != 1 || row < rows - left_tail
+                } else {
+                    other.strides[1] != 1 || column >= columns - right_tail
+                };
+                let selected = if select_right { right } else { left };
+                output_values[row * columns + column] =
+                    f32::from_bits(selected.to_bits() | 0x0040_0000);
+            }
+        }
+
+        Ok(output)
+    }
+
     /// Divides tensors element by element using IEEE 754 true division and
     /// trailing-dimension broadcasting.
     ///
@@ -3273,6 +3336,19 @@ fn apply_binary_operation_scalar(
     right: f32,
 ) -> f32 {
     operation(left, right)
+}
+
+#[cfg(feature = "python-bindings")]
+const fn outer_paired_nan_scalar_tail(elements: usize) -> usize {
+    // PyTorch 2.13's dispatched CPU float32 loop handles two eight-lane
+    // vectors at a time. Its fallback loop consumes one lane before groups of
+    // four, leaving these final lanes with the opposite NaN operand priority.
+    let vector_remainder = elements % PYTORCH_OUTER_VECTOR_BLOCK;
+    if vector_remainder == 0 {
+        0
+    } else {
+        (vector_remainder - 1) % PYTORCH_OUTER_SCALAR_TAIL_BLOCK
+    }
 }
 
 #[inline(never)]
