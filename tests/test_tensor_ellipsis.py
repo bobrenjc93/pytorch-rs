@@ -44,6 +44,30 @@ class TensorEllipsisIndexTests(unittest.TestCase):
                 np.asarray(scalar).view(np.uint32).item(), 0x8000_0000
             )
 
+    def test_tuple_subclass_is_normalized_through_its_iterator(self):
+        class RedirectingTuple(tuple):
+            def __new__(cls):
+                return super().__new__(cls, (Ellipsis,))
+
+            def __init__(self):
+                self.iter_calls = 0
+
+            def __iter__(self):
+                self.iter_calls += 1
+                return iter((0,))
+
+        source = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        index = RedirectingTuple()
+        result = source[index]
+
+        self.assertIs(tuple.__getitem__(index, 0), Ellipsis)
+        self.assertEqual(index.iter_calls, 1)
+        self.assertEqual(result.tolist(), [1.0, 2.0])
+        self.assertEqual(result.shape, (2,))
+        self.assertEqual(result.stride(), (1,))
+        self.assertEqual(result.storage_offset(), 0)
+        self.assertTrue(result.is_set_to(source[0]))
+
     def test_alias_autograd_gradient_and_no_grad_leaf_status(self):
         for syntax, index in self.ellipsis_indices():
             with self.subTest(syntax=syntax):

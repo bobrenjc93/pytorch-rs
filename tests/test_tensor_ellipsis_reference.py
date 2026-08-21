@@ -63,6 +63,40 @@ class TensorEllipsisIndexReferenceTests(unittest.TestCase):
                         self.alias_contract(expected, index),
                     )
 
+    def tuple_subclass_contract(self, module):
+        class RedirectingTuple(tuple):
+            def __new__(cls):
+                return super().__new__(cls, (Ellipsis,))
+
+            def __init__(self):
+                self.iter_calls = 0
+
+            def __iter__(self):
+                self.iter_calls += 1
+                return iter((0,))
+
+        source = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=module.float32
+        )
+        index = RedirectingTuple()
+        result = source[index]
+        expected_view = source[0]
+        return {
+            "stored_ellipsis": tuple.__getitem__(index, 0) is Ellipsis,
+            "iter_calls": index.iter_calls,
+            "values": result.tolist(),
+            "shape": tuple(result.shape),
+            "stride": result.stride(),
+            "storage_offset": result.storage_offset(),
+            "same_logical_view": result.is_set_to(expected_view),
+        }
+
+    def test_tuple_subclass_iteration_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.tuple_subclass_contract(torch),
+            self.tuple_subclass_contract(reference_torch),
+        )
+
     def autograd_contract(self, module, index):
         leaf = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]],

@@ -262,6 +262,11 @@ impl PyTensorBase {
         let inner = if index.is_instance_of::<PyEllipsis>() {
             tensor.inner.metadata_alias()
         } else if let Ok(indices) = index.cast::<PyTuple>() {
+            let indices = if index.is_exact_instance_of::<PyTuple>() {
+                indices.clone()
+            } else {
+                index.cast::<PySequence>()?.to_tuple()?
+            };
             if indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>() {
                 tensor.inner.metadata_alias()
             } else {
