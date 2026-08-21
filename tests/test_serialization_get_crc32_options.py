@@ -224,14 +224,18 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
 
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         serialization = torch.serialization
-        functions = {
+        exports = {
+            "LoadEndianness": serialization.LoadEndianness,
             "get_crc32_options": serialization.get_crc32_options,
             "set_crc32_options": serialization.set_crc32_options,
+            "get_default_load_endianness": (
+                serialization.get_default_load_endianness
+            ),
             "get_default_mmap_options": serialization.get_default_mmap_options,
             "set_default_mmap_options": serialization.set_default_mmap_options,
         }
 
-        self.assertEqual(serialization.__all__, list(functions))
+        self.assertEqual(serialization.__all__, list(exports))
 
         package_import = {}
         exec("from torch_rs import serialization", package_import)
@@ -240,12 +244,13 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "get_crc32_options, set_crc32_options, get_default_mmap_options, "
+            "LoadEndianness, get_crc32_options, set_crc32_options, "
+            "get_default_load_endianness, get_default_mmap_options, "
             "set_default_mmap_options",
             direct_import,
         )
-        for name, function in functions.items():
-            self.assertIs(direct_import[name], function)
+        for name, value in exports.items():
+            self.assertIs(direct_import[name], value)
 
         serialization_namespace = {}
         exec("from torch_rs.serialization import *", serialization_namespace)
@@ -255,26 +260,26 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
                 for name in serialization_namespace
                 if not name.startswith("__")
             },
-            set(functions),
+            set(exports),
         )
-        for name, function in functions.items():
-            self.assertIs(serialization_namespace[name], function)
+        for name, value in exports.items():
+            self.assertIs(serialization_namespace[name], value)
 
         self.assertNotIn("serialization", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
-        for name in ("serialization", *functions):
+        for name in ("serialization", *exports):
             self.assertNotIn(name, torch.__all__)
             self.assertNotIn(name, top_level_namespace)
 
-        for name, function in functions.items():
-            self.assertIs(copy.copy(function), function)
-            self.assertIs(copy.deepcopy(function), function)
+        for name, value in exports.items():
+            self.assertIs(copy.copy(value), value)
+            self.assertIs(copy.deepcopy(value), value)
             for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
                 with self.subTest(name=name, protocol=protocol):
-                    payload = pickle.dumps(function, protocol=protocol)
+                    payload = pickle.dumps(value, protocol=protocol)
                     self.assertIn(b"torch_rs.serialization", payload)
-                    self.assertIs(pickle.loads(payload), function)
+                    self.assertIs(pickle.loads(payload), value)
 
     def test_argument_errors_match_pytorch_2_13(self):
         getter = torch.serialization.get_crc32_options
@@ -374,14 +379,15 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         self.assertEqual(
             {name for name in vars(serialization) if not name.startswith("_")},
             {
+                "LoadEndianness",
                 "get_crc32_options",
                 "set_crc32_options",
+                "get_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
             },
         )
         for name in (
-            "get_default_load_endianness",
             "set_default_load_endianness",
             "save",
             "load",
@@ -393,6 +399,8 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         for name in (
             "get_crc32_options",
             "set_crc32_options",
+            "LoadEndianness",
+            "get_default_load_endianness",
             "save",
             "load",
         ):
@@ -416,6 +424,8 @@ sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
 serialization = torch.serialization
+assert [member.value for member in serialization.LoadEndianness] == [1, 2, 3]
+assert serialization.get_default_load_endianness() is None
 assert serialization.get_crc32_options() is True
 assert serialization.set_crc32_options(False) is None
 assert serialization.get_crc32_options() is False
@@ -439,17 +449,23 @@ assert (
     == replacement.get_default_mmap_options()
 )
 assert serialization.__all__ == [
+    "LoadEndianness",
     "get_crc32_options",
     "set_crc32_options",
+    "get_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
 ]
 assert replacement.__all__ == [
+    "LoadEndianness",
     "get_crc32_options",
     "set_crc32_options",
+    "get_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
 ]
+assert replacement.get_default_load_endianness() is None
+assert not hasattr(replacement, "set_default_load_endianness")
 if hasattr(mmap, "MAP_PRIVATE") and hasattr(mmap, "MAP_SHARED"):
     replacement.set_default_mmap_options(mmap.MAP_SHARED)
     assert old_getter() is None

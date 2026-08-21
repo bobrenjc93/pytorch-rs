@@ -275,8 +275,10 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         actual_serialization = torch.serialization
         expected_serialization = reference_torch.serialization
         supported_names = (
+            "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",
+            "get_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
         )
@@ -314,13 +316,15 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         expected_direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "get_crc32_options, set_crc32_options, get_default_mmap_options, "
+            "LoadEndianness, get_crc32_options, set_crc32_options, "
+            "get_default_load_endianness, get_default_mmap_options, "
             "set_default_mmap_options",
             actual_direct_import,
         )
         exec(
             "from torch.serialization import "
-            "get_crc32_options, set_crc32_options, get_default_mmap_options, "
+            "LoadEndianness, get_crc32_options, set_crc32_options, "
+            "get_default_load_endianness, get_default_mmap_options, "
             "set_default_mmap_options",
             expected_direct_import,
         )
@@ -416,8 +420,10 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         self.assertEqual(
             actual_public,
             {
+                "LoadEndianness",
                 "get_crc32_options",
                 "set_crc32_options",
+                "get_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
             },
@@ -425,7 +431,6 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         unsupported = set(expected_serialization.__all__) - actual_public
         self.assertTrue(
             {
-                "get_default_load_endianness",
                 "set_default_load_endianness",
                 "save",
                 "load",
@@ -441,8 +446,10 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
                 self.assertFalse(hasattr(torch, name))
                 self.assertNotIn(name, torch.__all__)
         for name in (
+            "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",
+            "get_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
         ):

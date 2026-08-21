@@ -4433,6 +4433,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.6
       }
+    },
+    {
+      "key": "pr:502",
+      "recordedAt": "2026-08-21T02:40:24.020Z",
+      "label": "PR #502",
+      "kind": "leaf",
+      "prNumber": 502,
+      "title": "Expose serialization load-endianness defaults",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 79,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 62.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.6
+      }
     }
   ]
 }
