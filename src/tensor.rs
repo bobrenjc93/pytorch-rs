@@ -2329,6 +2329,15 @@ impl Tensor {
         self.unary_map(f32::exp)
     }
 
+    /// Computes the natural logarithm of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn log(&self) -> Result<Self, TensorError> {
+        self.unary_map(log_value)
+    }
+
     /// Computes the nonnegative square root of every element.
     ///
     /// # Errors
@@ -4285,6 +4294,20 @@ fn relu_value(value: f32) -> f32 {
     }
 }
 
+fn log_value(value: f32) -> f32 {
+    // PyTorch canonicalizes domain errors to a positive quiet NaN while
+    // preserving negative zero and the payload and sign of NaN inputs.
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    let is_nan = magnitude > f32::INFINITY.to_bits();
+    let is_negative_nonzero = bits & F32_SIGN_MASK != 0 && magnitude != 0;
+    if is_negative_nonzero && !is_nan {
+        f32::NAN
+    } else {
+        value.ln()
+    }
+}
+
 fn sqrt_value(value: f32) -> f32 {
     // PyTorch canonicalizes domain errors to a positive quiet NaN while
     // preserving signed zero and the payload and sign of NaN inputs.
@@ -4347,8 +4370,8 @@ mod tests {
 
     use super::{
         CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device,
-        F32_SIGN_MASK, SavedTensor, Tensor, TensorError, materialize_contiguous_trailing_broadcast,
-        sqrt_value, try_result_vector,
+        F32_SIGN_MASK, SavedTensor, Tensor, TensorError, log_value,
+        materialize_contiguous_trailing_broadcast, sqrt_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -4411,6 +4434,57 @@ mod tests {
 
         assert_eq!(
             inputs.map(|bits| sqrt_value(f32::from_bits(bits)).to_bits()),
+            expected
+        );
+    }
+
+    #[test]
+    fn natural_logarithm_matches_pytorch_float32_edge_bits() {
+        let inputs = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x007f_ffff,
+            0x807f_ffff,
+            0x0080_0000,
+            0x8080_0000,
+            0x3f00_0000,
+            0x3f80_0000,
+            0x4000_0000,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xff81_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let expected = [
+            0xff80_0000,
+            0xff80_0000,
+            0xc2ce_8ed0,
+            0x7fc0_0000,
+            0xc2ae_ac50,
+            0x7fc0_0000,
+            0xc2ae_ac50,
+            0x7fc0_0000,
+            0xbf31_7218,
+            0x0000_0000,
+            0x3f31_7218,
+            0x42b1_7218,
+            0x7fc0_0000,
+            0x7f80_0000,
+            0x7fc0_0000,
+            0x7fc1_2345,
+            0xffc1_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+
+        assert_eq!(
+            inputs.map(|bits| log_value(f32::from_bits(bits)).to_bits()),
             expected
         );
     }
@@ -5186,6 +5260,7 @@ mod tests {
             (tensor.relu().unwrap(), shared.relu().unwrap()),
             (tensor.sin().unwrap(), shared.sin().unwrap()),
             (tensor.exp().unwrap(), shared.exp().unwrap()),
+            (tensor.log().unwrap(), shared.log().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
             (
                 tensor.add_scalar(1.25).unwrap(),
@@ -5447,6 +5522,10 @@ mod tests {
 
         assert_eq!(
             tensor.exp(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.log(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
