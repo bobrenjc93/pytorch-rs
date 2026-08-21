@@ -5,7 +5,7 @@ from .torch_rs import Tensor as _NativeTensor
 
 
 def _is_shared_implementation(input):
-    if isinstance(input, Tensor):
+    if type(input) is Tensor:
         # Native tensors use process-local owned or mutex-backed gradient
         # storage. Neither representation is operating-system shared memory.
         return False

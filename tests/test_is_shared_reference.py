@@ -188,6 +188,37 @@ class TensorIsSharedReferenceTests(unittest.TestCase):
             self.callable_contract(reference_torch),
         )
 
+    def spoofed_receiver_contract(self, module):
+        function = inspect.getattr_static(module.Tensor, "is_shared")
+        events = []
+
+        class Storage:
+            def _is_shared(self):
+                events.append("_is_shared")
+                return "storage-result"
+
+        class SpoofedTensor:
+            @property
+            def __class__(self):
+                events.append("__class__")
+                return module.Tensor
+
+            def _typed_storage(self):
+                events.append("_typed_storage")
+                return Storage()
+
+        value = SpoofedTensor()
+        appears_to_be_tensor = isinstance(value, module.Tensor)
+        events.clear()
+        result = function(value)
+        return appears_to_be_tensor, result, events
+
+    def test_spoofed_tensor_class_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.spoofed_receiver_contract(torch),
+            self.spoofed_receiver_contract(reference_torch),
+        )
+
     def override_contract(self, module):
         function = inspect.getattr_static(module.Tensor, "is_shared")
         marker = object()

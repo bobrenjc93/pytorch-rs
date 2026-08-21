@@ -15,6 +15,11 @@ METHOD_DOC = (
     "        "
 )
 
+if sys.version_info >= (3, 13):
+    # CPython 3.13+ cleans function docstring indentation while preserving
+    # the terminating newline; PyTorch's source docstring follows that rule.
+    METHOD_DOC = inspect.cleandoc(METHOD_DOC) + "\n"
+
 
 class TensorIsSharedTests(unittest.TestCase):
     def tensor_cases(self):
@@ -184,6 +189,31 @@ class TensorIsSharedTests(unittest.TestCase):
                 with self.assertRaises(error_type) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
+
+    def test_spoofed_tensor_class_uses_the_storage_query_path(self):
+        function = inspect.getattr_static(torch.Tensor, "is_shared")
+        events = []
+
+        class Storage:
+            def _is_shared(self):
+                events.append("_is_shared")
+                return "storage-result"
+
+        class SpoofedTensor:
+            @property
+            def __class__(self):
+                events.append("__class__")
+                return torch.Tensor
+
+            def _typed_storage(self):
+                events.append("_typed_storage")
+                return Storage()
+
+        value = SpoofedTensor()
+        self.assertTrue(isinstance(value, torch.Tensor))
+        events.clear()
+        self.assertEqual(function(value), "storage-result")
+        self.assertEqual(events, ["_typed_storage", "_is_shared"])
 
     def test_unary_override_and_torch_function_modes_receive_python_function(self):
         tensor = torch.tensor([1.0])
