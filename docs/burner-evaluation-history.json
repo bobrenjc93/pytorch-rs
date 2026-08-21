@@ -4593,6 +4593,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.7
       }
+    },
+    {
+      "key": "pr:543",
+      "recordedAt": "2026-08-21T10:52:23.516Z",
+      "label": "PR #543",
+      "kind": "leaf",
+      "prNumber": 543,
+      "title": "Support deterministic rank-4 dropout2d at p=1",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 80.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 63.9,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.7
+      }
     }
   ]
 }
