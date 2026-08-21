@@ -1554,6 +1554,15 @@ pub(crate) fn matmul_variable_function(
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
 }
 
+pub(crate) fn outer_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = bind_outer_arguments(args, kwargs)?;
+    dispatch_top_level_outer(py, &call, args, kwargs)
+}
+
 pub(crate) fn mul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1757,6 +1766,12 @@ impl UnaryOutOperation {
 
 struct BoundUnaryOutCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
+    out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+struct BoundOuterCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    vec2: BoundTensorOrTorchFunction<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
@@ -3085,6 +3100,51 @@ fn ordered_matmul_overrides<'py>(
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
 }
 
+fn ordered_outer_overrides<'py>(
+    call: &BoundOuterCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match &call.input {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let vec2 = match &call.vec2 {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let out = match &call.out {
+        Some(BoundTensorOrTorchFunction::Override(probed)) => Some(probed),
+        Some(BoundTensorOrTorchFunction::Tensor(_)) | None => None,
+    };
+
+    let mut overrides =
+        ordered_binary_overrides(input, vec2, "unable to allocate outer dispatch operands")?;
+    let Some(probed) = out else {
+        return Ok(overrides);
+    };
+    if overrides
+        .iter()
+        .any(|existing| existing.dispatch_type.is(probed.precedence_type.as_any()))
+    {
+        return Ok(overrides);
+    }
+
+    overrides
+        .try_reserve_exact(1)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate outer dispatch operands"))?;
+    for (index, existing) in overrides.iter().enumerate() {
+        let existing_type = existing
+            .dispatch_type
+            .cast::<PyType>()
+            .expect("a torch-function dispatch type is a Python type");
+        if probed.precedence_type.is_subclass(existing_type.as_any())? {
+            overrides.insert(index, probed.clone());
+            return Ok(overrides);
+        }
+    }
+    overrides.push(probed.clone());
+    Ok(overrides)
+}
+
 fn ordered_dtype_overrides<'py>(
     operation: DTypeBinaryOperation,
     first: &BoundDTypeOperand<'py>,
@@ -3168,6 +3228,93 @@ fn dispatch_top_level_matmul(
         active_mode.get(),
         &overrides,
     )?)
+}
+
+fn dispatch_top_level_outer(
+    py: Python<'_>,
+    call: &BoundOuterCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_outer_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_outer(py, call);
+    }
+
+    let function = variable_function(py, "outer")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Disable the top mode for the complete dispatch attempt. A mode can call
+    // the public function explicitly to forward to the next mode.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.outer",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_outer(py: Python<'_>, call: &BoundOuterCall<'_>) -> PyResult<Py<PyAny>> {
+    let (BoundTensorOrTorchFunction::Tensor(input), BoundTensorOrTorchFunction::Tensor(vec2)) =
+        (&call.input, &call.vec2)
+    else {
+        unreachable!("outer overrides were dispatched before the native path")
+    };
+    let input = input.try_borrow()?;
+    let vec2 = vec2.try_borrow()?;
+    let input_rank = input.inner.shape().len();
+    if input_rank != 1 {
+        return Err(PyRuntimeError::new_err(format!(
+            "outer: Expected 1-D argument self, but got {input_rank}-D"
+        )));
+    }
+    let vec2_rank = vec2.inner.shape().len();
+    if vec2_rank != 1 {
+        return Err(PyRuntimeError::new_err(format!(
+            "outer: Expected 1-D argument vec2, but got {vec2_rank}-D"
+        )));
+    }
+    if call.out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "outer(): the 'out' argument is not supported",
+        ));
+    }
+
+    let rows = i64::try_from(input.inner.shape()[0])
+        .map_err(|_| PyOverflowError::new_err("outer input length exceeds int64"))?;
+    let columns = i64::try_from(vec2.inner.shape()[0])
+        .map_err(|_| PyOverflowError::new_err("outer vec2 length exceeds int64"))?;
+    let left = input
+        .inner
+        .reshape([rows, 1])
+        .map_err(|error| tensor_error(&error))?;
+    let right = vec2
+        .inner
+        .reshape([1, columns])
+        .map_err(|error| tensor_error(&error))?;
+    let output = left.mul(&right).map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }
 
 fn dispatch_top_level_multiplication(
@@ -7385,6 +7532,156 @@ fn bind_unary_out_arguments<'py>(
     };
     validate_unary_out_keywords(operation, &selection, keywords)?;
     Ok(BoundUnaryOutCall { input, out })
+}
+
+struct OuterArgumentSelection<'py> {
+    input: ParsedCallArgument<'py>,
+    vec2: ParsedCallArgument<'py>,
+    input_keyword_alias: Option<&'static str>,
+}
+
+fn bind_outer_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundOuterCall<'py>> {
+    let selection = select_outer_arguments(positional, keywords)?;
+    let input = parse_tensor_or_torch_function_argument("outer", "input", &selection.input)?;
+    let vec2 = parse_tensor_or_torch_function_argument("outer", "vec2", &selection.vec2)?;
+    let out = match keywords
+        .map(|values| values.get_item("out"))
+        .transpose()?
+        .flatten()
+    {
+        Some(out) if !out.is_none() => Some(parse_tensor_or_torch_function_argument(
+            "outer",
+            "out",
+            &ParsedCallArgument {
+                value: out,
+                position: None,
+            },
+        )?),
+        Some(_) | None => None,
+    };
+    validate_outer_keywords(&selection, keywords)?;
+    Ok(BoundOuterCall { input, vec2, out })
+}
+
+fn select_outer_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<OuterArgumentSelection<'py>> {
+    if positional.len() > 2 {
+        return Err(PyTypeError::new_err(format!(
+            "outer() takes 2 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let (keyword_input, input_keyword_alias) = match keywords {
+        Some(values) => {
+            if let Some(input) = values.get_item("input")? {
+                (Some(input), None)
+            } else if let Some(input) = values.get_item("x")? {
+                (Some(input), Some("x"))
+            } else if let Some(input) = values.get_item("a")? {
+                (Some(input), Some("a"))
+            } else if let Some(input) = values.get_item("x1")? {
+                (Some(input), Some("x1"))
+            } else {
+                (None, None)
+            }
+        }
+        None => (None, None),
+    };
+    let input = if positional.is_empty() {
+        keyword_input.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        })
+    };
+    let vec2 = if positional.len() < 2 {
+        keywords
+            .map(|values| values.get_item("vec2"))
+            .transpose()?
+            .flatten()
+            .map(|value| ParsedCallArgument {
+                value,
+                position: None,
+            })
+    } else {
+        Some(ParsedCallArgument {
+            value: positional.get_item(1)?,
+            position: Some(2),
+        })
+    };
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "outer() missing 2 required positional argument: \"input\", \"vec2\"",
+        ));
+    };
+    let Some(vec2) = vec2 else {
+        parse_tensor_or_torch_function_argument("outer", "input", &input)?;
+        return Err(PyTypeError::new_err(
+            "outer() missing 1 required positional arguments: \"vec2\"",
+        ));
+    };
+
+    Ok(OuterArgumentSelection {
+        input,
+        vec2,
+        input_keyword_alias,
+    })
+}
+
+fn validate_outer_keywords(
+    selection: &OuterArgumentSelection<'_>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    let Some(keywords) = keywords else {
+        return Ok(());
+    };
+    let has_out = keywords.get_item("out")?.is_some();
+    let expected_keyword_count = usize::from(selection.input.position.is_none())
+        + usize::from(selection.vec2.position.is_none())
+        + usize::from(has_out);
+    let sole_alias = if keywords.len() == expected_keyword_count {
+        selection.input_keyword_alias
+    } else {
+        None
+    };
+
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        if key == "out" || sole_alias == Some(key.as_str()) {
+            continue;
+        }
+        if key == "input" {
+            if selection.input.position.is_some() {
+                return Err(PyTypeError::new_err(
+                    "outer() got multiple values for argument 'input'",
+                ));
+            }
+            continue;
+        }
+        if key == "vec2" {
+            if selection.vec2.position.is_some() {
+                return Err(PyTypeError::new_err(
+                    "outer() got multiple values for argument 'vec2'",
+                ));
+            }
+            continue;
+        }
+        return Err(PyTypeError::new_err(format!(
+            "outer() got an unexpected keyword argument '{key}'"
+        )));
+    }
+    Ok(())
 }
 
 fn validate_unary_out_keywords(

@@ -19,15 +19,16 @@ use crate::python::{
     exp_variable_function, get_device_variable_function, is_conj_variable_function,
     is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
     movedim_variable_function, mul_variable_function, multiply_variable_function,
-    neg_variable_function, permute_variable_function, positive_variable_function,
-    promote_types_variable_function, ravel_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sin_variable_function, sqrt_variable_function, unbind_variable_function,
+    neg_variable_function, outer_variable_function, permute_variable_function,
+    positive_variable_function, promote_types_variable_function, ravel_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
+    select_variable_function, sin_variable_function, sqrt_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 27] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 28] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -51,6 +52,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 27] = [
     "movedim",
     "moveaxis",
     "matmul",
+    "outer",
     "mul",
     "multiply",
     "can_cast",
@@ -444,6 +446,33 @@ Example::
 
 ";
 
+const OUTER_DOC: &std::ffi::CStr = cr"
+outer(input, vec2, *, out=None) -> Tensor
+
+Outer product of :attr:`input` and :attr:`vec2`.
+If :attr:`input` is a vector of size :math:`n` and :attr:`vec2` is a vector of
+size :math:`m`, then :attr:`out` must be a matrix of size :math:`(n \times m)`.
+
+.. note:: This function does not :ref:`broadcast <broadcasting-semantics>`.
+
+Args:
+    input (Tensor): 1-D input vector
+    vec2 (Tensor): 1-D input vector
+
+Keyword args:
+    out (Tensor, optional): optional output matrix
+
+Example::
+
+    >>> v1 = torch.arange(1., 5.)
+    >>> v2 = torch.arange(1., 4.)
+    >>> torch.outer(v1, v2)
+    tensor([[  1.,   2.,   3.],
+            [  2.,   4.,   6.],
+            [  3.,   6.,   9.],
+            [  4.,   8.,  12.]])
+";
+
 #[allow(
     unsafe_code,
     reason = "CPython passes borrowed tuple and dictionary pointers to C method callbacks"
@@ -507,6 +536,7 @@ variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
+variable_function_callback!(outer_callback, outer_variable_function);
 variable_function_callback!(can_cast_callback, can_cast_variable_function);
 variable_function_callback!(promote_types_callback, promote_types_variable_function);
 
@@ -555,6 +585,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
+        variable_function_method!(c"outer", outer_callback, OUTER_DOC),
         variable_function_method!(c"can_cast", can_cast_callback, CAN_CAST_DOC),
         variable_function_method!(c"promote_types", promote_types_callback, PROMOTE_TYPES_DOC),
         ffi::PyMethodDef::zeroed(),
