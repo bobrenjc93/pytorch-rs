@@ -1,3 +1,4 @@
+from collections.abc import Callable
 import contextlib
 import copy
 import importlib
@@ -13,61 +14,31 @@ import unittest
 import torch_rs as torch
 
 
-FUNCTION_DOC = """
-    Indicates whether a graph is executed/traced as part of torch.compile() or torch.export().
+FUNCTION_DOC = '''Return the current default backend for ``torch.compile``.
 
-    Note that there are 2 other related flags that should deprecated eventually:
-      * torch._dynamo.external_utils.is_compiling()
-      * torch._utils.is_compiling()
-
-    Example::
-
-        >>> def forward(self, x):
-        >>>     if not torch.compiler.is_compiling():
-        >>>        pass # ...logic that is not needed in a compiled/traced graph...
-        >>>
-        >>>     # ...rest of the function...
-    """
+    Returns:
+        The current default backend (string or callable). Initially ``"inductor"``.
+    '''
 
 
-PYTORCH_COMPILER_EXPORTS = (
-    "compile",
-    "config",
-    "assume_constant_result",
-    "reset",
-    "allow_in_graph",
-    "substitute_in_graph",
-    "list_backends",
-    "disable",
-    "set_default_backend",
-    "get_default_backend",
-    "set_stance",
-    "set_enable_guard_collectives",
-    "cudagraph_mark_step_begin",
-    "load_compiled_function",
-    "wrap_numpy",
-    "is_compiling",
-    "is_dynamo_compiling",
-    "is_exporting",
-    "save_cache_artifacts",
-    "load_cache_artifacts",
-    "keep_portable_guards_unsafe",
-    "skip_guard_on_inbuilt_nn_modules_unsafe",
-    "skip_guard_on_all_nn_modules_unsafe",
-    "keep_tensor_guards_unsafe",
-    "skip_guard_on_globals_unsafe",
-    "skip_all_guards_unsafe",
-    "nested_compile_region",
-)
+class CompilerGetDefaultBackendTests(unittest.TestCase):
+    def test_returns_exact_inductor_without_registry_lookups(self):
+        function = torch.compiler.get_default_backend
+        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(function.__code__.co_freevars, ())
+        self.assertEqual(function.__code__.co_cellvars, ())
 
+        for _ in range(4):
+            result = function()
+            self.assertIs(type(result), str)
+            self.assertEqual(result, "inductor")
 
-class CompilerIsCompilingTests(unittest.TestCase):
-    def test_eager_false_is_exact_and_preserves_grad_mode(self):
-        function = torch.compiler.is_compiling
+    def test_query_preserves_grad_mode(self):
+        function = torch.compiler.get_default_backend
 
         def assert_query_preserves_grad_mode(expected_grad_state):
             self.assertIs(torch.is_grad_enabled(), expected_grad_state)
-            self.assertIs(function(), False)
+            self.assertEqual(function(), "inductor")
             self.assertIs(torch.is_grad_enabled(), expected_grad_state)
 
         assert_query_preserves_grad_mode(True)
@@ -78,8 +49,8 @@ class CompilerIsCompilingTests(unittest.TestCase):
             assert_query_preserves_grad_mode(False)
         assert_query_preserves_grad_mode(True)
 
-    def test_eager_false_is_stable_across_threads_and_grad_modes(self):
-        function = torch.compiler.is_compiling
+    def test_inductor_is_stable_across_threads_and_grad_modes(self):
+        function = torch.compiler.get_default_backend
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -90,11 +61,16 @@ class CompilerIsCompilingTests(unittest.TestCase):
                 context = torch.no_grad() if index % 2 else contextlib.nullcontext()
                 with context:
                     barrier.wait(timeout=10)
+                    first = function()
+                    middle_grad_state = torch.is_grad_enabled()
+                    second = function()
                     results[index] = (
                         torch.is_grad_enabled(),
-                        function(),
-                        torch.is_grad_enabled(),
-                        function(),
+                        type(first) is str,
+                        first,
+                        middle_grad_state,
+                        type(second) is str,
+                        second,
                         torch.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -117,31 +93,39 @@ class CompilerIsCompilingTests(unittest.TestCase):
                 result,
                 (
                     expected_grad_state,
-                    False,
+                    True,
+                    "inductor",
                     expected_grad_state,
-                    False,
+                    True,
+                    "inductor",
                     expected_grad_state,
                 ),
             )
-            self.assertIs(result[1], False)
-            self.assertIs(result[3], False)
 
     def test_signature_annotations_documentation_and_module_identity(self):
         compiler = importlib.import_module("torch_rs.compiler")
-        function = compiler.is_compiling
+        function = compiler.get_default_backend
+        return_annotation = str | Callable[..., typing.Any]
 
         self.assertIs(torch.compiler, compiler)
         self.assertIs(sys.modules["torch_rs.compiler"], compiler)
         self.assertIs(type(function), types.FunctionType)
-        self.assertEqual(str(inspect.signature(function)), "() -> bool")
-        self.assertEqual(function.__annotations__, {"return": bool})
-        self.assertEqual(typing.get_type_hints(function), {"return": bool})
-        self.assertEqual(function.__name__, "is_compiling")
-        self.assertEqual(function.__qualname__, "is_compiling")
+        self.assertEqual(
+            inspect.signature(function),
+            inspect.Signature(return_annotation=return_annotation),
+        )
+        self.assertEqual(function.__annotations__, {"return": return_annotation})
+        self.assertEqual(
+            typing.get_type_hints(function),
+            {"return": return_annotation},
+        )
+        self.assertEqual(function.__name__, "get_default_backend")
+        self.assertEqual(function.__qualname__, "get_default_backend")
         self.assertEqual(function.__module__, "torch_rs.compiler")
         self.assertIs(inspect.getmodule(function), compiler)
         self.assertEqual(
-            inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
+            inspect.cleandoc(function.__doc__),
+            inspect.cleandoc(FUNCTION_DOC),
         )
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
@@ -150,7 +134,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
 
     def test_exports_copy_and_pickle_use_the_canonical_module(self):
         compiler = torch.compiler
-        function = compiler.is_compiling
+        function = compiler.get_default_backend
 
         self.assertEqual(
             compiler.__all__,
@@ -166,41 +150,17 @@ class CompilerIsCompilingTests(unittest.TestCase):
         exec("from torch_rs.compiler import *", compiler_namespace)
         self.assertEqual(
             {name for name in compiler_namespace if not name.startswith("__")},
-            {
-                "assume_constant_result",
-                "get_default_backend",
-                "is_compiling",
-                "is_dynamo_compiling",
-                "is_exporting",
-            },
+            set(compiler.__all__),
         )
-        self.assertIs(
-            compiler_namespace["assume_constant_result"],
-            compiler.assume_constant_result,
-        )
-        self.assertIs(
-            compiler_namespace["get_default_backend"],
-            compiler.get_default_backend,
-        )
-        self.assertIs(compiler_namespace["is_compiling"], function)
-        self.assertIs(
-            compiler_namespace["is_dynamo_compiling"],
-            compiler.is_dynamo_compiling,
-        )
-        self.assertIs(compiler_namespace["is_exporting"], compiler.is_exporting)
+        for name in compiler.__all__:
+            self.assertIs(compiler_namespace[name], getattr(compiler, name))
 
         self.assertNotIn("compiler", torch.__all__)
-        self.assertNotIn("assume_constant_result", torch.__all__)
-        self.assertNotIn("is_compiling", torch.__all__)
-        self.assertNotIn("is_dynamo_compiling", torch.__all__)
-        self.assertNotIn("is_exporting", torch.__all__)
+        self.assertNotIn("get_default_backend", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("compiler", top_level_namespace)
-        self.assertNotIn("assume_constant_result", top_level_namespace)
-        self.assertNotIn("is_compiling", top_level_namespace)
-        self.assertNotIn("is_dynamo_compiling", top_level_namespace)
-        self.assertNotIn("is_exporting", top_level_namespace)
+        self.assertNotIn("get_default_backend", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -211,23 +171,23 @@ class CompilerIsCompilingTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.compiler.is_compiling
+        function = torch.compiler.get_default_backend
         cases = (
             (
                 lambda: function(None),
-                "is_compiling() takes 0 positional arguments but 1 was given",
+                "get_default_backend() takes 0 positional arguments but 1 was given",
             ),
             (
                 lambda: function(None, None),
-                "is_compiling() takes 0 positional arguments but 2 were given",
+                "get_default_backend() takes 0 positional arguments but 2 were given",
             ),
             (
-                lambda: function(enabled=True),
-                "is_compiling() got an unexpected keyword argument 'enabled'",
+                lambda: function(backend=None),
+                "get_default_backend() got an unexpected keyword argument 'backend'",
             ),
             (
-                lambda: function(None, enabled=True),
-                "is_compiling() got an unexpected keyword argument 'enabled'",
+                lambda: function(None, backend=None),
+                "get_default_backend() got an unexpected keyword argument 'backend'",
             ),
         )
         for call, message in cases:
@@ -237,24 +197,14 @@ class CompilerIsCompilingTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_compile_export_and_other_compiler_apis_remain_unsupported(self):
+    def test_setter_and_compilation_remain_unsupported(self):
+        self.assertFalse(hasattr(torch.compiler, "set_default_backend"))
+        self.assertNotIn("set_default_backend", torch.compiler.__all__)
+        self.assertFalse(hasattr(torch.compiler, "compile"))
         self.assertFalse(hasattr(torch, "compile"))
-        self.assertFalse(hasattr(torch, "export"))
-        self.assertFalse(hasattr(torch, "is_compiling"))
 
-        for name in PYTORCH_COMPILER_EXPORTS:
-            if name not in {
-                "assume_constant_result",
-                "get_default_backend",
-                "is_compiling",
-                "is_dynamo_compiling",
-                "is_exporting",
-            }:
-                with self.subTest(name=name):
-                    self.assertFalse(hasattr(torch.compiler, name))
-
-    def test_importing_the_package_does_not_import_pytorch(self):
-        script = r"""
+    def test_importing_and_calling_does_not_import_pytorch_or_a_registry(self):
+        script = r'''
 import sys
 
 class RejectPytorchImport:
@@ -266,9 +216,19 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
-assert torch.compiler.is_compiling() is False
+modules_before_call = set(sys.modules)
+assert torch.compiler.get_default_backend() == "inductor"
+assert torch.compiler.get_default_backend() == "inductor"
+assert set(sys.modules) == modules_before_call
+assert not hasattr(torch.compiler, "set_default_backend")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
-"""
+assert not any(
+    name.startswith("torch_rs._dynamo")
+    or name.startswith("torch_rs.compiler.backends")
+    or name == "torch_rs.compiler.registry"
+    for name in sys.modules
+)
+'''
         completed = subprocess.run(
             [sys.executable, "-c", script],
             check=False,
