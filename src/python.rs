@@ -1351,6 +1351,14 @@ pub(crate) fn sin_variable_function(
     unary_out_variable_function(UnaryOutOperation::SIN, py, args, kwargs)
 }
 
+pub(crate) fn sqrt_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::SQRT, py, args, kwargs)
+}
+
 fn unary_out_variable_function(
     operation: UnaryOutOperation,
     py: Python<'_>,
@@ -1723,6 +1731,15 @@ impl UnaryOutOperation {
         out_unsupported_error: "sin(): the 'out' argument is not supported",
         autograd_unsupported_error: None,
         apply: CoreTensor::sin,
+    };
+
+    const SQRT: Self = Self {
+        name: "sqrt",
+        qualified_name: "torch.sqrt",
+        dispatch_allocation_error: "unable to allocate sqrt dispatch operands",
+        out_unsupported_error: "sqrt(): the 'out' argument is not supported",
+        autograd_unsupported_error: Some("sqrt(): autograd recording is not supported"),
+        apply: CoreTensor::sqrt,
     };
 }
 
