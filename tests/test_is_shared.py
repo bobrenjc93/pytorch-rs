@@ -16,6 +16,11 @@ METHOD_DOC = (
     "        "
 )
 
+if sys.version_info >= (3, 13):
+    # CPython 3.13+ cleans function docstring indentation while preserving
+    # the terminating newline; PyTorch's source docstring follows that rule.
+    METHOD_DOC = inspect.cleandoc(METHOD_DOC) + "\n"
+
 
 class TensorIsSharedTests(unittest.TestCase):
     def tensor_cases(self):
@@ -276,6 +281,53 @@ class TensorIsSharedTests(unittest.TestCase):
         self.assertEqual(dispatch_types, (Override,))
         self.assertEqual(args, (value,))
         self.assertEqual(kwargs, {})
+
+    def test_duck_typed_receivers_cannot_spoof_the_native_tensor_check(self):
+        marker = object()
+        events = []
+
+        class Storage:
+            def _is_shared(self):
+                events.append("storage._is_shared")
+                return marker
+
+        class SpoofedTensor:
+            @property
+            def __class__(self):
+                events.append("__class__")
+                return torch.Tensor
+
+            def _typed_storage(self):
+                events.append("_typed_storage")
+                return Storage()
+
+        spoofed = SpoofedTensor()
+        self.assertTrue(isinstance(spoofed, torch.Tensor))
+        events.clear()
+        self.assertIs(torch.Tensor.is_shared(spoofed), marker)
+        self.assertEqual(events, ["_typed_storage", "storage._is_shared"])
+
+        class ClassAccessError(Exception):
+            pass
+
+        class RaisingClass:
+            @property
+            def __class__(self):
+                events.append("__class__")
+                raise ClassAccessError("receiver class must not be read")
+
+            def _typed_storage(self):
+                events.append("_typed_storage")
+                return Storage()
+
+        raising = RaisingClass()
+        with self.assertRaisesRegex(
+            ClassAccessError, "^receiver class must not be read$"
+        ):
+            isinstance(raising, torch.Tensor)
+        events.clear()
+        self.assertIs(torch.Tensor.is_shared(raising), marker)
+        self.assertEqual(events, ["_typed_storage", "storage._is_shared"])
 
     def test_shared_memory_mutation_and_storage_apis_remain_unsupported(self):
         tensor = torch.tensor([1.0])

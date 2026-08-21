@@ -291,6 +291,69 @@ class TensorIsSharedReferenceTests(unittest.TestCase):
             self.override_contract(reference_torch),
         )
 
+    def duck_typed_receiver_contract(self, module):
+        marker = object()
+        events = []
+
+        class Storage:
+            def _is_shared(self):
+                events.append("storage._is_shared")
+                return marker
+
+        class SpoofedTensor:
+            @property
+            def __class__(self):
+                events.append("__class__")
+                return module.Tensor
+
+            def _typed_storage(self):
+                events.append("_typed_storage")
+                return Storage()
+
+        spoofed = SpoofedTensor()
+        spoofed_isinstance = isinstance(spoofed, module.Tensor)
+        events.clear()
+        spoofed_result = module.Tensor.is_shared(spoofed)
+        spoofed_events = tuple(events)
+
+        class ClassAccessError(Exception):
+            pass
+
+        class RaisingClass:
+            @property
+            def __class__(self):
+                events.append("__class__")
+                raise ClassAccessError("receiver class must not be read")
+
+            def _typed_storage(self):
+                events.append("_typed_storage")
+                return Storage()
+
+        raising = RaisingClass()
+        try:
+            isinstance(raising, module.Tensor)
+        except Exception as error:
+            class_probe_error = type(error).__name__, str(error)
+        else:
+            self.fail("the raising __class__ property was not consulted")
+        events.clear()
+        raising_result = module.Tensor.is_shared(raising)
+
+        return {
+            "spoofed_isinstance": spoofed_isinstance,
+            "spoofed_result": spoofed_result is marker,
+            "spoofed_events": spoofed_events,
+            "class_probe_error": class_probe_error,
+            "raising_result": raising_result is marker,
+            "raising_events": tuple(events),
+        }
+
+    def test_duck_typed_receiver_fallback_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.duck_typed_receiver_contract(torch),
+            self.duck_typed_receiver_contract(reference_torch),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

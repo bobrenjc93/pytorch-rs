@@ -5,7 +5,7 @@ from .torch_rs import Tensor
 
 
 def _is_shared_impl(self):
-    if isinstance(self, Tensor):
+    if type(self) is Tensor:
         # Both ordinary owned storage and mutex-backed accumulated-gradient
         # storage are process-local. Views retain the same local allocation.
         return False
