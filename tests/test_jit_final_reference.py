@@ -46,8 +46,12 @@ class JitFinalReferenceTests(unittest.TestCase):
         )
 
     def subscription_outcome(self, marker, argument):
-        value = marker[argument]
+        try:
+            value = marker[argument]
+        except Exception as error:
+            return ("raise", type(error), str(error), error.args)
         return (
+            "return",
             type(value),
             repr(value),
             str(value),

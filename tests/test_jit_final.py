@@ -34,7 +34,6 @@ class JitFinalTests(unittest.TestCase):
             (int, (int,)),
             (list[str], (list[str],)),
             (None, (type(None),)),
-            (Ellipsis, (Ellipsis,)),
         )
 
         for argument, expected_arguments in cases:
@@ -43,6 +42,19 @@ class JitFinalTests(unittest.TestCase):
                 self.assertEqual(value, typing.Final[argument])
                 self.assertIs(typing.get_origin(value), typing.Final)
                 self.assertEqual(typing.get_args(value), expected_arguments)
+
+        try:
+            expected_ellipsis = typing.Final[Ellipsis]
+        except TypeError as expected_error:
+            with self.assertRaises(TypeError) as actual_raised:
+                marker[Ellipsis]
+            self.assertEqual(str(actual_raised.exception), str(expected_error))
+            self.assertEqual(actual_raised.exception.args, expected_error.args)
+        else:
+            actual_ellipsis = marker[Ellipsis]
+            self.assertEqual(actual_ellipsis, expected_ellipsis)
+            self.assertIs(typing.get_origin(actual_ellipsis), typing.Final)
+            self.assertEqual(typing.get_args(actual_ellipsis), (Ellipsis,))
 
         self.assertIs(marker[int], marker[int])
         self.assertEqual(repr(marker[int]), "typing.Final[int]")
