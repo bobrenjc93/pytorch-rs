@@ -4401,6 +4401,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.5
       }
+    },
+    {
+      "key": "pr:492",
+      "recordedAt": "2026-08-21T01:11:57.098Z",
+      "label": "PR #492",
+      "kind": "leaf",
+      "prNumber": 492,
+      "title": "Add eager torch.jit.isinstance type refinement",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 78.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 62.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.5
+      }
     }
   ]
 }

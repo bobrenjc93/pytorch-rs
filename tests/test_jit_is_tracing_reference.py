@@ -158,6 +158,7 @@ class JitIsTracingReferenceTests(unittest.TestCase):
             "annotate",
             "export",
             "ignore",
+            "isinstance",
             "script_if_tracing",
             "unused",
         }

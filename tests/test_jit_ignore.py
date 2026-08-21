@@ -321,7 +321,14 @@ class JitIgnoreTests(unittest.TestCase):
 
         self.assertEqual(
             jit.__all__,
-            ["annotate", "export", "ignore", "script_if_tracing", "unused"],
+            [
+                "annotate",
+                "export",
+                "ignore",
+                "isinstance",
+                "script_if_tracing",
+                "unused",
+            ],
         )
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
@@ -329,6 +336,7 @@ class JitIgnoreTests(unittest.TestCase):
                 "annotate",
                 "export",
                 "ignore",
+                "isinstance",
                 "is_scripting",
                 "is_tracing",
                 "script_if_tracing",
@@ -339,7 +347,14 @@ class JitIgnoreTests(unittest.TestCase):
         exec("from torch_rs.jit import *", jit_namespace)
         self.assertEqual(
             {name for name in jit_namespace if not name.startswith("__")},
-            {"annotate", "export", "ignore", "script_if_tracing", "unused"},
+            {
+                "annotate",
+                "export",
+                "ignore",
+                "isinstance",
+                "script_if_tracing",
+                "unused",
+            },
         )
         self.assertIs(jit_namespace["ignore"], function)
 
