@@ -78,10 +78,6 @@ class JitFinalTests(unittest.TestCase):
                 "(<class 'int'>, <class 'str'>).",
             ),
             (
-                lambda: marker[marker[int]],
-                "typing.Final[int] is not valid as type argument",
-            ),
-            (
                 lambda: marker[int][str],
                 "typing.Final[int] is not a generic class",
             ),
@@ -92,6 +88,23 @@ class JitFinalTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
+
+    def test_nested_final_subscription_matches_the_active_typing_behavior(self):
+        marker = torch.jit.Final
+
+        try:
+            expected = typing.Final[typing.Final[int]]
+        except TypeError as expected_error:
+            with self.assertRaises(TypeError) as actual_raised:
+                marker[marker[int]]
+            self.assertEqual(type(actual_raised.exception), type(expected_error))
+            self.assertEqual(str(actual_raised.exception), str(expected_error))
+            self.assertEqual(actual_raised.exception.args, expected_error.args)
+        else:
+            actual = marker[marker[int]]
+            self.assertIs(actual, expected)
+            self.assertIs(typing.get_origin(actual), typing.Final)
+            self.assertEqual(typing.get_args(actual), (typing.Final[int],))
 
     def test_namespace_copying_and_pickling_preserve_the_typing_alias(self):
         marker = torch.jit.Final

@@ -22,14 +22,18 @@ class JitFinalReferenceTests(unittest.TestCase):
                 "jit.Final differentials require pinned PyTorch 2.13.0"
             )
 
-    def assert_error_matches(self, actual_call, expected_call):
-        with self.assertRaises(Exception) as actual_raised:
-            actual_call()
-        with self.assertRaises(Exception) as expected_raised:
-            expected_call()
-        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
-        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
-        self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
+    def assert_outcome_matches(self, actual_call, expected_call):
+        def capture(call):
+            try:
+                return None, call()
+            except Exception as error:
+                return (type(error), str(error), error.args), None
+
+        actual_error, actual_result = capture(actual_call)
+        expected_error, expected_result = capture(expected_call)
+        self.assertEqual(actual_error, expected_error)
+        if actual_error is None:
+            self.assertIs(actual_result, expected_result)
 
     def test_identity_and_metadata_match_pytorch_2_13(self):
         actual_internal = importlib.import_module("torch_rs._jit_internal")
@@ -115,7 +119,7 @@ class JitFinalReferenceTests(unittest.TestCase):
         expected_configuration.retries = 4
         self.assertEqual(actual_configuration.retries, expected_configuration.retries)
 
-    def test_instantiation_and_subscription_errors_match_pytorch_2_13(self):
+    def test_instantiation_and_subscription_outcomes_match_pytorch_2_13(self):
         actual = torch.jit.Final
         expected = reference_torch.jit.Final
         cases = (
@@ -129,7 +133,7 @@ class JitFinalReferenceTests(unittest.TestCase):
         )
         for actual_call, expected_call in cases:
             with self.subTest(actual_call=actual_call, expected_call=expected_call):
-                self.assert_error_matches(actual_call, expected_call)
+                self.assert_outcome_matches(actual_call, expected_call)
 
     def test_namespace_copying_and_pickling_match_pytorch_2_13(self):
         actual = torch.jit.Final
