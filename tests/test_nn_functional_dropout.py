@@ -405,6 +405,18 @@ class FunctionalDropoutTests(unittest.TestCase):
                 "tensor([3.], grad_fn=<AddBackward0>)",
             ),
             (
+                leaf_probability.relu(),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([2.], grad_fn=<ReluBackward0>)",
+            ),
+            (
+                torch.tensor([-2.0], requires_grad=True).sin(),
+                ValueError,
+                "dropout probability has to be between 0 and 1, but got "
+                "tensor([-0.9093], grad_fn=<SinBackward0>)",
+            ),
+            (
                 leaf_probability.reshape(1, 1),
                 ValueError,
                 "dropout probability has to be between 0 and 1, but got "
