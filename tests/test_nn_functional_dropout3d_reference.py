@@ -43,6 +43,18 @@ class FunctionalDropout3dReferenceTests(unittest.TestCase):
                 requires_grad=requires_grad,
             )
             return leaf, leaf[1].transpose(3, 4)
+        if case == "channels_last_3d":
+            leaf = module.tensor(
+                [
+                    [
+                        [[[-1.0, 2.0], [-0.0, 3.0]]],
+                        [[[4.0, -5.0], [6.0, -7.0]]],
+                    ]
+                ],
+                dtype=module.float32,
+                requires_grad=requires_grad,
+            )
+            return leaf, leaf.contiguous(memory_format=module.channels_last_3d)
 
         leaf = module.zeros(
             (2, 1, 2, 3, 4, 5),
@@ -206,6 +218,172 @@ class FunctionalDropout3dReferenceTests(unittest.TestCase):
                         self.assertTrue(expected.is_set_to(expected_input))
                     self.assert_metadata_matches(actual, expected, case=invocation)
                     self.assert_values_match(actual, expected, case=invocation)
+
+    def test_training_probability_one_matches_native_zero_multiplication(self):
+        for requires_grad in (False, True):
+            for case in ("contiguous", "offset", "strided", "channels_last_3d"):
+                _, actual_input = self.make_case(
+                    torch, case, requires_grad=requires_grad
+                )
+                _, expected_input = self.make_case(
+                    reference_torch, case, requires_grad=requires_grad
+                )
+                probabilities = (
+                    (1.0, 1.0),
+                    (1, 1),
+                    (True, True),
+                    (np.float32(1.0), np.float32(1.0)),
+                    (
+                        torch.tensor(1.0),
+                        reference_torch.tensor(
+                            1.0, dtype=reference_torch.float32
+                        ),
+                    ),
+                )
+                for probability_case, (
+                    actual_probability,
+                    expected_probability,
+                ) in enumerate(probabilities):
+                    expected_rng = reference_torch.get_rng_state().clone()
+                    actual = functional.dropout3d(
+                        actual_input,
+                        p=actual_probability,
+                        training=True,
+                        inplace=False,
+                    )
+                    expected = reference_functional.dropout3d(
+                        expected_input,
+                        p=expected_probability,
+                        training=True,
+                        inplace=False,
+                    )
+                    invocation = (requires_grad, case, probability_case)
+                    with self.subTest(case=invocation):
+                        self.assertIsNot(actual, actual_input)
+                        self.assertIsNot(expected, expected_input)
+                        self.assertFalse(actual.is_set_to(actual_input))
+                        self.assertFalse(expected.is_set_to(expected_input))
+                        self.assertNotEqual(
+                            actual.data_ptr(), actual_input.data_ptr()
+                        )
+                        self.assertNotEqual(
+                            expected.data_ptr(), expected_input.data_ptr()
+                        )
+                        self.assertTrue(
+                            reference_torch.equal(
+                                expected_rng,
+                                reference_torch.get_rng_state(),
+                            )
+                        )
+                    self.assert_metadata_matches(actual, expected, case=invocation)
+                    self.assert_values_match(actual, expected, case=invocation)
+
+    def test_probability_one_signed_zero_nan_and_infinity_bits_match(self):
+        special_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0xBF80_0000,
+                0x3F80_0000,
+            ),
+            dtype=np.uint32,
+        )
+        values = memoryview(special_bits.view(np.float32))
+        actual_input = torch.tensor(values).reshape(1, 2, 1, 2, 2)
+        expected_input = reference_torch.tensor(values).reshape(1, 2, 1, 2, 2)
+
+        for case, actual, expected in (
+            ("contiguous", actual_input, expected_input),
+            (
+                "strided",
+                actual_input.transpose(3, 4),
+                expected_input.transpose(3, 4),
+            ),
+            (
+                "channels_last_3d",
+                actual_input.contiguous(memory_format=torch.channels_last_3d),
+                expected_input.contiguous(
+                    memory_format=reference_torch.channels_last_3d
+                ),
+            ),
+        ):
+            actual_output = functional.dropout3d(
+                actual, p=1, training=True, inplace=False
+            )
+            expected_output = reference_functional.dropout3d(
+                expected, p=1, training=True, inplace=False
+            )
+            self.assert_metadata_matches(actual_output, expected_output, case=case)
+            self.assert_values_match(actual_output, expected_output, case=case)
+
+    def test_probability_one_backward_and_no_grad_match(self):
+        actual_leaf = torch.tensor(
+            [[[[[-1.0, 2.0], [-0.0, 3.0]]]]], requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            [[[[[-1.0, 2.0], [-0.0, 3.0]]]]], requires_grad=True
+        )
+        actual_input = actual_leaf.transpose(3, 4)
+        expected_input = expected_leaf.transpose(3, 4)
+        actual_output = functional.dropout3d(
+            actual_input,
+            p=torch.tensor(1.0),
+            training=True,
+            inplace=False,
+        )
+        expected_output = reference_functional.dropout3d(
+            expected_input,
+            p=reference_torch.tensor(1.0),
+            training=True,
+            inplace=False,
+        )
+        self.assert_metadata_matches(
+            actual_output, expected_output, case="probability-one output"
+        )
+        self.assert_values_match(
+            actual_output, expected_output, case="probability-one output"
+        )
+        actual_weights = torch.tensor([[[[[2.0, -3.0], [-5.0, 7.0]]]]])
+        expected_weights = reference_torch.tensor(
+            [[[[[2.0, -3.0], [-5.0, 7.0]]]]]
+        )
+        (actual_output * actual_weights).sum().backward()
+        (expected_output * expected_weights).sum().backward()
+        self.assert_metadata_matches(
+            actual_leaf.grad, expected_leaf.grad, case="probability-one gradient"
+        )
+        self.assert_values_match(
+            actual_leaf.grad, expected_leaf.grad, case="probability-one gradient"
+        )
+
+        actual_leaf = torch.tensor(
+            [[[[[-1.0, 2.0], [-0.0, 3.0]]]]], requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            [[[[[-1.0, 2.0], [-0.0, 3.0]]]]], requires_grad=True
+        )
+        actual_input = actual_leaf.transpose(3, 4)
+        expected_input = expected_leaf.transpose(3, 4)
+        with torch.no_grad():
+            actual_output = functional.dropout3d(
+                actual_input, p=1, training=True
+            )
+        with reference_torch.no_grad():
+            expected_output = reference_functional.dropout3d(
+                expected_input, p=1, training=True
+            )
+        self.assertIsNot(actual_output, actual_input)
+        self.assertIsNot(expected_output, expected_input)
+        self.assert_metadata_matches(
+            actual_output, expected_output, case="probability-one no_grad"
+        )
+        self.assert_values_match(
+            actual_output, expected_output, case="probability-one no_grad"
+        )
 
     def test_backward_no_grad_empty_training_and_rng_state_match(self):
         actual_leaf = torch.tensor(
@@ -543,6 +721,24 @@ class FunctionalDropout3dReferenceTests(unittest.TestCase):
         self.assertIs(actual_output, actual_input)
         self.assertIs(expected_output, expected_input)
         self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
+
+        actual_mode = ActualMode(forward=True)
+        expected_mode = ExpectedMode(forward=True)
+        with actual_mode:
+            actual_output = functional.dropout3d(
+                actual_input, p=1, training=True, inplace=False
+            )
+        with expected_mode:
+            expected_output = reference_functional.dropout3d(
+                expected_input, p=1, training=True, inplace=False
+            )
+        self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
+        self.assert_metadata_matches(
+            actual_output, expected_output, case="probability-one mode"
+        )
+        self.assert_values_match(
+            actual_output, expected_output, case="probability-one mode"
+        )
 
 
 if __name__ == "__main__":
