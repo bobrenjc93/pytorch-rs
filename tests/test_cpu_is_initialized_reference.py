@@ -167,6 +167,7 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
             "device_count",
             "is_available",
             "is_initialized",
+            "set_device",
             "synchronize",
         }
 
@@ -259,6 +260,7 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
                 "device_count",
                 "is_available",
                 "is_initialized",
+                "set_device",
                 "synchronize",
             },
         )
@@ -269,7 +271,6 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
                 "current_stream",
                 "Event",
                 "get_capabilities",
-                "set_device",
                 "Stream",
                 "StreamContext",
                 "stream",

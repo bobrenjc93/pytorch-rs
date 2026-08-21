@@ -10,6 +10,7 @@ __all__ = [
     "is_initialized",
     "synchronize",
     "current_device",
+    "set_device",
     "device_count",
 ]
 
@@ -47,6 +48,13 @@ def current_device() -> str:
     N.B. This function only exists to facilitate device-agnostic code
     """
     return "cpu"
+
+
+def set_device(device: _device | str | int | None) -> None:
+    r"""Sets the current device, in CPU we do nothing.
+
+    N.B. This function only exists to facilitate device-agnostic code
+    """
 
 
 def device_count() -> int:

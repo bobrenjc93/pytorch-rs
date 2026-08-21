@@ -178,6 +178,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                     "device_count",
                     "is_available",
                     "is_initialized",
+                    "set_device",
                     "synchronize",
                 }
             ],
@@ -215,6 +216,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                 "device_count",
                 "is_available",
                 "is_initialized",
+                "set_device",
                 "synchronize",
             },
         )
@@ -222,6 +224,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             actual_cpu_namespace["current_device"], actual_cpu.current_device
         )
         self.assertIs(actual_cpu_namespace["device_count"], actual)
+        self.assertIs(actual_cpu_namespace["set_device"], actual_cpu.set_device)
         self.assertIs(actual_cpu_namespace["synchronize"], actual_cpu.synchronize)
         self.assertIs(expected_cpu_namespace["device_count"], expected)
 
@@ -277,6 +280,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                 "device_count",
                 "is_available",
                 "is_initialized",
+                "set_device",
                 "synchronize",
             },
         )

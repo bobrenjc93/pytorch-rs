@@ -212,6 +212,7 @@ class CpuSynchronizeTests(unittest.TestCase):
                 "is_initialized",
                 "synchronize",
                 "current_device",
+                "set_device",
                 "device_count",
             ],
         )
@@ -233,6 +234,7 @@ class CpuSynchronizeTests(unittest.TestCase):
                 "device_count",
                 "is_available",
                 "is_initialized",
+                "set_device",
                 "synchronize",
             },
         )
@@ -240,6 +242,7 @@ class CpuSynchronizeTests(unittest.TestCase):
         self.assertIs(cpu_namespace["synchronize"], function)
         self.assertIs(cpu_namespace["is_available"], cpu.is_available)
         self.assertIs(cpu_namespace["is_initialized"], cpu.is_initialized)
+        self.assertIs(cpu_namespace["set_device"], cpu.set_device)
         self.assertIs(cpu_namespace["device_count"], cpu.device_count)
 
         for name in ("cpu", "device_count", "is_available", "synchronize"):
@@ -296,6 +299,7 @@ class CpuSynchronizeTests(unittest.TestCase):
                 "device_count",
                 "is_available",
                 "is_initialized",
+                "set_device",
                 "synchronize",
             },
         )
@@ -304,7 +308,6 @@ class CpuSynchronizeTests(unittest.TestCase):
             "current_stream",
             "Event",
             "get_capabilities",
-            "set_device",
             "Stream",
             "StreamContext",
             "stream",
