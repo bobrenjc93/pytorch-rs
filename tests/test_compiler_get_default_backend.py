@@ -111,8 +111,8 @@ class CompilerGetDefaultBackendTests(unittest.TestCase):
         self.assertIs(sys.modules["torch_rs.compiler"], compiler)
         self.assertIs(type(function), types.FunctionType)
         self.assertEqual(
-            str(inspect.signature(function)),
-            "() -> str | collections.abc.Callable[..., typing.Any]",
+            inspect.signature(function),
+            inspect.Signature(return_annotation=return_annotation),
         )
         self.assertEqual(function.__annotations__, {"return": return_annotation})
         self.assertEqual(
