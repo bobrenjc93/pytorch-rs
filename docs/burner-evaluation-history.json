@@ -4721,6 +4721,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 91.3
       }
+    },
+    {
+      "key": "pr:580",
+      "recordedAt": "2026-08-21T18:22:49.302Z",
+      "label": "PR #580",
+      "kind": "leaf",
+      "prNumber": 580,
+      "title": "Expose read-only Tensor.grad_dtype",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 81,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 64.6,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 91.4
+      }
     }
   ]
 }
