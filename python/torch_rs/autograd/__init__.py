@@ -3,11 +3,12 @@
 from .. import _C as _C
 from . import grad_mode as grad_mode
 from .grad_mode import no_grad as no_grad
+from .grad_mode import set_multithreading_enabled as set_multithreading_enabled
 
 
 is_multithreading_enabled = _C._is_multithreading_enabled
 is_view_replay_enabled = _C._is_view_replay_enabled
 
-__all__ = ["grad_mode", "no_grad"]
+__all__ = ["grad_mode", "no_grad", "set_multithreading_enabled"]
 
 del _C

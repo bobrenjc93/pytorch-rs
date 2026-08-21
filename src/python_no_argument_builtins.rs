@@ -1,4 +1,4 @@
-//! Stable-ABI bindings for PyTorch-style no-argument built-in functions.
+//! Stable-ABI bindings for PyTorch-style state-query and control built-ins.
 
 use std::ffi::CStr;
 
@@ -9,7 +9,13 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyCFunction, PyDict, PyModule, PyTuple};
 
 use crate::{
-    DType, is_grad_enabled as core_is_grad_enabled,
+    DType,
+    grad_mode::{
+        is_multithreading_enabled as core_is_multithreading_enabled,
+        set_multithreading_enabled as core_set_multithreading_enabled,
+    },
+    is_grad_enabled as core_is_grad_enabled,
+    python_argument_schema::ArgumentSchema,
     python_dtype::{PyDType, dtype_object},
 };
 
@@ -70,9 +76,62 @@ fn is_multithreading_enabled(
             args.len()
         )));
     }
-    // Expose PyTorch's supported default without adding its setter or a
-    // parallel backward scheduler to the native engine.
-    Ok(true)
+    Ok(core_is_multithreading_enabled())
+}
+
+fn set_multithreading_enabled(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    if args.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "set_multithreading_enabled() takes 1 positional argument but {} were given",
+            args.len()
+        )));
+    }
+
+    let mut enabled = if args.is_empty() {
+        None
+    } else {
+        Some(args.get_item(0)?)
+    };
+    let mut keyword_error = None;
+    if let Some(kwargs) = kwargs {
+        for (key, value) in kwargs {
+            let key = key.extract::<String>()?;
+            if key == "enabled" {
+                if enabled.is_some() {
+                    keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(
+                            "set_multithreading_enabled() got multiple values for argument 'enabled'",
+                        )
+                    });
+                } else {
+                    enabled = Some(value);
+                }
+            } else {
+                keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "set_multithreading_enabled() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+
+    let Some(enabled) = enabled else {
+        return Err(PyTypeError::new_err(
+            "set_multithreading_enabled() missing 1 required positional arguments: \"enabled\"",
+        ));
+    };
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+
+    let enabled = ArgumentSchema::new("set_multithreading_enabled", "enabled", 1, "bool")
+        .parse_exact_bool(&enabled)?;
+    core_set_multithreading_enabled(enabled);
+    Ok(())
 }
 
 fn is_autocast_cache_enabled(
@@ -247,7 +306,7 @@ const GET_NUM_INTEROP_THREADS_SIGNATURE_DOC: &CStr = c"get_num_interop_threads($
     unsafe_code,
     reason = "CPython passes borrowed tuple and dictionary pointers to C function callbacks"
 )]
-unsafe fn no_argument_builtin_arguments(
+unsafe fn builtin_call_arguments(
     py: Python<'_>,
     args: *mut ffi::PyObject,
     kwargs: *mut ffi::PyObject,
@@ -273,7 +332,7 @@ unsafe fn is_grad_enabled_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     is_grad_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
@@ -290,7 +349,7 @@ unsafe fn is_inference_mode_enabled_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     is_inference_mode_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
@@ -307,10 +366,26 @@ unsafe fn is_multithreading_enabled_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     is_multithreading_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_multithreading_enabled_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
+    set_multithreading_enabled(&args, kwargs.as_ref())?;
+    Ok(py.None().into_ptr())
 }
 
 #[allow(
@@ -324,7 +399,7 @@ unsafe fn is_autocast_cache_enabled_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     is_autocast_cache_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
@@ -341,7 +416,7 @@ unsafe fn is_view_replay_enabled_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     is_view_replay_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
@@ -358,7 +433,7 @@ unsafe fn is_anomaly_enabled_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     is_anomaly_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
@@ -375,7 +450,7 @@ unsafe fn is_anomaly_check_nan_enabled_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     is_anomaly_check_nan_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
@@ -392,7 +467,7 @@ unsafe fn get_default_dtype_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     get_default_dtype(py, &args, kwargs.as_ref()).map(Py::into_ptr)
 }
 
@@ -407,7 +482,7 @@ unsafe fn get_num_threads_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     get_num_threads(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
@@ -424,7 +499,7 @@ unsafe fn get_num_interop_threads_callback(
     kwargs: *mut ffi::PyObject,
 ) -> PyResult<*mut ffi::PyObject> {
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
-    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    let (args, kwargs) = unsafe { builtin_call_arguments(py, args, kwargs) }?;
     get_num_interop_threads(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
@@ -463,9 +538,22 @@ fn add_multithreading_builtin(
         is_multithreading_enabled_doc,
         Some(module),
     )?)?;
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            set_multithreading_enabled_callback
+        ),
+        c"_set_multithreading_enabled",
+        c"",
+        Some(module),
+    )?)?;
     module
         .getattr("__all__")?
         .call_method1("remove", ("_is_multithreading_enabled",))?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_set_multithreading_enabled",))?;
     Ok(())
 }
 

@@ -100,8 +100,13 @@ class NoGradNamespaceTests(unittest.TestCase):
         self.assertIs(torch.no_grad, grad_mode.no_grad)
         self.assertIs(torch.no_grad, autograd_no_grad)
         self.assertIs(torch.no_grad, grad_mode_no_grad)
-        self.assertEqual(autograd.__all__, ["grad_mode", "no_grad"])
-        self.assertEqual(grad_mode.__all__, ["no_grad"])
+        self.assertEqual(
+            autograd.__all__,
+            ["grad_mode", "no_grad", "set_multithreading_enabled"],
+        )
+        self.assertEqual(
+            grad_mode.__all__, ["no_grad", "set_multithreading_enabled"]
+        )
         self.assertNotIn("autograd", torch.__all__)
 
         for module in (autograd, grad_mode):

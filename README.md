@@ -158,7 +158,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
 
-`torch.autograd.is_multithreading_enabled()` reports PyTorch's default enabled state as the exact `True` singleton without changing thread-local gradient mode or importing PyTorch. Autograd multithreading mutation and a parallel backward scheduler remain unsupported.
+`torch.autograd.is_multithreading_enabled()` reports a default-enabled thread-local state without changing gradient mode or importing PyTorch. The strict-boolean native `torch._C._set_multithreading_enabled(enabled)` setter and identical `torch.autograd.set_multithreading_enabled` / `torch.autograd.grad_mode.set_multithreading_enabled` context aliases mutate that state immediately and restore nested or exceptional contexts. Backward remains serial in both states and produces the same gradients; a parallel backward scheduler remains unsupported.
 
 `torch.get_float32_matmul_precision()` reports the invariant string `"highest"`, reflecting that the native CPU float32 matrix-multiplication engine has no reduced-precision modes. The setter and its `"high"` and `"medium"` states remain unsupported, and the query does not change native matmul behavior.
 

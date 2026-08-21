@@ -1,8 +1,119 @@
 """Gradient-mode context managers."""
 
 import copyreg as _copyreg
+import functools as _functools
+import inspect as _inspect
+import sys as _sys
+import warnings as _warnings
+from typing import Any as _Any
 
+from .. import _C as _C
 from ..torch_rs import no_grad as no_grad
+
+
+def _decorate_context(context_factory, function):
+    if _inspect.isgeneratorfunction(function):
+        @_functools.wraps(function)
+        def generator_context(*args, **kwargs):
+            generator = function(*args, **kwargs)
+            try:
+                with context_factory():
+                    response = generator.send(None)
+
+                while True:
+                    try:
+                        request = yield response
+                    except GeneratorExit:
+                        with context_factory():
+                            generator.close()
+                        raise
+                    except BaseException:
+                        with context_factory():
+                            response = generator.throw(*_sys.exc_info())
+                    else:
+                        with context_factory():
+                            response = generator.send(request)
+            except StopIteration as error:
+                return error.value
+
+        return generator_context
+
+    @_functools.wraps(function)
+    def decorate_context(*args, **kwargs):
+        with context_factory():
+            return function(*args, **kwargs)
+
+    return decorate_context
+
+
+class _DecoratorContextManager:
+    """Allow a context manager to be used as a decorator."""
+
+    def __call__(self, original_function):
+        if _inspect.isclass(original_function):
+            _warnings.warn(
+                "Decorating classes is deprecated and will be disabled in "
+                "future versions. You should only decorate functions or methods. "
+                "To preserve the current behavior of class decoration, you can "
+                "directly decorate the `__init__` method and nothing else.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            function = lambda *args, **kwargs: original_function(*args, **kwargs)
+        else:
+            function = original_function
+
+        return _decorate_context(self.clone, function)
+
+    def clone(self):
+        return self.__class__()
+
+
+class set_multithreading_enabled(_DecoratorContextManager):
+    r"""Context-manager that enables or disables multithreaded backward.
+
+    Ordinarily, when :ref:`accelerator<accelerators>` devices are in use,
+    the backward pass runs on device-specific worker threads. The engine
+    creates these threads based on the number of available devices and
+    reuses them across iterations.
+
+    When ``mode=False``, the backward pass runs on the calling thread
+    instead. ``mode=True`` restores the default behavior.
+
+    This can be used as a context-manager or as a function. It is
+    thread-local and will not affect computation in other threads.
+
+    Args:
+        mode (bool): Whether to enable multithreaded backward (``True``,
+                    default) or disable (``False``).
+
+    .. note::
+        This API does not apply to :ref:`forward-mode AD <forward-mode-ad>`,
+        which never uses multithreading.
+
+    """
+
+    def __init__(self, mode: bool) -> None:
+        self.prev = _C._is_multithreading_enabled()
+        _C._set_multithreading_enabled(mode)
+        self.mode = mode
+
+    def __enter__(self) -> None:
+        pass
+
+    def __exit__(
+        self,
+        exc_type: _Any,
+        exc_value: _Any,
+        traceback: _Any,
+    ) -> None:
+        _C._set_multithreading_enabled(self.prev)
+
+    def clone(self) -> "set_multithreading_enabled":
+        r"""
+        Create a copy of this class
+        """
+        return self.__class__(self.mode)
 
 
 def _legacy_rebuild_no_grad(context_type):
@@ -78,4 +189,4 @@ def _reduce_no_grad(context, protocol):
     return newobj, newargs, _no_grad_state(context)
 
 
-__all__ = ["no_grad"]
+__all__ = ["no_grad", "set_multithreading_enabled"]
