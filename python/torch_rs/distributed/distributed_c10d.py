@@ -1,11 +1,20 @@
 """Distributed Collective Communication (c10d)."""
 
 __all__ = [
+    "get_pg_count",
     "is_gloo_available",
     "is_initialized",
     "is_mpi_available",
     "is_nccl_available",
 ]
+
+
+def get_pg_count() -> int:
+    """
+    Return the number of process groups.
+
+    """
+    return 0
 
 
 def is_gloo_available() -> bool:

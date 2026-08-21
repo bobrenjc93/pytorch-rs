@@ -147,6 +147,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_pg_count",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",
@@ -157,6 +158,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
         self.assertIs(distributed_namespace["is_available"], function)
 
         self.assertNotIn("distributed", torch.__all__)
+        self.assertNotIn("get_pg_count", torch.__all__)
         self.assertNotIn("is_available", torch.__all__)
         self.assertNotIn("is_gloo_available", torch.__all__)
         self.assertNotIn("is_initialized", torch.__all__)
@@ -165,6 +167,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("distributed", top_level_namespace)
+        self.assertNotIn("get_pg_count", top_level_namespace)
         self.assertNotIn("is_available", top_level_namespace)
         self.assertNotIn("is_gloo_available", top_level_namespace)
         self.assertNotIn("is_initialized", top_level_namespace)
@@ -213,6 +216,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
             {name for name in vars(distributed) if not name.startswith("_")},
             {
                 "distributed_c10d",
+                "get_pg_count",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",
@@ -220,6 +224,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
                 "is_nccl_available",
             },
         )
+        self.assertFalse(hasattr(torch, "get_pg_count"))
         self.assertFalse(hasattr(torch, "is_available"))
         self.assertFalse(hasattr(torch, "is_gloo_available"))
         self.assertFalse(hasattr(torch, "is_initialized"))
@@ -251,6 +256,7 @@ import torch_rs as torch
 function = torch.distributed.is_available
 assert function.__code__.co_names == ()
 assert function() is False
+assert torch.distributed.get_pg_count() == 0
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
