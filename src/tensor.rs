@@ -45,14 +45,16 @@ struct SavedTensor {
     autograd: Option<Arc<AutogradMeta>>,
 }
 
-type UnaryVjp = fn(f32, f32) -> f32;
+// Keep dynamic dispatch at node granularity so each operation's element loop
+// can inline and vectorize its scalar VJP.
+type UnaryVjpKernel = fn(&SavedTensor, &[f32], &mut Vec<f32>);
 
 #[derive(Clone)]
 struct SavedInputUnaryNode {
     input: SavedTensor,
     #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
     identity: AutogradNode,
-    vjp: UnaryVjp,
+    vjp: UnaryVjpKernel,
 }
 
 #[derive(Clone)]
@@ -941,7 +943,7 @@ impl Tensor {
         &self,
         mut output: Self,
         identity: AutogradNode,
-        vjp: UnaryVjp,
+        vjp: UnaryVjpKernel,
     ) -> Result<Self, TensorError> {
         if self.records_grad() {
             output.autograd = Some(Arc::new(AutogradMeta {
@@ -2305,7 +2307,7 @@ impl Tensor {
     /// Returns an error when result metadata or storage allocation fails.
     pub fn relu(&self) -> Result<Self, TensorError> {
         let output = self.unary_map(relu_value)?;
-        self.finish_saved_input_unary_vjp(output, AutogradNode::Relu, relu_backward_value)
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Relu, apply_relu_vjp)
     }
 
     /// Computes the sine of every element in radians.
@@ -2315,7 +2317,7 @@ impl Tensor {
     /// Returns an error when result metadata or storage allocation fails.
     pub fn sin(&self) -> Result<Self, TensorError> {
         let output = self.unary_map(f32::sin)?;
-        self.finish_saved_input_unary_vjp(output, AutogradNode::Sin, sin_backward_value)
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Sin, apply_sin_vjp)
     }
 
     /// Computes the base-e exponential of every element.
@@ -3080,26 +3082,35 @@ fn apply_saved_input_unary(
     };
     debug_assert_eq!(input.elements, upstream.len());
     let mut gradient = try_result_vector(input.elements, input.elements)?;
+    (node.vjp)(input, upstream, &mut gradient);
+    add_gradient(gradients, meta, input.output_nr, gradient);
+    Ok(())
+}
+
+fn apply_relu_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
     // Borrow one exact saved range for row-contiguous layouts, including
     // nonzero-offset views, instead of resolving layout and storage per value.
     if let Some(saved_values) = input.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
-        gradient.extend(
-            saved_values
-                .iter()
-                .zip(upstream)
-                .map(|(&saved_value, &upstream_value)| (node.vjp)(saved_value, upstream_value)),
-        );
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| relu_backward_value(saved_value, upstream_value),
+        ));
     } else {
         gradient.extend(
-            upstream
-                .iter()
-                .enumerate()
-                .map(|(index, &value)| (node.vjp)(input.value_at_linear_index(index), value)),
+            upstream.iter().enumerate().map(|(index, &value)| {
+                relu_backward_value(input.value_at_linear_index(index), value)
+            }),
         );
     }
-    add_gradient(gradients, meta, input.output_nr, gradient);
-    Ok(())
+}
+
+fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    gradient.extend(
+        upstream
+            .iter()
+            .enumerate()
+            .map(|(index, value)| value * input.value_at_linear_index(index).cos()),
+    );
 }
 
 struct GradientAccumulator {
@@ -4288,6 +4299,7 @@ fn sqrt_value(value: f32) -> f32 {
     }
 }
 
+#[inline]
 fn relu_backward_value(input: f32, upstream: f32) -> f32 {
     let bits = input.to_bits();
     let magnitude = bits & !F32_SIGN_MASK;
@@ -4298,10 +4310,6 @@ fn relu_backward_value(input: f32, upstream: f32) -> f32 {
     } else {
         0.0
     }
-}
-
-fn sin_backward_value(input: f32, upstream: f32) -> f32 {
-    upstream * input.cos()
 }
 
 fn filled_storage(elements: usize, fill_value: f32) -> Result<Vec<f32>, TensorError> {
