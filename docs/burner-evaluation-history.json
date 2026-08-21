@@ -4689,6 +4689,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 91.1
       }
+    },
+    {
+      "key": "pr:571",
+      "recordedAt": "2026-08-21T16:27:49.064Z",
+      "label": "PR #571",
+      "kind": "leaf",
+      "prNumber": 571,
+      "title": "Support deterministic rank-5 dropout3d at p=1",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 80.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 64.4,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 91.2
+      }
     }
   ]
 }
