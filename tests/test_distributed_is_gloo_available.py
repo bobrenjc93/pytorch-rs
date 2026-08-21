@@ -138,6 +138,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -171,6 +172,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_pg_count",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",
@@ -191,6 +193,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         self.assertEqual(
             {name for name in owner_namespace if not name.startswith("__")},
             {
+                "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -200,10 +203,12 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         self.assertIs(owner_namespace["is_gloo_available"], function)
 
         self.assertNotIn("distributed", torch.__all__)
+        self.assertNotIn("get_pg_count", torch.__all__)
         self.assertNotIn("is_gloo_available", torch.__all__)
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("distributed", top_level_namespace)
+        self.assertNotIn("get_pg_count", top_level_namespace)
         self.assertNotIn("is_gloo_available", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
@@ -248,6 +253,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         distributed_c10d = distributed.distributed_c10d
 
         self.assertIs(distributed.is_available(), False)
+        self.assertEqual(distributed.get_pg_count(), 0)
         self.assertIs(distributed.is_initialized(), False)
         self.assertIs(distributed.is_mpi_available(), False)
         self.assertIs(distributed.is_nccl_available(), False)
@@ -255,6 +261,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
             {name for name in vars(distributed) if not name.startswith("_")},
             {
                 "distributed_c10d",
+                "get_pg_count",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",
@@ -269,6 +276,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
                 if not name.startswith("_")
             },
             {
+                "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -320,6 +328,7 @@ function = torch.distributed.is_gloo_available
 assert function.__code__.co_names == ()
 assert function() is False
 assert torch.distributed.is_available() is False
+assert torch.distributed.get_pg_count() == 0
 assert torch.distributed.is_nccl_available() is False
 assert torch.distributed.is_initialized() is False
 assert not hasattr(torch.distributed, "ProcessGroupGloo")

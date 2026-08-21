@@ -215,6 +215,7 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "get_pg_count",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",
