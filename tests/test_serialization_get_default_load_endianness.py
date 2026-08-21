@@ -26,6 +26,12 @@ GETTER_DOC = """
     """
 
 
+class _RuntimeLoadEndianness(enum.Enum):
+    NATIVE = 1
+    LITTLE = 2
+    BIG = 3
+
+
 class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
     def test_enum_has_exact_members_values_and_identity(self):
         endianness = torch.serialization.LoadEndianness
@@ -41,7 +47,7 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
         self.assertEqual(endianness.__qualname__, "LoadEndianness")
         self.assertEqual(endianness.__module__, "torch_rs.serialization")
         self.assertIs(inspect.getmodule(endianness), torch.serialization)
-        self.assertIsNone(endianness.__doc__)
+        self.assertEqual(endianness.__doc__, _RuntimeLoadEndianness.__doc__)
         self.assertEqual(endianness.__annotations__, {})
         self.assertEqual(
             tuple(endianness.__members__),
@@ -268,9 +274,12 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
 
     def test_enum_rejects_invalid_construction_without_changing_the_default(self):
         endianness = torch.serialization.LoadEndianness
+        with self.assertRaises((TypeError, ValueError)) as runtime_raised:
+            _RuntimeLoadEndianness(1, 2)
+
         cases = (
             (TypeError, lambda: endianness()),
-            (ValueError, lambda: endianness(1, 2)),
+            (type(runtime_raised.exception), lambda: endianness(1, 2)),
             (TypeError, lambda: endianness(name="NATIVE")),
             (ValueError, lambda: endianness(0)),
             (ValueError, lambda: endianness("NATIVE")),
