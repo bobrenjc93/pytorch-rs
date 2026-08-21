@@ -4465,6 +4465,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.6
       }
+    },
+    {
+      "key": "pr:508",
+      "recordedAt": "2026-08-21T04:44:41.277Z",
+      "label": "PR #508",
+      "kind": "leaf",
+      "prNumber": 508,
+      "title": "Consolidate Tensor rank and cardinality bindings",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 79.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 62.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.7
+      }
     }
   ]
 }
