@@ -188,6 +188,7 @@ class JitAnnotateTests(unittest.TestCase):
                 "ignore",
                 "isinstance",
                 "script_if_tracing",
+                "strict_fusion",
                 "unused",
             ],
         )
@@ -202,6 +203,7 @@ class JitAnnotateTests(unittest.TestCase):
                 "is_scripting",
                 "is_tracing",
                 "script_if_tracing",
+                "strict_fusion",
                 "unused",
             },
         )
@@ -216,6 +218,7 @@ class JitAnnotateTests(unittest.TestCase):
                 "ignore",
                 "isinstance",
                 "script_if_tracing",
+                "strict_fusion",
                 "unused",
             },
         )
