@@ -694,11 +694,6 @@ impl PyTensorBase {
 
         let output = {
             let tensor = tensor.try_borrow()?;
-            if tensor.inner.requires_grad() && is_grad_enabled() {
-                return Err(PyRuntimeError::new_err(
-                    "sqrt(): autograd recording is not supported",
-                ));
-            }
             tensor.inner.sqrt().map_err(|error| tensor_error(&error))?
         };
         Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
