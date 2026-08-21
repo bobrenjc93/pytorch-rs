@@ -256,8 +256,7 @@ class TensorSqrtTests(unittest.TestCase):
         self.assertEqual(order, ["upper", "lower"])
         self.assertEqual(forwarded.tolist(), [2.0])
 
-    def test_top_level_inplace_dtype_and_out_extensions_remain_unsupported(self):
-        self.assertFalse(hasattr(torch, "sqrt"))
+    def test_inplace_dtype_and_method_out_extensions_remain_unsupported(self):
         self.assertFalse(hasattr(torch.Tensor, "sqrt_"))
         self.assertFalse(hasattr(torch, "float64"))
 
