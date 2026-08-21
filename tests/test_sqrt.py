@@ -263,7 +263,12 @@ class TensorSqrtTests(unittest.TestCase):
 
         tensor = torch.tensor([4.0])
         with self.assertRaisesRegex(
-            TypeError, r"^TensorBase\.sqrt\(\) takes no keyword arguments$"
+            TypeError,
+            (
+                r"^Tensor\.sqrt\(\) takes no keyword arguments$"
+                if sys.version_info < (3, 11)
+                else r"^TensorBase\.sqrt\(\) takes no keyword arguments$"
+            ),
         ):
             tensor.sqrt(out=None)
 

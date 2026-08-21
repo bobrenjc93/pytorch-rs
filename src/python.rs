@@ -1973,10 +1973,13 @@ fn dispatch_tensorbase_mode(
     if !is_not_implemented(py, &result) {
         return Ok(Some(result));
     }
-    let legacy_const_data_ptr = cpython_compat::uses_legacy_tensorbase_redispatch(py)
-        && matches!(target, TensorBaseModeTarget::Method("const_data_ptr"));
-    if legacy_const_data_ptr {
-        cpython_compat::probe_const_data_ptr_legacy_redispatch(py)?;
+    let legacy_no_argument_method = cpython_compat::uses_legacy_tensorbase_redispatch(py)
+        && matches!(
+            target,
+            TensorBaseModeTarget::Method("const_data_ptr" | "sqrt")
+        );
+    if legacy_no_argument_method {
+        cpython_compat::probe_tensorbase_legacy_redispatch(py)?;
     }
 
     // TensorBase's fallback retries the descriptor after restoring the active
@@ -1989,7 +1992,7 @@ fn dispatch_tensorbase_mode(
     // values and mode side effects match TensorBase's recursive fallback.
     let caller = cpython_compat::torch_function_descriptor_caller(py)?;
     let _redispatch_depth =
-        legacy_const_data_ptr.then(cpython_compat::enter_const_data_ptr_legacy_redispatch);
+        legacy_no_argument_method.then(cpython_compat::enter_tensorbase_legacy_redispatch);
     Ok(Some(caller.bind(py).call1((function, args))?.unbind()))
 }
 
