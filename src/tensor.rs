@@ -639,6 +639,12 @@ impl Tensor {
         self.device().is_xpu()
     }
 
+    /// Reports whether this tensor's device is an XLA accelerator.
+    #[must_use]
+    pub fn is_xla(&self) -> bool {
+        self.device().is_xla()
+    }
+
     /// Reports whether this tensor's device is an Apple MPS accelerator.
     #[must_use]
     pub fn is_mps(&self) -> bool {
