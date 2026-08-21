@@ -137,7 +137,12 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
         self.assertFalse(hasattr(distributed, "__all__"))
         self.assertEqual(
             distributed_c10d.__all__,
-            ["is_initialized", "is_mpi_available", "is_nccl_available"],
+            [
+                "is_gloo_available",
+                "is_initialized",
+                "is_mpi_available",
+                "is_nccl_available",
+            ],
         )
 
         package_import = {}
@@ -167,6 +172,7 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
             {
                 "distributed_c10d",
                 "is_available",
+                "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
@@ -184,7 +190,12 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in owner_namespace if not name.startswith("__")},
-            {"is_initialized", "is_mpi_available", "is_nccl_available"},
+            {
+                "is_gloo_available",
+                "is_initialized",
+                "is_mpi_available",
+                "is_nccl_available",
+            },
         )
         self.assertIs(owner_namespace["is_nccl_available"], function)
 
@@ -241,6 +252,7 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
             {
                 "distributed_c10d",
                 "is_available",
+                "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
@@ -252,7 +264,12 @@ class DistributedIsNcclAvailableTests(unittest.TestCase):
                 for name in vars(distributed_c10d)
                 if not name.startswith("_")
             },
-            {"is_initialized", "is_mpi_available", "is_nccl_available"},
+            {
+                "is_gloo_available",
+                "is_initialized",
+                "is_mpi_available",
+                "is_nccl_available",
+            },
         )
         for name in (
             "Backend",
@@ -299,6 +316,7 @@ function = torch.distributed.is_nccl_available
 assert function.__code__.co_names == ()
 assert function() is False
 assert torch.distributed.is_available() is False
+assert torch.distributed.is_gloo_available() is False
 assert torch.distributed.is_initialized() is False
 assert not hasattr(torch.distributed, "ProcessGroupNCCL")
 assert not hasattr(torch.distributed, "init_process_group")

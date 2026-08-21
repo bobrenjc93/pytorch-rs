@@ -64,6 +64,7 @@ assert torch.serialization.get_default_mmap_options() == getattr(
     mmap, "MAP_PRIVATE", None
 )
 assert torch.distributed.is_available() is False
+assert torch.distributed.is_gloo_available() is False
 assert torch.distributed.is_initialized() is False
 assert torch.distributed.is_mpi_available() is False
 assert torch.distributed.is_nccl_available() is False
@@ -149,7 +150,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.serialization.LoadEndianness` exposes PyTorch's `NATIVE`, `LITTLE`, and `BIG` load-byte-order choices, while `torch.serialization.get_default_load_endianness()` reports the exact default `None` state. Changing that default remains unsupported. `torch.serialization.get_crc32_options()` and `torch.serialization.set_crc32_options(compute_crc32)` expose mutable process-global archive-record checksum state without importing PyTorch. The state starts as the exact `True` singleton, the setter returns `None`, and the getter returns the most recently supplied value. `torch.serialization.get_default_mmap_options()` reports the process-global default used by PyTorch for memory-mapped loads: `mmap.MAP_PRIVATE` initially on supported POSIX platforms. `torch.serialization.set_default_mmap_options(flags)` immediately selects `mmap.MAP_PRIVATE` or `mmap.MAP_SHARED` and also acts as a context manager that restores the prior setting on exit. The mmap setter is unavailable on Windows, while `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
 
-`Tensor.is_distributed()` returns the exact `False` singleton for every supported local CPU tensor without inspecting or changing storage, layout, or autograd state. `torch.distributed.is_available()`, `torch.distributed.is_mpi_available()`, and `torch.distributed.is_nccl_available()` are honest package, MPI, and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All four package queries return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Distributed tensor types, MPI initialization, process-group creation, backend execution, collectives, and every other distributed API remain unsupported.
+`Tensor.is_distributed()` returns the exact `False` singleton for every supported local CPU tensor without inspecting or changing storage, layout, or autograd state. `torch.distributed.is_available()`, `torch.distributed.is_gloo_available()`, `torch.distributed.is_mpi_available()`, and `torch.distributed.is_nccl_available()` are honest package, Gloo, MPI, and NCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state. All five package queries return the exact `False` singleton without probing hardware, environment variables, or PyTorch. Distributed tensor types, Gloo or MPI initialization, process-group creation, backend execution, collectives, and every other distributed API remain unsupported.
 
 ## Non-negotiable evaluation rules
 
