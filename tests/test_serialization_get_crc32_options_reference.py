@@ -282,6 +282,9 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
             "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
+            "clear_safe_globals",
+            "get_safe_globals",
+            "add_safe_globals",
         )
 
         self.assertIs(sys.modules["torch_rs.serialization"], actual_serialization)
@@ -320,7 +323,8 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
             "LoadEndianness, get_crc32_options, set_crc32_options, "
             "get_default_load_endianness, set_default_load_endianness, "
             "get_default_mmap_options, "
-            "set_default_mmap_options",
+            "set_default_mmap_options, clear_safe_globals, get_safe_globals, "
+            "add_safe_globals",
             actual_direct_import,
         )
         exec(
@@ -328,7 +332,8 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
             "LoadEndianness, get_crc32_options, set_crc32_options, "
             "get_default_load_endianness, set_default_load_endianness, "
             "get_default_mmap_options, "
-            "set_default_mmap_options",
+            "set_default_mmap_options, clear_safe_globals, get_safe_globals, "
+            "add_safe_globals",
             expected_direct_import,
         )
         for name in supported_names:
@@ -430,6 +435,9 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
                 "set_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
+                "clear_safe_globals",
+                "get_safe_globals",
+                "add_safe_globals",
             },
         )
         unsupported = set(expected_serialization.__all__) - actual_public
@@ -451,6 +459,9 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
             "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
+            "clear_safe_globals",
+            "get_safe_globals",
+            "add_safe_globals",
         ):
             with self.subTest(top_level_name=name):
                 self.assertFalse(hasattr(reference_torch, name))

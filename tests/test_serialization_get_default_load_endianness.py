@@ -186,6 +186,9 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
             "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
+            "clear_safe_globals",
+            "get_safe_globals",
+            "add_safe_globals",
         ]
 
         self.assertEqual(serialization.__all__, exported_names)
@@ -355,6 +358,9 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
                 "set_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
+                "clear_safe_globals",
+                "get_safe_globals",
+                "add_safe_globals",
             },
         )
         for name in ("save", "load"):
