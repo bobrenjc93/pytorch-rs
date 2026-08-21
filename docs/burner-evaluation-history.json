@@ -4737,6 +4737,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 91.4
       }
+    },
+    {
+      "key": "pr:586",
+      "recordedAt": "2026-08-21T19:05:44.724Z",
+      "label": "PR #586",
+      "kind": "leaf",
+      "prNumber": 586,
+      "title": "Expose top-level torch.neg",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 81.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 64.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 91.5
+      }
     }
   ]
 }
