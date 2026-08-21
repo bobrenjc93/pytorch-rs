@@ -264,7 +264,7 @@ class JitIgnoreReferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(torch.jit) if not name.startswith("_")},
-            {*wildcard_supported, "is_scripting", "is_tracing"},
+            {*wildcard_supported, "Final", "is_scripting", "is_tracing"},
         )
 
         actual_namespace = {}
