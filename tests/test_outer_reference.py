@@ -1,6 +1,9 @@
 import inspect
+import os
 import pickle
 import re
+import subprocess
+import sys
 import types
 import unittest
 
@@ -146,6 +149,76 @@ class OuterReferenceTests(unittest.TestCase):
                 make_vector(reference_torch, right_values, right_stride),
             )
             self.assert_matches(actual, expected, case=name)
+
+    def test_paired_nan_payloads_match_cpu_dispatch_and_parallel_ranges(self):
+        script = inspect.cleandoc(
+            """
+            import numpy as np
+            import torch as reference_torch
+            import torch_rs as torch
+
+            LEFT = 0x7F81_2345
+            RIGHT = 0xFF85_4321
+
+            if reference_torch.get_num_threads() != 3:
+                raise AssertionError(reference_torch.get_num_threads())
+
+            def make_vector(module, value, length, stride=1):
+                bits = np.full(length * stride, 0x3F80_0000, dtype=np.uint32)
+                bits[::stride] = value
+                vector = module.tensor(memoryview(bits.view(np.float32)))
+                if stride == 1:
+                    return vector
+                return vector.reshape((length, stride)).transpose(0, 1)[0]
+
+            def check(rows, columns, left_stride=1, right_stride=1):
+                actual = np.asarray(
+                    torch.outer(
+                        make_vector(torch, LEFT, rows, left_stride),
+                        make_vector(torch, RIGHT, columns, right_stride),
+                    )
+                ).view(np.uint32)
+                expected = reference_torch.outer(
+                    make_vector(reference_torch, LEFT, rows, left_stride),
+                    make_vector(reference_torch, RIGHT, columns, right_stride),
+                ).numpy().view(np.uint32)
+                if not np.array_equal(actual, expected):
+                    mismatch = np.flatnonzero(actual.reshape(-1) != expected.reshape(-1))
+                    raise AssertionError(
+                        (rows, columns, left_stride, right_stride, mismatch[:20].tolist())
+                    )
+
+            for width in range(1, 35):
+                check(1, width)
+                check(width, 1)
+            check(2, 19)
+            check(2, 19, right_stride=2)
+            check(19, 1, left_stride=2)
+            check(4_097, 17)
+            """
+        )
+        for capability in (None, "default"):
+            environment = os.environ.copy()
+            environment["OMP_NUM_THREADS"] = "3"
+            environment["MKL_NUM_THREADS"] = "3"
+            environment["PYTHONDONTWRITEBYTECODE"] = "1"
+            if capability is None:
+                environment.pop("ATEN_CPU_CAPABILITY", None)
+            else:
+                environment["ATEN_CPU_CAPABILITY"] = capability
+            completed = subprocess.run(
+                [sys.executable, "-c", script],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+            with self.subTest(capability=capability or "automatic"):
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+                )
 
     @staticmethod
     def make_autograd_inputs(module):

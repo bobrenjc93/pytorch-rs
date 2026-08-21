@@ -297,6 +297,9 @@ class OuterTests(unittest.TestCase):
             self.assertEqual(mode.calls, [])
 
     def test_rank_errors_and_concrete_out_rejection(self):
+        # The vector-only feature intentionally exposes PyTorch's signature
+        # while leaving concrete output destinations outside its supported
+        # subset. Rejection must happen without changing the destination.
         vector = torch.tensor([1.0, 2.0])
         rank_cases = (
             (

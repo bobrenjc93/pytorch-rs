@@ -16,9 +16,14 @@ const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
 #[cfg(feature = "python-bindings")]
+// PyTorch 2.13's x86 float32 binary loops consume two eight-float vectors.
 const PYTORCH_OUTER_VECTOR_BLOCK: usize = 16;
 #[cfg(feature = "python-bindings")]
+// The accelerated scalar fallback leaves at most three non-vectorized lanes.
 const PYTORCH_OUTER_SCALAR_TAIL_BLOCK: usize = 4;
+#[cfg(feature = "python-bindings")]
+// at::internal::GRAIN_SIZE, used by TensorIterator::for_each.
+const PYTORCH_TENSOR_ITERATOR_GRAIN_SIZE: usize = 32_768;
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -2208,44 +2213,50 @@ impl Tensor {
         let columns = other.shape[1];
         debug_assert_eq!(output.shape, [rows, columns]);
         debug_assert!(output.is_contiguous());
+        if !(0..rows).any(|row| self.value_at_linear_index(row).is_nan())
+            || !(0..columns).any(|column| other.value_at_linear_index(column).is_nan())
+        {
+            return Ok(output);
+        }
 
-        let right_tail = if columns > 1 && other.strides[1] == 1 {
-            outer_paired_nan_scalar_tail(columns)
+        let (inner_width, varying_is_contiguous, broadcast_operand) = if columns == 1 {
+            (rows, self.strides[0] == 1, OuterNanOperand::Right)
         } else {
-            0
+            (columns, other.strides[1] == 1, OuterNanOperand::Left)
         };
-        let left_tail = if columns == 1 && self.strides[0] == 1 {
-            outer_paired_nan_scalar_tail(rows)
-        } else {
-            0
-        };
+        let cpu_capability = pytorch_outer_cpu_capability();
         let output_values = Arc::get_mut(&mut output.storage)
             .and_then(Storage::owned_values_mut)
             .expect("outer multiplication must produce unique owned storage");
 
-        for row in 0..rows {
-            let left = self.value_at_linear_index(row);
-            if !left.is_nan() {
-                continue;
-            }
-            for column in 0..columns {
-                let right = other.value_at_linear_index(column);
-                if !right.is_nan() {
-                    continue;
+        for (range_start, range_end) in pytorch_outer_parallel_ranges(output.elements) {
+            let mut segment_start = range_start;
+            while segment_start < range_end {
+                let inner_offset = segment_start % inner_width;
+                let segment_elements = (inner_width - inner_offset).min(range_end - segment_start);
+                for lane in 0..segment_elements {
+                    let output_index = segment_start + lane;
+                    let row = output_index / columns;
+                    let column = output_index % columns;
+                    let left = self.value_at_linear_index(row);
+                    let right = other.value_at_linear_index(column);
+                    if left.is_nan() && right.is_nan() {
+                        let operand = pytorch_outer_paired_nan_operand(
+                            cpu_capability,
+                            varying_is_contiguous,
+                            broadcast_operand,
+                            segment_elements,
+                            lane,
+                        );
+                        let selected = match operand {
+                            OuterNanOperand::Left => left,
+                            OuterNanOperand::Right => right,
+                        };
+                        output_values[output_index] =
+                            f32::from_bits(selected.to_bits() | 0x0040_0000);
+                    }
                 }
-
-                // PyTorch's float32 TensorIterator multiplication uses its
-                // broadcast operand for vector lanes and its varying operand
-                // for the final scalar lanes. Arbitrary-stride loops select
-                // vec2 for every paired-NaN lane.
-                let select_right = if columns == 1 {
-                    self.strides[0] != 1 || row < rows - left_tail
-                } else {
-                    other.strides[1] != 1 || column >= columns - right_tail
-                };
-                let selected = if select_right { right } else { left };
-                output_values[row * columns + column] =
-                    f32::from_bits(selected.to_bits() | 0x0040_0000);
+                segment_start += segment_elements;
             }
         }
 
@@ -3339,15 +3350,131 @@ fn apply_binary_operation_scalar(
 }
 
 #[cfg(feature = "python-bindings")]
-const fn outer_paired_nan_scalar_tail(elements: usize) -> usize {
-    // PyTorch 2.13's dispatched CPU float32 loop handles two eight-lane
-    // vectors at a time. Its fallback loop consumes one lane before groups of
-    // four, leaving these final lanes with the opposite NaN operand priority.
+#[derive(Clone, Copy)]
+enum OuterCpuCapability {
+    Default,
+    Accelerated,
+}
+
+#[cfg(feature = "python-bindings")]
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum OuterNanOperand {
+    Left,
+    Right,
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_outer_cpu_capability() -> OuterCpuCapability {
+    if let Some(requested) = std::env::var_os("ATEN_CPU_CAPABILITY") {
+        let requested = requested.to_string_lossy();
+        if requested.eq_ignore_ascii_case("default") {
+            return OuterCpuCapability::Default;
+        }
+        if requested.eq_ignore_ascii_case("avx2") || requested.eq_ignore_ascii_case("avx512") {
+            return OuterCpuCapability::Accelerated;
+        }
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    if std::arch::is_x86_feature_detected!("avx2") {
+        return OuterCpuCapability::Accelerated;
+    }
+
+    OuterCpuCapability::Default
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_outer_parallel_ranges(elements: usize) -> impl Iterator<Item = (usize, usize)> {
+    // The PyTorch 2.13 wheel uses OpenMP's invoke_parallel partition: cap the
+    // number of tasks by the configured thread count, then ceil-divide the
+    // complete linear range evenly among those tasks.
+    let thread_limit = ["MKL_NUM_THREADS", "OMP_NUM_THREADS"]
+        .into_iter()
+        .find_map(|name| {
+            std::env::var(name).ok().and_then(|value| {
+                value
+                    .split(',')
+                    .next()
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+                    .filter(|threads| *threads > 0)
+            })
+        })
+        .unwrap_or(usize::MAX);
+    let tasks = if elements > PYTORCH_TENSOR_ITERATOR_GRAIN_SIZE && thread_limit > 1 {
+        elements
+            .div_ceil(PYTORCH_TENSOR_ITERATOR_GRAIN_SIZE)
+            .min(thread_limit)
+    } else {
+        1
+    };
+    let chunk_size = elements.div_ceil(tasks);
+    (0..tasks).filter_map(move |task| {
+        let start = task * chunk_size;
+        (start < elements).then(|| (start, (start + chunk_size).min(elements)))
+    })
+}
+
+#[cfg(feature = "python-bindings")]
+const fn pytorch_outer_accelerated_scalar_tail(elements: usize) -> usize {
     let vector_remainder = elements % PYTORCH_OUTER_VECTOR_BLOCK;
     if vector_remainder == 0 {
         0
     } else {
         (vector_remainder - 1) % PYTORCH_OUTER_SCALAR_TAIL_BLOCK
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+fn pytorch_outer_paired_nan_operand(
+    cpu_capability: OuterCpuCapability,
+    varying_is_contiguous: bool,
+    broadcast_operand: OuterNanOperand,
+    segment_elements: usize,
+    lane: usize,
+) -> OuterNanOperand {
+    if !varying_is_contiguous {
+        return OuterNanOperand::Right;
+    }
+
+    match cpu_capability {
+        OuterCpuCapability::Accelerated => {
+            if segment_elements == 1 {
+                return OuterNanOperand::Right;
+            }
+            let varying_operand = if broadcast_operand == OuterNanOperand::Left {
+                OuterNanOperand::Right
+            } else {
+                OuterNanOperand::Left
+            };
+            let scalar_tail = pytorch_outer_accelerated_scalar_tail(segment_elements);
+            if lane >= segment_elements - scalar_tail {
+                varying_operand
+            } else {
+                broadcast_operand
+            }
+        }
+        OuterCpuCapability::Default => {
+            // The portable Vec256 implementation evaluates each complete
+            // 16-element block in this fixed source order. Its scalar
+            // remainder consistently selects the semantic right operand.
+            let vector_elements =
+                segment_elements / PYTORCH_OUTER_VECTOR_BLOCK * PYTORCH_OUTER_VECTOR_BLOCK;
+            if lane >= vector_elements {
+                return OuterNanOperand::Right;
+            }
+            let block_lane = lane % PYTORCH_OUTER_VECTOR_BLOCK;
+            if broadcast_operand == OuterNanOperand::Left {
+                if block_lane == 3 || block_lane >= 8 {
+                    OuterNanOperand::Left
+                } else {
+                    OuterNanOperand::Right
+                }
+            } else if block_lane < 3 {
+                OuterNanOperand::Right
+            } else {
+                OuterNanOperand::Left
+            }
+        }
     }
 }
 
