@@ -169,7 +169,12 @@ class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
                 name
                 for name in expected_c10d.__all__
                 if name
-                in {"is_initialized", "is_mpi_available", "is_nccl_available"}
+                in {
+                    "is_gloo_available",
+                    "is_initialized",
+                    "is_mpi_available",
+                    "is_nccl_available",
+                }
             ],
         )
         self.assertEqual(
@@ -250,6 +255,7 @@ class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
             {
                 "distributed_c10d",
                 "is_available",
+                "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
@@ -259,7 +265,12 @@ class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
             {
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
-            {"is_initialized", "is_mpi_available", "is_nccl_available"},
+            {
+                "is_gloo_available",
+                "is_initialized",
+                "is_mpi_available",
+                "is_nccl_available",
+            },
         )
         unsupported = expected_public - actual_public
         self.assertTrue(unsupported)
@@ -293,8 +304,10 @@ class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(actual_c10d, "ProcessGroupMPI"))
         self.assertIs(actual_distributed.is_available(), False)
         self.assertIs(actual_distributed.is_initialized(), False)
+        self.assertIs(actual_distributed.is_gloo_available(), False)
         self.assertIs(actual_distributed.is_nccl_available(), False)
         self.assertIs(type(expected_distributed.is_available()), bool)
+        self.assertIs(type(expected_distributed.is_gloo_available()), bool)
         self.assertIs(type(expected_distributed.is_initialized()), bool)
         self.assertIs(type(expected_distributed.is_nccl_available()), bool)
 

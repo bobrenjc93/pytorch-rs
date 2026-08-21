@@ -148,6 +148,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
             {
                 "distributed_c10d",
                 "is_available",
+                "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
@@ -157,6 +158,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
 
         self.assertNotIn("distributed", torch.__all__)
         self.assertNotIn("is_available", torch.__all__)
+        self.assertNotIn("is_gloo_available", torch.__all__)
         self.assertNotIn("is_initialized", torch.__all__)
         self.assertNotIn("is_mpi_available", torch.__all__)
         self.assertNotIn("is_nccl_available", torch.__all__)
@@ -164,6 +166,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("distributed", top_level_namespace)
         self.assertNotIn("is_available", top_level_namespace)
+        self.assertNotIn("is_gloo_available", top_level_namespace)
         self.assertNotIn("is_initialized", top_level_namespace)
         self.assertNotIn("is_mpi_available", top_level_namespace)
         self.assertNotIn("is_nccl_available", top_level_namespace)
@@ -211,12 +214,14 @@ class DistributedIsAvailableTests(unittest.TestCase):
             {
                 "distributed_c10d",
                 "is_available",
+                "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
             },
         )
         self.assertFalse(hasattr(torch, "is_available"))
+        self.assertFalse(hasattr(torch, "is_gloo_available"))
         self.assertFalse(hasattr(torch, "is_initialized"))
         self.assertFalse(hasattr(torch, "is_mpi_available"))
         self.assertFalse(hasattr(torch, "is_nccl_available"))
