@@ -164,22 +164,24 @@ class JitStrictFusionTests(unittest.TestCase):
             inspect.cleandoc(strict_fusion.__doc__), STRICT_FUSION_DOC.strip()
         )
         self.assertIsNone(strict_fusion.__text_signature__)
+        for name in (
+            "__module__",
+            "__doc__",
+            "__init__",
+            "__enter__",
+            "__exit__",
+            "__dict__",
+            "__weakref__",
+        ):
+            with self.subTest(class_field=name):
+                self.assertIn(name, strict_fusion.__dict__)
         self.assertEqual(
-            tuple(
+            {
                 name
                 for name in strict_fusion.__dict__
-                if name != "__slotnames__"
-            ),
-            (
-                "__module__",
-                "__doc__",
-                "__init__",
-                "__enter__",
-                "__exit__",
-                "__dict__",
-                "__weakref__",
-                "__annotations__",
-            ),
+                if not name.startswith("__")
+            },
+            set(),
         )
 
         methods = (

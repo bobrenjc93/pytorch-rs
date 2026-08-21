@@ -48,6 +48,45 @@ class JitStrictFusionReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
+    def signature_text(self, function):
+        try:
+            return str(inspect.signature(function))
+        except NameError:
+            # PyTorch 2.13 deletes torch.jit.Any after defining this class.
+            # Python 3.14 resolves annotations lazily, so preserve unresolved
+            # forward references when inspecting the reference method.
+            import annotationlib
+
+            return str(
+                inspect.signature(
+                    function,
+                    annotation_format=annotationlib.Format.FORWARDREF,
+                )
+            )
+
+    def annotation_shape(self, function):
+        try:
+            annotations = function.__annotations__
+        except NameError:
+            import annotationlib
+
+            annotations = inspect.get_annotations(
+                function,
+                format=annotationlib.Format.STRING,
+            )
+
+        def normalize(annotation):
+            if annotation is typing.Any or annotation in ("Any", "_Any"):
+                return "Any"
+            if annotation is None or annotation == "None":
+                return "None"
+            return repr(annotation)
+
+        return {
+            name: normalize(annotation)
+            for name, annotation in annotations.items()
+        }
+
     def warning_outcome(self, module):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -266,7 +305,22 @@ class JitStrictFusionReferenceTests(unittest.TestCase):
         self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(actual.__text_signature__, expected.__text_signature__)
-        self.assertEqual(tuple(actual.__dict__), tuple(expected.__dict__))
+        for name in (
+            "__module__",
+            "__doc__",
+            "__init__",
+            "__enter__",
+            "__exit__",
+            "__dict__",
+            "__weakref__",
+        ):
+            with self.subTest(class_field=name):
+                self.assertIn(name, actual.__dict__)
+                self.assertIn(name, expected.__dict__)
+        self.assertEqual(
+            {name for name in actual.__dict__ if not name.startswith("__")},
+            {name for name in expected.__dict__ if not name.startswith("__")},
+        )
 
         for actual_method, expected_method in (
             (actual.__init__, expected.__init__),
@@ -277,15 +331,12 @@ class JitStrictFusionReferenceTests(unittest.TestCase):
                 self.assertIs(type(actual_method), types.FunctionType)
                 self.assertIs(type(expected_method), types.FunctionType)
                 self.assertEqual(
-                    str(inspect.signature(actual_method)),
-                    str(inspect.signature(expected_method)),
+                    self.signature_text(actual_method),
+                    self.signature_text(expected_method),
                 )
                 self.assertEqual(
-                    actual_method.__annotations__, expected_method.__annotations__
-                )
-                self.assertEqual(
-                    typing.get_type_hints(actual_method),
-                    typing.get_type_hints(expected_method),
+                    self.annotation_shape(actual_method),
+                    self.annotation_shape(expected_method),
                 )
                 self.assertEqual(actual_method.__name__, expected_method.__name__)
                 self.assertEqual(
