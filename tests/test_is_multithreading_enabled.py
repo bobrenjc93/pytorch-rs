@@ -214,8 +214,28 @@ class IsMultithreadingEnabledTests(unittest.TestCase):
                 "set_multithreading_enabled(): argument 'enabled' (position 1) must be bool, not NoneType",
             ),
             (
+                lambda: setter(enabled=None),
+                "set_multithreading_enabled(): argument 'enabled' must be bool, not NoneType",
+            ),
+            (
+                lambda: setter(enabled=None, unexpected=True),
+                "set_multithreading_enabled(): argument 'enabled' must be bool, not NoneType",
+            ),
+            (
+                lambda: setter(None, enabled=True),
+                "set_multithreading_enabled(): argument 'enabled' (position 1) must be bool, not NoneType",
+            ),
+            (
+                lambda: setter(None, unexpected=True),
+                "set_multithreading_enabled(): argument 'enabled' (position 1) must be bool, not NoneType",
+            ),
+            (
                 lambda: setter(1),
                 "set_multithreading_enabled(): argument 'enabled' (position 1) must be bool, not int",
+            ),
+            (
+                lambda: setter(enabled=1),
+                "set_multithreading_enabled(): argument 'enabled' must be bool, not int",
             ),
             (
                 lambda: setter(np.bool_(True)),

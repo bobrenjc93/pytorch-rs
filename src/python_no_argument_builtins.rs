@@ -90,46 +90,45 @@ fn set_multithreading_enabled(
         )));
     }
 
-    let mut enabled = if args.is_empty() {
-        None
+    let (enabled, is_positional) = if args.is_empty() {
+        let Some(enabled) = kwargs
+            .map(|values| values.get_item("enabled"))
+            .transpose()?
+            .flatten()
+        else {
+            return Err(PyTypeError::new_err(
+                "set_multithreading_enabled() missing 1 required positional arguments: \"enabled\"",
+            ));
+        };
+        (enabled, false)
     } else {
-        Some(args.get_item(0)?)
+        (args.get_item(0)?, true)
     };
-    let mut keyword_error = None;
+
+    let schema = if is_positional {
+        ArgumentSchema::new("set_multithreading_enabled", "enabled", 1, "bool")
+    } else {
+        ArgumentSchema::keyword("set_multithreading_enabled", "enabled", "bool")
+    };
+    let enabled = schema.parse_exact_bool(&enabled)?;
+
     if let Some(kwargs) = kwargs {
-        for (key, value) in kwargs {
+        for (key, _) in kwargs {
             let key = key.extract::<String>()?;
             if key == "enabled" {
-                if enabled.is_some() {
-                    keyword_error.get_or_insert_with(|| {
-                        PyTypeError::new_err(
-                            "set_multithreading_enabled() got multiple values for argument 'enabled'",
-                        )
-                    });
-                } else {
-                    enabled = Some(value);
+                if is_positional {
+                    return Err(PyTypeError::new_err(
+                        "set_multithreading_enabled() got multiple values for argument 'enabled'",
+                    ));
                 }
             } else {
-                keyword_error.get_or_insert_with(|| {
-                    PyTypeError::new_err(format!(
-                        "set_multithreading_enabled() got an unexpected keyword argument '{key}'"
-                    ))
-                });
+                return Err(PyTypeError::new_err(format!(
+                    "set_multithreading_enabled() got an unexpected keyword argument '{key}'"
+                )));
             }
         }
     }
 
-    let Some(enabled) = enabled else {
-        return Err(PyTypeError::new_err(
-            "set_multithreading_enabled() missing 1 required positional arguments: \"enabled\"",
-        ));
-    };
-    if let Some(error) = keyword_error {
-        return Err(error);
-    }
-
-    let enabled = ArgumentSchema::new("set_multithreading_enabled", "enabled", 1, "bool")
-        .parse_exact_bool(&enabled)?;
     core_set_multithreading_enabled(enabled);
     Ok(())
 }

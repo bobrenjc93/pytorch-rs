@@ -235,7 +235,21 @@ class IsMultithreadingEnabledReferenceTests(unittest.TestCase):
             ),
             (lambda: actual(foo=True), lambda: expected(foo=True)),
             (lambda: actual(None), lambda: expected(None)),
+            (lambda: actual(enabled=None), lambda: expected(enabled=None)),
+            (
+                lambda: actual(enabled=None, unexpected=True),
+                lambda: expected(enabled=None, unexpected=True),
+            ),
+            (
+                lambda: actual(None, enabled=True),
+                lambda: expected(None, enabled=True),
+            ),
+            (
+                lambda: actual(None, unexpected=True),
+                lambda: expected(None, unexpected=True),
+            ),
             (lambda: actual(1), lambda: expected(1)),
+            (lambda: actual(enabled=1), lambda: expected(enabled=1)),
             (lambda: actual(np.bool_(True)), lambda: expected(np.bool_(True))),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
