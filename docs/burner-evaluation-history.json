@@ -4625,6 +4625,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.7
       }
+    },
+    {
+      "key": "pr:555",
+      "recordedAt": "2026-08-21T13:02:41.304Z",
+      "label": "PR #555",
+      "kind": "leaf",
+      "prNumber": 555,
+      "title": "Add inference-only Tensor.sqrt",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 80.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 64.1,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.7
+      }
     }
   ]
 }
