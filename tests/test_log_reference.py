@@ -155,6 +155,37 @@ class TensorLogReferenceTests(unittest.TestCase):
                 actual_input.log(), expected_input.log(), case=(case, shape)
             )
 
+    def test_denormal_flush_mode_matches_pytorch_2_13_and_is_restored(self):
+        subnormal_bits = np.resize(
+            np.asarray(
+                (0x0000_0001, 0x8000_0001, 0x007F_FFFF, 0x807F_FFFF),
+                dtype=np.uint32,
+            ),
+            64,
+        )
+        values = memoryview(subnormal_bits.view(np.float32))
+
+        reference_torch.set_flush_denormal(False)
+        try:
+            self.assertTrue(reference_torch.set_flush_denormal(True))
+            actual_input = torch.tensor(values)
+            expected_input = reference_torch.tensor(values)
+            actual_output = actual_input.log()
+            expected_output = expected_input.log()
+        finally:
+            reference_torch.set_flush_denormal(False)
+
+        self.assert_tensor_matches(
+            actual_output,
+            expected_output,
+            case="denormal flushing",
+            exact_bits=True,
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_output).view(np.uint32),
+            np.full(subnormal_bits.shape, 0xFF80_0000, dtype=np.uint32),
+        )
+
     @staticmethod
     def error(action):
         try:
