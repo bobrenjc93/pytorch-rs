@@ -4705,6 +4705,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 91.2
       }
+    },
+    {
+      "key": "pr:575",
+      "recordedAt": "2026-08-21T17:27:14.246Z",
+      "label": "PR #575",
+      "kind": "leaf",
+      "prNumber": 575,
+      "title": "Expose read-only Tensor.data aliases",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 80.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 64.5,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 91.3
+      }
     }
   ]
 }
