@@ -17,6 +17,7 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 BuiltinUnionType: type | tuple[type, ...] = types.UnionType
+Final = typing.Final
 
 
 def is_scripting() -> bool:

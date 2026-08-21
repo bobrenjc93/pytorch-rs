@@ -194,7 +194,7 @@ class JitAttributeTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(jit) if not name.startswith("_")},
-            {*supported, "is_scripting", "is_tracing"},
+            {*supported, "Final", "is_scripting", "is_tracing"},
         )
         self.assertFalse(hasattr(script, "__all__"))
         self.assertEqual(
