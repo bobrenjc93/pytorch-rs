@@ -86,3 +86,30 @@ impl PyTensorBase {
         tensor.inner().shape()[axis].into_py_any(slf.py())
     }
 }
+
+#[pymethods]
+impl PyTensor {
+    /// Alias for [`Tensor.dim()`](https://pytorch.org/docs/stable/generated/torch.Tensor.dim.html).
+    #[getter]
+    fn ndim(&self) -> usize {
+        self.inner().shape().len()
+    }
+
+    /// Alias for [`Tensor.dim()`](https://pytorch.org/docs/stable/generated/torch.Tensor.dim.html).
+    #[pyo3(text_signature = None)]
+    fn ndimension(&self) -> usize {
+        self.inner().shape().len()
+    }
+
+    /// Alias for [`Tensor.numel()`](https://pytorch.org/docs/stable/generated/torch.Tensor.numel.html).
+    #[pyo3(text_signature = None)]
+    fn nelement(&self) -> usize {
+        self.inner().numel()
+    }
+
+    /// Returns the total number of elements in the tensor.
+    #[pyo3(text_signature = None)]
+    fn numel(&self) -> usize {
+        self.inner().numel()
+    }
+}
