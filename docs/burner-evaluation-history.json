@@ -4449,6 +4449,22 @@
         "eval_b4945d15": 98,
         "eval_c8a1bfb9": 90.6
       }
+    },
+    {
+      "key": "pr:505",
+      "recordedAt": "2026-08-21T03:47:22.886Z",
+      "label": "PR #505",
+      "kind": "leaf",
+      "prNumber": 505,
+      "title": "Expose torch.distributed.is_gloo_available",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 79.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 62.7,
+        "eval_b4945d15": 98,
+        "eval_c8a1bfb9": 90.6
+      }
     }
   ]
 }
