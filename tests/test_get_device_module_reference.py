@@ -119,8 +119,21 @@ class GetDeviceModuleReferenceTests(unittest.TestCase):
             str(inspect.signature(expected)),
         )
         self.assertEqual(
-            str(actual.__annotations__).replace("torch_rs", "torch"),
-            str(expected.__annotations__),
+            hasattr(actual, "__annotations__"),
+            hasattr(expected, "__annotations__"),
+        )
+        self.assertEqual(
+            hasattr(actual, "__annotate__"),
+            hasattr(expected, "__annotate__"),
+        )
+        if hasattr(actual, "__annotations__"):
+            self.assertEqual(
+                str(actual.__annotations__).replace("torch_rs", "torch"),
+                str(expected.__annotations__),
+            )
+        self.assertEqual(
+            str(inspect.get_annotations(actual)).replace("torch_rs", "torch"),
+            str(inspect.get_annotations(expected)),
         )
         self.assertEqual(
             str(typing.get_type_hints(actual)).replace("torch_rs", "torch"),
@@ -145,8 +158,10 @@ class GetDeviceModuleReferenceTests(unittest.TestCase):
             str(inspect.signature(expected.__wrapped__)),
         )
         self.assertEqual(
-            str(actual.__wrapped__.__annotations__).replace("torch_rs", "torch"),
-            str(expected.__wrapped__.__annotations__),
+            str(inspect.get_annotations(actual.__wrapped__)).replace(
+                "torch_rs", "torch"
+            ),
+            str(inspect.get_annotations(expected.__wrapped__)),
         )
         self.assertEqual(
             actual.__wrapped__.__defaults__, expected.__wrapped__.__defaults__

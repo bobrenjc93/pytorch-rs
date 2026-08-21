@@ -92,26 +92,32 @@ class GetDeviceModuleTests(unittest.TestCase):
             str(inspect.signature(function)),
             "(device: torch_rs.device | str | None = None)",
         )
-        self.assertEqual(
-            function.__annotations__,
-            {"device": torch.device | str | None},
-        )
+        expected_annotations = {"device": torch.device | str | None}
+        self.assertEqual(inspect.get_annotations(function), expected_annotations)
         self.assertEqual(
             typing.get_type_hints(function),
-            {"device": torch.device | str | None},
+            expected_annotations,
         )
+        if sys.version_info >= (3, 14):
+            self.assertFalse(hasattr(function, "__annotations__"))
+            self.assertTrue(hasattr(function, "__annotate__"))
+        else:
+            self.assertEqual(function.__annotations__, expected_annotations)
+            self.assertFalse(hasattr(function, "__annotate__"))
         self.assertEqual(function.__name__, "get_device_module")
         self.assertEqual(function.__qualname__, "get_device_module")
         self.assertEqual(function.__module__, "torch_rs")
         self.assertIs(inspect.getmodule(function), torch)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
+        )
         self.assertFalse(hasattr(function, "__defaults__"))
         self.assertFalse(hasattr(function, "__kwdefaults__"))
         self.assertFalse(hasattr(function, "__text_signature__"))
 
         self.assertIs(type(wrapped), types.FunctionType)
         self.assertEqual(inspect.signature(wrapped), inspect.signature(function))
-        self.assertEqual(wrapped.__annotations__, function.__annotations__)
+        self.assertEqual(inspect.get_annotations(wrapped), expected_annotations)
         self.assertEqual(wrapped.__defaults__, (None,))
         self.assertIsNone(wrapped.__kwdefaults__)
 
