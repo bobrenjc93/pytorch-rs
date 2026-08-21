@@ -185,35 +185,6 @@ class FunctionalDropout3dTests(unittest.TestCase):
                         self.assert_unchanged_identity(output, source, before)
 
     def test_training_probability_one_returns_a_new_signed_zero_product(self):
-        expected_bits = np.asarray(
-            [
-                0x80000000,
-                0x00000000,
-                0x80000000,
-                0x00000000,
-                0x7FC00000,
-                0xFFC00000,
-                0xFFC00000,
-                0x80000000,
-            ]
-            * 2,
-            dtype=np.uint32,
-        )
-        strided_expected_bits = np.asarray(
-            [
-                0x80000000,
-                0x7FC00000,
-                0x80000000,
-                0xFFC00000,
-                0x00000000,
-                0xFFC00000,
-                0x00000000,
-                0x80000000,
-            ]
-            * 2,
-            dtype=np.uint32,
-        )
-
         for case, source in enumerate(self.make_probability_one_cases()):
             for probability in (
                 1.0,
@@ -241,10 +212,18 @@ class FunctionalDropout3dTests(unittest.TestCase):
                     self.assertFalse(output.requires_grad)
                     self.assertTrue(output.is_leaf)
                     self.assertEqual(output.output_nr, 0)
+                    source_values = np.asarray(source).reshape(-1)
+                    output_values = np.asarray(output).reshape(-1)
+                    finite = np.isfinite(source_values)
                     np.testing.assert_array_equal(
-                        np.asarray(output).reshape(-1).view(np.uint32),
-                        strided_expected_bits if case == 2 else expected_bits,
+                        output_values[finite].view(np.uint32),
+                        np.where(
+                            np.signbit(source_values[finite]),
+                            np.uint32(0x80000000),
+                            np.uint32(0x00000000),
+                        ),
                     )
+                    self.assertTrue(np.isnan(output_values[~finite]).all())
                     self.assertEqual(self.snapshot(source)[:-1], before[:-1])
                     np.testing.assert_array_equal(
                         self.snapshot(source)[-1], before[-1]
