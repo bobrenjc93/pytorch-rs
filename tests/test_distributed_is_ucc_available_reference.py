@@ -2,7 +2,6 @@ import contextlib
 import copy
 import importlib
 import inspect
-import os
 import pickle
 import pickletools
 import sys
@@ -10,7 +9,6 @@ import threading
 import types
 import typing
 import unittest
-from unittest import mock
 
 import torch_rs as torch
 
@@ -21,12 +19,13 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedGetPgCountReferenceTests(unittest.TestCase):
+class DistributedIsUccAvailableReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.get_pg_count differentials require pinned PyTorch 2.13.0"
+                "distributed.is_ucc_available differentials require pinned "
+                "PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -39,7 +38,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def threaded_outcome(self, module):
-        function = module.distributed.get_pg_count
+        function = module.distributed.is_ucc_available
         baseline = function()
         worker_count = 8
         barrier = threading.Barrier(worker_count)
@@ -51,14 +50,12 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 context = module.no_grad() if index % 2 else contextlib.nullcontext()
                 with context:
                     barrier.wait(timeout=10)
-                    first = function()
-                    second = function()
                     worker_states[index] = (
                         module.is_grad_enabled(),
-                        type(first).__name__,
-                        first,
-                        type(second).__name__,
-                        second,
+                        function(),
+                        module.is_grad_enabled(),
+                        function(),
+                        module.is_grad_enabled(),
                     )
             except BaseException as error:
                 errors.append((type(error).__name__, str(error)))
@@ -74,7 +71,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
 
         self.assertFalse(any(thread.is_alive() for thread in threads))
         self.assertEqual(errors, [])
-        return type(baseline).__name__, baseline, worker_states
+        return baseline, worker_states
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -88,41 +85,27 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_uninitialized_count_matches_across_environments_and_threads(self):
-        actual = torch.distributed.get_pg_count
-        expected = reference_torch.distributed.get_pg_count
-        expected_c10d = importlib.import_module(
-            "torch.distributed.distributed_c10d"
-        )
+    def test_false_is_stable_while_reference_capability_varies_by_build(self):
+        actual_baseline, actual_workers = self.threaded_outcome(torch)
+        expected_baseline, expected_workers = self.threaded_outcome(reference_torch)
 
-        self.assertEqual(expected_c10d._world.group_count, 0)
-        environments = (
-            {},
-            {"USE_DISTRIBUTED": "0"},
-            {"USE_DISTRIBUTED": "1"},
-            {
-                "CUDA_VISIBLE_DEVICES": "0",
-                "MASTER_ADDR": "127.0.0.1",
-                "MASTER_PORT": "29500",
-                "RANK": "0",
-                "WORLD_SIZE": "1",
-            },
-        )
-        for environment in environments:
-            with self.subTest(environment=environment):
-                with mock.patch.dict(os.environ, environment, clear=True):
-                    actual_result = actual()
-                    expected_result = expected()
-                    self.assertIs(type(actual_result), int)
-                    self.assertIs(type(expected_result), int)
-                    self.assertEqual(actual_result, 0)
-                    self.assertEqual(actual_result, expected_result)
+        self.assertIs(actual_baseline, False)
+        self.assertIs(type(expected_baseline), bool)
+        for baseline, worker_states in (
+            (actual_baseline, actual_workers),
+            (expected_baseline, expected_workers),
+        ):
+            self.assertIs(type(baseline), bool)
+            for index, state in enumerate(worker_states):
+                expected_grad_state = index % 2 == 0
+                self.assertIs(state[0], expected_grad_state)
+                self.assertIs(state[1], baseline)
+                self.assertIs(state[2], expected_grad_state)
+                self.assertIs(state[3], baseline)
+                self.assertIs(state[4], expected_grad_state)
 
-        self.assertEqual(
-            self.threaded_outcome(torch),
-            self.threaded_outcome(reference_torch),
-        )
-        self.assertEqual(expected_c10d._world.group_count, 0)
+        self.assertIs(torch.distributed.is_initialized(), False)
+        self.assertIs(reference_torch.distributed.is_initialized(), False)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_distributed = importlib.import_module("torch_rs.distributed")
@@ -133,15 +116,15 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
-        actual = actual_distributed.get_pg_count
-        expected = expected_distributed.get_pg_count
+        actual = actual_distributed.is_ucc_available
+        expected = expected_distributed.is_ucc_available
 
         self.assertIs(torch.distributed, actual_distributed)
         self.assertIs(reference_torch.distributed, expected_distributed)
         self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
         self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-        self.assertIs(actual_c10d.get_pg_count, actual)
-        self.assertIs(expected_c10d.get_pg_count, expected)
+        self.assertIs(actual_c10d.is_ucc_available, actual)
+        self.assertIs(expected_c10d.is_ucc_available, expected)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -170,8 +153,8 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.get_pg_count
-        expected = expected_distributed.get_pg_count
+        actual = actual_distributed.is_ucc_available
+        expected = expected_distributed.is_ucc_available
 
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"], actual_c10d
@@ -204,8 +187,8 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("distributed"),
         )
         self.assertEqual(
-            torch.__all__.count("get_pg_count"),
-            reference_torch.__all__.count("get_pg_count"),
+            torch.__all__.count("is_ucc_available"),
+            reference_torch.__all__.count("is_ucc_available"),
         )
 
         for module, function in (
@@ -216,7 +199,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["get_pg_count"], function)
+            self.assertIs(namespace["is_ucc_available"], function)
 
         actual_namespace = {}
         expected_namespace = {}
@@ -229,7 +212,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("distributed", namespace)
-            self.assertNotIn("get_pg_count", namespace)
+            self.assertNotIn("is_ucc_available", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -245,8 +228,8 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.get_pg_count
-        expected = reference_torch.distributed.get_pg_count
+        actual = torch.distributed.is_ucc_available
+        expected = reference_torch.distributed.is_ucc_available
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
@@ -260,7 +243,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_existing_queries_are_preserved_and_execution_remains_unsupported(self):
+    def test_ucc_execution_and_other_distributed_apis_remain_unsupported(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
@@ -298,20 +281,6 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 "is_ucc_available",
             },
         )
-        for name in (
-            "is_available",
-            "is_gloo_available",
-            "is_initialized",
-            "is_mpi_available",
-            "is_nccl_available",
-            "is_ucc_available",
-        ):
-            with self.subTest(name=name):
-                self.assertIs(getattr(actual_distributed, name)(), False)
-                self.assertIs(
-                    type(getattr(expected_distributed, name)()), bool
-                )
-
         unsupported = expected_public - actual_public
         self.assertTrue(unsupported)
         for name in unsupported:
@@ -319,6 +288,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 self.assertFalse(hasattr(actual_distributed, name))
 
         for name in (
+            "Backend",
             "GroupMember",
             "ProcessGroup",
             "all_reduce",
@@ -330,9 +300,18 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertTrue(hasattr(expected_distributed, name))
-                self.assertTrue(hasattr(expected_c10d, name))
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
+
+        expected_ucc_available = expected_distributed.is_ucc_available()
+        self.assertIs(type(expected_ucc_available), bool)
+        if expected_ucc_available:
+            self.assertTrue(hasattr(expected_distributed, "ProcessGroupUCC"))
+            self.assertTrue(hasattr(expected_c10d, "ProcessGroupUCC"))
+        self.assertFalse(hasattr(actual_distributed, "ProcessGroupUCC"))
+        self.assertFalse(hasattr(actual_c10d, "ProcessGroupUCC"))
+        self.assertIs(actual_distributed.is_initialized(), False)
+        self.assertIs(expected_distributed.is_initialized(), False)
 
 
 if __name__ == "__main__":

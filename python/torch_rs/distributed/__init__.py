@@ -17,3 +17,4 @@ from .distributed_c10d import is_gloo_available as is_gloo_available
 from .distributed_c10d import is_initialized as is_initialized
 from .distributed_c10d import is_mpi_available as is_mpi_available
 from .distributed_c10d import is_nccl_available as is_nccl_available
+from .distributed_c10d import is_ucc_available as is_ucc_available
