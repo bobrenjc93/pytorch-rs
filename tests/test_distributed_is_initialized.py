@@ -142,6 +142,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "get_node_local_rank",
             ],
         )
 
@@ -177,6 +178,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "get_node_local_rank",
             },
         )
         self.assertIs(distributed_namespace["is_initialized"], function)
@@ -198,6 +200,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "get_node_local_rank",
             },
         )
         self.assertIs(owner_namespace["is_initialized"], function)
@@ -269,6 +272,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "get_node_local_rank",
             },
         )
         self.assertEqual(
@@ -284,6 +288,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 "is_mpi_available",
                 "is_nccl_available",
                 "is_ucc_available",
+                "get_node_local_rank",
             },
         )
         self.assertFalse(hasattr(torch, "get_pg_count"))
