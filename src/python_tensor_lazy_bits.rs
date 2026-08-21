@@ -9,6 +9,25 @@ use crate::python::{PyTensor, PyTensorBase, dispatch_tensorbase_no_argument_mode
 impl PyTensorBase {
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nconj() -> Tensor\n\nSee :func:`torch.conj`\n"]
+    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
+    // derives `($self, /)` from that descriptor shape, while older runtimes
+    // leave `__text_signature__` unset; PyTorch follows the same split.
+    #[pyo3(text_signature = None)]
+    fn conj(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "conj")? {
+            return Ok(result);
+        }
+
+        // Float32 is real-valued and the native tensor model has no conjugate
+        // views. Conjugation is therefore the exact receiver, preserving all
+        // storage, view, and autograd state without recording a new operation.
+        Ok(tensor.clone().unbind().into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nis_conj() -> bool\n\nReturns True if the conjugate bit of :attr:`self` is set to true.\n"]
     // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
     // derives `($self, /)` from that descriptor shape, while older runtimes
