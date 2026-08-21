@@ -103,6 +103,19 @@ class OuterReferenceTests(unittest.TestCase):
                     case=(name, form),
                 )
 
+    def test_paired_nan_prefers_vec2_payload_like_pytorch_2_13(self):
+        left_bits = np.asarray((0x7FC1_2345,), dtype=np.uint32)
+        right_bits = np.asarray((0xFFC5_4321,), dtype=np.uint32)
+        actual = torch.outer(
+            torch.tensor(memoryview(left_bits.view(np.float32))),
+            torch.tensor(memoryview(right_bits.view(np.float32))),
+        )
+        expected = reference_torch.outer(
+            reference_torch.tensor(memoryview(left_bits.view(np.float32))),
+            reference_torch.tensor(memoryview(right_bits.view(np.float32))),
+        )
+        self.assert_matches(actual, expected, case="paired NaN payload precedence")
+
     @staticmethod
     def make_autograd_inputs(module):
         left_leaf = module.tensor(

@@ -3313,7 +3313,12 @@ fn apply_top_level_outer(py: Python<'_>, call: &BoundOuterCall<'_>) -> PyResult<
         .inner
         .reshape([1, columns])
         .map_err(|error| tensor_error(&error))?;
-    let output = left.mul(&right).map_err(|error| tensor_error(&error))?;
+    // Native scalar multiplication preserves its left operand's payload when
+    // both values are NaNs, while PyTorch's outer product preserves vec2's.
+    // Multiplication and broadcasting are symmetric here, so reversing the
+    // internal operands matches that payload precedence without changing the
+    // result shape or its contiguous layout.
+    let output = right.mul(&left).map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }
 

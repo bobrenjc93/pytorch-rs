@@ -104,6 +104,17 @@ class OuterTests(unittest.TestCase):
                 self.assertEqual(actual.storage_offset(), 0)
                 self.assertTrue(actual.is_contiguous())
 
+        paired_nan_left = torch.tensor(
+            memoryview(np.asarray((0x7FC1_2345,), dtype=np.uint32).view(np.float32))
+        )
+        paired_nan_right = torch.tensor(
+            memoryview(np.asarray((0xFFC5_4321,), dtype=np.uint32).view(np.float32))
+        )
+        np.testing.assert_array_equal(
+            np.asarray(torch.outer(paired_nan_left, paired_nan_right)).view(np.uint32),
+            np.asarray(((0xFFC5_4321,),), dtype=np.uint32),
+        )
+
     def test_autograd_shared_operands_empty_vectors_and_no_grad(self):
         actual_left_leaf = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
