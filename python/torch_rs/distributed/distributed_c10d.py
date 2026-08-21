@@ -6,6 +6,7 @@ __all__ = [
     "is_initialized",
     "is_mpi_available",
     "is_nccl_available",
+    "is_ucc_available",
 ]
 
 
@@ -34,4 +35,9 @@ def is_mpi_available() -> bool:
 
 def is_nccl_available() -> bool:
     """Check if the NCCL backend is available."""
+    return False
+
+
+def is_ucc_available() -> bool:
+    """Check if the UCC backend is available."""
     return False

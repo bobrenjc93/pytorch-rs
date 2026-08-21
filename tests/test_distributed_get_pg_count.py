@@ -144,6 +144,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             ],
         )
 
@@ -178,6 +179,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         self.assertIs(distributed_namespace["get_pg_count"], function)
@@ -198,6 +200,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         self.assertIs(owner_namespace["get_pg_count"], function)
@@ -265,6 +268,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         self.assertEqual(
@@ -279,6 +283,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_initialized",
                 "is_mpi_available",
                 "is_nccl_available",
+                "is_ucc_available",
             },
         )
         for name in (
