@@ -1343,6 +1343,14 @@ pub(crate) fn exp_variable_function(
     unary_out_variable_function(UnaryOutOperation::EXP, py, args, kwargs)
 }
 
+pub(crate) fn neg_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::NEG, py, args, kwargs)
+}
+
 pub(crate) fn sin_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1715,6 +1723,15 @@ struct UnaryOutOperation {
 }
 
 impl UnaryOutOperation {
+    const NEG: Self = Self {
+        name: "neg",
+        qualified_name: "torch.neg",
+        dispatch_allocation_error: "unable to allocate neg dispatch operands",
+        out_unsupported_error: "neg(): the 'out' argument is not supported",
+        autograd_unsupported_error: None,
+        apply: CoreTensor::negate,
+    };
+
     const EXP: Self = Self {
         name: "exp",
         qualified_name: "torch.exp",
