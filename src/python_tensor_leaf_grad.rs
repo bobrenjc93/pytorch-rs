@@ -1,8 +1,39 @@
 //! Python leaf-gradient descriptors for native tensors.
 
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
-use crate::{python::PyTensor, python_tensor_errors::tensor_error};
+use crate::{
+    python::{PyTensor, PyTensorBase, dispatch_tensorbase_getset_mode},
+    python_dtype::dtype_object,
+    python_tensor_errors::tensor_error,
+};
+
+#[pymethods]
+impl PyTensorBase {
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nThe allowed dtype of :attr:``grad`` for this tensor.\n\n:attr:``grad_dtype`` can be set to a specific dtype or ``None``. By default,\n``t.grad_dtype == t.dtype``. When not None, the autograd engine casts\nincoming gradients to this dtype. This attribute is only accessible and\nsettable for leaf tensors.\n\n.. warning::\n    Use with caution. Diverging the dtypes of a tensor and its gradient may\n    break downstream systems that assume they match.\n\nExample::\n\n    >>> x = torch.tensor([1.0, 2.0], requires_grad=True)\n    >>> x.grad_dtype\n    torch.float32\n\n    >>> x.grad_dtype = torch.float16\n    >>> x.grad_dtype\n    torch.float16\n\n    >>> # Allow any gradient dtype\n    >>> x.grad_dtype = None\n    >>> x.grad_dtype\n"]
+    #[getter]
+    fn grad_dtype(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_getset_mode(slf.py(), tensor, "grad_dtype")? {
+            return Ok(result);
+        }
+
+        let dtype = {
+            let tensor = tensor.try_borrow()?;
+            if !tensor.inner().is_leaf() {
+                return Err(PyRuntimeError::new_err(
+                    "grad_dtype can only be accessed on leaf tensors.",
+                ));
+            }
+            tensor.inner().dtype()
+        };
+        Ok(dtype_object(slf.py(), dtype)?
+            .clone_ref(slf.py())
+            .into_any())
+    }
+}
 
 #[pymethods]
 impl PyTensor {
