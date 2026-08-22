@@ -189,6 +189,33 @@ class TopLevelAddTests(unittest.TestCase):
                 torch.add(tensor, [])
         self.assertEqual(invalid.calls, [])
 
+    def test_multi_operand_overrides_deduplicate_before_precedence_ordering(self):
+        events = []
+
+        class Base:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("base", func, types, args, kwargs))
+                return "base result"
+
+        class Derived(Base):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("derived", func, types, args, kwargs))
+                return "derived result"
+
+        result = torch.add(Base(), Derived, alpha=Derived())
+
+        self.assertEqual(result, "base result")
+        self.assertEqual(len(events), 1)
+        label, function, dispatch_types, args, kwargs = events[0]
+        self.assertEqual(label, "base")
+        self.assertIs(function, torch.add)
+        self.assertEqual(dispatch_types, (Base, Derived))
+        self.assertIsInstance(args[0], Base)
+        self.assertIs(args[1], Derived)
+        self.assertIsInstance(kwargs["alpha"], Derived)
+
     def test_metadata_errors_and_native_scope(self):
         tensor = torch.tensor([1.0])
         other = torch.tensor([2.0])

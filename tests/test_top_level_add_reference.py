@@ -225,6 +225,46 @@ class TopLevelAddReferenceTests(unittest.TestCase):
             self.dispatch_observation(reference_torch),
         )
 
+    def multi_operand_override_observation(self, module):
+        events = []
+
+        class Base:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        "base",
+                        func is module.add,
+                        tuple(item.__name__ for item in types),
+                        len(args),
+                        None if kwargs is None else tuple(kwargs),
+                    )
+                )
+                return "base result"
+
+        class Derived(Base):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        "derived",
+                        func is module.add,
+                        tuple(item.__name__ for item in types),
+                        len(args),
+                        None if kwargs is None else tuple(kwargs),
+                    )
+                )
+                return "derived result"
+
+        result = module.add(Base(), Derived, alpha=Derived())
+        return result, events
+
+    def test_multi_operand_override_deduplication_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.multi_operand_override_observation(torch),
+            self.multi_operand_override_observation(reference_torch),
+        )
+
     def test_binding_and_conversion_errors_match_pytorch_2_13(self):
         actual = torch.tensor([1.0])
         expected = reference_torch.tensor([1.0])

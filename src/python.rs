@@ -3176,15 +3176,23 @@ fn insert_ordered_override<'py>(
     overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
     probed: &ProbedTorchFunctionOverride<'py>,
 ) -> PyResult<()> {
+    // Check the complete set before precedence insertion. A class-valued
+    // operand is reported as the class itself but ordered by its metaclass, so
+    // a later instance of that class can otherwise be inserted before an
+    // earlier equivalent entry and leave both in the dispatch list.
+    if overrides
+        .iter()
+        .any(|existing| existing.dispatch_type.is(probed.precedence_type.as_any()))
+    {
+        return Ok(());
+    }
+
     for (index, existing) in overrides.iter().enumerate() {
         // PyTorch reports a class-valued operand itself in the dispatch types,
         // but orders an incoming operand by its runtime type. Its metaclass is
         // therefore compared with the reported class, preserving class
         // argument order and repeated class identities without changing
         // ordinary instance subclass precedence.
-        if existing.dispatch_type.is(probed.precedence_type.as_any()) {
-            return Ok(());
-        }
         let existing_type = existing
             .dispatch_type
             .cast::<PyType>()
