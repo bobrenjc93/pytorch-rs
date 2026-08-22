@@ -718,6 +718,27 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nreciprocal() -> Tensor\n\nSee :func:`torch.reciprocal`\n"]
+    #[pyo3(text_signature = None)]
+    fn reciprocal(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "reciprocal")?
+        {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor
+                .inner
+                .reciprocal()
+                .map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\npositive() -> Tensor\n\nSee :func:`torch.positive`\n"]
     #[pyo3(text_signature = None)]
     fn positive(slf: &Bound<'_, Self>) -> PyResult<Py<PyTensor>> {
@@ -1783,8 +1804,8 @@ impl UnaryOutOperation {
         qualified_name: "torch.reciprocal",
         dispatch_allocation_error: "unable to allocate reciprocal dispatch operands",
         out_unsupported_error: "reciprocal(): the 'out' argument is not supported",
-        autograd_unsupported_error: Some("reciprocal(): autograd recording is not supported"),
-        apply: apply_reciprocal,
+        autograd_unsupported_error: None,
+        apply: CoreTensor::reciprocal,
     };
 
     const SIN: Self = Self {
@@ -1804,10 +1825,6 @@ impl UnaryOutOperation {
         autograd_unsupported_error: None,
         apply: CoreTensor::sqrt,
     };
-}
-
-fn apply_reciprocal(tensor: &CoreTensor) -> Result<CoreTensor, TensorError> {
-    tensor.scalar_div_with_unary_layout(1.0)
 }
 
 struct BoundUnaryOutCall<'py> {
@@ -2060,7 +2077,7 @@ fn dispatch_tensorbase_mode(
     let legacy_no_argument_method = cpython_compat::uses_legacy_tensorbase_redispatch(py)
         && matches!(
             target,
-            TensorBaseModeTarget::Method("const_data_ptr" | "sqrt")
+            TensorBaseModeTarget::Method("const_data_ptr" | "reciprocal" | "sqrt")
         );
     if legacy_no_argument_method {
         cpython_compat::probe_tensorbase_legacy_redispatch(py)?;

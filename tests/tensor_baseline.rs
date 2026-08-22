@@ -691,6 +691,113 @@ fn exponential_handles_empty_shapes_and_reports_metadata_overflow() {
 }
 
 #[test]
+fn reciprocal_preserves_ieee_bits_layouts_and_fresh_storage() {
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0001,
+        0x8000_0001,
+        0x0080_0000,
+        0x8080_0000,
+        0x3eaa_aaab,
+        0xbeaa_aaab,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x7f7f_ffff,
+        0xff7f_ffff,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7f81_2345,
+        0xff81_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let expected_bits = [
+        0x7f80_0000,
+        0xff80_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7e80_0000,
+        0xfe80_0000,
+        0x4040_0000,
+        0xc040_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0020_0000,
+        0x8020_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x7fc1_2345,
+        0xffc1_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let special =
+        Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()]).unwrap();
+    let special_output = special.reciprocal().unwrap();
+    assert!(
+        special_output
+            .logical_values()
+            .map(f32::to_bits)
+            .eq(expected_bits)
+    );
+    assert!(!special_output.shares_storage_with(&special));
+
+    let base = Tensor::from_vec((1_u8..=24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let strided = base.transpose(0, 2).unwrap();
+    let strided_output = strided.reciprocal().unwrap();
+    assert_eq!(strided_output.shape(), strided.shape());
+    assert_eq!(strided_output.stride(), strided.stride());
+    assert_eq!(strided_output.storage_offset(), 0);
+    assert!(!strided_output.shares_storage_with(&strided));
+
+    let channels_last = Tensor::ones([2, 3, 4, 5])
+        .unwrap()
+        .try_clone_with_memory_format(MemoryFormat::ChannelsLast)
+        .unwrap();
+    let channels_last_output = channels_last.reciprocal().unwrap();
+    assert_eq!(channels_last_output.stride(), channels_last.stride());
+    assert!(channels_last_output.is_contiguous_with_memory_format(MemoryFormat::ChannelsLast));
+    assert!(!channels_last_output.shares_storage_with(&channels_last));
+
+    let empty = Tensor::zeros([1, 0, 1]).unwrap();
+    let empty_output = empty.reciprocal().unwrap();
+    assert_eq!(empty_output.shape(), empty.shape());
+    assert_eq!(empty_output.stride(), [1, 1, 1]);
+    assert_eq!(empty_output.storage_offset(), 0);
+    assert!(!empty_output.shares_storage_with(&empty));
+}
+
+#[test]
+fn reciprocal_rejects_grad_recording_before_layout_planning() {
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(
+        extreme.reciprocal(),
+        Err(TensorError::AutogradRecordingUnsupported {
+            operation: "reciprocal"
+        })
+    );
+
+    let _guard = pytorch_rs::no_grad();
+    assert_eq!(
+        extreme.reciprocal(),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+
+    let ordinary = Tensor::from_vec(vec![2.0, -4.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let output = ordinary.reciprocal().unwrap();
+    assert_eq!(output.as_slice(), [0.5, -0.25]);
+    assert!(!output.requires_grad());
+    assert!(output.is_leaf());
+}
+
+#[test]
 fn binary_arithmetic_broadcasts_mixed_ranks_and_singleton_dimensions() {
     let left = Tensor::from_vec(vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0], [2, 1, 3]).unwrap();
     let right = Tensor::from_vec(vec![1.0, 2.0, 4.0], [3, 1]).unwrap();

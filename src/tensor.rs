@@ -2339,20 +2339,27 @@ impl Tensor {
         self.scalar_div_with_output_layout(scalar, shape, strides)
     }
 
-    /// Divides a scalar by every element while using unary output layout planning.
+    /// Computes the reciprocal of every element.
     ///
-    /// This is the numerical path for top-level `torch.reciprocal`; reflected
-    /// scalar division retains its additional binary layout-planning pass.
+    /// This operation is inference-only until its backward formula is
+    /// implemented. Calls which would record an autograd edge fail before any
+    /// result metadata or storage is allocated; [`crate::no_grad`] permits the
+    /// operation on tensors which otherwise require gradients.
     ///
     /// # Errors
     ///
-    /// Returns an error when result metadata or storage allocation fails.
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn scalar_div_with_unary_layout(&self, scalar: f32) -> Result<Self, TensorError> {
+    /// Returns an error when autograd recording would be required, or when
+    /// result metadata or storage allocation fails.
+    pub fn reciprocal(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported {
+                operation: "reciprocal",
+            });
+        }
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = self.unary_output_strides(&shape, elements)?;
-        self.scalar_div_with_output_layout(scalar, shape, strides)
+        self.scalar_div_with_output_layout(1.0, shape, strides)
     }
 
     fn scalar_div_with_output_layout(
@@ -5549,6 +5556,10 @@ mod tests {
 
         assert_eq!(
             tensor.exp(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.reciprocal(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(

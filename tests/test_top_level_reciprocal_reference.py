@@ -475,7 +475,7 @@ class TopLevelReciprocalReferenceTests(unittest.TestCase):
             torch.reciprocal(torch.tensor([2.0]), out=destination)
         self.assertEqual(destination.tolist(), [17.0])
 
-        self.assertFalse(hasattr(torch.Tensor, "reciprocal"))
+        self.assertTrue(hasattr(torch.Tensor, "reciprocal"))
         self.assertFalse(hasattr(torch.Tensor, "reciprocal_"))
         self.assertTrue(hasattr(reference_torch.Tensor, "reciprocal"))
         self.assertTrue(hasattr(reference_torch.Tensor, "reciprocal_"))
