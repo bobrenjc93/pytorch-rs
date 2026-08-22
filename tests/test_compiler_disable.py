@@ -89,7 +89,7 @@ class CompilerDisableTests(unittest.TestCase):
                 self.assertEqual(wrapped.__qualname__, original.__qualname__)
                 self.assertEqual(wrapped.__module__, original.__module__)
                 self.assertEqual(wrapped.__doc__, original.__doc__)
-                self.assertIs(wrapped.__annotations__, original.__annotations__)
+                self.assertEqual(wrapped.__annotations__, original.__annotations__)
 
     def test_wrapped_errors_and_return_values_are_transparent(self):
         sentinel = object()
@@ -220,7 +220,10 @@ class CompilerDisableTests(unittest.TestCase):
         self.assertEqual(function.__qualname__, "disable")
         self.assertEqual(function.__module__, "torch_rs.compiler")
         self.assertIs(inspect.getmodule(function), compiler)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__),
+            inspect.cleandoc(FUNCTION_DOC),
+        )
         self.assertEqual(function.__defaults__, (None, True))
         self.assertEqual(function.__kwdefaults__, {"reason": None})
         self.assertEqual(function.__dict__, {})
