@@ -38,6 +38,16 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         signed_zero = torch.tensor([-0.0])[:]
         self.assertEqual(np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000)
 
+    def test_singleton_full_slice_tuple_returns_a_distinct_exact_metadata_alias(self):
+        index = (slice(None),)
+        for case, source in self.layout_cases():
+            with self.subTest(case=case):
+                alias = source[index]
+                self.assert_metadata_alias(source, alias)
+
+        signed_zero = torch.tensor([-0.0])[index]
+        self.assertEqual(np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000)
+
     def test_scalar_full_slice_raises_the_exact_pytorch_error(self):
         with self.assertRaises(IndexError) as raised:
             torch.tensor(-0.0)[:]
@@ -46,9 +56,19 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             "slice() cannot be applied to a 0-dim tensor.",
         )
 
-    def test_slice_autograd_gradient_node_and_no_grad_leaf_status(self):
+    def test_scalar_singleton_full_slice_tuple_raises_too_many_indices(self):
+        with self.assertRaises(IndexError) as raised:
+            torch.tensor(-0.0)[(slice(None),)]
+        self.assertEqual(
+            str(raised.exception),
+            "too many indices for tensor of dimension 0",
+        )
+
+    def assert_autograd_gradient_node_and_no_grad_leaf_status(
+        self, index, node_name
+    ):
         leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
-        alias = leaf[:]
+        alias = leaf[index]
         self.assert_metadata_alias(leaf, alias)
         self.assertTrue(alias.requires_grad)
         self.assertFalse(alias.is_leaf)
@@ -60,10 +80,10 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError,
             r"^dropout probability has to be between 0 and 1, but got "
-            r"tensor\(\[2\.\], grad_fn=<SliceBackward0>\)$",
+            rf"tensor\(\[2\.\], grad_fn=<{node_name}>\)$",
         ):
             torch.nn.functional.dropout(
-                None, p=diagnostic_leaf[:], training=False
+                None, p=diagnostic_leaf[index], training=False
             )
 
         no_grad_leaf = torch.tensor(
@@ -71,18 +91,28 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         )
         no_grad_source = no_grad_leaf.transpose(0, 1)
         with torch.no_grad():
-            no_grad_alias = no_grad_source[:]
+            no_grad_alias = no_grad_source[index]
         self.assert_metadata_alias(no_grad_source, no_grad_alias)
         self.assertTrue(no_grad_alias.requires_grad)
         self.assertTrue(no_grad_alias.is_leaf)
         self.assertIsNone(no_grad_leaf.grad)
 
-    def test_slice_storage_and_autograd_survive_source_lifetime(self):
+    def test_slice_autograd_gradient_node_and_no_grad_leaf_status(self):
+        self.assert_autograd_gradient_node_and_no_grad_leaf_status(
+            slice(None), "SliceBackward0"
+        )
+
+    def test_singleton_full_slice_tuple_uses_alias_autograd_semantics(self):
+        self.assert_autograd_gradient_node_and_no_grad_leaf_status(
+            (slice(None),), "AliasBackward0"
+        )
+
+    def assert_storage_and_autograd_survive_source_lifetime(self, index):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
 
         def retained_view():
             source = torch.tensor(values.tolist()).transpose(0, 2)[1]
-            return source[:]
+            return source[index]
 
         surviving = retained_view()
         gc.collect()
@@ -95,7 +125,7 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         def retained_autograd_view():
             source = (leaf * 2.0).transpose(0, 2)[1]
-            return source[:]
+            return source[index]
 
         tracked = retained_autograd_view()
         gc.collect()
@@ -105,7 +135,13 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         expected[:, :, 1] = 2.0 * np.asarray(weights).T
         np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
 
-    def test_full_slice_dispatches_through_tensorbase_mode_before_indexing(self):
+    def test_slice_storage_and_autograd_survive_source_lifetime(self):
+        self.assert_storage_and_autograd_survive_source_lifetime(slice(None))
+
+    def test_singleton_full_slice_tuple_survives_source_lifetime(self):
+        self.assert_storage_and_autograd_survive_source_lifetime((slice(None),))
+
+    def assert_dispatches_through_tensorbase_mode_before_indexing(self, index):
         source = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
         marker = object()
 
@@ -125,7 +161,6 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                 )
                 return marker
 
-        index = slice(None)
         mode = RecordingMode()
         with mode:
             result = source[index]
@@ -165,6 +200,14 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             forwarded = source[index]
         self.assert_metadata_alias(source, forwarded)
 
+    def test_full_slice_dispatches_through_tensorbase_mode_before_indexing(self):
+        self.assert_dispatches_through_tensorbase_mode_before_indexing(slice(None))
+
+    def test_singleton_full_slice_tuple_dispatches_with_original_index(self):
+        self.assert_dispatches_through_tensorbase_mode_before_indexing(
+            (slice(None),)
+        )
+
     def test_existing_indices_and_unsupported_slice_forms_are_unchanged(self):
         tensor = torch.tensor(
             [
@@ -183,9 +226,14 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             slice(None, -1),
             slice(None, None, 1),
             slice(None, None, 2),
-            (slice(None),),
+            (slice(1, None),),
+            (slice(None, -1),),
+            (slice(None, None, 1),),
+            (slice(None, None, 2),),
             (slice(None), 0),
             (0, slice(None)),
+            (slice(None), slice(None)),
+            (slice(None), Ellipsis),
         )
         for index in unsupported:
             with self.subTest(index=repr(index)):
