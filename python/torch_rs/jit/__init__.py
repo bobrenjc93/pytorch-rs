@@ -13,6 +13,7 @@ __all__ = [
     "export",
     "ignore",
     "isinstance",
+    "onednn_fusion_enabled",
     "script_if_tracing",
     "strict_fusion",
     "unused",
@@ -144,6 +145,15 @@ def isinstance(obj, target_type):
         m(y)
     """
     return _isinstance(obj, target_type)
+
+
+def onednn_fusion_enabled():
+    """Return whether onednn JIT fusion is enabled.
+
+    .. deprecated:: 2.5
+        TorchScript is deprecated, please use ``torch.compile`` instead.
+    """
+    return False
 
 
 def script_if_tracing(fn):

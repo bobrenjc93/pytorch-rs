@@ -150,6 +150,7 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
             "export",
             "ignore",
             "isinstance",
+            "onednn_fusion_enabled",
             "script_if_tracing",
             "strict_fusion",
             "unused",
