@@ -4929,6 +4929,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.5
       }
+    },
+    {
+      "key": "pr:627",
+      "recordedAt": "2026-08-22T07:51:18.958Z",
+      "label": "PR #627",
+      "kind": "leaf",
+      "prNumber": 627,
+      "title": "Fast-path contiguous sqrt backward inputs",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 82.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 65.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.5
+      }
     }
   ]
 }
