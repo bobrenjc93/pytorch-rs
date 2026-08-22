@@ -140,6 +140,7 @@ class CompilerGetDefaultBackendTests(unittest.TestCase):
             compiler.__all__,
             [
                 "assume_constant_result",
+                "reset",
                 "get_default_backend",
                 "is_compiling",
                 "is_dynamo_compiling",
