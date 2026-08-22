@@ -44,28 +44,29 @@ def default_convert(data):
         raise NotImplementedError(
             "default_convert does not support NumPy arrays or scalars"
         )
-    if elem_type is dict:
-        clone = copy.copy(data)
-        clone.update({key: default_convert(data[key]) for key in data})
-        return clone
+    if isinstance(data, collections.abc.Mapping):
+        try:
+            if isinstance(data, collections.abc.MutableMapping):
+                clone = copy.copy(data)
+                clone.update({key: default_convert(data[key]) for key in data})
+                return clone
+            return elem_type({key: default_convert(data[key]) for key in data})
+        except TypeError:
+            return {key: default_convert(data[key]) for key in data}
     if isinstance(data, tuple) and hasattr(data, "_fields"):  # namedtuple
         return elem_type(*(default_convert(value) for value in data))
-    if elem_type is tuple:
+    if isinstance(data, tuple):
         return [default_convert(value) for value in data]
-    if elem_type is list:
-        clone = copy.copy(data)
-        for index, value in enumerate(data):
-            clone[index] = default_convert(value)
-        return clone
-    if isinstance(data, collections.abc.Mapping):
-        raise NotImplementedError(
-            "default_convert only supports built-in dict mappings"
-        )
     if isinstance(data, collections.abc.Sequence) and not isinstance(
         data, (str, bytes)
     ):
-        raise NotImplementedError(
-            "default_convert only supports built-in list and tuple sequences, "
-            "plus namedtuples"
-        )
+        try:
+            if isinstance(data, collections.abc.MutableSequence):
+                clone = copy.copy(data)
+                for index, value in enumerate(data):
+                    clone[index] = default_convert(value)
+                return clone
+            return elem_type([default_convert(value) for value in data])
+        except TypeError:
+            return [default_convert(value) for value in data]
     return data

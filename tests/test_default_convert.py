@@ -6,11 +6,12 @@ import pickle
 import types
 import unittest
 from collections import namedtuple
+from types import MappingProxyType
 
 import numpy as np
 import torch_rs as torch
 
-from torch_rs.utils.data import default_convert
+from torch_rs.utils.data import DataChunk, default_convert
 
 
 class DictSubclass(dict):
@@ -23,6 +24,16 @@ class ListSubclass(list):
 
 class TupleSubclass(tuple):
     pass
+
+
+class CopyFailingDict(dict):
+    def __copy__(self):
+        raise TypeError("copy disabled")
+
+
+class CopyFailingList(list):
+    def __copy__(self):
+        raise TypeError("copy disabled")
 
 
 class DefaultConvertTests(unittest.TestCase):
@@ -125,19 +136,61 @@ class DefaultConvertTests(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, "NumPy"):
             default_convert({"nested": [np.int32(1)]})
 
-    def test_exotic_mapping_and_sequence_types_are_explicitly_unsupported(self):
-        cases = (
-            (DictSubclass(value=1), "built-in dict mappings"),
-            (collections.OrderedDict((("value", 1),)), "built-in dict mappings"),
-            (ListSubclass((1, 2)), "built-in list and tuple sequences"),
-            (TupleSubclass((1, 2)), "built-in list and tuple sequences"),
-            (range(2), "built-in list and tuple sequences"),
-        )
+    def test_mapping_and_sequence_subclasses_use_copy_or_fallback(self):
+        tensor = torch.tensor([1.0, 2.0])
 
-        for value, message in cases:
-            with self.subTest(value_type=type(value).__name__):
-                with self.assertRaisesRegex(NotImplementedError, message):
-                    default_convert(value)
+        mapping = DictSubclass(value=(tensor, "text"))
+        mapping.marker = object()
+        converted_mapping = default_convert(mapping)
+        self.assertIs(type(converted_mapping), DictSubclass)
+        self.assertIsNot(converted_mapping, mapping)
+        self.assertIs(converted_mapping.marker, mapping.marker)
+        self.assertIs(converted_mapping["value"][0], tensor)
+        self.assertEqual(converted_mapping["value"][1], "text")
+        self.assertIs(type(converted_mapping["value"]), list)
+
+        ordered = collections.OrderedDict(
+            (("first", (1, 2)), ("second", [3]))
+        )
+        converted_ordered = default_convert(ordered)
+        self.assertIs(type(converted_ordered), collections.OrderedDict)
+        self.assertIsNot(converted_ordered, ordered)
+        self.assertEqual(list(converted_ordered), ["first", "second"])
+        self.assertEqual(converted_ordered, {"first": [1, 2], "second": [3]})
+
+        proxy = MappingProxyType({"value": (1, 2)})
+        converted_proxy = default_convert(proxy)
+        self.assertIs(type(converted_proxy), type(proxy))
+        self.assertIsNot(converted_proxy, proxy)
+        self.assertEqual(converted_proxy, {"value": [1, 2]})
+
+        sequence = ListSubclass([(tensor, "text")])
+        sequence.marker = object()
+        converted_sequence = default_convert(sequence)
+        self.assertIs(type(converted_sequence), ListSubclass)
+        self.assertIsNot(converted_sequence, sequence)
+        self.assertIs(converted_sequence.marker, sequence.marker)
+        self.assertIs(converted_sequence[0][0], tensor)
+        self.assertEqual(converted_sequence[0][1], "text")
+        self.assertIs(type(converted_sequence[0]), list)
+
+        chunk = DataChunk([(tensor, "text"), {"value": (1, 2)}])
+        converted_chunk = default_convert(chunk)
+        self.assertIs(type(converted_chunk), DataChunk)
+        self.assertIsNot(converted_chunk, chunk)
+        self.assertIs(converted_chunk[0][0], tensor)
+        self.assertEqual(converted_chunk[0][1], "text")
+        self.assertEqual(converted_chunk[1], {"value": [1, 2]})
+        self.assertEqual(list(converted_chunk.raw_iterator()), list(chunk))
+
+        self.assertEqual(default_convert(TupleSubclass((1, 2))), [1, 2])
+        self.assertEqual(default_convert(range(3)), [0, 1, 2])
+        self.assertIs(
+            type(default_convert(CopyFailingDict(value=(1, 2)))), dict
+        )
+        self.assertIs(
+            type(default_convert(CopyFailingList(((1, 2),)))), list
+        )
 
     def test_metadata_exports_and_unsupported_neighbors(self):
         data_module = importlib.import_module("torch_rs.utils.data")
