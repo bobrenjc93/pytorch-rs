@@ -4087,7 +4087,9 @@ fn tensor(
     let requires_grad = requires_grad.0;
     let dtype_was_explicit = dtype.is_some();
     let (dtype, device) = parse_metadata("tensor", dtype, device)?;
-    let (flattened, shape) = if let Ok(scalar) = data.extract::<f32>() {
+    let (flattened, shape) = if let Some(flat_float_list) = flatten_exact_float_list(data)? {
+        flat_float_list
+    } else if let Ok(scalar) = data.extract::<f32>() {
         (vec![scalar], Vec::new())
     } else if data.cast::<PyBytes>().is_ok() {
         return Err(PyTypeError::new_err("new(): invalid data type 'bytes'"));
@@ -10430,6 +10432,50 @@ fn is_sequence_input(value: &Bound<'_, PyAny>) -> PyResult<bool> {
         return Ok(false);
     }
     Ok(value.hasattr("__len__")? && value.hasattr("__getitem__")?)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the exact-list fast path needs borrowed stable-ABI item access without per-item reference churn"
+)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+fn flatten_exact_float_list(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
+    let Ok(values) = value.cast_exact::<PyList>() else {
+        return Ok(None);
+    };
+
+    pyo3::sync::critical_section::with_critical_section(values.as_any(), || {
+        let length = values.len();
+        for index in 0..length {
+            // SAFETY: the critical section prevents list mutation, and the
+            // index is bounded by the length read while holding that section.
+            let item = unsafe { ffi::PyList_GetItem(values.as_ptr(), index as ffi::Py_ssize_t) };
+            if item.is_null() {
+                return Err(PyErr::fetch(value.py()));
+            }
+            // SAFETY: `item` is a live borrowed reference from the locked list.
+            if unsafe { ffi::PyFloat_CheckExact(item) } == 0 {
+                return Ok(None);
+            }
+        }
+
+        let mut output = Vec::new();
+        output.try_reserve_exact(length).map_err(|_| {
+            PyMemoryError::new_err("unable to allocate native tensor storage for float list")
+        })?;
+        for index in 0..length {
+            // SAFETY: the locked list has the same length and exact-float
+            // elements established by the first pass.
+            let item = unsafe { ffi::PyList_GetItem(values.as_ptr(), index as ffi::Py_ssize_t) };
+            if item.is_null() {
+                return Err(PyErr::fetch(value.py()));
+            }
+            // SAFETY: the exact-type check guarantees a built-in float, so
+            // conversion cannot invoke user code or invalidate the borrow.
+            output.push(unsafe { ffi::PyFloat_AsDouble(item) } as f32);
+        }
+        Ok(Some((output, vec![length])))
+    })
 }
 
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
