@@ -4833,6 +4833,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92
       }
+    },
+    {
+      "key": "pr:606",
+      "recordedAt": "2026-08-22T01:22:43.764Z",
+      "label": "PR #606",
+      "kind": "leaf",
+      "prNumber": 606,
+      "title": "Expose read-only Tensor.is_vulkan metadata",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 81.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 65.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.1
+      }
     }
   ]
 }
