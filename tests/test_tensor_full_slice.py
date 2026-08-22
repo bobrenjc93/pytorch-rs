@@ -107,6 +107,11 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None),), "AliasBackward0"
         )
 
+    def test_empty_tuple_uses_alias_autograd_semantics(self):
+        self.assert_autograd_gradient_node_and_no_grad_leaf_status(
+            (), "AliasBackward0"
+        )
+
     def assert_storage_and_autograd_survive_source_lifetime(self, index):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
 
@@ -227,6 +232,17 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         alias = source[FullSliceRemapTuple((0,))]
         self.assert_metadata_alias(source, alias)
+
+        class EmptyRemapTuple(tuple):
+            def __iter__(self):
+                return iter(())
+
+        empty_index = EmptyRemapTuple((0,))
+        empty_alias = source[empty_index]
+        self.assert_metadata_alias(source, empty_alias)
+        self.assert_autograd_gradient_node_and_no_grad_leaf_status(
+            empty_index, "AliasBackward0"
+        )
 
         class IterationErrorTuple(tuple):
             def __iter__(self):

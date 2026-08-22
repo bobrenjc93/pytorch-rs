@@ -287,7 +287,9 @@ impl PyTensorBase {
                     .cast_into::<PyTuple>()?;
                 &normalized_indices
             };
-            if indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>() {
+            if indices.is_empty()
+                || (indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>())
+            {
                 tensor.inner.metadata_alias()
             } else if indices.len() == 1 && is_exact_full_slice(&indices.get_item(0)?)? {
                 if tensor.inner.shape().is_empty() {

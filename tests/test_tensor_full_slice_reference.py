@@ -108,6 +108,13 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
 
         alias = source[FullSliceRemapTuple((0,))]
 
+        class EmptyRemapTuple(tuple):
+            def __iter__(self):
+                return iter(())
+
+        empty_index = EmptyRemapTuple((0,))
+        empty_alias = source[empty_index]
+
         class IterationErrorTuple(tuple):
             def __iter__(self):
                 raise RuntimeError("tuple iteration exploded")
@@ -130,6 +137,15 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             "alias_offset": alias.storage_offset(),
             "alias_same_logical_view": alias.is_set_to(source),
             "alias_same_data_pointer": alias.data_ptr() == source.data_ptr(),
+            "empty_alias_values": empty_alias.tolist(),
+            "empty_alias_shape": tuple(empty_alias.shape),
+            "empty_alias_stride": empty_alias.stride(),
+            "empty_alias_offset": empty_alias.storage_offset(),
+            "empty_alias_same_logical_view": empty_alias.is_set_to(source),
+            "empty_alias_same_data_pointer": (
+                empty_alias.data_ptr() == source.data_ptr()
+            ),
+            "empty_alias_node": self.node_diagnostic(module, empty_index),
             "iteration_error": iteration_error,
         }
 
@@ -217,6 +233,9 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         self.assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(
             (slice(None),)
         )
+
+    def test_empty_tuple_autograd_matches_pytorch_2_13(self):
+        self.assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(())
 
     def lifetime_contract(self, module, index):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
