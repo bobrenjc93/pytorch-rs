@@ -18,6 +18,15 @@ except ImportError:
     reference_functional = None
 
 
+LEGACY_RANK_THREE_WARNING = (
+    "dropout2d: Received a 3D input to dropout2d and assuming that channel-wise "
+    "1D dropout behavior is desired - input is interpreted as shape (N, C, L), where C "
+    "is the channel dim. This behavior will change in a future release to interpret the "
+    "input as one without a batch dimension, i.e. shape (C, H, W). To maintain the 1D "
+    "channel-wise dropout behavior, please switch to using dropout1d instead."
+)
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class FunctionalDropout2dReferenceTests(unittest.TestCase):
     @classmethod
@@ -72,6 +81,44 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
             return leaf, offset
         return leaf, offset.transpose(2, 3)
 
+    def make_rank_three_case(self, module, case, *, requires_grad):
+        if case == "contiguous":
+            leaf = module.tensor(
+                [
+                    [[1.0, -2.0], [3.0, -4.0]],
+                    [[5.0, -6.0], [7.0, -8.0]],
+                ],
+                dtype=module.float32,
+                requires_grad=requires_grad,
+            )
+            return leaf, leaf
+        if case == "empty":
+            leaf = module.zeros(
+                (2, 1, 0, 4),
+                dtype=module.float32,
+                requires_grad=requires_grad,
+            )
+            return leaf, leaf[1].transpose(1, 2)
+
+        leaf = module.tensor(
+            [
+                [
+                    [[9.0, 10.0], [11.0, 12.0]],
+                    [[13.0, 14.0], [15.0, 16.0]],
+                ],
+                [
+                    [[-1.0, 2.0], [-3.0, 4.0]],
+                    [[-5.0, 6.0], [-7.0, 8.0]],
+                ],
+            ],
+            dtype=module.float32,
+            requires_grad=requires_grad,
+        )
+        offset = leaf[1]
+        if case == "offset":
+            return leaf, offset
+        return leaf, offset.transpose(1, 2)
+
     def assert_metadata_matches(self, actual, expected, *, case):
         with self.subTest(case=case):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -90,6 +137,17 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
                 np.asarray(actual.detach()).reshape(-1).view(np.uint32),
                 expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
             )
+
+    def assert_legacy_warning(self, caught):
+        self.assertEqual(len(caught), 1)
+        self.assertIs(caught[0].category, UserWarning)
+        self.assertEqual(str(caught[0].message), LEGACY_RANK_THREE_WARNING)
+        self.assertEqual(caught[0].filename, __file__)
+
+    def assert_legacy_warnings_match(self, actual, expected):
+        self.assert_legacy_warning(actual)
+        self.assert_legacy_warning(expected)
+        self.assertEqual(str(actual[0].message), str(expected[0].message))
 
     def capture_error(self, call):
         try:
@@ -226,6 +284,190 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
                         self.assertTrue(expected.is_set_to(expected_input))
                     self.assert_metadata_matches(actual, expected, case=invocation)
                     self.assert_values_match(actual, expected, case=invocation)
+
+    def test_rank_three_identity_values_layouts_rng_and_warnings_match(self):
+        calls = (
+            (
+                lambda function, input, module: function(
+                    input, p=0.75, training=False
+                ),
+                "evaluation",
+            ),
+            (
+                lambda function, input, module: function(
+                    input, p=1.0, training=False, inplace=True
+                ),
+                "evaluation_inplace",
+            ),
+            (
+                lambda function, input, module: function(
+                    input, p=0, training=True
+                ),
+                "zero_probability",
+            ),
+            (
+                lambda function, input, module: function(
+                    input, p=module.tensor(0.0), training=True, inplace=True
+                ),
+                "tensor_zero_probability_inplace",
+            ),
+        )
+
+        for requires_grad in (False, True):
+            for case in ("contiguous", "offset", "strided"):
+                _, actual_input = self.make_rank_three_case(
+                    torch, case, requires_grad=requires_grad
+                )
+                _, expected_input = self.make_rank_three_case(
+                    reference_torch, case, requires_grad=requires_grad
+                )
+                self.assert_metadata_matches(
+                    actual_input,
+                    expected_input,
+                    case=(requires_grad, case, "input"),
+                )
+
+                for call, label in calls:
+                    rng_before = reference_torch.get_rng_state().clone()
+                    with warnings.catch_warnings(record=True) as actual_warnings:
+                        warnings.simplefilter("always")
+                        actual = call(functional.dropout2d, actual_input, torch)
+                    actual_rng_unchanged = reference_torch.equal(
+                        rng_before, reference_torch.get_rng_state()
+                    )
+                    with warnings.catch_warnings(record=True) as expected_warnings:
+                        warnings.simplefilter("always")
+                        expected = call(
+                            reference_functional.dropout2d,
+                            expected_input,
+                            reference_torch,
+                        )
+                    expected_rng_unchanged = reference_torch.equal(
+                        rng_before, reference_torch.get_rng_state()
+                    )
+                    invocation = (requires_grad, case, label)
+                    with self.subTest(case=invocation):
+                        self.assertIs(actual, actual_input)
+                        self.assertIs(expected, expected_input)
+                        self.assertTrue(actual.is_set_to(actual_input))
+                        self.assertTrue(expected.is_set_to(expected_input))
+                        self.assertTrue(actual_rng_unchanged)
+                        self.assertTrue(expected_rng_unchanged)
+                    self.assert_legacy_warnings_match(
+                        actual_warnings, expected_warnings
+                    )
+                    self.assert_metadata_matches(actual, expected, case=invocation)
+                    self.assert_values_match(actual, expected, case=invocation)
+
+    def test_empty_rank_three_training_identity_and_rng_match(self):
+        for requires_grad in (False, True):
+            _, actual_input = self.make_rank_three_case(
+                torch, "empty", requires_grad=requires_grad
+            )
+            _, expected_input = self.make_rank_three_case(
+                reference_torch, "empty", requires_grad=requires_grad
+            )
+            for probability in (0.25, 1.0):
+                for inplace in (False, True):
+                    rng_before = reference_torch.get_rng_state().clone()
+                    with warnings.catch_warnings(record=True) as actual_warnings:
+                        warnings.simplefilter("always")
+                        actual = functional.dropout2d(
+                            actual_input,
+                            p=probability,
+                            training=True,
+                            inplace=inplace,
+                        )
+                    actual_rng_unchanged = reference_torch.equal(
+                        rng_before, reference_torch.get_rng_state()
+                    )
+                    with warnings.catch_warnings(record=True) as expected_warnings:
+                        warnings.simplefilter("always")
+                        expected = reference_functional.dropout2d(
+                            expected_input,
+                            p=probability,
+                            training=True,
+                            inplace=inplace,
+                        )
+                    expected_rng_unchanged = reference_torch.equal(
+                        rng_before, reference_torch.get_rng_state()
+                    )
+                    invocation = (requires_grad, probability, inplace)
+                    with self.subTest(case=invocation):
+                        self.assertIs(actual, actual_input)
+                        self.assertIs(expected, expected_input)
+                        self.assertTrue(actual.is_set_to(actual_input))
+                        self.assertTrue(expected.is_set_to(expected_input))
+                        self.assertTrue(actual_rng_unchanged)
+                        self.assertTrue(expected_rng_unchanged)
+                    self.assert_legacy_warnings_match(
+                        actual_warnings, expected_warnings
+                    )
+                    self.assert_metadata_matches(actual, expected, case=invocation)
+                    self.assert_values_match(actual, expected, case=invocation)
+
+    def test_rank_three_backward_and_no_grad_match(self):
+        actual_leaf = torch.tensor(
+            [[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            [[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True
+        )
+        actual_input = actual_leaf.transpose(1, 2)
+        expected_input = expected_leaf.transpose(1, 2)
+        with warnings.catch_warnings(record=True) as actual_warnings:
+            warnings.simplefilter("always")
+            actual_output = functional.dropout2d(
+                actual_input, p=0, training=True, inplace=True
+            )
+        with warnings.catch_warnings(record=True) as expected_warnings:
+            warnings.simplefilter("always")
+            expected_output = reference_functional.dropout2d(
+                expected_input, p=0, training=True, inplace=True
+            )
+        self.assert_legacy_warnings_match(actual_warnings, expected_warnings)
+        self.assertIs(actual_output, actual_input)
+        self.assertIs(expected_output, expected_input)
+
+        actual_weights = torch.tensor([[[2.0, 3.0], [5.0, 7.0]]])
+        expected_weights = reference_torch.tensor(
+            [[[2.0, 3.0], [5.0, 7.0]]]
+        )
+        (actual_output * actual_weights).sum().backward()
+        (expected_output * expected_weights).sum().backward()
+        self.assert_metadata_matches(
+            actual_leaf.grad, expected_leaf.grad, case="rank_three_gradient"
+        )
+        self.assert_values_match(
+            actual_leaf.grad, expected_leaf.grad, case="rank_three_gradient"
+        )
+
+        actual_leaf = torch.zeros((1, 2, 3), requires_grad=True)
+        expected_leaf = reference_torch.zeros(
+            (1, 2, 3), requires_grad=True
+        )
+        actual_input = actual_leaf.transpose(1, 2)
+        expected_input = expected_leaf.transpose(1, 2)
+        with warnings.catch_warnings(record=True) as actual_warnings:
+            warnings.simplefilter("always")
+            with torch.no_grad():
+                actual_output = functional.dropout2d(
+                    actual_input, p=0.75, training=False
+                )
+        with warnings.catch_warnings(record=True) as expected_warnings:
+            warnings.simplefilter("always")
+            with reference_torch.no_grad():
+                expected_output = reference_functional.dropout2d(
+                    expected_input, p=0.75, training=False
+                )
+        self.assert_legacy_warnings_match(actual_warnings, expected_warnings)
+        self.assertIs(actual_output, actual_input)
+        self.assertIs(expected_output, expected_input)
+        self.assert_metadata_matches(
+            actual_output, expected_output, case="rank_three_no_grad"
+        )
+        self.assertIsNone(actual_leaf.grad)
+        self.assertIsNone(expected_leaf.grad)
 
     def test_backward_no_grad_and_empty_training_match(self):
         actual_leaf = torch.tensor(
@@ -527,19 +769,25 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
                     return func(*args, **kwargs)
                 return "mode-result"
 
-        actual_input = torch.zeros((1, 2, 3, 4))
-        expected_input = reference_torch.zeros((1, 2, 3, 4))
+        actual_input = torch.zeros((1, 2, 3))
+        expected_input = reference_torch.zeros((1, 2, 3))
         actual_mode = ActualMode()
         expected_mode = ExpectedMode()
-        with actual_mode:
-            actual_output = functional.dropout2d(
-                actual_input, p=-1, training="invalid", inplace=True
-            )
-        with expected_mode:
-            expected_output = reference_functional.dropout2d(
-                expected_input, p=-1, training="invalid", inplace=True
-            )
+        with warnings.catch_warnings(record=True) as actual_warnings:
+            warnings.simplefilter("always")
+            with actual_mode:
+                actual_output = functional.dropout2d(
+                    actual_input, p=-1, training="invalid", inplace=True
+                )
+        with warnings.catch_warnings(record=True) as expected_warnings:
+            warnings.simplefilter("always")
+            with expected_mode:
+                expected_output = reference_functional.dropout2d(
+                    expected_input, p=-1, training="invalid", inplace=True
+                )
         self.assertEqual(actual_output, expected_output)
+        self.assertEqual(actual_warnings, [])
+        self.assertEqual(expected_warnings, [])
         actual_call = actual_mode.calls[0]
         expected_call = expected_mode.calls[0]
         self.assertIs(actual_call[0], functional.dropout2d)
@@ -552,41 +800,61 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
 
         actual_mode = ActualMode(forward=True)
         expected_mode = ExpectedMode(forward=True)
-        with actual_mode:
-            actual_output = functional.dropout2d(
-                actual_input, p=0, training=True, inplace=True
-            )
-        with expected_mode:
-            expected_output = reference_functional.dropout2d(
-                expected_input, p=0, training=True, inplace=True
-            )
+        with warnings.catch_warnings(record=True) as actual_warnings:
+            warnings.simplefilter("always")
+            with actual_mode:
+                actual_output = functional.dropout2d(
+                    actual_input, p=0, training=True, inplace=True
+                )
+        with warnings.catch_warnings(record=True) as expected_warnings:
+            warnings.simplefilter("always")
+            with expected_mode:
+                expected_output = reference_functional.dropout2d(
+                    expected_input, p=0, training=True, inplace=True
+                )
         self.assertIs(actual_output, actual_input)
         self.assertIs(expected_output, expected_input)
         self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
+        self.assert_legacy_warnings_match(actual_warnings, expected_warnings)
 
-    def test_sampling_and_deprecated_non_rank_four_forms_stay_unsupported(self):
-        actual_input = torch.zeros((1, 2, 3, 4), requires_grad=True)
-        before = np.asarray(actual_input.detach()).copy().view(np.uint32)
-        for probability in (0.25, 1.0):
-            for inplace in (False, True):
-                with self.subTest(probability=probability, inplace=inplace):
-                    with self.assertRaisesRegex(
-                        NotImplementedError,
-                        "^torch_rs.nn.functional.dropout2d does not support "
-                        "sampling$",
+    def test_sampling_and_unsupported_ranks_stay_unsupported(self):
+        sources = (
+            (torch.zeros((1, 2, 3, 4), requires_grad=True), False),
+            (torch.zeros((1, 2, 3), requires_grad=True), True),
+        )
+        for actual_input, warns in sources:
+            before = np.asarray(actual_input.detach()).copy().view(np.uint32)
+            for probability in (0.25, 1.0):
+                for inplace in (False, True):
+                    with self.subTest(
+                        rank=len(actual_input.shape),
+                        probability=probability,
+                        inplace=inplace,
                     ):
-                        functional.dropout2d(
-                            actual_input,
-                            p=probability,
-                            training=True,
-                            inplace=inplace,
+                        with warnings.catch_warnings(record=True) as caught:
+                            warnings.simplefilter("always")
+                            with self.assertRaisesRegex(
+                                NotImplementedError,
+                                "^torch_rs.nn.functional.dropout2d does not "
+                                "support sampling$",
+                            ):
+                                functional.dropout2d(
+                                    actual_input,
+                                    p=probability,
+                                    training=True,
+                                    inplace=inplace,
+                                )
+                        if warns:
+                            self.assert_legacy_warning(caught)
+                        else:
+                            self.assertEqual(caught, [])
+                        np.testing.assert_array_equal(
+                            np.asarray(actual_input.detach()).view(np.uint32),
+                            before,
                         )
-                    np.testing.assert_array_equal(
-                        np.asarray(actual_input.detach()).view(np.uint32), before
-                    )
-                    self.assertIsNone(actual_input.grad)
+                        self.assertIsNone(actual_input.grad)
 
-        for shape in ((), (2, 3, 4), (2, 3, 4, 5, 6), (2, 0, 3)):
+        for shape in ((), (2,), (2, 3), (2, 3, 4, 5, 6), (2, 0)):
             actual_input = torch.zeros(shape)
             expected_input = reference_torch.zeros(shape)
             with warnings.catch_warnings(record=True) as actual_warnings:

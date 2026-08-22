@@ -18,6 +18,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: true,
         required_rank: None,
+        legacy_rank: None,
     },
     DropoutMetadata {
         public_function: "alpha_dropout",
@@ -26,6 +27,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: false,
         supports_probability_one: false,
         required_rank: None,
+        legacy_rank: None,
     },
     DropoutMetadata {
         public_function: "feature_alpha_dropout",
@@ -34,6 +36,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: true,
         required_rank: None,
+        legacy_rank: None,
     },
     DropoutMetadata {
         public_function: "dropout1d",
@@ -42,6 +45,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: false,
         required_rank: Some(3),
+        legacy_rank: None,
     },
     DropoutMetadata {
         public_function: "dropout2d",
@@ -50,6 +54,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: false,
         required_rank: Some(4),
+        legacy_rank: Some(3),
     },
     DropoutMetadata {
         public_function: "dropout3d",
@@ -58,6 +63,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         supports_tensor_probability: true,
         supports_probability_one: true,
         required_rank: Some(5),
+        legacy_rank: None,
     },
 ];
 
@@ -69,6 +75,7 @@ struct DropoutMetadata {
     supports_tensor_probability: bool,
     supports_probability_one: bool,
     required_rank: Option<usize>,
+    legacy_rank: Option<usize>,
 }
 
 struct DropoutSchema {
@@ -146,8 +153,10 @@ fn _nn_functional_dropout(
         )));
     }
 
+    let input_rank = tensor.try_borrow()?.inner().shape().len();
     if let Some(required_rank) = metadata.required_rank
-        && tensor.try_borrow()?.inner().shape().len() != required_rank
+        && input_rank != required_rank
+        && metadata.legacy_rank != Some(input_rank)
     {
         return Err(PyNotImplementedError::new_err(format!(
             "torch_rs.nn.functional.{} only supports rank-{required_rank} inputs",
