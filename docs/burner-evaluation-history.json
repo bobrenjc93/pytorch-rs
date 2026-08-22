@@ -4849,6 +4849,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.1
       }
+    },
+    {
+      "key": "pr:612",
+      "recordedAt": "2026-08-22T03:31:30.730Z",
+      "label": "PR #612",
+      "kind": "leaf",
+      "prNumber": 612,
+      "title": "Expose single-root torch.autograd.backward",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 81.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 65.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.2
+      }
     }
   ]
 }
