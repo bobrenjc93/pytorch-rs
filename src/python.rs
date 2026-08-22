@@ -273,7 +273,9 @@ impl PyTensorBase {
             tensor.inner.unsqueeze_front()
         } else if index.is_instance_of::<PyEllipsis>() {
             tensor.inner.metadata_alias()
-        } else if let Ok(indices) = index.cast::<PyTuple>() {
+        } else if index.is_instance_of::<PyTuple>() {
+            // PyTorch materializes tuple subclasses through their Python iterator first.
+            let indices = index.cast::<PySequence>()?.to_tuple()?;
             if indices.len() == 1
                 && (indices.get_item(0)?.is_instance_of::<PyEllipsis>()
                     || (!tensor.inner.shape().is_empty()

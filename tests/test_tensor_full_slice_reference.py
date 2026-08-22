@@ -198,6 +198,58 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
     def test_singleton_tuple_source_lifetime_matches_pytorch_2_13(self):
         self.assert_source_lifetime_matches_pytorch_2_13((slice(None),))
 
+    def tuple_subclass_contract(self, module):
+        events = []
+
+        class IntegerOverride(tuple):
+            def __iter__(self):
+                events.append("integer")
+                return iter((0,))
+
+        class FullSliceOverride(tuple):
+            def __iter__(self):
+                events.append("full-slice")
+                return iter((slice(None),))
+
+        class ExplodingOverride(tuple):
+            def __iter__(self):
+                events.append("explode")
+                raise RuntimeError("tuple iteration exploded")
+
+        source = module.tensor(
+            [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], dtype=module.float32
+        )
+        row = source[IntegerOverride((slice(None),))]
+        alias = source[FullSliceOverride((0,))]
+        try:
+            source[ExplodingOverride((slice(None),))]
+        except Exception as error:
+            error_contract = type(error).__name__, str(error)
+        else:
+            self.fail("exploding tuple iterator unexpectedly succeeded")
+
+        return {
+            "events": tuple(events),
+            "row_values": row.tolist(),
+            "row_shape": tuple(row.shape),
+            "row_stride": row.stride(),
+            "row_offset": row.storage_offset(),
+            "row_shared_pointer": row.data_ptr() == source.data_ptr(),
+            "alias_values": alias.tolist(),
+            "alias_shape": tuple(alias.shape),
+            "alias_stride": alias.stride(),
+            "alias_offset": alias.storage_offset(),
+            "alias_is_set_to_source": alias.is_set_to(source),
+            "alias_shared_pointer": alias.data_ptr() == source.data_ptr(),
+            "error": error_contract,
+        }
+
+    def test_tuple_subclass_iteration_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.tuple_subclass_contract(torch),
+            self.tuple_subclass_contract(reference_torch),
+        )
+
     def mode_dispatch_contract(self, module, index):
         source = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]], dtype=module.float32

@@ -208,6 +208,42 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None),)
         )
 
+    def test_tuple_subclasses_are_normalized_through_their_iterator(self):
+        events = []
+
+        class IntegerOverride(tuple):
+            def __iter__(self):
+                events.append("integer")
+                return iter((0,))
+
+        class FullSliceOverride(tuple):
+            def __iter__(self):
+                events.append("full-slice")
+                return iter((slice(None),))
+
+        class ExplodingOverride(tuple):
+            def __iter__(self):
+                events.append("explode")
+                raise RuntimeError("tuple iteration exploded")
+
+        source = torch.tensor([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
+
+        row = source[IntegerOverride((slice(None),))]
+        self.assertEqual(events, ["integer"])
+        self.assertEqual(row.tolist(), [0.0, 1.0, 2.0])
+        self.assertEqual(row.shape, (3,))
+        self.assertEqual(row.stride(), (1,))
+        self.assertEqual(row.storage_offset(), 0)
+        self.assertEqual(row.data_ptr(), source.data_ptr())
+
+        alias = source[FullSliceOverride((0,))]
+        self.assertEqual(events, ["integer", "full-slice"])
+        self.assert_metadata_alias(source, alias)
+
+        with self.assertRaisesRegex(RuntimeError, r"^tuple iteration exploded$"):
+            source[ExplodingOverride((slice(None),))]
+        self.assertEqual(events, ["integer", "full-slice", "explode"])
+
     def test_existing_indices_and_unsupported_slice_forms_are_unchanged(self):
         tensor = torch.tensor(
             [
