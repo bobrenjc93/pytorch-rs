@@ -3121,12 +3121,20 @@ fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
 }
 
 fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
-    gradient.extend(
-        upstream
-            .iter()
-            .enumerate()
-            .map(|(index, &value)| value / (2.0 * sqrt_value(input.value_at_linear_index(index)))),
-    );
+    // Borrow one exact saved range for row-contiguous layouts, including
+    // nonzero-offset views, instead of resolving layout and storage per value.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| sqrt_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(
+            upstream.iter().enumerate().map(|(index, &value)| {
+                sqrt_backward_value(input.value_at_linear_index(index), value)
+            }),
+        );
+    }
 }
 
 struct GradientAccumulator {
@@ -4313,6 +4321,11 @@ fn sqrt_value(value: f32) -> f32 {
     } else {
         value.sqrt()
     }
+}
+
+#[inline]
+fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
+    upstream / (2.0 * sqrt_value(input))
 }
 
 #[inline]
