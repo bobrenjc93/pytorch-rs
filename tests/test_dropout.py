@@ -326,6 +326,126 @@ class DropoutTests(unittest.TestCase):
                 torch.dropout(source, 0, False)
         self.assertEqual(len(declining.calls), 1)
 
+    def test_probability_and_training_torch_function_overrides_dispatch(self):
+        source = torch.tensor([1.0, -2.0])
+        marker = object()
+
+        class ProbabilityOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        probability = ProbabilityOverride()
+        self.assertIs(torch.dropout(source, probability, False), marker)
+        self.assertEqual(len(ProbabilityOverride.calls), 1)
+        function, dispatch_types, args, kwargs = ProbabilityOverride.calls[0]
+        self.assertIs(function, torch.dropout)
+        self.assertEqual(dispatch_types, (ProbabilityOverride,))
+        self.assertEqual(args, (source, probability, False))
+        self.assertIsNone(kwargs)
+
+        class TrainingOverride:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return marker
+
+        training = TrainingOverride()
+        self.assertIs(
+            torch.dropout(input=source, p=0, train=training), marker
+        )
+        self.assertEqual(len(TrainingOverride.calls), 1)
+        function, dispatch_types, args, kwargs = TrainingOverride.calls[0]
+        self.assertIs(function, torch.dropout)
+        self.assertEqual(dispatch_types, (TrainingOverride,))
+        self.assertEqual(args, ())
+        self.assertEqual(
+            kwargs, {"input": source, "p": 0, "train": training}
+        )
+
+        events = []
+
+        class BaseOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(
+                    ("base", func, tuple(item.__name__ for item in types))
+                )
+                return NotImplemented
+
+        class DerivedOverride(BaseOverride):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(
+                    ("derived", func, tuple(item.__name__ for item in types))
+                )
+                return marker
+
+        class OtherOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(
+                    ("other", func, tuple(item.__name__ for item in types))
+                )
+                return NotImplemented
+
+        self.assertIs(
+            torch.dropout(
+                OtherOverride(), BaseOverride(), DerivedOverride()
+            ),
+            marker,
+        )
+        self.assertEqual(
+            [(label, types) for label, _, types in events],
+            [
+                ("other", ("OtherOverride", "DerivedOverride", "BaseOverride")),
+                (
+                    "derived",
+                    ("OtherOverride", "DerivedOverride", "BaseOverride"),
+                ),
+            ],
+        )
+        self.assertTrue(all(function is torch.dropout for _, function, _ in events))
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return marker
+
+        ProbabilityOverride.calls.clear()
+        TrainingOverride.calls.clear()
+        probability = ProbabilityOverride()
+        training = TrainingOverride()
+        mode = RecordingMode()
+        with mode:
+            self.assertIs(torch.dropout(source, probability, training), marker)
+        self.assertEqual(ProbabilityOverride.calls, [])
+        self.assertEqual(TrainingOverride.calls, [])
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(function, torch.dropout)
+        self.assertEqual(
+            dispatch_types, (ProbabilityOverride, TrainingOverride)
+        )
+        self.assertEqual(args, (source, probability, training))
+        self.assertIsNone(kwargs)
+
+        ProbabilityOverride.calls.clear()
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^dropout\(\): argument 'train' \(position 3\) must be bool, not int$",
+        ):
+            torch.dropout(source, ProbabilityOverride(), 1)
+        self.assertEqual(ProbabilityOverride.calls, [])
+
     def test_stochastic_calls_are_rejected_without_mutating_the_input(self):
         leaf = torch.tensor(
             [[9.0, 9.0, 9.0], [-1.0, 2.0, -0.0]], requires_grad=True

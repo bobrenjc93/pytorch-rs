@@ -391,6 +391,231 @@ class DropoutReferenceTests(unittest.TestCase):
         self.assert_metadata_matches(actual, expected, case="forwarding mode")
         self.assert_values_match(actual, expected, case="forwarding mode")
 
+    def test_probability_and_training_overrides_match(self):
+        def observe(module):
+            source = module.tensor([1.0])
+
+            class ProbabilityOverride:
+                calls = []
+
+                @classmethod
+                def __torch_function__(
+                    cls, func, types, args=(), kwargs=None
+                ):
+                    cls.calls.append((func, types, args, kwargs))
+                    return "probability-result"
+
+            probability_argument = ProbabilityOverride()
+            probability_result = module.dropout(
+                source, probability_argument, False
+            )
+            probability_call = ProbabilityOverride.calls[0]
+
+            class TrainingOverride:
+                calls = []
+
+                @classmethod
+                def __torch_function__(
+                    cls, func, types, args=(), kwargs=None
+                ):
+                    cls.calls.append((func, types, args, kwargs))
+                    return "training-result"
+
+            training_argument = TrainingOverride()
+            training_result = module.dropout(
+                input=source, p=0, train=training_argument
+            )
+            training_call = TrainingOverride.calls[0]
+
+            ordered_events = []
+
+            class BaseOverride:
+                @classmethod
+                def __torch_function__(
+                    cls, func, types, args=(), kwargs=None
+                ):
+                    ordered_events.append(
+                        ("base", tuple(item.__name__ for item in types))
+                    )
+                    return NotImplemented
+
+            class DerivedOverride(BaseOverride):
+                @classmethod
+                def __torch_function__(
+                    cls, func, types, args=(), kwargs=None
+                ):
+                    ordered_events.append(
+                        ("derived", tuple(item.__name__ for item in types))
+                    )
+                    return "derived-result"
+
+            class OtherOverride:
+                @classmethod
+                def __torch_function__(
+                    cls, func, types, args=(), kwargs=None
+                ):
+                    ordered_events.append(
+                        ("other", tuple(item.__name__ for item in types))
+                    )
+                    return NotImplemented
+
+            ordered_result = module.dropout(
+                OtherOverride(), BaseOverride(), DerivedOverride()
+            )
+
+            class SharedOverride:
+                calls = []
+
+                @classmethod
+                def __torch_function__(
+                    cls, func, types, args=(), kwargs=None
+                ):
+                    cls.calls.append(tuple(item.__name__ for item in types))
+                    return "shared-result"
+
+            shared_result = module.dropout(
+                source, SharedOverride(), SharedOverride()
+            )
+
+            mode_calls = []
+
+            class RecordingMode(module.overrides.TorchFunctionMode):
+                def __torch_function__(
+                    self, func, types, args=(), kwargs=None
+                ):
+                    mode_calls.append((func, types, args, kwargs))
+                    return "mode-result"
+
+            ProbabilityOverride.calls.clear()
+            TrainingOverride.calls.clear()
+            mode_probability = ProbabilityOverride()
+            mode_training = TrainingOverride()
+            with RecordingMode():
+                mode_result = module.dropout(
+                    source, mode_probability, mode_training
+                )
+            mode_call = mode_calls[0]
+            mode_probability_calls = tuple(ProbabilityOverride.calls)
+            mode_training_calls = tuple(TrainingOverride.calls)
+
+            declining_mode_calls = []
+
+            class DecliningMode(module.overrides.TorchFunctionMode):
+                def __torch_function__(
+                    self, func, types, args=(), kwargs=None
+                ):
+                    declining_mode_calls.append(
+                        (func is module.dropout, tuple(item.__name__ for item in types))
+                    )
+                    return NotImplemented
+
+            ProbabilityOverride.calls.clear()
+            declining_probability = ProbabilityOverride()
+            with DecliningMode():
+                declining_result = module.dropout(
+                    source, declining_probability, False
+                )
+            declining_override_call = ProbabilityOverride.calls[0]
+
+            one_shot_results = []
+            for slot in (1, 2):
+                events = []
+
+                class Descriptor:
+                    def __init__(self):
+                        self.lookups = 0
+
+                    def __get__(self, instance, owner):
+                        self.lookups += 1
+                        events.append(self.lookups)
+                        if self.lookups == 1:
+                            raise AttributeError("transient probe failure")
+
+                        def handler(func, types, args=(), kwargs=None):
+                            return "unexpected"
+
+                        return handler
+
+                descriptor = Descriptor()
+
+                class OneShot:
+                    __torch_function__ = descriptor
+
+                arguments = [source, 0, False]
+                arguments[slot] = OneShot()
+                error_type, message = self.capture_error(
+                    lambda arguments=arguments: module.dropout(*arguments)
+                )
+                one_shot_results.append(
+                    (slot, error_type.__name__, message, tuple(events))
+                )
+
+            def normalize(call, overridden, *, keyword):
+                func, dispatch_types, args, kwargs = call
+                return (
+                    func is module.dropout,
+                    tuple(item.__name__ for item in dispatch_types),
+                    ()
+                    if keyword
+                    else (
+                        args[0] is source,
+                        args[1] is overridden,
+                        args[2] is False,
+                    ),
+                    None
+                    if kwargs is None
+                    else (
+                        tuple(kwargs),
+                        kwargs.get("input") is source,
+                        kwargs.get("p"),
+                        kwargs.get("train") is overridden,
+                    ),
+                )
+
+            mode_func, mode_types, mode_args, mode_kwargs = mode_call
+            return {
+                "probability": (
+                    probability_result,
+                    normalize(
+                        probability_call,
+                        probability_argument,
+                        keyword=False,
+                    ),
+                ),
+                "training": (
+                    training_result,
+                    normalize(training_call, training_argument, keyword=True),
+                ),
+                "ordered": (ordered_result, tuple(ordered_events)),
+                "shared": (
+                    shared_result,
+                    tuple(SharedOverride.calls),
+                ),
+                "mode": (
+                    mode_result,
+                    mode_func is module.dropout,
+                    tuple(item.__name__ for item in mode_types),
+                    mode_args[0] is source,
+                    mode_args[1] is mode_probability,
+                    mode_args[2] is mode_training,
+                    mode_kwargs,
+                    mode_probability_calls,
+                    mode_training_calls,
+                ),
+                "declining_mode": (
+                    declining_result,
+                    tuple(declining_mode_calls),
+                    normalize(
+                        declining_override_call,
+                        declining_probability,
+                        keyword=False,
+                    ),
+                ),
+                "one_shot": tuple(one_shot_results),
+            }
+
+        self.assertEqual(observe(torch), observe(reference_torch))
+
     def test_stochastic_rejection_preserves_reference_rng_and_input(self):
         leaf = torch.tensor(
             [[9.0, 9.0, 9.0], [-1.0, 2.0, -0.0]], requires_grad=True

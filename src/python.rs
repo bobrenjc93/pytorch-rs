@@ -25,8 +25,8 @@ use crate::{
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_memory_format::{PyMemoryFormat, memory_format_object},
     python_nn_functional::{
-        add_nn_functional_bridges, apply_top_level_dropout, parse_top_level_dropout_probability,
-        parse_top_level_dropout_training,
+        add_nn_functional_bridges, apply_top_level_dropout, is_top_level_dropout_probability,
+        parse_top_level_dropout_probability, parse_top_level_dropout_training,
     },
     python_no_argument_builtins::add_no_argument_builtins,
     python_scalar_conversions::register_scalar_conversions,
@@ -1792,8 +1792,13 @@ struct BoundUnaryOutCall<'py> {
 
 struct BoundDropoutCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
-    probability: f64,
-    training: bool,
+    probability: BoundDropoutArgument<'py, f64>,
+    training: BoundDropoutArgument<'py, bool>,
+}
+
+enum BoundDropoutArgument<'py, T> {
+    Value(T),
+    Override(ProbedTorchFunctionOverride<'py>),
 }
 
 enum BoundMulOperand<'py> {
@@ -1903,13 +1908,13 @@ fn probe_torch_function_override<'py>(
 
 #[allow(
     unsafe_code,
-    reason = "dtype argument parity requires CPython's one-shot exception-suppressing attribute probe"
+    reason = "non-Tensor schema parity requires CPython's one-shot exception-suppressing attribute probe"
 )]
-fn probe_dtype_torch_function_override<'py>(
+fn probe_one_shot_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
-    // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
-    // __torch_function__ lookup through a tensor-type fallback.
+    // Unlike Tensor arguments, PyTorch's dtype, scalar, and boolean parsers do
+    // not retry a failed __torch_function__ lookup through a tensor fallback.
     // SAFETY: `value` is live for this call and the attribute name is a static,
     // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
     let has_override =
@@ -2519,23 +2524,21 @@ fn dispatch_top_level_dropout(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if torch_function_mode_stack::is_empty()
-        && let BoundTensorOrTorchFunction::Tensor(tensor) = &call.input
-    {
-        return apply_top_level_dropout(py, tensor, call.probability, call.training);
+    let overrides = ordered_dropout_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_bound_dropout(py, call);
     }
 
     let function = variable_function(py, "dropout")?;
-    let types = match &call.input {
-        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
-        BoundTensorOrTorchFunction::Override(probed) => {
-            PyTuple::new(py, [probed.dispatch_type.clone()])?
-        }
-    };
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
 
-    // The generated binding converts every schema argument before dispatch,
-    // but leaves the native probability-range check until after modes and
-    // tensor overrides have had an opportunity to replace the operation.
+    // The generated binding validates every schema argument and converts
+    // native scalar/bool values before dispatch, but leaves the probability
+    // range check until modes and overrides have had an opportunity to replace
+    // the operation.
     let active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
@@ -2546,33 +2549,37 @@ fn dispatch_top_level_dropout(
         }
     }
 
-    match &call.input {
-        BoundTensorOrTorchFunction::Override(probed) => {
-            let handler = resolve_torch_function_override(py, probed)?;
-            let result =
-                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
-            if !is_not_implemented(py, &result) {
-                return Ok(result);
-            }
-            Err(torch_function_dispatch_error(
-                py,
-                "torch.dropout",
-                active_mode.get(),
-                Some(probed.dispatch_type.as_unbound()),
-            )?)
-        }
-        BoundTensorOrTorchFunction::Tensor(tensor) => {
-            if active_mode.get().is_some() {
-                return Err(torch_function_dispatch_error(
-                    py,
-                    "torch.dropout",
-                    active_mode.get(),
-                    None,
-                )?);
-            }
-            apply_top_level_dropout(py, tensor, call.probability, call.training)
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
         }
     }
+
+    if active_mode.get().is_none() && overrides.is_empty() {
+        return apply_bound_dropout(py, call);
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.dropout",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_bound_dropout(py: Python<'_>, call: &BoundDropoutCall<'_>) -> PyResult<Py<PyAny>> {
+    let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
+        unreachable!("dropout input overrides were dispatched before the native path")
+    };
+    let BoundDropoutArgument::Value(probability) = &call.probability else {
+        unreachable!("dropout probability overrides were dispatched before the native path")
+    };
+    let BoundDropoutArgument::Value(training) = &call.training else {
+        unreachable!("dropout training overrides were dispatched before the native path")
+    };
+    apply_top_level_dropout(py, input, *probability, *training)
 }
 
 #[allow(
@@ -3128,44 +3135,75 @@ fn dispatch_matmul(
     }
 }
 
-fn ordered_binary_overrides<'py>(
-    first: Option<&ProbedTorchFunctionOverride<'py>>,
-    second: Option<&ProbedTorchFunctionOverride<'py>>,
+fn ordered_torch_function_overrides<'py, const N: usize>(
+    candidates: [Option<&ProbedTorchFunctionOverride<'py>>; N],
     allocation_error: &'static str,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
-    let mut overrides = Vec::new();
+    let mut overrides: Vec<ProbedTorchFunctionOverride<'py>> = Vec::new();
     overrides
-        .try_reserve_exact(2)
+        .try_reserve_exact(N)
         .map_err(|_| PyMemoryError::new_err(allocation_error))?;
 
-    if let Some(probed) = first {
-        overrides.push(probed.clone());
-    }
-    if let Some(probed) = second {
-        let Some(first) = overrides.first() else {
-            overrides.push(probed.clone());
-            return Ok(overrides);
-        };
+    for probed in candidates.into_iter().flatten() {
         // PyTorch reports a class-valued operand itself in the dispatch types,
         // but orders an incoming operand by its runtime type. Its metaclass is
-        // therefore compared with the first reported class, preserving class
+        // therefore compared with each reported class, preserving class
         // argument order and repeated class identities without changing
         // ordinary instance subclass precedence.
-        if first.dispatch_type.is(probed.precedence_type.as_any()) {
-            return Ok(overrides);
+        if overrides
+            .iter()
+            .any(|current| current.dispatch_type.is(probed.precedence_type.as_any()))
+        {
+            continue;
         }
 
-        let first_type = first
-            .dispatch_type
-            .cast::<PyType>()
-            .expect("a torch-function dispatch type is a Python type");
-        if probed.precedence_type.is_subclass(first_type.as_any())? {
-            overrides.insert(0, probed.clone());
+        let mut insertion_index = None;
+        for (index, current) in overrides.iter().enumerate() {
+            let current_type = current
+                .dispatch_type
+                .cast::<PyType>()
+                .expect("a torch-function dispatch type is a Python type");
+            if probed.precedence_type.is_subclass(current_type.as_any())? {
+                insertion_index = Some(index);
+                break;
+            }
+        }
+        if let Some(index) = insertion_index {
+            overrides.insert(index, probed.clone());
         } else {
             overrides.push(probed.clone());
         }
     }
     Ok(overrides)
+}
+
+fn ordered_binary_overrides<'py>(
+    first: Option<&ProbedTorchFunctionOverride<'py>>,
+    second: Option<&ProbedTorchFunctionOverride<'py>>,
+    allocation_error: &'static str,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    ordered_torch_function_overrides([first, second], allocation_error)
+}
+
+fn ordered_dropout_overrides<'py>(
+    call: &BoundDropoutCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match &call.input {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let probability = match &call.probability {
+        BoundDropoutArgument::Override(probed) => Some(probed),
+        BoundDropoutArgument::Value(_) => None,
+    };
+    let training = match &call.training {
+        BoundDropoutArgument::Override(probed) => Some(probed),
+        BoundDropoutArgument::Value(_) => None,
+    };
+    ordered_torch_function_overrides(
+        [input, probability, training],
+        "unable to allocate dropout dispatch operands",
+    )
 }
 
 fn ordered_matmul_overrides<'py>(
@@ -7553,9 +7591,8 @@ fn bind_dropout_arguments<'py>(
         arguments.map(|argument| argument.expect("all dropout arguments were bound above"));
     let input_was_keyword = input.position.is_none();
     let input = parse_tensor_or_torch_function_argument("dropout", "input", &input)?;
-    let probability =
-        parse_top_level_dropout_probability(&probability.value, probability.position)?;
-    let training = parse_top_level_dropout_training(&training.value, training.position)?;
+    let probability = bind_dropout_probability_argument(&probability)?;
+    let training = bind_dropout_training_argument(&training)?;
 
     if let Some(keywords) = keywords {
         let bound_keyword_count = usize::from(input_was_keyword)
@@ -7599,15 +7636,43 @@ fn validate_dropout_argument_prefix(
         let probability = arguments[1]
             .as_ref()
             .expect("the dropout probability preceding a binding gap is present");
-        parse_top_level_dropout_probability(&probability.value, probability.position)?;
+        bind_dropout_probability_argument(probability)?;
     }
     if length >= 3 {
         let training = arguments[2]
             .as_ref()
             .expect("the dropout training flag preceding a binding gap is present");
-        parse_top_level_dropout_training(&training.value, training.position)?;
+        bind_dropout_training_argument(training)?;
     }
     Ok(())
+}
+
+fn bind_dropout_probability_argument<'py>(
+    probability: &ParsedCallArgument<'py>,
+) -> PyResult<BoundDropoutArgument<'py, f64>> {
+    if is_top_level_dropout_probability(&probability.value)? {
+        return parse_top_level_dropout_probability(&probability.value, probability.position)
+            .map(BoundDropoutArgument::Value);
+    }
+    if let Some(probed) = probe_one_shot_torch_function_override(&probability.value) {
+        return Ok(BoundDropoutArgument::Override(probed));
+    }
+    parse_top_level_dropout_probability(&probability.value, probability.position)
+        .map(BoundDropoutArgument::Value)
+}
+
+fn bind_dropout_training_argument<'py>(
+    training: &ParsedCallArgument<'py>,
+) -> PyResult<BoundDropoutArgument<'py, bool>> {
+    if training.value.is_exact_instance_of::<PyBool>() {
+        return parse_top_level_dropout_training(&training.value, training.position)
+            .map(BoundDropoutArgument::Value);
+    }
+    if let Some(probed) = probe_one_shot_torch_function_override(&training.value) {
+        return Ok(BoundDropoutArgument::Override(probed));
+    }
+    parse_top_level_dropout_training(&training.value, training.position)
+        .map(BoundDropoutArgument::Value)
 }
 
 fn validate_unary_out_keywords(
@@ -8009,7 +8074,7 @@ fn parse_dtype_operand<'py>(
     if let Ok(dtype) = argument.value.cast::<PyDType>() {
         return Ok(BoundDTypeOperand::DType(dtype.try_borrow()?.inner()));
     }
-    if let Some(probed) = probe_dtype_torch_function_override(&argument.value) {
+    if let Some(probed) = probe_one_shot_torch_function_override(&argument.value) {
         return Ok(BoundDTypeOperand::Override(probed));
     }
 

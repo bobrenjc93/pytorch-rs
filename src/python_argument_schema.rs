@@ -104,3 +104,25 @@ pub(crate) fn parse_float_like_argument(
 
     Err(schema.type_error(value)?)
 }
+
+pub(crate) fn is_float_like_argument(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.cast::<PyTensor>().is_ok()
+        || value.is_instance_of::<PyInt>()
+        || value.is_instance_of::<PyFloat>()
+    {
+        return Ok(true);
+    }
+
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(false);
+    };
+    let generic = numpy.getattr("generic")?;
+    if !value.is_instance(&generic)? {
+        return Ok(false);
+    }
+
+    Ok(value.is_instance(&numpy.getattr("bool_")?)?
+        || value.is_instance(&numpy.getattr("integer")?)?
+        || value.is_instance(&numpy.getattr("floating")?)?
+        || value.is_instance(&numpy.getattr("complexfloating")?)?)
+}

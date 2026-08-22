@@ -6,7 +6,7 @@ use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     python::PyTensor,
-    python_argument_schema::{ArgumentSchema, parse_float_like_argument},
+    python_argument_schema::{ArgumentSchema, is_float_like_argument, parse_float_like_argument},
     python_tensor_errors::tensor_error,
 };
 
@@ -180,6 +180,10 @@ pub(crate) fn parse_top_level_dropout_probability(
         ArgumentSchema::with_optional_position("dropout", "p", position, "float"),
         probability,
     )
+}
+
+pub(crate) fn is_top_level_dropout_probability(probability: &Bound<'_, PyAny>) -> PyResult<bool> {
+    is_float_like_argument(probability)
 }
 
 pub(crate) fn parse_top_level_dropout_training(
