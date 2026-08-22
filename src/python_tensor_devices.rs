@@ -91,6 +91,21 @@ impl PyTensorBase {
         tensor.try_borrow()?.inner().is_mps().into_py_any(slf.py())
     }
 
+    // PyTorch 2.13 exposes this descriptor without a docstring.
+    #[getter]
+    fn is_vulkan(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_getset_mode(slf.py(), tensor, "is_vulkan")? {
+            return Ok(result);
+        }
+
+        tensor
+            .try_borrow()?
+            .inner()
+            .is_vulkan()
+            .into_py_any(slf.py())
+    }
+
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is a meta tensor, ``False`` otherwise.  Meta tensors\nare like normal tensors, but they carry no data.\n"]
