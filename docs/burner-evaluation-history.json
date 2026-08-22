@@ -5089,6 +5089,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.9
       }
+    },
+    {
+      "key": "pr:665",
+      "recordedAt": "2026-08-22T16:57:22.047Z",
+      "label": "PR #665",
+      "kind": "leaf",
+      "prNumber": 665,
+      "title": "Expose inference-only Tensor.reciprocal",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 84,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 93.1
+      }
     }
   ]
 }

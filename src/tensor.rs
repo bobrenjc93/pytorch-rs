@@ -2339,20 +2339,19 @@ impl Tensor {
         self.scalar_div_with_output_layout(scalar, shape, strides)
     }
 
-    /// Divides a scalar by every element while using unary output layout planning.
-    ///
-    /// This is the numerical path for top-level `torch.reciprocal`; reflected
-    /// scalar division retains its additional binary layout-planning pass.
+    /// Computes the reciprocal of every element using unary output layout planning.
     ///
     /// # Errors
     ///
-    /// Returns an error when result metadata or storage allocation fails.
-    #[cfg(feature = "python-bindings")]
-    pub(crate) fn scalar_div_with_unary_layout(&self, scalar: f32) -> Result<Self, TensorError> {
-        let elements = self.elements;
-        let shape = try_clone_result_shape(&self.shape, elements)?;
-        let strides = self.unary_output_strides(&shape, elements)?;
-        self.scalar_div_with_output_layout(scalar, shape, strides)
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn reciprocal(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported {
+                operation: "reciprocal",
+            });
+        }
+        self.unary_map(|value| 1.0 * value.recip())
     }
 
     fn scalar_div_with_output_layout(
@@ -5568,6 +5567,10 @@ mod tests {
 
         assert_eq!(
             tensor.exp(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.reciprocal(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(

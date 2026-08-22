@@ -335,11 +335,11 @@ class TopLevelReciprocalTests(unittest.TestCase):
         exec("from torch_rs import *", wildcard_namespace)
         self.assertIs(wildcard_namespace["reciprocal"], function)
 
-    def test_tensor_and_inplace_forms_remain_unsupported(self):
+    def test_tensor_method_is_exposed_while_inplace_forms_remain_unsupported(self):
         tensor = torch.tensor([2.0])
-        self.assertFalse(hasattr(torch.Tensor, "reciprocal"))
+        self.assertTrue(hasattr(torch.Tensor, "reciprocal"))
         self.assertFalse(hasattr(torch.Tensor, "reciprocal_"))
-        self.assertFalse(hasattr(tensor, "reciprocal"))
+        self.assertEqual(tensor.reciprocal().tolist(), [0.5])
         self.assertFalse(hasattr(tensor, "reciprocal_"))
         self.assertFalse(hasattr(torch, "reciprocal_"))
         self.assertNotIn("reciprocal_", torch.__all__)

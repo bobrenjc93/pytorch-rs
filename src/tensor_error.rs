@@ -100,6 +100,9 @@ pub enum TensorError {
     BackwardRequiresScalar {
         elements: usize,
     },
+    AutogradRecordingUnsupported {
+        operation: &'static str,
+    },
     DoesNotRequireGrad,
     BackwardGraphFreed,
 }
@@ -202,6 +205,7 @@ impl Display for TensorError {
                 format_memory_format_error(formatter, error)
             }
             error @ (Self::BackwardRequiresScalar { .. }
+            | Self::AutogradRecordingUnsupported { .. }
             | Self::DoesNotRequireGrad
             | Self::BackwardGraphFreed) => format_autograd_error(formatter, error),
         }
@@ -356,6 +360,12 @@ fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> 
     match error {
         TensorError::BackwardRequiresScalar { .. } => {
             formatter.write_str("grad can be implicitly created only for scalar outputs")
+        }
+        TensorError::AutogradRecordingUnsupported { operation } => {
+            write!(
+                formatter,
+                "{operation}(): autograd recording is not supported"
+            )
         }
         TensorError::DoesNotRequireGrad => formatter.write_str(
             "element 0 of tensors does not require grad and does not have a grad_fn",
