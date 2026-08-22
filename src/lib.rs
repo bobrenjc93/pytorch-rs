@@ -62,6 +62,8 @@ mod python_tensor_storage;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_torch_function_mode;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_torch_function_probe;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_variable_functions;
 mod storage;
 mod tensor;

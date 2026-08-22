@@ -31,6 +31,7 @@ use crate::{
     python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_tensor_queries::add_tensor_queries,
     python_torch_function_mode as torch_function_mode_stack,
+    python_torch_function_probe::add_torch_function_probe,
     python_variable_functions::{add_variable_functions, variable_function},
 };
 
@@ -10516,6 +10517,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     torch_function_mode_stack::add_torch_function_mode_stack(module)?;
+    add_torch_function_probe(module)?;
     add_variable_functions(module)?;
     module.add_function(wrap_pyfunction!(clone, module)?)?;
     module.add_function(wrap_pyfunction!(relu, module)?)?;
