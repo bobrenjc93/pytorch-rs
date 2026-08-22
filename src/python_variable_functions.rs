@@ -15,21 +15,21 @@ use pyo3::types::{PyDict, PyModule, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    adjoint_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
-    atleast_3d_variable_function, can_cast_variable_function, detach_variable_function,
-    exp_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    neg_variable_function, negative_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    reciprocal_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
-    sqrt_variable_function, unbind_variable_function,
+    adjoint_variable_function, allclose_variable_function, atleast_1d_variable_function,
+    atleast_2d_variable_function, atleast_3d_variable_function, can_cast_variable_function,
+    detach_variable_function, exp_variable_function, get_device_variable_function,
+    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, neg_variable_function, negative_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, reciprocal_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sin_variable_function, sqrt_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 30] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 31] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -56,6 +56,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 30] = [
     "movedim",
     "moveaxis",
     "matmul",
+    "allclose",
     "mul",
     "multiply",
     "can_cast",
@@ -483,6 +484,36 @@ Example::
 
 ";
 
+const ALLCLOSE_DOC: &std::ffi::CStr = cr"
+allclose(input: Tensor, other: Tensor, rtol: float = 1e-05, atol: float = 1e-08, equal_nan: bool = False) -> bool
+
+This function checks if :attr:`input` and :attr:`other` satisfy the condition:
+
+.. math::
+    \lvert \text{input}_i - \text{other}_i \rvert \leq \texttt{atol} + \texttt{rtol} \times \lvert \text{other}_i \rvert
+
+elementwise, for all elements of :attr:`input` and :attr:`other`. The behaviour of this function is analogous to
+`numpy.allclose <https://numpy.org/doc/stable/reference/generated/numpy.allclose.html>`_
+
+Args:
+    input (Tensor): first tensor to compare
+    other (Tensor): second tensor to compare
+    atol (float, optional): absolute tolerance. Default: 1e-08
+    rtol (float, optional): relative tolerance. Default: 1e-05
+    equal_nan (bool, optional): if ``True``, then two ``NaN`` s will be considered equal. Default: ``False``
+
+Example::
+
+    >>> torch.allclose(torch.tensor([10000., 1e-07]), torch.tensor([10000.1, 1e-08]))
+    False
+    >>> torch.allclose(torch.tensor([10000., 1e-08]), torch.tensor([10000.1, 1e-09]))
+    True
+    >>> torch.allclose(torch.tensor([1.0, float('nan')]), torch.tensor([1.0, float('nan')]))
+    False
+    >>> torch.allclose(torch.tensor([1.0, float('nan')]), torch.tensor([1.0, float('nan')]), equal_nan=True)
+    True
+";
+
 #[allow(
     unsafe_code,
     reason = "CPython passes borrowed tuple and dictionary pointers to C method callbacks"
@@ -562,6 +593,7 @@ variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
+variable_function_callback!(allclose_callback, allclose_variable_function);
 variable_function_callback!(can_cast_callback, can_cast_variable_function);
 variable_function_callback!(promote_types_callback, promote_types_variable_function);
 
@@ -613,6 +645,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
+        variable_function_method!(c"allclose", allclose_callback, ALLCLOSE_DOC),
         variable_function_method!(c"can_cast", can_cast_callback, CAN_CAST_DOC),
         variable_function_method!(c"promote_types", promote_types_callback, PROMOTE_TYPES_DOC),
         ffi::PyMethodDef::zeroed(),

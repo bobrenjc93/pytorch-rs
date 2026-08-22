@@ -517,6 +517,43 @@ impl Tensor {
         self.shape() == other.shape()
     }
 
+    /// Reports whether same-shaped tensors are elementwise close using
+    /// `PyTorch`'s asymmetric floating-point tolerance rule.
+    ///
+    /// Callers validate matching shapes and nonnegative tolerances before
+    /// entering this native predicate. Values are visited in logical order so
+    /// offsets and arbitrary positive strides do not require materialization.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn allclose_same_shape(
+        &self,
+        other: &Self,
+        relative_tolerance: f64,
+        absolute_tolerance: f64,
+        equal_nan: bool,
+    ) -> bool {
+        debug_assert_eq!(self.shape(), other.shape());
+        debug_assert!(relative_tolerance >= 0.0);
+        debug_assert!(absolute_tolerance >= 0.0);
+
+        // ATen applies scalar tolerances through float32 tensor operations for
+        // float32 operands, including their rounding and overflow behavior.
+        #[allow(clippy::cast_possible_truncation)]
+        let relative_tolerance = relative_tolerance as f32;
+        #[allow(clippy::cast_possible_truncation)]
+        let absolute_tolerance = absolute_tolerance as f32;
+        self.logical_values()
+            .zip(other.logical_values())
+            .all(|(input, other)| {
+                allclose_value(
+                    input,
+                    other,
+                    relative_tolerance,
+                    absolute_tolerance,
+                    equal_nan,
+                )
+            })
+    }
+
     /// Reports whether two tensors point to the exact same logical view.
     ///
     /// Matching views share storage and have identical storage offsets, shapes,
@@ -4390,6 +4427,28 @@ fn negate_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
 }
 
+#[allow(
+    clippy::float_cmp,
+    reason = "allclose includes exact IEEE equality before its tolerance comparison"
+)]
+#[cfg(any(feature = "python-bindings", test))]
+fn allclose_value(
+    input: f32,
+    other: f32,
+    relative_tolerance: f32,
+    absolute_tolerance: f32,
+    equal_nan: bool,
+) -> bool {
+    if input == other || (equal_nan && input.is_nan() && other.is_nan()) {
+        return true;
+    }
+
+    let actual_error = (input - other).abs();
+    let relative_error = (other * relative_tolerance).abs();
+    let allowed_error = absolute_tolerance + relative_error;
+    actual_error.is_finite() && actual_error <= allowed_error
+}
+
 fn relu_value(value: f32) -> f32 {
     // Only exact zeros bypass the established max path, so FTZ/DAZ cannot
     // classify a subnormal as zero and NaN behavior remains unchanged.
@@ -4533,6 +4592,77 @@ mod tests {
             inputs.map(|bits| sqrt_value(f32::from_bits(bits)).to_bits()),
             expected
         );
+    }
+
+    #[test]
+    fn allclose_matches_float32_tolerance_and_nonfinite_semantics() {
+        let input = Tensor::from_vec(vec![1.0, 2.0], [2]).unwrap();
+        let other = Tensor::from_vec(vec![2.0, 1.0], [2]).unwrap();
+        assert!(!input.allclose_same_shape(&other, 0.5, 0.0, false));
+        assert!(
+            Tensor::from_vec(vec![1.0], [1])
+                .unwrap()
+                .allclose_same_shape(&Tensor::from_vec(vec![2.0], [1]).unwrap(), 0.5, 0.0, false,)
+        );
+
+        let smallest_subnormal = f32::from_bits(1);
+        let subnormal = Tensor::from_vec(vec![smallest_subnormal], [1]).unwrap();
+        let zero = Tensor::zeros([1]).unwrap();
+        assert!(!subnormal.allclose_same_shape(
+            &zero,
+            0.0,
+            f64::from(smallest_subnormal) * 0.5,
+            false,
+        ));
+        assert!(subnormal.allclose_same_shape(
+            &zero,
+            0.0,
+            f64::from(smallest_subnormal) * 0.500_000_01,
+            false,
+        ));
+
+        let nonfinite = Tensor::from_vec(
+            vec![0.0, -0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN],
+            [5],
+        )
+        .unwrap();
+        let same_nonfinite = Tensor::from_vec(
+            vec![-0.0, 0.0, f32::INFINITY, f32::NEG_INFINITY, f32::NAN],
+            [5],
+        )
+        .unwrap();
+        assert!(!nonfinite.allclose_same_shape(&same_nonfinite, 0.0, 0.0, false));
+        assert!(nonfinite.allclose_same_shape(&same_nonfinite, 0.0, 0.0, true));
+
+        let overflowing_difference = Tensor::from_vec(vec![f32::MAX], [1]).unwrap();
+        let opposite = Tensor::from_vec(vec![f32::MIN], [1]).unwrap();
+        assert!(!overflowing_difference.allclose_same_shape(&opposite, 0.0, f64::INFINITY, false,));
+    }
+
+    #[test]
+    fn allclose_iterates_offset_noncontiguous_and_empty_layouts_logically() {
+        let strided = Tensor::from_vec(vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0], [3, 2])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let contiguous = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
+        assert!(strided.allclose_same_shape(&contiguous, 0.0, 0.0, false));
+
+        let offset = Tensor::from_vec(vec![10.0, 20.0, 1.0, 3.0, 2.0, 4.0], [3, 2])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        assert!(offset.allclose_same_shape(
+            &Tensor::from_vec(vec![20.0, 3.0, 4.0], [3]).unwrap(),
+            0.0,
+            0.0,
+            false,
+        ));
+
+        let empty = Tensor::zeros([3, 0, 2]).unwrap();
+        assert!(empty.allclose_same_shape(&Tensor::ones([3, 0, 2]).unwrap(), 0.0, 0.0, false));
     }
 
     #[test]

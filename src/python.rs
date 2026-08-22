@@ -1587,6 +1587,37 @@ pub(crate) fn matmul_variable_function(
     dispatch_top_level_matmul(py, &input, &other, args, kwargs)
 }
 
+pub(crate) fn allclose_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let arguments = bind_allclose_arguments(args, kwargs)?;
+    let input = parse_tensor_or_torch_function_argument("allclose", "input", &arguments.input)?;
+    let other = parse_tensor_or_torch_function_argument("allclose", "other", &arguments.other)?;
+    if let Some(relative_tolerance) = &arguments.relative_tolerance {
+        validate_allclose_float_argument("rtol", relative_tolerance)?;
+    }
+    if let Some(absolute_tolerance) = &arguments.absolute_tolerance {
+        validate_allclose_float_argument("atol", absolute_tolerance)?;
+    }
+    if let Some(equal_nan) = &arguments.equal_nan {
+        validate_allclose_bool_argument("equal_nan", equal_nan)?;
+    }
+    if let Some(keyword_error) = arguments.keyword_error {
+        return Err(keyword_error);
+    }
+
+    let call = BoundAllcloseCall {
+        input,
+        other,
+        relative_tolerance: arguments.relative_tolerance,
+        absolute_tolerance: arguments.absolute_tolerance,
+        equal_nan: arguments.equal_nan,
+    };
+    dispatch_top_level_allclose(py, &call, args, kwargs)
+}
+
 pub(crate) fn mul_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1813,6 +1844,23 @@ fn apply_reciprocal(tensor: &CoreTensor) -> Result<CoreTensor, TensorError> {
 struct BoundUnaryOutCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+struct BoundAllcloseCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    other: BoundTensorOrTorchFunction<'py>,
+    relative_tolerance: Option<ParsedCallArgument<'py>>,
+    absolute_tolerance: Option<ParsedCallArgument<'py>>,
+    equal_nan: Option<ParsedCallArgument<'py>>,
+}
+
+struct AllcloseCallArguments<'py> {
+    input: ParsedCallArgument<'py>,
+    other: ParsedCallArgument<'py>,
+    relative_tolerance: Option<ParsedCallArgument<'py>>,
+    absolute_tolerance: Option<ParsedCallArgument<'py>>,
+    equal_nan: Option<ParsedCallArgument<'py>>,
+    keyword_error: Option<PyErr>,
 }
 
 enum BoundMulOperand<'py> {
@@ -3140,6 +3188,24 @@ fn ordered_matmul_overrides<'py>(
     ordered_binary_overrides(input, other, "unable to allocate matmul dispatch operands")
 }
 
+fn ordered_allclose_overrides<'py>(
+    call: &BoundAllcloseCall<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let input = match &call.input {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    let other = match &call.other {
+        BoundTensorOrTorchFunction::Override(probed) => Some(probed),
+        BoundTensorOrTorchFunction::Tensor(_) => None,
+    };
+    ordered_binary_overrides(
+        input,
+        other,
+        "unable to allocate allclose dispatch operands",
+    )
+}
+
 fn ordered_dtype_overrides<'py>(
     operation: DTypeBinaryOperation,
     first: &BoundDTypeOperand<'py>,
@@ -3223,6 +3289,86 @@ fn dispatch_top_level_matmul(
         active_mode.get(),
         &overrides,
     )?)
+}
+
+fn dispatch_top_level_allclose(
+    py: Python<'_>,
+    call: &BoundAllcloseCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let overrides = ordered_allclose_overrides(call)?;
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
+        return apply_top_level_allclose(py, call);
+    }
+
+    let function = variable_function(py, "allclose")?;
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+
+    // Generated variable functions validate their schema before dispatch and
+    // disable the top mode for the complete attempt. Explicit forwarding from
+    // a mode therefore reaches the next mode, then operand overrides or the
+    // native predicate.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    for probed in &overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.allclose",
+        active_mode.get(),
+        &overrides,
+    )?)
+}
+
+fn apply_top_level_allclose(py: Python<'_>, call: &BoundAllcloseCall<'_>) -> PyResult<Py<PyAny>> {
+    let relative_tolerance = parse_allclose_tolerance(call.relative_tolerance.as_ref(), 1.0e-5)?;
+    let absolute_tolerance = parse_allclose_tolerance(call.absolute_tolerance.as_ref(), 1.0e-8)?;
+    let equal_nan = parse_allclose_equal_nan(call.equal_nan.as_ref())?;
+    validate_allclose_tolerance(py, "rtol", relative_tolerance)?;
+    validate_allclose_tolerance(py, "atol", absolute_tolerance)?;
+
+    let (BoundTensorOrTorchFunction::Tensor(input), BoundTensorOrTorchFunction::Tensor(other)) =
+        (&call.input, &call.other)
+    else {
+        unreachable!("allclose overrides were dispatched before the native path")
+    };
+    let other = other.try_borrow()?;
+    let input = input.try_borrow()?;
+    if !input.inner.is_same_size(&other.inner) {
+        return Err(PyRuntimeError::new_err(format!(
+            "allclose(): same-shaped tensors are required, but input has shape {:?} and other has shape {:?}",
+            input.inner.shape(),
+            other.inner.shape(),
+        )));
+    }
+
+    input
+        .inner
+        .allclose_same_shape(
+            &other.inner,
+            relative_tolerance,
+            absolute_tolerance,
+            equal_nan,
+        )
+        .into_py_any(py)
 }
 
 fn dispatch_top_level_multiplication(
@@ -7855,6 +8001,127 @@ fn parse_dtype_operand<'py>(
     )))
 }
 
+fn bind_allclose_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<AllcloseCallArguments<'py>> {
+    if positional.len() > 5 {
+        return Err(PyTypeError::new_err(format!(
+            "allclose() takes from 2 to 5 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let keyword_argument = |names: &[&str]| -> PyResult<Option<Bound<'py, PyAny>>> {
+        let Some(keywords) = keywords else {
+            return Ok(None);
+        };
+        for name in names {
+            if let Some(value) = keywords.get_item(*name)? {
+                return Ok(Some(value));
+            }
+        }
+        Ok(None)
+    };
+    let positional_argument = |index: usize| -> PyResult<Option<ParsedCallArgument<'py>>> {
+        if index < positional.len() {
+            Ok(Some(ParsedCallArgument {
+                value: positional.get_item(index)?,
+                position: Some(index + 1),
+            }))
+        } else {
+            Ok(None)
+        }
+    };
+    let keyword_call_argument = |names: &[&str]| -> PyResult<Option<ParsedCallArgument<'py>>> {
+        Ok(keyword_argument(names)?.map(|value| ParsedCallArgument {
+            value,
+            position: None,
+        }))
+    };
+
+    let input = positional_argument(0)?.or(keyword_call_argument(&["input", "x", "a", "x1"])?);
+    let other = positional_argument(1)?.or(keyword_call_argument(&["other", "x2"])?);
+    let relative_tolerance = positional_argument(2)?.or(keyword_call_argument(&["rtol"])?);
+    let absolute_tolerance = positional_argument(3)?.or(keyword_call_argument(&["atol"])?);
+    let equal_nan = positional_argument(4)?.or(keyword_call_argument(&["equal_nan"])?);
+
+    let Some(input) = input else {
+        return Err(PyTypeError::new_err(
+            "allclose() missing 2 required positional argument: \"input\", \"other\"",
+        ));
+    };
+    let Some(other) = other else {
+        parse_tensor_or_torch_function_argument("allclose", "input", &input)?;
+        return Err(PyTypeError::new_err(
+            "allclose() missing 1 required positional arguments: \"other\"",
+        ));
+    };
+
+    let keyword_arguments = usize::from(input.position.is_none())
+        + usize::from(other.position.is_none())
+        + usize::from(
+            relative_tolerance
+                .as_ref()
+                .is_some_and(|argument| argument.position.is_none()),
+        )
+        + usize::from(
+            absolute_tolerance
+                .as_ref()
+                .is_some_and(|argument| argument.position.is_none()),
+        )
+        + usize::from(
+            equal_nan
+                .as_ref()
+                .is_some_and(|argument| argument.position.is_none()),
+        );
+    let keyword_error = allclose_keyword_error(positional.len(), keywords, keyword_arguments)?;
+
+    Ok(AllcloseCallArguments {
+        input,
+        other,
+        relative_tolerance,
+        absolute_tolerance,
+        equal_nan,
+        keyword_error,
+    })
+}
+
+fn allclose_keyword_error(
+    positional_count: usize,
+    keywords: Option<&Bound<'_, PyDict>>,
+    bound_keyword_count: usize,
+) -> PyResult<Option<PyErr>> {
+    let Some(keywords) = keywords else {
+        return Ok(None);
+    };
+    if keywords.len() <= bound_keyword_count {
+        return Ok(None);
+    }
+
+    for key in keywords.keys() {
+        let key = key.extract::<String>()?;
+        let position = match key.as_str() {
+            "input" => 0,
+            "other" => 1,
+            "rtol" => 2,
+            "atol" => 3,
+            "equal_nan" => 4,
+            _ => {
+                return Ok(Some(PyTypeError::new_err(format!(
+                    "allclose() got an unexpected keyword argument '{key}'"
+                ))));
+            }
+        };
+        if position < positional_count {
+            return Ok(Some(PyTypeError::new_err(format!(
+                "allclose() got multiple values for argument '{key}'"
+            ))));
+        }
+    }
+    Ok(None)
+}
+
 #[derive(Clone, Copy)]
 enum LegacyBinaryInputKind {
     Tensor,
@@ -8101,6 +8368,74 @@ fn parse_tensor_or_torch_function_argument<'py>(
     }
     parse_tensor_argument(function, argument, value)
         .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
+}
+
+fn validate_allclose_float_argument(name: &str, argument: &ParsedCallArgument<'_>) -> PyResult<()> {
+    if let Ok(tensor) = argument.value.cast::<PyTensor>() {
+        let tensor = tensor.try_borrow()?;
+        if tensor.inner.shape().is_empty() && !tensor.inner.requires_grad() {
+            return Ok(());
+        }
+    } else if is_real_arithmetic_scalar(&argument.value)? {
+        return Ok(());
+    }
+
+    let position = argument
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&argument.value)?;
+    Err(PyTypeError::new_err(format!(
+        "allclose(): argument '{name}'{position} must be float, not {actual}"
+    )))
+}
+
+fn validate_allclose_bool_argument(name: &str, argument: &ParsedCallArgument<'_>) -> PyResult<()> {
+    if argument.value.is_exact_instance_of::<PyBool>() {
+        return Ok(());
+    }
+
+    let position = argument
+        .position
+        .map_or_else(String::new, |position| format!(" (position {position})"));
+    let actual = python_type_name(&argument.value)?;
+    Err(PyTypeError::new_err(format!(
+        "allclose(): argument '{name}'{position} must be bool, not {actual}"
+    )))
+}
+
+fn parse_allclose_tolerance(
+    argument: Option<&ParsedCallArgument<'_>>,
+    default: f64,
+) -> PyResult<f64> {
+    let Some(argument) = argument else {
+        return Ok(default);
+    };
+    if let Ok(tensor) = argument.value.cast::<PyTensor>() {
+        return tensor
+            .try_borrow()?
+            .inner
+            .item()
+            .map(f64::from)
+            .map_err(|error| item_error(&error));
+    }
+    argument.value.extract::<f64>()
+}
+
+fn parse_allclose_equal_nan(argument: Option<&ParsedCallArgument<'_>>) -> PyResult<bool> {
+    argument.map_or(Ok(false), |argument| argument.value.is_truthy())
+}
+
+fn validate_allclose_tolerance(py: Python<'_>, name: &str, tolerance: f64) -> PyResult<()> {
+    if tolerance >= 0.0 {
+        return Ok(());
+    }
+
+    let formatted = PyString::new(py, "{:g}")
+        .call_method1("format", (tolerance,))?
+        .extract::<String>()?;
+    Err(PyRuntimeError::new_err(format!(
+        "{name} must be greater than or equal to zero, but got {formatted}"
+    )))
 }
 
 fn is_real_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
