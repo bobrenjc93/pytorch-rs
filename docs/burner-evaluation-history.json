@@ -5153,6 +5153,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 93.4
       }
+    },
+    {
+      "key": "pr:679",
+      "recordedAt": "2026-08-22T20:34:39.295Z",
+      "label": "PR #679",
+      "kind": "leaf",
+      "prNumber": 679,
+      "title": "Support singleton full-slice tuple indexing",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 84.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 67.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 93.5
+      }
     }
   ]
 }
