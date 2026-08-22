@@ -758,23 +758,39 @@ impl Tensor {
     /// according to their current logical shape.
     #[must_use]
     pub fn with_requires_grad(mut self, requires_grad: bool) -> Self {
-        if !requires_grad {
+        if requires_grad {
+            self.enable_requires_grad();
+        } else {
             self.autograd = None;
-            self.output_nr = 0;
-            self.view_requires_grad = false;
-        } else if self.autograd.is_none() {
-            self.autograd = Some(Arc::new(AutogradMeta {
-                kind: AutogradKind::Leaf {
-                    shape: self.shape.clone(),
-                    dtype: self.dtype(),
-                    device: self.device(),
-                    grad: Mutex::new(None),
-                },
-            }));
             self.output_nr = 0;
             self.view_requires_grad = false;
         }
         self
+    }
+
+    /// Installs leaf gradient accumulation metadata without changing storage
+    /// or layout.
+    ///
+    /// Existing graph participants are left untouched. A leaf view created
+    /// while recording was disabled has no backward edge despite reporting
+    /// `requires_grad`; enabling it promotes that view to an independent leaf,
+    /// matching `Tensor.requires_grad_(True)`.
+    pub(crate) fn enable_requires_grad(&mut self) {
+        if self.autograd.is_some() {
+            return;
+        }
+
+        let autograd = Arc::new(AutogradMeta {
+            kind: AutogradKind::Leaf {
+                shape: self.shape.clone(),
+                dtype: self.dtype(),
+                device: self.device(),
+                grad: Mutex::new(None),
+            },
+        });
+        self.autograd = Some(autograd);
+        self.output_nr = 0;
+        self.view_requires_grad = false;
     }
 
     /// Returns a detached, contiguous snapshot of an accumulated leaf gradient.

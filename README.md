@@ -148,6 +148,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `Tensor.grad_dtype` is a read-only leaf-tensor query that returns the canonical `torch.float32` singleton used by native gradient accumulation. Non-leaf access raises PyTorch's error; setting `None` or an alternate gradient dtype remains unsupported.
 
+`Tensor.requires_grad_()` and `Tensor.requires_grad_(True)` enable native leaf gradient accumulation in place and return the exact receiver. The supported path preserves storage, offsets, strides, and existing graphs for ordinary, empty, detached, offset, and noncontiguous leaf tensors; operations created under `no_grad` remain unrecorded. `requires_grad_(False)` is rejected before mutation because disabling gradient recording is not yet supported.
+
 `torch.overrides.has_torch_function_unary` is the public alias of the native `torch._C._has_torch_function_unary` builtin used by the Python-owned unary dispatch wrappers. It matches PyTorch's exact-tensor, Tensor-class, custom-override, disabled-handler, mode, and descriptor-failure behavior without exposing the generic or variadic probes.
 
 `Tensor.ravel()` and top-level `torch.ravel()` share the native view-or-copy path: row-contiguous inputs alias storage through a new one-dimensional wrapper, while other layouts are materialized.
