@@ -65,7 +65,7 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
         native_values = tuple(getattr(native, name) for name in CAPABILITY_NAMES)
         backends = module.backends
         backend_modules = tuple(
-            getattr(backends, name) for name in ("openmp", "mkl")
+            getattr(backends, name) for name in ("openmp", "mkl", "nnpack")
         )
         backend_functions = tuple(
             backend.is_available for backend in backend_modules
@@ -94,7 +94,9 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
             tuple(
                 getattr(module.backends, name) is backend
                 for name, backend in zip(
-                    ("openmp", "mkl"), backend_modules, strict=True
+                    ("openmp", "mkl", "nnpack"),
+                    backend_modules,
+                    strict=True,
                 )
             ),
             tuple(
@@ -139,16 +141,18 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
     def test_backend_availability_namespaces_match_the_supported_scope(self):
         self.assertTrue(hasattr(reference_torch, "backends"))
         self.assertTrue(hasattr(torch, "backends"))
-        for backend in ("openmp", "mkl"):
+        for backend in ("openmp", "mkl", "nnpack"):
             with self.subTest(backend=backend):
                 actual = getattr(torch.backends, backend)
                 expected = getattr(reference_torch.backends, backend)
                 self.assertIs(type(actual.is_available()), bool)
                 self.assertIs(type(expected.is_available()), bool)
-                self.assertIs(
-                    actual.is_available(),
-                    getattr(torch._C, f"has_{backend}"),
+                actual_expected = (
+                    torch._nnpack_available()
+                    if backend == "nnpack"
+                    else getattr(torch._C, f"has_{backend}")
                 )
+                self.assertIs(actual.is_available(), actual_expected)
 
         self.assertFalse(hasattr(torch.backends, "lapack"))
         self.assertFalse(hasattr(torch.backends, "mkldnn"))
