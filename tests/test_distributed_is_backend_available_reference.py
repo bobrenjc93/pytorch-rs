@@ -2,10 +2,9 @@ import contextlib
 import copy
 import importlib
 import inspect
-import os
 import pickle
 import pickletools
-import threading
+import sys
 import types
 import typing
 import unittest
@@ -19,53 +18,18 @@ except ImportError:
     reference_torch = None
 
 
-_OMITTED = object()
-
-
-class IntLike:
-    def __int__(self):
-        return 23
-
-
-class IndexLike:
-    def __index__(self):
-        return -24
-
-
-class BadInt:
-    def __int__(self):
-        return "25"
-
-
-class RaisingInt:
-    def __int__(self):
-        raise LookupError("sentinel conversion failure")
+SUPPORTED_BACKENDS = ("gloo", "mpi", "nccl", "ucc", "xccl")
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
+class DistributedIsBackendAvailableReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.get_node_local_rank differentials require pinned "
+                "distributed.is_backend_available differentials require pinned "
                 "PyTorch 2.13.0"
             )
-
-    def outcome(self, function, fallback_rank=_OMITTED):
-        try:
-            if fallback_rank is _OMITTED:
-                result = function()
-            else:
-                result = function(fallback_rank)
-        except BaseException as error:
-            return (
-                "error",
-                type(error).__name__,
-                str(error),
-                error.args,
-            )
-        return "return", type(result).__name__, result
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -88,112 +52,65 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def threaded_outcome(self, module, environment, fallback_rank):
-        function = module.distributed.get_node_local_rank
-        worker_count = 8
-        barrier = threading.Barrier(worker_count)
-        results = [None] * worker_count
-        errors = []
+    def test_supported_simple_name_routing_matches(self):
+        for backend in SUPPORTED_BACKENDS:
+            query_name = f"is_{backend}_available"
+            for module in (torch, reference_torch):
+                function = module.distributed.is_backend_available
+                marker = object()
+                for spelling in (
+                    backend,
+                    backend.upper(),
+                    backend.title(),
+                ):
+                    with self.subTest(
+                        module=module.__name__,
+                        backend=backend,
+                        spelling=spelling,
+                    ):
+                        with contextlib.ExitStack() as stack:
+                            queries = {
+                                name: stack.enter_context(
+                                    mock.patch.object(
+                                        module.distributed,
+                                        f"is_{name}_available",
+                                        return_value=(
+                                            marker if name == backend else False
+                                        ),
+                                    )
+                                )
+                                for name in SUPPORTED_BACKENDS
+                            }
+                            self.assertIs(function(spelling), marker)
+                        queries[backend].assert_called_once_with()
+                        for other_backend, query in queries.items():
+                            if other_backend != backend:
+                                query.assert_not_called()
 
-        with mock.patch.dict(os.environ, environment, clear=True):
-            before = dict(os.environ)
+    def test_unknown_simple_names_and_type_errors_match(self):
+        actual = torch.distributed.is_backend_available
+        expected = reference_torch.distributed.is_backend_available
 
-            def worker(index):
-                try:
-                    context = (
-                        module.no_grad()
-                        if index % 2
-                        else contextlib.nullcontext()
-                    )
-                    with context:
-                        barrier.wait(timeout=10)
-                        first = function(fallback_rank)
-                        second = function(fallback_rank=fallback_rank)
-                        results[index] = (
-                            module.is_grad_enabled(),
-                            type(first).__name__,
-                            first,
-                            type(second).__name__,
-                            second,
-                        )
-                except BaseException as error:
-                    errors.append((type(error).__name__, str(error), error.args))
+        for backend in ("", "unknown", "cpu", " gloo ", "gloo_"):
+            with self.subTest(backend=backend):
+                self.assertIs(actual(backend), False)
+                self.assertIs(expected(backend), False)
 
-            threads = [
-                threading.Thread(target=worker, args=(index,))
-                for index in range(worker_count)
-            ]
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join(timeout=10)
-
-            self.assertFalse(any(thread.is_alive() for thread in threads))
-            self.assertEqual(dict(os.environ), before)
-        return errors, results
-
-    def test_environment_fallback_precedence_and_errors_match(self):
-        actual = torch.distributed.get_node_local_rank
-        expected = reference_torch.distributed.get_node_local_rank
         cases = (
-            ({}, _OMITTED),
-            ({}, None),
-            ({}, 0),
-            ({}, -3),
-            ({}, True),
-            ({}, 4.9),
-            ({}, " 10 "),
-            ({}, b"11"),
-            ({}, bytearray(b"12")),
-            ({}, IntLike()),
-            ({}, IndexLike()),
-            ({}, BadInt()),
-            ({}, RaisingInt()),
-            ({}, object()),
-            ({"LOCAL_RANK": "0"}, _OMITTED),
-            ({"LOCAL_RANK": "-7"}, 999),
-            ({"LOCAL_RANK": "+8"}, None),
-            ({"LOCAL_RANK": " 9 "}, object()),
-            ({"LOCAL_RANK": "٠"}, 999),
-            ({"LOCAL_RANK": ""}, 5),
-            ({"LOCAL_RANK": "4.5"}, 5),
-            ({"LOCAL_RANK": "not-a-rank"}, 5),
+            (lambda: actual(None), lambda: expected(None)),
+            (lambda: actual(1), lambda: expected(1)),
+            (lambda: actual(b"gloo"), lambda: expected(b"gloo")),
+            (lambda: actual(["gloo"]), lambda: expected(["gloo"])),
         )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
 
-        for environment, fallback_rank in cases:
-            with self.subTest(
-                environment=environment, fallback_rank=fallback_rank
-            ):
-                with mock.patch.dict(os.environ, environment, clear=True):
-                    before = dict(os.environ)
-                    actual_outcome = self.outcome(actual, fallback_rank)
-                    self.assertEqual(dict(os.environ), before)
-                    expected_outcome = self.outcome(expected, fallback_rank)
-                    self.assertEqual(dict(os.environ), before)
-                self.assertEqual(actual_outcome, expected_outcome)
-
-    def test_threaded_environment_and_fallback_reads_match(self):
-        expected_c10d = importlib.import_module(
-            "torch.distributed.distributed_c10d"
+        self.assertIs(actual(backend="gloo"), False)
+        self.assertIs(
+            type(expected(backend="gloo")),
+            bool,
         )
-        self.assertEqual(expected_c10d._world.group_count, 0)
-
-        for environment, fallback_rank in (
-            ({"LOCAL_RANK": "31"}, -1),
-            ({"RANK": "8"}, "32"),
-        ):
-            with self.subTest(
-                environment=environment, fallback_rank=fallback_rank
-            ):
-                self.assertEqual(
-                    self.threaded_outcome(torch, environment, fallback_rank),
-                    self.threaded_outcome(
-                        reference_torch, environment, fallback_rank
-                    ),
-                )
-
-        self.assertIs(reference_torch.distributed.is_initialized(), False)
-        self.assertEqual(expected_c10d._world.group_count, 0)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_distributed = importlib.import_module("torch_rs.distributed")
@@ -204,15 +121,15 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
-        actual = actual_distributed.get_node_local_rank
-        expected = expected_distributed.get_node_local_rank
+        actual = actual_distributed.is_backend_available
+        expected = expected_distributed.is_backend_available
 
         self.assertIs(torch.distributed, actual_distributed)
         self.assertIs(reference_torch.distributed, expected_distributed)
         self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
         self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-        self.assertIs(actual_c10d.get_node_local_rank, actual)
-        self.assertIs(expected_c10d.get_node_local_rank, expected)
+        self.assertIs(actual_c10d.is_backend_available, actual)
+        self.assertIs(expected_c10d.is_backend_available, expected)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -244,8 +161,8 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.get_node_local_rank
-        expected = expected_distributed.get_node_local_rank
+        actual = actual_distributed.is_backend_available
+        expected = expected_distributed.is_backend_available
         supported = {
             "get_pg_count",
             "is_gloo_available",
@@ -258,6 +175,12 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
             "get_node_local_rank",
         }
 
+        self.assertIs(
+            sys.modules["torch_rs.distributed.distributed_c10d"], actual_c10d
+        )
+        self.assertIs(
+            sys.modules["torch.distributed.distributed_c10d"], expected_c10d
+        )
         self.assertEqual(
             hasattr(actual_distributed, "__all__"),
             hasattr(expected_distributed, "__all__"),
@@ -267,8 +190,8 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
             [name for name in expected_c10d.__all__ if name in supported],
         )
         self.assertEqual(
-            torch.__all__.count("get_node_local_rank"),
-            reference_torch.__all__.count("get_node_local_rank"),
+            torch.__all__.count("is_backend_available"),
+            reference_torch.__all__.count("is_backend_available"),
         )
 
         for module, function in (
@@ -279,12 +202,12 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["get_node_local_rank"], function)
+            self.assertIs(namespace["is_backend_available"], function)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertNotIn("get_node_local_rank", namespace)
+            self.assertNotIn("is_backend_available", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -302,32 +225,60 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_binding_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.get_node_local_rank
-        expected = reference_torch.distributed.get_node_local_rank
+        actual = torch.distributed.is_backend_available
+        expected = reference_torch.distributed.is_backend_available
         cases = (
-            (lambda: actual(1, 2), lambda: expected(1, 2)),
+            (lambda: actual(), lambda: expected()),
+            (
+                lambda: actual("gloo", "mpi"),
+                lambda: expected("gloo", "mpi"),
+            ),
             (
                 lambda: actual(enabled=True),
                 lambda: expected(enabled=True),
             ),
             (
-                lambda: actual(1, fallback_rank=2),
-                lambda: expected(1, fallback_rank=2),
+                lambda: actual("gloo", backend="mpi"),
+                lambda: expected("gloo", backend="mpi"),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_no_process_group_or_global_rank_surface_was_added(self):
+    def test_explicitly_unsupported_distributed_surface_stays_absent(self):
         actual_distributed = torch.distributed
-        actual_c10d = actual_distributed.distributed_c10d
         expected_distributed = reference_torch.distributed
+        actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
 
-        self.assertIs(actual_distributed.is_initialized(), False)
-        self.assertEqual(actual_distributed.get_pg_count(), 0)
+        for backend in (
+            "cpu:gloo",
+            "cuda:nccl",
+            "gloo:nccl",
+            "cpu:gloo,cuda:nccl",
+        ):
+            with self.subTest(backend=backend):
+                self.assertIs(
+                    actual_distributed.is_backend_available(backend), False
+                )
+
+        third_party_query = mock.Mock(return_value=True)
+        with mock.patch.object(
+            actual_distributed,
+            "is_third_party_available",
+            third_party_query,
+            create=True,
+        ):
+            self.assertIs(
+                actual_distributed.is_backend_available("third_party"), False
+            )
+        third_party_query.assert_not_called()
+
         for name in (
+            "Backend",
+            "BackendConfig",
+            "GroupMember",
             "ProcessGroup",
             "all_reduce",
             "destroy_process_group",
