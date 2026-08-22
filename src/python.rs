@@ -276,10 +276,11 @@ impl PyTensorBase {
         } else if index.is_instance_of::<PyTuple>() {
             // PyTorch materializes tuple subclasses through their Python iterator first.
             let indices = index.cast::<PySequence>()?.to_tuple()?;
-            if indices.len() == 1
-                && (indices.get_item(0)?.is_instance_of::<PyEllipsis>()
-                    || (!tensor.inner.shape().is_empty()
-                        && is_exact_full_slice(&indices.get_item(0)?)?))
+            if indices.is_empty()
+                || (indices.len() == 1
+                    && (indices.get_item(0)?.is_instance_of::<PyEllipsis>()
+                        || (!tensor.inner.shape().is_empty()
+                            && is_exact_full_slice(&indices.get_item(0)?)?)))
             {
                 tensor.inner.metadata_alias()
             } else if indices.len() == 2

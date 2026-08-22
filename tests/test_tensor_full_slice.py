@@ -48,6 +48,11 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         signed_zero = torch.tensor([-0.0])[index]
         self.assertEqual(np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000)
 
+    def test_empty_tuple_returns_an_exact_metadata_alias(self):
+        for case, source in self.layout_cases() + (("scalar", torch.tensor(-0.0)),):
+            with self.subTest(case=case):
+                self.assert_metadata_alias(source, source[()])
+
     def test_scalar_full_slice_raises_the_exact_pytorch_error(self):
         with self.assertRaises(IndexError) as raised:
             torch.tensor(-0.0)[:]
@@ -105,6 +110,11 @@ class TensorFullSliceIndexTests(unittest.TestCase):
     def test_singleton_tuple_uses_alias_autograd_node_and_no_grad_status(self):
         self.assert_autograd_gradient_node_and_no_grad_leaf_status(
             (slice(None),), "AliasBackward0"
+        )
+
+    def test_empty_tuple_uses_alias_autograd_node_and_no_grad_status(self):
+        self.assert_autograd_gradient_node_and_no_grad_leaf_status(
+            (), "AliasBackward0"
         )
 
     def assert_storage_and_autograd_survive_source_lifetime(self, index):
@@ -221,6 +231,11 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                 events.append("full-slice")
                 return iter((slice(None),))
 
+        class EmptyOverride(tuple):
+            def __iter__(self):
+                events.append("empty")
+                return iter(())
+
         class ExplodingOverride(tuple):
             def __iter__(self):
                 events.append("explode")
@@ -240,9 +255,22 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         self.assertEqual(events, ["integer", "full-slice"])
         self.assert_metadata_alias(source, alias)
 
+        diagnostic_leaf = torch.tensor([2.0], requires_grad=True)
+        empty_alias = diagnostic_leaf[EmptyOverride((Ellipsis,))]
+        self.assertEqual(events, ["integer", "full-slice", "empty"])
+        self.assert_metadata_alias(diagnostic_leaf, empty_alias)
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^dropout probability has to be between 0 and 1, but got "
+            r"tensor\(\[2\.\], grad_fn=<AliasBackward0>\)$",
+        ):
+            torch.nn.functional.dropout(None, p=empty_alias, training=False)
+
         with self.assertRaisesRegex(RuntimeError, r"^tuple iteration exploded$"):
             source[ExplodingOverride((slice(None),))]
-        self.assertEqual(events, ["integer", "full-slice", "explode"])
+        self.assertEqual(
+            events, ["integer", "full-slice", "empty", "explode"]
+        )
 
     def test_existing_indices_and_unsupported_slice_forms_are_unchanged(self):
         tensor = torch.tensor(

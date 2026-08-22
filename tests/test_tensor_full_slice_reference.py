@@ -158,6 +158,9 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
     def test_singleton_tuple_autograd_and_no_grad_match_pytorch_2_13(self):
         self.assert_autograd_node_gradient_and_no_grad_status_match((slice(None),))
 
+    def test_empty_tuple_autograd_and_no_grad_match_pytorch_2_13(self):
+        self.assert_autograd_node_gradient_and_no_grad_status_match(())
+
     def lifetime_contract(self, module, index):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         leaf = module.tensor(
@@ -211,6 +214,11 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                 events.append("full-slice")
                 return iter((slice(None),))
 
+        class EmptyOverride(tuple):
+            def __iter__(self):
+                events.append("empty")
+                return iter(())
+
         class ExplodingOverride(tuple):
             def __iter__(self):
                 events.append("explode")
@@ -221,6 +229,16 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         )
         row = source[IntegerOverride((slice(None),))]
         alias = source[FullSliceOverride((0,))]
+        diagnostic_leaf = module.tensor(
+            [2.0], dtype=module.float32, requires_grad=True
+        )
+        empty_alias = diagnostic_leaf[EmptyOverride((Ellipsis,))]
+        try:
+            module.nn.functional.dropout(None, p=empty_alias, training=False)
+        except ValueError as error:
+            empty_alias_diagnostic = str(error)
+        else:
+            self.fail("dropout unexpectedly accepted an out-of-range tensor probability")
         try:
             source[ExplodingOverride((slice(None),))]
         except Exception as error:
@@ -241,6 +259,14 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             "alias_offset": alias.storage_offset(),
             "alias_is_set_to_source": alias.is_set_to(source),
             "alias_shared_pointer": alias.data_ptr() == source.data_ptr(),
+            "empty_alias_shape": tuple(empty_alias.shape),
+            "empty_alias_stride": empty_alias.stride(),
+            "empty_alias_offset": empty_alias.storage_offset(),
+            "empty_alias_is_set_to_source": empty_alias.is_set_to(diagnostic_leaf),
+            "empty_alias_shared_pointer": (
+                empty_alias.data_ptr() == diagnostic_leaf.data_ptr()
+            ),
+            "empty_alias_diagnostic": empty_alias_diagnostic,
             "error": error_contract,
         }
 
