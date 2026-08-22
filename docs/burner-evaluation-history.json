@@ -5041,6 +5041,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.5
       }
+    },
+    {
+      "key": "pr:654",
+      "recordedAt": "2026-08-22T14:27:51.327Z",
+      "label": "PR #654",
+      "kind": "leaf",
+      "prNumber": 654,
+      "title": "Expose inference-only top-level torch.reciprocal",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 83.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.7
+      }
     }
   ]
 }

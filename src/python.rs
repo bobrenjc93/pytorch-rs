@@ -1347,6 +1347,14 @@ pub(crate) fn ravel_variable_function(
     )
 }
 
+pub(crate) fn reciprocal_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::RECIPROCAL, py, args, kwargs)
+}
+
 pub(crate) fn exp_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1770,6 +1778,15 @@ impl UnaryOutOperation {
         apply: CoreTensor::exp,
     };
 
+    const RECIPROCAL: Self = Self {
+        name: "reciprocal",
+        qualified_name: "torch.reciprocal",
+        dispatch_allocation_error: "unable to allocate reciprocal dispatch operands",
+        out_unsupported_error: "reciprocal(): the 'out' argument is not supported",
+        autograd_unsupported_error: Some("reciprocal(): autograd recording is not supported"),
+        apply: apply_reciprocal,
+    };
+
     const SIN: Self = Self {
         name: "sin",
         qualified_name: "torch.sin",
@@ -1787,6 +1804,10 @@ impl UnaryOutOperation {
         autograd_unsupported_error: None,
         apply: CoreTensor::sqrt,
     };
+}
+
+fn apply_reciprocal(tensor: &CoreTensor) -> Result<CoreTensor, TensorError> {
+    tensor.scalar_div_with_unary_layout(1.0)
 }
 
 struct BoundUnaryOutCall<'py> {
