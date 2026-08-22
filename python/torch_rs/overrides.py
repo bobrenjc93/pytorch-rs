@@ -7,6 +7,7 @@ from .torch_rs import (
     Tensor,
     _get_function_stack_at,
     _has_torch_function_unary as has_torch_function_unary,
+    _has_torch_function_variadic as has_torch_function_variadic,
     _len_torch_function_stack,
     _pop_torch_function_stack,
     _push_on_torch_function_stack,

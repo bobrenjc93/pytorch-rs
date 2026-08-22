@@ -206,7 +206,7 @@ class HasTorchFunctionUnaryTests(unittest.TestCase):
         )
         self.assertIs(public_namespace["has_torch_function_unary"], function)
 
-    def test_probe_is_not_wildcard_exported_and_broader_probes_stay_unsupported(self):
+    def test_probe_is_not_wildcard_exported_and_generic_probe_stays_unsupported(self):
         function = torch.overrides.has_torch_function_unary
         self.assertNotIn("has_torch_function_unary", torch.overrides.__all__)
         self.assertNotIn("_has_torch_function_unary", torch._C.__all__)
@@ -225,11 +225,11 @@ class HasTorchFunctionUnaryTests(unittest.TestCase):
         for module, names in (
             (
                 torch.overrides,
-                ("has_torch_function", "has_torch_function_variadic"),
+                ("has_torch_function",),
             ),
             (
                 torch._C,
-                ("_has_torch_function", "_has_torch_function_variadic"),
+                ("_has_torch_function",),
             ),
         ):
             for name in names:
