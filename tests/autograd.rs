@@ -1082,6 +1082,61 @@ fn transformations_record_inverse_gradient_mappings() {
 }
 
 #[test]
+fn leading_dimension_narrow_records_contiguous_logical_gradient_ranges() {
+    let leaf = Tensor::from_vec((0_u8..48).map(f32::from).collect(), [48])
+        .unwrap()
+        .with_requires_grad(true);
+    let source = leaf
+        .mul_scalar(2.0)
+        .unwrap()
+        .reshape([2, 2, 3, 4])
+        .unwrap()
+        .index_integer(1)
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+    let narrowed = source.narrow_first_dimension(-2, 2).unwrap();
+    assert!(narrowed.requires_grad());
+    assert!(!narrowed.is_leaf());
+    assert!(narrowed.shares_storage_with(&source));
+
+    let weights = Tensor::from_vec((1_u8..=16).map(f32::from).collect(), [2, 2, 4]).unwrap();
+    narrowed.mul(&weights).unwrap().sum().backward().unwrap();
+
+    let mut expected = vec![0.0; 48];
+    for (index, weight) in [
+        (28, 1.0),
+        (29, 2.0),
+        (30, 3.0),
+        (31, 4.0),
+        (40, 5.0),
+        (41, 6.0),
+        (42, 7.0),
+        (43, 8.0),
+        (32, 9.0),
+        (33, 10.0),
+        (34, 11.0),
+        (35, 12.0),
+        (44, 13.0),
+        (45, 14.0),
+        (46, 15.0),
+        (47, 16.0),
+    ] {
+        expected[index] = 2.0 * weight;
+    }
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), expected);
+
+    let empty = Tensor::zeros([4, 2]).unwrap().with_requires_grad(true);
+    empty
+        .narrow_first_dimension(2, 0)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert_eq!(values(&empty.grad().unwrap().unwrap()), [0.0; 8]);
+}
+
+#[test]
 fn channels_last_clone_records_identity_gradients_and_obeys_no_grad() {
     let leaf = Tensor::from_vec((1_u8..=48).map(f32::from).collect(), [2, 3, 2, 4])
         .unwrap()
@@ -1202,6 +1257,7 @@ fn no_grad_views_preserve_requires_grad_without_recording_history() {
     assert!(source.reshape([4]).unwrap().requires_grad());
     assert!(source.squeeze().unwrap().requires_grad());
     assert!(source.index([0]).unwrap().requires_grad());
+    assert!(source.narrow_first_dimension(0, 1).unwrap().requires_grad());
     assert_eq!(
         transposed.backward(),
         Err(TensorError::BackwardRequiresScalar { elements: 4 })

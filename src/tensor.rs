@@ -1837,6 +1837,81 @@ impl Tensor {
         Ok(output)
     }
 
+    /// Narrows the leading dimension without copying storage.
+    ///
+    /// Negative starts wrap from the end of the leading dimension. The start
+    /// may equal the dimension size when `length` is zero, in which case the
+    /// returned empty view retains the corresponding one-past-end offset.
+    /// Shape, strides, dtype, device, and storage otherwise follow `PyTorch`'s
+    /// leading-dimension `Tensor.narrow` view semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for scalars, negative lengths, starts outside the
+    /// inclusive negative/positive dimension bounds, ranges extending beyond
+    /// the dimension, checked offset overflow, or view metadata allocation
+    /// failure.
+    pub fn narrow_first_dimension(&self, start: i64, length: i64) -> Result<Self, TensorError> {
+        let Some(&size) = self.shape.first() else {
+            return Err(TensorError::NarrowCannotApplyToScalar);
+        };
+        if length < 0 {
+            return Err(TensorError::NarrowLengthNegative);
+        }
+
+        let signed_size = i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        if start < -signed_size || start > signed_size {
+            return Err(TensorError::NarrowStartOutOfRange {
+                start,
+                size: signed_size,
+            });
+        }
+        let normalized_start = if start < 0 {
+            signed_size
+                .checked_add(start)
+                .ok_or(TensorError::IndexCalculationOverflow)?
+        } else {
+            start
+        };
+        if length > signed_size - normalized_start {
+            return Err(TensorError::NarrowExceedsDimension {
+                start: normalized_start,
+                length,
+                size: signed_size,
+            });
+        }
+
+        let normalized_start =
+            usize::try_from(normalized_start).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        let length = usize::try_from(length).map_err(|_| TensorError::IndexCalculationOverflow)?;
+        let offset = self.checked_normalized_dimension_offset(self.offset, 0, normalized_start)?;
+
+        let mut shape = try_clone_result_shape(&self.shape, self.elements)?;
+        shape[0] = length;
+        let strides = try_clone_result_shape(&self.strides, self.elements)?;
+        let elements = element_count(&shape)?;
+        validate_view_bounds(&shape, &strides, offset, elements, self.storage.len())?;
+
+        let trailing_elements = if size == 0 { 0 } else { self.elements / size };
+        let input_start = normalized_start
+            .checked_mul(trailing_elements)
+            .ok_or(TensorError::IndexCalculationOverflow)?;
+        self.finish_view_transform(
+            Self {
+                storage: Arc::clone(&self.storage),
+                shape,
+                strides,
+                offset,
+                elements,
+                output_nr: 0,
+                view_requires_grad: false,
+                autograd: None,
+            },
+            TransformMapping::Index { input_start },
+            AutogradNode::Slice,
+        )
+    }
+
     /// Selects the leading dimension with one integer, returning a shared-storage view.
     ///
     /// Negative indices wrap from the end of the dimension. This entry point
@@ -2002,7 +2077,16 @@ impl Tensor {
         };
         let normalized =
             usize::try_from(normalized).map_err(|_| TensorError::IndexCalculationOverflow)?;
-        let contribution = normalized
+        self.checked_normalized_dimension_offset(offset, dimension, normalized)
+    }
+
+    fn checked_normalized_dimension_offset(
+        &self,
+        offset: usize,
+        dimension: usize,
+        normalized_index: usize,
+    ) -> Result<usize, TensorError> {
+        let contribution = normalized_index
             .checked_mul(self.strides[dimension])
             .ok_or(TensorError::IndexCalculationOverflow)?;
         let offset = offset

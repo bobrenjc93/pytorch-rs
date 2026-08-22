@@ -2833,6 +2833,120 @@ fn integer_indexing_returns_shared_storage_views_with_pytorch_layouts() {
 }
 
 #[test]
+fn leading_dimension_narrow_returns_shared_storage_views_with_pytorch_layouts() {
+    let tensor = Tensor::from_vec((0_u8..48).map(f32::from).collect(), [2, 2, 3, 4]).unwrap();
+    let source = tensor.index_integer(1).unwrap().transpose(0, 1).unwrap();
+    assert_eq!(source.shape(), [3, 2, 4]);
+    assert_eq!(source.stride(), [4, 12, 1]);
+    assert_eq!(source.storage_offset(), 24);
+
+    let narrowed = source.narrow_first_dimension(-2, 2).unwrap();
+    assert_eq!(narrowed.shape(), [2, 2, 4]);
+    assert_eq!(narrowed.stride(), source.stride());
+    assert_eq!(narrowed.storage_offset(), 28);
+    assert!(narrowed.shares_storage_with(&source));
+    assert_eq!(narrowed.dtype(), source.dtype());
+    assert_eq!(narrowed.device(), source.device());
+    assert_eq!(
+        narrowed.try_to_vec().unwrap(),
+        [
+            28.0, 29.0, 30.0, 31.0, 40.0, 41.0, 42.0, 43.0, 32.0, 33.0, 34.0, 35.0, 44.0, 45.0,
+            46.0, 47.0,
+        ]
+    );
+    assert_eq!(
+        narrowed.data_ptr(),
+        source.data_ptr() + source.stride()[0] * source.element_size()
+    );
+
+    let zero_length = source.narrow_first_dimension(3, 0).unwrap();
+    assert_eq!(zero_length.shape(), [0, 2, 4]);
+    assert_eq!(zero_length.stride(), source.stride());
+    assert_eq!(zero_length.storage_offset(), 36);
+    assert_eq!(zero_length.data_ptr(), 0);
+    assert!(zero_length.shares_storage_with(&source));
+
+    let inner_empty = Tensor::zeros([4, 0, 3]).unwrap();
+    let inner_empty_view = inner_empty.narrow_first_dimension(-1, 1).unwrap();
+    assert_eq!(inner_empty_view.shape(), [1, 0, 3]);
+    assert_eq!(inner_empty_view.stride(), [3, 3, 1]);
+    assert_eq!(inner_empty_view.storage_offset(), 9);
+    assert!(inner_empty_view.try_to_vec().unwrap().is_empty());
+
+    let leading_empty = Tensor::zeros([0, 3]).unwrap();
+    let leading_empty_view = leading_empty.narrow_first_dimension(0, 0).unwrap();
+    assert_eq!(leading_empty_view.shape(), [0, 3]);
+    assert_eq!(leading_empty_view.stride(), [3, 1]);
+    assert_eq!(leading_empty_view.storage_offset(), 0);
+    assert!(leading_empty_view.shares_storage_with(&leading_empty));
+}
+
+#[test]
+fn leading_dimension_narrow_reports_range_and_checked_offset_errors() {
+    let tensor = Tensor::zeros([4, 3]).unwrap();
+    assert_eq!(
+        tensor.narrow_first_dimension(0, -1),
+        Err(TensorError::NarrowLengthNegative)
+    );
+    for start in [-5, 5] {
+        assert_eq!(
+            tensor.narrow_first_dimension(start, 0),
+            Err(TensorError::NarrowStartOutOfRange { start, size: 4 })
+        );
+    }
+    assert_eq!(
+        tensor.narrow_first_dimension(-1, 2),
+        Err(TensorError::NarrowExceedsDimension {
+            start: 3,
+            length: 2,
+            size: 4,
+        })
+    );
+    assert_eq!(
+        Tensor::from_vec(vec![1.0], [])
+            .unwrap()
+            .narrow_first_dimension(0, 0),
+        Err(TensorError::NarrowCannotApplyToScalar)
+    );
+
+    let maximum = isize::MAX.unsigned_abs();
+    let maximum_i64 = i64::try_from(maximum).unwrap();
+    assert_eq!(
+        Tensor::zeros([maximum, 0])
+            .unwrap()
+            .narrow_first_dimension(maximum_i64, maximum_i64),
+        Err(TensorError::NarrowExceedsDimension {
+            start: maximum_i64,
+            length: maximum_i64,
+            size: maximum_i64,
+        })
+    );
+    let extreme = Tensor::zeros([2, 0, maximum]).unwrap();
+    assert_eq!(
+        extreme
+            .narrow_first_dimension(1, 0)
+            .unwrap()
+            .storage_offset(),
+        maximum
+    );
+    assert_eq!(
+        extreme.narrow_first_dimension(2, 0),
+        Err(TensorError::InvalidStorageOffset { offset: -2 })
+    );
+
+    let offset = Tensor::zeros([maximum, 0])
+        .unwrap()
+        .index_integer(maximum_i64 - 1)
+        .unwrap()
+        .reshape([maximum_i64, 0])
+        .unwrap();
+    assert_eq!(
+        offset.narrow_first_dimension(maximum_i64, 0),
+        Err(TensorError::InvalidStorageOffset { offset: -3 })
+    );
+}
+
+#[test]
 fn integer_indexing_reports_pytorch_compatible_errors() {
     let tensor = Tensor::zeros([2, 3, 4]).unwrap();
     for (indices, expected) in [

@@ -328,6 +328,43 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nnarrow(dimension, start, length) -> Tensor\n\nSee :func:`torch.narrow`.\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn narrow(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let ([dimension, start, length], start_kind) = bind_narrow_arguments(args, kwargs)?;
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "narrow",
+            "torch.Tensor.narrow",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        if matches!(start_kind, NarrowStartKind::Tensor) {
+            return Err(PyRuntimeError::new_err(
+                "Tensor.narrow only supports integer start values",
+            ));
+        }
+
+        // Generated bindings convert SymInt-like arguments in reverse
+        // declaration order, after TorchFunctionMode has observed the original
+        // Python objects.
+        let length = extract_symint_index(&length.value)?;
+        let start = extract_symint_index(&start.value)?;
+        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+        narrow_first_dimension(slf.py(), tensor, dimension, start, length)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nselect(dim, index) -> Tensor\n\nSee :func:`torch.select`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn select(
@@ -354,7 +391,7 @@ impl PyTensorBase {
 
         // Generated bindings convert the SymInt-like index before the plain
         // integer dimension. Keep that observable order after mode dispatch.
-        let index = extract_select_index(&index.value)?;
+        let index = extract_symint_index(&index.value)?;
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
         select_first_dimension(slf.py(), tensor, dimension, index, "Tensor.select")
     }
@@ -2092,6 +2129,39 @@ fn unbind_first_dimension(
         .unbind())
 }
 
+fn narrow_first_dimension(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    dimension: i64,
+    start: i64,
+    length: i64,
+) -> PyResult<Py<PyAny>> {
+    let tensor = tensor.try_borrow()?;
+    let shape = tensor.inner.shape();
+    if shape.is_empty() {
+        return Err(PyRuntimeError::new_err(
+            "narrow() cannot be applied to a 0-dim tensor.",
+        ));
+    }
+    if length < 0 {
+        return Err(PyRuntimeError::new_err(
+            "narrow(): length must be non-negative.",
+        ));
+    }
+    let axis = normalize_dimension(dimension, shape.len())?;
+    if axis != 0 {
+        return Err(PyRuntimeError::new_err(
+            "Tensor.narrow only supports dimension 0",
+        ));
+    }
+
+    let inner = tensor
+        .inner
+        .narrow_first_dimension(start, length)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
 fn select_first_dimension(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
@@ -2208,7 +2278,7 @@ fn dispatch_top_level_select(
     if torch_function_mode_stack::is_empty()
         && let BoundTensorOrTorchFunction::Tensor(tensor) = input
     {
-        let index = extract_select_index(&index.value)?;
+        let index = extract_symint_index(&index.value)?;
         let dimension = extract_dimension_swap_dimension(&dimension.value)?;
         return select_first_dimension(py, tensor, dimension, index, "torch.select");
     }
@@ -2258,7 +2328,7 @@ fn dispatch_top_level_select(
                     None,
                 )?);
             }
-            let index = extract_select_index(&index.value)?;
+            let index = extract_symint_index(&index.value)?;
             let dimension = extract_dimension_swap_dimension(&dimension.value)?;
             select_first_dimension(py, tensor, dimension, index, "torch.select")
         }
@@ -5448,6 +5518,169 @@ fn bind_top_level_unbind_arguments<'py>(
     Ok((bound_input, dimension))
 }
 
+#[derive(Clone, Copy)]
+enum NarrowStartKind {
+    Integer,
+    Tensor,
+}
+
+#[derive(Clone, Copy)]
+struct NarrowArgumentCompatibility {
+    tensor_overload: [bool; 3],
+    integer_overload: [bool; 3],
+}
+
+fn bind_narrow_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<([ParsedCallArgument<'py>; 3], NarrowStartKind)> {
+    const NAMES: [&str; 3] = ["dim", "start", "length"];
+
+    if positional.len() > NAMES.len() {
+        return Err(narrow_binding_error(positional, keywords, None)?);
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 3] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    let mut incorrect_keyword = false;
+    if let Some(keywords) = keywords {
+        for (key, value) in keywords {
+            let key = key.extract::<String>()?;
+            let Some(index) = NAMES.iter().position(|name| *name == key) else {
+                incorrect_keyword = true;
+                continue;
+            };
+            if arguments[index].is_some() {
+                incorrect_keyword = true;
+                continue;
+            }
+            arguments[index] = Some(ParsedCallArgument {
+                value,
+                position: None,
+            });
+        }
+    }
+
+    let argument_count = positional
+        .len()
+        .saturating_add(keywords.map_or(0, PyDictMethods::len));
+    if argument_count != NAMES.len() || incorrect_keyword || arguments.iter().any(Option::is_none) {
+        return Err(narrow_binding_error(positional, keywords, None)?);
+    }
+
+    let arguments =
+        arguments.map(|argument| argument.expect("all required narrow arguments were bound above"));
+    let dimension = is_dimension_swap_integer(&arguments[0].value)?;
+    let tensor_start = arguments[1].value.cast::<PyTensor>().is_ok();
+    let integer_start =
+        is_dimension_swap_integer(&arguments[1].value)? || probe_symint_index(&arguments[1].value);
+    let length =
+        is_dimension_swap_integer(&arguments[2].value)? || probe_symint_index(&arguments[2].value);
+    let compatibility = NarrowArgumentCompatibility {
+        tensor_overload: [dimension, tensor_start, length],
+        integer_overload: [dimension, integer_start, length],
+    };
+
+    if !dimension || !length || (!tensor_start && !integer_start) {
+        return Err(narrow_binding_error(
+            positional,
+            keywords,
+            Some(compatibility),
+        )?);
+    }
+
+    let start_kind = if tensor_start {
+        NarrowStartKind::Tensor
+    } else {
+        NarrowStartKind::Integer
+    };
+    Ok((arguments, start_kind))
+}
+
+fn narrow_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    compatibility: Option<NarrowArgumentCompatibility>,
+) -> PyResult<PyErr> {
+    const NAMES: [&str; 3] = ["dim", "start", "length"];
+
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    let argument_count = positional
+        .len()
+        .saturating_add(keywords.map_or(0, PyDictMethods::len));
+    let mut tensor_mismatch = String::new();
+    let mut integer_mismatch = String::new();
+    if argument_count == NAMES.len() {
+        let allocation = PythonAllocationFallback::new(positional.py());
+        let (arguments, incorrect_keywords) =
+            overload_error_arguments(positional, keywords, &NAMES, &allocation)?;
+        if !incorrect_keywords.is_empty() {
+            tensor_mismatch = overload_invalid_keyword_mismatch(&incorrect_keywords, &allocation)?;
+            integer_mismatch.clone_from(&tensor_mismatch);
+        } else if let Some(compatibility) = compatibility
+            && arguments.iter().all(Option::is_some)
+        {
+            let mut complete = try_size_vector_with(arguments.len(), &allocation)?;
+            for argument in arguments {
+                try_push_size_with(
+                    &mut complete,
+                    argument.expect("narrow diagnostics checked all arguments"),
+                    &allocation,
+                )?;
+            }
+            tensor_mismatch = narrow_invalid_type_mismatch(&complete, compatibility, true)?;
+            integer_mismatch = narrow_invalid_type_mismatch(&complete, compatibility, false)?;
+        }
+    }
+
+    Ok(PyTypeError::new_err(format!(
+        "narrow() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (int dim, Tensor start, int length){tensor_mismatch}\n * (int dim, int start, int length){integer_mismatch}\n"
+    )))
+}
+
+fn narrow_invalid_type_mismatch(
+    arguments: &[ParsedCallArgument<'_>],
+    compatibility: NarrowArgumentCompatibility,
+    tensor_start_overload: bool,
+) -> PyResult<String> {
+    const NAMES: [&str; 3] = ["dim", "start", "length"];
+    let valid = if tensor_start_overload {
+        compatibility.tensor_overload
+    } else {
+        compatibility.integer_overload
+    };
+    let mut details = try_size_vector(arguments.len())?;
+    for ((name, argument), valid) in NAMES.iter().zip(arguments).zip(valid) {
+        let mut detail = if argument.position.is_none() {
+            format!(
+                "{name}={}",
+                call_argument_type_description(&argument.value)?
+            )
+        } else {
+            call_argument_type_description(&argument.value)?
+        };
+        if !valid {
+            detail = format!("!{detail}!");
+        }
+        try_push_size(&mut details, detail)?;
+    }
+    let trailing = if arguments[0].position.is_none() {
+        ", "
+    } else {
+        ""
+    };
+    Ok(format!(
+        "\n      didn't match because some of the arguments have invalid types: ({}{trailing})",
+        details.join(", ")
+    ))
+}
+
 fn bind_select_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -5651,7 +5884,7 @@ fn validate_select_argument_prefix(
 }
 
 fn validate_select_index(index: &ParsedCallArgument<'_>) -> PyResult<()> {
-    if is_dimension_swap_integer(&index.value)? || probe_select_index(&index.value) {
+    if is_dimension_swap_integer(&index.value)? || probe_symint_index(&index.value) {
         return Ok(());
     }
 
@@ -5665,7 +5898,7 @@ fn validate_select_index(index: &ParsedCallArgument<'_>) -> PyResult<()> {
     ))
 }
 
-fn probe_select_index(index: &Bound<'_, PyAny>) -> bool {
+fn probe_symint_index(index: &Bound<'_, PyAny>) -> bool {
     if index.is_instance_of::<PyBool>() {
         return false;
     }
@@ -5678,7 +5911,7 @@ fn call_python_index<'py>(index: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAn
         .call1((index,))
 }
 
-fn extract_select_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
+fn extract_symint_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
     if is_dimension_swap_integer(index)? {
         return extract_dimension_swap_dimension(index);
     }
@@ -8812,7 +9045,7 @@ fn movedim_binding_error(
 
     let (integer_mismatch, sequence_mismatch) = if argument_count == names.len() {
         let (arguments, incorrect_keywords) =
-            movedim_error_arguments(positional, keywords, names, &allocation)?;
+            overload_error_arguments(positional, keywords, names, &allocation)?;
         if incorrect_keywords.is_empty() {
             if arguments.iter().all(Option::is_some) {
                 let mut complete = try_size_vector_with(arguments.len(), &allocation)?;
@@ -8832,8 +9065,8 @@ fn movedim_binding_error(
             }
         } else {
             (
-                movedim_invalid_keyword_mismatch(&incorrect_keywords, &allocation)?,
-                movedim_invalid_keyword_mismatch(&incorrect_keywords, &allocation)?,
+                overload_invalid_keyword_mismatch(&incorrect_keywords, &allocation)?,
+                overload_invalid_keyword_mismatch(&incorrect_keywords, &allocation)?,
             )
         }
     } else {
@@ -8866,7 +9099,7 @@ fn movedim_binding_error(
     Ok(PyErr::from_value(exception))
 }
 
-fn movedim_error_arguments<'py>(
+fn overload_error_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
     names: &[&str],
@@ -8969,7 +9202,7 @@ fn movedim_invalid_type_mismatch(
     Ok(mismatch)
 }
 
-fn movedim_invalid_keyword_mismatch(
+fn overload_invalid_keyword_mismatch(
     keywords: &[String],
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<String> {

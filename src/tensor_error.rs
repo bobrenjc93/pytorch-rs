@@ -26,6 +26,17 @@ pub enum TensorError {
     },
     InvalidScalarIndex,
     SliceCannotApplyToScalar,
+    NarrowCannotApplyToScalar,
+    NarrowLengthNegative,
+    NarrowStartOutOfRange {
+        start: i64,
+        size: i64,
+    },
+    NarrowExceedsDimension {
+        start: i64,
+        length: i64,
+        size: i64,
+    },
     TooManyIndices {
         dimensions: usize,
     },
@@ -122,13 +133,12 @@ impl Display for TensorError {
             Self::ItemRequiresOneElement { elements } => {
                 write!(formatter, "item requires one element, got {elements}")
             }
-            Self::InvalidScalarIndex => write!(
-                formatter,
-                "invalid index of a 0-dim tensor. Use `tensor.item()` in Python or `tensor.item<T>()` in C++ to convert a 0-dim tensor to a number"
-            ),
-            Self::SliceCannotApplyToScalar => {
-                formatter.write_str("slice() cannot be applied to a 0-dim tensor.")
-            }
+            error @ (Self::InvalidScalarIndex
+            | Self::SliceCannotApplyToScalar
+            | Self::NarrowCannotApplyToScalar
+            | Self::NarrowLengthNegative
+            | Self::NarrowStartOutOfRange { .. }
+            | Self::NarrowExceedsDimension { .. }) => format_indexing_error(formatter, error),
             Self::TooManyIndices { dimensions } => {
                 write!(
                     formatter,
@@ -209,6 +219,38 @@ impl Display for TensorError {
 }
 
 impl Error for TensorError {}
+
+fn format_indexing_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::InvalidScalarIndex => write!(
+            formatter,
+            "invalid index of a 0-dim tensor. Use `tensor.item()` in Python or `tensor.item<T>()` in C++ to convert a 0-dim tensor to a number"
+        ),
+        TensorError::SliceCannotApplyToScalar => {
+            formatter.write_str("slice() cannot be applied to a 0-dim tensor.")
+        }
+        TensorError::NarrowCannotApplyToScalar => {
+            formatter.write_str("narrow() cannot be applied to a 0-dim tensor.")
+        }
+        TensorError::NarrowLengthNegative => {
+            formatter.write_str("narrow(): length must be non-negative.")
+        }
+        TensorError::NarrowStartOutOfRange { start, size } => write!(
+            formatter,
+            "start out of range (expected to be in range of [{}, {size}], but got {start})",
+            -size
+        ),
+        TensorError::NarrowExceedsDimension {
+            start,
+            length,
+            size,
+        } => write!(
+            formatter,
+            "start ({start}) + length ({length}) exceeds dimension size ({size})."
+        ),
+        _ => unreachable!("only indexing errors are formatted here"),
+    }
+}
 
 fn format_shape_mismatch(
     formatter: &mut Formatter<'_>,

@@ -123,6 +123,8 @@ assert torch.moveaxis(batched_matrices, source=0, destination=-1).shape == (2, 3
 matrix_view = batched_matrices.select(dim=-3, index=1)
 assert matrix_view.shape == (2, 3)
 assert torch.select(batched_matrices, dim=-3, index=1).is_set_to(matrix_view)
+matrix_range = batched_matrices.narrow(dim=-3, start=1, length=2)
+assert matrix_range.shape == (2, 2, 3)
 
 # PyTorch-compatible view calls use the same conventional alias.
 batched = torch.zeros((1, 2, 1, 3))
@@ -152,6 +154,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `Tensor.grad_dtype` is a read-only leaf-tensor query that returns the canonical `torch.float32` singleton used by native gradient accumulation. Non-leaf access raises PyTorch's error; setting `None` or an alternate gradient dtype remains unsupported.
 
 `torch.overrides.has_torch_function_unary` is the public alias of the native `torch._C._has_torch_function_unary` builtin used by the Python-owned unary dispatch wrappers. It matches PyTorch's exact-tensor, Tensor-class, custom-override, disabled-handler, mode, and descriptor-failure behavior without exposing the generic or variadic probes.
+
+`Tensor.narrow(dim, start, length)` exposes integer-start leading-dimension views, including normalized negative starts, zero-length ranges, noncontiguous inputs, checked offsets, and native slice autograd. Other dimensions, tensor-valued starts, and top-level `torch.narrow` remain unsupported.
 
 `Tensor.ravel()` and top-level `torch.ravel()` share the native view-or-copy path: row-contiguous inputs alias storage through a new one-dimensional wrapper, while other layouts are materialized.
 

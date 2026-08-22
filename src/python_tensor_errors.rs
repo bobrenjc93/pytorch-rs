@@ -12,6 +12,9 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::MatmulRequiresMatrices { .. }
         | TensorError::MatmulInnerDimensionMismatch { .. }
         | TensorError::ItemRequiresOneElement { .. }
+        | TensorError::NarrowCannotApplyToScalar
+        | TensorError::NarrowLengthNegative
+        | TensorError::NarrowExceedsDimension { .. }
         | TensorError::InvalidStorageOffset { .. }
         | TensorError::IndexCalculationOverflow
         | TensorError::ReshapeMultipleInferredDimensions
@@ -41,6 +44,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::SliceCannotApplyToScalar
+        | TensorError::NarrowStartOutOfRange { .. }
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
         | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
