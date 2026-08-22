@@ -189,6 +189,7 @@ __all__ = [
 if "matmul" in _native.__all__:
     __all__.insert(0, "matmul")
 
+from . import accelerator as accelerator
 from . import autograd as autograd
 from . import compiler as compiler
 from . import cpu as cpu
