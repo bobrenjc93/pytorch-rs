@@ -1,4 +1,6 @@
 from collections.abc import Callable
+import functools
+import types
 from typing import Any
 
 from .. import _compiler_state as _state
@@ -7,6 +9,7 @@ from .. import _compiler_state as _state
 __all__ = [
     "assume_constant_result",
     "reset",
+    "disable",
     "set_default_backend",
     "get_default_backend",
     "is_compiling",
@@ -41,6 +44,53 @@ def reset() -> None:
     process-local state used by :func:`torch.compile`. It does not delete
     filesystem caches, such as Inductor's disk cache.
     """
+
+
+def disable(fn=None, recursive=True, *, reason=None):
+    """
+    This function provides a decorator to disable compilation on a function.
+    It also provides the option of recursively disabling called functions.
+
+    Args:
+        fn (optional): The function to disable
+        recursive (optional): A boolean value indicating whether the disabling should be recursive.
+        reason (optional): A string value indicating the reason for disabling the function.
+    """
+    if fn is None:
+        raise NotImplementedError(
+            "torch.compiler.disable() without a function is not supported"
+        )
+
+    supported_function_types = (types.FunctionType, types.MethodType)
+    if not isinstance(fn, supported_function_types):
+        raise NotImplementedError(
+            "torch.compiler.disable() currently supports only Python functions"
+        )
+
+    unwrapped_fn = fn
+    while (
+        hasattr(unwrapped_fn, "_torchdynamo_orig_callable")
+        and getattr(unwrapped_fn, "_torchdynamo_wrapper_id", None)
+        == id(unwrapped_fn)
+    ):
+        unwrapped_fn = unwrapped_fn._torchdynamo_orig_callable
+        if not isinstance(unwrapped_fn, supported_function_types):
+            raise NotImplementedError(
+                "torch.compiler.disable() currently supports only Python functions"
+            )
+
+    disable_recursive = bool(recursive)
+
+    @functools.wraps(unwrapped_fn)
+    def disabled_function(*args, **kwargs):
+        return unwrapped_fn(*args, **kwargs)
+
+    disabled_function._torchdynamo_disable = True
+    disabled_function._torchdynamo_disable_msg = reason
+    disabled_function._torchdynamo_orig_callable = unwrapped_fn
+    disabled_function._torchdynamo_wrapper_id = id(disabled_function)
+    disabled_function._torchdynamo_disable_recursive = disable_recursive
+    return disabled_function
 
 
 def set_default_backend(backend: str | Callable[..., Any] | None) -> None:
