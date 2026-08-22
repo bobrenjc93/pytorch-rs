@@ -4099,6 +4099,8 @@ fn tensor(
             let shape = flatten_rectangular(data, &mut flattened)?;
             (flattened, shape)
         }
+    } else if let Some(flat_float_list) = flatten_exact_float_list(data)? {
+        flat_float_list
     } else if is_sequence_input(data)? {
         let mut flattened = Vec::new();
         let shape = flatten_rectangular(data, &mut flattened)?;
@@ -10430,6 +10432,33 @@ fn is_sequence_input(value: &Bound<'_, PyAny>) -> PyResult<bool> {
         return Ok(false);
     }
     Ok(value.hasattr("__len__")? && value.hasattr("__getitem__")?)
+}
+
+fn flatten_exact_float_list(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
+    let Ok(values) = value.cast_exact::<PyList>() else {
+        return Ok(None);
+    };
+    // Snapshot the exact list in C, then borrow from the immutable tuple. This
+    // avoids per-item owned-reference traffic in both the type probe and copy.
+    let values = values.as_sequence().to_tuple()?;
+    if !values
+        .iter_borrowed()
+        .all(|value| value.is_exact_instance_of::<PyFloat>())
+    {
+        return Ok(None);
+    }
+
+    let length = values.len();
+    let mut output = Vec::new();
+    output.try_reserve_exact(length).map_err(|_| {
+        PyMemoryError::new_err("unable to allocate native tensor storage for float list")
+    })?;
+    for value in values.iter_borrowed() {
+        let value = value.extract::<f64>()?;
+        #[allow(clippy::cast_possible_truncation)]
+        output.push(value as f32);
+    }
+    Ok(Some((output, vec![length])))
 }
 
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
