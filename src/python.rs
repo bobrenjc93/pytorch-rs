@@ -93,6 +93,49 @@ if _TypeIs is not None:
 is_tensor.__module__ = "torch_rs"
 "#;
 
+const IS_STORAGE_SOURCE: &CStr = cr#"
+import copy as _copy
+from typing import Any as _Any
+from typing import TypeGuard as _TypeGuard
+
+
+def is_storage(obj: _Any, /) -> _TypeGuard["TypedStorage | UntypedStorage"]:
+    r"""Returns True if `obj` is a PyTorch storage object.
+
+    Args:
+        obj (Object): Object to test
+    Example::
+
+        >>> import torch
+        >>> # UntypedStorage (recommended)
+        >>> tensor = torch.tensor([1, 2, 3])
+        >>> storage = tensor.untyped_storage()
+        >>> torch.is_storage(storage)
+        True
+        >>>
+        >>> # TypedStorage (legacy)
+        >>> typed_storage = torch.TypedStorage(5, dtype=torch.float32)
+        >>> torch.is_storage(typed_storage)
+        True
+        >>>
+        >>> # regular tensor (should return False)
+        >>> torch.is_storage(tensor)
+        False
+        >>>
+        >>> # non-storage object
+        >>> torch.is_storage([1, 2, 3])
+        False
+    """
+    return False
+
+
+# Do not share a mutable ForwardRef cache with another torch implementation.
+is_storage.__annotations__["return"] = _copy.deepcopy(
+    is_storage.__annotations__["return"]
+)
+is_storage.__module__ = "torch_rs"
+"#;
+
 #[cfg(target_os = "macos")]
 const T_NON_MATRIX_WARNING: &CStr = c"The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at /Users/runner/work/pytorch/pytorch/aten/src/ATen/native/TensorShape.cpp:4317.)";
 #[cfg(target_os = "macos")]
@@ -10571,6 +10614,15 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
         is_tensor_helpers.setattr("torch", module)?;
     }
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
+    // Storage objects are not part of the supported Python surface, so every
+    // object reachable through this module is deterministically not storage.
+    let is_storage_helpers = PyModule::from_code(
+        py,
+        IS_STORAGE_SOURCE,
+        c"torch_rs/_is_storage.py",
+        c"torch_rs._is_storage",
+    )?;
+    module.add("is_storage", is_storage_helpers.getattr("is_storage")?)?;
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     torch_function_mode_stack::add_torch_function_mode_stack(module)?;
