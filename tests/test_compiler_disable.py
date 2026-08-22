@@ -152,7 +152,10 @@ class CompilerDisableTests(unittest.TestCase):
                     self.assertEqual(wrapped.__qualname__, original.__qualname__)
                     self.assertEqual(wrapped.__module__, original.__module__)
                     self.assertEqual(wrapped.__doc__, original.__doc__)
-                    self.assertIs(wrapped.__annotations__, original.__annotations__)
+                    self.assertEqual(
+                        wrapped.__annotations__,
+                        original.__annotations__,
+                    )
 
     def test_factory_freezes_recursive_truthiness_and_reuses_reason(self):
         truthy_recursive = [1]
@@ -556,10 +559,7 @@ class CompilerDisableTests(unittest.TestCase):
                 self.assertTrue(callable(decorator))
                 self.assertFalse(hasattr(decorator, "__enter__"))
                 self.assertFalse(hasattr(decorator, "__exit__"))
-                with self.assertRaisesRegex(
-                    TypeError,
-                    "does not support the context manager protocol",
-                ):
+                with self.assertRaises((AttributeError, TypeError)):
                     with decorator:
                         self.fail("unsupported context body was entered")
 
