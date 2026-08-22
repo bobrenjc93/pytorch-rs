@@ -16,7 +16,7 @@ from .torch_rs import (
 class TorchFunctionMode:
     """Override ``__torch_function__`` operations within a dynamic scope."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def __torch_function__(self, func, types, args=(), kwargs=None):
@@ -37,6 +37,13 @@ class TorchFunctionMode:
             stacklevel=2,
         )
         return cls(*args, **kwargs)
+
+
+class BaseTorchFunctionMode(TorchFunctionMode):
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        if kwargs is None:
+            kwargs = {}
+        return func(*args, **kwargs)
 
 
 def _push_mode(mode):
