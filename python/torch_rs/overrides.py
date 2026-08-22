@@ -30,6 +30,7 @@ def _disable_user_warnings(func):
     return wrapper
 
 
+@_functools.cache
 def _get_tensor_methods() -> set[Callable]:
     """Returns a set of the overridable methods on ``torch.Tensor``"""
     names = {
@@ -38,7 +39,15 @@ def _get_tensor_methods() -> set[Callable]:
         if tensor_type is not object
         for name in vars(tensor_type)
     }
-    return {method for name in names if callable(method := getattr(Tensor, name))}
+    methods = {
+        method for name in names if callable(method := getattr(Tensor, name))
+    }
+    # These entry points do not pass themselves to ``__torch_function__``:
+    # iteration delegates to ``dim`` and ``unbind``, while ``stride`` is an
+    # ignored metadata query in PyTorch's override registry.
+    methods.discard(Tensor.__iter__)
+    methods.discard(Tensor.stride)
+    return methods
 
 
 @_disable_user_warnings

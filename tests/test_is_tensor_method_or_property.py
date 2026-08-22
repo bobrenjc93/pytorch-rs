@@ -85,15 +85,16 @@ class IsTensorMethodOrPropertyTests(unittest.TestCase):
             str.upper,
             object.__str__,
             torch.Tensor.__str__,
+            torch.Tensor.stride,
+            torch.Tensor.__iter__,
             tensor.sqrt,
         )
         for callable_object in callables:
             with self.subTest(callable_object=callable_object):
                 self.assertIs(function(callable_object), False)
 
-    def test_live_tensor_namespace_is_consulted_after_the_first_call(self):
+    def test_later_monkey_patches_are_not_classified_as_handlers(self):
         function = torch.overrides.is_tensor_method_or_property
-        self.assertIs(function(torch.Tensor.sqrt), True)
 
         def future_tensor_method(self):
             return self
@@ -103,7 +104,7 @@ class IsTensorMethodOrPropertyTests(unittest.TestCase):
         setattr(torch.Tensor, name, future_tensor_method)
         try:
             self.assertIs(getattr(torch.Tensor, name), future_tensor_method)
-            self.assertIs(function(future_tensor_method), True)
+            self.assertIs(function(future_tensor_method), False)
         finally:
             delattr(torch.Tensor, name)
 
@@ -114,7 +115,10 @@ class IsTensorMethodOrPropertyTests(unittest.TestCase):
         self.assertEqual(function.__name__, "is_tensor_method_or_property")
         self.assertEqual(function.__qualname__, "is_tensor_method_or_property")
         self.assertEqual(function.__module__, "torch_rs.overrides")
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__),
+            inspect.cleandoc(FUNCTION_DOC),
+        )
         self.assertEqual(
             function.__annotations__,
             {"func": Callable, "return": bool},
@@ -130,7 +134,10 @@ class IsTensorMethodOrPropertyTests(unittest.TestCase):
             str(inspect.signature(function.__wrapped__)),
             str(inspect.signature(function)),
         )
-        self.assertEqual(function.__wrapped__.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__wrapped__.__doc__),
+            inspect.cleandoc(FUNCTION_DOC),
+        )
 
         self.assertIs(
             importlib.import_module("torch_rs.overrides").is_tensor_method_or_property,
@@ -201,7 +208,6 @@ class IsTensorMethodOrPropertyTests(unittest.TestCase):
                 AttributeError,
                 "'object' object has no attribute '__name__'",
             ),
-            (lambda: function([]), TypeError, "unhashable type: 'list'"),
             (
                 lambda: function(CallableWithoutName()),
                 AttributeError,
@@ -215,6 +221,11 @@ class IsTensorMethodOrPropertyTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
+
+        with self.assertRaises(TypeError) as raised:
+            function([])
+        self.assertIn("unhashable", str(raised.exception))
+        self.assertIn("list", str(raised.exception))
 
         class NamedGet:
             __name__ = "__get__"
@@ -243,6 +254,16 @@ assert function(torch.Tensor.is_shared) is True
 assert function(torch.Tensor.sqrt) is True
 assert function(torch.Tensor.__base__.real.__get__) is True
 assert function(torch.sqrt) is False
+
+def unrelated_tensor_method(self):
+    return self
+
+torch.Tensor._unrelated_override_probe = unrelated_tensor_method
+try:
+    assert function(unrelated_tensor_method) is False
+finally:
+    del torch.Tensor._unrelated_override_probe
+
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

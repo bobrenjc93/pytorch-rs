@@ -129,6 +129,39 @@ class IsTensorMethodOrPropertyReferenceTests(unittest.TestCase):
             self.recognition_observation(reference_torch),
         )
 
+    def test_non_handler_tensor_callables_match_pytorch_2_13(self):
+        actual = torch.overrides.is_tensor_method_or_property
+        expected = reference_torch.overrides.is_tensor_method_or_property
+
+        # Populate both derived method sets before mutating either class.
+        self.assertIs(actual(torch.Tensor.sqrt), True)
+        self.assertIs(expected(reference_torch.Tensor.sqrt), True)
+        for module, function in (
+            (torch, actual),
+            (reference_torch, expected),
+        ):
+            with self.subTest(module=module.__name__):
+                self.assertIs(function(module.Tensor.stride), False)
+                self.assertIs(function(module.Tensor.__iter__), False)
+
+        def unrelated_tensor_method(self):
+            return self
+
+        name = "_unrelated_tensor_method_for_override_probe"
+        self.assertFalse(hasattr(torch.Tensor, name))
+        self.assertFalse(hasattr(reference_torch.Tensor, name))
+        setattr(torch.Tensor, name, unrelated_tensor_method)
+        setattr(reference_torch.Tensor, name, unrelated_tensor_method)
+        try:
+            self.assertIs(actual(getattr(torch.Tensor, name)), False)
+            self.assertIs(
+                expected(getattr(reference_torch.Tensor, name)),
+                False,
+            )
+        finally:
+            delattr(torch.Tensor, name)
+            delattr(reference_torch.Tensor, name)
+
     def invalid_input_observation(self, function):
         class CallableWithoutName:
             def __call__(self):

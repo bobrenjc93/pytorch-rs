@@ -200,4 +200,8 @@ from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
 
+# Snapshot the completed Tensor namespace after Python-owned methods have been
+# installed. Later monkey patches are not ``__torch_function__`` handlers.
+overrides._get_tensor_methods()
+
 del _copyreg, _functools, _native, _sys
