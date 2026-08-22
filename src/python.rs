@@ -242,6 +242,32 @@ impl PyTensorBase {
         tensor.try_borrow()?.inner.output_nr().into_py_any(slf.py())
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nnew_zeros(size, *, dtype=None, device=None, requires_grad=False, layout=torch.strided, pin_memory=False) -> Tensor\n\n\nReturns a Tensor of size :attr:`size` filled with ``0``.\nBy default, the returned Tensor has the same :class:`torch.dtype` and\n:class:`torch.device` as this tensor.\n\nArgs:\n    size (int...): a list, tuple, or :class:`torch.Size` of integers defining the\n        shape of the output tensor.\n\nKeyword args:\n    dtype (:class:`torch.dtype`, optional): the desired type of returned tensor.\n        Default: if None, same :class:`torch.dtype` as this tensor.\n    device (:class:`torch.device`, optional): the desired device of returned tensor.\n        Default: if None, same :class:`torch.device` as this tensor.\n    requires_grad (bool, optional): If autograd should record operations on the\n        returned tensor. Default: ``False``.\n    layout (:class:`torch.layout`, optional): the desired layout of returned Tensor.\n        Default: ``torch.strided``.\n    pin_memory (bool, optional): If set, returned tensor would be allocated in\n        the pinned memory. Works only for CPU tensors. Default: ``False``.\n\nExample::\n\n    >>> tensor = torch.tensor((), dtype=torch.float64)\n    >>> tensor.new_zeros((2, 3))\n    tensor([[ 0.,  0.,  0.],\n            [ 0.,  0.,  0.]], dtype=torch.float64)\n\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn new_zeros(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let arguments = validate_new_zeros_arguments(bind_new_zeros_arguments(args, kwargs)?)?;
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "new_zeros",
+            "torch.Tensor.new_zeros",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        apply_new_zeros(tensor, arguments)
+    }
+
     fn __getitem__(slf: &Bound<'_, Self>, index: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let tensor = slf.as_any().cast::<PyTensor>()?;
         // Keep the common integer-index path allocation-free when no mode is active.
@@ -3324,6 +3350,30 @@ struct ParsedCreationSize {
     scalar_dimension: Option<usize>,
 }
 
+struct NewZerosCallArguments<'py> {
+    size: Option<Bound<'py, PyAny>>,
+    size_position: Option<usize>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
+enum PendingNewZerosSize<'py> {
+    Scalar(Bound<'py, PyAny>),
+    Dimensions(Vec<Bound<'py, PyAny>>),
+}
+
+struct ParsedNewZerosArguments<'py> {
+    size: PendingNewZerosSize<'py>,
+    dtype: Option<DType>,
+    device: Option<Bound<'py, PyAny>>,
+    pin_memory: bool,
+    requires_grad: bool,
+}
+
 struct FullCallArguments<'py> {
     size: Option<Bound<'py, PyAny>>,
     fill_value: Option<Bound<'py, PyAny>>,
@@ -4514,6 +4564,345 @@ fn bind_creation_arguments<'py>(
         }
     }
     Ok(arguments)
+}
+
+fn bind_new_zeros_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<NewZerosCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(PyTypeError::new_err(format!(
+            "new_zeros() takes 1 positional argument but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut size_was_provided = !positional.is_empty();
+    let mut arguments = NewZerosCallArguments {
+        size: if positional.is_empty() {
+            None
+        } else {
+            Some(positional.get_item(0)?)
+        },
+        size_position: (!positional.is_empty()).then_some(1),
+        dtype: None,
+        layout: None,
+        device: None,
+        pin_memory: None,
+        requires_grad: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "size" => {
+                if size_was_provided {
+                    arguments.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err("new_zeros() got multiple values for argument 'size'")
+                    });
+                } else {
+                    size_was_provided = true;
+                    arguments.size = Some(value);
+                    arguments.size_position = None;
+                }
+            }
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "new_zeros() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn validate_new_zeros_arguments(
+    arguments: NewZerosCallArguments<'_>,
+) -> PyResult<ParsedNewZerosArguments<'_>> {
+    let NewZerosCallArguments {
+        size,
+        size_position,
+        dtype,
+        layout,
+        device,
+        pin_memory,
+        requires_grad,
+        keyword_error,
+    } = arguments;
+    let Some(size) = size else {
+        return Err(PyTypeError::new_err(
+            "new_zeros() missing 1 required positional arguments: \"size\"",
+        ));
+    };
+
+    // Generated TensorOptions bindings validate types in this order before
+    // consulting TorchFunctionMode or resolving device strings and sizes.
+    let size = validate_new_zeros_size(&size, size_position)?;
+    let dtype = parse_new_zeros_dtype(dtype.as_ref())?;
+    validate_new_zeros_layout(layout.as_ref())?;
+    validate_new_zeros_device_type(device.as_ref())?;
+    let pin_memory = parse_new_zeros_bool("pin_memory", pin_memory.as_ref())?;
+    let requires_grad = parse_new_zeros_bool("requires_grad", requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+
+    Ok(ParsedNewZerosArguments {
+        size,
+        dtype,
+        device,
+        pin_memory,
+        requires_grad,
+    })
+}
+
+fn validate_new_zeros_size<'py>(
+    size: &Bound<'py, PyAny>,
+    position: Option<usize>,
+) -> PyResult<PendingNewZerosSize<'py>> {
+    if let Ok(dimensions) = size.cast::<PyTuple>() {
+        return validate_new_zeros_dimensions(size, dimensions.len(), dimensions.iter(), position);
+    }
+    if let Ok(dimensions) = size.cast::<PyList>() {
+        return validate_new_zeros_dimensions(size, dimensions.len(), dimensions.iter(), position);
+    }
+
+    if position.is_none() || size.is_instance_of::<PyBool>() {
+        return Err(new_zeros_size_type_error(size, position)?);
+    }
+    if is_dimension_swap_integer(size)? {
+        return Ok(PendingNewZerosSize::Scalar(size.clone()));
+    }
+    if call_python_index(size).is_err() {
+        return Err(new_zeros_size_type_error(size, position)?);
+    }
+    if call_python_index(size).is_err() {
+        return Err(new_zeros_size_element_type_error(size, position, 0)?);
+    }
+    Ok(PendingNewZerosSize::Scalar(size.clone()))
+}
+
+fn validate_new_zeros_dimensions<'py>(
+    sequence: &Bound<'py, PyAny>,
+    length: usize,
+    dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
+    position: Option<usize>,
+) -> PyResult<PendingNewZerosSize<'py>> {
+    let mut validated = try_size_vector(length)?;
+    for (index, dimension) in dimensions.enumerate() {
+        let valid = !dimension.is_instance_of::<PyBool>()
+            && (is_dimension_swap_integer(&dimension)? || call_python_index(&dimension).is_ok());
+        if !valid {
+            return if position.is_some() {
+                Err(new_zeros_size_element_type_error(
+                    &dimension, position, index,
+                )?)
+            } else {
+                Err(new_zeros_size_type_error(sequence, position)?)
+            };
+        }
+        try_push_size(&mut validated, dimension)?;
+    }
+    Ok(PendingNewZerosSize::Dimensions(validated))
+}
+
+fn new_zeros_size_type_error(size: &Bound<'_, PyAny>, position: Option<usize>) -> PyResult<PyErr> {
+    let actual = python_type_name(size)?;
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    Ok(PyTypeError::new_err(format!(
+        "new_zeros(): argument 'size'{position} must be tuple of ints, not {actual}"
+    )))
+}
+
+fn new_zeros_size_element_type_error(
+    dimension: &Bound<'_, PyAny>,
+    position: Option<usize>,
+    index: usize,
+) -> PyResult<PyErr> {
+    let actual = python_type_name(dimension)?;
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    Ok(PyTypeError::new_err(format!(
+        "new_zeros(): argument 'size'{position} must be tuple of ints, but found element of type {actual} at pos {index}"
+    )))
+}
+
+fn parse_new_zeros_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<Option<DType>> {
+    let Some(dtype) = dtype else {
+        return Ok(None);
+    };
+    if let Ok(dtype) = dtype.cast::<PyDType>() {
+        return Ok(Some(dtype.try_borrow()?.inner()));
+    }
+
+    let actual = python_type_name(dtype)?;
+    Err(PyTypeError::new_err(format!(
+        "new_zeros(): argument 'dtype' must be torch.dtype, not {actual}"
+    )))
+}
+
+fn validate_new_zeros_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(layout) = layout else {
+        return Ok(());
+    };
+    if layout.is_instance(layout_objects(layout.py())?.layout.bind(layout.py()))? {
+        return Ok(());
+    }
+
+    let actual = python_type_name(layout)?;
+    Err(PyTypeError::new_err(format!(
+        "new_zeros(): argument 'layout' must be torch.layout, not {actual}"
+    )))
+}
+
+fn validate_new_zeros_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    let Some(device) = device else {
+        return Ok(());
+    };
+    if device.cast::<PyDevice>().is_ok() || device.cast::<PyString>().is_ok() {
+        return Ok(());
+    }
+
+    let actual = python_type_name(device)?;
+    Err(PyTypeError::new_err(format!(
+        "new_zeros(): argument 'device' must be torch.device, not {actual}"
+    )))
+}
+
+fn parse_new_zeros_bool(argument: &str, value: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let Some(value) = value else {
+        return Ok(false);
+    };
+    if value.is_exact_instance_of::<PyBool>() {
+        return value.is_truthy();
+    }
+
+    let actual = python_type_name(value)?;
+    Err(PyTypeError::new_err(format!(
+        "new_zeros(): argument '{argument}' must be bool, not {actual}"
+    )))
+}
+
+fn apply_new_zeros(
+    tensor: &Bound<'_, PyTensor>,
+    arguments: ParsedNewZerosArguments<'_>,
+) -> PyResult<Py<PyAny>> {
+    let (source_dtype, source_device) = {
+        let tensor = tensor.try_borrow()?;
+        (tensor.inner.dtype(), tensor.inner.device())
+    };
+    let dtype = arguments.dtype.unwrap_or(source_dtype);
+    let device = arguments
+        .device
+        .as_ref()
+        .map_or(Ok(source_device), |device| {
+            parse_device_value("new_zeros", device)
+        })?;
+    let dimensions = finish_new_zeros_size(arguments.size)?;
+    if arguments.pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "new_zeros(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
+
+    let inner = CoreTensor::zeros_with_metadata(dimensions.clone(), dtype, device)
+        .map_err(|error| new_zeros_shape_error(&error, &dimensions))?
+        .with_requires_grad(arguments.requires_grad);
+    Ok(Py::new(tensor.py(), PyTensor::new(inner))?.into_any())
+}
+
+fn finish_new_zeros_size(size: PendingNewZerosSize<'_>) -> PyResult<Vec<usize>> {
+    let dimensions = match size {
+        PendingNewZerosSize::Scalar(dimension) => {
+            let mut dimensions = try_size_vector(1)?;
+            try_push_size(&mut dimensions, extract_new_zeros_dimension(&dimension, 1)?)?;
+            dimensions
+        }
+        PendingNewZerosSize::Dimensions(dimensions) => {
+            let mut parsed = try_size_vector(dimensions.len())?;
+            for (index, dimension) in dimensions.iter().enumerate() {
+                try_push_size(
+                    &mut parsed,
+                    extract_new_zeros_dimension(dimension, index + 1)?,
+                )?;
+            }
+            parsed
+        }
+    };
+
+    if let Some(dimension) = dimensions.iter().find(|dimension| **dimension < 0) {
+        return Err(PyRuntimeError::new_err(format!(
+            "Trying to create tensor with negative dimension {dimension}: {dimensions:?}"
+        )));
+    }
+
+    let mut shape = try_size_vector(dimensions.len())?;
+    for (index, dimension) in dimensions.into_iter().enumerate() {
+        try_push_size(
+            &mut shape,
+            usize::try_from(dimension).map_err(|_| new_zeros_dimension_unpack_error(index + 1))?,
+        )?;
+    }
+    Ok(shape)
+}
+
+fn extract_new_zeros_dimension(dimension: &Bound<'_, PyAny>, position: usize) -> PyResult<i64> {
+    if is_dimension_swap_integer(dimension)? {
+        return dimension
+            .extract::<i64>()
+            .map_err(|_| new_zeros_dimension_unpack_error(position));
+    }
+
+    let Ok(indexed) = call_python_index(dimension) else {
+        return Err(new_zeros_dimension_unpack_type_error(position, dimension)?);
+    };
+    indexed
+        .extract::<i64>()
+        .map_err(|_| new_zeros_dimension_unpack_error(position))
+}
+
+fn new_zeros_dimension_unpack_type_error(
+    position: usize,
+    dimension: &Bound<'_, PyAny>,
+) -> PyResult<PyErr> {
+    let actual = python_type_name(dimension)?;
+    Ok(new_zeros_dimension_unpack_error_with_reason(
+        position,
+        &format!("type must be tuple of ints,but got {actual}"),
+    ))
+}
+
+fn new_zeros_dimension_unpack_error(position: usize) -> PyErr {
+    new_zeros_dimension_unpack_error_with_reason(position, "Overflow when unpacking long long")
+}
+
+fn new_zeros_dimension_unpack_error_with_reason(position: usize, reason: &str) -> PyErr {
+    PyTypeError::new_err(format!(
+        "new_zeros(): argument 'size' failed to unpack the object at pos {position} with error \"{reason}\""
+    ))
+}
+
+fn new_zeros_shape_error(error: &TensorError, shape: &[usize]) -> PyErr {
+    if matches!(
+        error,
+        TensorError::ElementCountOverflow | TensorError::StorageCapacityOverflow { .. }
+    ) {
+        PyRuntimeError::new_err(format!(
+            "Storage size calculation overflowed with sizes={shape:?}"
+        ))
+    } else {
+        tensor_error(error)
+    }
 }
 
 fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
