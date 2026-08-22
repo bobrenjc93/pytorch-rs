@@ -22,14 +22,14 @@ use crate::python::{
     movedim_variable_function, mul_variable_function, multiply_variable_function,
     neg_variable_function, negative_variable_function, permute_variable_function,
     positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sin_variable_function, sqrt_variable_function,
-    unbind_variable_function,
+    reciprocal_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
+    sqrt_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 29] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 30] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -42,6 +42,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 29] = [
     "neg",
     "negative",
     "exp",
+    "reciprocal",
     "sin",
     "sqrt",
     "is_vulkan_available",
@@ -137,6 +138,34 @@ Example::
 
     >>> torch.exp(torch.tensor([0, math.log(2.)]))
     tensor([ 1.,  2.])
+";
+
+const RECIPROCAL_DOC: &std::ffi::CStr = cr"
+reciprocal(input, *, out=None) -> Tensor
+
+Returns a new tensor with the reciprocal of the elements of :attr:`input`
+
+.. math::
+    \text{out}_{i} = \frac{1}{\text{input}_{i}}
+
+.. note::
+    Unlike NumPy's reciprocal, torch.reciprocal supports integral inputs. Integral
+    inputs to reciprocal are automatically :ref:`promoted <type-promotion-doc>` to
+    the default scalar type.
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.randn(4)
+    >>> a
+    tensor([-0.4595, -2.1219, -1.4314,  0.7298])
+    >>> torch.reciprocal(a)
+    tensor([-2.1763, -0.4713, -0.6986,  1.3702])
 ";
 
 const SIN_DOC: &std::ffi::CStr = cr"
@@ -514,6 +543,7 @@ variable_function_callback!(ravel_callback, ravel_variable_function);
 variable_function_callback!(neg_callback, neg_variable_function);
 variable_function_callback!(negative_callback, negative_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
+variable_function_callback!(reciprocal_callback, reciprocal_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
@@ -567,6 +597,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"neg", neg_callback, NEG_DOC),
         variable_function_method!(c"negative", negative_callback, NEGATIVE_DOC),
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
+        variable_function_method!(c"reciprocal", reciprocal_callback, RECIPROCAL_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
