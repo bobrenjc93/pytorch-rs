@@ -84,6 +84,18 @@ class TopLevelReciprocalReferenceTests(unittest.TestCase):
                 "empty",
                 module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2)[1],
             ),
+            (
+                "empty singleton trailing",
+                module.zeros((0, 1), dtype=module.float32),
+            ),
+            (
+                "empty singleton middle",
+                module.zeros((0, 1, 2), dtype=module.float32),
+            ),
+            (
+                "empty singleton surrounding",
+                module.zeros((1, 0, 1), dtype=module.float32),
+            ),
             ("offset", strided[1]),
             ("noncontiguous", strided),
             (

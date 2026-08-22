@@ -2336,6 +2336,31 @@ impl Tensor {
             }],
             elements,
         )?;
+        self.scalar_div_with_output_layout(scalar, shape, strides)
+    }
+
+    /// Divides a scalar by every element while using unary output layout planning.
+    ///
+    /// This is the numerical path for top-level `torch.reciprocal`; reflected
+    /// scalar division retains its additional binary layout-planning pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn scalar_div_with_unary_layout(&self, scalar: f32) -> Result<Self, TensorError> {
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = self.unary_output_strides(&shape, elements)?;
+        self.scalar_div_with_output_layout(scalar, shape, strides)
+    }
+
+    fn scalar_div_with_output_layout(
+        &self,
+        scalar: f32,
+        shape: Vec<usize>,
+        strides: Vec<usize>,
+    ) -> Result<Self, TensorError> {
         let data = self.materialize_with_strides(&strides, |value| scalar * value.recip())?;
         Ok(Self::from_owned_parts(
             data,

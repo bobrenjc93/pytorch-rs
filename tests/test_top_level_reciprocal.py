@@ -40,10 +40,15 @@ Example::
 
 
 class TopLevelReciprocalTests(unittest.TestCase):
-    def assert_matches_division(self, actual, expected, *, case):
+    def assert_matches_division(
+        self, actual, expected, *, case, expected_stride=None
+    ):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, expected.shape)
-            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(
+                actual.stride(),
+                expected.stride() if expected_stride is None else expected_stride,
+            )
             self.assertEqual(actual.storage_offset(), expected.storage_offset())
             self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
             self.assertEqual(actual.requires_grad, expected.requires_grad)
@@ -68,7 +73,7 @@ class TopLevelReciprocalTests(unittest.TestCase):
             ("alias and out none", lambda: torch.reciprocal(x=source, out=None)),
         )
 
-    def test_supported_calls_reuse_reflected_division_bits_and_layouts(self):
+    def test_supported_calls_reuse_reflected_division_bits_and_unary_layouts(self):
         base = torch.tensor(
             np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist()
         )
@@ -97,20 +102,29 @@ class TopLevelReciprocalTests(unittest.TestCase):
             dtype=np.uint32,
         )
         cases = (
-            ("scalar", torch.tensor(-0.0)),
-            ("empty", torch.zeros((2, 0, 3)).transpose(0, 2)[1]),
-            ("offset", strided[1]),
-            ("noncontiguous", strided),
+            ("scalar", torch.tensor(-0.0), None),
+            ("empty", torch.zeros((2, 0, 3)).transpose(0, 2)[1], None),
+            ("empty singleton trailing", torch.zeros((0, 1)), (1, 1)),
+            ("empty singleton middle", torch.zeros((0, 1, 2)), (2, 2, 1)),
+            ("empty singleton surrounding", torch.zeros((1, 0, 1)), (1, 1, 1)),
+            ("offset", strided[1], None),
+            ("noncontiguous", strided, None),
             (
                 "numerical edges",
                 torch.tensor(memoryview(special_bits.view(np.float32))),
+                None,
             ),
         )
 
-        for case, source in cases:
+        for case, source, expected_stride in cases:
             expected = 1.0 / source
             for form, call in self.supported_calls(source):
-                self.assert_matches_division(call(), expected, case=(case, form))
+                self.assert_matches_division(
+                    call(),
+                    expected,
+                    case=(case, form),
+                    expected_stride=expected_stride,
+                )
 
     def test_autograd_is_rejected_before_output_planning_and_no_grad_is_allowed(self):
         leaf = torch.tensor(

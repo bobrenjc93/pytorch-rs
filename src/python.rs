@@ -1802,7 +1802,7 @@ impl UnaryOutOperation {
 }
 
 fn apply_reciprocal(tensor: &CoreTensor) -> Result<CoreTensor, TensorError> {
-    tensor.scalar_div(1.0)
+    tensor.scalar_div_with_unary_layout(1.0)
 }
 
 struct BoundUnaryOutCall<'py> {
