@@ -188,15 +188,19 @@ class TensorSquareTests(unittest.TestCase):
             self.assert_tensor_matches(actual, expected, case=(case, "no_grad"))
             self.assertFalse(actual.is_set_to(source))
 
-    def test_signed_zero_and_nonfinite_gradients_reuse_shared_multiplication(self):
+    def test_pow_backward_order_preserves_overflow_subnormal_and_nonfinite_bits(self):
         input_bits = np.asarray(
             (
                 0x0000_0000,
                 0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
                 0x0080_0000,
                 0x8080_0000,
                 0x3F80_0000,
                 0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
                 0x7F80_0000,
                 0xFF80_0000,
                 0x7F81_2345,
@@ -210,10 +214,14 @@ class TensorSquareTests(unittest.TestCase):
             (
                 0x3F80_0000,
                 0xBF80_0000,
-                0x7F80_0000,
-                0xFF80_0000,
                 0x3F00_0000,
-                0xBF00_0000,
+                0x3F00_0000,
+                0x0000_0001,
+                0x0000_0001,
+                0x0000_0000,
+                0x8000_0000,
+                0x3E80_0000,
+                0x3E80_0000,
                 0x3F80_0000,
                 0xBF80_0000,
                 0x3F80_0000,
@@ -223,20 +231,50 @@ class TensorSquareTests(unittest.TestCase):
             ),
             dtype=np.uint32,
         )
-        outputs = []
-        gradients = []
-        for operation in ("square", "mul"):
-            leaf = torch.tensor(memoryview(input_bits.view(np.float32)), requires_grad=True)
-            weights = torch.tensor(memoryview(weight_bits.view(np.float32)))
-            output = leaf.square() if operation == "square" else leaf.mul(leaf)
-            (output * weights).sum().backward()
-            outputs.append(output)
-            gradients.append(leaf.grad)
-
-        self.assert_tensor_matches(outputs[0], outputs[1], case="special forward")
-        self.assert_tensor_matches(
-            gradients[0], gradients[1], case="special gradient"
+        expected_gradient_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x0000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0000,
+                0x0000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7F80_0000,
+                0x7F80_0000,
+                0x7FC1_2345,
+                0xFFC1_2345,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
         )
+        leaf = torch.tensor(
+            memoryview(input_bits.view(np.float32)), requires_grad=True
+        )
+        weights = torch.tensor(memoryview(weight_bits.view(np.float32)))
+        output = leaf.square()
+        (output * weights).sum().backward()
+
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad, dtype=np.float32).view(np.uint32),
+            expected_gradient_bits,
+        )
+
+        probability = torch.tensor([2.0], requires_grad=True).square()
+        with self.assertRaisesRegex(
+            ValueError,
+            (
+                r"^dropout probability has to be between 0 and 1, but got "
+                r"tensor\(\[4\.\], grad_fn=<PowBackward0>\)$"
+            ),
+        ):
+            torch.nn.functional.dropout(
+                torch.tensor([1.0]), p=probability, training=False
+            )
 
     def test_tensorbase_descriptor_metadata_and_no_argument_errors(self):
         tensor = torch.tensor([2.0])

@@ -172,15 +172,19 @@ class TensorSquareReferenceTests(unittest.TestCase):
                 actual_leaf.grad, expected_leaf.grad, case=(case, "gradient")
             )
 
-    def test_signed_zero_and_nonfinite_gradients_match_pytorch_2_13_bitwise(self):
+    def test_pow_backward_overflow_subnormal_and_nonfinite_bits_match_pytorch_2_13(self):
         input_bits = np.asarray(
             (
                 0x0000_0000,
                 0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
                 0x0080_0000,
                 0x8080_0000,
                 0x3F80_0000,
                 0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
                 0x7F80_0000,
                 0xFF80_0000,
                 0x7F81_2345,
@@ -194,10 +198,14 @@ class TensorSquareReferenceTests(unittest.TestCase):
             (
                 0x3F80_0000,
                 0xBF80_0000,
-                0x7F80_0000,
-                0xFF80_0000,
                 0x3F00_0000,
-                0xBF00_0000,
+                0x3F00_0000,
+                0x0000_0001,
+                0x0000_0001,
+                0x0000_0000,
+                0x8000_0000,
+                0x3E80_0000,
+                0x3E80_0000,
                 0x3F80_0000,
                 0xBF80_0000,
                 0x3F80_0000,
@@ -223,6 +231,68 @@ class TensorSquareReferenceTests(unittest.TestCase):
         self.assert_tensor_matches(
             results[0][1], results[1][1], case="special gradient"
         )
+
+    def test_seeded_finite_pow_backward_bits_match_pytorch_2_13(self):
+        rng = np.random.default_rng(0x50_A2E)
+        input_bits = rng.integers(0, 1 << 32, size=100_000, dtype=np.uint32)
+        weight_bits = rng.integers(0, 1 << 32, size=100_000, dtype=np.uint32)
+        for bits in (input_bits, weight_bits):
+            nonfinite = bits & np.uint32(0x7F80_0000) == np.uint32(0x7F80_0000)
+            bits[nonfinite] ^= np.uint32(0x0080_0000)
+
+        input_bits[:6] = np.asarray(
+            (
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x0000_0001,
+                0x8000_0001,
+                0x0080_0000,
+                0x8080_0000,
+            ),
+            dtype=np.uint32,
+        )
+        weight_bits[:6] = np.asarray(
+            (
+                0x3E80_0000,
+                0x3E80_0000,
+                0x3F00_0000,
+                0x3F00_0000,
+                0x0000_0001,
+                0x0000_0001,
+            ),
+            dtype=np.uint32,
+        )
+
+        gradients = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                memoryview(input_bits.view(np.float32)), requires_grad=True
+            )
+            weights = module.tensor(memoryview(weight_bits.view(np.float32)))
+            (leaf.square() * weights).sum().backward()
+            gradients.append(np.asarray(leaf.grad).view(np.uint32).copy())
+
+        np.testing.assert_array_equal(gradients[0], gradients[1])
+
+    def test_pow_backward_node_identity_matches_pytorch_2_13(self):
+        errors = []
+        for module in (torch, reference_torch):
+            probability = module.tensor(
+                [2.0], dtype=module.float32, requires_grad=True
+            ).square()
+            try:
+                module.nn.functional.dropout(
+                    module.tensor([1.0], dtype=module.float32),
+                    p=probability,
+                    training=False,
+                )
+            except Exception as error:
+                errors.append((type(error).__name__, str(error)))
+            else:
+                self.fail("dropout unexpectedly accepted a squared tensor probability")
+
+        self.assertEqual(errors[0], errors[1])
+        self.assertIn("grad_fn=<PowBackward0>", errors[0][1])
 
     @staticmethod
     def error(action):

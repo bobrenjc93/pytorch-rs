@@ -750,7 +750,7 @@ impl PyTensorBase {
             let tensor = tensor.try_borrow()?;
             tensor
                 .inner
-                .mul(&tensor.inner)
+                .square()
                 .map_err(|error| tensor_error(&error))?
         };
         Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
