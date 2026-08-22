@@ -50,6 +50,7 @@ assert torch.has_mkl is False
 assert torch.has_lapack is False
 assert torch.backends.openmp.is_available() is False
 assert torch.backends.mkl.is_available() is False
+assert torch.backends.nnpack.is_available() is False
 assert torch.autograd.is_multithreading_enabled() is True
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
@@ -174,7 +175,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
 
-`torch.has_openmp`, `torch.has_mkl`, and `torch.has_lapack` are native build-capability flags. `torch.backends.openmp.is_available()` and `torch.backends.mkl.is_available()` expose the first two flags through PyTorch's canonical backend namespaces. They each return the exact `False` singleton because the current Cargo build links none of those external runtimes; importing or calling them performs no host probe and does not import PyTorch. OpenMP and MKL configuration, verbosity, and execution, LAPACK backend namespaces, and every other `torch.backends` API remain unsupported.
+`torch.has_openmp`, `torch.has_mkl`, and `torch.has_lapack` are native build-capability flags. `torch.backends.openmp.is_available()` and `torch.backends.mkl.is_available()` expose the first two flags through PyTorch's canonical backend namespaces, while `torch.backends.nnpack.is_available()` exposes an invariant native build probe. All three queries return the exact `False` singleton because the current Cargo build links none of those external runtimes; importing or calling them performs no host probe and does not import PyTorch. OpenMP, MKL, and NNPACK configuration, verbosity, and execution, LAPACK backend namespaces, and every other `torch.backends` API remain unsupported.
 
 `torch.autograd.is_multithreading_enabled()` reports PyTorch's default enabled state as the exact `True` singleton without changing thread-local gradient mode or importing PyTorch. Autograd multithreading mutation and a parallel backward scheduler remain unsupported.
 

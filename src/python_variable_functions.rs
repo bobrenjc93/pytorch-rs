@@ -512,6 +512,16 @@ fn is_vulkan_available_variable_function(
     false.into_py_any(py)
 }
 
+fn nnpack_available_variable_function(
+    py: Python<'_>,
+    _args: &Bound<'_, PyTuple>,
+    _kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    // NNPACK execution is not compiled into this native Cargo backend.
+    // PyTorch's private build probe ignores every argument and keyword.
+    false.into_py_any(py)
+}
+
 macro_rules! variable_function_callback {
     ($name:ident, $implementation:ident) => {
         #[allow(
@@ -551,6 +561,10 @@ variable_function_callback!(multiply_callback, multiply_variable_function);
 variable_function_callback!(
     is_vulkan_available_callback,
     is_vulkan_available_variable_function
+);
+variable_function_callback!(
+    nnpack_available_callback,
+    nnpack_available_variable_function
 );
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
 variable_function_callback!(is_inference_callback, is_inference_variable_function);
@@ -603,6 +617,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
         variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
+        variable_function_method!(c"_nnpack_available", nnpack_available_callback, c""),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
         variable_function_method!(c"is_inference", is_inference_callback, IS_INFERENCE_DOC),
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
@@ -665,6 +680,9 @@ pub(crate) fn add_variable_functions(module: &Bound<'_, PyModule>) -> PyResult<(
         function.setattr("__module__", "torch")?;
         module.add(name, function)?;
     }
+    variable_functions
+        .getattr("_nnpack_available")?
+        .setattr("__module__", "torch")?;
     Ok(())
 }
 
