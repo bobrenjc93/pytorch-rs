@@ -4,6 +4,7 @@ from typing import Any
 
 __all__ = [
     "assume_constant_result",
+    "list_backends",
     "get_default_backend",
     "is_compiling",
     "is_dynamo_compiling",
@@ -27,6 +28,16 @@ def assume_constant_result(fn):
     """
     fn._dynamo_marked_constant = True
     return fn
+
+
+def list_backends(exclude_tags=("debug", "experimental")) -> list[str]:
+    """
+    Return valid strings that can be passed to `torch.compile(..., backend="name")`.
+
+    Args:
+        exclude_tags(optional): A tuple of strings representing tags to exclude.
+    """
+    return []
 
 
 def get_default_backend() -> str | Callable[..., Any]:
