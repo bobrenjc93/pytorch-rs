@@ -5201,6 +5201,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 93.7
       }
+    },
+    {
+      "key": "pr:692",
+      "recordedAt": "2026-08-22T23:52:18.744Z",
+      "label": "PR #692",
+      "kind": "leaf",
+      "prNumber": 692,
+      "title": "Add differentiable Tensor.square",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 84.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 67.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 93.8
+      }
     }
   ]
 }

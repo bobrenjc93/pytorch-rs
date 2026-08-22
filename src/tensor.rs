@@ -2215,7 +2215,7 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn mul(&self, other: &Self) -> Result<Self, TensorError> {
-        let mut output = self.zip_map(other, |left, right| left * right)?;
+        let mut output = self.multiply_values(other)?;
         if (self.requires_grad() || other.requires_grad()) && is_grad_enabled() {
             let left_has_edge = self.autograd.is_some();
             let right_has_edge = other.autograd.is_some();
@@ -2233,6 +2233,17 @@ impl Tensor {
             }));
         }
         Ok(output)
+    }
+
+    /// Squares every element through the shared-operand multiplication kernel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn square(&self) -> Result<Self, TensorError> {
+        let output = self.multiply_values(self)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Power, apply_square_vjp)
     }
 
     /// Divides tensors element by element using IEEE 754 true division and
@@ -2554,6 +2565,10 @@ impl Tensor {
         }
 
         self.zip_map_broadcast(other, operation)
+    }
+
+    fn multiply_values(&self, other: &Self) -> Result<Self, TensorError> {
+        self.zip_map(other, |left, right| left * right)
     }
 
     fn zip_map_broadcast(
@@ -3182,6 +3197,24 @@ fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
             .enumerate()
             .map(|(index, value)| value * input.value_at_linear_index(index).cos()),
     );
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn apply_square_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // PyTorch's PowBackward0 doubles the saved input before applying the
+    // upstream gradient. Preserve that operation order because distributing
+    // the gradient over two multiply contributions changes float32 overflow
+    // and subnormal rounding.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| square_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            square_backward_value(input.value_at_linear_index(index), value)
+        }));
+    }
 }
 
 fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
@@ -4419,6 +4452,12 @@ fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
 }
 
 #[inline]
+#[cfg(any(feature = "python-bindings", test))]
+fn square_backward_value(input: f32, upstream: f32) -> f32 {
+    (2.0 * input) * upstream
+}
+
+#[inline]
 fn relu_backward_value(input: f32, upstream: f32) -> f32 {
     let bits = input.to_bits();
     let magnitude = bits & !F32_SIGN_MASK;
@@ -4531,6 +4570,62 @@ mod tests {
         assert_eq!(
             inputs.map(|bits| sqrt_value(f32::from_bits(bits)).to_bits()),
             expected
+        );
+    }
+
+    #[test]
+    fn square_backward_matches_pow_order_for_overflow_and_subnormals() {
+        let inputs = [
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x0000_0001,
+            0x8000_0001,
+            0x0000_0002,
+            0x8000_0002,
+            0x0080_0000,
+            0x8080_0000,
+        ];
+        let upstream = [
+            0x3e80_0000,
+            0x3e80_0000,
+            0x3f00_0000,
+            0x3f00_0000,
+            0x3e80_0000,
+            0x3e80_0000,
+            0x0000_0001,
+            0x0000_0001,
+        ];
+        let expected = [
+            0x7f80_0000,
+            0xff80_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x0000_0001,
+            0x8000_0001,
+            0x0000_0000,
+            0x8000_0000,
+        ];
+
+        let leaf = Tensor::from_vec(inputs.map(f32::from_bits).to_vec(), [inputs.len()])
+            .unwrap()
+            .with_requires_grad(true);
+        let weights =
+            Tensor::from_vec(upstream.map(f32::from_bits).to_vec(), [upstream.len()]).unwrap();
+        leaf.square()
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+
+        assert!(
+            leaf.grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected)
         );
     }
 
@@ -4668,6 +4763,10 @@ mod tests {
 
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
+        assert_eq!(
+            source.square().unwrap().grad_fn_name(),
+            Some("PowBackward0")
+        );
         assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
     }
 
