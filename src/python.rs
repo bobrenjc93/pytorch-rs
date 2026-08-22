@@ -274,7 +274,9 @@ impl PyTensorBase {
         } else if index.is_instance_of::<PyEllipsis>() {
             tensor.inner.metadata_alias()
         } else if let Ok(indices) = index.cast::<PyTuple>() {
-            if indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>() {
+            if indices.len() == 1 && indices.get_item(0)?.is_none() {
+                tensor.inner.unsqueeze_front()
+            } else if indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>() {
                 tensor.inner.metadata_alias()
             } else if indices.len() == 2
                 && indices.get_item(0)?.is_instance_of::<PyEllipsis>()
