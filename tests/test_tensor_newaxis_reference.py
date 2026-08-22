@@ -1,5 +1,6 @@
 import gc
 import inspect
+import sys
 import unittest
 
 import numpy as np
@@ -83,6 +84,35 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
                         self.leading_unsqueeze_contract(actual, actual_index),
                         self.leading_unsqueeze_contract(expected, expected_index),
                     )
+
+    def extreme_empty_contract(self, module, trailing_dimension):
+        source = module.zeros((0,), dtype=module.float32).reshape(
+            (sys.maxsize, 0, trailing_dimension)
+        )
+        try:
+            result = source[module.newaxis]
+        except Exception as error:
+            return ("error", type(error).__name__, str(error))
+        return (
+            "result",
+            tuple(result.shape),
+            result.stride(),
+            result.storage_offset(),
+            result.data_ptr() == source.data_ptr(),
+            result.is_set_to(source),
+            str(result.dtype),
+            str(result.device),
+        )
+
+    def test_extreme_empty_stride_wrapping_matches_pytorch_2_13(self):
+        for trailing_dimension in (2, 3):
+            with self.subTest(trailing_dimension=trailing_dimension):
+                self.assertEqual(
+                    self.extreme_empty_contract(torch, trailing_dimension),
+                    self.extreme_empty_contract(
+                        reference_torch, trailing_dimension
+                    ),
+                )
 
     def make_autograd_case(self, module, case):
         if case == "scalar":

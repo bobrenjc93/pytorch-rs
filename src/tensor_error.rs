@@ -78,6 +78,9 @@ pub enum TensorError {
     ViewIncompatibleLayout,
     ElementCountOverflow,
     StrideCalculationOverflow,
+    NegativeStrides {
+        strides: Vec<i64>,
+    },
     StorageCapacityOverflow {
         elements: usize,
     },
@@ -176,13 +179,10 @@ impl Display for TensorError {
                 formatter,
                 "shape '{shape:?}' is invalid for input of size {elements}"
             ),
-            Self::ViewIncompatibleLayout => formatter.write_str(
-                "view size is not compatible with input tensor's size and stride (at least one dimension spans across two contiguous subspaces). Use .reshape(...) instead.",
-            ),
-            Self::ElementCountOverflow => {
-                formatter.write_str("tensor element count overflowed usize")
-            }
-            Self::StrideCalculationOverflow => formatter.write_str("Stride calculation overflowed"),
+            error @ (Self::ViewIncompatibleLayout
+            | Self::ElementCountOverflow
+            | Self::StrideCalculationOverflow
+            | Self::NegativeStrides { .. }) => format_stride_error(formatter, error),
             Self::StorageCapacityOverflow { elements } => write!(
                 formatter,
                 "storage for a tensor with {elements} elements exceeds the platform capacity"
@@ -304,6 +304,25 @@ fn format_flatten_non_concrete_error(formatter: &mut Formatter<'_>) -> std::fmt:
 
 fn format_reshape_inference_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
     formatter.write_str("only one dimension can be inferred")
+}
+
+fn format_stride_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::ViewIncompatibleLayout => formatter.write_str(
+            "view size is not compatible with input tensor's size and stride (at least one dimension spans across two contiguous subspaces). Use .reshape(...) instead.",
+        ),
+        TensorError::ElementCountOverflow => {
+            formatter.write_str("tensor element count overflowed usize")
+        }
+        TensorError::StrideCalculationOverflow => {
+            formatter.write_str("Stride calculation overflowed")
+        }
+        TensorError::NegativeStrides { strides } => write!(
+            formatter,
+            "as_strided: Negative strides are not supported at the moment, got strides: {strides:?}"
+        ),
+        _ => unreachable!("only stride and element-count errors are formatted here"),
+    }
 }
 
 fn format_memory_format_error(

@@ -1,5 +1,6 @@
 import gc
 import inspect
+import sys
 import types
 import unittest
 
@@ -55,6 +56,27 @@ class TensorNewAxisIndexTests(unittest.TestCase):
 
         scalar = torch.tensor(-0.0)[None]
         self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0x8000_0000)
+
+    @unittest.skipUnless(
+        sys.maxsize == (1 << 63) - 1,
+        "signed 64-bit stride wrapping requires a 64-bit Python build",
+    )
+    def test_extreme_empty_leading_stride_uses_signed_wrapping(self):
+        wrapped_negative = torch.zeros((0,)).reshape((sys.maxsize, 0, 2))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^as_strided: Negative strides are not supported at the moment, "
+            r"got strides: \[-2, 2, 2, 1\]$",
+        ):
+            wrapped_negative[None]
+
+        wrapped_positive = torch.zeros((0,)).reshape((sys.maxsize, 0, 3))
+        result = wrapped_positive[torch.newaxis]
+        self.assertEqual(result.shape, (1, sys.maxsize, 0, 3))
+        self.assertEqual(result.stride(), (sys.maxsize - 2, 3, 3, 1))
+        self.assertEqual(result.storage_offset(), 0)
+        self.assertEqual(result.data_ptr(), wrapped_positive.data_ptr())
+        self.assertFalse(result.is_set_to(wrapped_positive))
 
     def make_autograd_case(self, case):
         if case == "scalar":
