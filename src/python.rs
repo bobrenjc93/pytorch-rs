@@ -44,6 +44,15 @@ static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 
+// These are compile-time facts about the native Cargo build. Keep them native
+// so importing the Python package never probes the host or imports another
+// tensor runtime to infer capabilities.
+const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 3] = [
+    ("has_openmp", false),
+    ("has_mkl", false),
+    ("has_lapack", false),
+];
+
 const IS_TENSOR_SOURCE: &CStr = cr#"
 import copy as _copy
 import sys as _sys
@@ -10485,6 +10494,9 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     cpython_compat::initialize_torch_function_descriptor_caller(py)?;
+    for (name, enabled) in NATIVE_BUILD_CAPABILITIES {
+        module.add(name, enabled)?;
+    }
     module.add("Size", size_type_object(py)?.clone_ref(py))?;
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();

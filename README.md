@@ -45,6 +45,9 @@ assert torch.cpu.device_count() == 1
 assert torch.cpu.synchronize() is None
 assert torch.get_num_threads() == 1
 assert torch.get_num_interop_threads() == 1
+assert torch.has_openmp is False
+assert torch.has_mkl is False
+assert torch.has_lapack is False
 assert torch.autograd.is_multithreading_enabled() is True
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
@@ -161,6 +164,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.cpu.is_available()` is the canonical device-agnostic CPU availability query and returns the exact `True` singleton. `torch.cpu.is_initialized()` likewise returns exact `True`, reflecting that the eager CPU backend is always initialized. `torch.cpu.current_device()` returns the invariant string `"cpu"`, and `torch.cpu.device_count()` reports the single logical CPU device as the exact integer `1`. Because native CPU execution is eager, `torch.cpu.synchronize(device=None)` ignores any device value and returns the exact `None` singleton. These APIs do not probe hardware, environment variables, or PyTorch. CPU streams, events, device mutation, capabilities, AMP, and the rest of the `torch.cpu` namespace remain unsupported.
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
+
+`torch.has_openmp`, `torch.has_mkl`, and `torch.has_lapack` are native build-capability flags. They each expose the exact `False` singleton because the current Cargo build links none of those external runtimes; importing or reading them performs no host probe and does not import PyTorch. OpenMP, MKL, LAPACK, and the broader `torch.backends` namespace remain unsupported.
 
 `torch.autograd.is_multithreading_enabled()` reports PyTorch's default enabled state as the exact `True` singleton without changing thread-local gradient mode or importing PyTorch. Autograd multithreading mutation and a parallel backward scheduler remain unsupported.
 
