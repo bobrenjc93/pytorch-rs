@@ -4881,6 +4881,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.3
       }
+    },
+    {
+      "key": "pr:617",
+      "recordedAt": "2026-08-22T05:07:44.227Z",
+      "label": "PR #617",
+      "kind": "leaf",
+      "prNumber": 617,
+      "title": "Add transparent torch.overrides.BaseTorchFunctionMode",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 82.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 65.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.4
+      }
     }
   ]
 }
