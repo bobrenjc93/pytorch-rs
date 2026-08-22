@@ -562,11 +562,13 @@ fn sqrt_preserves_scalar_empty_offset_and_strided_autograd_history() {
     assert_eq!(empty_output.storage_offset(), 0);
     assert_eq!(empty_output.dtype(), empty.dtype());
     assert_eq!(empty_output.device(), empty.device());
-    empty_output.sum().backward().unwrap();
+    let empty_loss = empty_output.sum();
+    empty_loss.backward().unwrap();
     let empty_gradient = empty.grad().unwrap().unwrap();
     assert_eq!(empty_gradient.shape(), [2, 0, 3]);
     assert_eq!(empty_gradient.stride(), [3, 3, 1]);
     assert!(values(&empty_gradient).is_empty());
+    assert_eq!(empty_loss.backward(), Err(TensorError::BackwardGraphFreed));
 
     let source = Tensor::from_vec((1_u8..=24).map(f32::from).collect(), [2, 3, 4])
         .unwrap()
@@ -686,7 +688,9 @@ fn sqrt_vjp_matches_pytorch_for_signed_zero_non_finites_and_nans() {
         0x7fc0_1234,
         0xffc0_5678,
     ];
-    let leaf = Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()])
+    let mut storage = vec![42.0; input_bits.len()];
+    storage.extend(input_bits.map(f32::from_bits));
+    let leaf = Tensor::from_vec(storage, [2, input_bits.len()])
         .unwrap()
         .with_requires_grad(true);
     let weights = Tensor::from_vec(
@@ -694,17 +698,24 @@ fn sqrt_vjp_matches_pytorch_for_signed_zero_non_finites_and_nans() {
         [weight_bits.len()],
     )
     .unwrap();
-    let loss = leaf.sqrt().unwrap().mul(&weights).unwrap().sum();
+    let offset = leaf.index([1]).unwrap();
+    assert_eq!(offset.storage_offset(), input_bits.len());
+    let loss = offset.sqrt().unwrap().mul(&weights).unwrap().sum();
 
     loss.backward().unwrap();
+    let gradient_bits = leaf
+        .grad()
+        .unwrap()
+        .unwrap()
+        .logical_values()
+        .map(f32::to_bits)
+        .collect::<Vec<_>>();
     assert!(
-        leaf.grad()
-            .unwrap()
-            .unwrap()
-            .logical_values()
-            .map(f32::to_bits)
-            .eq(expected_gradient_bits)
+        gradient_bits[..input_bits.len()]
+            .iter()
+            .all(|&bits| bits == 0.0_f32.to_bits())
     );
+    assert_eq!(gradient_bits[input_bits.len()..], expected_gradient_bits);
     assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
 }
 

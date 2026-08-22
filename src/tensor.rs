@@ -3121,12 +3121,40 @@ fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
 }
 
 fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // Borrow one exact saved range for row-contiguous layouts, including
+    // nonzero-offset views, instead of resolving layout and storage per value.
+    if try_extend_contiguous_sqrt_gradient(gradient, input, upstream) {
+        return;
+    }
     gradient.extend(
         upstream
             .iter()
             .enumerate()
             .map(|(index, &value)| value / (2.0 * sqrt_value(input.value_at_linear_index(index)))),
     );
+}
+
+// Keep contiguous probing and iteration out of the caller so release LTO
+// preserves the existing indexed-loop code generation for strided layouts.
+#[inline(never)]
+fn try_extend_contiguous_sqrt_gradient(
+    gradient: &mut Vec<f32>,
+    input: &SavedTensor,
+    upstream: &[f32],
+) -> bool {
+    let Some(saved_values) = input.contiguous_slice() else {
+        return false;
+    };
+    debug_assert_eq!(saved_values.len(), upstream.len());
+    gradient.extend(
+        saved_values
+            .iter()
+            .zip(upstream)
+            .map(|(&saved_value, &upstream_value)| {
+                upstream_value / (2.0 * sqrt_value(saved_value))
+            }),
+    );
+    true
 }
 
 struct GradientAccumulator {
