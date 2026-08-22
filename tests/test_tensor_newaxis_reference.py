@@ -47,6 +47,16 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
             ("noncontiguous", base.transpose(0, 3)[1]),
         )
 
+    def newaxis_index(self, module, index_form, use_newaxis):
+        newaxis = module.newaxis if use_newaxis else None
+        if index_form == "bare":
+            return newaxis
+        if index_form == "leading_tuple":
+            return (newaxis,)
+        if index_form == "trailing":
+            return (Ellipsis, newaxis)
+        raise AssertionError(f"unknown new-axis index form: {index_form}")
+
     def unsqueeze_contract(self, source, index):
         result = source[index]
         values = np.asarray(result.detach(), dtype=np.float32).reshape(-1)
@@ -83,6 +93,31 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
                     self.assertEqual(
                         self.unsqueeze_contract(actual, actual_index),
                         self.unsqueeze_contract(expected, expected_index),
+                    )
+
+    def test_exact_leading_singleton_tuple_matches_pytorch_2_13(self):
+        for spelling in ("none", "newaxis"):
+            actual_cases = self.layout_cases(torch)
+            expected_cases = self.layout_cases(reference_torch)
+            for (actual_case, actual), (expected_case, expected) in zip(
+                actual_cases, expected_cases, strict=True
+            ):
+                self.assertEqual(actual_case, expected_case)
+                with self.subTest(spelling=spelling, case=actual_case):
+                    use_newaxis = spelling == "newaxis"
+                    self.assertEqual(
+                        self.unsqueeze_contract(
+                            actual,
+                            self.newaxis_index(
+                                torch, "leading_tuple", use_newaxis
+                            ),
+                        ),
+                        self.unsqueeze_contract(
+                            expected,
+                            self.newaxis_index(
+                                reference_torch, "leading_tuple", use_newaxis
+                            ),
+                        ),
                     )
 
     def test_exact_trailing_layout_value_and_aliasing_match_pytorch_2_13(self):
@@ -190,9 +225,9 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
             return leaf, leaf.transpose(0, 3)[1]
         raise AssertionError(f"unknown case: {case}")
 
-    def autograd_contract(self, module, case, trailing=False):
+    def autograd_contract(self, module, case, index_form):
         leaf, source = self.make_autograd_case(module, case)
-        index = (Ellipsis, module.newaxis) if trailing else module.newaxis
+        index = self.newaxis_index(module, index_form, True)
         result = source[index]
         metadata = (
             result is not source,
@@ -208,9 +243,9 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
         (result * weights).sum().backward()
         return metadata, np.asarray(leaf.grad, dtype=np.float32).copy()
 
-    def no_grad_contract(self, module, case, trailing=False):
+    def no_grad_contract(self, module, case, index_form):
         leaf, source = self.make_autograd_case(module, case)
-        index = (Ellipsis, None) if trailing else None
+        index = self.newaxis_index(module, index_form, False)
         with module.no_grad():
             result = source[index]
         return (
@@ -225,11 +260,11 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
             leaf.grad,
         )
 
-    def unsqueeze_node_diagnostic(self, module, trailing=False):
+    def unsqueeze_node_diagnostic(self, module, index_form):
         leaf = module.tensor(
             [2.0], dtype=module.float32, requires_grad=True
         )
-        index = (Ellipsis, module.newaxis) if trailing else module.newaxis
+        index = self.newaxis_index(module, index_form, True)
         try:
             module.nn.functional.dropout(
                 None, p=leaf[index], training=False
@@ -238,36 +273,41 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
             return str(error)
         self.fail("dropout unexpectedly accepted an out-of-range tensor probability")
 
-    def assert_autograd_and_no_grad_match_pytorch_2_13(self, trailing):
+    def assert_autograd_and_no_grad_match_pytorch_2_13(self, index_form):
         for case in ("scalar", "empty", "offset", "noncontiguous"):
             with self.subTest(case=case, mode="autograd"):
                 actual_metadata, actual_gradient = self.autograd_contract(
-                    torch, case, trailing
+                    torch, case, index_form
                 )
                 expected_metadata, expected_gradient = self.autograd_contract(
-                    reference_torch, case, trailing
+                    reference_torch, case, index_form
                 )
                 self.assertEqual(actual_metadata, expected_metadata)
                 np.testing.assert_array_equal(actual_gradient, expected_gradient)
 
             with self.subTest(case=case, mode="no_grad"):
                 self.assertEqual(
-                    self.no_grad_contract(torch, case, trailing),
-                    self.no_grad_contract(reference_torch, case, trailing),
+                    self.no_grad_contract(torch, case, index_form),
+                    self.no_grad_contract(reference_torch, case, index_form),
                 )
 
         self.assertEqual(
-            self.unsqueeze_node_diagnostic(torch, trailing),
-            self.unsqueeze_node_diagnostic(reference_torch, trailing),
+            self.unsqueeze_node_diagnostic(torch, index_form),
+            self.unsqueeze_node_diagnostic(reference_torch, index_form),
         )
 
     def test_autograd_and_no_grad_match_pytorch_2_13_for_every_layout(self):
-        self.assert_autograd_and_no_grad_match_pytorch_2_13(False)
+        self.assert_autograd_and_no_grad_match_pytorch_2_13("bare")
+
+    def test_leading_singleton_tuple_autograd_and_no_grad_match_pytorch_2_13(
+        self,
+    ):
+        self.assert_autograd_and_no_grad_match_pytorch_2_13("leading_tuple")
 
     def test_trailing_autograd_and_no_grad_match_pytorch_2_13(self):
-        self.assert_autograd_and_no_grad_match_pytorch_2_13(True)
+        self.assert_autograd_and_no_grad_match_pytorch_2_13("trailing")
 
-    def lifetime_contract(self, module, trailing=False):
+    def lifetime_contract(self, module, index_form):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         leaf = module.tensor(
             values.tolist(), dtype=module.float32, requires_grad=True
@@ -275,7 +315,7 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
 
         def make_view():
             source = (leaf * 2.0).transpose(0, 2)[1]
-            index = (Ellipsis, module.newaxis) if trailing else module.newaxis
+            index = self.newaxis_index(module, index_form, True)
             return source[index]
 
         result = make_view()
@@ -290,7 +330,7 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
         )
         values = (
             [[[1.0], [2.0]], [[3.0], [4.0]], [[5.0], [6.0]]]
-            if trailing
+            if index_form == "trailing"
             else [[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]]
         )
         weights = module.tensor(values, dtype=module.float32)
@@ -298,22 +338,34 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
         return metadata, np.asarray(leaf.grad, dtype=np.float32).copy()
 
     def test_source_lifetime_matches_pytorch_2_13(self):
-        actual_metadata, actual_gradient = self.lifetime_contract(torch)
+        actual_metadata, actual_gradient = self.lifetime_contract(torch, "bare")
         expected_metadata, expected_gradient = self.lifetime_contract(
-            reference_torch
+            reference_torch, "bare"
+        )
+        self.assertEqual(actual_metadata, expected_metadata)
+        np.testing.assert_array_equal(actual_gradient, expected_gradient)
+
+    def test_leading_singleton_tuple_lifetime_matches_pytorch_2_13(self):
+        actual_metadata, actual_gradient = self.lifetime_contract(
+            torch, "leading_tuple"
+        )
+        expected_metadata, expected_gradient = self.lifetime_contract(
+            reference_torch, "leading_tuple"
         )
         self.assertEqual(actual_metadata, expected_metadata)
         np.testing.assert_array_equal(actual_gradient, expected_gradient)
 
     def test_trailing_source_lifetime_matches_pytorch_2_13(self):
-        actual_metadata, actual_gradient = self.lifetime_contract(torch, True)
+        actual_metadata, actual_gradient = self.lifetime_contract(
+            torch, "trailing"
+        )
         expected_metadata, expected_gradient = self.lifetime_contract(
-            reference_torch, True
+            reference_torch, "trailing"
         )
         self.assertEqual(actual_metadata, expected_metadata)
         np.testing.assert_array_equal(actual_gradient, expected_gradient)
 
-    def mode_contract(self, module, trailing=False):
+    def mode_contract(self, module, index_form):
         marker = object()
 
         class RecordingMode(module.overrides.TorchFunctionMode):
@@ -342,9 +394,7 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
                 return func(*args, **(kwargs or {}))
 
         for case, source in self.layout_cases(module):
-            index = (
-                (Ellipsis, module.newaxis) if trailing else module.newaxis
-            )
+            index = self.newaxis_index(module, index_form, True)
             mode.calls.clear()
             with mode:
                 result = source[index]
@@ -373,7 +423,7 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
                 )
             )
 
-            forwarding_index = (Ellipsis, None) if trailing else None
+            forwarding_index = self.newaxis_index(module, index_form, False)
             with ForwardingMode():
                 forwarded = source[forwarding_index]
             forwarded_layouts.append(
@@ -410,9 +460,7 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
         source = self.layout_cases(module)[0][1]
         lower = NestedMode("lower", marker)
         upper = NestedMode("upper")
-        nested_index = (
-            (Ellipsis, module.newaxis) if trailing else module.newaxis
-        )
+        nested_index = self.newaxis_index(module, index_form, True)
         with lower:
             with upper:
                 nested_result = source[nested_index]
@@ -429,13 +477,22 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
 
     def test_torch_function_mode_behavior_matches_pytorch_2_13(self):
         self.assertEqual(
-            self.mode_contract(torch), self.mode_contract(reference_torch)
+            self.mode_contract(torch, "bare"),
+            self.mode_contract(reference_torch, "bare"),
+        )
+
+    def test_leading_singleton_tuple_torch_function_mode_matches_pytorch_2_13(
+        self,
+    ):
+        self.assertEqual(
+            self.mode_contract(torch, "leading_tuple"),
+            self.mode_contract(reference_torch, "leading_tuple"),
         )
 
     def test_trailing_torch_function_mode_matches_pytorch_2_13(self):
         self.assertEqual(
-            self.mode_contract(torch, True),
-            self.mode_contract(reference_torch, True),
+            self.mode_contract(torch, "trailing"),
+            self.mode_contract(reference_torch, "trailing"),
         )
 
 
