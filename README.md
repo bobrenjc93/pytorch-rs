@@ -43,6 +43,9 @@ assert torch.cpu.is_available() is True
 assert torch.cpu.current_device() == "cpu"
 assert torch.cpu.device_count() == 1
 assert torch.cpu.synchronize() is None
+assert torch.accelerator.current_accelerator() is None
+assert torch.accelerator.is_available() is False
+assert torch.accelerator.device_count() == 0
 assert torch.get_num_threads() == 1
 assert torch.get_num_interop_threads() == 1
 assert torch.has_openmp is False
@@ -162,6 +165,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.functional.broadcast_shapes` and its identical top-level `torch.broadcast_shapes` alias compute canonical `torch.Size` results directly from nonnegative Python integer, tuple, list, and `torch.Size` inputs without creating tensors. Symbolic dimensions, tracing, and `torch.broadcast_tensors` remain unsupported.
 
 `torch.cpu.is_available()` is the canonical device-agnostic CPU availability query and returns the exact `True` singleton. `torch.cpu.is_initialized()` likewise returns exact `True`, reflecting that the eager CPU backend is always initialized. `torch.cpu.current_device()` returns the invariant string `"cpu"`, and `torch.cpu.device_count()` reports the single logical CPU device as the exact integer `1`. Because native CPU execution is eager, `torch.cpu.synchronize(device=None)` ignores any device value and returns the exact `None` singleton. These APIs do not probe hardware, environment variables, or PyTorch. CPU streams, events, device mutation, capabilities, AMP, and the rest of the `torch.cpu` namespace remain unsupported.
+
+`torch.accelerator.current_accelerator(check_available=False)`, `torch.accelerator.is_available()`, and `torch.accelerator.device_count()` share one CPU-only discovery boundary and return exact `None`, `False`, and `0`, respectively. They do not inspect visible host accelerators, environment variables, or PyTorch. Accelerator device selection, streams, memory management, graphs, synchronization, and execution remain unsupported.
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
 
