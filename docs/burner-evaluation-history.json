@@ -4913,6 +4913,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.5
       }
+    },
+    {
+      "key": "pr:623",
+      "recordedAt": "2026-08-22T06:57:03.483Z",
+      "label": "PR #623",
+      "kind": "leaf",
+      "prNumber": 623,
+      "title": "Expose eager torch.jit.onednn_fusion_enabled",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 82.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 65.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.5
+      }
     }
   ]
 }

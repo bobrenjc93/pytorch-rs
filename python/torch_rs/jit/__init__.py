@@ -13,6 +13,7 @@ __all__ = [
     "export",
     "ignore",
     "isinstance",
+    "onednn_fusion_enabled",
     "script_if_tracing",
     "strict_fusion",
     "unused",
@@ -47,6 +48,15 @@ class strict_fusion:
 
     def __exit__(self, type: _Any, value: _Any, tb: _Any) -> None:
         pass
+
+
+def onednn_fusion_enabled():
+    """Return whether onednn JIT fusion is enabled.
+
+    .. deprecated:: 2.5
+        TorchScript is deprecated, please use ``torch.compile`` instead.
+    """
+    return False
 
 
 def annotate(the_type, the_value):
