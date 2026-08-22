@@ -34,6 +34,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::SqueezeDimensionsRankLimit
         | TensorError::FlattenStartAfterEnd
         | TensorError::FlattenNonConcreteInteger
+        | TensorError::NonConcreteInteger
         | TensorError::ElementCountOverflow
         | TensorError::BackwardRequiresScalar { .. }
         | TensorError::DoesNotRequireGrad

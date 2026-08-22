@@ -62,6 +62,7 @@ pub enum TensorError {
     SqueezeDimensionsRankLimit,
     FlattenStartAfterEnd,
     FlattenNonConcreteInteger,
+    NonConcreteInteger,
     ReshapeMultipleInferredDimensions,
     ReshapeInvalidDimension {
         dimension: i64,
@@ -161,7 +162,9 @@ impl Display for TensorError {
                 format_squeeze_error(formatter, error)
             }
             Self::FlattenStartAfterEnd => format_flatten_error(formatter),
-            Self::FlattenNonConcreteInteger => format_flatten_non_concrete_error(formatter),
+            Self::FlattenNonConcreteInteger | Self::NonConcreteInteger => {
+                format_non_concrete_integer_error(formatter)
+            }
             Self::ReshapeMultipleInferredDimensions => format_reshape_inference_error(formatter),
             Self::ReshapeInvalidDimension {
                 dimension,
@@ -298,7 +301,7 @@ fn format_flatten_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
     formatter.write_str("flatten() has invalid args: start_dim cannot come after end_dim")
 }
 
-fn format_flatten_non_concrete_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
+fn format_non_concrete_integer_error(formatter: &mut Formatter<'_>) -> std::fmt::Result {
     formatter.write_str("SymIntArrayRef expected to contain only concrete integers")
 }
 

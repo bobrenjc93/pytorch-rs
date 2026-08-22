@@ -62,6 +62,21 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         "signed 64-bit stride wrapping requires a 64-bit Python build",
     )
     def test_extreme_empty_leading_stride_uses_signed_wrapping(self):
+        non_concrete = torch.zeros((0,)).reshape((1 << 62, 0, 2))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "SymIntArrayRef expected to contain only concrete integers",
+        ):
+            non_concrete[None]
+
+        negative_boundary = torch.zeros((0,)).reshape((1 << 62, 0, 3))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^as_strided: Negative strides are not supported at the moment, "
+            r"got strides: \[-4611686018427387904, 3, 3, 1\]$",
+        ):
+            negative_boundary[torch.newaxis]
+
         wrapped_negative = torch.zeros((0,)).reshape((sys.maxsize, 0, 2))
         with self.assertRaisesRegex(
             RuntimeError,

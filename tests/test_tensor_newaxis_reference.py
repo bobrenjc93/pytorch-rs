@@ -85,14 +85,22 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
                         self.leading_unsqueeze_contract(expected, expected_index),
                     )
 
-    def extreme_empty_contract(self, module, trailing_dimension):
+    def extreme_empty_contract(
+        self, module, leading_dimension, trailing_dimension
+    ):
         source = module.zeros((0,), dtype=module.float32).reshape(
-            (sys.maxsize, 0, trailing_dimension)
+            (leading_dimension, 0, trailing_dimension)
         )
         try:
             result = source[module.newaxis]
         except Exception as error:
-            return ("error", type(error).__name__, str(error))
+            message = str(error)
+            non_concrete = (
+                "SymIntArrayRef expected to contain only concrete integers"
+            )
+            if non_concrete in message:
+                message = non_concrete
+            return ("error", type(error).__name__, message)
         return (
             "result",
             tuple(result.shape),
@@ -104,13 +112,33 @@ class TensorNewAxisIndexReferenceTests(unittest.TestCase):
             str(result.device),
         )
 
-    def test_extreme_empty_stride_wrapping_matches_pytorch_2_13(self):
-        for trailing_dimension in (2, 3):
-            with self.subTest(trailing_dimension=trailing_dimension):
+    @unittest.skipUnless(
+        sys.maxsize == (1 << 63) - 1,
+        "signed 64-bit stride wrapping requires a 64-bit Python build",
+    )
+    def test_extreme_empty_stride_boundaries_match_pytorch_2_13(self):
+        cases = (
+            ((1 << 62) - 1, 2),
+            (1 << 62, 2),
+            ((1 << 62) + 1, 2),
+            ((1 << 62) - 1, 3),
+            (1 << 62, 3),
+            (sys.maxsize, 2),
+            (sys.maxsize, 3),
+        )
+        for leading_dimension, trailing_dimension in cases:
+            with self.subTest(
+                leading_dimension=leading_dimension,
+                trailing_dimension=trailing_dimension,
+            ):
                 self.assertEqual(
-                    self.extreme_empty_contract(torch, trailing_dimension),
                     self.extreme_empty_contract(
-                        reference_torch, trailing_dimension
+                        torch, leading_dimension, trailing_dimension
+                    ),
+                    self.extreme_empty_contract(
+                        reference_torch,
+                        leading_dimension,
+                        trailing_dimension,
                     ),
                 )
 
