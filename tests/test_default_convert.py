@@ -5,13 +5,14 @@ import pickle
 import types
 import unittest
 from collections import OrderedDict, UserDict, UserList, deque, namedtuple
+from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 
 import numpy as np
 
 import torch_rs as torch
 
-from torch_rs.utils.data import default_convert
+from torch_rs.utils.data import DataChunk, default_convert
 
 
 Point = namedtuple("Point", ("x", "y"))
@@ -49,10 +50,6 @@ FUNCTION_DOC = """Convert each NumPy array element into a :class:`torch.Tensor`.
     """
 
 NUMPY_ERROR = "default_convert does not support NumPy arrays or scalars"
-CONTAINER_ERROR = (
-    "default_convert only supports built-in dict, list, tuple, and "
-    "namedtuple containers"
-)
 
 
 class DictSubclass(dict):
@@ -65,6 +62,52 @@ class ListSubclass(list):
 
 class TupleSubclass(tuple):
     pass
+
+
+class ConstructibleSequence(Sequence):
+    def __init__(self, values):
+        self.values = tuple(values)
+
+    def __getitem__(self, index):
+        return self.values[index]
+
+    def __len__(self):
+        return len(self.values)
+
+
+class ConstructorRejectingMapping(Mapping):
+    def __init__(self):
+        self.data = {"value": (1, 2)}
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+
+class ConstructorRejectingSequence(Sequence):
+    def __init__(self):
+        self.values = ((1, 2),)
+
+    def __getitem__(self, index):
+        return self.values[index]
+
+    def __len__(self):
+        return len(self.values)
+
+
+class CopyRejectingMutableMapping(UserDict):
+    def __copy__(self):
+        raise TypeError("copy disabled")
+
+
+class CopyRejectingMutableSequence(UserList):
+    def __copy__(self):
+        raise TypeError("copy disabled")
 
 
 class IterableOnly:
@@ -173,23 +216,81 @@ class DefaultConvertTests(unittest.TestCase):
         converted = default_convert({numpy_key: "value"})
         self.assertIs(next(iter(converted)), numpy_key)
 
-    def test_exotic_mapping_and_sequence_types_are_rejected(self):
-        values = (
-            DictSubclass(value=1),
-            OrderedDict(value=1),
-            UserDict(value=1),
-            MappingProxyType({"value": 1}),
-            ListSubclass([1]),
-            UserList([1]),
-            TupleSubclass((1,)),
-            range(2),
-            deque([1]),
-            bytearray(b"a"),
-        )
-        for value in values:
-            with self.subTest(value_type=type(value)):
-                with self.assertRaisesRegex(TypeError, f"^{CONTAINER_ERROR}$"):
-                    default_convert(value)
+    def test_mapping_and_sequence_subclasses_use_pytorch_copy_fallbacks(self):
+        chunk = DataChunk([(1, 2)])
+        dict_subclass = DictSubclass(value=(1, 2))
+        dict_marker = object()
+        dict_subclass.marker = dict_marker
+        list_subclass = ListSubclass([(1, 2)])
+        list_marker = object()
+        list_subclass.marker = list_marker
+
+        cases = {
+            "data_chunk": (chunk, DataChunk, [[1, 2]]),
+            "dict_subclass": (
+                dict_subclass,
+                DictSubclass,
+                {"value": [1, 2]},
+            ),
+            "ordered_dict": (
+                OrderedDict(value=(1, 2)),
+                OrderedDict,
+                OrderedDict(value=[1, 2]),
+            ),
+            "user_dict": (UserDict(value=(1, 2)), UserDict, {"value": [1, 2]}),
+            "mapping_proxy": (
+                MappingProxyType({"value": (1, 2)}),
+                type(MappingProxyType({})),
+                {"value": [1, 2]},
+            ),
+            "list_subclass": (list_subclass, ListSubclass, [[1, 2]]),
+            "user_list": (UserList([(1, 2)]), UserList, [[1, 2]]),
+            "constructible_sequence": (
+                ConstructibleSequence([(1, 2)]),
+                ConstructibleSequence,
+                [[1, 2]],
+            ),
+            "tuple_subclass": (TupleSubclass(((1, 2),)), list, [[1, 2]]),
+            "range_fallback": (range(2), list, [0, 1]),
+            "deque": (deque([(1, 2)]), deque, deque([[1, 2]])),
+            "bytearray": (bytearray(b"a"), bytearray, bytearray(b"a")),
+            "mapping_copy_fallback": (
+                CopyRejectingMutableMapping(value=(1, 2)),
+                dict,
+                {"value": [1, 2]},
+            ),
+            "mapping_constructor_fallback": (
+                ConstructorRejectingMapping(),
+                dict,
+                {"value": [1, 2]},
+            ),
+            "sequence_copy_fallback": (
+                CopyRejectingMutableSequence([(1, 2)]),
+                list,
+                [[1, 2]],
+            ),
+            "sequence_constructor_fallback": (
+                ConstructorRejectingSequence(),
+                list,
+                [[1, 2]],
+            ),
+        }
+        converted = {}
+        for name, (value, expected_type, expected_value) in cases.items():
+            with self.subTest(name=name):
+                result = default_convert(value)
+                converted[name] = result
+                self.assertIs(type(result), expected_type)
+                self.assertIsNot(result, value)
+                if isinstance(result, Mapping):
+                    self.assertEqual(dict(result), dict(expected_value))
+                else:
+                    self.assertEqual(list(result), list(expected_value))
+
+        self.assertIs(converted["dict_subclass"].marker, dict_marker)
+        self.assertIs(converted["list_subclass"].marker, list_marker)
+        self.assertIs(converted["data_chunk"].items, chunk.items)
+        self.assertEqual(list(converted["data_chunk"].raw_iterator()), [(1, 2)])
 
     def test_signature_annotations_documentation_and_metadata(self):
         self.assertIs(type(default_convert), types.FunctionType)

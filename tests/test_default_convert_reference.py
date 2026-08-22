@@ -5,7 +5,9 @@ import pickle
 import pickletools
 import types
 import unittest
-from collections import OrderedDict, UserDict, UserList, namedtuple
+from collections import OrderedDict, UserDict, UserList, deque, namedtuple
+from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 
 import numpy as np
 
@@ -26,6 +28,56 @@ class DictSubclass(dict):
 
 class ListSubclass(list):
     pass
+
+
+class TupleSubclass(tuple):
+    pass
+
+
+class ConstructibleSequence(Sequence):
+    def __init__(self, values):
+        self.values = tuple(values)
+
+    def __getitem__(self, index):
+        return self.values[index]
+
+    def __len__(self):
+        return len(self.values)
+
+
+class ConstructorRejectingMapping(Mapping):
+    def __init__(self):
+        self.data = {"value": (1, 2)}
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+
+class ConstructorRejectingSequence(Sequence):
+    def __init__(self):
+        self.values = ((1, 2),)
+
+    def __getitem__(self, index):
+        return self.values[index]
+
+    def __len__(self):
+        return len(self.values)
+
+
+class CopyRejectingMutableMapping(UserDict):
+    def __copy__(self):
+        raise TypeError("copy disabled")
+
+
+class CopyRejectingMutableSequence(UserList):
+    def __copy__(self):
+        raise TypeError("copy disabled")
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -92,6 +144,55 @@ class DefaultConvertReferenceTests(unittest.TestCase):
             "empty_tuple": (),
         }
         return source, tensor
+
+    def make_collection_cases(self, module):
+        dict_subclass = DictSubclass(value=(1, 2))
+        dict_subclass.marker = object()
+        list_subclass = ListSubclass([(1, 2)])
+        list_subclass.marker = object()
+        return {
+            "data_chunk": module.utils.data.DataChunk([(1, 2)]),
+            "dict_subclass": dict_subclass,
+            "ordered_dict": OrderedDict(value=(1, 2)),
+            "user_dict": UserDict(value=(1, 2)),
+            "mapping_proxy": MappingProxyType({"value": (1, 2)}),
+            "list_subclass": list_subclass,
+            "user_list": UserList([(1, 2)]),
+            "constructible_sequence": ConstructibleSequence([(1, 2)]),
+            "tuple_subclass": TupleSubclass(((1, 2),)),
+            "range_fallback": range(2),
+            "deque": deque([(1, 2)]),
+            "bytearray": bytearray(b"a"),
+            "mapping_copy_fallback": CopyRejectingMutableMapping(
+                value=(1, 2)
+            ),
+            "mapping_constructor_fallback": ConstructorRejectingMapping(),
+            "sequence_copy_fallback": CopyRejectingMutableSequence([(1, 2)]),
+            "sequence_constructor_fallback": ConstructorRejectingSequence(),
+        }
+
+    def collection_shape(self, value):
+        value_type = type(value)
+        type_name = (
+            value_type.__module__.replace("torch_rs", "torch"),
+            value_type.__name__,
+        )
+        if isinstance(value, Mapping):
+            return (
+                "mapping",
+                type_name,
+                tuple(
+                    (key, self.collection_shape(item))
+                    for key, item in value.items()
+                ),
+            )
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            return (
+                "sequence",
+                type_name,
+                tuple(self.collection_shape(item) for item in value),
+            )
+        return ("leaf", type_name, value)
 
     def test_supported_recursive_behavior_matches_pytorch_2_13(self):
         actual_source, actual_tensor = self.make_supported_case(torch)
@@ -233,28 +334,43 @@ class DefaultConvertReferenceTests(unittest.TestCase):
                     actual(value)
                 expected(value)
 
-    def test_exotic_collections_remain_outside_the_supported_scope(self):
+    def test_mapping_and_sequence_copy_fallbacks_match_pytorch_2_13(self):
         actual = torch.utils.data.default_convert
         expected = reference_torch.utils.data.default_convert
-        values = (
-            DictSubclass(value=1),
-            OrderedDict(value=1),
-            UserDict(value=1),
-            ListSubclass([1]),
-            UserList([1]),
-            range(2),
-            bytearray(b"a"),
+        actual_cases = self.make_collection_cases(torch)
+        expected_cases = self.make_collection_cases(reference_torch)
+
+        actual_results = {}
+        expected_results = {}
+        for name in actual_cases:
+            with self.subTest(name=name):
+                actual_result = actual(actual_cases[name])
+                expected_result = expected(expected_cases[name])
+                actual_results[name] = actual_result
+                expected_results[name] = expected_result
+                self.assertEqual(
+                    self.collection_shape(actual_result),
+                    self.collection_shape(expected_result),
+                )
+                self.assertIsNot(actual_result, actual_cases[name])
+                self.assertIsNot(expected_result, expected_cases[name])
+
+        for name in ("dict_subclass", "list_subclass"):
+            self.assertIs(
+                actual_results[name].marker, actual_cases[name].marker
+            )
+            self.assertIs(
+                expected_results[name].marker, expected_cases[name].marker
+            )
+
+        actual_chunk = actual_results["data_chunk"]
+        expected_chunk = expected_results["data_chunk"]
+        self.assertIs(actual_chunk.items, actual_cases["data_chunk"].items)
+        self.assertIs(expected_chunk.items, expected_cases["data_chunk"].items)
+        self.assertEqual(
+            self.collection_shape(list(actual_chunk.raw_iterator())),
+            self.collection_shape(list(expected_chunk.raw_iterator())),
         )
-        for value in values:
-            with self.subTest(value_type=type(value)):
-                with self.assertRaisesRegex(
-                    TypeError,
-                    "^default_convert only supports built-in dict, list, tuple, "
-                    "and namedtuple containers$",
-                ):
-                    actual(value)
-                expected_result = expected(value)
-                self.assertIsNot(expected_result, value)
 
     def test_pickle_and_copy_behavior_matches_pytorch_2_13(self):
         actual = torch.utils.data.default_convert
