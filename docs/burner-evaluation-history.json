@@ -4977,6 +4977,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.5
       }
+    },
+    {
+      "key": "pr:639",
+      "recordedAt": "2026-08-22T10:37:18.714Z",
+      "label": "PR #639",
+      "kind": "leaf",
+      "prNumber": 639,
+      "title": "Expose eager torch.compiler.reset",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 83,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.5
+      }
     }
   ]
 }
