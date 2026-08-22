@@ -7,6 +7,7 @@ fn native_metadata_describes_all_supported_storage_shapes() {
     assert_eq!(Device::default(), Device::Cpu);
     assert_eq!(MemoryFormat::default(), MemoryFormat::Preserve);
     assert_eq!(DType::Float32.to_string(), "float32");
+    assert_eq!(DType::Float32.abbr(), "f32");
     assert_eq!(DType::Float32.element_size(), size_of::<f32>());
     assert_eq!(DType::Float32.element_size(), 4);
     assert!(DType::Float32.is_floating_point());

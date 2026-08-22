@@ -76,6 +76,14 @@ pub enum DType {
 }
 
 impl DType {
+    /// Returns the compact scalar-type abbreviation used by `PyTorch`.
+    #[must_use]
+    pub const fn abbr(self) -> &'static str {
+        match self {
+            Self::Float32 => "f32",
+        }
+    }
+
     /// Returns the number of bytes used to store one scalar value.
     #[must_use]
     pub const fn element_size(self) -> usize {
