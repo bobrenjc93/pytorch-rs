@@ -5009,6 +5009,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.5
       }
+    },
+    {
+      "key": "pr:647",
+      "recordedAt": "2026-08-22T12:43:57.227Z",
+      "label": "PR #647",
+      "kind": "leaf",
+      "prNumber": 647,
+      "title": "Support exact trailing new-axis indexing",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 83.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.5
+      }
     }
   ]
 }
