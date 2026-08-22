@@ -177,6 +177,18 @@ impl PyTensorBase {
         Ok(strided_object(slf.py())?.clone_ref(slf.py()))
     }
 
+    #[getter]
+    fn name(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("name"))?
+        {
+            return Ok(result);
+        }
+
+        Ok(slf.py().None())
+    }
+
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if this Tensor is non-leaf and its :attr:`grad` is enabled to be\npopulated during :func:`backward`, ``False`` otherwise.\n"]
