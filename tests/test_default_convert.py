@@ -110,6 +110,57 @@ class CopyRejectingMutableSequence(UserList):
         raise TypeError("copy disabled")
 
 
+class UpdateRejectingMutableMapping(UserDict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reject_updates = True
+
+    def update(self, *args, **kwargs):
+        if getattr(self, "reject_updates", False):
+            raise TypeError("update disabled")
+        return super().update(*args, **kwargs)
+
+
+class AssignmentRejectingMutableSequence(UserList):
+    def __setitem__(self, index, value):
+        raise TypeError("assignment disabled")
+
+
+class OneShotMapping(Mapping):
+    def __init__(self, first, retry):
+        self.first = first
+        self.retry = retry
+        self.reads = 0
+
+    def __getitem__(self, key):
+        if key != "value":
+            raise KeyError(key)
+        self.reads += 1
+        return self.first if self.reads == 1 else self.retry
+
+    def __iter__(self):
+        return iter(("value",))
+
+    def __len__(self):
+        return 1
+
+
+class OneShotSequence(Sequence):
+    def __init__(self, first, retry):
+        self.first = first
+        self.retry = retry
+        self.reads = 0
+
+    def __getitem__(self, index):
+        if index != 0:
+            raise IndexError(index)
+        self.reads += 1
+        return self.first if self.reads == 1 else self.retry
+
+    def __len__(self):
+        return 1
+
+
 class IterableOnly:
     def __iter__(self):
         return iter((1, 2))
@@ -216,6 +267,17 @@ class DefaultConvertTests(unittest.TestCase):
         converted = default_convert({numpy_key: "value"})
         self.assertIs(next(iter(converted)), numpy_key)
 
+    def test_numpy_rejection_does_not_retry_stateful_collections(self):
+        values = (
+            OneShotMapping(np.array([1]), "mapping retry bypass"),
+            OneShotSequence(np.int64(1), "sequence retry bypass"),
+        )
+        for value in values:
+            with self.subTest(value_type=type(value)):
+                with self.assertRaisesRegex(TypeError, f"^{NUMPY_ERROR}$"):
+                    default_convert(value)
+                self.assertEqual(value.reads, 1)
+
     def test_mapping_and_sequence_subclasses_use_pytorch_copy_fallbacks(self):
         chunk = DataChunk([(1, 2)])
         dict_subclass = DictSubclass(value=(1, 2))
@@ -264,6 +326,11 @@ class DefaultConvertTests(unittest.TestCase):
                 dict,
                 {"value": [1, 2]},
             ),
+            "mapping_update_fallback": (
+                UpdateRejectingMutableMapping(value=(1, 2)),
+                dict,
+                {"value": [1, 2]},
+            ),
             "sequence_copy_fallback": (
                 CopyRejectingMutableSequence([(1, 2)]),
                 list,
@@ -271,6 +338,11 @@ class DefaultConvertTests(unittest.TestCase):
             ),
             "sequence_constructor_fallback": (
                 ConstructorRejectingSequence(),
+                list,
+                [[1, 2]],
+            ),
+            "sequence_assignment_fallback": (
+                AssignmentRejectingMutableSequence([(1, 2)]),
                 list,
                 [[1, 2]],
             ),

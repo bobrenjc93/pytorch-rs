@@ -80,6 +80,22 @@ class CopyRejectingMutableSequence(UserList):
         raise TypeError("copy disabled")
 
 
+class UpdateRejectingMutableMapping(UserDict):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reject_updates = True
+
+    def update(self, *args, **kwargs):
+        if getattr(self, "reject_updates", False):
+            raise TypeError("update disabled")
+        return super().update(*args, **kwargs)
+
+
+class AssignmentRejectingMutableSequence(UserList):
+    def __setitem__(self, index, value):
+        raise TypeError("assignment disabled")
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class DefaultConvertReferenceTests(unittest.TestCase):
     @classmethod
@@ -167,8 +183,14 @@ class DefaultConvertReferenceTests(unittest.TestCase):
                 value=(1, 2)
             ),
             "mapping_constructor_fallback": ConstructorRejectingMapping(),
+            "mapping_update_fallback": UpdateRejectingMutableMapping(
+                value=(1, 2)
+            ),
             "sequence_copy_fallback": CopyRejectingMutableSequence([(1, 2)]),
             "sequence_constructor_fallback": ConstructorRejectingSequence(),
+            "sequence_assignment_fallback": AssignmentRejectingMutableSequence(
+                [(1, 2)]
+            ),
         }
 
     def collection_shape(self, value):
