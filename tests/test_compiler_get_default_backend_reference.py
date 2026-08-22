@@ -191,6 +191,7 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
         expected = expected_compiler.get_default_backend
         supported = {
             "assume_constant_result",
+            "reset",
             "get_default_backend",
             "is_compiling",
             "is_dynamo_compiling",
