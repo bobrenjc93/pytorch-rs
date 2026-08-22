@@ -190,6 +190,7 @@ class CompilerAssumeConstantResultTests(unittest.TestCase):
             [
                 "assume_constant_result",
                 "reset",
+                "disable",
                 "set_default_backend",
                 "get_default_backend",
                 "is_compiling",

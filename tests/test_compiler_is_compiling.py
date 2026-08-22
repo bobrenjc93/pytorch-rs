@@ -157,6 +157,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
             [
                 "assume_constant_result",
                 "reset",
+                "disable",
                 "set_default_backend",
                 "get_default_backend",
                 "is_compiling",
@@ -171,6 +172,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
             {
                 "assume_constant_result",
                 "reset",
+                "disable",
                 "set_default_backend",
                 "get_default_backend",
                 "is_compiling",
@@ -250,6 +252,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
             if name not in {
                 "assume_constant_result",
                 "reset",
+                "disable",
                 "set_default_backend",
                 "get_default_backend",
                 "is_compiling",
