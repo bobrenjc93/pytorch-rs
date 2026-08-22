@@ -17,7 +17,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         inplace_operation: "dropout_",
         supports_tensor_probability: true,
         supports_probability_one: true,
-        required_rank: None,
+        supported_ranks: None,
     },
     DropoutMetadata {
         public_function: "alpha_dropout",
@@ -25,7 +25,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         inplace_operation: "alpha_dropout_",
         supports_tensor_probability: false,
         supports_probability_one: false,
-        required_rank: None,
+        supported_ranks: None,
     },
     DropoutMetadata {
         public_function: "feature_alpha_dropout",
@@ -33,7 +33,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         inplace_operation: "feature_alpha_dropout_",
         supports_tensor_probability: true,
         supports_probability_one: true,
-        required_rank: None,
+        supported_ranks: None,
     },
     DropoutMetadata {
         public_function: "dropout1d",
@@ -41,7 +41,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
         supports_probability_one: false,
-        required_rank: Some(3),
+        supported_ranks: Some(&[3]),
     },
     DropoutMetadata {
         public_function: "dropout2d",
@@ -49,7 +49,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
         supports_probability_one: false,
-        required_rank: Some(4),
+        supported_ranks: Some(&[3, 4]),
     },
     DropoutMetadata {
         public_function: "dropout3d",
@@ -57,7 +57,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
         supports_probability_one: true,
-        required_rank: Some(5),
+        supported_ranks: Some(&[5]),
     },
 ];
 
@@ -68,7 +68,7 @@ struct DropoutMetadata {
     inplace_operation: &'static str,
     supports_tensor_probability: bool,
     supports_probability_one: bool,
-    required_rank: Option<usize>,
+    supported_ranks: Option<&'static [usize]>,
 }
 
 struct DropoutSchema {
@@ -146,12 +146,18 @@ fn _nn_functional_dropout(
         )));
     }
 
-    if let Some(required_rank) = metadata.required_rank
-        && tensor.try_borrow()?.inner().shape().len() != required_rank
+    let input_rank = tensor.try_borrow()?.inner().shape().len();
+    if let Some(supported_ranks) = metadata.supported_ranks
+        && !supported_ranks.contains(&input_rank)
     {
+        let supported_ranks = supported_ranks
+            .iter()
+            .map(|rank| format!("rank-{rank}"))
+            .collect::<Vec<_>>()
+            .join(" or ");
         return Err(PyNotImplementedError::new_err(format!(
-            "torch_rs.nn.functional.{} only supports rank-{required_rank} inputs",
-            metadata.public_function
+            "torch_rs.nn.functional.{} only supports {supported_ranks} inputs",
+            metadata.public_function,
         )));
     }
 
