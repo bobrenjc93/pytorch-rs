@@ -83,7 +83,7 @@ class TopLevelReciprocalTests(unittest.TestCase):
             ("noncontiguous", leaf.transpose(0, 2)),
         )
 
-    def test_supported_calls_reuse_reflected_scalar_division_bits_and_layouts(self):
+    def test_supported_calls_match_reciprocal_bits_and_layouts(self):
         base = torch.tensor(
             np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
         )
@@ -130,7 +130,26 @@ class TopLevelReciprocalTests(unittest.TestCase):
                 if source.numel():
                     self.assertNotEqual(output.data_ptr(), source.data_ptr())
 
-    def test_extreme_empty_metadata_error_uses_scalar_division_path(self):
+    def test_empty_singleton_layouts_use_unary_stride_planning(self):
+        cases = (
+            (
+                "transposed zero by one",
+                torch.zeros((1, 0)).transpose(0, 1),
+                (1, 1),
+            ),
+            ("singleton zero singleton", torch.zeros((1, 0, 1)), (1, 1, 1)),
+        )
+        for case, source, expected_stride in cases:
+            self.assertEqual(source.stride(), expected_stride)
+            for form, call in self.supported_calls(source):
+                output = call()
+                with self.subTest(case=case, form=form):
+                    self.assertEqual(output.shape, source.shape)
+                    self.assertEqual(output.stride(), expected_stride)
+                    self.assertEqual(output.storage_offset(), 0)
+                    self.assertEqual(output.numel(), 0)
+
+    def test_extreme_empty_metadata_error_uses_unary_layout_path(self):
         source = torch.zeros((2, 0, sys.maxsize)).transpose(0, 1)
         with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             1.0 / source

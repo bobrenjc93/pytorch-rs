@@ -2346,6 +2346,17 @@ impl Tensor {
         ))
     }
 
+    /// Computes the reciprocal of every element with unary output layout
+    /// planning.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn reciprocal(&self) -> Result<Self, TensorError> {
+        self.unary_map(f32::recip)
+    }
+
     /// Applies rectified linear activation element by element.
     ///
     /// # Errors
@@ -5530,6 +5541,19 @@ mod tests {
             tensor.sqrt(),
             Err(TensorError::AllocationFailed { elements })
         );
+        assert_eq!(
+            tensor.reciprocal(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+    }
+
+    #[test]
+    fn reciprocal_uses_single_unary_layout_planning_pass_for_empty_singletons() {
+        let transposed = Tensor::zeros([1, 0]).unwrap().transpose(0, 1).unwrap();
+        assert_eq!(transposed.reciprocal().unwrap().stride(), [1, 1]);
+
+        let singleton = Tensor::zeros([1, 0, 1]).unwrap();
+        assert_eq!(singleton.reciprocal().unwrap().stride(), [1, 1, 1]);
     }
 
     #[test]

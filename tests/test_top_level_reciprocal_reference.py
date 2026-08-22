@@ -81,6 +81,14 @@ class TopLevelReciprocalReferenceTests(unittest.TestCase):
         return (
             ("scalar", module.tensor(-0.0, dtype=module.float32)),
             (
+                "transposed zero by one",
+                module.zeros((1, 0), dtype=module.float32).transpose(0, 1),
+            ),
+            (
+                "singleton zero singleton",
+                module.zeros((1, 0, 1), dtype=module.float32),
+            ),
+            (
                 "empty",
                 module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2)[1],
             ),

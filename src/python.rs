@@ -1802,12 +1802,8 @@ impl UnaryOutOperation {
         dispatch_allocation_error: "unable to allocate reciprocal dispatch operands",
         out_unsupported_error: "reciprocal(): the 'out' argument is not supported",
         autograd_unsupported_error: Some("reciprocal(): autograd recording is not supported"),
-        apply: apply_reciprocal,
+        apply: CoreTensor::reciprocal,
     };
-}
-
-fn apply_reciprocal(input: &CoreTensor) -> Result<CoreTensor, TensorError> {
-    input.scalar_div(1.0)
 }
 
 struct BoundUnaryOutCall<'py> {
