@@ -155,6 +155,75 @@ class TensorTrueDivideReferenceTests(unittest.TestCase):
             case="IEEE edge bits",
         )
 
+    def test_disabled_torch_function_scalar_is_native_and_absent_from_mode_types(self):
+        disabled_handler = reference_torch._C._disabled_torch_function_impl
+
+        class DisabledInt(int):
+            __torch_function__ = disabled_handler
+
+        value = DisabledInt(2)
+        actual_input = torch.tensor([8.0, -4.0])
+        expected_input = reference_torch.tensor(
+            [8.0, -4.0], dtype=reference_torch.float32
+        )
+        for binding in ("positional", "other", "x2"):
+            with self.subTest(binding=binding):
+                if binding == "positional":
+                    actual = actual_input.true_divide(value)
+                    expected = expected_input.true_divide(value)
+                else:
+                    actual = actual_input.true_divide(**{binding: value})
+                    expected = expected_input.true_divide(**{binding: value})
+                self.assert_tensor_matches(actual, expected, case=binding)
+
+        def exercise_mode(module, *, forward):
+            input = module.tensor([8.0])
+            descriptor = inspect.getattr_static(module.Tensor, "true_divide")
+
+            class Mode(module.overrides.TorchFunctionMode):
+                def __init__(self):
+                    self.calls = []
+
+                def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                    self.calls.append((func, dispatch_types, args, kwargs))
+                    if forward:
+                        return func(*args, **(kwargs or {}))
+                    return "marker"
+
+            mode = Mode()
+            with mode:
+                result = input.true_divide(other=value)
+            func, dispatch_types, args, kwargs = mode.calls[0]
+            trace = (
+                len(mode.calls),
+                func is descriptor,
+                func.__qualname__,
+                tuple(item.__name__ for item in dispatch_types),
+                len(args),
+                args[0] is input,
+                tuple(kwargs),
+                kwargs["other"] is value,
+            )
+            return result, trace
+
+        actual_marker, actual_trace = exercise_mode(torch, forward=False)
+        expected_marker, expected_trace = exercise_mode(reference_torch, forward=False)
+        self.assertEqual(actual_marker, expected_marker)
+        self.assertEqual(actual_trace, expected_trace)
+        self.assertEqual(actual_trace[3], ())
+
+        actual_forwarded, actual_trace = exercise_mode(torch, forward=True)
+        expected_forwarded, expected_trace = exercise_mode(
+            reference_torch, forward=True
+        )
+        self.assertEqual(actual_trace, expected_trace)
+        self.assertEqual(actual_trace[3], ())
+        self.assert_tensor_matches(
+            actual_forwarded,
+            expected_forwarded,
+            case="disabled handler mode forwarding",
+        )
+
     def test_no_grad_outputs_match_while_recording_remains_explicitly_unsupported(self):
         actual_left = torch.tensor([[2.0, 4.0]], requires_grad=True).transpose(0, 1)
         expected_left = reference_torch.tensor(

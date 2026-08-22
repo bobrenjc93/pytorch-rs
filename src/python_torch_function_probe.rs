@@ -13,7 +13,28 @@ use crate::{python::PyTensor, python_torch_function_mode};
 const HAS_TORCH_FUNCTION_UNARY_DOC: &CStr = c"Special case of `has_torch_function` for single inputs.\n    Instead of:\n      `has_torch_function((t,))`\n    call:\n      `has_torch_function_unary(t)`\n    which skips unnecessary packing and unpacking work.\n    ";
 const HAS_TORCH_FUNCTION_UNARY_SIGNATURE_DOC: &CStr = c"_has_torch_function_unary($self, object, /)\n--\n\nSpecial case of `has_torch_function` for single inputs.\n    Instead of:\n      `has_torch_function((t,))`\n    call:\n      `has_torch_function_unary(t)`\n    which skips unnecessary packing and unpacking work.\n    ";
 
-fn is_disabled_torch_function_handler(handler: &Bound<'_, PyAny>) -> bool {
+#[allow(
+    unsafe_code,
+    reason = "PyTorch suppresses errors while probing the __torch_function__ descriptor"
+)]
+pub(crate) fn lookup_torch_function_handler<'py>(
+    value: &Bound<'py, PyAny>,
+) -> Option<Bound<'py, PyAny>> {
+    // SAFETY: `value` is live for the call and the attribute name is a static,
+    // NUL-terminated string. A non-null result is a new owned reference.
+    let handler =
+        unsafe { ffi::PyObject_GetAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) };
+    if handler.is_null() {
+        // PyTorch's legacy probe suppresses descriptor failures.
+        // SAFETY: the GIL is held and clearing no pending exception is valid.
+        unsafe { ffi::PyErr_Clear() };
+        return None;
+    }
+    // SAFETY: PyObject_GetAttrString returned a new owned reference.
+    Some(unsafe { Bound::<PyAny>::from_owned_ptr(value.py(), handler) })
+}
+
+pub(crate) fn is_disabled_torch_function_handler(handler: &Bound<'_, PyAny>) -> bool {
     if handler.cast::<PyCFunction>().is_err() {
         return false;
     }
@@ -29,10 +50,6 @@ fn is_disabled_torch_function_handler(handler: &Bound<'_, PyAny>) -> bool {
     module_matches && name_matches
 }
 
-#[allow(
-    unsafe_code,
-    reason = "PyTorch suppresses errors while probing the __torch_function__ descriptor"
-)]
 fn has_torch_function_unary(value: &Bound<'_, PyAny>) -> bool {
     if !python_torch_function_mode::is_empty() {
         return true;
@@ -46,18 +63,9 @@ fn has_torch_function_unary(value: &Bound<'_, PyAny>) -> bool {
 
     // PyTorch's fast attribute probe clears failures from user-defined
     // descriptors instead of surfacing them from this predicate.
-    // SAFETY: `value` is live for the call and the attribute name is a static,
-    // NUL-terminated string. A non-null result is a new owned reference.
-    let handler =
-        unsafe { ffi::PyObject_GetAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) };
-    if handler.is_null() {
-        // SAFETY: the GIL is held and clearing the descriptor lookup failure is
-        // the observable behavior of PyTorch's exception-suppressing probe.
-        unsafe { ffi::PyErr_Clear() };
+    let Some(handler) = lookup_torch_function_handler(value) else {
         return false;
-    }
-    // SAFETY: PyObject_GetAttrString returned a new owned reference.
-    let handler = unsafe { Bound::<PyAny>::from_owned_ptr(value.py(), handler) };
+    };
     !is_disabled_torch_function_handler(&handler)
 }
 

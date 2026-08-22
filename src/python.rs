@@ -31,7 +31,9 @@ use crate::{
     python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_tensor_queries::add_tensor_queries,
     python_torch_function_mode as torch_function_mode_stack,
-    python_torch_function_probe::add_torch_function_probe,
+    python_torch_function_probe::{
+        add_torch_function_probe, is_disabled_torch_function_handler, lookup_torch_function_handler,
+    },
     python_variable_functions::{add_variable_functions, variable_function},
 };
 
@@ -1873,45 +1875,30 @@ enum TensorBaseModeTarget {
     GetSet(&'static str),
 }
 
-#[allow(
-    unsafe_code,
-    reason = "PyTorch binding parity requires CPython's exception-suppressing legacy attribute probe"
-)]
 fn probe_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
-    // PyTorch's argument parser uses the legacy, exception-suppressing
-    // PyObject_HasAttr API here. If the initial probe fails, its tensor-type
-    // fallback retries once before rejecting the input. The actual callable is
-    // deliberately resolved only after the active mode has declined.
-    // SAFETY: `value` is live for this call and the attribute name is a static,
-    // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
-    let has_override =
-        unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
-    let has_override = has_override
-        || unsafe {
-            ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0
-        };
-    if !has_override {
+    // PyTorch's argument parser retries a failed legacy lookup once through
+    // its tensor-type fallback. Keep that observable lookup count while
+    // retaining the resolved handler long enough to recognize the disabled
+    // sentinel. Non-disabled handlers are deliberately resolved again only
+    // after the active mode has declined, so intervening mutations remain
+    // visible during dispatch.
+    let handler =
+        lookup_torch_function_handler(value).or_else(|| lookup_torch_function_handler(value))?;
+    if is_disabled_torch_function_handler(&handler) {
         return None;
     }
     Some(probed_torch_function_override(value))
 }
 
-#[allow(
-    unsafe_code,
-    reason = "dtype argument parity requires CPython's one-shot exception-suppressing attribute probe"
-)]
 fn probe_dtype_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
     // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
     // __torch_function__ lookup through a tensor-type fallback.
-    // SAFETY: `value` is live for this call and the attribute name is a static,
-    // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
-    let has_override =
-        unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
-    has_override.then(|| probed_torch_function_override(value))
+    let handler = lookup_torch_function_handler(value)?;
+    (!is_disabled_torch_function_handler(&handler)).then(|| probed_torch_function_override(value))
 }
 
 fn probed_torch_function_override<'py>(
