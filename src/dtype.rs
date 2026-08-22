@@ -76,6 +76,14 @@ pub enum DType {
 }
 
 impl DType {
+    /// Returns the canonical short name for this scalar type.
+    #[must_use]
+    pub const fn abbreviation(self) -> &'static str {
+        match self {
+            Self::Float32 => "f32",
+        }
+    }
+
     /// Returns the number of bytes used to store one scalar value.
     #[must_use]
     pub const fn element_size(self) -> usize {
@@ -163,6 +171,11 @@ mod tests {
     use super::DType;
 
     const CURRENT_DTYPES: [DType; 1] = [DType::Float32];
+
+    #[test]
+    fn float32_abbreviation_is_canonical() {
+        assert_eq!(DType::Float32.abbreviation(), "f32");
+    }
 
     #[test]
     fn casting_relation_covers_every_current_dtype_pair() {
