@@ -1,3 +1,5 @@
+import functools as _functools
+import types as _types
 from collections.abc import Callable
 from typing import Any
 
@@ -7,6 +9,7 @@ from .. import _compiler_state as _state
 __all__ = [
     "assume_constant_result",
     "reset",
+    "disable",
     "set_default_backend",
     "get_default_backend",
     "is_compiling",
@@ -41,6 +44,55 @@ def reset() -> None:
     process-local state used by :func:`torch.compile`. It does not delete
     filesystem caches, such as Inductor's disk cache.
     """
+
+
+def disable(fn=None, recursive=True, *, reason=None):
+    """
+    This function provides a decorator to disable compilation on a function.
+    It also provides the option of recursively disabling called functions.
+
+    Args:
+        fn (optional): The function to disable
+        recursive (optional): A boolean value indicating whether the disabling should be recursive.
+        reason (optional): A string value indicating the reason for disabling the function.
+    """
+    if fn is None:
+        raise NotImplementedError(
+            "torch_rs.compiler.disable only supports direct calls with a Python "
+            "function"
+        )
+    if not callable(fn):
+        raise AssertionError("fn must be callable")
+    if not isinstance(fn, (_types.FunctionType, _types.MethodType)):
+        raise NotImplementedError(
+            "torch_rs.compiler.disable only supports direct calls with a Python "
+            "function"
+        )
+
+    while hasattr(fn, "_torchdynamo_orig_callable") and getattr(
+        fn, "_torchdynamo_wrapper_id", None
+    ) == id(fn):
+        fn = fn._torchdynamo_orig_callable
+        if not callable(fn):
+            raise AssertionError(
+                f"A callable function is expected, but {type(fn)} is provided."
+            )
+        if not isinstance(fn, (_types.FunctionType, _types.MethodType)):
+            raise NotImplementedError(
+                "torch_rs.compiler.disable only supports direct calls with a Python "
+                "function"
+            )
+
+    @_functools.wraps(fn)
+    def disabled(*args, **kwargs):
+        return fn(*args, **kwargs)
+
+    disabled._torchdynamo_disable = True
+    disabled._torchdynamo_disable_msg = reason
+    disabled._torchdynamo_orig_callable = fn
+    disabled._torchdynamo_wrapper_id = id(disabled)
+    disabled._torchdynamo_disable_recursive = bool(recursive)
+    return disabled
 
 
 def set_default_backend(backend: str | Callable[..., Any] | None) -> None:
