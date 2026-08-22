@@ -639,6 +639,24 @@ impl Tensor {
         self.device().is_cuda()
     }
 
+    /// Reports whether this tensor's device is a Graphcore IPU accelerator.
+    #[must_use]
+    pub fn is_ipu(&self) -> bool {
+        self.device().is_ipu()
+    }
+
+    /// Reports whether this tensor's device is a Meta MTIA accelerator.
+    #[must_use]
+    pub fn is_mtia(&self) -> bool {
+        self.device().is_mtia()
+    }
+
+    /// Reports whether this tensor's device is a Maia accelerator.
+    #[must_use]
+    pub fn is_maia(&self) -> bool {
+        self.device().is_maia()
+    }
+
     /// Reports whether this tensor's device is an Intel XPU accelerator.
     #[must_use]
     pub fn is_xpu(&self) -> bool {

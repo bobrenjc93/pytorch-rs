@@ -4945,6 +4945,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.5
       }
+    },
+    {
+      "key": "pr:631",
+      "recordedAt": "2026-08-22T08:46:50.182Z",
+      "label": "PR #631",
+      "kind": "leaf",
+      "prNumber": 631,
+      "title": "Expose remaining accelerator-location Tensor flags",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 82.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.5
+      }
     }
   ]
 }
