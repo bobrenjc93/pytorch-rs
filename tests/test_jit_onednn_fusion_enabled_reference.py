@@ -4,12 +4,10 @@ import importlib
 import inspect
 import pickle
 import pickletools
-import sys
 import threading
 import types
 import typing
 import unittest
-import warnings
 
 import torch_rs as torch
 
@@ -20,12 +18,13 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class JitIsTracingReferenceTests(unittest.TestCase):
+class JitOnednnFusionEnabledReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "jit.is_tracing differentials require pinned PyTorch 2.13.0"
+                "jit.onednn_fusion_enabled differentials require pinned "
+                "PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -38,13 +37,13 @@ class JitIsTracingReferenceTests(unittest.TestCase):
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
     def supported_state_outcome(self, module):
-        function = module.jit.is_tracing
+        function = module.jit.onednn_fusion_enabled
 
         def query_outcome():
             before = module.is_grad_enabled()
             result = function()
             after = module.is_grad_enabled()
-            return before, result is False, after
+            return before, result, type(result) is bool, after
 
         states = [query_outcome()]
         with module.no_grad():
@@ -94,36 +93,53 @@ class JitIsTracingReferenceTests(unittest.TestCase):
         return shape
 
     def test_supported_eager_threaded_and_grad_states_match_pytorch_2_13(self):
-        self.assertEqual(
-            self.supported_state_outcome(torch),
-            self.supported_state_outcome(reference_torch),
-        )
+        original = reference_torch.jit.onednn_fusion_enabled()
+        try:
+            reference_torch.jit.enable_onednn_fusion(False)
+            self.assertEqual(
+                self.supported_state_outcome(torch),
+                self.supported_state_outcome(reference_torch),
+            )
+        finally:
+            reference_torch.jit.enable_onednn_fusion(original)
 
-    def test_signature_documentation_and_trace_module_identity_match(self):
+        self.assertIs(torch.jit.onednn_fusion_enabled(), False)
+        self.assertIs(reference_torch.jit.onednn_fusion_enabled(), original)
+
+    def test_reference_only_setter_bounds_the_unsupported_true_state(self):
+        actual = torch.jit.onednn_fusion_enabled
+        expected = reference_torch.jit.onednn_fusion_enabled
+        original = expected()
+
+        try:
+            reference_torch.jit.enable_onednn_fusion(False)
+            actual_states = [actual()]
+            expected_states = [expected()]
+
+            reference_torch.jit.enable_onednn_fusion(True)
+            actual_states.append(actual())
+            expected_states.append(expected())
+
+            reference_torch.jit.enable_onednn_fusion(False)
+            actual_states.append(actual())
+            expected_states.append(expected())
+        finally:
+            reference_torch.jit.enable_onednn_fusion(original)
+
+        for state in actual_states:
+            self.assertIs(state, False)
+        self.assertEqual(expected_states, [False, True, False])
+        for state in expected_states:
+            self.assertIs(type(state), bool)
+
+    def test_signature_documentation_and_identity_match(self):
         actual_jit = importlib.import_module("torch_rs.jit")
         expected_jit = importlib.import_module("torch.jit")
-        actual_trace = importlib.import_module("torch_rs.jit._trace")
-        expected_trace = importlib.import_module("torch.jit._trace")
-        actual = actual_jit.is_tracing
-        expected = expected_jit.is_tracing
+        actual = actual_jit.onednn_fusion_enabled
+        expected = expected_jit.onednn_fusion_enabled
 
         self.assertIs(torch.jit, actual_jit)
         self.assertIs(reference_torch.jit, expected_jit)
-        self.assertIs(actual_jit._trace, actual_trace)
-        self.assertIs(expected_jit._trace, expected_trace)
-        self.assertIs(sys.modules["torch_rs.jit._trace"], actual_trace)
-        self.assertIs(sys.modules["torch.jit._trace"], expected_trace)
-        self.assertIs(actual, actual_trace.is_tracing)
-        self.assertIs(expected, expected_trace.is_tracing)
-        self.assertEqual(actual_trace.__doc__, expected_trace.__doc__)
-        self.assertEqual(
-            actual_trace.__name__.replace("torch_rs", "torch"),
-            expected_trace.__name__,
-        )
-        self.assertEqual(
-            actual_trace.__package__.replace("torch_rs", "torch"),
-            expected_trace.__package__,
-        )
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -136,8 +152,8 @@ class JitIsTracingReferenceTests(unittest.TestCase):
         self.assertEqual(
             actual.__module__.replace("torch_rs", "torch"), expected.__module__
         )
-        self.assertIs(inspect.getmodule(actual), actual_trace)
-        self.assertIs(inspect.getmodule(expected), expected_trace)
+        self.assertIs(inspect.getmodule(actual), actual_jit)
+        self.assertIs(inspect.getmodule(expected), expected_jit)
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(actual.__defaults__, expected.__defaults__)
         self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
@@ -150,10 +166,8 @@ class JitIsTracingReferenceTests(unittest.TestCase):
     def test_imports_exports_copy_and_pickle_match_the_supported_scope(self):
         actual_jit = torch.jit
         expected_jit = reference_torch.jit
-        actual_trace = actual_jit._trace
-        expected_trace = expected_jit._trace
-        actual = actual_jit.is_tracing
-        expected = expected_jit.is_tracing
+        actual = actual_jit.onednn_fusion_enabled
+        expected = expected_jit.onednn_fusion_enabled
         wildcard_supported = {
             "Attribute",
             "annotate",
@@ -165,11 +179,7 @@ class JitIsTracingReferenceTests(unittest.TestCase):
             "strict_fusion",
             "unused",
         }
-        public_supported = {
-            *wildcard_supported,
-            "is_scripting",
-            "is_tracing",
-        }
+        public_supported = {*wildcard_supported, "is_scripting", "is_tracing"}
 
         self.assertEqual(
             actual_jit.__all__,
@@ -179,73 +189,54 @@ class JitIsTracingReferenceTests(unittest.TestCase):
                 if name in wildcard_supported
             ],
         )
-        self.assertNotIn("is_tracing", actual_jit.__all__)
-        self.assertNotIn("is_tracing", expected_jit.__all__)
+        self.assertIn("onednn_fusion_enabled", actual_jit.__all__)
+        self.assertIn("onednn_fusion_enabled", expected_jit.__all__)
         self.assertEqual(
             {name for name in vars(actual_jit) if not name.startswith("_")},
             public_supported,
         )
-        self.assertFalse(hasattr(actual_trace, "__all__"))
-        self.assertFalse(hasattr(expected_trace, "__all__"))
-        self.assertEqual(
-            {name for name in vars(actual_trace) if not name.startswith("_")},
-            {"is_tracing"},
-        )
-        self.assertIn("is_tracing", vars(expected_trace))
         self.assertEqual(
             torch.__all__.count("jit"), reference_torch.__all__.count("jit")
         )
         self.assertEqual(
-            torch.__all__.count("is_tracing"),
-            reference_torch.__all__.count("is_tracing"),
+            torch.__all__.count("onednn_fusion_enabled"),
+            reference_torch.__all__.count("onednn_fusion_enabled"),
         )
 
-        actual_package_import = {}
-        expected_package_import = {}
-        exec("from torch_rs.jit import is_tracing", actual_package_import)
-        exec("from torch.jit import is_tracing", expected_package_import)
-        self.assertIs(actual_package_import["is_tracing"], actual)
-        self.assertIs(expected_package_import["is_tracing"], expected)
-
-        actual_module_import = {}
-        expected_module_import = {}
-        exec("from torch_rs.jit._trace import is_tracing", actual_module_import)
-        exec("from torch.jit._trace import is_tracing", expected_module_import)
-        self.assertIs(actual_module_import["is_tracing"], actual)
-        self.assertIs(expected_module_import["is_tracing"], expected)
+        actual_explicit = {}
+        expected_explicit = {}
+        exec(
+            "from torch_rs.jit import onednn_fusion_enabled",
+            actual_explicit,
+        )
+        exec(
+            "from torch.jit import onednn_fusion_enabled",
+            expected_explicit,
+        )
+        self.assertIs(actual_explicit["onednn_fusion_enabled"], actual)
+        self.assertIs(expected_explicit["onednn_fusion_enabled"], expected)
 
         actual_namespace = {}
         expected_namespace = {}
         exec("from torch_rs.jit import *", actual_namespace)
         exec("from torch.jit import *", expected_namespace)
         self.assertEqual(
-            {name for name in actual_namespace if not name.startswith("__")},
-            wildcard_supported,
-        )
-        self.assertNotIn("is_tracing", actual_namespace)
-        self.assertNotIn("is_tracing", expected_namespace)
-
-        actual_trace_namespace = {}
-        expected_trace_namespace = {}
-        exec("from torch_rs.jit._trace import *", actual_trace_namespace)
-        exec("from torch.jit._trace import *", expected_trace_namespace)
-        self.assertEqual(
             {
                 name
-                for name in actual_trace_namespace
+                for name in actual_namespace
                 if not name.startswith("__")
             },
-            {"is_tracing"},
+            wildcard_supported,
         )
-        self.assertIs(actual_trace_namespace["is_tracing"], actual)
-        self.assertIs(expected_trace_namespace["is_tracing"], expected)
+        self.assertIs(actual_namespace["onednn_fusion_enabled"], actual)
+        self.assertIs(expected_namespace["onednn_fusion_enabled"], expected)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("jit", namespace)
-            self.assertNotIn("is_tracing", namespace)
-            self.assertFalse(hasattr(module, "is_tracing"))
+            self.assertNotIn("onednn_fusion_enabled", namespace)
+            self.assertFalse(hasattr(module, "onednn_fusion_enabled"))
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -261,8 +252,8 @@ class JitIsTracingReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.jit.is_tracing
-        expected = reference_torch.jit.is_tracing
+        actual = torch.jit.onednn_fusion_enabled
+        expected = reference_torch.jit.onednn_fusion_enabled
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
@@ -276,51 +267,30 @@ class JitIsTracingReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_reference_trace_bounds_the_unsupported_true_state(self):
-        actual_is_tracing = torch.jit.is_tracing
-        expected_is_tracing = reference_torch.jit.is_tracing
-        actual_states = [actual_is_tracing()]
-        expected_states = [expected_is_tracing()]
+    def test_setter_torchscript_and_fusion_execution_remain_unsupported(self):
+        self.assertTrue(callable(reference_torch.jit.enable_onednn_fusion))
+        self.assertIn("enable_onednn_fusion", reference_torch.jit.__all__)
+        self.assertFalse(hasattr(torch.jit, "enable_onednn_fusion"))
+        self.assertNotIn("enable_onednn_fusion", torch.jit.__all__)
 
-        def probe(value):
-            actual_states.append(actual_is_tracing())
-            expected_states.append(expected_is_tracing())
-            return value + 1
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            traced = reference_torch.jit.trace(
-                probe,
-                reference_torch.tensor(1.0),
-                check_trace=False,
-            )
-        result = traced(reference_torch.tensor(2.0))
-        actual_states.append(actual_is_tracing())
-        expected_states.append(expected_is_tracing())
-
-        self.assertEqual(result.item(), 3.0)
-        self.assertEqual(actual_states, [False, False, False])
-        self.assertEqual(expected_states, [False, True, False])
-        for state in (*actual_states, *expected_states):
-            self.assertIs(type(state), bool)
-
-    def test_tracing_scripting_and_compilation_remain_unsupported(self):
-        self.assertTrue(callable(reference_torch.jit.trace))
-        self.assertTrue(callable(reference_torch.jit.script))
-        self.assertFalse(hasattr(torch, "compile"))
+        expected_public = {
+            name for name in vars(reference_torch.jit) if not name.startswith("_")
+        }
         for name in (
             "CompilationUnit",
             "ScriptFunction",
             "ScriptModule",
+            "freeze",
+            "optimize_for_inference",
             "script",
-            "script_method",
+            "set_fusion_strategy",
             "trace",
             "trace_module",
         ):
             with self.subTest(name=name):
+                self.assertIn(name, expected_public)
                 self.assertFalse(hasattr(torch.jit, name))
-        self.assertFalse(hasattr(torch.jit._trace, "trace"))
-        self.assertFalse(hasattr(torch.jit._trace, "trace_module"))
+        self.assertFalse(hasattr(torch, "compile"))
 
 
 if __name__ == "__main__":
