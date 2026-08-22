@@ -135,7 +135,7 @@ class DefaultConvertReferenceTests(unittest.TestCase):
         self.assertEqual(actual["empty"], expected["empty"])
         self.assertIs(type(actual["empty"]), list)
 
-    def test_signature_annotations_documentation_metadata_and_exports_match(self):
+    def test_signature_metadata_exports_and_documented_numpy_boundary(self):
         actual_data = importlib.import_module("torch_rs.utils.data")
         expected_data = importlib.import_module("torch.utils.data")
         actual_collate = importlib.import_module("torch_rs.utils.data._utils.collate")
@@ -154,7 +154,12 @@ class DefaultConvertReferenceTests(unittest.TestCase):
         )
         self.assertEqual(actual.__name__, expected.__name__)
         self.assertEqual(actual.__qualname__, expected.__qualname__)
-        self.assertEqual(actual.__doc__, expected.__doc__)
+        self.assertNotEqual(actual.__doc__, expected.__doc__)
+        self.assertIn(
+            "NumPy arrays and scalars are deliberately unsupported", actual.__doc__
+        )
+        self.assertNotIn("Convert each NumPy array element", actual.__doc__)
+        self.assertIn("Convert each NumPy array element", expected.__doc__)
         self.assertEqual(actual.__defaults__, expected.__defaults__)
         self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
         self.assertEqual(actual.__dict__, expected.__dict__)

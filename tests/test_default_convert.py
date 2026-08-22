@@ -154,6 +154,39 @@ class DefaultConvertTests(unittest.TestCase):
         self.assertIs(wrapped_values[4][0], array)
         self.assertIs(wrapped_values[5]["array"], array)
 
+    def test_deeply_nested_numpy_rejection_visits_each_child_once(self):
+        collate_module = importlib.import_module("torch_rs.utils.data._utils.collate")
+        original = collate_module.default_convert
+        depth = 16
+
+        for container_name, wrap in (
+            ("list", lambda child: [child]),
+            ("mapping", lambda child: {"child": child}),
+        ):
+            nested = np.int64(1)
+            for _ in range(depth):
+                nested = wrap(nested)
+
+            calls = 0
+
+            def counting_convert(data):
+                nonlocal calls
+                calls += 1
+                if calls > depth:
+                    self.fail("recursive conversion retried a converted child")
+                return original(data)
+
+            collate_module.default_convert = counting_convert
+            try:
+                with self.subTest(container=container_name):
+                    with self.assertRaisesRegex(
+                        TypeError, "NumPy arrays and scalars are not supported"
+                    ):
+                        original(nested)
+                    self.assertEqual(calls, depth)
+            finally:
+                collate_module.default_convert = original
+
     def test_generic_mappings_use_copy_constructor_and_fallback_paths(self):
         ordered = OrderedDict(first=(1, 2), second=[3, 4])
         user_dict = UserDict(value=(5, 6))
@@ -234,7 +267,12 @@ class DefaultConvertTests(unittest.TestCase):
         )
         self.assertEqual(default_convert.__name__, "default_convert")
         self.assertEqual(default_convert.__qualname__, "default_convert")
-        self.assertIn("Convert each NumPy array element", default_convert.__doc__)
+        self.assertIn("Recursively copy supported containers", default_convert.__doc__)
+        self.assertIn(
+            "NumPy arrays and scalars are deliberately unsupported",
+            default_convert.__doc__,
+        )
+        self.assertNotIn("Convert each NumPy array element", default_convert.__doc__)
         self.assertIn("a single data point to be converted", default_convert.__doc__)
         self.assertIsNone(default_convert.__defaults__)
         self.assertIsNone(default_convert.__kwdefaults__)
