@@ -1,6 +1,9 @@
+import copy
+import importlib
 import inspect
 import json
 import math
+import pickle
 import subprocess
 import sys
 import types
@@ -272,6 +275,125 @@ print(json.dumps({
 
         self.assertFalse(hasattr(torch.Tensor, "to"))
         self.assertFalse(hasattr(torch.Tensor, "vulkan"))
+
+
+@unittest.skipIf(reference_torch is None, "install the reference dependency group")
+class IsVulkanAvailableReferenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if reference_torch.__version__.split("+")[0] != "2.13.0":
+            raise AssertionError(
+                "is_vulkan_available differentials require pinned PyTorch 2.13.0"
+            )
+
+    def callable_contract(self, module):
+        function = module.is_vulkan_available
+        owner = function.__reduce__()[1][0]
+        wildcard_namespace = {}
+        exec(f"from {module.__name__} import *", wildcard_namespace)
+        try:
+            inspect.signature(function)
+        except Exception as error:
+            signature_error = type(error).__name__
+        else:
+            signature_error = None
+        return {
+            "type": type(function).__name__,
+            "is_builtin": type(function) is types.BuiltinFunctionType,
+            "name": function.__name__,
+            "qualname": function.__qualname__,
+            "module": function.__module__,
+            "doc": function.__doc__,
+            "text_signature": function.__text_signature__,
+            "self_is_none": function.__self__ is None,
+            "has_annotations": hasattr(function, "__annotations__"),
+            "owner_name": owner.__name__,
+            "owner_qualname": owner.__qualname__,
+            "owner_module": owner.__module__.replace("torch_rs._C", "torch._C"),
+            "owner_path_identity": owner is module._C._VariableFunctionsClass,
+            "owner_callable_identity": owner.is_vulkan_available is function,
+            "signature_error": signature_error,
+            "all_count": module.__all__.count("is_vulkan_available"),
+            "owner_not_in_all": "_VariableFunctionsClass" not in module.__all__,
+            "owner_not_top_level": not hasattr(module, "_VariableFunctionsClass"),
+            "wildcard_identity": wildcard_namespace["is_vulkan_available"]
+            is function,
+            "copy_identity": copy.copy(function) is function,
+            "deepcopy_identity": copy.deepcopy(function) is function,
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(function, protocol=protocol)) is function
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
+        }
+
+    def test_callable_contract_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.callable_contract(torch),
+            self.callable_contract(reference_torch),
+        )
+
+    def test_permissive_argument_contract_matches_pytorch_2_13(self):
+        class ExplosiveOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                raise AssertionError("availability query dispatched an argument")
+
+        for module in (torch, reference_torch):
+            function = module.is_vulkan_available
+            calls = (
+                lambda: function(),
+                lambda: function(None),
+                lambda: function(1, "cuda", object()),
+                lambda: function(enabled=True),
+                lambda: function(None, device="cuda:0", enabled=True),
+                lambda: function(
+                    ExplosiveOverride(), candidate=ExplosiveOverride()
+                ),
+            )
+            for call in calls:
+                with self.subTest(module=module.__name__, call=call):
+                    result = call()
+                    self.assertIs(type(result), bool)
+                    self.assertIs(result, False)
+
+    def native_reload_contract(self, module):
+        native = module._C
+        function = module.is_vulkan_available
+        owner = native._VariableFunctionsClass
+        reloaded = importlib.reload(native)
+        return (
+            reloaded is native,
+            module.is_vulkan_available is function,
+            module._C._VariableFunctionsClass is owner,
+            owner.is_vulkan_available is function,
+            function() is False,
+        )
+
+    def test_native_reload_behavior_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.native_reload_contract(torch),
+            self.native_reload_contract(reference_torch),
+        )
+
+    @unittest.skipUnless(
+        reference_torch is not None and reference_torch.cuda.is_available(),
+        "PyTorch CUDA is unavailable",
+    )
+    def test_real_cuda_availability_does_not_change_vulkan_result(self):
+        device = reference_torch.device("cuda", 0)
+        tensor = reference_torch.arange(4, device=device)
+        self.assertTrue(reference_torch.cuda.get_device_name(device))
+        self.assertIs(reference_torch.cuda.is_available(), True)
+        self.assertEqual(tensor.sum().item(), 6)
+
+        for module in (torch, reference_torch):
+            with self.subTest(module=module.__name__):
+                self.assertIs(module.is_vulkan_available(), False)
+                self.assertIs(
+                    module.is_vulkan_available(tensor, cuda_available=True),
+                    False,
+                )
+        reference_torch.cuda.synchronize(device)
 
 
 if __name__ == "__main__":

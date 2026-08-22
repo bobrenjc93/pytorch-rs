@@ -1,6 +1,10 @@
+import copy
 import importlib
 import inspect
 import math
+import pickle
+import re
+import subprocess
 import sys
 import types
 import unittest
@@ -212,6 +216,147 @@ class TensorIsVulkanTests(unittest.TestCase):
             tensor.to("vulkan")
         with self.assertRaises(AttributeError):
             tensor.vulkan()
+
+
+class IsVulkanAvailableTests(unittest.TestCase):
+    def test_returns_exact_false_and_ignores_all_arguments(self):
+        function = torch.is_vulkan_available
+
+        class ExplosiveOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                raise AssertionError("availability query dispatched an argument")
+
+        calls = (
+            lambda: function(),
+            lambda: function(None),
+            lambda: function(1, "cuda", object()),
+            lambda: function(enabled=True),
+            lambda: function(None, device="cuda:0", enabled=True),
+            lambda: function(ExplosiveOverride(), candidate=ExplosiveOverride()),
+        )
+        for call in calls:
+            with self.subTest(call=call):
+                result = call()
+                self.assertIs(type(result), bool)
+                self.assertIs(result, False)
+
+    def test_native_callable_metadata_ownership_and_wildcard_export(self):
+        function = torch.is_vulkan_available
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "is_vulkan_available")
+        self.assertEqual(
+            function.__qualname__,
+            "_VariableFunctionsClass.is_vulkan_available",
+        )
+        self.assertEqual(function.__module__, "torch")
+        self.assertIsNone(function.__doc__)
+        self.assertIsNone(function.__text_signature__)
+        self.assertIsNone(function.__self__)
+        self.assertFalse(hasattr(function, "__annotations__"))
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method is_vulkan_available of type object at "
+            r"0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.is_vulkan_available, function)
+
+        self.assertEqual(torch.__all__.count("is_vulkan_available"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["is_vulkan_available"], function)
+
+    def test_identity_is_stable_across_import_reload_copy_and_pickle(self):
+        package = importlib.import_module("torch_rs")
+        native = importlib.import_module("torch_rs._C")
+        function = torch.is_vulkan_available
+        owner = torch._C._VariableFunctionsClass
+
+        self.assertIs(package, torch)
+        self.assertIs(native, torch._C)
+        explicit_namespace = {}
+        exec(
+            "from torch_rs import is_vulkan_available",
+            explicit_namespace,
+        )
+        self.assertIs(explicit_namespace["is_vulkan_available"], function)
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                restored = pickle.loads(pickle.dumps(function, protocol=protocol))
+                self.assertIs(restored, function)
+
+        self.assertIs(importlib.reload(package), package)
+        self.assertIs(torch.is_vulkan_available, function)
+        self.assertIs(torch._C._VariableFunctionsClass, owner)
+        self.assertIs(owner.is_vulkan_available, function)
+        self.assertEqual(torch.__all__.count("is_vulkan_available"), 1)
+
+        self.assertIs(importlib.reload(native), native)
+        self.assertIs(torch.is_vulkan_available, function)
+        self.assertIs(torch._C._VariableFunctionsClass, owner)
+        self.assertIs(owner.is_vulkan_available, function)
+
+    def test_variable_function_owner_is_immutable(self):
+        function = torch.is_vulkan_available
+        owner = torch._C._VariableFunctionsClass
+        actions = (
+            lambda: setattr(owner, "is_vulkan_available", None),
+            lambda: delattr(owner, "is_vulkan_available"),
+        )
+        message = (
+            "cannot set 'is_vulkan_available' attribute of immutable type "
+            "'torch_rs._C._VariableFunctionsClass'"
+        )
+        for action in actions:
+            with self.subTest(action=action):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    action()
+                self.assertIs(owner.is_vulkan_available, function)
+
+    def test_module_reimport_reuses_the_callable_owner(self):
+        source = r"""
+import importlib
+import pickle
+import sys
+
+first = importlib.import_module("torch_rs")
+first_function = first.is_vulkan_available
+first_owner = first._C._VariableFunctionsClass
+for name in tuple(sys.modules):
+    if name == "torch_rs" or name.startswith("torch_rs."):
+        del sys.modules[name]
+
+second = importlib.import_module("torch_rs")
+assert second.is_vulkan_available is first_function
+assert second._C._VariableFunctionsClass is first_owner
+assert first_owner.is_vulkan_available is first_function
+assert pickle.loads(pickle.dumps(first_function)) is first_function
+assert second.is_vulkan_available(object(), ignored=True) is False
+assert second.__all__.count("is_vulkan_available") == 1
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
 
 
 if __name__ == "__main__":

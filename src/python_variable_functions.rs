@@ -8,6 +8,7 @@
 
 use std::ffi::c_void;
 
+use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyDict, PyModule, PyTuple};
@@ -28,7 +29,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 28] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 29] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -43,6 +44,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 28] = [
     "exp",
     "sin",
     "sqrt",
+    "is_vulkan_available",
     "is_conj",
     "is_inference",
     "resolve_conj",
@@ -471,6 +473,16 @@ unsafe fn call_arguments(
     Ok((args, kwargs))
 }
 
+fn is_vulkan_available_variable_function(
+    py: Python<'_>,
+    _args: &Bound<'_, PyTuple>,
+    _kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    // Vulkan execution is not compiled into this native backend. PyTorch's
+    // availability query deliberately ignores every argument and keyword.
+    false.into_py_any(py)
+}
+
 macro_rules! variable_function_callback {
     ($name:ident, $implementation:ident) => {
         #[allow(
@@ -506,6 +518,10 @@ variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
+variable_function_callback!(
+    is_vulkan_available_callback,
+    is_vulkan_available_variable_function
+);
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
 variable_function_callback!(is_inference_callback, is_inference_variable_function);
 variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
@@ -555,6 +571,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
+        variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
         variable_function_method!(c"is_inference", is_inference_callback, IS_INFERENCE_DOC),
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
