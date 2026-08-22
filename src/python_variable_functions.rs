@@ -17,18 +17,18 @@ use crate::python::{
     adjoint_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
     atleast_3d_variable_function, can_cast_variable_function, detach_variable_function,
     exp_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    neg_variable_function, negative_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sin_variable_function, sqrt_variable_function,
-    unbind_variable_function,
+    is_inference_variable_function, is_vulkan_available_variable_function,
+    matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
+    mul_variable_function, multiply_variable_function, neg_variable_function,
+    negative_variable_function, permute_variable_function, positive_variable_function,
+    promote_types_variable_function, ravel_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sin_variable_function, sqrt_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 28] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 29] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -45,6 +45,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 28] = [
     "sqrt",
     "is_conj",
     "is_inference",
+    "is_vulkan_available",
     "resolve_conj",
     "resolve_neg",
     "unbind",
@@ -508,6 +509,10 @@ variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
 variable_function_callback!(is_conj_callback, is_conj_variable_function);
 variable_function_callback!(is_inference_callback, is_inference_variable_function);
+variable_function_callback!(
+    is_vulkan_available_callback,
+    is_vulkan_available_variable_function
+);
 variable_function_callback!(resolve_conj_callback, resolve_conj_variable_function);
 variable_function_callback!(resolve_neg_callback, resolve_neg_variable_function);
 variable_function_callback!(unbind_callback, unbind_variable_function);
@@ -557,6 +562,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
         variable_function_method!(c"is_conj", is_conj_callback, IS_CONJ_DOC),
         variable_function_method!(c"is_inference", is_inference_callback, IS_INFERENCE_DOC),
+        variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
         variable_function_method!(c"resolve_conj", resolve_conj_callback, RESOLVE_CONJ_DOC),
         variable_function_method!(c"resolve_neg", resolve_neg_callback, RESOLVE_NEG_DOC),
         variable_function_method!(c"unbind", unbind_callback, UNBIND_DOC),

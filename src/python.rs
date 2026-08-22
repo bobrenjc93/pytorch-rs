@@ -1408,6 +1408,16 @@ pub(crate) fn is_inference_variable_function(
     dispatch_is_inference(py, &input, args, kwargs)
 }
 
+pub(crate) fn is_vulkan_available_variable_function(
+    py: Python<'_>,
+    _args: &Bound<'_, PyTuple>,
+    _kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    // PyTorch 2.13's generated binding accepts and ignores arbitrary call
+    // arguments. This native build has no Vulkan execution backend.
+    false.into_py_any(py)
+}
+
 pub(crate) fn resolve_conj_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
