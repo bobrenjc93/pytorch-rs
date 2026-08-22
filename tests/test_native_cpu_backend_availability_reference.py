@@ -20,6 +20,7 @@ except ImportError:
 BACKENDS = {
     "openmp": "has_openmp",
     "mkl": "has_mkl",
+    "nnpack": None,
 }
 
 
@@ -65,9 +66,13 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                 self.assertIs(type(actual), bool)
                 self.assertIs(type(expected), bool)
                 self.assertIs(actual, False)
-                self.assertIs(actual, getattr(torch._C, flag))
-                self.assertIs(actual, getattr(torch, flag))
-                self.assertIs(expected, getattr(reference_torch._C, flag))
+                if flag is None:
+                    self.assertIs(actual, torch._nnpack_available())
+                    self.assertIs(expected, reference_torch._nnpack_available())
+                else:
+                    self.assertIs(actual, getattr(torch._C, flag))
+                    self.assertIs(actual, getattr(torch, flag))
+                    self.assertIs(expected, getattr(reference_torch._C, flag))
 
     def test_signature_documentation_and_ownership_match_pytorch_2_13(self):
         for backend in BACKENDS:
@@ -306,7 +311,6 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                 "cudnn",
                 "mkldnn",
                 "mps",
-                "nnpack",
                 "quantized",
             }.issubset(expected_public - actual_public)
         )
@@ -317,6 +321,20 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.backends.mkl, name))
                 self.assertTrue(hasattr(reference_torch.backends.mkl, name))
+
+        self.assertEqual(torch.backends.nnpack.__all__, ["is_available"])
+        self.assertEqual(
+            torch.backends.nnpack.__all__,
+            [
+                name
+                for name in reference_torch.backends.nnpack.__all__
+                if name == "is_available"
+            ],
+        )
+        for name in ("flags", "set_flags"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(torch.backends.nnpack, name))
+                self.assertTrue(hasattr(reference_torch.backends.nnpack, name))
 
 
 if __name__ == "__main__":

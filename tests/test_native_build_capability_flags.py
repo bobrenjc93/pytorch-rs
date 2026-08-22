@@ -62,8 +62,10 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
         tensor_factory = torch.tensor
         matmul = torch.matmul
         backends = torch.backends
+        nnpack_probe = torch._nnpack_available
         backend_modules = {
-            name: getattr(backends, name) for name in ("openmp", "mkl")
+            name: getattr(backends, name)
+            for name in ("openmp", "mkl", "nnpack")
         }
         backend_functions = {
             name: module.is_available
@@ -76,6 +78,11 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
             self.assertIs(torch.Tensor, tensor_type)
             self.assertIs(torch.tensor, tensor_factory)
             self.assertIs(torch.matmul, matmul)
+            self.assertIs(torch._nnpack_available, nnpack_probe)
+            self.assertIs(
+                torch._C._VariableFunctionsClass._nnpack_available,
+                nnpack_probe,
+            )
             self.assertEqual(torch.__all__.count("matmul"), 2)
             self.assertEqual(
                 torch.matmul(left, right).tolist(),
@@ -94,7 +101,12 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
             for name, module in backend_modules.items():
                 self.assertIs(getattr(torch.backends, name), module)
                 self.assertIs(module.is_available, backend_functions[name])
-                self.assertIs(module.is_available(), getattr(torch._C, f"has_{name}"))
+                expected = (
+                    torch._nnpack_available()
+                    if name == "nnpack"
+                    else getattr(torch._C, f"has_{name}")
+                )
+                self.assertIs(module.is_available(), expected)
 
         assert_stable_surface()
         self.assertIs(importlib.reload(package), package)
@@ -105,11 +117,20 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
     def test_backend_availability_namespaces_are_the_only_supported_scope(self):
         backends = importlib.import_module("torch_rs.backends")
         self.assertIs(torch.backends, backends)
-        for backend, flag in (("openmp", "has_openmp"), ("mkl", "has_mkl")):
+        for backend, flag in (
+            ("openmp", "has_openmp"),
+            ("mkl", "has_mkl"),
+            ("nnpack", None),
+        ):
             with self.subTest(backend=backend):
                 module = importlib.import_module(f"torch_rs.backends.{backend}")
                 self.assertIs(getattr(backends, backend), module)
-                self.assertIs(module.is_available(), getattr(torch._C, flag))
+                expected = (
+                    torch._nnpack_available()
+                    if flag is None
+                    else getattr(torch._C, flag)
+                )
+                self.assertIs(module.is_available(), expected)
 
         for module_name in (
             "torch_rs.backends.lapack",

@@ -17,10 +17,17 @@ BACKENDS = {
     "openmp": (
         "has_openmp",
         "Return whether PyTorch is built with OpenMP support.",
+        None,
     ),
     "mkl": (
         "has_mkl",
         "Return whether PyTorch is built with MKL support.",
+        None,
+    ),
+    "nnpack": (
+        None,
+        "Return whether PyTorch is built with NNPACK support.",
+        ["is_available"],
     ),
 }
 
@@ -29,29 +36,74 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
     def test_queries_return_the_exact_native_build_flags(self):
         environments = (
             {},
-            {"USE_OPENMP": "1", "USE_MKL": "1"},
-            {"OMP_NUM_THREADS": "64", "MKL_NUM_THREADS": "64"},
+            {"USE_OPENMP": "1", "USE_MKL": "1", "USE_NNPACK": "1"},
+            {
+                "OMP_NUM_THREADS": "64",
+                "MKL_NUM_THREADS": "64",
+                "NNPACK_NUM_THREADS": "64",
+            },
         )
         for environment in environments:
             with self.subTest(environment=environment):
                 with mock.patch.dict(os.environ, environment, clear=True):
-                    for backend, (flag, _) in BACKENDS.items():
+                    for backend, (flag, _, _) in BACKENDS.items():
                         with self.subTest(backend=backend):
                             function = getattr(torch.backends, backend).is_available
                             result = function()
                             self.assertIs(type(result), bool)
                             self.assertIs(result, False)
-                            self.assertIs(result, getattr(torch._C, flag))
-                            self.assertIs(result, getattr(torch, flag))
+                            if flag is None:
+                                self.assertIs(result, torch._nnpack_available())
+                            else:
+                                self.assertIs(result, getattr(torch._C, flag))
+                                self.assertIs(result, getattr(torch, flag))
+
+        self.assertNotIn("_nnpack_available", torch.__all__)
+        self.assertFalse(hasattr(torch._C, "_nnpack_available"))
+        self.assertIs(torch._nnpack_available(None, enabled=True), False)
+
+    def test_private_nnpack_build_probe_matches_pytorch_2_13_ownership(self):
+        function = torch._nnpack_available
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "_nnpack_available")
+        self.assertEqual(
+            function.__qualname__,
+            "_VariableFunctionsClass._nnpack_available",
+        )
+        self.assertEqual(function.__module__, "torch")
+        self.assertIsNone(function.__doc__)
+        self.assertIsNone(function.__text_signature__)
+        self.assertIsNone(function.__self__)
+        self.assertFalse(hasattr(function, "__annotations__"))
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner._nnpack_available, function)
+        self.assertFalse(hasattr(torch._C, "_nnpack_available"))
+        self.assertNotIn("_nnpack_available", torch.__all__)
+        self.assertNotIn("_nnpack_available", torch._C.__all__)
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)),
+                    function,
+                )
 
     def test_signature_documentation_and_ownership_match_pytorch_2_13(self):
-        for backend, (flag, documentation) in BACKENDS.items():
+        for backend, (flag, documentation, module_all) in BACKENDS.items():
             with self.subTest(backend=backend):
                 module = importlib.import_module(f"torch_rs.backends.{backend}")
                 function = module.is_available
 
                 self.assertIsNone(module.__doc__)
-                self.assertFalse(hasattr(module, "__all__"))
+                if module_all is None:
+                    self.assertFalse(hasattr(module, "__all__"))
+                else:
+                    self.assertEqual(module.__all__, module_all)
                 self.assertIs(type(function), types.FunctionType)
                 self.assertEqual(str(inspect.signature(function)), "()")
                 self.assertEqual(inspect.get_annotations(function), {})
@@ -64,7 +116,12 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
                 self.assertIsNone(function.__kwdefaults__)
                 self.assertEqual(function.__dict__, {})
                 self.assertFalse(hasattr(function, "__text_signature__"))
-                self.assertEqual(function.__code__.co_names, ("torch", "_C", flag))
+                expected_names = (
+                    ("torch", "_nnpack_available")
+                    if flag is None
+                    else ("torch", "_C", flag)
+                )
+                self.assertEqual(function.__code__.co_names, expected_names)
                 self.assertEqual(function.__code__.co_freevars, ())
                 self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -116,16 +173,22 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
 
                 child_wildcard = {}
                 exec(f"from {module_name} import *", child_wildcard)
+                expected_child_names = (
+                    {"is_available"}
+                    if backend == "nnpack"
+                    else {"is_available", "torch"}
+                )
                 self.assertEqual(
                     {
                         name
                         for name in child_wildcard
                         if not name.startswith("__")
                     },
-                    {"is_available", "torch"},
+                    expected_child_names,
                 )
                 self.assertIs(child_wildcard["is_available"], function)
-                self.assertIs(child_wildcard["torch"], torch)
+                if backend != "nnpack":
+                    self.assertIs(child_wildcard["torch"], torch)
 
                 self.assertIs(copy.copy(function), function)
                 self.assertIs(copy.deepcopy(function), function)
@@ -136,7 +199,7 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
 
     def test_reload_replaces_functions_and_preserves_canonical_modules(self):
         backends = torch.backends
-        for backend, (flag, _) in BACKENDS.items():
+        for backend, (flag, _, _) in BACKENDS.items():
             with self.subTest(backend=backend):
                 module = getattr(backends, backend)
                 old_function = module.is_available
@@ -149,7 +212,12 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
                 self.assertIs(getattr(backends, backend), module)
                 self.assertIs(sys.modules[module.__name__], module)
                 self.assertIsNot(module.is_available, old_function)
-                self.assertIs(module.is_available(), getattr(torch._C, flag))
+                expected = (
+                    torch._nnpack_available()
+                    if flag is None
+                    else getattr(torch._C, flag)
+                )
+                self.assertIs(module.is_available(), expected)
                 self.assertIs(copy.copy(module.is_available), module.is_available)
                 self.assertIs(
                     copy.deepcopy(module.is_available), module.is_available
@@ -210,13 +278,16 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
             with self.subTest(mkl_name=name):
                 self.assertFalse(hasattr(backends.mkl, name))
 
+        for name in ("flags", "set_flags"):
+            with self.subTest(nnpack_name=name):
+                self.assertFalse(hasattr(backends.nnpack, name))
+
         for name in (
             "cpu",
             "cuda",
             "cudnn",
             "mkldnn",
             "mps",
-            "nnpack",
             "quantized",
         ):
             with self.subTest(backend=name):
@@ -225,6 +296,8 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
                     importlib.import_module(f"torch_rs.backends.{name}")
 
         self.assertFalse(hasattr(torch._C, "_verbose"))
+        self.assertFalse(hasattr(torch._C, "_get_nnpack_enabled"))
+        self.assertFalse(hasattr(torch._C, "_set_nnpack_enabled"))
 
     def test_importing_and_calling_does_not_probe_or_import_external_runtimes(self):
         script = r'''
@@ -243,19 +316,25 @@ sys.meta_path.insert(0, RejectExternalRuntimeImport())
 os.environ.update(
     USE_OPENMP="1",
     USE_MKL="1",
+    USE_NNPACK="1",
     OMP_NUM_THREADS="64",
     MKL_NUM_THREADS="64",
+    NNPACK_NUM_THREADS="64",
 )
 import torch_rs as torch
-from torch_rs.backends import mkl, openmp
+from torch_rs.backends import mkl, nnpack, openmp
 from torch_rs.backends.mkl import is_available as is_mkl_available
+from torch_rs.backends.nnpack import is_available as is_nnpack_available
 from torch_rs.backends.openmp import is_available as is_openmp_available
 
 assert torch.backends.mkl is mkl
+assert torch.backends.nnpack is nnpack
 assert torch.backends.openmp is openmp
 assert mkl.is_available is is_mkl_available
+assert nnpack.is_available is is_nnpack_available
 assert openmp.is_available is is_openmp_available
 assert mkl.is_available() is torch._C.has_mkl is False
+assert nnpack.is_available() is torch._nnpack_available() is False
 assert openmp.is_available() is torch._C.has_openmp is False
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
