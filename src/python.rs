@@ -17,8 +17,12 @@ use pyo3::types::{
 
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, is_grad_enabled,
+    python_autocast::add_autocast_enabled,
     python_cpython_compat as cpython_compat,
-    python_device::{PyDevice, device_argument_type_error, parse_device_value},
+    python_device::{
+        PyDevice, RecognizedDeviceType, device_argument_type_error, parse_device_specification,
+        parse_device_value,
+    },
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
     python_finfo::finfo_type_object,
     python_grad_mode::add_no_grad,
@@ -4745,65 +4749,8 @@ fn parse_scalar_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Dev
         return Ok(device.try_borrow()?.inner());
     }
     let specification = device.cast::<PyString>()?.to_str()?;
-    if specification.is_empty() {
-        return Err(PyRuntimeError::new_err("Device string must not be empty"));
-    }
-    let (device_type, index) = specification
-        .split_once(':')
-        .map_or((specification, None), |(device_type, index)| {
-            (device_type, Some(index))
-        });
-    let known_type = matches!(
-        device_type,
-        "cpu"
-            | "cuda"
-            | "ipu"
-            | "xpu"
-            | "mkldnn"
-            | "opengl"
-            | "opencl"
-            | "ideep"
-            | "hip"
-            | "ve"
-            | "fpga"
-            | "maia"
-            | "xla"
-            | "lazy"
-            | "vulkan"
-            | "mps"
-            | "meta"
-            | "hpu"
-            | "mtia"
-            | "privateuseone"
-    );
-    if !known_type {
-        if !device_type.is_empty()
-            && device_type
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
-        {
-            return Err(PyRuntimeError::new_err(format!(
-                "Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone device type at start of device string: {device_type}"
-            )));
-        }
-        return Err(PyRuntimeError::new_err(format!(
-            "Invalid device string: '{specification}'"
-        )));
-    }
-    if let Some(index) = index {
-        let valid_digits = !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit());
-        if !valid_digits || (index.len() > 1 && index.starts_with('0')) {
-            return Err(PyRuntimeError::new_err(format!(
-                "Invalid device string: '{specification}'"
-            )));
-        }
-        if index.parse::<i32>().is_err() {
-            return Err(PyRuntimeError::new_err(format!(
-                "Could not parse device index '{index}' in device string '{specification}'"
-            )));
-        }
-    }
-    if device_type == "cpu" {
+    let (device_type, _) = parse_device_specification(specification)?;
+    if device_type == RecognizedDeviceType::Cpu {
         return Ok(Device::Cpu);
     }
     Err(PyRuntimeError::new_err(format!(
@@ -10523,6 +10470,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
         is_tensor_helpers.setattr("torch", module)?;
     }
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
+    add_autocast_enabled(module)?;
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
     module.add_function(wrap_pyfunction!(_autograd_backward, module)?)?;

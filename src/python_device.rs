@@ -7,6 +7,49 @@ use pyo3::types::{PyAny, PyBool, PyDict, PyInt, PyModule, PyString, PyTuple};
 use crate::Device;
 
 const UNINDEXED_DEVICE: i8 = -1;
+const EXPECTED_DEVICE_TYPES: &str = "cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RecognizedDeviceType {
+    Cpu,
+    Cuda,
+    Ipu,
+    Xpu,
+    Mkldnn,
+    OpenGl,
+    OpenCl,
+    Ideep,
+    Hip,
+    Ve,
+    Fpga,
+    Maia,
+    Xla,
+    Lazy,
+    Vulkan,
+    Mps,
+    Meta,
+    Hpu,
+    Mtia,
+    PrivateUseOne,
+}
+
+impl RecognizedDeviceType {
+    pub(crate) const fn supports_autocast(self) -> bool {
+        matches!(
+            self,
+            Self::Cpu
+                | Self::Cuda
+                | Self::Ipu
+                | Self::Xpu
+                | Self::Maia
+                | Self::Xla
+                | Self::Mps
+                | Self::Hpu
+                | Self::Mtia
+                | Self::PrivateUseOne
+        )
+    }
+}
 
 fn normalize_device_index(index: i64) -> i8 {
     // PyTorch narrows Python's non-negative int64 index to its signed 8-bit
@@ -17,6 +60,82 @@ fn normalize_device_index(index: i64) -> i8 {
 fn repr_device_index(index: i8) -> u16 {
     // PyTorch 2.13's repr widens a signed DeviceIndex directly to uint16_t.
     u16::from_le_bytes(i16::from(index).to_le_bytes())
+}
+
+fn device_string_error(mut message: String) -> PyErr {
+    // PyTorch builds these diagnostics through a NUL-terminated C string, so
+    // an embedded NUL truncates the observable message.
+    if let Some(nul) = message.find('\0') {
+        message.truncate(nul);
+    }
+    PyRuntimeError::new_err(message)
+}
+
+pub(crate) fn parse_device_specification(
+    specification: &str,
+) -> PyResult<(RecognizedDeviceType, Option<i32>)> {
+    if specification.is_empty() {
+        return Err(PyRuntimeError::new_err("Device string must not be empty"));
+    }
+
+    let (device_type, index) = specification
+        .split_once(':')
+        .map_or((specification, None), |(device_type, index)| {
+            (device_type, Some(index))
+        });
+    let device_type = match device_type {
+        "cpu" => RecognizedDeviceType::Cpu,
+        "cuda" => RecognizedDeviceType::Cuda,
+        "ipu" => RecognizedDeviceType::Ipu,
+        "xpu" => RecognizedDeviceType::Xpu,
+        "mkldnn" => RecognizedDeviceType::Mkldnn,
+        "opengl" => RecognizedDeviceType::OpenGl,
+        "opencl" => RecognizedDeviceType::OpenCl,
+        "ideep" => RecognizedDeviceType::Ideep,
+        "hip" => RecognizedDeviceType::Hip,
+        "ve" => RecognizedDeviceType::Ve,
+        "fpga" => RecognizedDeviceType::Fpga,
+        "maia" => RecognizedDeviceType::Maia,
+        "xla" => RecognizedDeviceType::Xla,
+        "lazy" => RecognizedDeviceType::Lazy,
+        "vulkan" => RecognizedDeviceType::Vulkan,
+        "mps" => RecognizedDeviceType::Mps,
+        "meta" => RecognizedDeviceType::Meta,
+        "hpu" => RecognizedDeviceType::Hpu,
+        "mtia" => RecognizedDeviceType::Mtia,
+        "privateuseone" => RecognizedDeviceType::PrivateUseOne,
+        _ if !device_type.is_empty()
+            && device_type
+                .bytes()
+                .all(|byte| byte.is_ascii_alphabetic() || byte == b'_') =>
+        {
+            return Err(PyRuntimeError::new_err(format!(
+                "Expected one of {EXPECTED_DEVICE_TYPES} device type at start of device string: {device_type}"
+            )));
+        }
+        _ => {
+            return Err(device_string_error(format!(
+                "Invalid device string: '{specification}'"
+            )));
+        }
+    };
+
+    let index = index
+        .map(|index| {
+            let valid_digits = !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit());
+            if !valid_digits || (index.len() > 1 && index.starts_with('0')) {
+                return Err(device_string_error(format!(
+                    "Invalid device string: '{specification}'"
+                )));
+            }
+            index.parse::<i32>().map_err(|_| {
+                device_string_error(format!(
+                    "Could not parse device index '{index}' in device string '{specification}'"
+                ))
+            })
+        })
+        .transpose()?;
+    Ok((device_type, index))
 }
 
 /// Python device descriptor backed by a native [`Device`].

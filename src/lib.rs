@@ -18,6 +18,8 @@ mod python;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_argument_schema;
 #[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_autocast;
+#[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_cpython_compat;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_device;
