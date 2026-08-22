@@ -1436,6 +1436,15 @@ pub(crate) fn sqrt_variable_function(
     unary_out_variable_function(UnaryOutOperation::SQRT, py, args, kwargs)
 }
 
+pub(crate) fn sum_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_sum_arguments(args, kwargs)?;
+    dispatch_single_tensor_override(SingleTensorOverrideOperation::SUM, py, &input, args, kwargs)
+}
+
 fn unary_out_variable_function(
     operation: UnaryOutOperation,
     py: Python<'_>,
@@ -1776,6 +1785,12 @@ impl SingleTensorOverrideOperation {
         name: "resolve_neg",
         qualified_name: "torch.resolve_neg",
         apply_native: apply_top_level_resolve_identity,
+    };
+
+    const SUM: Self = Self {
+        name: "sum",
+        qualified_name: "torch.sum",
+        apply_native: apply_top_level_sum,
     };
 }
 
@@ -2592,6 +2607,11 @@ fn apply_top_level_detach(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyRes
         .inner
         .detach()
         .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+fn apply_top_level_sum(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    let inner = tensor.try_borrow()?.inner.sum();
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
@@ -7619,6 +7639,88 @@ fn legacy_single_tensor_type_error(
     let input_type = python_type_name(&input.value)?;
     Ok(PyTypeError::new_err(format!(
         "{function}(): argument 'input'{position} must be Tensor, not {input_type}"
+    )))
+}
+
+fn bind_sum_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if positional.len() > 3 {
+        return Err(PyTypeError::new_err(format!(
+            "sum() takes from 2 to 3 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+    if positional.len() > 1 {
+        return Err(sum_invalid_combination(positional, keywords)?);
+    }
+
+    let keyword_input = match keywords {
+        Some(values) => values
+            .get_item("input")?
+            .or(values.get_item("x")?)
+            .or(values.get_item("a")?)
+            .or(values.get_item("x1")?),
+        None => None,
+    };
+    if positional.is_empty() && keyword_input.is_none() {
+        let keyword_count = keywords.map_or(0, PyDictMethods::len);
+        if keyword_count != 1 {
+            return Err(sum_invalid_combination(positional, keywords)?);
+        }
+        return Err(PyTypeError::new_err(
+            "sum() missing 1 required positional arguments: \"input\"",
+        ));
+    }
+
+    let selection = select_legacy_single_argument("sum", positional, keywords)?;
+    let dtype = keywords
+        .map(|values| values.get_item("dtype"))
+        .transpose()?
+        .flatten();
+    let dtype_is_supported = dtype
+        .as_ref()
+        .is_none_or(|value| value.is_none() || value.cast::<PyDType>().is_ok());
+
+    let mut keywords_are_supported = true;
+    if let Some(keywords) = keywords {
+        for key in keywords.keys() {
+            let key = key.extract::<String>()?;
+            let is_selected_alias =
+                selection.input.position.is_none() && selection.keyword_alias == Some(key.as_str());
+            let is_canonical_input = key == "input" && selection.input.position.is_none();
+            if key != "dtype" && !is_selected_alias && !is_canonical_input {
+                keywords_are_supported = false;
+                break;
+            }
+        }
+    }
+    if !keywords_are_supported || !dtype_is_supported {
+        return Err(sum_invalid_combination(positional, keywords)?);
+    }
+
+    if let Ok(tensor) = selection.input.value.cast::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(tensor.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override(&selection.input.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    if dtype.is_some() {
+        return Err(sum_invalid_combination(positional, keywords)?);
+    }
+    Err(legacy_single_tensor_type_error("sum", &selection.input)?)
+}
+
+fn sum_invalid_combination(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "sum() received an invalid combination of arguments - got ({summary}), but expected one of:\n \
+* (Tensor input, *, torch.dtype dtype = None)\n \
+* (Tensor input, tuple of ints dim, bool keepdim = False, *, torch.dtype dtype = None, Tensor out = None)\n"
     )))
 }
 
