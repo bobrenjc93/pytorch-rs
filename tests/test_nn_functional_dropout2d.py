@@ -46,6 +46,15 @@ Args:
 """
 
 
+LEGACY_RANK_THREE_WARNING = (
+    "dropout2d: Received a 3D input to dropout2d and assuming that channel-wise "
+    "1D dropout behavior is desired - input is interpreted as shape (N, C, L), where C "
+    "is the channel dim. This behavior will change in a future release to interpret the "
+    "input as one without a batch dimension, i.e. shape (C, H, W). To maintain the 1D "
+    "channel-wise dropout behavior, please switch to using dropout1d instead."
+)
+
+
 class FunctionalDropout2dTests(unittest.TestCase):
     def make_nonempty_cases(self, *, requires_grad):
         contiguous = torch.tensor(
@@ -77,6 +86,30 @@ class FunctionalDropout2dTests(unittest.TestCase):
         offset = backing[1]
         return contiguous, offset, offset.transpose(2, 3)
 
+    def make_rank_three_cases(self, *, requires_grad):
+        contiguous = torch.tensor(
+            [
+                [[1.0, -2.0], [3.0, -4.0]],
+                [[5.0, -6.0], [7.0, -8.0]],
+            ],
+            requires_grad=requires_grad,
+        )
+        backing = torch.tensor(
+            [
+                [
+                    [[9.0, 10.0], [11.0, 12.0]],
+                    [[13.0, 14.0], [15.0, 16.0]],
+                ],
+                [
+                    [[-1.0, 2.0], [-3.0, 4.0]],
+                    [[-5.0, 6.0], [-7.0, 8.0]],
+                ],
+            ],
+            requires_grad=requires_grad,
+        )
+        offset = backing[1]
+        return contiguous, offset, offset.transpose(1, 2)
+
     def snapshot(self, tensor):
         return (
             id(tensor),
@@ -96,6 +129,12 @@ class FunctionalDropout2dTests(unittest.TestCase):
         after = self.snapshot(source)
         self.assertEqual(after[:-1], before[:-1])
         np.testing.assert_array_equal(after[-1], before[-1])
+
+    def assert_legacy_rank_three_warning(self, caught):
+        self.assertEqual(len(caught), 1)
+        self.assertIs(caught[0].category, UserWarning)
+        self.assertEqual(str(caught[0].message), LEGACY_RANK_THREE_WARNING)
+        self.assertEqual(caught[0].filename, __file__)
 
     def test_imports_signature_documentation_and_pickling(self):
         imported_nn = importlib.import_module("torch_rs.nn")
@@ -198,6 +237,30 @@ class FunctionalDropout2dTests(unittest.TestCase):
                         )
                         self.assert_unchanged_identity(output, source, before)
 
+    def test_rank_three_identity_paths_warn_and_return_exact_input(self):
+        calls = (
+            {"p": 0.75, "training": False, "inplace": False},
+            {"p": 1, "training": False, "inplace": True},
+            {"p": 0, "training": True, "inplace": False},
+            {
+                "p": torch.tensor(0.0),
+                "training": True,
+                "inplace": True,
+            },
+        )
+
+        for case, source in enumerate(
+            self.make_rank_three_cases(requires_grad=True)
+        ):
+            for kwargs in calls:
+                before = self.snapshot(source)
+                with self.subTest(case=case, kwargs=kwargs):
+                    with warnings.catch_warnings(record=True) as caught:
+                        warnings.simplefilter("always")
+                        output = functional.dropout2d(source, **kwargs)
+                    self.assert_unchanged_identity(output, source, before)
+                    self.assert_legacy_rank_three_warning(caught)
+
     def test_empty_rank_four_training_inputs_return_the_exact_input(self):
         backing = torch.zeros((2, 1, 0, 3, 4), requires_grad=True)
         sources = (
@@ -222,6 +285,34 @@ class FunctionalDropout2dTests(unittest.TestCase):
                             inplace=inplace,
                         )
                         self.assert_unchanged_identity(output, source, before)
+
+    def test_empty_rank_three_training_inputs_warn_and_return_exact_input(self):
+        backing = torch.zeros((2, 1, 0, 4), requires_grad=True)
+        sources = (
+            torch.zeros((2, 0, 4), requires_grad=True),
+            backing[1],
+            backing[1].transpose(1, 2),
+        )
+
+        for case, source in enumerate(sources):
+            for probability in (0.25, 1.0, np.float32(0.5), torch.tensor(0.5)):
+                for inplace in (False, True):
+                    before = self.snapshot(source)
+                    with self.subTest(
+                        case=case,
+                        probability=type(probability),
+                        inplace=inplace,
+                    ):
+                        with warnings.catch_warnings(record=True) as caught:
+                            warnings.simplefilter("always")
+                            output = functional.dropout2d(
+                                source,
+                                p=probability,
+                                training=True,
+                                inplace=inplace,
+                            )
+                        self.assert_unchanged_identity(output, source, before)
+                        self.assert_legacy_rank_three_warning(caught)
 
     def test_identity_preserves_autograd_and_no_grad_state(self):
         leaf = torch.tensor(
@@ -250,6 +341,43 @@ class FunctionalDropout2dTests(unittest.TestCase):
         self.assertTrue(unchanged.requires_grad)
         self.assertFalse(unchanged.is_leaf)
         self.assertIsNone(untracked_leaf.grad)
+
+        rank_three_leaf = torch.tensor(
+            [[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True
+        )
+        rank_three_source = rank_three_leaf.transpose(1, 2)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            rank_three_output = functional.dropout2d(
+                rank_three_source, p=0, training=True, inplace=True
+            )
+        self.assert_legacy_rank_three_warning(caught)
+        self.assertIs(rank_three_output, rank_three_source)
+        self.assertTrue(rank_three_output.requires_grad)
+        self.assertFalse(rank_three_output.is_leaf)
+        self.assertEqual(rank_three_output.output_nr, rank_three_source.output_nr)
+
+        rank_three_weights = torch.tensor([[[2.0, 3.0], [5.0, 7.0]]])
+        (rank_three_output * rank_three_weights).sum().backward()
+        self.assertEqual(
+            rank_three_leaf.grad.tolist(), [[[2.0, 5.0], [3.0, 7.0]]]
+        )
+
+        rank_three_untracked_leaf = torch.zeros(
+            (1, 2, 3), requires_grad=True
+        )
+        rank_three_untracked_source = rank_three_untracked_leaf.transpose(1, 2)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with torch.no_grad():
+                rank_three_unchanged = functional.dropout2d(
+                    rank_three_untracked_source, p=0.75, training=False
+                )
+        self.assert_legacy_rank_three_warning(caught)
+        self.assertIs(rank_three_unchanged, rank_three_untracked_source)
+        self.assertTrue(rank_three_unchanged.requires_grad)
+        self.assertFalse(rank_three_unchanged.is_leaf)
+        self.assertIsNone(rank_three_untracked_leaf.grad)
 
     def test_probability_validation_and_feature_dropout_schema(self):
         source = torch.zeros((1, 2, 3, 4))
@@ -423,61 +551,80 @@ class FunctionalDropout2dTests(unittest.TestCase):
                     return func(*args, **kwargs)
                 return "mode-result"
 
-        source = torch.zeros((1, 2, 3, 4))
+        source = torch.zeros((1, 2, 3))
         mode = RecordingMode()
-        with mode:
-            self.assertEqual(
-                functional.dropout2d(
-                    source, p=-1, training="invalid", inplace=True
-                ),
-                "mode-result",
-            )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with mode:
+                self.assertEqual(
+                    functional.dropout2d(
+                        source, p=-1, training="invalid", inplace=True
+                    ),
+                    "mode-result",
+                )
+        self.assertEqual(caught, [])
         self.assertIs(mode.calls[0][0], functional.dropout2d)
         self.assertEqual(mode.calls[0][1], (torch.Tensor,))
 
         mode = RecordingMode(forward=True)
-        with mode:
-            output = functional.dropout2d(
-                source, p=0, training=True, inplace=True
-            )
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with mode:
+                output = functional.dropout2d(
+                    source, p=0, training=True, inplace=True
+                )
         self.assertIs(output, source)
         self.assertEqual(len(mode.calls), 1)
+        self.assert_legacy_rank_three_warning(caught)
 
-    def test_sampling_and_non_rank_four_inputs_are_explicitly_unsupported(self):
-        source = torch.tensor(
-            [[[[1.0, 2.0], [3.0, 4.0]]]], requires_grad=True
+    def test_sampling_and_unsupported_ranks_remain_explicit(self):
+        sources = (
+            (torch.zeros((1, 2, 3, 4), requires_grad=True), False),
+            (torch.zeros((1, 2, 3), requires_grad=True), True),
         )
-        before = self.snapshot(source)
-        for probability in (0.25, 1.0):
-            for inplace in (False, True):
-                with self.subTest(sampling=probability, inplace=inplace):
-                    with self.assertRaisesRegex(
-                        NotImplementedError,
-                        "^torch_rs.nn.functional.dropout2d does not support "
-                        "sampling$",
+        for source, warns in sources:
+            before = self.snapshot(source)
+            for probability in (0.25, 1.0):
+                for inplace in (False, True):
+                    with self.subTest(
+                        rank=len(source.shape),
+                        probability=probability,
+                        inplace=inplace,
                     ):
-                        functional.dropout2d(
-                            source,
-                            p=probability,
-                            training=True,
-                            inplace=inplace,
+                        with warnings.catch_warnings(record=True) as caught:
+                            warnings.simplefilter("always")
+                            with self.assertRaisesRegex(
+                                NotImplementedError,
+                                "^torch_rs.nn.functional.dropout2d does not "
+                                "support sampling$",
+                            ):
+                                functional.dropout2d(
+                                    source,
+                                    p=probability,
+                                    training=True,
+                                    inplace=inplace,
+                                )
+                        if warns:
+                            self.assert_legacy_rank_three_warning(caught)
+                        else:
+                            self.assertEqual(caught, [])
+                        self.assertEqual(
+                            self.snapshot(source)[:-1], before[:-1]
                         )
-                    self.assertEqual(self.snapshot(source)[:-1], before[:-1])
-                    np.testing.assert_array_equal(
-                        self.snapshot(source)[-1], before[-1]
-                    )
-                    self.assertIsNone(source.grad)
+                        np.testing.assert_array_equal(
+                            self.snapshot(source)[-1], before[-1]
+                        )
+                        self.assertIsNone(source.grad)
 
-        non_rank_four = (
+        unsupported_ranks = (
             torch.tensor(-0.0),
             torch.zeros((2,)),
             torch.zeros((2, 3)),
-            torch.zeros((2, 3, 4)),
             torch.zeros((2, 3, 4, 5, 6)),
-            torch.zeros((2, 0, 3)),
+            torch.zeros((2, 0)),
         )
         identity_modes = ((0.5, False), (0.0, True), (0.5, True))
-        for source in non_rank_four:
+        for source in unsupported_ranks:
             for probability, training in identity_modes:
                 for inplace in (False, True):
                     with self.subTest(
@@ -492,7 +639,7 @@ class FunctionalDropout2dTests(unittest.TestCase):
                             with self.assertRaisesRegex(
                                 NotImplementedError,
                                 "^torch_rs.nn.functional.dropout2d only "
-                                "supports rank-4 inputs$",
+                                "supports rank-3 and rank-4 inputs$",
                             ):
                                 functional.dropout2d(
                                     source,
