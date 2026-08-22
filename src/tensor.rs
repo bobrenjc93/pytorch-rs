@@ -3250,6 +3250,25 @@ fn transform_backward(
             dimensions,
             output_shape,
         } => {
+            if dimensions.as_slice() == [1, 0] && input.shape.len() == 2 {
+                let rows = input.shape[0];
+                let columns = input.shape[1];
+                debug_assert_eq!(output_shape.as_slice(), [columns, rows]);
+                debug_assert_eq!(upstream.len(), input.elements);
+
+                let mut gradient = try_result_vector(input.elements, input.elements)?;
+                if upstream.is_empty() {
+                    return Ok(gradient);
+                }
+                // Push in input-row order while reading each transposed output column.
+                for row in 0..rows {
+                    for column in 0..columns {
+                        gradient.push(upstream[column * rows + row]);
+                    }
+                }
+                return Ok(gradient);
+            }
+
             let mut gradient = filled_storage(input.elements, 0.0)?;
             if upstream.is_empty() {
                 return Ok(gradient);

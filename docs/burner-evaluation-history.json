@@ -5057,6 +5057,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.7
       }
+    },
+    {
+      "key": "pr:656",
+      "recordedAt": "2026-08-22T15:17:19.681Z",
+      "label": "PR #656",
+      "kind": "leaf",
+      "prNumber": 656,
+      "title": "Fast-path rank-2 transpose backward",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 83.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.8
+      }
     }
   ]
 }
