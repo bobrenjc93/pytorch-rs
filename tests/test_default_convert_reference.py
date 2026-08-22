@@ -1,3 +1,4 @@
+import collections
 import copy
 import importlib
 import inspect
@@ -6,6 +7,7 @@ import pickletools
 import types
 import unittest
 from collections import namedtuple
+from types import MappingProxyType
 
 import numpy as np
 import torch_rs as torch
@@ -14,6 +16,28 @@ try:
     import torch as reference_torch
 except ImportError:
     reference_torch = None
+
+
+class DictSubclass(dict):
+    pass
+
+
+class ListSubclass(list):
+    pass
+
+
+class TupleSubclass(tuple):
+    pass
+
+
+class CopyFailingDict(dict):
+    def __copy__(self):
+        raise TypeError("copy disabled")
+
+
+class CopyFailingList(list):
+    def __copy__(self):
+        raise TypeError("copy disabled")
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -189,22 +213,72 @@ class DefaultConvertReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_numpy_and_exotic_collection_boundaries_are_deliberate(self):
+    def test_generic_mapping_and_sequence_behavior_matches_pytorch_2_13(self):
+        actual_mapping = DictSubclass(value=(1, 2))
+        expected_mapping = DictSubclass(value=(1, 2))
+        actual_mapping.marker = object()
+        expected_mapping.marker = object()
+        actual_sequence = ListSubclass(((1, 2),))
+        expected_sequence = ListSubclass(((1, 2),))
+        actual_sequence.marker = object()
+        expected_sequence.marker = object()
+
+        cases = (
+            (
+                torch.utils.data.DataChunk([(1, 2), {"value": (3, 4)}]),
+                reference_torch.utils.data.DataChunk(
+                    [(1, 2), {"value": (3, 4)}]
+                ),
+            ),
+            (actual_mapping, expected_mapping),
+            (
+                collections.OrderedDict(
+                    (("first", (1, 2)), ("second", [3]))
+                ),
+                collections.OrderedDict(
+                    (("first", (1, 2)), ("second", [3]))
+                ),
+            ),
+            (
+                MappingProxyType({"value": (1, 2)}),
+                MappingProxyType({"value": (1, 2)}),
+            ),
+            (actual_sequence, expected_sequence),
+            (TupleSubclass((1, 2)), TupleSubclass((1, 2))),
+            (range(3), range(3)),
+            (
+                CopyFailingDict(value=(1, 2)),
+                CopyFailingDict(value=(1, 2)),
+            ),
+            (CopyFailingList(((1, 2),)), CopyFailingList(((1, 2),))),
+        )
+
+        for actual_source, expected_source in cases:
+            with self.subTest(value_type=type(actual_source).__name__):
+                actual = torch.utils.data.default_convert(actual_source)
+                expected = reference_torch.utils.data.default_convert(expected_source)
+                self.assertEqual(actual, expected)
+                self.assertEqual(
+                    f"{type(actual).__module__}.{type(actual).__qualname__}".replace(
+                        "torch_rs", "torch"
+                    ),
+                    f"{type(expected).__module__}.{type(expected).__qualname__}",
+                )
+                self.assertIsNot(actual, actual_source)
+                self.assertIsNot(expected, expected_source)
+
+                if hasattr(actual_source, "marker"):
+                    self.assertIs(actual.marker, actual_source.marker)
+                    self.assertIs(expected.marker, expected_source.marker)
+                if hasattr(actual, "raw_iterator"):
+                    self.assertEqual(
+                        list(actual.raw_iterator()), list(expected.raw_iterator())
+                    )
+
+    def test_numpy_boundary_and_unsupported_neighbors_remain_deliberate(self):
         for value in (np.array([1, 2]), np.int64(3), np.str_("text")):
             with self.subTest(value_type=type(value).__name__):
                 with self.assertRaisesRegex(NotImplementedError, "NumPy"):
-                    torch.utils.data.default_convert(value)
-                reference_torch.utils.data.default_convert(value)
-
-        class DictSubclass(dict):
-            pass
-
-        class ListSubclass(list):
-            pass
-
-        for value in (DictSubclass(value=1), ListSubclass((1, 2)), range(2)):
-            with self.subTest(value_type=type(value).__name__):
-                with self.assertRaises(NotImplementedError):
                     torch.utils.data.default_convert(value)
                 reference_torch.utils.data.default_convert(value)
 
