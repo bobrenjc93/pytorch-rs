@@ -3121,12 +3121,20 @@ fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
 }
 
 fn apply_sqrt_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
-    gradient.extend(
-        upstream
-            .iter()
-            .enumerate()
-            .map(|(index, &value)| value / (2.0 * sqrt_value(input.value_at_linear_index(index)))),
-    );
+    // Borrow one exact saved range for row-contiguous layouts, including
+    // nonzero-offset views, instead of resolving layout and storage per value.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| upstream_value / (2.0 * sqrt_value(saved_value)),
+        ));
+    } else {
+        gradient.extend(
+            upstream.iter().enumerate().map(|(index, &value)| {
+                value / (2.0 * sqrt_value(input.value_at_linear_index(index)))
+            }),
+        );
+    }
 }
 
 struct GradientAccumulator {
@@ -4363,8 +4371,8 @@ mod tests {
 
     use super::{
         CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device,
-        F32_SIGN_MASK, SavedTensor, Tensor, TensorError, materialize_contiguous_trailing_broadcast,
-        sqrt_value, try_result_vector,
+        F32_SIGN_MASK, SavedTensor, Tensor, TensorError, apply_sqrt_vjp,
+        materialize_contiguous_trailing_broadcast, sqrt_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -4592,6 +4600,61 @@ mod tests {
             .unwrap()
             .index_integer(1)
             .unwrap()
+    }
+
+    #[test]
+    fn sqrt_vjp_contiguous_ranges_match_the_strided_fallback_bitwise() {
+        let input_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x8000_0001,
+            0x3f80_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xffc5_4321,
+        ];
+        let upstream_bits = [
+            0x3f80_0000,
+            0xbf80_0000,
+            0x8000_0000,
+            0x7f80_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7fc0_1234,
+            0xffc0_5678,
+        ];
+        let shape = [2, 4];
+        let contiguous = Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), shape).unwrap();
+        let offset_contiguous = offset_contiguous_tensor(&input_bits, &shape);
+        let mut transposed_storage = Vec::with_capacity(input_bits.len());
+        for column in 0..shape[1] {
+            for row in 0..shape[0] {
+                transposed_storage.push(f32::from_bits(input_bits[row * shape[1] + column]));
+            }
+        }
+        let strided = Tensor::from_vec(transposed_storage, [shape[1], shape[0]])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let upstream = upstream_bits.map(f32::from_bits);
+        let saved_contiguous = SavedTensor::try_from_tensor(&contiguous, true).unwrap();
+        let saved_offset = SavedTensor::try_from_tensor(&offset_contiguous, true).unwrap();
+        let saved_strided = SavedTensor::try_from_tensor(&strided, true).unwrap();
+        let apply = |saved: &SavedTensor| {
+            let mut gradient = Vec::with_capacity(input_bits.len());
+            apply_sqrt_vjp(saved, &upstream, &mut gradient);
+            gradient.into_iter().map(f32::to_bits).collect::<Vec<_>>()
+        };
+
+        assert!(saved_contiguous.contiguous_slice().is_some());
+        assert!(saved_offset.offset > 0);
+        assert!(saved_offset.contiguous_slice().is_some());
+        assert!(saved_strided.contiguous_slice().is_none());
+
+        let expected = apply(&saved_strided);
+        assert_eq!(apply(&saved_contiguous), expected);
+        assert_eq!(apply(&saved_offset), expected);
     }
 
     fn offset_strided_matrix(bits: [u32; 9]) -> Tensor {
