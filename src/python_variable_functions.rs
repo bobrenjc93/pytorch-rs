@@ -15,21 +15,21 @@ use pyo3::types::{PyDict, PyModule, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    adjoint_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
-    atleast_3d_variable_function, can_cast_variable_function, detach_variable_function,
-    exp_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    neg_variable_function, negative_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    reciprocal_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
-    sqrt_variable_function, unbind_variable_function,
+    add_variable_function, adjoint_variable_function, atleast_1d_variable_function,
+    atleast_2d_variable_function, atleast_3d_variable_function, can_cast_variable_function,
+    detach_variable_function, exp_variable_function, get_device_variable_function,
+    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, neg_variable_function, negative_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, reciprocal_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sin_variable_function, sqrt_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 30] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 31] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -56,11 +56,56 @@ const VARIABLE_FUNCTION_NAMES: [&str; 30] = [
     "movedim",
     "moveaxis",
     "matmul",
+    "add",
     "mul",
     "multiply",
     "can_cast",
     "promote_types",
 ];
+
+const ADD_DOC: &std::ffi::CStr = cr"
+add(input, other, *, alpha=1, out=None) -> Tensor
+
+Adds :attr:`other`, scaled by :attr:`alpha`, to :attr:`input`.
+
+.. math::
+    \text{{out}}_i = \text{{input}}_i + \text{{alpha}} \times \text{{other}}_i
+
+
+Supports :ref:`broadcasting to a common shape <broadcasting-semantics>`,
+:ref:`type promotion <type-promotion-doc>`, and integer, float, and complex inputs.
+
+Args:
+    input (Tensor): the input tensor.
+    other (Tensor or Number): the tensor or number to add to :attr:`input`.
+
+Keyword arguments:
+    alpha (Number): the multiplier for :attr:`other`.
+    out (Tensor, optional): the output tensor.
+
+Examples::
+
+    >>> a = torch.randn(4)
+    >>> a
+    tensor([ 0.0202,  1.0985,  1.3506, -0.6056])
+    >>> torch.add(a, 20)
+    tensor([ 20.0202,  21.0985,  21.3506,  19.3944])
+
+    >>> b = torch.randn(4)
+    >>> b
+    tensor([-0.9732, -0.3497,  0.6245,  0.4022])
+    >>> c = torch.randn(4, 1)
+    >>> c
+    tensor([[ 0.3743],
+            [-1.7724],
+            [-0.5811],
+            [-0.8017]])
+    >>> torch.add(b, c, alpha=10)
+    tensor([[  2.7695,   3.3930,   4.3672,   4.1450],
+            [-18.6971, -18.0736, -17.0994, -17.3216],
+            [ -6.7845,  -6.1610,  -5.1868,  -5.4090],
+            [ -8.9902,  -8.3667,  -7.3925,  -7.6147]])
+";
 
 const ADJOINT_DOC: &std::ffi::CStr = cr"
 adjoint(input: Tensor) -> Tensor
@@ -562,6 +607,7 @@ variable_function_callback!(permute_callback, permute_variable_function);
 variable_function_callback!(movedim_callback, movedim_variable_function);
 variable_function_callback!(moveaxis_callback, moveaxis_variable_function);
 variable_function_callback!(matmul_callback, matmul_variable_function);
+variable_function_callback!(add_callback, add_variable_function);
 variable_function_callback!(can_cast_callback, can_cast_variable_function);
 variable_function_callback!(promote_types_callback, promote_types_variable_function);
 
@@ -613,6 +659,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"movedim", movedim_callback, MOVEDIM_DOC),
         variable_function_method!(c"moveaxis", moveaxis_callback, MOVEAXIS_DOC),
         variable_function_method!(c"matmul", matmul_callback, MATMUL_DOC),
+        variable_function_method!(c"add", add_callback, ADD_DOC),
         variable_function_method!(c"can_cast", can_cast_callback, CAN_CAST_DOC),
         variable_function_method!(c"promote_types", promote_types_callback, PROMOTE_TYPES_DOC),
         ffi::PyMethodDef::zeroed(),

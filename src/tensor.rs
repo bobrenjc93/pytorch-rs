@@ -2252,7 +2252,21 @@ impl Tensor {
     ///
     /// Returns an error when result allocation fails.
     pub fn add_scalar(&self, scalar: f32) -> Result<Self, TensorError> {
-        let output = self.map_scalar(scalar, |value, scalar| value + scalar)?;
+        let output = self.map_scalar(scalar, add_values_preserving_nan_order)?;
+        self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
+    }
+
+    /// Adds every element to a scalar with the scalar as the left IEEE 754
+    /// operand.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn scalar_add(&self, scalar: f32) -> Result<Self, TensorError> {
+        let output = self.map_scalar(scalar, |value, scalar| {
+            add_values_preserving_nan_order(scalar, value)
+        })?;
         self.finish_copy_transform(output, TransformMapping::Identity, AutogradNode::Add)
     }
 
@@ -3361,6 +3375,16 @@ struct BroadcastPlan {
     strides: Vec<usize>,
     dimensions: Vec<BroadcastDimension>,
     elements: usize,
+}
+
+fn add_values_preserving_nan_order(left: f32, right: f32) -> f32 {
+    if left.is_nan() && right.is_nan() {
+        // The native pointwise kernels select the right operand's NaN payload
+        // when both operands are NaNs. Quiet signaling values as the hardware
+        // addition would while retaining its sign and payload bits.
+        return f32::from_bits(right.to_bits() | 0x0040_0000);
+    }
+    left + right
 }
 
 #[inline(never)]
@@ -5347,6 +5371,33 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    #[test]
+    fn scalar_addition_preserves_ieee_operand_order() {
+        let tensor_nan = 0xffc5_4321;
+        let scalar_nan = 0x7fc6_789a;
+        let tensor = Tensor::from_vec(vec![f32::from_bits(tensor_nan), 1.0], [2]).unwrap();
+        let scalar = f32::from_bits(scalar_nan);
+
+        assert_eq!(
+            tensor
+                .add_scalar(scalar)
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            [scalar_nan, scalar_nan]
+        );
+        assert_eq!(
+            tensor
+                .scalar_add(scalar)
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            [tensor_nan, scalar_nan]
+        );
     }
 
     #[test]
