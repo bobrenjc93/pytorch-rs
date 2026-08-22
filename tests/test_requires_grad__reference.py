@@ -75,6 +75,7 @@ class TensorRequiresGradInPlaceReferenceTests(unittest.TestCase):
                     "before_autograd": before[-2:],
                     "after_autograd": after[-2:],
                     "gradient_shape": tuple(tensor.grad.shape),
+                    "gradient_stride": tuple(tensor.grad.stride()),
                     "gradient": tensor.grad.tolist(),
                     "source_grad_is_none": source is None or source.grad is None,
                 }
@@ -85,6 +86,100 @@ class TensorRequiresGradInPlaceReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.enable_contract(torch),
             self.enable_contract(reference_torch),
+        )
+
+    def preexisting_view_contract(self, module):
+        base = module.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=module.float32
+        )
+        alias = base[:]
+        nested = alias.transpose(0, 1)[1]
+        detached = alias.detach()
+        before = (
+            base.requires_grad,
+            alias.requires_grad,
+            nested.requires_grad,
+            detached.requires_grad,
+        )
+        result = base.requires_grad_()
+
+        outputs = []
+        for view in (alias, nested):
+            output = view * 2.0
+            output.sum().backward()
+            outputs.append(
+                (
+                    view.requires_grad,
+                    view.is_leaf,
+                    output.requires_grad,
+                    output.is_leaf,
+                    view.grad is None,
+                )
+            )
+        base_grad_after_views = base.grad
+
+        promoted = alias.requires_grad_(True)
+        weights = module.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=module.float32
+        )
+        (alias * weights).sum().backward()
+        return {
+            "before": before,
+            "base_result_is_receiver": result is base,
+            "after": (
+                base.requires_grad,
+                alias.requires_grad,
+                nested.requires_grad,
+                detached.requires_grad,
+            ),
+            "outputs": outputs,
+            "base_grad_after_views_is_none": base_grad_after_views is None,
+            "promoted_is_receiver": promoted is alias,
+            "alias_gradient": alias.grad.tolist(),
+            "base_grad_is_none": base.grad is None,
+        }
+
+    def test_preexisting_views_follow_base_enablement_like_pytorch_2_13(self):
+        self.assertEqual(
+            self.preexisting_view_contract(torch),
+            self.preexisting_view_contract(reference_torch),
+        )
+
+    def gradient_layout_contract(self, module):
+        base = module.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=module.float32
+        )
+        leaf = base.transpose(0, 1).detach()
+        first = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=module.float32
+        )
+        second = module.tensor(
+            [[6.0, 5.0], [4.0, 3.0], [2.0, 1.0]], dtype=module.float32
+        )
+        result = leaf.requires_grad_()
+        (leaf * first).sum().backward()
+        gradient = leaf.grad
+        first_state = (
+            tuple(gradient.shape),
+            tuple(gradient.stride()),
+            gradient.storage_offset(),
+            gradient.is_contiguous(),
+            gradient.tolist(),
+        )
+        (leaf * second).sum().backward()
+        return {
+            "result_is_receiver": result is leaf,
+            "leaf_stride": tuple(leaf.stride()),
+            "first_gradient": first_state,
+            "gradient_identity_preserved": leaf.grad is gradient,
+            "accumulated_stride": tuple(leaf.grad.stride()),
+            "accumulated_values": leaf.grad.tolist(),
+        }
+
+    def test_dense_noncontiguous_gradient_layout_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.gradient_layout_contract(torch),
+            self.gradient_layout_contract(reference_torch),
         )
 
     def state_contract(self, module):

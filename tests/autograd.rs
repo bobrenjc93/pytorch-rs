@@ -41,6 +41,53 @@ fn leaf_gradient_snapshots_preserve_the_contiguous_slice_contract() {
 }
 
 #[test]
+fn views_created_before_root_enablement_observe_the_live_flag() {
+    let base = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0], [2, 2]).unwrap();
+    let view = base.index([]).unwrap();
+    let detached = view.detach().unwrap();
+
+    assert!(!base.requires_grad());
+    assert!(!view.requires_grad());
+    let base = base.with_requires_grad(true);
+
+    assert!(base.requires_grad());
+    assert!(view.requires_grad());
+    assert!(view.is_leaf());
+    assert!(!detached.requires_grad());
+
+    let output = view.mul_scalar(2.0).unwrap();
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
+    output.sum().backward().unwrap();
+    assert!(base.grad().unwrap().is_none());
+    assert!(view.grad().unwrap().is_none());
+
+    let promoted = view.with_requires_grad(true);
+    promoted.mul_scalar(3.0).unwrap().sum().backward().unwrap();
+    assert_eq!(values(&promoted.grad().unwrap().unwrap()), [3.0; 4]);
+    assert!(base.grad().unwrap().is_none());
+}
+
+#[test]
+fn dense_noncontiguous_leaf_gradients_preserve_strides_and_values() {
+    let base = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
+    let leaf = base
+        .transpose(0, 1)
+        .unwrap()
+        .detach()
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [3, 2]).unwrap();
+
+    leaf.mul(&weights).unwrap().sum().backward().unwrap();
+    let gradient = leaf.grad().unwrap().unwrap();
+
+    assert_eq!(leaf.stride(), [1, 3]);
+    assert_eq!(gradient.stride(), leaf.stride());
+    assert_eq!(values(&gradient), values(&weights));
+}
+
+#[test]
 fn item_does_not_mutate_a_one_element_view_graph() {
     let leaf = Tensor::from_vec(
         [0x0000_0000, 0x7fc1_2345].map(f32::from_bits).to_vec(),

@@ -96,6 +96,61 @@ class TensorRequiresGradInPlaceTests(unittest.TestCase):
                 if source is not None:
                     self.assertIsNone(source.grad)
 
+    def test_views_created_before_base_enablement_follow_the_live_root(self):
+        base = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        alias = base[:]
+        nested = alias.transpose(0, 1)[1]
+        detached = alias.detach()
+
+        self.assertFalse(base.requires_grad)
+        self.assertFalse(alias.requires_grad)
+        self.assertFalse(nested.requires_grad)
+        self.assertIs(base.requires_grad_(), base)
+
+        self.assertTrue(alias.requires_grad)
+        self.assertTrue(alias.is_leaf)
+        self.assertTrue(nested.requires_grad)
+        self.assertTrue(nested.is_leaf)
+        self.assertFalse(detached.requires_grad)
+
+        for case, view in (("alias", alias), ("nested", nested)):
+            with self.subTest(case=case):
+                output = view * 2.0
+                self.assertTrue(output.requires_grad)
+                self.assertFalse(output.is_leaf)
+                output.sum().backward()
+                self.assertIsNone(view.grad)
+                self.assertIsNone(base.grad)
+
+        self.assertIs(alias.requires_grad_(True), alias)
+        weights = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        (alias * weights).sum().backward()
+        np.testing.assert_array_equal(np.asarray(alias.grad), np.asarray(weights))
+        self.assertIsNone(base.grad)
+
+    def test_dense_noncontiguous_leaf_gradient_preserves_default_layout(self):
+        base = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        leaf = base.transpose(0, 1).detach()
+        first = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        second = torch.tensor([[6.0, 5.0], [4.0, 3.0], [2.0, 1.0]])
+
+        self.assertEqual(leaf.stride(), (1, 3))
+        self.assertIs(leaf.requires_grad_(), leaf)
+        (leaf * first).sum().backward()
+        gradient = leaf.grad
+
+        self.assertEqual(gradient.stride(), leaf.stride())
+        self.assertFalse(gradient.is_contiguous())
+        np.testing.assert_array_equal(np.asarray(gradient), np.asarray(first))
+
+        (leaf * second).sum().backward()
+        self.assertIs(leaf.grad, gradient)
+        self.assertEqual(leaf.grad.stride(), (1, 3))
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad),
+            np.asarray(first) + np.asarray(second),
+        )
+
     def test_existing_leaf_and_nonleaf_autograd_state_is_unchanged(self):
         leaf = torch.tensor([1.0, 2.0], requires_grad=True)
         (leaf * 2.0).sum().backward()
