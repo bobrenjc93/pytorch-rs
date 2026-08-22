@@ -1,4 +1,8 @@
+import os
 import struct
+import subprocess
+import sys
+import textwrap
 import unittest
 
 import numpy as np
@@ -57,6 +61,47 @@ class TensorFloatListTests(unittest.TestCase):
         self.assertIsNone(leaf.grad)
         leaf.sum().backward()
         self.assertEqual(leaf.grad.tolist(), [1.0, 1.0, 1.0])
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_float_list_avoids_a_linear_pointer_snapshot(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+
+            import torch_rs as torch
+
+            elements = 5_000_000
+            values = [float(index) for index in range(elements)]
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 45 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            output = torch.tensor(values)
+            assert output.shape == (elements,)
+            assert output[0].item() == 0.0
+            assert output[-1].item() == float(elements - 1)
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode == 77:
+            self.skipTest("process hard address-space limit is too low")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_nested_mixed_and_subclassed_lists_keep_sequence_fallback(self):
         class TrackingList(list):

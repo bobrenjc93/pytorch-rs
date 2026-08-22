@@ -9,7 +9,7 @@ use pyo3::exceptions::{
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::sync::PyOnceLock;
+use pyo3::sync::{PyOnceLock, critical_section::with_critical_section};
 use pyo3::types::{
     PyAny, PyBool, PyBytes, PyComplex, PyDict, PyEllipsis, PyFloat, PyInt, PyList, PyMapping,
     PyMemoryView, PyModule, PySequence, PySlice, PyString, PyTuple, PyType,
@@ -10438,27 +10438,28 @@ fn flatten_exact_float_list(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f3
     let Ok(values) = value.cast_exact::<PyList>() else {
         return Ok(None);
     };
-    // Snapshot the exact list in C, then borrow from the immutable tuple. This
-    // avoids per-item owned-reference traffic in both the type probe and copy.
-    let values = values.as_sequence().to_tuple()?;
-    if !values
-        .iter_borrowed()
-        .all(|value| value.is_exact_instance_of::<PyFloat>())
-    {
-        return Ok(None);
-    }
+    // Keep the list stable across both passes without retaining an O(n)
+    // snapshot of its element pointers.
+    with_critical_section(values.as_any(), || {
+        if !values
+            .iter()
+            .all(|value| value.is_exact_instance_of::<PyFloat>())
+        {
+            return Ok(None);
+        }
 
-    let length = values.len();
-    let mut output = Vec::new();
-    output.try_reserve_exact(length).map_err(|_| {
-        PyMemoryError::new_err("unable to allocate native tensor storage for float list")
-    })?;
-    for value in values.iter_borrowed() {
-        let value = value.extract::<f64>()?;
-        #[allow(clippy::cast_possible_truncation)]
-        output.push(value as f32);
-    }
-    Ok(Some((output, vec![length])))
+        let length = values.len();
+        let mut output = Vec::new();
+        output.try_reserve_exact(length).map_err(|_| {
+            PyMemoryError::new_err("unable to allocate native tensor storage for float list")
+        })?;
+        for value in values {
+            let value = value.extract::<f64>()?;
+            #[allow(clippy::cast_possible_truncation)]
+            output.push(value as f32);
+        }
+        Ok(Some((output, vec![length])))
+    })
 }
 
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
@@ -10475,6 +10476,27 @@ fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyRes
     let length = value.len()?;
     if length == 0 {
         return Ok(vec![0]);
+    }
+
+    if let Ok(values) = value.cast_exact::<PyList>() {
+        let mut values = values.iter();
+        let first = values
+            .next()
+            .expect("a nonempty exact list must have a first item");
+        let first_shape = flatten_rectangular(&first, output)?;
+        for value in values {
+            let shape = flatten_rectangular(&value, output)?;
+            if shape != first_shape {
+                return Err(PyValueError::new_err(
+                    "expected a rectangular sequence, but nested shapes differ",
+                ));
+            }
+        }
+
+        let mut shape = Vec::with_capacity(first_shape.len() + 1);
+        shape.push(length);
+        shape.extend(first_shape);
+        return Ok(shape);
     }
 
     let first_shape = flatten_rectangular(&value.get_item(0)?, output)?;
