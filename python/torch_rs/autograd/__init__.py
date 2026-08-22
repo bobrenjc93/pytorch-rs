@@ -29,6 +29,18 @@ def _require_default_graph_option(name, value, *, allow_none):
         )
 
 
+def _normalize_single_root(tensors):
+    if type(tensors) is _Tensor:
+        return tensors
+    if type(tensors) is tuple or type(tensors) is list:
+        if len(tensors) == 1 and type(tensors[0]) is _Tensor:
+            return tensors[0]
+    raise TypeError(
+        "torch_rs.autograd.backward only supports an exact native Tensor, "
+        "directly or in an exact one-element tuple or list"
+    )
+
+
 def backward(
     tensors: _TensorOrTensorsOrGradEdge,
     grad_tensors: _TensorOrOptionalTensors | None = None,
@@ -96,10 +108,7 @@ def backward(
             ``dict(model.named_parameters())``) is also accepted, in which case
             the values are used as the input tensors.
     """
-    if type(tensors) is not _Tensor:
-        raise TypeError(
-            "torch_rs.autograd.backward only supports one exact native Tensor"
-        )
+    root = _normalize_single_root(tensors)
     if grad_tensors is not None:
         raise NotImplementedError(
             "torch_rs.autograd.backward does not support explicit gradients"
@@ -115,7 +124,7 @@ def backward(
             "torch_rs.autograd.backward does not support inputs"
         )
 
-    tensors.backward()
+    root.backward()
 
 
 is_multithreading_enabled = _C._is_multithreading_enabled
