@@ -41,7 +41,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
         supports_probability_one: false,
-        supported_ranks: Some(&[3]),
+        supported_ranks: Some(&[2, 3]),
     },
     DropoutMetadata {
         public_function: "dropout2d",
@@ -162,7 +162,25 @@ fn _nn_functional_dropout(
     }
 
     let input_is_empty = tensor.try_borrow()?.inner().numel() == 0;
+    let is_unbatched_dropout1d = metadata.public_function == "dropout1d" && input_rank == 2;
+    if is_unbatched_dropout1d && inplace {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.dropout1d does not support inplace=True for rank-2 inputs",
+        ));
+    }
     if !training || probability == 0.0 || input_is_empty {
+        if is_unbatched_dropout1d {
+            // PyTorch routes an unbatched input through unsqueeze(0) and
+            // squeeze(0), so even an identity feature-dropout call returns a
+            // distinct view with a SqueezeBackward1 edge.
+            let output = tensor
+                .try_borrow()?
+                .inner()
+                .unsqueeze_front()
+                .and_then(|input| input.squeeze_dim(0))
+                .map_err(|error| tensor_error(&error))?;
+            return PyTensor::new(output).into_py_any(py);
+        }
         return Ok(tensor.clone().unbind().into_any());
     }
 
