@@ -567,6 +567,81 @@ fn sine_handles_scalar_and_empty_tensors_with_pytorch_layouts() {
 }
 
 #[test]
+fn reciprocal_matches_pytorch_float32_ieee_bits() {
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0001,
+        0x8000_0001,
+        0x0080_0000,
+        0x8080_0000,
+        0x3eaa_aaab,
+        0xbeaa_aaab,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x7f7f_ffff,
+        0xff7f_ffff,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7f81_2345,
+        0xff81_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let expected_bits = [
+        0x7f80_0000,
+        0xff80_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7e80_0000,
+        0xfe80_0000,
+        0x4040_0000,
+        0xc040_0000,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x0020_0000,
+        0x8020_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x7fc1_2345,
+        0xffc1_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let input =
+        Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()]).unwrap();
+    let output = input.reciprocal().unwrap();
+
+    assert!(output.logical_values().map(f32::to_bits).eq(expected_bits));
+    assert!(!output.shares_storage_with(&input));
+}
+
+#[test]
+fn reciprocal_preserves_unary_layouts_and_materializes_fresh_storage() {
+    let base = Tensor::from_vec((1_u8..=24).map(f32::from).collect(), [2, 3, 4]).unwrap();
+    let strided = base.transpose(0, 2).unwrap();
+    let offset = strided.index_integer(1).unwrap();
+    let cases: [(Tensor, Vec<usize>); 6] = [
+        (Tensor::from_vec(vec![-0.0], []).unwrap(), Vec::new()),
+        (Tensor::zeros([0, 1]).unwrap(), vec![1, 1]),
+        (Tensor::zeros([0, 1, 2]).unwrap(), vec![2, 2, 1]),
+        (Tensor::zeros([1, 0, 1]).unwrap(), vec![1, 1, 1]),
+        (offset, vec![1, 3]),
+        (strided, vec![1, 4, 12]),
+    ];
+
+    for (input, expected_strides) in cases {
+        let output = input.reciprocal().unwrap();
+        assert_eq!(output.shape(), input.shape());
+        assert_eq!(output.stride(), expected_strides);
+        assert_eq!(output.storage_offset(), 0);
+        assert_eq!(output.dtype(), input.dtype());
+        assert_eq!(output.device(), input.device());
+        assert!(!output.shares_storage_with(&input));
+    }
+}
+
+#[test]
 fn exponential_matches_pytorch_float32_values_and_ieee_special_cases() {
     const ATOL: f32 = f32::from_bits(1);
     const RTOL: f32 = 2.0e-6;
