@@ -191,6 +191,7 @@ if "matmul" in _native.__all__:
 
 from . import accelerator as accelerator
 from . import autograd as autograd
+from . import backends as backends
 from . import compiler as compiler
 from . import cpu as cpu
 from . import distributed as distributed

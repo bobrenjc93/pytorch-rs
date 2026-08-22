@@ -61,6 +61,14 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
         tensor_type = torch.Tensor
         tensor_factory = torch.tensor
         matmul = torch.matmul
+        backends = torch.backends
+        backend_modules = {
+            name: getattr(backends, name) for name in ("openmp", "mkl")
+        }
+        backend_functions = {
+            name: module.is_available
+            for name, module in backend_modules.items()
+        }
         left = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
         right = torch.tensor([[5.0, 6.0], [7.0, 8.0]])
 
@@ -82,6 +90,11 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
                 self.assertIs(getattr(torch._C, name), False)
                 self.assertEqual(torch.__all__.count(name), 1)
                 self.assertEqual(torch._C.__all__.count(name), 1)
+            self.assertIs(torch.backends, backends)
+            for name, module in backend_modules.items():
+                self.assertIs(getattr(torch.backends, name), module)
+                self.assertIs(module.is_available, backend_functions[name])
+                self.assertIs(module.is_available(), getattr(torch._C, f"has_{name}"))
 
         assert_stable_surface()
         self.assertIs(importlib.reload(package), package)
@@ -89,13 +102,18 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
         self.assertIs(importlib.reload(native), native)
         assert_stable_surface()
 
-    def test_external_runtime_surfaces_remain_unsupported(self):
-        self.assertFalse(hasattr(torch, "backends"))
+    def test_backend_availability_namespaces_are_the_only_supported_scope(self):
+        backends = importlib.import_module("torch_rs.backends")
+        self.assertIs(torch.backends, backends)
+        for backend, flag in (("openmp", "has_openmp"), ("mkl", "has_mkl")):
+            with self.subTest(backend=backend):
+                module = importlib.import_module(f"torch_rs.backends.{backend}")
+                self.assertIs(getattr(backends, backend), module)
+                self.assertIs(module.is_available(), getattr(torch._C, flag))
+
         for module_name in (
-            "torch_rs.backends",
-            "torch_rs.backends.openmp",
-            "torch_rs.backends.mkl",
             "torch_rs.backends.lapack",
+            "torch_rs.backends.mkldnn",
         ):
             with self.subTest(module=module_name):
                 with self.assertRaises(ModuleNotFoundError):
