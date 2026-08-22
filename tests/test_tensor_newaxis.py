@@ -74,8 +74,14 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         exec("from torch_rs import *", namespace)
         self.assertIsNone(namespace["newaxis"])
 
-    def test_bare_none_and_torch_newaxis_use_the_leading_unsqueeze_view(self):
-        for spelling, index in (("None", None), ("torch.newaxis", torch.newaxis)):
+    def test_bare_and_exact_tuple_newaxis_use_the_leading_unsqueeze_view(self):
+        indices = (
+            ("None", None),
+            ("torch.newaxis", torch.newaxis),
+            ("(None,)", (None,)),
+            ("(torch.newaxis,)", (torch.newaxis,)),
+        )
+        for spelling, index in indices:
             for case, source, shape, stride, offset in self.layout_cases():
                 with self.subTest(spelling=spelling, case=case):
                     result = source[index]
@@ -85,6 +91,10 @@ class TensorNewAxisIndexTests(unittest.TestCase):
 
         scalar = torch.tensor(-0.0)[None]
         self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0x8000_0000)
+        tuple_scalar = torch.tensor(-0.0)[(torch.newaxis,)]
+        self.assertEqual(
+            np.asarray(tuple_scalar).view(np.uint32).item(), 0x8000_0000
+        )
 
     def test_exact_trailing_none_and_newaxis_use_the_trailing_unsqueeze_view(self):
         indices = (
@@ -170,41 +180,53 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         raise AssertionError(f"unknown case: {case}")
 
     def test_autograd_and_no_grad_cover_every_supported_layout(self):
-        for case, _, shape, stride, offset in self.layout_cases():
-            with self.subTest(case=case, mode="autograd"):
-                leaf, source = self.make_autograd_case(case)
-                result = source[None]
-                self.assert_leading_unsqueeze(
-                    source, result, shape, stride, offset
-                )
-                self.assertTrue(result.requires_grad)
-                self.assertFalse(result.is_leaf)
-                weights = torch.ones(tuple(result.shape))
-                (result * weights).sum().backward()
-                np.testing.assert_array_equal(
-                    np.asarray(leaf.grad), self.expected_gradient(case)
-                )
+        index_pairs = (
+            ("bare", None, torch.newaxis),
+            ("tuple", (None,), (torch.newaxis,)),
+        )
+        for spelling, autograd_index, no_grad_index in index_pairs:
+            for case, _, shape, stride, offset in self.layout_cases():
+                with self.subTest(
+                    spelling=spelling, case=case, mode="autograd"
+                ):
+                    leaf, source = self.make_autograd_case(case)
+                    result = source[autograd_index]
+                    self.assert_leading_unsqueeze(
+                        source, result, shape, stride, offset
+                    )
+                    self.assertTrue(result.requires_grad)
+                    self.assertFalse(result.is_leaf)
+                    weights = torch.ones(tuple(result.shape))
+                    (result * weights).sum().backward()
+                    np.testing.assert_array_equal(
+                        np.asarray(leaf.grad), self.expected_gradient(case)
+                    )
 
-            with self.subTest(case=case, mode="no_grad"):
-                leaf, source = self.make_autograd_case(case)
-                with torch.no_grad():
-                    result = source[torch.newaxis]
-                self.assert_leading_unsqueeze(
-                    source, result, shape, stride, offset
-                )
-                self.assertTrue(result.requires_grad)
-                self.assertTrue(result.is_leaf)
-                self.assertIsNone(leaf.grad)
+                with self.subTest(
+                    spelling=spelling, case=case, mode="no_grad"
+                ):
+                    leaf, source = self.make_autograd_case(case)
+                    with torch.no_grad():
+                        result = source[no_grad_index]
+                    self.assert_leading_unsqueeze(
+                        source, result, shape, stride, offset
+                    )
+                    self.assertTrue(result.requires_grad)
+                    self.assertTrue(result.is_leaf)
+                    self.assertIsNone(leaf.grad)
 
-        diagnostic_leaf = torch.tensor([2.0], requires_grad=True)
-        with self.assertRaisesRegex(
-            ValueError,
-            r"^dropout probability has to be between 0 and 1, but got "
-            r"tensor\(\[\[2\.\]\], grad_fn=<UnsqueezeBackward0>\)$",
-        ):
-            torch.nn.functional.dropout(
-                None, p=diagnostic_leaf[None], training=False
-            )
+            diagnostic_leaf = torch.tensor([2.0], requires_grad=True)
+            with self.subTest(spelling=spelling, mode="diagnostic"):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r"^dropout probability has to be between 0 and 1, but got "
+                    r"tensor\(\[\[2\.\]\], grad_fn=<UnsqueezeBackward0>\)$",
+                ):
+                    torch.nn.functional.dropout(
+                        None,
+                        p=diagnostic_leaf[autograd_index],
+                        training=False,
+                    )
 
     def test_trailing_autograd_and_no_grad_cover_every_supported_layout(self):
         for case, _, shape, stride, offset in self.trailing_layout_cases():
@@ -246,32 +268,40 @@ class TensorNewAxisIndexTests(unittest.TestCase):
     def test_storage_and_autograd_survive_source_lifetime(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
 
-        def retained_view():
+        def retained_view(index):
             source = torch.tensor(values.tolist()).transpose(0, 2)[1]
-            return source[None]
+            return source[index]
 
-        surviving = retained_view()
-        gc.collect()
-        self.assertEqual(surviving.shape, (1, 3, 2))
-        self.assertEqual(surviving.stride(), (12, 4, 12))
-        self.assertEqual(surviving.storage_offset(), 1)
-        np.testing.assert_array_equal(
-            np.asarray(surviving), values[:, :, 1].T[None]
-        )
+        for spelling, view_index, autograd_index in (
+            ("bare", None, torch.newaxis),
+            ("tuple", (None,), (torch.newaxis,)),
+        ):
+            with self.subTest(spelling=spelling, kind="storage"):
+                surviving = retained_view(view_index)
+                gc.collect()
+                self.assertEqual(surviving.shape, (1, 3, 2))
+                self.assertEqual(surviving.stride(), (12, 4, 12))
+                self.assertEqual(surviving.storage_offset(), 1)
+                np.testing.assert_array_equal(
+                    np.asarray(surviving), values[:, :, 1].T[None]
+                )
 
-        leaf = torch.tensor(values.tolist(), requires_grad=True)
+            with self.subTest(spelling=spelling, kind="autograd"):
+                leaf = torch.tensor(values.tolist(), requires_grad=True)
 
-        def retained_autograd_view():
-            source = (leaf * 2.0).transpose(0, 2)[1]
-            return source[torch.newaxis]
+                def retained_autograd_view():
+                    source = (leaf * 2.0).transpose(0, 2)[1]
+                    return source[autograd_index]
 
-        tracked = retained_autograd_view()
-        gc.collect()
-        weights = torch.tensor([[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]])
-        (tracked * weights).sum().backward()
-        expected = np.zeros_like(values)
-        expected[:, :, 1] = 2.0 * np.asarray(weights)[0].T
-        np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
+                tracked = retained_autograd_view()
+                gc.collect()
+                weights = torch.tensor(
+                    [[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]]
+                )
+                (tracked * weights).sum().backward()
+                expected = np.zeros_like(values)
+                expected[:, :, 1] = 2.0 * np.asarray(weights)[0].T
+                np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
 
     def test_trailing_storage_and_autograd_survive_source_lifetime(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
@@ -305,7 +335,7 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         expected[:, :, 1] = 2.0 * np.asarray(weights)[..., 0].T
         np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
 
-    def test_torch_function_mode_observes_none_before_indexing(self):
+    def test_torch_function_mode_observes_leading_newaxis_before_indexing(self):
         marker = object()
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
@@ -326,43 +356,53 @@ class TensorNewAxisIndexTests(unittest.TestCase):
 
         descriptor = inspect.getattr_static(torch.Tensor, "__getitem__")
         mode = RecordingMode()
-        for case, source, _, _, _ in self.layout_cases():
-            with self.subTest(case=case, mode="recording"):
-                mode.calls.clear()
-                with mode:
-                    result = source[torch.newaxis]
-                    self.assertEqual(
-                        torch.overrides._get_current_function_mode_stack(), [mode]
+        indices = (("bare", torch.newaxis), ("tuple", (torch.newaxis,)))
+        for spelling, index in indices:
+            for case, source, _, _, _ in self.layout_cases():
+                with self.subTest(
+                    spelling=spelling, case=case, mode="recording"
+                ):
+                    mode.calls.clear()
+                    with mode:
+                        result = source[index]
+                        self.assertEqual(
+                            torch.overrides._get_current_function_mode_stack(),
+                            [mode],
+                        )
+                    self.assertIs(result, marker)
+                    self.assertEqual(len(mode.calls), 1)
+                    function, dispatch_types, args, kwargs, handler_stack = (
+                        mode.calls[0]
                     )
-                self.assertIs(result, marker)
-                self.assertEqual(len(mode.calls), 1)
-                function, dispatch_types, args, kwargs, handler_stack = mode.calls[0]
-                self.assertIs(type(function), types.WrapperDescriptorType)
-                self.assertIs(function, descriptor)
-                self.assertEqual(function.__qualname__, "TensorBase.__getitem__")
-                self.assertEqual(function.__objclass__.__name__, "TensorBase")
-                self.assertEqual(function.__objclass__.__module__, "torch._C")
-                self.assertEqual(dispatch_types, ())
-                self.assertEqual(len(args), 2)
-                self.assertIs(args[0], source)
-                self.assertIsNone(args[1])
-                self.assertIsNone(kwargs)
-                self.assertEqual(handler_stack, ())
-                self.assertEqual(
-                    torch.overrides._get_current_function_mode_stack(), []
-                )
+                    self.assertIs(type(function), types.WrapperDescriptorType)
+                    self.assertIs(function, descriptor)
+                    self.assertEqual(function.__qualname__, "TensorBase.__getitem__")
+                    self.assertEqual(function.__objclass__.__name__, "TensorBase")
+                    self.assertEqual(function.__objclass__.__module__, "torch._C")
+                    self.assertEqual(dispatch_types, ())
+                    self.assertEqual(len(args), 2)
+                    self.assertIs(args[0], source)
+                    self.assertIs(args[1], index)
+                    self.assertIsNone(kwargs)
+                    self.assertEqual(handler_stack, ())
+                    self.assertEqual(
+                        torch.overrides._get_current_function_mode_stack(), []
+                    )
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):
             def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
                 return func(*args, **(kwargs or {}))
 
-        for case, source, shape, stride, offset in self.layout_cases():
-            with self.subTest(case=case, mode="forwarding"):
-                with ForwardingMode():
-                    result = source[None]
-                self.assert_leading_unsqueeze(
-                    source, result, shape, stride, offset
-                )
+        for spelling, index in (("bare", None), ("tuple", (None,))):
+            for case, source, shape, stride, offset in self.layout_cases():
+                with self.subTest(
+                    spelling=spelling, case=case, mode="forwarding"
+                ):
+                    with ForwardingMode():
+                        result = source[index]
+                    self.assert_leading_unsqueeze(
+                        source, result, shape, stride, offset
+                    )
 
     def test_torch_function_mode_observes_the_exact_trailing_tuple(self):
         marker = object()
@@ -427,7 +467,6 @@ class TensorNewAxisIndexTests(unittest.TestCase):
     def test_other_newaxis_and_public_unsqueeze_forms_remain_unsupported(self):
         tensor = torch.ones((2, 3))
         leading_mixed = (
-            (None,),
             (None, None),
             (None, 0),
             (None, Ellipsis),
