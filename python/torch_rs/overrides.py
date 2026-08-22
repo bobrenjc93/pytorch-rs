@@ -1,7 +1,9 @@
 """Dynamic ``__torch_function__`` override modes."""
 
+import functools as _functools
 import types as _types
 import warnings
+from collections.abc import Callable
 
 from .torch_rs import (
     Tensor,
@@ -11,6 +13,58 @@ from .torch_rs import (
     _pop_torch_function_stack,
     _push_on_torch_function_stack,
 )
+
+
+def _disable_user_warnings(func):
+    @_functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=UserWarning,
+                message=".*is deprecated, please use.*",
+                module="torch",
+            )
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _get_tensor_methods() -> set[Callable]:
+    """Returns a set of the overridable methods on ``torch.Tensor``"""
+    names = {
+        name
+        for tensor_type in Tensor.__mro__
+        if tensor_type is not object
+        for name in vars(tensor_type)
+    }
+    return {method for name in names if callable(method := getattr(Tensor, name))}
+
+
+@_disable_user_warnings
+def is_tensor_method_or_property(func: Callable) -> bool:
+    """
+    Returns True if the function passed in is a handler for a
+    method or property belonging to ``torch.Tensor``, as passed
+    into ``__torch_function__``.
+
+    .. note::
+       For properties, their ``__get__`` method must be passed in.
+
+    This may be needed, in particular, for the following reasons:
+
+    1. Methods/properties sometimes don't contain a `__module__` slot.
+    2. They require that the first passed-in argument is an instance
+       of ``torch.Tensor``.
+
+    Examples
+    --------
+    >>> is_tensor_method_or_property(torch.Tensor.add)
+    True
+    >>> is_tensor_method_or_property(torch.add)
+    False
+    """
+    return func in _get_tensor_methods() or func.__name__ == "__get__"
 
 
 class TorchFunctionMode:
@@ -158,4 +212,4 @@ def _dispatch_unary_torch_function(
     raise TypeError(message)
 
 
-__all__ = ["TorchFunctionMode"]
+__all__ = ["TorchFunctionMode", "is_tensor_method_or_property"]
