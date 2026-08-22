@@ -33,6 +33,30 @@ impl Device {
         }
     }
 
+    /// Reports whether this device executes on a Graphcore IPU accelerator.
+    #[must_use]
+    pub const fn is_ipu(self) -> bool {
+        match self {
+            Self::Cpu => false,
+        }
+    }
+
+    /// Reports whether this device executes on a Meta MTIA accelerator.
+    #[must_use]
+    pub const fn is_mtia(self) -> bool {
+        match self {
+            Self::Cpu => false,
+        }
+    }
+
+    /// Reports whether this device executes on a Maia accelerator.
+    #[must_use]
+    pub const fn is_maia(self) -> bool {
+        match self {
+            Self::Cpu => false,
+        }
+    }
+
     /// Reports whether this device executes on an Intel XPU accelerator.
     #[must_use]
     pub const fn is_xpu(self) -> bool {

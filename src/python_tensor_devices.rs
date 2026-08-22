@@ -54,6 +54,41 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nIs ``True`` if the Tensor is stored on the IPU, ``False`` otherwise.\n"]
+    #[getter]
+    fn is_ipu(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_getset_mode(slf.py(), tensor, "is_ipu")? {
+            return Ok(result);
+        }
+
+        tensor.try_borrow()?.inner().is_ipu().into_py_any(slf.py())
+    }
+
+    // PyTorch 2.13 exposes this descriptor without a docstring.
+    #[getter]
+    fn is_mtia(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_getset_mode(slf.py(), tensor, "is_mtia")? {
+            return Ok(result);
+        }
+
+        tensor.try_borrow()?.inner().is_mtia().into_py_any(slf.py())
+    }
+
+    // PyTorch 2.13 exposes this descriptor without a docstring.
+    #[getter]
+    fn is_maia(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_getset_mode(slf.py(), tensor, "is_maia")? {
+            return Ok(result);
+        }
+
+        tensor.try_borrow()?.inner().is_maia().into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nIs ``True`` if the Tensor is stored on the XPU, ``False`` otherwise.\n"]
     #[getter]
     fn is_xpu(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
