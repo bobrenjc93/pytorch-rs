@@ -1,3 +1,4 @@
+import collections
 import copy
 import importlib
 import inspect
@@ -5,6 +6,8 @@ import pickle
 import types
 import unittest
 from collections import namedtuple
+from collections.abc import Mapping, Sequence
+from types import MappingProxyType
 
 import numpy as np
 import torch_rs as torch
@@ -33,8 +36,150 @@ class TupleSubclass(tuple):
     pass
 
 
+class CopyFailingDict(dict):
+    def __copy__(self):
+        raise TypeError("copy is unavailable")
+
+
+class CopyFailingList(list):
+    def __copy__(self):
+        raise TypeError("copy is unavailable")
+
+
+class UpdateFailingDict(dict):
+    def update(self, *args, **kwargs):
+        raise TypeError("update is unavailable")
+
+
+class SetItemFailingList(list):
+    def __setitem__(self, key, value):
+        raise TypeError("item replacement is unavailable")
+
+
+class ConstructorFailingMapping(Mapping):
+    def __init__(self):
+        self.values = {"value": (1, 2)}
+
+    def __getitem__(self, key):
+        return self.values[key]
+
+    def __iter__(self):
+        return iter(self.values)
+
+    def __len__(self):
+        return len(self.values)
+
+
+class ConstructorFailingSequence(Sequence):
+    def __init__(self):
+        self.values = ((1, 2),)
+
+    def __getitem__(self, index):
+        return self.values[index]
+
+    def __len__(self):
+        return len(self.values)
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class DefaultConvertReferenceTests(unittest.TestCase):
+    @staticmethod
+    def normalize_collection(value):
+        if isinstance(value, Mapping):
+            return (
+                type(value).__name__,
+                tuple(
+                    (key, DefaultConvertReferenceTests.normalize_collection(item))
+                    for key, item in value.items()
+                ),
+            )
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            return (
+                type(value).__name__,
+                tuple(
+                    DefaultConvertReferenceTests.normalize_collection(item)
+                    for item in value
+                ),
+            )
+        return value
+
+    @classmethod
+    def collection_contract(cls, module):
+        nested_tuple = (1, 2)
+        marker = object()
+        list_subclass = ListSubclass([nested_tuple])
+        list_subclass.marker = marker
+        dict_subclass = DictSubclass(value=nested_tuple)
+        dict_subclass.marker = marker
+        cases = {
+            "list_subclass": list_subclass,
+            "dict_subclass": dict_subclass,
+            "ordered_dict": collections.OrderedDict(
+                (("first", nested_tuple), ("last", (3,)))
+            ),
+            "defaultdict": collections.defaultdict(list, value=nested_tuple),
+            "user_list": collections.UserList([nested_tuple]),
+            "user_dict": collections.UserDict(value=nested_tuple),
+            "deque": collections.deque([nested_tuple]),
+            "mapping_proxy": MappingProxyType({"value": nested_tuple}),
+            "tuple_subclass": TupleSubclass((nested_tuple,)),
+            "bytearray": bytearray(b"ab"),
+            "range": range(3),
+            "memoryview": memoryview(b"ab"),
+            "data_chunk": module.utils.data.DataChunk([nested_tuple]),
+        }
+        outcomes = {}
+        for name, source in cases.items():
+            before = cls.normalize_collection(source)
+            converted = module.utils.data.default_convert(source)
+            outcomes[name] = {
+                "source": cls.normalize_collection(source),
+                "source_unchanged": cls.normalize_collection(source) == before,
+                "result": cls.normalize_collection(converted),
+                "copied": converted is not source,
+                "marker_preserved": (
+                    getattr(converted, "marker", None) is marker
+                    if hasattr(source, "marker")
+                    else None
+                ),
+                "default_factory": (
+                    converted.default_factory.__name__
+                    if isinstance(converted, collections.defaultdict)
+                    else None
+                ),
+                "data_shared": (
+                    converted.data is source.data
+                    if isinstance(source, (collections.UserList, collections.UserDict))
+                    else None
+                ),
+                "items_shared": (
+                    converted.items is source.items
+                    if type(source).__name__ == "DataChunk"
+                    else None
+                ),
+                "raw_items": (
+                    cls.normalize_collection(list(converted.raw_iterator()))
+                    if type(source).__name__ == "DataChunk"
+                    else None
+                ),
+            }
+        return outcomes
+
+    @classmethod
+    def fallback_contract(cls, module):
+        cases = {
+            "copy_failing_dict": CopyFailingDict(value=(1, 2)),
+            "update_failing_dict": UpdateFailingDict(value=(1, 2)),
+            "constructor_failing_mapping": ConstructorFailingMapping(),
+            "copy_failing_list": CopyFailingList([(1, 2)]),
+            "setitem_failing_list": SetItemFailingList([(1, 2)]),
+            "constructor_failing_sequence": ConstructorFailingSequence(),
+        }
+        return {
+            name: cls.normalize_collection(module.utils.data.default_convert(value))
+            for name, value in cases.items()
+        }
+
     @staticmethod
     def conversion_shape(module):
         tensor = module.tensor([1.0, 2.0], requires_grad=True)
@@ -219,21 +364,37 @@ class DefaultConvertReferenceTests(unittest.TestCase):
                 self.assertEqual(raised.exception.args, (NUMPY_ERROR,))
                 self.assertIs(expected(value), value)
 
-    def test_exotic_collection_subclasses_are_deliberately_unsupported(self):
-        actual = torch.utils.data.default_convert
-        expected = reference_torch.utils.data.default_convert
-        factories = (
-            lambda: ListSubclass([(1, 2)]),
-            lambda: DictSubclass(value=(1, 2)),
-            lambda: TupleSubclass(((1, 2),)),
+        wrapper_factories = (
+            lambda module: ListSubclass([np.int64(1)]),
+            lambda module: DictSubclass(value=np.int64(1)),
+            lambda module: collections.UserList([np.int64(1)]),
+            lambda module: collections.UserDict(value=np.int64(1)),
+            lambda module: TupleSubclass((np.int64(1),)),
+            lambda module: module.utils.data.DataChunk([np.int64(1)]),
         )
+        for factory in wrapper_factories:
+            actual_value = factory(torch)
+            expected_value = factory(reference_torch)
+            with self.subTest(wrapper_type=type(actual_value).__name__):
+                with self.assertRaises(TypeError) as raised:
+                    actual(actual_value)
+                self.assertEqual(raised.exception.args, (NUMPY_ERROR,))
+                converted = expected(expected_value)
+                if isinstance(converted, Mapping):
+                    converted_value = next(iter(converted.values()))
+                else:
+                    converted_value = converted[0]
+                self.assertIsInstance(converted_value, reference_torch.Tensor)
 
-        for factory in factories:
-            actual_value = factory()
-            expected_value = factory()
-            with self.subTest(value_type=type(actual_value).__name__):
-                self.assertIs(actual(actual_value), actual_value)
-                self.assertIsNot(expected(expected_value), expected_value)
+    def test_mapping_sequence_copying_and_fallbacks_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.collection_contract(torch),
+            self.collection_contract(reference_torch),
+        )
+        self.assertEqual(
+            self.fallback_contract(torch),
+            self.fallback_contract(reference_torch),
+        )
 
 
 if __name__ == "__main__":

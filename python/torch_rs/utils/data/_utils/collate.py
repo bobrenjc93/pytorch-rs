@@ -8,6 +8,7 @@ static methods.
 `default_collate` and `default_convert` are exposed to users via 'dataloader.py'.
 """
 
+import collections
 import copy
 
 from torch_rs import Tensor
@@ -65,17 +66,39 @@ def default_convert(data):
         raise TypeError(
             "torch_rs.utils.data.default_convert does not support NumPy arrays or scalars"
         )
-    if elem_type is dict:
-        clone = copy.copy(data)
-        clone.update({key: default_convert(data[key]) for key in data})
-        return clone
+    if isinstance(data, collections.abc.Mapping):
+        try:
+            if isinstance(data, collections.abc.MutableMapping):
+                # The mapping type may have extra properties, so we can't just
+                # use `type(data)(...)` to create the new mapping.
+                # Create a clone and update it if the mapping type is mutable.
+                clone = copy.copy(data)
+                clone.update({key: default_convert(data[key]) for key in data})
+                return clone
+            return elem_type({key: default_convert(data[key]) for key in data})
+        except TypeError:
+            # The mapping type may not support `copy()` / `update(mapping)`
+            # or `__init__(iterable)`.
+            return {key: default_convert(data[key]) for key in data}
     if isinstance(data, tuple) and hasattr(data, "_fields"):  # namedtuple
         return elem_type(*(default_convert(item) for item in data))
-    if elem_type is tuple:
+    if isinstance(data, tuple):
         return [default_convert(item) for item in data]
-    if elem_type is list:
-        clone = copy.copy(data)
-        for index, item in enumerate(data):
-            clone[index] = default_convert(item)
-        return clone
+    if isinstance(data, collections.abc.Sequence) and not isinstance(
+        data, (str, bytes)
+    ):
+        try:
+            if isinstance(data, collections.abc.MutableSequence):
+                # The sequence type may have extra properties, so we can't just
+                # use `type(data)(...)` to create the new sequence.
+                # Create a clone and update it if the sequence type is mutable.
+                clone = copy.copy(data)
+                for index, item in enumerate(data):
+                    clone[index] = default_convert(item)
+                return clone
+            return elem_type([default_convert(item) for item in data])
+        except TypeError:
+            # The sequence type may not support `copy()` / `__setitem__`
+            # or `__init__(iterable)` (e.g., `range`).
+            return [default_convert(item) for item in data]
     return data
