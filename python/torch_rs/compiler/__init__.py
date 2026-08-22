@@ -4,6 +4,7 @@ from typing import Any
 
 __all__ = [
     "assume_constant_result",
+    "reset",
     "get_default_backend",
     "is_compiling",
     "is_dynamo_compiling",
@@ -27,6 +28,17 @@ def assume_constant_result(fn):
     """
     fn._dynamo_marked_constant = True
     return fn
+
+
+def reset() -> None:
+    """
+    Reset the in-process compiler state.
+
+    This function clears Dynamo's in-memory compilation caches and related
+    process-local state used by :func:`torch.compile`. It does not delete
+    filesystem caches, such as Inductor's disk cache.
+    """
+    return None
 
 
 def get_default_backend() -> str | Callable[..., Any]:

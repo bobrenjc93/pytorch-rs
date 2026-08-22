@@ -4,7 +4,6 @@ import importlib
 import inspect
 import pickle
 import pickletools
-import threading
 import types
 import typing
 import unittest
@@ -18,13 +17,12 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
+class CompilerResetReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "compiler.get_default_backend differentials require pinned "
-                "PyTorch 2.13.0"
+                "compiler.reset differentials require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -36,59 +34,73 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
-    def supported_state_outcome(self, module):
-        function = module.compiler.get_default_backend
+    def compiler_state(self, module):
+        return (
+            module.compiler.get_default_backend(),
+            module.compiler.is_compiling(),
+            module.compiler.is_dynamo_compiling(),
+            module.compiler.is_exporting(),
+        )
 
-        def query_outcome():
-            before = module.is_grad_enabled()
-            first = function()
-            middle = module.is_grad_enabled()
-            second = function()
-            after = module.is_grad_enabled()
+    def eager_tensor_outcome(self, module):
+        leaf = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0]],
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        view = leaf.view(4)
+        weights = module.tensor([2.0, -1.0, 0.5, 3.0])
+        loss = (view * weights).sum()
+        leaf_identity = id(leaf)
+        view_identity = id(view)
+        leaf_pointer = leaf.data_ptr()
+        view_offset = view.storage_offset()
+        state = self.compiler_state(module)
+
+        returns_none = [module.compiler.reset() is None for _ in range(5)]
+        state_after = self.compiler_state(module)
+        tensor_before_backward = (
+            id(leaf) == leaf_identity,
+            id(view) == view_identity,
+            leaf.data_ptr() == leaf_pointer,
+            view.data_ptr() == leaf_pointer,
+            view.storage_offset() == view_offset,
+            leaf.tolist(),
+            view.tolist(),
+            leaf.grad is None,
+        )
+        loss.backward()
+        return (
+            returns_none,
+            state,
+            state_after,
+            tensor_before_backward,
+            leaf.grad.tolist(),
+        )
+
+    def grad_mode_outcome(self, module):
+        def observe():
+            before_grad = module.is_grad_enabled()
+            before_state = self.compiler_state(module)
+            result = module.compiler.reset()
+            after_state = self.compiler_state(module)
+            after_grad = module.is_grad_enabled()
             return (
-                before,
-                type(first) is str,
-                first,
-                middle,
-                type(second) is str,
-                second,
-                after,
+                before_grad,
+                result is None,
+                before_state,
+                after_state,
+                after_grad,
             )
 
-        states = [query_outcome()]
+        states = [observe()]
         with module.no_grad():
-            states.append(query_outcome())
+            states.append(observe())
             with module.no_grad():
-                states.append(query_outcome())
-            states.append(query_outcome())
-        states.append(query_outcome())
-
-        worker_count = 8
-        barrier = threading.Barrier(worker_count)
-        worker_states = [None] * worker_count
-        errors = []
-
-        def worker(index):
-            try:
-                context = module.no_grad() if index % 2 else contextlib.nullcontext()
-                with context:
-                    barrier.wait(timeout=10)
-                    worker_states[index] = query_outcome()
-            except BaseException as error:
-                errors.append((type(error).__name__, str(error)))
-
-        threads = [
-            threading.Thread(target=worker, args=(index,))
-            for index in range(worker_count)
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=10)
-
-        self.assertFalse(any(thread.is_alive() for thread in threads))
-        self.assertEqual(errors, [])
-        return states, worker_states
+                states.append(observe())
+            states.append(observe())
+        states.append(observe())
+        return states
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -102,69 +114,27 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_supported_default_threaded_and_grad_states_match_pytorch_2_13(self):
-        getter = reference_torch.compiler.get_default_backend
-        setter = reference_torch.compiler.set_default_backend
-        original_backend = getter()
+    def test_eager_tensor_graph_and_grad_mode_behavior_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.eager_tensor_outcome(torch),
+            self.eager_tensor_outcome(reference_torch),
+        )
+        self.assertEqual(
+            self.grad_mode_outcome(torch),
+            self.grad_mode_outcome(reference_torch),
+        )
 
-        try:
-            setter(None)
-            self.assertEqual(
-                self.supported_state_outcome(torch),
-                self.supported_state_outcome(reference_torch),
-            )
-        finally:
-            setter(original_backend)
-
-        self.assertEqual(torch.compiler.get_default_backend(), "inductor")
-        self.assertIs(getter(), original_backend)
-
-    def test_reference_only_setter_bounds_alternate_string_and_callable_states(self):
-        actual = torch.compiler.get_default_backend
-        expected = reference_torch.compiler.get_default_backend
-        setter = reference_torch.compiler.set_default_backend
-        original_backend = expected()
-        alternate_name = "".join(("ea", "ger"))
-
-        def alternate_callable(graph_module, example_inputs):
-            return graph_module.forward
-
-        try:
-            self.assertIs(setter(None), None)
-            self.assertEqual(actual(), "inductor")
-            self.assertEqual(expected(), "inductor")
-
-            self.assertIs(setter(alternate_name), None)
-            self.assertEqual(actual(), "inductor")
-            self.assertIs(expected(), alternate_name)
-
-            self.assertIs(setter(alternate_callable), None)
-            self.assertEqual(actual(), "inductor")
-            self.assertIs(expected(), alternate_callable)
-
-            self.assertIs(setter(None), None)
-            self.assertEqual(actual(), "inductor")
-            self.assertEqual(expected(), "inductor")
-        finally:
-            setter(original_backend)
-
-        self.assertEqual(actual(), "inductor")
-        self.assertIs(expected(), original_backend)
-
-    def test_signature_annotations_documentation_and_identity_match(self):
+    def test_signature_documentation_and_identity_match_pytorch_2_13(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")
         expected_compiler = importlib.import_module("torch.compiler")
-        actual = actual_compiler.get_default_backend
-        expected = expected_compiler.get_default_backend
+        actual = actual_compiler.reset
+        expected = expected_compiler.reset
 
         self.assertIs(torch.compiler, actual_compiler)
         self.assertIs(reference_torch.compiler, expected_compiler)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
-        self.assertEqual(
-            str(inspect.signature(actual)),
-            str(inspect.signature(expected)),
-        )
+        self.assertEqual(str(inspect.signature(actual)), str(inspect.signature(expected)))
         self.assertEqual(actual.__annotations__, expected.__annotations__)
         self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
         self.assertEqual(actual.__name__, expected.__name__)
@@ -184,11 +154,11 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
             hasattr(expected, "__text_signature__"),
         )
 
-    def test_exports_copy_and_pickle_match_pytorch_2_13(self):
+    def test_exports_copying_and_pickling_match_pytorch_2_13(self):
         actual_compiler = torch.compiler
         expected_compiler = reference_torch.compiler
-        actual = actual_compiler.get_default_backend
-        expected = expected_compiler.get_default_backend
+        actual = actual_compiler.reset
+        expected = expected_compiler.reset
         supported = {
             "assume_constant_result",
             "reset",
@@ -207,8 +177,8 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("compiler"),
         )
         self.assertEqual(
-            torch.__all__.count("get_default_backend"),
-            reference_torch.__all__.count("get_default_backend"),
+            torch.__all__.count("reset"),
+            reference_torch.__all__.count("reset"),
         )
 
         for module in (actual_compiler, expected_compiler):
@@ -221,7 +191,7 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
-            self.assertNotIn("get_default_backend", namespace)
+            self.assertNotIn("reset", namespace)
 
         for function in (actual, expected):
             self.assertIs(copy.copy(function), function)
@@ -236,34 +206,37 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.compiler.get_default_backend
-        expected = reference_torch.compiler.get_default_backend
+        actual = torch.compiler.reset
+        expected = reference_torch.compiler.reset
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
+            (lambda: actual(state=None), lambda: expected(state=None)),
             (
-                lambda: actual(backend=None),
-                lambda: expected(backend=None),
-            ),
-            (
-                lambda: actual(None, backend=None),
-                lambda: expected(None, backend=None),
+                lambda: actual(None, state=None),
+                lambda: expected(None, state=None),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_setter_and_compilation_remain_deliberately_unsupported(self):
-        self.assertTrue(hasattr(reference_torch.compiler, "set_default_backend"))
-        self.assertIn("set_default_backend", reference_torch.compiler.__all__)
-        self.assertFalse(hasattr(torch.compiler, "set_default_backend"))
-        self.assertNotIn("set_default_backend", torch.compiler.__all__)
-
+    def test_compilation_and_cache_serialization_remain_unsupported(self):
         self.assertTrue(callable(reference_torch.compile))
         self.assertTrue(callable(reference_torch.compiler.compile))
+        self.assertTrue(callable(reference_torch.compiler.save_cache_artifacts))
+        self.assertTrue(callable(reference_torch.compiler.load_cache_artifacts))
         self.assertFalse(hasattr(torch, "compile"))
-        self.assertFalse(hasattr(torch.compiler, "compile"))
+        self.assertFalse(hasattr(torch, "export"))
+        for name in (
+            "compile",
+            "load_compiled_function",
+            "save_cache_artifacts",
+            "load_cache_artifacts",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(torch.compiler, name))
+                self.assertNotIn(name, torch.compiler.__all__)
 
 
 if __name__ == "__main__":
