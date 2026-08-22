@@ -5105,6 +5105,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 93.1
       }
+    },
+    {
+      "key": "pr:668",
+      "recordedAt": "2026-08-22T17:57:05.119Z",
+      "label": "PR #668",
+      "kind": "leaf",
+      "prNumber": 668,
+      "title": "Support legacy rank-3 functional dropout2d identities",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 84.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 93.2
+      }
     }
   ]
 }
