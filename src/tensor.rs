@@ -12,6 +12,7 @@ use crate::storage::Storage;
 use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
+const F32_QUIET_NAN_MASK: u32 = 0x0040_0000;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
@@ -3176,14 +3177,18 @@ fn apply_reciprocal_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Ve
     // the shared saved-input unary node without retaining output storage.
     if let Some(saved_values) = input.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
-        gradient.extend(saved_values.iter().zip(upstream).map(
-            |(&saved_value, &upstream_value)| {
-                reciprocal_backward_value(saved_value, upstream_value)
+        gradient.extend(saved_values.iter().zip(upstream).enumerate().map(
+            |(index, (&saved_value, &upstream_value))| {
+                reciprocal_backward_value(
+                    saved_value,
+                    upstream_value,
+                    Some((saved_values.len(), index)),
+                )
             },
         ));
     } else {
         gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
-            reciprocal_backward_value(input.value_at_linear_index(index), value)
+            reciprocal_backward_value(input.value_at_linear_index(index), value, None)
         }));
     }
 }
@@ -4408,16 +4413,48 @@ fn reciprocal_value(value: f32) -> f32 {
 }
 
 #[inline]
-fn reciprocal_backward_value(input: f32, upstream: f32) -> f32 {
+fn reciprocal_backward_value(
+    input: f32,
+    upstream: f32,
+    contiguous_index: Option<(usize, usize)>,
+) -> f32 {
     let result = reciprocal_value(input);
     let negative_upstream = negate_value(upstream);
     let squared_result = result * result;
     if negative_upstream.is_nan() && squared_result.is_nan() {
-        // TensorIterator's CPU multiplication keeps the right-hand NaN when
-        // both operands are NaNs; scalar Rust multiplication keeps the left.
-        squared_result
+        if contiguous_index.is_some_and(|(elements, index)| {
+            pytorch_contiguous_multiply_uses_left_nan(elements, index)
+        }) {
+            f32::from_bits(negative_upstream.to_bits() | F32_QUIET_NAN_MASK)
+        } else {
+            squared_result
+        }
     } else {
         negative_upstream * squared_result
+    }
+}
+
+fn pytorch_contiguous_multiply_uses_left_nan(elements: usize, index: usize) -> bool {
+    // PyTorch 2.13's AVX2 and AVX512 float32 multiplication kernels select the
+    // right NaN in complete sixteen-lane groups. Within the compiler-vectorized
+    // tail, each partial eight-lane group selects the left NaN for its first
+    // four lanes and, for a seven-lane group, its final lane. The second group's
+    // three-lane tail also selects its final left NaN. These choices are
+    // observable only when both operands are NaNs with different payloads or
+    // signs.
+    let tail = elements % 16;
+    let tail_start = elements - tail;
+    if index < tail_start {
+        return false;
+    }
+    let tail_index = index - tail_start;
+    match tail {
+        4..=6 => tail_index < 4,
+        7 => tail_index < 4 || tail_index == 6,
+        11 => tail_index == 10,
+        12..=14 => (8..12).contains(&tail_index),
+        15 => (8..12).contains(&tail_index) || tail_index == 14,
+        _ => false,
     }
 }
 

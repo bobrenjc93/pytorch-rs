@@ -112,6 +112,57 @@ fn reciprocal_vjp_matches_pytorch_for_signed_zero_non_finites_and_nans() {
 }
 
 #[test]
+fn reciprocal_vjp_matches_pytorch_paired_nan_vector_boundaries() {
+    const INPUT_NAN_BITS: u32 = 0x7fc1_2345;
+    const LEFT_NAN_BITS: u32 = 0xffc5_abcd;
+    const RIGHT_NAN_BITS: u32 = INPUT_NAN_BITS;
+    let cases = [
+        (3, "RRR"),
+        (4, "LLLL"),
+        (5, "LLLLR"),
+        (8, "RRRRRRRR"),
+        (11, "RRRRRRRRRRL"),
+        (12, "RRRRRRRRLLLL"),
+        (16, "RRRRRRRRRRRRRRRR"),
+        (19, "RRRRRRRRRRRRRRRRRRR"),
+        (20, "RRRRRRRRRRRRRRRRLLLL"),
+        (27, "RRRRRRRRRRRRRRRRRRRRRRRRRRL"),
+        (32, "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR"),
+        (36, "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRLLLL"),
+    ];
+
+    for (elements, pattern) in cases {
+        let leaf = Tensor::from_vec(vec![f32::from_bits(INPUT_NAN_BITS); elements], [elements])
+            .unwrap()
+            .with_requires_grad(true);
+        let weights =
+            Tensor::from_vec(vec![f32::from_bits(0x7fc5_abcd); elements], [elements]).unwrap();
+        leaf.reciprocal()
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+
+        let expected = pattern.bytes().map(|operand| match operand {
+            b'L' => LEFT_NAN_BITS,
+            b'R' => RIGHT_NAN_BITS,
+            _ => unreachable!("paired-NaN pattern must name the selected operand"),
+        });
+        assert!(
+            leaf.grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected),
+            "paired-NaN mismatch for {elements} elements"
+        );
+    }
+}
+
+#[test]
 fn reciprocal_preserves_scalar_empty_offset_and_strided_autograd() {
     let scalar = Tensor::from_vec(vec![2.0], [])
         .unwrap()

@@ -219,6 +219,46 @@ class TensorReciprocalReferenceTests(unittest.TestCase):
             tensors[0][1], tensors[1][1], case="special gradient"
         )
 
+    def test_autograd_paired_nan_short_and_vector_blocks_match_pytorch_2_13(self):
+        cases = (
+            (3, "RRR"),
+            (4, "LLLL"),
+            (5, "LLLLR"),
+            (8, "RRRRRRRR"),
+            (11, "RRRRRRRRRRL"),
+            (12, "RRRRRRRRLLLL"),
+            (16, "RRRRRRRRRRRRRRRR"),
+            (19, "RRRRRRRRRRRRRRRRRRR"),
+            (20, "RRRRRRRRRRRRRRRRLLLL"),
+            (27, "RRRRRRRRRRRRRRRRRRRRRRRRRRL"),
+            (32, "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR"),
+            (36, "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRLLLL"),
+        )
+        selected_bits = {
+            "L": np.uint32(0xFFC5_ABCD),
+            "R": np.uint32(0x7FC1_2345),
+        }
+        for elements, pattern in cases:
+            expected_bits = np.asarray(
+                [selected_bits[operand] for operand in pattern], dtype=np.uint32
+            )
+            gradients = []
+            for module in (torch, reference_torch):
+                input_bits = np.full(elements, 0x7FC1_2345, dtype=np.uint32)
+                weight_bits = np.full(elements, 0x7FC5_ABCD, dtype=np.uint32)
+                leaf = module.tensor(
+                    memoryview(input_bits.view(np.float32)), requires_grad=True
+                )
+                weights = module.tensor(memoryview(weight_bits.view(np.float32)))
+                (leaf.reciprocal() * weights).sum().backward()
+                gradients.append(
+                    np.asarray(leaf.grad, dtype=np.float32).view(np.uint32)
+                )
+
+            with self.subTest(elements=elements):
+                np.testing.assert_array_equal(gradients[1], expected_bits)
+                np.testing.assert_array_equal(gradients[0], gradients[1])
+
     def test_autograd_accumulation_graph_freeing_and_no_grad_match_pytorch_2_13(
         self,
     ):
