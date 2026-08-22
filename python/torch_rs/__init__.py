@@ -25,6 +25,11 @@ torch = _sys.modules[__name__]
 newaxis = None
 
 
+# PyTorch exposes this private build probe through its immutable variable-
+# function owner, but not through ``torch._C`` or wildcard imports.
+_nnpack_available = _native._VariableFunctionsClass._nnpack_available
+
+
 def are_deterministic_algorithms_enabled() -> _builtins.bool:
     r"""Returns True if the global deterministic flag is turned on. Refer to
     :func:`torch.use_deterministic_algorithms` documentation for more details.

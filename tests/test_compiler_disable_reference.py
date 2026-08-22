@@ -15,9 +15,11 @@ except ImportError:
     reference_torch = None
 
 
-@torch.compiler.assume_constant_result
 def _actual_picklable_function(value):
     return value + 1
+
+
+_actual_picklable_function = torch.compiler.disable(_actual_picklable_function)
 
 
 def _reference_picklable_function(value):
@@ -25,34 +27,18 @@ def _reference_picklable_function(value):
 
 
 if reference_torch is not None:
-    _reference_picklable_function = reference_torch.compiler.assume_constant_result(
+    _reference_picklable_function = reference_torch.compiler.disable(
         _reference_picklable_function
     )
 
 
-class _SlotCallable:
-    __slots__ = ()
-
-    def __call__(self):
-        return "called"
-
-
-class _RejectingCallable:
-    def __setattr__(self, name, value):
-        raise RuntimeError("attribute writes forbidden")
-
-    def __call__(self):
-        return "called"
-
-
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
+class CompilerDisableReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "compiler.assume_constant_result differentials require pinned "
-                "PyTorch 2.13.0"
+                "compiler.disable differentials require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -76,98 +62,160 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def decorator_outcome(self, module):
+    def wrapped_outcome(self, module, recursive):
         calls = []
+        reason = object()
 
-        @module.compiler.assume_constant_result
-        def calculate(value, *, scale=1):
+        def calculate(value: int, *, scale: int = 1) -> int:
+            """Calculate eagerly."""
             calls.append((value, scale))
             return value * scale + len(calls)
 
-        return (
-            calculate._dynamo_marked_constant is True,
-            calculate(3, scale=2),
-            calculate(3, scale=2),
-            calls,
-            str(inspect.signature(calculate)),
-            calculate.__name__,
-            calculate.__module__,
+        original = calculate
+        shared_attribute = []
+        original.custom_attribute = shared_attribute
+        wrapped = module.compiler.disable(
+            original,
+            recursive=recursive,
+            reason=reason,
         )
-
-    def test_decorator_use_and_eager_behavior_match_pytorch_2_13(self):
-        self.assertEqual(
-            self.decorator_outcome(torch),
-            self.decorator_outcome(reference_torch),
+        metadata = (
+            wrapped._torchdynamo_disable is True,
+            wrapped._torchdynamo_disable_msg is reason,
+            wrapped._torchdynamo_orig_callable is original,
+            wrapped._torchdynamo_wrapper_id == id(wrapped),
+            wrapped._torchdynamo_disable_recursive is recursive,
+            wrapped.__wrapped__ is original,
         )
+        reflection = (
+            type(wrapped) is types.FunctionType,
+            wrapped is not original,
+            inspect.unwrap(wrapped) is original,
+            wrapped.custom_attribute is shared_attribute,
+            not hasattr(original, "_torchdynamo_disable"),
+            str(inspect.signature(wrapped)),
+            wrapped.__name__,
+            wrapped.__qualname__,
+            wrapped.__module__.split(".")[-1],
+            wrapped.__doc__,
+            wrapped.__annotations__ is original.__annotations__,
+        )
+        values = (wrapped(3, scale=2), wrapped(3, scale=2), calls)
+        return metadata, reflection, values
 
-    def test_direct_calls_and_noncallable_targets_match_pytorch_2_13(self):
-        for module in (torch, reference_torch):
-            with self.subTest(module=module.__name__):
+    def test_direct_wrapping_and_eager_calls_match_pytorch_2_13(self):
+        for recursive in (True, False):
+            with self.subTest(recursive=recursive):
+                self.assertEqual(
+                    self.wrapped_outcome(torch, recursive),
+                    self.wrapped_outcome(reference_torch, recursive),
+                )
 
-                def function(value):
-                    return value + 1
-
-                positional = module.compiler.assume_constant_result(function)
-                keyword = module.compiler.assume_constant_result(fn=function)
-                self.assertIs(positional, function)
-                self.assertIs(keyword, function)
-                self.assertIs(function._dynamo_marked_constant, True)
-                self.assertEqual(function(4), 5)
-
-                target = types.SimpleNamespace(existing="preserved")
-                self.assertIs(module.compiler.assume_constant_result(target), target)
-                self.assertEqual(target.existing, "preserved")
-                self.assertIs(target._dynamo_marked_constant, True)
-
-    def test_repeated_marking_matches_pytorch_2_13(self):
+    def test_method_binding_matches_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):
 
-            def function():
-                return "eager"
+            class Accumulator:
+                def __init__(self):
+                    self.total = 0
 
-            sentinel = object()
-            function._dynamo_marked_constant = sentinel
-            function.other_metadata = "preserved"
-            first = module.compiler.assume_constant_result(function)
-            second = module.compiler.assume_constant_result(first)
+                def add(self, value):
+                    self.total += value
+                    return self.total
+
+            original = Accumulator.add
+            Accumulator.add = module.compiler.disable(
+                Accumulator.add,
+                recursive=False,
+                reason="method",
+            )
+            left = Accumulator()
+            right = Accumulator()
             outcomes.append(
                 (
-                    first is function,
-                    second is function,
-                    function._dynamo_marked_constant is True,
-                    function.other_metadata,
-                    function(),
+                    isinstance(left.add, types.MethodType),
+                    left.add.__self__ is left,
+                    left.add.__func__ is Accumulator.add,
+                    Accumulator.add.__wrapped__ is original,
+                    Accumulator.add._torchdynamo_orig_callable is original,
+                    Accumulator.add._torchdynamo_disable_recursive is False,
+                    Accumulator.add._torchdynamo_disable_msg,
+                    left.add(2),
+                    left.add(3),
+                    right.add(7),
                 )
             )
 
         self.assertEqual(outcomes[0], outcomes[1])
 
-    def test_invalid_target_errors_match_pytorch_2_13(self):
-        target_factories = (
-            lambda: None,
-            lambda: 1,
-            list,
-            lambda: len,
-            _SlotCallable,
-            _RejectingCallable,
-        )
-        for case, target_factory in enumerate(target_factories):
-            with self.subTest(case=case):
-                actual_target = target_factory()
-                expected_target = target_factory()
-                self.assert_error_matches(
-                    lambda: torch.compiler.assume_constant_result(actual_target),
-                    lambda: reference_torch.compiler.assume_constant_result(
-                        expected_target
-                    ),
+    def test_direct_bound_methods_and_repeated_wrapping_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+
+            class Counter:
+                def add(self, value):
+                    return value + 1
+
+            counter = Counter()
+            bound = counter.add
+            wrapped_bound = module.compiler.disable(bound, recursive=False)
+
+            def function(value):
+                return value + 2
+
+            first = module.compiler.disable(function, reason="first")
+            second = module.compiler.disable(
+                first,
+                recursive=False,
+                reason="second",
+            )
+            outcomes.append(
+                (
+                    wrapped_bound(3),
+                    wrapped_bound.__wrapped__ is bound,
+                    wrapped_bound._torchdynamo_orig_callable is bound,
+                    second(3),
+                    second is not first,
+                    second.__wrapped__ is function,
+                    second._torchdynamo_orig_callable is function,
+                    second._torchdynamo_disable_msg,
+                    second._torchdynamo_disable_recursive,
                 )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_truthiness_and_reason_metadata_match_pytorch_2_13(self):
+        for recursive in (0, 1, [], [1], None, "recursive"):
+            reason = object()
+            outcomes = []
+            for module in (torch, reference_torch):
+
+                def function():
+                    return "eager"
+
+                wrapped = module.compiler.disable(
+                    function,
+                    recursive=recursive,
+                    reason=reason,
+                )
+                outcomes.append(
+                    (
+                        wrapped(),
+                        wrapped._torchdynamo_disable_recursive,
+                        type(wrapped._torchdynamo_disable_recursive),
+                        wrapped._torchdynamo_disable_msg is reason,
+                    )
+                )
+
+            with self.subTest(recursive=recursive):
+                self.assertEqual(outcomes[0], outcomes[1])
 
     def test_signature_documentation_and_ownership_match_pytorch_2_13(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")
         expected_compiler = importlib.import_module("torch.compiler")
-        actual = actual_compiler.assume_constant_result
-        expected = expected_compiler.assume_constant_result
+        actual = actual_compiler.disable
+        expected = expected_compiler.disable
 
         self.assertIs(torch.compiler, actual_compiler)
         self.assertIs(reference_torch.compiler, expected_compiler)
@@ -197,8 +245,8 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
     def test_exports_copying_and_pickling_match_pytorch_2_13(self):
         actual_compiler = torch.compiler
         expected_compiler = reference_torch.compiler
-        actual = actual_compiler.assume_constant_result
-        expected = expected_compiler.assume_constant_result
+        actual = actual_compiler.disable
+        expected = expected_compiler.disable
         supported = {
             "assume_constant_result",
             "reset",
@@ -219,8 +267,8 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("compiler"),
         )
         self.assertEqual(
-            torch.__all__.count("assume_constant_result"),
-            reference_torch.__all__.count("assume_constant_result"),
+            torch.__all__.count("disable"),
+            reference_torch.__all__.count("disable"),
         )
 
         for module in (actual_compiler, expected_compiler):
@@ -233,7 +281,7 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
-            self.assertNotIn("assume_constant_result", namespace)
+            self.assertNotIn("disable", namespace)
 
         for function in (actual, expected):
             self.assertIs(copy.copy(function), function)
@@ -247,46 +295,47 @@ class CompilerAssumeConstantResultReferenceTests(unittest.TestCase):
                     self.pickle_shape(expected, protocol),
                 )
 
-        for function in (
-            _actual_picklable_function,
-            _reference_picklable_function,
-        ):
-            self.assertIs(function._dynamo_marked_constant, True)
+        for function in (_actual_picklable_function, _reference_picklable_function):
             self.assertIs(copy.copy(function), function)
             self.assertIs(copy.deepcopy(function), function)
             self.assertEqual(function(4), 5)
+            self.assertIs(function._torchdynamo_disable, True)
+            self.assertIs(function._torchdynamo_disable_recursive, True)
             for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-                with self.subTest(marked=function.__name__, protocol=protocol):
+                with self.subTest(wrapped=function.__name__, protocol=protocol):
                     self.assertIs(
                         pickle.loads(pickle.dumps(function, protocol)), function
                     )
 
-    def test_call_shape_errors_match_pytorch_2_13(self):
-        actual = torch.compiler.assume_constant_result
-        expected = reference_torch.compiler.assume_constant_result
-        actual_function = lambda: None
-        expected_function = lambda: None
+    def test_supported_errors_match_pytorch_2_13(self):
+        actual = torch.compiler.disable
+        expected = reference_torch.compiler.disable
+        actual_function = lambda value, /: value
+        expected_function = lambda value, /: value
         cases = (
-            (lambda: actual(), lambda: expected()),
             (
-                lambda: actual(actual_function, actual_function),
-                lambda: expected(expected_function, expected_function),
+                lambda: actual(actual_function, True, "reason"),
+                lambda: expected(expected_function, True, "reason"),
             ),
             (
                 lambda: actual(actual_function, fn=actual_function),
                 lambda: expected(expected_function, fn=expected_function),
             ),
             (
-                lambda: actual(actual_function, extra=True),
-                lambda: expected(expected_function, extra=True),
+                lambda: actual(actual_function, recursive=True, extra=True),
+                lambda: expected(expected_function, recursive=True, extra=True),
+            ),
+            (
+                lambda: actual(actual_function)(value=1),
+                lambda: expected(expected_function)(value=1),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_state_queries_stay_eager_and_graph_execution_stays_unsupported(self):
-        @torch.compiler.assume_constant_result
+    def test_compilation_stays_unsupported_and_eager_state_stays_false(self):
+        @torch.compiler.disable
         def function():
             return (
                 torch.compiler.is_compiling(),
