@@ -96,7 +96,16 @@ is_tensor.__module__ = "torch_rs"
 const IS_STORAGE_SOURCE: &CStr = cr#"
 import copy as _copy
 from typing import Any as _Any
+from typing import Protocol as _Protocol
 from typing import TypeGuard as _TypeGuard
+
+
+class TypedStorage(_Protocol):
+    """Annotation-only stand-in for PyTorch's unsupported typed storage."""
+
+
+class UntypedStorage(_Protocol):
+    """Annotation-only stand-in for PyTorch's unsupported untyped storage."""
 
 
 def is_storage(obj: _Any, /) -> _TypeGuard["TypedStorage | UntypedStorage"]:

@@ -166,6 +166,12 @@ class IsStorageReferenceTests(unittest.TestCase):
         self.assertEqual(actual.__annotations__, expected.__annotations__)
         self.assertEqual(inspect.get_annotations(actual), inspect.get_annotations(expected))
         self.assertEqual(inspect.signature(actual), inspect.signature(expected))
+        actual_hints = typing.get_type_hints(actual)
+        expected_hints = typing.get_type_hints(expected)
+        self.assertEqual(
+            str(actual_hints).replace("torch_rs._is_storage", "torch.storage"),
+            str(expected_hints),
+        )
         self.assertIs(
             typing.get_origin(actual.__annotations__["return"]),
             typing.TypeGuard,

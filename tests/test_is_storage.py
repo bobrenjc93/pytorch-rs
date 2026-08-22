@@ -216,6 +216,31 @@ class IsStorageTests(unittest.TestCase):
             typing.get_args(function.__annotations__["return"]),
             (typing.ForwardRef("TypedStorage | UntypedStorage"),),
         )
+        resolved_annotations = typing.get_type_hints(function)
+        self.assertIs(resolved_annotations["obj"], typing.Any)
+        self.assertIs(
+            typing.get_origin(resolved_annotations["return"]),
+            typing.TypeGuard,
+        )
+        storage_union = typing.get_args(resolved_annotations["return"])[0]
+        self.assertIs(typing.get_origin(storage_union), types.UnionType)
+        storage_types = typing.get_args(storage_union)
+        self.assertEqual(
+            tuple(storage_type.__name__ for storage_type in storage_types),
+            ("TypedStorage", "UntypedStorage"),
+        )
+        self.assertTrue(
+            all(
+                storage_type.__module__ == "torch_rs._is_storage"
+                for storage_type in storage_types
+            )
+        )
+        self.assertTrue(
+            all(
+                getattr(storage_type, "_is_protocol", False)
+                for storage_type in storage_types
+            )
+        )
         self.assertEqual(inspect.signature(function), expected_signature)
         self.assertEqual(
             str(inspect.signature(function)),
@@ -250,6 +275,14 @@ class IsStorageTests(unittest.TestCase):
         for name in ("storage", "storage_type", "untyped_storage", "_typed_storage"):
             with self.subTest(owner="Tensor", name=name):
                 self.assertFalse(hasattr(torch.Tensor, name))
+
+        for storage_type in typing.get_args(
+            typing.get_args(typing.get_type_hints(torch.is_storage)["return"])[0]
+        ):
+            with self.subTest(annotation_type=storage_type.__name__):
+                self.assertIs(torch.is_storage(storage_type), False)
+                with self.assertRaises(TypeError):
+                    storage_type()
 
     def test_positional_only_binding_errors_match_pytorch_2_13(self):
         value = torch.tensor([1.0])
