@@ -83,32 +83,150 @@ class TensorReciprocalTests(unittest.TestCase):
             self.assertFalse(function_output.is_set_to(source))
             self.assertFalse(method_output.is_set_to(function_output))
 
-    def test_grad_recording_is_rejected_before_planning_and_no_grad_is_allowed(self):
+    def test_method_records_grad_for_scalar_empty_offset_and_noncontiguous_inputs(self):
+        scalar = torch.tensor(2.0, requires_grad=True)
+        scalar_output = scalar.reciprocal()
+        self.assertTrue(scalar_output.requires_grad)
+        self.assertFalse(scalar_output.is_leaf)
+        self.assertEqual(scalar_output.shape, ())
+        self.assertEqual(scalar_output.stride(), ())
+        scalar_output.backward()
+        self.assertEqual(scalar.grad.item(), -0.25)
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        empty_output = empty.reciprocal()
+        self.assertTrue(empty_output.requires_grad)
+        self.assertFalse(empty_output.is_leaf)
+        self.assertEqual(empty_output.shape, (2, 0, 3))
+        self.assertEqual(empty_output.stride(), (3, 3, 1))
+        self.assertFalse(empty_output.is_set_to(empty))
+        empty_output.sum().backward()
+        self.assertEqual(empty.grad.shape, (2, 0, 3))
+        self.assertEqual(empty.grad.numel(), 0)
+
         leaf = torch.tensor(
+            np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            requires_grad=True,
+        )
+        view = leaf.transpose(0, 2)[1]
+        output = view.reciprocal()
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        self.assertEqual(output.shape, (3, 2))
+        self.assertEqual(output.stride(), (1, 3))
+        self.assertEqual(output.storage_offset(), 0)
+        self.assertFalse(output.is_set_to(view))
+        weights = torch.tensor(
+            np.arange(1, 7, dtype=np.float32).reshape(3, 2).tolist()
+        )
+        loss = (output * weights).sum()
+        loss.backward()
+        expected = np.zeros((2, 3, 4), dtype=np.float32)
+        expected[:, :, 1] = (
+            -np.asarray(weights)
+            * np.square(np.reciprocal(np.asarray(view, dtype=np.float32)))
+        ).transpose(1, 0)
+        np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            loss.backward()
+
+    def test_method_vjp_matches_pytorch_special_value_bits(self):
+        input_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x0080_0000,
+                0x8080_0000,
+                0x3EAA_AAAB,
+                0xBEAA_AAAB,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7F81_2345,
+                0xFF81_2345,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        weight_bits = np.asarray(
+            (
+                0x3F80_0000,
+                0xBF80_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x4000_0000,
+                0xC000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FCA_BCDE,
+                0xFFCA_BCDE,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F00_0000,
+                0xBF00_0000,
+                0x7F81_2345,
+                0xFF81_2345,
+                0x7FC5_4321,
+                0xFFC1_2345,
+            ),
+            dtype=np.uint32,
+        )
+        expected_gradient_bits = np.asarray(
+            (
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFC0_0000,
+                0xFFC0_0000,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7F80_0000,
+                0xFFCA_BCDE,
+                0x7FCA_BCDE,
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0000,
+                0x7FC1_2345,
+                0xFFC1_2345,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
+        )
+        leaf = torch.tensor(
+            memoryview(input_bits.view(np.float32)), requires_grad=True
+        )
+        weights = torch.tensor(memoryview(weight_bits.view(np.float32)))
+        output = leaf.reciprocal()
+        (output * weights).sum().backward()
+
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad).view(np.uint32), expected_gradient_bits
+        )
+
+    def test_method_accumulates_across_graphs_and_honors_no_grad(self):
+        accumulated = torch.tensor([1.0, 2.0, 4.0], requires_grad=True)
+        accumulated.reciprocal().sum().backward()
+        accumulated.reciprocal().sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(accumulated.grad), [-2.0, -0.5, -0.125]
+        )
+
+        source = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
-        )
-        source = leaf.transpose(0, 1)[1]
-
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
-        ):
-            source.reciprocal()
-
-        extreme = torch.zeros((0,), requires_grad=True).reshape(
-            (0, sys.maxsize, 3)
-        )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
-        ):
-            extreme.reciprocal()
-
+        ).transpose(0, 1)[1]
         with torch.no_grad():
             actual = source.reciprocal()
             expected = torch.reciprocal(source)
-            with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
-                extreme.reciprocal()
         self.assert_matches(actual, expected, case="no_grad")
         self.assertFalse(actual.is_set_to(source))
 
@@ -116,6 +234,12 @@ class TensorReciprocalTests(unittest.TestCase):
         self.assert_matches(
             detached.reciprocal(), torch.reciprocal(detached), case="detached"
         )
+
+        extreme = torch.zeros((0,), requires_grad=True).reshape(
+            (0, sys.maxsize, 3)
+        )
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+            extreme.reciprocal()
 
     def test_tensorbase_descriptor_metadata_and_no_argument_errors(self):
         tensor = torch.tensor([4.0])
@@ -250,14 +374,13 @@ class TensorReciprocalTests(unittest.TestCase):
         self.assertEqual(forwarded.tolist(), [0.25])
 
         order.clear()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^reciprocal\(\): autograd recording is not supported$",
-        ):
-            with ForwardingMode("lower"):
-                with ForwardingMode("upper"):
-                    tensor.reciprocal()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                tracked = tensor.reciprocal()
         self.assertEqual(order, ["upper", "lower"])
+        self.assertTrue(tracked.requires_grad)
+        tracked.sum().backward()
+        self.assertEqual(tensor.grad.tolist(), [-0.0625])
 
         invalid_mode = RecordingMode()
         with self.assertRaises(TypeError):

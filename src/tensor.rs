@@ -2343,15 +2343,10 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn reciprocal(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported {
-                operation: "reciprocal",
-            });
-        }
-        self.unary_map(|value| 1.0 * value.recip())
+        let output = self.unary_map(reciprocal_value)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Reciprocal, apply_reciprocal_vjp)
     }
 
     fn scalar_div_with_output_layout(
@@ -3172,6 +3167,24 @@ fn apply_relu_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
                 relu_backward_value(input.value_at_linear_index(index), value)
             }),
         );
+    }
+}
+
+fn apply_reciprocal_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // PyTorch's derivative is `-grad * (result * result)`. Recompute the
+    // immutable forward result from the saved input so this operation can use
+    // the shared saved-input unary node without retaining output storage.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| {
+                reciprocal_backward_value(saved_value, upstream_value)
+            },
+        ));
+    } else {
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            reciprocal_backward_value(input.value_at_linear_index(index), value)
+        }));
     }
 }
 
@@ -4389,6 +4402,25 @@ fn negate_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
 }
 
+#[inline]
+fn reciprocal_value(value: f32) -> f32 {
+    1.0 * value.recip()
+}
+
+#[inline]
+fn reciprocal_backward_value(input: f32, upstream: f32) -> f32 {
+    let result = reciprocal_value(input);
+    let negative_upstream = negate_value(upstream);
+    let squared_result = result * result;
+    if negative_upstream.is_nan() && squared_result.is_nan() {
+        // TensorIterator's CPU multiplication keeps the right-hand NaN when
+        // both operands are NaNs; scalar Rust multiplication keeps the left.
+        squared_result
+    } else {
+        negative_upstream * squared_result
+    }
+}
+
 fn relu_value(value: f32) -> f32 {
     // Only exact zeros bypass the established max path, so FTZ/DAZ cannot
     // classify a subnormal as zero and NaN behavior remains unchanged.
@@ -4667,6 +4699,10 @@ mod tests {
             .with_requires_grad(true);
 
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
+        assert_eq!(
+            source.reciprocal().unwrap().grad_fn_name(),
+            Some("ReciprocalBackward0")
+        );
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
         assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
     }

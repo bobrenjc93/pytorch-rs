@@ -1804,7 +1804,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.reciprocal",
         dispatch_allocation_error: "unable to allocate reciprocal dispatch operands",
         out_unsupported_error: "reciprocal(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
+        autograd_unsupported_error: Some("reciprocal(): autograd recording is not supported"),
         apply: CoreTensor::reciprocal,
     };
 
