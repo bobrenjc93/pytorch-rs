@@ -94,8 +94,8 @@ is_tensor.__module__ = "torch_rs"
 "#;
 
 const IS_STORAGE_SOURCE: &CStr = cr#"
-import copy as _copy
 from typing import Any as _Any
+from typing import ForwardRef as _ForwardRef
 from typing import Protocol as _Protocol
 from typing import TypeGuard as _TypeGuard
 
@@ -138,9 +138,11 @@ def is_storage(obj: _Any, /) -> _TypeGuard["TypedStorage | UntypedStorage"]:
     return False
 
 
-# Do not share a mutable ForwardRef cache with another torch implementation.
-is_storage.__annotations__["return"] = _copy.deepcopy(
-    is_storage.__annotations__["return"]
+# TypeGuard subscriptions are cached by typing. Rebuild this annotation around
+# a fresh ForwardRef so a previously evaluated cache entry from another torch
+# implementation cannot leak its storage classes into get_type_hints().
+is_storage.__annotations__["return"] = is_storage.__annotations__["return"].copy_with(
+    (_ForwardRef("TypedStorage | UntypedStorage"),)
 )
 is_storage.__module__ = "torch_rs"
 "#;

@@ -2,6 +2,7 @@ import copy
 import inspect
 import pickle
 import re
+import subprocess
 import sys
 import types
 import typing
@@ -128,6 +129,58 @@ class AttributeTrap:
         raise AssertionError(f"is_storage read attribute {name}")
 
 
+PRIMED_TYPE_GUARD_CACHE_SCRIPT = r"""
+import typing
+
+
+class ForeignTypedStorage:
+    pass
+
+
+class ForeignUntypedStorage:
+    pass
+
+
+def foreign_is_storage(
+    obj: typing.Any, /
+) -> typing.TypeGuard["TypedStorage | UntypedStorage"]:
+    return False
+
+
+foreign_is_storage.__globals__["TypedStorage"] = ForeignTypedStorage
+foreign_is_storage.__globals__["UntypedStorage"] = ForeignUntypedStorage
+foreign_hints = typing.get_type_hints(foreign_is_storage)
+foreign_union = typing.get_args(foreign_hints["return"])[0]
+assert typing.get_args(foreign_union) == (
+    ForeignTypedStorage,
+    ForeignUntypedStorage,
+)
+
+import torch_rs as torch
+
+
+resolved = typing.get_type_hints(torch.is_storage)
+storage_union = typing.get_args(resolved["return"])[0]
+storage_types = typing.get_args(storage_union)
+assert tuple(storage_type.__module__ for storage_type in storage_types) == (
+    "torch_rs._is_storage",
+    "torch_rs._is_storage",
+)
+assert tuple(storage_type.__name__ for storage_type in storage_types) == (
+    "TypedStorage",
+    "UntypedStorage",
+)
+assert all(
+    getattr(storage_type, "_is_protocol", False)
+    for storage_type in storage_types
+)
+assert all(
+    storage_type not in (ForeignTypedStorage, ForeignUntypedStorage)
+    for storage_type in storage_types
+)
+"""
+
+
 class IsStorageTests(unittest.TestCase):
     def test_every_reachable_kind_returns_exact_false_without_hooks(self):
         conversion_trap = ConversionTrap()
@@ -245,6 +298,19 @@ class IsStorageTests(unittest.TestCase):
         self.assertEqual(
             str(inspect.signature(function)),
             "(obj: Any, /) -> TypeGuard[ForwardRef('TypedStorage | UntypedStorage')]",
+        )
+
+    def test_primed_type_guard_cache_cannot_capture_foreign_storage_types(self):
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", PRIMED_TYPE_GUARD_CACHE_SCRIPT],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            completed.stdout + completed.stderr,
         )
 
     def test_exports_copying_and_pickling(self):
