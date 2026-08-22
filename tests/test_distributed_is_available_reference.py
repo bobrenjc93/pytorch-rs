@@ -220,6 +220,7 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
+                "is_backend_available",
                 "is_nccl_available",
                 "is_ucc_available",
                 "is_xccl_available",
