@@ -54,6 +54,35 @@ class FunctionalDropout1dReferenceTests(unittest.TestCase):
             return leaf, offset
         return leaf, offset.transpose(1, 2)
 
+    def make_rank_two_case(self, module, case, *, requires_grad):
+        if case == "contiguous":
+            leaf = module.tensor(
+                [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+                dtype=module.float32,
+                requires_grad=requires_grad,
+            )
+            return leaf, leaf
+        if case == "singleton":
+            leaf = module.tensor(
+                [[7.0]],
+                dtype=module.float32,
+                requires_grad=requires_grad,
+            )
+            return leaf, leaf
+        if case == "empty":
+            leaf = module.zeros(
+                (0, 3), dtype=module.float32, requires_grad=requires_grad
+            )
+            return leaf, leaf.transpose(0, 1)
+
+        leaf = module.zeros(
+            (2, 3, 4), dtype=module.float32, requires_grad=requires_grad
+        )
+        offset = leaf[1]
+        if case == "offset":
+            return leaf, offset
+        return leaf, offset.transpose(0, 1)
+
     def assert_metadata_matches(self, actual, expected, *, case):
         with self.subTest(case=case):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -206,6 +235,202 @@ class FunctionalDropout1dReferenceTests(unittest.TestCase):
                         self.assertTrue(expected.is_set_to(expected_input))
                     self.assert_metadata_matches(actual, expected, case=invocation)
                     self.assert_values_match(actual, expected, case=invocation)
+
+    def test_rank_two_identity_views_match(self):
+        calls = (
+            (
+                lambda function, input, module: function(
+                    input, p=0.75, training=False, inplace=False
+                ),
+                "evaluation",
+            ),
+            (
+                lambda function, input, module: function(
+                    input, p=0, training=True, inplace=False
+                ),
+                "zero_probability",
+            ),
+            (
+                lambda function, input, module: function(
+                    input,
+                    p=module.tensor(0.0),
+                    training=True,
+                    inplace=False,
+                ),
+                "tensor_zero_probability",
+            ),
+        )
+
+        for requires_grad in (False, True):
+            for case in ("contiguous", "offset", "strided", "singleton"):
+                _, actual_input = self.make_rank_two_case(
+                    torch, case, requires_grad=requires_grad
+                )
+                _, expected_input = self.make_rank_two_case(
+                    reference_torch, case, requires_grad=requires_grad
+                )
+                for call, label in calls:
+                    expected_rng = reference_torch.get_rng_state().clone()
+                    actual = call(functional.dropout1d, actual_input, torch)
+                    self.assertTrue(
+                        reference_torch.equal(
+                            expected_rng, reference_torch.get_rng_state()
+                        )
+                    )
+                    expected = call(
+                        reference_functional.dropout1d,
+                        expected_input,
+                        reference_torch,
+                    )
+                    invocation = (requires_grad, case, label)
+                    with self.subTest(case=invocation):
+                        self.assertIsNot(actual, actual_input)
+                        self.assertIsNot(expected, expected_input)
+                        self.assertTrue(actual.is_set_to(actual_input))
+                        self.assertTrue(expected.is_set_to(expected_input))
+                        self.assertTrue(
+                            reference_torch.equal(
+                                expected_rng, reference_torch.get_rng_state()
+                            )
+                        )
+                    self.assert_metadata_matches(actual, expected, case=invocation)
+                    self.assert_values_match(actual, expected, case=invocation)
+
+    def test_rank_two_empty_training_views_and_rng_state_match(self):
+        for requires_grad in (False, True):
+            _, actual_input = self.make_rank_two_case(
+                torch, "empty", requires_grad=requires_grad
+            )
+            _, expected_input = self.make_rank_two_case(
+                reference_torch, "empty", requires_grad=requires_grad
+            )
+            for probability in (0.25, 1.0):
+                expected_rng = reference_torch.get_rng_state().clone()
+                actual = functional.dropout1d(
+                    actual_input,
+                    p=probability,
+                    training=True,
+                    inplace=False,
+                )
+                self.assertTrue(
+                    reference_torch.equal(
+                        expected_rng, reference_torch.get_rng_state()
+                    )
+                )
+                expected = reference_functional.dropout1d(
+                    expected_input,
+                    p=probability,
+                    training=True,
+                    inplace=False,
+                )
+                invocation = (requires_grad, probability)
+                with self.subTest(case=invocation):
+                    self.assertIsNot(actual, actual_input)
+                    self.assertIsNot(expected, expected_input)
+                    self.assertTrue(actual.is_set_to(actual_input))
+                    self.assertTrue(expected.is_set_to(expected_input))
+                    self.assertTrue(
+                        reference_torch.equal(
+                            expected_rng, reference_torch.get_rng_state()
+                        )
+                    )
+                self.assert_metadata_matches(actual, expected, case=invocation)
+                self.assert_values_match(actual, expected, case=invocation)
+
+    def test_rank_two_backward_and_no_grad_match(self):
+        for case in ("contiguous", "offset", "strided", "singleton", "empty"):
+            actual_leaf, actual_input = self.make_rank_two_case(
+                torch, case, requires_grad=True
+            )
+            expected_leaf, expected_input = self.make_rank_two_case(
+                reference_torch, case, requires_grad=True
+            )
+            actual_output = functional.dropout1d(
+                actual_input, p=0, training=True, inplace=False
+            )
+            expected_output = reference_functional.dropout1d(
+                expected_input, p=0, training=True, inplace=False
+            )
+            self.assert_metadata_matches(
+                actual_output, expected_output, case=(case, "autograd")
+            )
+
+            actual_output.sum().backward()
+            expected_output.sum().backward()
+            self.assert_metadata_matches(
+                actual_leaf.grad, expected_leaf.grad, case=(case, "gradient")
+            )
+            self.assert_values_match(
+                actual_leaf.grad, expected_leaf.grad, case=(case, "gradient")
+            )
+
+            actual_leaf, actual_input = self.make_rank_two_case(
+                torch, case, requires_grad=True
+            )
+            expected_leaf, expected_input = self.make_rank_two_case(
+                reference_torch, case, requires_grad=True
+            )
+            with torch.no_grad():
+                actual_output = functional.dropout1d(
+                    actual_input, p=0.75, training=False, inplace=False
+                )
+            with reference_torch.no_grad():
+                expected_output = reference_functional.dropout1d(
+                    expected_input, p=0.75, training=False, inplace=False
+                )
+            with self.subTest(case=(case, "no_grad")):
+                self.assertIsNot(actual_output, actual_input)
+                self.assertIsNot(expected_output, expected_input)
+                self.assertTrue(actual_output.is_set_to(actual_input))
+                self.assertTrue(expected_output.is_set_to(expected_input))
+                self.assertIsNone(actual_leaf.grad)
+                self.assertIsNone(expected_leaf.grad)
+            self.assert_metadata_matches(
+                actual_output, expected_output, case=(case, "no_grad")
+            )
+
+    def test_rank_two_probability_errors_and_squeeze_node_match(self):
+        actual_input = torch.zeros((2, 3))
+        expected_input = reference_torch.zeros((2, 3))
+        cases = (
+            {"p": -0.1, "training": "invalid", "inplace": True},
+            {"p": float("nan"), "training": False, "inplace": False},
+            {"p": Decimal("0"), "training": False, "inplace": False},
+            {"p": 0, "training": np.bool_(False), "inplace": False},
+        )
+        for case, kwargs in enumerate(cases):
+            actual_error = self.capture_error(
+                lambda kwargs=kwargs: functional.dropout1d(
+                    actual_input, **kwargs
+                )
+            )
+            expected_error = self.capture_error(
+                lambda kwargs=kwargs: reference_functional.dropout1d(
+                    expected_input, **kwargs
+                )
+            )
+            with self.subTest(case=case):
+                self.assertIs(actual_error[0], expected_error[0])
+                self.assertEqual(actual_error[1], expected_error[1])
+
+        actual_probability = functional.dropout1d(
+            torch.tensor([[2.0]], requires_grad=True), p=0
+        )
+        expected_probability = reference_functional.dropout1d(
+            reference_torch.tensor([[2.0]], requires_grad=True), p=0
+        )
+        actual_error = self.capture_error(
+            lambda: functional.dropout1d(
+                actual_input, p=actual_probability, training=False
+            )
+        )
+        expected_error = self.capture_error(
+            lambda: reference_functional.dropout1d(
+                expected_input, p=expected_probability, training=False
+            )
+        )
+        self.assertIs(actual_error[0], expected_error[0])
+        self.assertEqual(actual_error[1], expected_error[1])
 
     def test_backward_no_grad_empty_training_and_rng_state_match(self):
         actual_leaf = torch.tensor(
@@ -543,6 +768,26 @@ class FunctionalDropout1dReferenceTests(unittest.TestCase):
         self.assertIs(actual_output, actual_input)
         self.assertIs(expected_output, expected_input)
         self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
+
+        actual_input = torch.zeros((2, 3))
+        expected_input = reference_torch.zeros((2, 3))
+        actual_mode = ActualMode(forward=True)
+        expected_mode = ExpectedMode(forward=True)
+        with actual_mode:
+            actual_output = functional.dropout1d(
+                actual_input, p=0.75, training=False, inplace=False
+            )
+        with expected_mode:
+            expected_output = reference_functional.dropout1d(
+                expected_input, p=0.75, training=False, inplace=False
+            )
+        self.assertIsNot(actual_output, actual_input)
+        self.assertIsNot(expected_output, expected_input)
+        self.assertTrue(actual_output.is_set_to(actual_input))
+        self.assertTrue(expected_output.is_set_to(expected_input))
+        self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
+        self.assertEqual(len(actual_mode.calls), 1)
+        self.assert_metadata_matches(actual_output, expected_output, case="rank2_mode")
 
 
 if __name__ == "__main__":
