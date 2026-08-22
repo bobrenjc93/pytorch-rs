@@ -181,7 +181,10 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertEqual(function.__qualname__, name)
                 self.assertEqual(function.__module__, "torch_rs.accelerator")
                 self.assertIs(inspect.getmodule(function), accelerator)
-                self.assertEqual(function.__doc__, FUNCTION_DOCS[name])
+                self.assertEqual(
+                    inspect.cleandoc(function.__doc__),
+                    inspect.cleandoc(FUNCTION_DOCS[name]),
+                )
                 self.assertEqual(
                     function.__defaults__,
                     (False,) if name == "current_accelerator" else None,
