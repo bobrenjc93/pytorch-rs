@@ -4082,7 +4082,11 @@ fn tensor(
     let requires_grad = requires_grad.0;
     let dtype_was_explicit = dtype.is_some();
     let (dtype, device) = parse_metadata("tensor", dtype, device)?;
-    let (flattened, shape) = if let Ok(scalar) = data.extract::<f32>() {
+    let (flattened, shape) = if let Some(flattened) = flatten_list_with_exact_float_fast_path(data)?
+    {
+        let length = flattened.len();
+        (flattened, vec![length])
+    } else if let Ok(scalar) = data.extract::<f32>() {
         (vec![scalar], Vec::new())
     } else if data.cast::<PyBytes>().is_ok() {
         return Err(PyTypeError::new_err("new(): invalid data type 'bytes'"));
@@ -10425,6 +10429,42 @@ fn is_sequence_input(value: &Bound<'_, PyAny>) -> PyResult<bool> {
         return Ok(false);
     }
     Ok(value.hasattr("__len__")? && value.hasattr("__getitem__")?)
+}
+
+// Exact built-in floats need neither scalar protocol dispatch nor recursive
+// shape discovery. A later non-exact item still uses the general parser so its
+// conversions, errors, and side effects occur exactly once.
+#[allow(clippy::cast_possible_truncation)]
+fn flatten_list_with_exact_float_fast_path(value: &Bound<'_, PyAny>) -> PyResult<Option<Vec<f32>>> {
+    let Ok(values) = value.cast_exact::<PyList>() else {
+        return Ok(None);
+    };
+
+    let length = values.len();
+    if length == 0 {
+        return Ok(Some(Vec::new()));
+    }
+    let first = values.get_item(0)?;
+    let Ok(first) = first.cast_exact::<PyFloat>() else {
+        return Ok(None);
+    };
+
+    let mut output = Vec::new();
+    output.try_reserve_exact(length).map_err(|_| {
+        PyMemoryError::new_err("unable to allocate native tensor storage for float list")
+    })?;
+    output.push(first.value() as f32);
+    for index in 1..length {
+        let item = values.get_item(index)?;
+        if let Ok(item) = item.cast_exact::<PyFloat>() {
+            output.push(item.value() as f32);
+        } else if !flatten_rectangular(&item, &mut output)?.is_empty() {
+            return Err(PyValueError::new_err(
+                "expected a rectangular sequence, but nested shapes differ",
+            ));
+        }
+    }
+    Ok(Some(output))
 }
 
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
