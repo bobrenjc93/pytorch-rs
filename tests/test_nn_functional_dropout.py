@@ -104,8 +104,8 @@ class FunctionalDropoutTests(unittest.TestCase):
         self.assertNotIn("types", wildcard_namespace)
         self.assertIsNone(nn.__doc__)
         self.assertEqual(functional.__doc__, "Functional interface.")
-        self.assertFalse(hasattr(torch, "dropout"))
-        self.assertNotIn("dropout", torch.__all__)
+        self.assertIsNot(torch.dropout, functional.dropout)
+        self.assertEqual(torch.__all__.count("dropout"), 1)
         self.assertFalse(hasattr(torch, "_nn_functional_dropout"))
         self.assertFalse(
             hasattr(

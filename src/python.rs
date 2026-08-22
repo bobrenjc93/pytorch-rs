@@ -24,7 +24,10 @@ use crate::{
     python_grad_mode::add_no_grad,
     python_layout::{LayoutObjects as PyLayoutObjects, create_layout_objects},
     python_memory_format::{PyMemoryFormat, memory_format_object},
-    python_nn_functional::add_nn_functional_bridges,
+    python_nn_functional::{
+        add_nn_functional_bridges, apply_top_level_dropout, parse_top_level_dropout_probability,
+        parse_top_level_dropout_training,
+    },
     python_no_argument_builtins::add_no_argument_builtins,
     python_scalar_conversions::register_scalar_conversions,
     python_size::size_type_object,
@@ -1331,6 +1334,15 @@ pub(crate) fn ravel_variable_function(
     )
 }
 
+pub(crate) fn dropout_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let call = bind_dropout_arguments(args, kwargs)?;
+    dispatch_top_level_dropout(py, &call, args, kwargs)
+}
+
 pub(crate) fn exp_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1776,6 +1788,12 @@ impl UnaryOutOperation {
 struct BoundUnaryOutCall<'py> {
     input: BoundTensorOrTorchFunction<'py>,
     out: Option<BoundTensorOrTorchFunction<'py>>,
+}
+
+struct BoundDropoutCall<'py> {
+    input: BoundTensorOrTorchFunction<'py>,
+    probability: f64,
+    training: bool,
 }
 
 enum BoundMulOperand<'py> {
@@ -2491,6 +2509,68 @@ fn dispatch_single_tensor_override(
                 )?);
             }
             (operation.apply_native)(py, tensor)
+        }
+    }
+}
+
+fn dispatch_top_level_dropout(
+    py: Python<'_>,
+    call: &BoundDropoutCall<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty()
+        && let BoundTensorOrTorchFunction::Tensor(tensor) = &call.input
+    {
+        return apply_top_level_dropout(py, tensor, call.probability, call.training);
+    }
+
+    let function = variable_function(py, "dropout")?;
+    let types = match &call.input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+    };
+
+    // The generated binding converts every schema argument before dispatch,
+    // but leaves the native probability-range check until after modes and
+    // tensor overrides have had an opportunity to replace the operation.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match &call.input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.dropout",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(tensor) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.dropout",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            apply_top_level_dropout(py, tensor, call.probability, call.training)
         }
     }
 }
@@ -7403,6 +7483,131 @@ fn bind_unary_out_arguments<'py>(
     };
     validate_unary_out_keywords(operation, &selection, keywords)?;
     Ok(BoundUnaryOutCall { input, out })
+}
+
+fn bind_dropout_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundDropoutCall<'py>> {
+    const NAMES: [&str; 3] = ["input", "p", "train"];
+
+    if positional.len() > NAMES.len() {
+        return Err(PyTypeError::new_err(format!(
+            "dropout() takes 3 positional arguments but {} were given",
+            positional.len()
+        )));
+    }
+
+    let mut arguments: [Option<ParsedCallArgument<'py>>; 3] = std::array::from_fn(|_| None);
+    for (index, value) in positional.iter().enumerate() {
+        arguments[index] = Some(ParsedCallArgument {
+            value,
+            position: Some(index + 1),
+        });
+    }
+
+    if let Some(keywords) = keywords {
+        if arguments[0].is_none() {
+            for name in ["input", "x", "a", "x1"] {
+                if let Some(value) = keywords.get_item(name)? {
+                    arguments[0] = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                    break;
+                }
+            }
+        }
+        for (index, name) in NAMES.iter().enumerate().skip(1) {
+            if arguments[index].is_none()
+                && let Some(value) = keywords.get_item(*name)?
+            {
+                arguments[index] = Some(ParsedCallArgument {
+                    value,
+                    position: None,
+                });
+            }
+        }
+    }
+
+    if let Some(first_missing) = arguments.iter().position(Option::is_none) {
+        validate_dropout_argument_prefix(&arguments, first_missing)?;
+        let missing = &NAMES[first_missing..];
+        let quoted_names = missing
+            .iter()
+            .map(|name| format!("\"{name}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let argument = if missing.len() == 1 {
+            "arguments"
+        } else {
+            "argument"
+        };
+        return Err(PyTypeError::new_err(format!(
+            "dropout() missing {} required positional {argument}: {quoted_names}",
+            missing.len()
+        )));
+    }
+
+    let [input, probability, training] =
+        arguments.map(|argument| argument.expect("all dropout arguments were bound above"));
+    let input_was_keyword = input.position.is_none();
+    let input = parse_tensor_or_torch_function_argument("dropout", "input", &input)?;
+    let probability =
+        parse_top_level_dropout_probability(&probability.value, probability.position)?;
+    let training = parse_top_level_dropout_training(&training.value, training.position)?;
+
+    if let Some(keywords) = keywords {
+        let bound_keyword_count = usize::from(input_was_keyword)
+            + usize::from(positional.len() < 2)
+            + usize::from(positional.len() < 3);
+        if keywords.len() > bound_keyword_count {
+            for key in keywords.keys() {
+                let key = key.extract::<String>()?;
+                let Some(position) = NAMES.iter().position(|name| *name == key) else {
+                    return Err(PyTypeError::new_err(format!(
+                        "dropout() got an unexpected keyword argument '{key}'"
+                    )));
+                };
+                if position < positional.len() {
+                    return Err(PyTypeError::new_err(format!(
+                        "dropout() got multiple values for argument '{key}'"
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(BoundDropoutCall {
+        input,
+        probability,
+        training,
+    })
+}
+
+fn validate_dropout_argument_prefix(
+    arguments: &[Option<ParsedCallArgument<'_>>; 3],
+    length: usize,
+) -> PyResult<()> {
+    if length >= 1 {
+        let input = arguments[0]
+            .as_ref()
+            .expect("the dropout input preceding a binding gap is present");
+        parse_tensor_or_torch_function_argument("dropout", "input", input)?;
+    }
+    if length >= 2 {
+        let probability = arguments[1]
+            .as_ref()
+            .expect("the dropout probability preceding a binding gap is present");
+        parse_top_level_dropout_probability(&probability.value, probability.position)?;
+    }
+    if length >= 3 {
+        let training = arguments[2]
+            .as_ref()
+            .expect("the dropout training flag preceding a binding gap is present");
+        parse_top_level_dropout_training(&training.value, training.position)?;
+    }
+    Ok(())
 }
 
 fn validate_unary_out_keywords(

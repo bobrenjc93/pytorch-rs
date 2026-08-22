@@ -13,7 +13,7 @@ use crate::{
 pub(crate) struct ArgumentSchema {
     operation: &'static str,
     name: &'static str,
-    position: usize,
+    position: Option<usize>,
     expected: &'static str,
 }
 
@@ -27,6 +27,20 @@ impl ArgumentSchema {
         Self {
             operation,
             name,
+            position: Some(position),
+            expected,
+        }
+    }
+
+    pub(crate) const fn with_optional_position(
+        operation: &'static str,
+        name: &'static str,
+        position: Option<usize>,
+        expected: &'static str,
+    ) -> Self {
+        Self {
+            operation,
+            name,
             position,
             expected,
         }
@@ -34,9 +48,12 @@ impl ArgumentSchema {
 
     pub(crate) fn type_error(self, value: &Bound<'_, PyAny>) -> PyResult<PyErr> {
         let actual = python_type_name(value)?;
+        let position = self
+            .position
+            .map_or_else(String::new, |position| format!(" (position {position})"));
         Ok(PyTypeError::new_err(format!(
-            "{}(): argument '{}' (position {}) must be {}, not {actual}",
-            self.operation, self.name, self.position, self.expected
+            "{}(): argument '{}'{} must be {}, not {actual}",
+            self.operation, self.name, position, self.expected
         )))
     }
 

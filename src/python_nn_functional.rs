@@ -10,15 +10,17 @@ use crate::{
     python_tensor_errors::tensor_error,
 };
 
+const STANDARD_DROPOUT_METADATA: DropoutMetadata = DropoutMetadata {
+    public_function: "dropout",
+    operation: "dropout",
+    inplace_operation: "dropout_",
+    supports_tensor_probability: true,
+    supports_probability_one: true,
+    required_rank: None,
+};
+
 const DROPOUT_METADATA: [DropoutMetadata; 6] = [
-    DropoutMetadata {
-        public_function: "dropout",
-        operation: "dropout",
-        inplace_operation: "dropout_",
-        supports_tensor_probability: true,
-        supports_probability_one: true,
-        required_rank: None,
-    },
+    STANDARD_DROPOUT_METADATA,
     DropoutMetadata {
         public_function: "alpha_dropout",
         operation: "alpha_dropout",
@@ -77,6 +79,12 @@ struct DropoutSchema {
     training: ArgumentSchema,
 }
 
+#[derive(Clone, Copy)]
+enum DropoutCallSite {
+    Functional,
+    TopLevel,
+}
+
 impl DropoutSchema {
     const fn new(metadata: DropoutMetadata, inplace: bool) -> Self {
         let operation = if inplace {
@@ -114,31 +122,15 @@ fn format_probability(py: Python<'_>, probability: f64) -> PyResult<String> {
         .extract()
 }
 
-#[pyfunction]
-fn _nn_functional_dropout(
+fn apply_dropout(
     py: Python<'_>,
-    kind: &str,
-    input: &Bound<'_, PyAny>,
-    probability: &Bound<'_, PyAny>,
-    training: &Bound<'_, PyAny>,
+    metadata: DropoutMetadata,
+    tensor: &Bound<'_, PyTensor>,
+    probability: f64,
+    training: bool,
     inplace: bool,
+    call_site: DropoutCallSite,
 ) -> PyResult<Py<PyAny>> {
-    // This private bridge mirrors the native operator's schema checks for the
-    // supported deterministic cases. It deliberately owns no random state or
-    // mutation.
-    let metadata = dropout_metadata(kind)?;
-    let schema = DropoutSchema::new(metadata, inplace);
-    let Ok(tensor) = input.cast::<PyTensor>() else {
-        return Err(schema.input.type_error(input)?);
-    };
-    if !metadata.supports_tensor_probability && probability.cast::<PyTensor>().is_ok() {
-        // Keep alpha dropout's supported probability surface to real scalars;
-        // standard dropout already owns the scalar-Tensor compatibility path.
-        return Err(schema.probability.type_error(probability)?);
-    }
-    let probability = parse_float_like_argument(schema.probability, probability)?;
-    let training = schema.training.parse_exact_bool(training)?;
-
     if !(0.0..=1.0).contains(&probability) {
         let probability = format_probability(py, probability)?;
         return Err(PyRuntimeError::new_err(format!(
@@ -169,10 +161,85 @@ fn _nn_functional_dropout(
         return PyTensor::new(output).into_py_any(py);
     }
 
+    let public_path = match call_site {
+        DropoutCallSite::Functional => {
+            format!("torch_rs.nn.functional.{}", metadata.public_function)
+        }
+        DropoutCallSite::TopLevel => "torch_rs.dropout".to_owned(),
+    };
     Err(PyNotImplementedError::new_err(format!(
-        "torch_rs.nn.functional.{} does not support sampling",
-        metadata.public_function
+        "{public_path} does not support sampling"
     )))
+}
+
+pub(crate) fn parse_top_level_dropout_probability(
+    probability: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<f64> {
+    parse_float_like_argument(
+        ArgumentSchema::with_optional_position("dropout", "p", position, "float"),
+        probability,
+    )
+}
+
+pub(crate) fn parse_top_level_dropout_training(
+    training: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<bool> {
+    ArgumentSchema::with_optional_position("dropout", "train", position, "bool")
+        .parse_exact_bool(training)
+}
+
+pub(crate) fn apply_top_level_dropout(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    probability: f64,
+    training: bool,
+) -> PyResult<Py<PyAny>> {
+    apply_dropout(
+        py,
+        STANDARD_DROPOUT_METADATA,
+        tensor,
+        probability,
+        training,
+        false,
+        DropoutCallSite::TopLevel,
+    )
+}
+
+#[pyfunction]
+fn _nn_functional_dropout(
+    py: Python<'_>,
+    kind: &str,
+    input: &Bound<'_, PyAny>,
+    probability: &Bound<'_, PyAny>,
+    training: &Bound<'_, PyAny>,
+    inplace: bool,
+) -> PyResult<Py<PyAny>> {
+    // This private bridge mirrors the native operator's schema checks for the
+    // supported deterministic cases. It deliberately owns no random state or
+    // mutation.
+    let metadata = dropout_metadata(kind)?;
+    let schema = DropoutSchema::new(metadata, inplace);
+    let Ok(tensor) = input.cast::<PyTensor>() else {
+        return Err(schema.input.type_error(input)?);
+    };
+    if !metadata.supports_tensor_probability && probability.cast::<PyTensor>().is_ok() {
+        // Keep alpha dropout's supported probability surface to real scalars;
+        // standard dropout already owns the scalar-Tensor compatibility path.
+        return Err(schema.probability.type_error(probability)?);
+    }
+    let probability = parse_float_like_argument(schema.probability, probability)?;
+    let training = schema.training.parse_exact_bool(training)?;
+    apply_dropout(
+        py,
+        metadata,
+        tensor,
+        probability,
+        training,
+        inplace,
+        DropoutCallSite::Functional,
+    )
 }
 
 #[pyfunction]

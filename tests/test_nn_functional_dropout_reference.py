@@ -1072,7 +1072,7 @@ class FunctionalDropoutReferenceTests(unittest.TestCase):
         self.assertEqual(len(actual_mode.calls), len(expected_mode.calls))
 
     def test_sampling_boundary_remains_deliberately_unsupported(self):
-        self.assertFalse(hasattr(torch, "dropout"))
+        self.assertTrue(hasattr(torch, "dropout"))
         self.assertTrue(hasattr(reference_torch, "dropout"))
 
         source = torch.tensor([1.0, 2.0], requires_grad=True)
