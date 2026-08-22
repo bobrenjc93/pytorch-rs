@@ -35,6 +35,11 @@ _picklable_function = torch.compiler.disable(
 )
 
 
+@torch.compiler.disable(recursive=False, reason="factory pickling test")
+def _factory_picklable_function(value, *, increment=1):
+    return value + increment
+
+
 class _Callable:
     def __call__(self):
         return "called"
@@ -91,6 +96,93 @@ class CompilerDisableTests(unittest.TestCase):
                 self.assertEqual(wrapped.__doc__, original.__doc__)
                 self.assertEqual(wrapped.__annotations__, original.__annotations__)
 
+    def test_factories_wrap_functions_and_preserve_configuration(self):
+        factory_calls = (
+            lambda recursive, reason: torch.compiler.disable(
+                recursive=recursive,
+                reason=reason,
+            ),
+            lambda recursive, reason: torch.compiler.disable(
+                None,
+                recursive=recursive,
+                reason=reason,
+            ),
+            lambda recursive, reason: torch.compiler.disable(
+                fn=None,
+                recursive=recursive,
+                reason=reason,
+            ),
+        )
+        for factory_call in factory_calls:
+            for recursive in (True, False):
+                with self.subTest(factory_call=factory_call, recursive=recursive):
+                    calls = []
+                    reason = object()
+                    decorator = factory_call(recursive, reason)
+
+                    def calculate(value: int, *, scale: int = 1) -> int:
+                        """Calculate eagerly."""
+                        calls.append((value, scale))
+                        return value * scale + len(calls)
+
+                    original = calculate
+                    shared_attribute = []
+                    original.custom_attribute = shared_attribute
+                    wrapped = decorator(original)
+
+                    self.assertTrue(callable(decorator))
+                    self.assertIsNot(wrapped, original)
+                    self.assertEqual(wrapped(3, scale=2), 7)
+                    self.assertEqual(wrapped(3, scale=2), 8)
+                    self.assertEqual(calls, [(3, 2), (3, 2)])
+                    self.assert_disable_metadata(
+                        wrapped,
+                        original,
+                        recursive,
+                        reason,
+                    )
+                    self.assertIs(inspect.unwrap(wrapped), original)
+                    self.assertIs(wrapped.custom_attribute, shared_attribute)
+                    self.assertFalse(hasattr(original, "_torchdynamo_disable"))
+                    self.assertEqual(
+                        str(inspect.signature(wrapped)),
+                        "(value: int, *, scale: int = 1) -> int",
+                    )
+                    self.assertEqual(wrapped.__name__, original.__name__)
+                    self.assertEqual(wrapped.__qualname__, original.__qualname__)
+                    self.assertEqual(wrapped.__module__, original.__module__)
+                    self.assertEqual(wrapped.__doc__, original.__doc__)
+                    self.assertIs(wrapped.__annotations__, original.__annotations__)
+
+    def test_factory_freezes_recursive_truthiness_and_reuses_reason(self):
+        truthy_recursive = [1]
+        falsey_recursive = []
+        truthy_reason = object()
+        falsey_reason = object()
+        truthy_factory = torch.compiler.disable(
+            recursive=truthy_recursive,
+            reason=truthy_reason,
+        )
+        falsey_factory = torch.compiler.disable(
+            recursive=falsey_recursive,
+            reason=falsey_reason,
+        )
+        truthy_recursive.clear()
+        falsey_recursive.append(1)
+
+        def first():
+            return "first"
+
+        def second():
+            return "second"
+
+        first_wrapped = truthy_factory(first)
+        second_wrapped = falsey_factory(second)
+        self.assert_disable_metadata(first_wrapped, first, True, truthy_reason)
+        self.assert_disable_metadata(second_wrapped, second, False, falsey_reason)
+        self.assertEqual(first_wrapped(), "first")
+        self.assertEqual(second_wrapped(), "second")
+
     def test_wrapped_errors_and_return_values_are_transparent(self):
         sentinel = object()
 
@@ -114,6 +206,38 @@ class CompilerDisableTests(unittest.TestCase):
             return value, flag
 
         wrapped = torch.compiler.disable(positional_only)
+        self.assertEqual(wrapped(3, flag=True), (3, True))
+        with self.assertRaises(TypeError) as wrapped_error:
+            wrapped(value=3)
+        with self.assertRaises(TypeError) as original_error:
+            positional_only(value=3)
+        self.assertEqual(str(wrapped_error.exception), str(original_error.exception))
+        self.assertEqual(wrapped_error.exception.args, original_error.exception.args)
+
+    def test_factory_wrapped_errors_and_return_values_are_transparent(self):
+        sentinel = object()
+        decorator = torch.compiler.disable(reason="factory")
+
+        def return_sentinel():
+            return sentinel
+
+        class CustomError(Exception):
+            pass
+
+        error = CustomError("eager failure")
+
+        def fail():
+            raise error
+
+        self.assertIs(decorator(return_sentinel)(), sentinel)
+        with self.assertRaises(CustomError) as raised:
+            decorator(fail)()
+        self.assertIs(raised.exception, error)
+
+        def positional_only(value, /, *, flag=False):
+            return value, flag
+
+        wrapped = decorator(positional_only)
         self.assertEqual(wrapped(3, flag=True), (3, True))
         with self.assertRaises(TypeError) as wrapped_error:
             wrapped(value=3)
@@ -163,6 +287,49 @@ class CompilerDisableTests(unittest.TestCase):
         original = Accumulator.add.__wrapped__
         self.assert_disable_metadata(Accumulator.add, original, True, None)
 
+    def test_factory_decorated_methods_keep_descriptor_binding(self):
+        reason = object()
+
+        class Accumulator:
+            def __init__(self):
+                self.total = 0
+
+            @torch.compiler.disable(recursive=False, reason=reason)
+            def add(self, value):
+                self.total += value
+                return self.total
+
+            @torch.compiler.disable()
+            def fail(self):
+                raise RuntimeError(self.total)
+
+            @classmethod
+            @torch.compiler.disable()
+            def identify(cls, value):
+                return cls, value
+
+            @staticmethod
+            @torch.compiler.disable(recursive=False)
+            def double(value):
+                return value * 2
+
+        left = Accumulator()
+        right = Accumulator()
+
+        self.assertIsInstance(left.add, types.MethodType)
+        self.assertIs(left.add.__self__, left)
+        self.assertIs(left.add.__func__, Accumulator.add)
+        self.assertEqual(left.add(2), 2)
+        self.assertEqual(left.add(3), 5)
+        self.assertEqual(right.add(7), 7)
+        self.assertEqual(Accumulator.identify("value"), (Accumulator, "value"))
+        self.assertEqual(Accumulator.double(4), 8)
+        with self.assertRaisesRegex(RuntimeError, "^5$"):
+            left.fail()
+
+        original = Accumulator.add.__wrapped__
+        self.assert_disable_metadata(Accumulator.add, original, False, reason)
+
     def test_direct_bound_method_and_repeated_wrapping_match_function_behavior(self):
         class Counter:
             def add(self, value):
@@ -186,6 +353,33 @@ class CompilerDisableTests(unittest.TestCase):
         self.assertIsNot(second, first)
         self.assertEqual(second(3), 5)
         self.assert_disable_metadata(second, function, False, "second")
+
+    def test_factory_bound_method_reuse_and_repeated_wrapping(self):
+        class Counter:
+            def add(self, value):
+                return value + 1
+
+        decorator = torch.compiler.disable(recursive=False, reason="factory")
+        counter = Counter()
+        bound = counter.add
+        wrapped_bound = decorator(bound)
+        self.assertEqual(wrapped_bound(3), 4)
+        self.assert_disable_metadata(wrapped_bound, bound, False, "factory")
+
+        def first_function(value):
+            return value + 2
+
+        def second_function(value):
+            return value + 3
+
+        first = decorator(first_function)
+        second = decorator(first)
+        other = decorator(second_function)
+        self.assertIsNot(second, first)
+        self.assertEqual(second(3), 5)
+        self.assertEqual(other(3), 6)
+        self.assert_disable_metadata(second, first_function, False, "factory")
+        self.assert_disable_metadata(other, second_function, False, "factory")
 
     def test_recursive_uses_truthiness_and_reason_is_preserved_by_identity(self):
         def function():
@@ -262,7 +456,11 @@ class CompilerDisableTests(unittest.TestCase):
         self.assertNotIn("compiler", top_level_namespace)
         self.assertNotIn("disable", top_level_namespace)
 
-        for copied_function in (function, _picklable_function):
+        for copied_function in (
+            function,
+            _picklable_function,
+            _factory_picklable_function,
+        ):
             self.assertIs(copy.copy(copied_function), copied_function)
             self.assertIs(copy.deepcopy(copied_function), copied_function)
             for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
@@ -280,6 +478,16 @@ class CompilerDisableTests(unittest.TestCase):
         self.assertEqual(
             _picklable_function._torchdynamo_disable_msg,
             "pickling test",
+        )
+        self.assertEqual(_factory_picklable_function(4, increment=3), 7)
+        self.assertIs(_factory_picklable_function._torchdynamo_disable, True)
+        self.assertIs(
+            _factory_picklable_function._torchdynamo_disable_recursive,
+            False,
+        )
+        self.assertEqual(
+            _factory_picklable_function._torchdynamo_disable_msg,
+            "factory pickling test",
         )
 
     def test_supported_call_shape_errors_match_pytorch_2_13(self):
@@ -306,28 +514,13 @@ class CompilerDisableTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_unsupported_forms_fail_without_mutating_targets(self):
-        message_without_function = (
-            "torch.compiler.disable() without a function is not supported"
-        )
-        for call in (
-            lambda: torch.compiler.disable(),
-            lambda: torch.compiler.disable(None),
-            lambda: torch.compiler.disable(fn=None, recursive=False),
-            lambda: torch.compiler.disable(recursive=False, reason="factory"),
-        ):
-            with self.subTest(call=call):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    f"^{re.escape(message_without_function)}$",
-                ):
-                    call()
-
+    def test_unsupported_targets_fail_without_mutating_classes(self):
         target_message = (
             "torch.compiler.disable() currently supports only Python functions"
         )
         original_init = _UnsupportedClass.__init__
         targets = (
+            None,
             _UnsupportedClass,
             len,
             [].append,
@@ -335,8 +528,20 @@ class CompilerDisableTests(unittest.TestCase):
             functools.partial(lambda: None),
             1,
         )
-        for target in targets:
-            with self.subTest(target=target):
+        decorators = (
+            torch.compiler.disable(),
+            torch.compiler.disable(recursive=False, reason="factory"),
+        )
+        for decorator in decorators:
+            for target in targets:
+                with self.subTest(decorator=decorator, target=target):
+                    with self.assertRaisesRegex(
+                        NotImplementedError,
+                        f"^{re.escape(target_message)}$",
+                    ):
+                        decorator(target)
+        for target in targets[1:]:
+            with self.subTest(direct_target=target):
                 with self.assertRaisesRegex(
                     NotImplementedError,
                     f"^{re.escape(target_message)}$",
@@ -344,8 +549,22 @@ class CompilerDisableTests(unittest.TestCase):
                     torch.compiler.disable(target)
         self.assertIs(_UnsupportedClass.__init__, original_init)
 
+    def test_factory_context_manager_use_remains_unsupported(self):
+        for recursive in (True, False):
+            decorator = torch.compiler.disable(recursive=recursive)
+            with self.subTest(recursive=recursive):
+                self.assertTrue(callable(decorator))
+                self.assertFalse(hasattr(decorator, "__enter__"))
+                self.assertFalse(hasattr(decorator, "__exit__"))
+                with self.assertRaisesRegex(
+                    TypeError,
+                    "does not support the context manager protocol",
+                ):
+                    with decorator:
+                        self.fail("unsupported context body was entered")
+
     def test_wrapping_does_not_enable_compilation_or_import_pytorch(self):
-        @torch.compiler.disable
+        @torch.compiler.disable()
         def state():
             return (
                 torch.compiler.is_compiling(),
@@ -372,13 +591,14 @@ import torch_rs as torch
 
 calls = []
 
-@torch.compiler.disable
+@torch.compiler.disable(recursive=False, reason="factory")
 def function(value):
     calls.append(value)
     return value + 1
 
 assert function._torchdynamo_disable is True
-assert function._torchdynamo_disable_recursive is True
+assert function._torchdynamo_disable_recursive is False
+assert function._torchdynamo_disable_msg == "factory"
 assert function(1) == 2
 assert function(2) == 3
 assert calls == [1, 2]
