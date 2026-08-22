@@ -20,6 +20,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::ReshapeElementCountMismatch { .. }
         | TensorError::ViewIncompatibleLayout
         | TensorError::StrideCalculationOverflow
+        | TensorError::NegativeStrides { .. }
         | TensorError::StorageCapacityOverflow { .. }
         | TensorError::AllocationFailed { .. }
         | TensorError::UnsupportedMemoryFormat { .. }
@@ -33,6 +34,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::SqueezeDimensionsRankLimit
         | TensorError::FlattenStartAfterEnd
         | TensorError::FlattenNonConcreteInteger
+        | TensorError::NonConcreteInteger
         | TensorError::ElementCountOverflow
         | TensorError::BackwardRequiresScalar { .. }
         | TensorError::DoesNotRequireGrad

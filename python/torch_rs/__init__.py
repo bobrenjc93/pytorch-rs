@@ -20,6 +20,10 @@ _sys.modules[f"{__name__}._C"] = _C
 # from this package without adding ``torch`` to wildcard imports.
 torch = _sys.modules[__name__]
 
+# Match PyTorch's NumPy-compatible spelling for inserting a singleton axis.
+# This remains a package-level alias; ``torch._C`` does not expose it.
+newaxis = None
+
 
 def are_deterministic_algorithms_enabled() -> _builtins.bool:
     r"""Returns True if the global deterministic flag is turned on. Refer to
@@ -177,6 +181,7 @@ __all__ = [
     "pi",
     "nan",
     "inf",
+    "newaxis",
 ]
 # PyTorch lists ``matmul`` once among its hand-written package exports and once
 # among generated variable functions. Preserve that observable duplicate while

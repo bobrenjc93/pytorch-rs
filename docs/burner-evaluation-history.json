@@ -4977,6 +4977,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.5
       }
+    },
+    {
+      "key": "pr:642",
+      "recordedAt": "2026-08-22T10:47:00.517Z",
+      "label": "PR #642",
+      "kind": "leaf",
+      "prNumber": 642,
+      "title": "Support bare new-axis tensor indexing",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 83.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.5
+      }
     }
   ]
 }

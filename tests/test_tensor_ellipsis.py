@@ -207,7 +207,6 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         self.assertEqual(indexed.storage_offset(), 4)
 
         unsupported = (
-            None,
             (Ellipsis, 0),
             (0, Ellipsis),
             (slice(None), Ellipsis),

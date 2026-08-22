@@ -12,6 +12,8 @@ use crate::storage::Storage;
 use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
+#[cfg(feature = "python-bindings")]
+const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
@@ -1219,9 +1221,29 @@ impl Tensor {
         shape.extend_from_slice(&self.shape);
 
         let leading_stride = match (self.shape.first(), self.strides.first()) {
-            (Some(dimension), Some(stride)) => dimension
-                .checked_mul(*stride)
-                .ok_or(TensorError::StrideCalculationOverflow)?,
+            (Some(dimension), Some(stride)) => {
+                // PyTorch carries sizes and strides through signed 64-bit
+                // arithmetic here, including wrapping for zero-element views.
+                let leading_stride = signed_wrapping_stride_product_value(*stride, *dimension)?;
+                // Packed SymInt values below -2^62 identify symbolic nodes
+                // instead of concrete integers, even in an eager stride list.
+                if leading_stride < MIN_CONCRETE_SYMINT {
+                    return Err(TensorError::NonConcreteInteger);
+                }
+                if leading_stride < 0 {
+                    let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
+                    strides.push(leading_stride);
+                    for &stride in &self.strides {
+                        strides.push(
+                            i64::try_from(stride)
+                                .map_err(|_| TensorError::StrideCalculationOverflow)?,
+                        );
+                    }
+                    return Err(TensorError::NegativeStrides { strides });
+                }
+                usize::try_from(leading_stride)
+                    .map_err(|_| TensorError::StrideCalculationOverflow)?
+            }
             (None, None) => 1,
             _ => unreachable!("validated tensor shape and stride ranks must match"),
         };
@@ -4290,13 +4312,20 @@ fn reshape_strides(shape: &[usize], elements: usize) -> Result<Vec<usize>, Tenso
 }
 
 fn signed_wrapping_stride_product(stride: usize, dimension: usize) -> Result<usize, TensorError> {
+    let product = signed_wrapping_stride_product_value(stride, dimension)?;
+    usize::try_from(product).map_err(|_| TensorError::StrideCalculationOverflow)
+}
+
+fn signed_wrapping_stride_product_value(
+    stride: usize,
+    dimension: usize,
+) -> Result<i64, TensorError> {
     if stride == 0 || dimension == 0 {
         return Ok(0);
     }
     let stride = i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?;
     let dimension = i64::try_from(dimension).map_err(|_| TensorError::StrideCalculationOverflow)?;
-    let product = stride.wrapping_mul(dimension);
-    usize::try_from(product).map_err(|_| TensorError::StrideCalculationOverflow)
+    Ok(stride.wrapping_mul(dimension))
 }
 
 fn checked_stride_product(stride: usize, dimension: usize) -> Result<usize, TensorError> {

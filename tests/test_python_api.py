@@ -1272,7 +1272,6 @@ class PythonApiBaselineTests(unittest.TestCase):
             1.0,
             np.float64(1.0),
             [0],
-            None,
             IntOnly(),
             FailingIndex(),
         )
