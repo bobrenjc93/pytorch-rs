@@ -108,6 +108,36 @@ class TensorTrueDivideTests(unittest.TestCase):
                     source.true_divide(other=scalar), expected, case=repr(scalar)
                 )
 
+    def test_complex_scalars_are_rejected_only_after_mode_dispatch(self):
+        tensor = torch.tensor([8.0])
+        message = r"^true_divide\(\): complex scalar operands are not supported$"
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        for scalar in (2 + 1j, np.complex64(2 + 1j), np.complex128(2 + 1j)):
+            for binding in ("positional", "other", "x2"):
+                def invoke():
+                    if binding == "positional":
+                        return tensor.true_divide(scalar)
+                    return tensor.true_divide(**{binding: scalar})
+
+                with self.subTest(scalar=type(scalar).__name__, binding=binding):
+                    with self.assertRaisesRegex(TypeError, message):
+                        invoke()
+
+                    mode = ForwardingMode()
+                    with mode, self.assertRaisesRegex(TypeError, message):
+                        invoke()
+                    self.assertEqual(len(mode.calls), 1)
+                    _, dispatch_types, _, _ = mode.calls[0]
+                    self.assertEqual(dispatch_types, ())
+
     def test_ieee_edge_bits_are_preserved(self):
         pairs = (
             (0x3F800000, 0x00000000),

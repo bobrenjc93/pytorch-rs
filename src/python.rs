@@ -1798,7 +1798,14 @@ struct BoundUnaryOutCall<'py> {
 enum BoundArithmeticOperand<'py> {
     Tensor(Bound<'py, PyTensor>),
     Scalar(Bound<'py, PyAny>),
+    UnsupportedComplexScalar,
     Override(ProbedTorchFunctionOverride<'py>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ArithmeticScalarKind {
+    Real,
+    Complex,
 }
 
 enum BoundDTypeOperand<'py> {
@@ -1878,18 +1885,18 @@ enum TensorBaseModeTarget {
 fn probe_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
-    // PyTorch's argument parser retries a failed legacy lookup once through
-    // its tensor-type fallback. Keep that observable lookup count while
-    // retaining the resolved handler long enough to recognize the disabled
-    // sentinel. Non-disabled handlers are deliberately resolved again only
-    // after the active mode has declined, so intervening mutations remain
-    // visible during dispatch.
-    let handler =
-        lookup_torch_function_handler(value).or_else(|| lookup_torch_function_handler(value))?;
-    if is_disabled_torch_function_handler(&handler) {
-        return None;
-    }
-    Some(probed_torch_function_override(value))
+    // PyTorch's tensor argument parser retries a missing or disabled legacy
+    // lookup once through its tensor-type fallback. Non-disabled handlers are
+    // deliberately resolved again only after the active mode has declined, so
+    // intervening mutations remain visible during dispatch.
+    probe_torch_function_override_once(value).or_else(|| probe_torch_function_override_once(value))
+}
+
+fn probe_torch_function_override_once<'py>(
+    value: &Bound<'py, PyAny>,
+) -> Option<ProbedTorchFunctionOverride<'py>> {
+    let handler = lookup_torch_function_handler(value)?;
+    (!is_disabled_torch_function_handler(&handler)).then(|| probed_torch_function_override(value))
 }
 
 fn probe_dtype_torch_function_override<'py>(
@@ -1897,8 +1904,7 @@ fn probe_dtype_torch_function_override<'py>(
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
     // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
     // __torch_function__ lookup through a tensor-type fallback.
-    let handler = lookup_torch_function_handler(value)?;
-    (!is_disabled_torch_function_handler(&handler)).then(|| probed_torch_function_override(value))
+    probe_torch_function_override_once(value)
 }
 
 fn probed_torch_function_override<'py>(
@@ -2901,7 +2907,9 @@ fn dispatch_true_divide(
         BoundArithmeticOperand::Override(probed) => {
             PyTuple::new(py, [probed.dispatch_type.clone()])?
         }
-        BoundArithmeticOperand::Tensor(_) | BoundArithmeticOperand::Scalar(_) => PyTuple::empty(py),
+        BoundArithmeticOperand::Tensor(_)
+        | BoundArithmeticOperand::Scalar(_)
+        | BoundArithmeticOperand::UnsupportedComplexScalar => PyTuple::empty(py),
     };
     let argument_count = args
         .len()
@@ -2919,7 +2927,7 @@ fn dispatch_true_divide(
     // disable the top mode for the complete attempt. Explicit forwarding from
     // a mode therefore reaches the next mode, then an operand override or the
     // native inference-only division path.
-    let active_mode = torch_function_mode_stack::pop();
+    let mut active_mode = torch_function_mode_stack::pop();
     if let Some(mode) = active_mode.get() {
         validate_torch_function_mode_handler(mode.bind(py))?;
         let handler = mode.bind(py).getattr("__torch_function__")?;
@@ -2935,6 +2943,13 @@ fn dispatch_true_divide(
             // Resolve only after the mode has declined so mutations made by the
             // mode to the operand's handler are visible, matching PyTorch.
             let handler = resolve_torch_function_override(py, probed)?;
+            if is_disabled_torch_function_handler(&handler) {
+                // A late-disabled scalar override is no longer part of the
+                // dispatch type set. Restore the mode and re-enter the public
+                // descriptor so it observes the call again with empty types.
+                active_mode.restore();
+                return Ok(function.bind(py).call(&call_args, kwargs)?.unbind());
+            }
             let result =
                 call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
             if !is_not_implemented(py, &result) {
@@ -2947,7 +2962,9 @@ fn dispatch_true_divide(
                 Some(probed.dispatch_type.as_unbound()),
             )?)
         }
-        BoundArithmeticOperand::Tensor(_) | BoundArithmeticOperand::Scalar(_) => {
+        BoundArithmeticOperand::Tensor(_)
+        | BoundArithmeticOperand::Scalar(_)
+        | BoundArithmeticOperand::UnsupportedComplexScalar => {
             if active_mode.get().is_some() {
                 return Err(torch_function_dispatch_error(
                     py,
@@ -2986,6 +3003,11 @@ fn apply_true_divide(
                 ));
             }
             BinaryOperation::Divide.apply_scalar(&tensor.inner, scalar, false)
+        }
+        BoundArithmeticOperand::UnsupportedComplexScalar => {
+            return Err(PyTypeError::new_err(
+                "true_divide(): complex scalar operands are not supported",
+            ));
         }
         BoundArithmeticOperand::Override(_) => {
             unreachable!("true_divide overrides were dispatched before the native path")
@@ -3246,11 +3268,15 @@ fn ordered_multiplication_overrides<'py>(
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
     let input = match input {
         BoundArithmeticOperand::Override(probed) => Some(probed),
-        BoundArithmeticOperand::Tensor(_) | BoundArithmeticOperand::Scalar(_) => None,
+        BoundArithmeticOperand::Tensor(_)
+        | BoundArithmeticOperand::Scalar(_)
+        | BoundArithmeticOperand::UnsupportedComplexScalar => None,
     };
     let other = match other {
         BoundArithmeticOperand::Override(probed) => Some(probed),
-        BoundArithmeticOperand::Tensor(_) | BoundArithmeticOperand::Scalar(_) => None,
+        BoundArithmeticOperand::Tensor(_)
+        | BoundArithmeticOperand::Scalar(_)
+        | BoundArithmeticOperand::UnsupportedComplexScalar => None,
     };
     ordered_binary_overrides(input, other, operation.dispatch_allocation_error())
 }
@@ -3376,6 +3402,10 @@ fn apply_top_level_multiplication(
                 "{}(): scalar-scalar multiplication is not supported; at least one operand must be Tensor",
                 operation.name()
             )));
+        }
+        (BoundArithmeticOperand::UnsupportedComplexScalar, _)
+        | (_, BoundArithmeticOperand::UnsupportedComplexScalar) => {
+            unreachable!("unsupported multiplication scalars were rejected while binding")
         }
         (BoundArithmeticOperand::Override(_), _) | (_, BoundArithmeticOperand::Override(_)) => {
             unreachable!("multiplication overrides were dispatched before the native path")
@@ -8188,25 +8218,35 @@ fn parse_tensor_or_torch_function_argument<'py>(
         .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
 }
 
-fn is_real_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn arithmetic_scalar_kind(value: &Bound<'_, PyAny>) -> PyResult<Option<ArithmeticScalarKind>> {
     if value.is_exact_instance_of::<PyBool>()
         || value.is_instance_of::<PyInt>()
         || value.is_instance_of::<PyFloat>()
     {
-        return Ok(true);
+        return Ok(Some(ArithmeticScalarKind::Real));
+    }
+    if value.is_instance_of::<PyComplex>() {
+        return Ok(Some(ArithmeticScalarKind::Complex));
     }
 
     let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
-        return Ok(false);
+        return Ok(None);
     };
     let generic = numpy.getattr("generic")?;
     if !value.is_instance(&generic)? {
-        return Ok(false);
+        return Ok(None);
     }
 
-    Ok(value.is_instance(&numpy.getattr("bool_")?)?
+    if value.is_instance(&numpy.getattr("bool_")?)?
         || value.is_instance(&numpy.getattr("integer")?)?
-        || value.is_instance(&numpy.getattr("floating")?)?)
+        || value.is_instance(&numpy.getattr("floating")?)?
+    {
+        return Ok(Some(ArithmeticScalarKind::Real));
+    }
+    if value.is_instance(&numpy.getattr("complexfloating")?)? {
+        return Ok(Some(ArithmeticScalarKind::Complex));
+    }
+    Ok(None)
 }
 
 fn parse_top_level_multiplication_operand<'py>(
@@ -8219,11 +8259,14 @@ fn parse_top_level_multiplication_operand<'py>(
     if let Ok(tensor) = value.value.cast::<PyTensor>() {
         return Ok(BoundArithmeticOperand::Tensor(tensor.clone()));
     }
-    if let Some(probed) = probe_torch_function_override(&value.value) {
+    if let Some(probed) = probe_torch_function_override_once(&value.value) {
         return Ok(BoundArithmeticOperand::Override(probed));
     }
-    if is_real_arithmetic_scalar(&value.value)? {
+    if arithmetic_scalar_kind(&value.value)? == Some(ArithmeticScalarKind::Real) {
         return Ok(BoundArithmeticOperand::Scalar(value.value.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override_once(&value.value) {
+        return Ok(BoundArithmeticOperand::Override(probed));
     }
 
     let argument_count = positional
@@ -8246,29 +8289,24 @@ fn parse_true_divide_operand<'py>(
         return Ok(BoundArithmeticOperand::Tensor(tensor.clone()));
     }
 
-    // The scalar overload is considered between the legacy argument parser's
+    // Number overloads are considered between the legacy argument parser's
     // initial __torch_function__ probe and its tensor-type fallback. Thus a
-    // transient failure on a real scalar is accepted natively without the
-    // fallback observing a subsequently available handler.
-    let initial_handler = lookup_torch_function_handler(&value.value);
-    if initial_handler
-        .as_ref()
-        .is_some_and(|handler| !is_disabled_torch_function_handler(handler))
-    {
-        return Ok(BoundArithmeticOperand::Override(
-            probed_torch_function_override(&value.value),
-        ));
+    // missing or disabled handler on a scalar is accepted without a retry,
+    // while non-scalars retain the fallback probe.
+    if let Some(probed) = probe_torch_function_override_once(&value.value) {
+        return Ok(BoundArithmeticOperand::Override(probed));
     }
-    if is_real_arithmetic_scalar(&value.value)? {
-        return Ok(BoundArithmeticOperand::Scalar(value.value.clone()));
+    match arithmetic_scalar_kind(&value.value)? {
+        Some(ArithmeticScalarKind::Real) => {
+            return Ok(BoundArithmeticOperand::Scalar(value.value.clone()));
+        }
+        Some(ArithmeticScalarKind::Complex) => {
+            return Ok(BoundArithmeticOperand::UnsupportedComplexScalar);
+        }
+        None => {}
     }
-    if initial_handler.is_none()
-        && let Some(handler) = lookup_torch_function_handler(&value.value)
-        && !is_disabled_torch_function_handler(&handler)
-    {
-        return Ok(BoundArithmeticOperand::Override(
-            probed_torch_function_override(&value.value),
-        ));
+    if let Some(probed) = probe_torch_function_override_once(&value.value) {
+        return Ok(BoundArithmeticOperand::Override(probed));
     }
 
     Err(overloaded_binary_method_binding_error(

@@ -155,6 +155,134 @@ class TensorTrueDivideReferenceTests(unittest.TestCase):
             case="IEEE edge bits",
         )
 
+    def test_complex_scalar_mode_dispatch_matches_pytorch_2_13(self):
+        def exercise(module, scalar, binding, mode_behavior):
+            tensor = module.tensor([8.0])
+            descriptor = inspect.getattr_static(module.Tensor, "true_divide")
+            calls = []
+
+            class Mode(module.overrides.TorchFunctionMode):
+                def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                    calls.append(
+                        (
+                            func is descriptor,
+                            func.__qualname__,
+                            tuple(value.__name__ for value in dispatch_types),
+                            len(args),
+                            None if kwargs is None else tuple(kwargs),
+                        )
+                    )
+                    if mode_behavior == "accept":
+                        return "mode-marker"
+                    return NotImplemented
+
+            def invoke():
+                if binding == "positional":
+                    return tensor.true_divide(scalar)
+                return tensor.true_divide(**{binding: scalar})
+
+            try:
+                with Mode():
+                    result = invoke()
+            except Exception as error:
+                outcome = "error", type(error).__name__, str(error).splitlines()[0]
+            else:
+                outcome = "result", result
+            return outcome, tuple(calls)
+
+        scalars = (2 + 1j, np.complex64(2 + 1j), np.complex128(2 + 1j))
+        for scalar in scalars:
+            for binding in ("positional", "other", "x2"):
+                for mode_behavior in ("accept", "decline"):
+                    with self.subTest(
+                        scalar=type(scalar).__name__,
+                        binding=binding,
+                        mode_behavior=mode_behavior,
+                    ):
+                        actual = exercise(torch, scalar, binding, mode_behavior)
+                        expected = exercise(
+                            reference_torch, scalar, binding, mode_behavior
+                        )
+                        self.assertEqual(actual, expected)
+                        self.assertEqual(actual[1][0][2], ())
+
+    def test_disabled_initial_probe_fallback_matches_pytorch_2_13(self):
+        disabled_handler = reference_torch._C._disabled_torch_function_impl
+
+        def exercise(module, operation, scalar_operand):
+            events = []
+
+            class StatefulDescriptor:
+                def __init__(self):
+                    self.lookups = 0
+
+                def __get__(self, instance, owner):
+                    self.lookups += 1
+                    resolution = self.lookups
+                    events.append(("lookup", resolution))
+                    if resolution == 1:
+                        return disabled_handler
+
+                    def handler(func, dispatch_types, args=(), kwargs=None):
+                        events.append(
+                            (
+                                "handler",
+                                resolution,
+                                func.__name__,
+                                tuple(value.__name__ for value in dispatch_types),
+                            )
+                        )
+                        return f"override-{resolution}"
+
+                    return handler
+
+            descriptor = StatefulDescriptor()
+            if scalar_operand:
+                class Value(int):
+                    __torch_function__ = descriptor
+
+                value = Value(2)
+            else:
+                class Value:
+                    __torch_function__ = descriptor
+
+                value = Value()
+
+            tensor = module.tensor([8.0])
+            if operation == "true_divide":
+                result = tensor.true_divide(value)
+            else:
+                result = getattr(module, operation)(tensor, value)
+            outcome = (
+                ("tensor", result.tolist())
+                if hasattr(result, "tolist")
+                else ("value", result)
+            )
+            return outcome, tuple(events)
+
+        for operation in ("true_divide", "mul", "multiply"):
+            for scalar_operand in (False, True):
+                with self.subTest(
+                    operation=operation, scalar_operand=scalar_operand
+                ):
+                    actual = exercise(torch, operation, scalar_operand)
+                    expected = exercise(
+                        reference_torch, operation, scalar_operand
+                    )
+                    self.assertEqual(actual, expected)
+                    if scalar_operand:
+                        self.assertEqual(actual[1], (("lookup", 1),))
+                    else:
+                        self.assertEqual(
+                            tuple(event[:2] for event in actual[1]),
+                            (
+                                ("lookup", 1),
+                                ("lookup", 2),
+                                ("lookup", 3),
+                                ("handler", 3),
+                            ),
+                        )
+
     def test_disabled_torch_function_scalar_is_native_and_absent_from_mode_types(self):
         disabled_handler = reference_torch._C._disabled_torch_function_impl
 
@@ -310,6 +438,70 @@ class TensorTrueDivideReferenceTests(unittest.TestCase):
                             self.assertEqual(actual[1], (("lookup", 1),))
                         if mode_behavior != "direct":
                             self.assertEqual(actual[2][0][1], ())
+
+    def test_late_disabled_scalar_override_redispatch_matches_pytorch_2_13(self):
+        disabled_handler = reference_torch._C._disabled_torch_function_impl
+
+        def exercise(module, binding):
+            events = []
+
+            class Scalar(int):
+                @classmethod
+                def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                    events.append(
+                        (
+                            "operand",
+                            func.__qualname__,
+                            tuple(value.__name__ for value in dispatch_types),
+                        )
+                    )
+                    return "operand-marker"
+
+            scalar = Scalar(2)
+            tensor = module.tensor([8.0])
+
+            class DecliningMode(module.overrides.TorchFunctionMode):
+                def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                    events.append(
+                        (
+                            "mode",
+                            func.__qualname__,
+                            tuple(value.__name__ for value in dispatch_types),
+                            len(args),
+                            None if kwargs is None else tuple(kwargs),
+                        )
+                    )
+                    Scalar.__torch_function__ = disabled_handler
+                    return NotImplemented
+
+            def invoke():
+                if binding == "positional":
+                    return tensor.true_divide(scalar)
+                return tensor.true_divide(**{binding: scalar})
+
+            try:
+                with DecliningMode():
+                    invoke()
+            except Exception as error:
+                outcome = type(error).__name__, str(error).splitlines()[0]
+            else:
+                raise AssertionError("late-disabled override unexpectedly succeeded")
+            return (
+                outcome,
+                tuple(events),
+                len(module.overrides._get_current_function_mode_stack()),
+            )
+
+        for binding in ("positional", "other", "x2"):
+            with self.subTest(binding=binding):
+                actual = exercise(torch, binding)
+                expected = exercise(reference_torch, binding)
+                self.assertEqual(actual, expected)
+                self.assertEqual(
+                    tuple(event[2] for event in actual[1]),
+                    (("Scalar",), ()),
+                )
+                self.assertEqual(actual[2], 0)
 
     def test_no_grad_outputs_match_while_recording_remains_explicitly_unsupported(self):
         actual_left = torch.tensor([[2.0, 4.0]], requires_grad=True).transpose(0, 1)
