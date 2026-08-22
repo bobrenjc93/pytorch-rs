@@ -63,6 +63,13 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
         matmul = module.matmul
         values = tuple(getattr(module, name) for name in CAPABILITY_NAMES)
         native_values = tuple(getattr(native, name) for name in CAPABILITY_NAMES)
+        backends = module.backends
+        backend_modules = tuple(
+            getattr(backends, name) for name in ("openmp", "mkl")
+        )
+        backend_functions = tuple(
+            backend.is_available for backend in backend_modules
+        )
 
         reloaded = importlib.reload(native)
         return (
@@ -82,6 +89,19 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
             tuple(
                 getattr(module, name) is getattr(native, name)
                 for name in CAPABILITY_NAMES
+            ),
+            module.backends is backends,
+            tuple(
+                getattr(module.backends, name) is backend
+                for name, backend in zip(
+                    ("openmp", "mkl"), backend_modules, strict=True
+                )
+            ),
+            tuple(
+                backend.is_available is function
+                for backend, function in zip(
+                    backend_modules, backend_functions, strict=True
+                )
             ),
         )
 
@@ -116,12 +136,22 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
             self.matmul_contract(reference_torch),
         )
 
-    def test_external_backend_modules_remain_deliberately_unsupported(self):
+    def test_backend_availability_namespaces_match_the_supported_scope(self):
         self.assertTrue(hasattr(reference_torch, "backends"))
-        self.assertFalse(hasattr(torch, "backends"))
+        self.assertTrue(hasattr(torch, "backends"))
         for backend in ("openmp", "mkl"):
             with self.subTest(backend=backend):
-                self.assertTrue(hasattr(reference_torch.backends, backend))
+                actual = getattr(torch.backends, backend)
+                expected = getattr(reference_torch.backends, backend)
+                self.assertIs(type(actual.is_available()), bool)
+                self.assertIs(type(expected.is_available()), bool)
+                self.assertIs(
+                    actual.is_available(),
+                    getattr(torch._C, f"has_{backend}"),
+                )
+
+        self.assertFalse(hasattr(torch.backends, "lapack"))
+        self.assertFalse(hasattr(torch.backends, "mkldnn"))
 
 
 if __name__ == "__main__":

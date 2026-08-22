@@ -5073,6 +5073,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.8
       }
+    },
+    {
+      "key": "pr:662",
+      "recordedAt": "2026-08-22T16:16:25.916Z",
+      "label": "PR #662",
+      "kind": "leaf",
+      "prNumber": 662,
+      "title": "Expose native CPU backend availability namespaces",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 83.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.9
+      }
     }
   ]
 }
