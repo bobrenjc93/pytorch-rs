@@ -4833,6 +4833,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92
       }
+    },
+    {
+      "key": "pr:607",
+      "recordedAt": "2026-08-22T01:13:17.298Z",
+      "label": "PR #607",
+      "kind": "leaf",
+      "prNumber": 607,
+      "title": "Expose torch.distributed.is_backend_available",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 81.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 65.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92
+      }
     }
   ]
 }
