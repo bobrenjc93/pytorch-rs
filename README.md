@@ -152,6 +152,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `Tensor.exp()` and inference-only `torch.exp()` share the native float32 CPU kernel. Top-level calls accept `out=None`; concrete output tensors and calls that would record an autograd edge remain explicitly unsupported.
 
+`Tensor.true_divide(other)` exposes the existing native float32 CPU tensor and real-scalar division paths with PyTorch-compatible broadcasting, layouts, descriptor binding, and `TorchFunctionMode` forwarding. Calls that would record autograd remain unsupported unless gradient recording is disabled with `torch.no_grad()`; `Tensor.div`, `Tensor.divide`, top-level, in-place, `out`, other-dtype, and other-device variants remain outside the supported surface.
+
 `torch.can_cast` and `torch.promote_types` accept the existing `torch.float32`/`torch.float` singleton aliases in positional or canonical keyword forms. Casting between the supported aliases returns `True`, while promotion returns the same canonical singleton. No additional dtype, casting pair, or promotion pair is exposed.
 
 `torch.functional.broadcast_shapes` and its identical top-level `torch.broadcast_shapes` alias compute canonical `torch.Size` results directly from nonnegative Python integer, tuple, list, and `torch.Size` inputs without creating tensors. Symbolic dimensions, tracing, and `torch.broadcast_tensors` remain unsupported.

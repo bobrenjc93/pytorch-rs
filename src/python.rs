@@ -743,6 +743,21 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\ntrue_divide(value) -> Tensor\n\nSee :func:`torch.true_divide`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn true_divide(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let other = bind_overloaded_binary_method_argument("true_divide", args, kwargs)?;
+        let other = parse_true_divide_operand(&other, args, kwargs)?;
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        dispatch_true_divide(slf.py(), tensor, &other, args, kwargs)
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nmatmul(tensor2) -> Tensor\n\nSee :func:`torch.matmul`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn matmul(
@@ -1778,7 +1793,7 @@ struct BoundUnaryOutCall<'py> {
     out: Option<BoundTensorOrTorchFunction<'py>>,
 }
 
-enum BoundMulOperand<'py> {
+enum BoundArithmeticOperand<'py> {
     Tensor(Bound<'py, PyTensor>),
     Scalar(Bound<'py, PyAny>),
     Override(ProbedTorchFunctionOverride<'py>),
@@ -2878,6 +2893,124 @@ fn apply_top_level_movedim(
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
+fn dispatch_true_divide(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    other: &BoundArithmeticOperand<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty()
+        && !matches!(other, BoundArithmeticOperand::Override(_))
+    {
+        return apply_true_divide(py, tensor, other);
+    }
+
+    let function = py
+        .get_type::<PyTensorBase>()
+        .getattr("true_divide")?
+        .unbind();
+    let types = match other {
+        BoundArithmeticOperand::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+        BoundArithmeticOperand::Tensor(_) | BoundArithmeticOperand::Scalar(_) => PyTuple::empty(py),
+    };
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("true_divide dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate true_divide dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    // Generated tensor methods validate their schema before dispatch and
+    // disable the top mode for the complete attempt. Explicit forwarding from
+    // a mode therefore reaches the next mode, then an operand override or the
+    // native inference-only division path.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match other {
+        BoundArithmeticOperand::Override(probed) => {
+            // Resolve only after the mode has declined so mutations made by the
+            // mode to the operand's handler are visible, matching PyTorch.
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.Tensor.true_divide",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundArithmeticOperand::Tensor(_) | BoundArithmeticOperand::Scalar(_) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.Tensor.true_divide",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            apply_true_divide(py, tensor, other)
+        }
+    }
+}
+
+fn apply_true_divide(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    other: &BoundArithmeticOperand<'_>,
+) -> PyResult<Py<PyAny>> {
+    let result = match other {
+        BoundArithmeticOperand::Tensor(other) => {
+            let tensor = tensor.try_borrow()?;
+            let other = other.try_borrow()?;
+            if is_grad_enabled() && (tensor.inner.requires_grad() || other.inner.requires_grad()) {
+                return Err(PyRuntimeError::new_err(
+                    "true_divide(): autograd recording is not supported",
+                ));
+            }
+            BinaryOperation::Divide.apply_tensors(&tensor.inner, &other.inner)
+        }
+        BoundArithmeticOperand::Scalar(scalar) => {
+            let scalar = parse_arithmetic_scalar_operand(scalar)?;
+            let tensor = tensor.try_borrow()?;
+            if is_grad_enabled() && tensor.inner.requires_grad() {
+                return Err(PyRuntimeError::new_err(
+                    "true_divide(): autograd recording is not supported",
+                ));
+            }
+            BinaryOperation::Divide.apply_scalar(&tensor.inner, scalar, false)
+        }
+        BoundArithmeticOperand::Override(_) => {
+            unreachable!("true_divide overrides were dispatched before the native path")
+        }
+    };
+    Ok(Py::new(
+        py,
+        PyTensor::new(result.map_err(|error| tensor_error(&error))?),
+    )?
+    .into_any())
+}
+
 fn dispatch_view_as(
     py: Python<'_>,
     tensor: &Bound<'_, PyTensor>,
@@ -3121,16 +3254,16 @@ fn ordered_dtype_overrides<'py>(
 
 fn ordered_multiplication_overrides<'py>(
     operation: MultiplicationOperation,
-    input: &BoundMulOperand<'py>,
-    other: &BoundMulOperand<'py>,
+    input: &BoundArithmeticOperand<'py>,
+    other: &BoundArithmeticOperand<'py>,
 ) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
     let input = match input {
-        BoundMulOperand::Override(probed) => Some(probed),
-        BoundMulOperand::Tensor(_) | BoundMulOperand::Scalar(_) => None,
+        BoundArithmeticOperand::Override(probed) => Some(probed),
+        BoundArithmeticOperand::Tensor(_) | BoundArithmeticOperand::Scalar(_) => None,
     };
     let other = match other {
-        BoundMulOperand::Override(probed) => Some(probed),
-        BoundMulOperand::Tensor(_) | BoundMulOperand::Scalar(_) => None,
+        BoundArithmeticOperand::Override(probed) => Some(probed),
+        BoundArithmeticOperand::Tensor(_) | BoundArithmeticOperand::Scalar(_) => None,
     };
     ordered_binary_overrides(input, other, operation.dispatch_allocation_error())
 }
@@ -3191,8 +3324,8 @@ fn dispatch_top_level_matmul(
 fn dispatch_top_level_multiplication(
     operation: MultiplicationOperation,
     py: Python<'_>,
-    input: &BoundMulOperand<'_>,
-    other: &BoundMulOperand<'_>,
+    input: &BoundArithmeticOperand<'_>,
+    other: &BoundArithmeticOperand<'_>,
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
@@ -3238,26 +3371,26 @@ fn dispatch_top_level_multiplication(
 fn apply_top_level_multiplication(
     operation: MultiplicationOperation,
     py: Python<'_>,
-    input: &BoundMulOperand<'_>,
-    other: &BoundMulOperand<'_>,
+    input: &BoundArithmeticOperand<'_>,
+    other: &BoundArithmeticOperand<'_>,
 ) -> PyResult<Py<PyAny>> {
     let result = match (input, other) {
-        (BoundMulOperand::Tensor(input), BoundMulOperand::Tensor(other)) => {
+        (BoundArithmeticOperand::Tensor(input), BoundArithmeticOperand::Tensor(other)) => {
             let other = other.try_borrow()?;
             BinaryOperation::Multiply.apply_tensors(&input.try_borrow()?.inner, &other.inner)
         }
-        (BoundMulOperand::Tensor(tensor), BoundMulOperand::Scalar(scalar))
-        | (BoundMulOperand::Scalar(scalar), BoundMulOperand::Tensor(tensor)) => {
-            let scalar = parse_top_level_mul_scalar(scalar)?;
+        (BoundArithmeticOperand::Tensor(tensor), BoundArithmeticOperand::Scalar(scalar))
+        | (BoundArithmeticOperand::Scalar(scalar), BoundArithmeticOperand::Tensor(tensor)) => {
+            let scalar = parse_arithmetic_scalar_operand(scalar)?;
             BinaryOperation::Multiply.apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
         }
-        (BoundMulOperand::Scalar(_), BoundMulOperand::Scalar(_)) => {
+        (BoundArithmeticOperand::Scalar(_), BoundArithmeticOperand::Scalar(_)) => {
             return Err(PyTypeError::new_err(format!(
                 "{}(): scalar-scalar multiplication is not supported; at least one operand must be Tensor",
                 operation.name()
             )));
         }
-        (BoundMulOperand::Override(_), _) | (_, BoundMulOperand::Override(_)) => {
+        (BoundArithmeticOperand::Override(_), _) | (_, BoundArithmeticOperand::Override(_)) => {
             unreachable!("multiplication overrides were dispatched before the native path")
         }
     };
@@ -3268,13 +3401,13 @@ fn apply_top_level_multiplication(
     .into_any())
 }
 
-fn parse_top_level_mul_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
+fn parse_arithmetic_scalar_operand(value: &Bound<'_, PyAny>) -> PyResult<f32> {
     match parse_arithmetic_scalar(value) {
         Ok(Some(ParsedArithmeticScalar::WideNumpyUnsigned)) => {
             Err(PyTypeError::new_err("an integer is required"))
         }
         Ok(Some(scalar)) => Ok(scalar.into_f32()),
-        Ok(None) => unreachable!("top-level mul scalar types were checked while binding"),
+        Ok(None) => unreachable!("arithmetic scalar types were checked while binding"),
         Err(_) if value.is_instance_of::<PyInt>() => {
             let message = if python_integer_is_negative(value)? {
                 "can't convert negative int to unsigned"
@@ -3905,7 +4038,9 @@ impl PyTensor {
                     let actual = python_type_name(&other.value)?;
                     Err(mul_argument_type_error(other.position, &actual))
                 }
-                MultiplicationOperation::Multiply => Err(multiply_binding_error(args, kwargs)?),
+                MultiplicationOperation::Multiply => Err(overloaded_binary_method_binding_error(
+                    "multiply", args, kwargs,
+                )?),
             };
         }
         if let Some(keyword_error) = keyword_error {
@@ -8093,15 +8228,15 @@ fn parse_top_level_multiplication_operand<'py>(
     value: &ParsedCallArgument<'py>,
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<BoundMulOperand<'py>> {
+) -> PyResult<BoundArithmeticOperand<'py>> {
     if let Ok(tensor) = value.value.cast::<PyTensor>() {
-        return Ok(BoundMulOperand::Tensor(tensor.clone()));
+        return Ok(BoundArithmeticOperand::Tensor(tensor.clone()));
     }
     if let Some(probed) = probe_torch_function_override(&value.value) {
-        return Ok(BoundMulOperand::Override(probed));
+        return Ok(BoundArithmeticOperand::Override(probed));
     }
     if is_real_arithmetic_scalar(&value.value)? {
-        return Ok(BoundMulOperand::Scalar(value.value.clone()));
+        return Ok(BoundArithmeticOperand::Scalar(value.value.clone()));
     }
 
     let argument_count = positional
@@ -8113,6 +8248,28 @@ fn parse_top_level_multiplication_operand<'py>(
 
     parse_tensor_argument(operation.name(), argument, value)?;
     unreachable!("unsupported multiplication operands were rejected by parse_tensor_argument")
+}
+
+fn parse_true_divide_operand<'py>(
+    value: &ParsedCallArgument<'py>,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<BoundArithmeticOperand<'py>> {
+    if let Ok(tensor) = value.value.cast::<PyTensor>() {
+        return Ok(BoundArithmeticOperand::Tensor(tensor.clone()));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundArithmeticOperand::Override(probed));
+    }
+    if is_real_arithmetic_scalar(&value.value)? {
+        return Ok(BoundArithmeticOperand::Scalar(value.value.clone()));
+    }
+
+    Err(overloaded_binary_method_binding_error(
+        "true_divide",
+        positional,
+        keywords,
+    )?)
 }
 
 fn bind_matmul_argument<'py>(
@@ -8140,6 +8297,11 @@ fn bind_multiplication_argument<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<(ParsedCallArgument<'py>, Option<PyErr>)> {
+    if matches!(operation, MultiplicationOperation::Multiply) {
+        return bind_overloaded_binary_method_argument(operation.name(), positional, keywords)
+            .map(|other| (other, None));
+    }
+
     if positional.is_empty()
         && let Some(keywords) = keywords
         && keywords.len() == 1
@@ -8154,33 +8316,41 @@ fn bind_multiplication_argument<'py>(
         ));
     }
 
-    if matches!(operation, MultiplicationOperation::Multiply) {
-        if positional.len() == 1 && keywords.is_none_or(PyDictMethods::is_empty) {
-            return Ok((
-                ParsedCallArgument {
-                    value: positional.get_item(0)?,
-                    position: Some(1),
-                },
-                None,
-            ));
+    bind_other_argument_with_x2_fallback(operation.name(), positional, keywords)
+}
+
+fn bind_overloaded_binary_method_argument<'py>(
+    function: &str,
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ParsedCallArgument<'py>> {
+    if positional.len() == 1 && keywords.is_none_or(PyDictMethods::is_empty) {
+        return Ok(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        });
+    }
+    if positional.is_empty()
+        && let Some(keywords) = keywords
+        && keywords.len() == 1
+    {
+        if let Some(other) = keywords.get_item("x2")? {
+            return Ok(ParsedCallArgument {
+                value: other,
+                position: None,
+            });
         }
-        if positional.is_empty()
-            && let Some(keywords) = keywords
-            && keywords.len() == 1
-            && let Some(other) = keywords.get_item("other")?
-        {
-            return Ok((
-                ParsedCallArgument {
-                    value: other,
-                    position: None,
-                },
-                None,
-            ));
+        if let Some(other) = keywords.get_item("other")? {
+            return Ok(ParsedCallArgument {
+                value: other,
+                position: None,
+            });
         }
-        return Err(multiply_binding_error(positional, keywords)?);
     }
 
-    bind_other_argument_with_x2_fallback(operation.name(), positional, keywords)
+    Err(overloaded_binary_method_binding_error(
+        function, positional, keywords,
+    )?)
 }
 
 fn bind_other_argument_with_x2_fallback<'py>(
@@ -8431,7 +8601,8 @@ fn push_multiply_mismatched_argument(
     Ok(())
 }
 
-fn multiply_binding_error(
+fn overloaded_binary_method_binding_error(
+    function: &str,
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyErr> {
@@ -8450,14 +8621,14 @@ fn multiply_binding_error(
             let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
             let number_detail = call_argument_type_description_with(&value, &allocation)?;
             (
-                multiply_invalid_type_mismatch(
+                overloaded_binary_invalid_type_mismatch(
                     &tensor_detail,
                     &actual_type,
                     "Tensor",
                     None,
                     &allocation,
                 )?,
-                multiply_invalid_type_mismatch(
+                overloaded_binary_invalid_type_mismatch(
                     &number_detail,
                     &actual_type,
                     "Number",
@@ -8477,14 +8648,14 @@ fn multiply_binding_error(
                 let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
                 let number_detail = call_argument_type_description_with(&value, &allocation)?;
                 (
-                    multiply_invalid_type_mismatch(
+                    overloaded_binary_invalid_type_mismatch(
                         &tensor_detail,
                         &actual_type,
                         "Tensor",
                         Some("other"),
                         &allocation,
                     )?,
-                    multiply_invalid_type_mismatch(
+                    overloaded_binary_invalid_type_mismatch(
                         &number_detail,
                         &actual_type,
                         "Number",
@@ -8493,7 +8664,7 @@ fn multiply_binding_error(
                     )?,
                 )
             } else {
-                let mismatch = multiply_invalid_keyword_mismatch(key, &allocation)?;
+                let mismatch = overloaded_binary_invalid_keyword_mismatch(key, &allocation)?;
                 (try_string_from_str_with(&mismatch, &allocation)?, mismatch)
             }
         }
@@ -8501,8 +8672,10 @@ fn multiply_binding_error(
         (String::new(), String::new())
     };
 
-    let mut message = try_string_from_str_with(
-        "multiply() received an invalid combination of arguments - got (",
+    let mut message = try_string_from_str_with(function, &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "() received an invalid combination of arguments - got (",
         &allocation,
     )?;
     try_push_string_with(&mut message, &summary, &allocation)?;
@@ -8527,7 +8700,7 @@ fn multiply_binding_error(
     Ok(PyErr::from_value(exception))
 }
 
-fn multiply_invalid_type_mismatch(
+fn overloaded_binary_invalid_type_mismatch(
     detail: &str,
     actual_type: &str,
     expected_type: &str,
@@ -8557,7 +8730,7 @@ fn multiply_invalid_type_mismatch(
     Ok(mismatch)
 }
 
-fn multiply_invalid_keyword_mismatch(
+fn overloaded_binary_invalid_keyword_mismatch(
     keyword: &str,
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<String> {
