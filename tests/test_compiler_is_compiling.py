@@ -156,6 +156,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
             compiler.__all__,
             [
                 "assume_constant_result",
+                "reset",
                 "get_default_backend",
                 "is_compiling",
                 "is_dynamo_compiling",
@@ -168,6 +169,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
             {name for name in compiler_namespace if not name.startswith("__")},
             {
                 "assume_constant_result",
+                "reset",
                 "get_default_backend",
                 "is_compiling",
                 "is_dynamo_compiling",
@@ -245,6 +247,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
         for name in PYTORCH_COMPILER_EXPORTS:
             if name not in {
                 "assume_constant_result",
+                "reset",
                 "get_default_backend",
                 "is_compiling",
                 "is_dynamo_compiling",

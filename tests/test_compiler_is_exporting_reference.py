@@ -142,6 +142,7 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "assume_constant_result",
+                    "reset",
                     "get_default_backend",
                     "is_compiling",
                     "is_dynamo_compiling",
@@ -262,6 +263,7 @@ class CompilerIsExportingReferenceTests(unittest.TestCase):
 
         unsupported = set(reference_torch.compiler.__all__) - {
             "assume_constant_result",
+            "reset",
             "get_default_backend",
             "is_compiling",
             "is_dynamo_compiling",
