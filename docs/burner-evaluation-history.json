@@ -5169,6 +5169,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 93.5
       }
+    },
+    {
+      "key": "pr:682",
+      "recordedAt": "2026-08-22T21:34:54.926Z",
+      "label": "PR #682",
+      "kind": "leaf",
+      "prNumber": 682,
+      "title": "Support rank-2 functional dropout1d identity paths",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 84.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 67.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 93.6
+      }
     }
   ]
 }
