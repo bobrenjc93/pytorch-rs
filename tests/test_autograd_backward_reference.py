@@ -88,6 +88,94 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             np.asarray(freed_leaf.grad).copy(),
         )
 
+    def mode_dispatch_outcome(self, module):
+        marker = object()
+
+        def summarize(call, loss):
+            label, function, dispatch_types, args, kwargs = call
+            return (
+                label,
+                function is module.autograd.backward,
+                tuple(item.__name__ for item in dispatch_types),
+                len(args),
+                type(args[0]).__name__,
+                len(args[0]),
+                args[0][0] is loss,
+                tuple(kwargs.items()),
+            )
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(("recording", func, types, args, kwargs))
+                return self.result
+
+        intercepted_leaf = module.tensor(2.0, requires_grad=True)
+        intercepted_loss = intercepted_leaf * intercepted_leaf
+        recording = RecordingMode(marker)
+        with recording:
+            intercepted_result = module.autograd.backward(intercepted_loss)
+
+        forwarding_calls = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_calls.append((self.label, func, types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        forwarded_leaf = module.tensor(3.0, requires_grad=True)
+        forwarded_loss = forwarded_leaf * forwarded_leaf
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded_result = module.autograd.backward(forwarded_loss)
+
+        return {
+            "intercepted_result": intercepted_result is marker,
+            "intercepted_gradient": intercepted_leaf.grad,
+            "recording_calls": tuple(
+                summarize(call, intercepted_loss) for call in recording.calls
+            ),
+            "forwarded_result": forwarded_result,
+            "forwarded_gradient": forwarded_leaf.grad.item(),
+            "forwarding_calls": tuple(
+                summarize(call, forwarded_loss) for call in forwarding_calls
+            ),
+        }
+
+    def monkeypatch_outcome(self, module):
+        marker = object()
+        calls = []
+        original = module.Tensor.backward
+
+        def replacement(*args, **kwargs):
+            calls.append((len(args), tuple(kwargs)))
+            return marker
+
+        module.Tensor.backward = replacement
+        try:
+            leaf = module.tensor(3.0, requires_grad=True)
+            loss = leaf * leaf
+            method_result = loss.backward()
+            method_gradient = leaf.grad
+            function_result = module.autograd.backward(loss)
+            function_gradient = leaf.grad.item()
+        finally:
+            module.Tensor.backward = original
+
+        return (
+            method_result is marker,
+            method_gradient,
+            function_result,
+            function_gradient,
+            tuple(calls),
+        )
+
     def test_single_root_default_calls_match_pytorch_2_13(self):
         for form in (
             "positional",
@@ -113,6 +201,18 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
         np.testing.assert_array_equal(actual[2], expected[2])
         self.assertEqual(actual[3], expected[3])
         np.testing.assert_array_equal(actual[4], expected[4])
+
+    def test_active_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_outcome(torch),
+            self.mode_dispatch_outcome(reference_torch),
+        )
+
+    def test_tensor_backward_monkeypatch_is_bypassed_like_pytorch_2_13(self):
+        self.assertEqual(
+            self.monkeypatch_outcome(torch),
+            self.monkeypatch_outcome(reference_torch),
+        )
 
     def test_native_engine_errors_match_pytorch_2_13(self):
         cases = (

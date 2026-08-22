@@ -2,9 +2,11 @@
 
 import operator as _operator
 from collections.abc import Sequence as _Sequence
+from contextvars import ContextVar as _ContextVar
 from typing import Union as _Union
 
 from .. import _C as _C
+from ..overrides import _dispatch_unary_torch_function
 from . import grad_mode as grad_mode
 from .grad_mode import no_grad as no_grad
 
@@ -17,6 +19,11 @@ _TensorOrTensorsOrGradEdge = _Union[
     _Sequence["GradientEdge"],
 ]
 _TensorOrOptionalTensors = _Tensor | _Sequence[_Tensor | None]
+_native_backward = _C._autograd_backward
+_mode_redispatch_active = _ContextVar(
+    "torch_rs_autograd_backward_mode_redispatch_active",
+    default=False,
+)
 
 
 def _require_default_graph_option(name, value, *, allow_none):
@@ -27,6 +34,43 @@ def _require_default_graph_option(name, value, *, allow_none):
         raise NotImplementedError(
             f"torch_rs.autograd.backward does not support {name}=True"
         )
+
+
+def _single_root_tensor(tensors):
+    if type(tensors) is _Tensor:
+        return tensors
+    if (
+        _mode_redispatch_active.get()
+        and type(tensors) is tuple
+        and len(tensors) == 1
+        and type(tensors[0]) is _Tensor
+    ):
+        return tensors[0]
+    raise TypeError(
+        "torch_rs.autograd.backward only supports one exact native Tensor"
+    )
+
+
+def _backward_implementation(
+    tensor,
+    *,
+    grad_tensors,
+    retain_graph,
+    create_graph,
+    inputs,
+):
+    if grad_tensors is not None:
+        raise NotImplementedError(
+            "torch_rs.autograd.backward does not support explicit gradients"
+        )
+    _require_default_graph_option("retain_graph", retain_graph, allow_none=True)
+    _require_default_graph_option("create_graph", create_graph, allow_none=False)
+    if inputs is not None:
+        raise NotImplementedError(
+            "torch_rs.autograd.backward does not support inputs"
+        )
+
+    _native_backward(tensor)
 
 
 def backward(
@@ -96,26 +140,29 @@ def backward(
             ``dict(model.named_parameters())``) is also accepted, in which case
             the values are used as the input tensors.
     """
-    if type(tensors) is not _Tensor:
-        raise TypeError(
-            "torch_rs.autograd.backward only supports one exact native Tensor"
-        )
-    if grad_tensors is not None:
-        raise NotImplementedError(
-            "torch_rs.autograd.backward does not support explicit gradients"
-        )
-    _require_default_graph_option("retain_graph", retain_graph, allow_none=True)
-    _require_default_graph_option("create_graph", create_graph, allow_none=False)
+    tensor = _single_root_tensor(tensors)
     if grad_variables is not None:
         raise NotImplementedError(
             "torch_rs.autograd.backward does not support grad_variables"
         )
-    if inputs is not None:
-        raise NotImplementedError(
-            "torch_rs.autograd.backward does not support inputs"
-        )
 
-    tensors.backward()
+    keyword_arguments = {
+        "grad_tensors": grad_tensors,
+        "retain_graph": retain_graph,
+        "create_graph": create_graph,
+        "inputs": inputs,
+    }
+    token = _mode_redispatch_active.set(True)
+    try:
+        return _dispatch_unary_torch_function(
+            backward,
+            _backward_implementation,
+            tensor,
+            keyword_arguments,
+            dispatch_arguments=((tensor,),),
+        )
+    finally:
+        _mode_redispatch_active.reset(token)
 
 
 is_multithreading_enabled = _C._is_multithreading_enabled

@@ -87,6 +87,7 @@ def _dispatch_unary_torch_function(
     input,
     keyword_arguments,
     include_tensor=True,
+    dispatch_arguments=None,
 ):
     if not has_torch_function_unary(input):
         return implementation(input, **keyword_arguments)
@@ -94,13 +95,14 @@ def _dispatch_unary_torch_function(
     mode = _get_current_function_mode()
     overloaded_args = _overloaded_unary_arguments(input, include_tensor)
     types = tuple(type(argument) for argument in overloaded_args)
+    arguments = (input,) if dispatch_arguments is None else dispatch_arguments
     if mode is not None:
         popped_mode = _pop_mode()
         try:
             result = popped_mode.__torch_function__(
                 public_function,
                 types,
-                (input,),
+                arguments,
                 keyword_arguments.copy(),
             )
         finally:
@@ -116,6 +118,7 @@ def _dispatch_unary_torch_function(
                 input,
                 keyword_arguments,
                 include_tensor=False,
+                dispatch_arguments=dispatch_arguments,
             )
 
         torch_func_method = overloaded_arg.__torch_function__
@@ -134,7 +137,7 @@ def _dispatch_unary_torch_function(
         result = torch_func_method(
             public_function,
             types,
-            (input,),
+            arguments,
             keyword_arguments.copy(),
         )
         if result is not NotImplemented:

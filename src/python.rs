@@ -3768,7 +3768,7 @@ impl PyTensor {
     }
 
     fn backward(&self) -> PyResult<()> {
-        self.inner.backward().map_err(|error| tensor_error(&error))
+        self.run_backward()
     }
 
     fn relu(&self) -> PyResult<Self> {
@@ -3870,6 +3870,10 @@ impl PyTensor {
 }
 
 impl PyTensor {
+    fn run_backward(&self) -> PyResult<()> {
+        self.inner.backward().map_err(|error| tensor_error(&error))
+    }
+
     fn matrix_multiply(&self, other: &Self) -> PyResult<Self> {
         self.inner
             .matmul(&other.inner)
@@ -4093,6 +4097,11 @@ fn tensor(
     CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
+}
+
+#[pyfunction(signature = (tensor, /))]
+fn _autograd_backward(tensor: &Bound<'_, PyTensor>) -> PyResult<()> {
+    tensor.try_borrow()?.run_backward()
 }
 
 fn scalar_tensor_impl(
@@ -10516,6 +10525,10 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
+    module.add_function(wrap_pyfunction!(_autograd_backward, module)?)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_autograd_backward",))?;
     torch_function_mode_stack::add_torch_function_mode_stack(module)?;
     add_torch_function_probe(module)?;
     add_variable_functions(module)?;

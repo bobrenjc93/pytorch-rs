@@ -65,6 +65,96 @@ class AutogradBackwardTests(unittest.TestCase):
         torch.autograd.backward((freed_leaf * freed_leaf).sum())
         self.assertEqual(freed_leaf.grad.tolist(), [8.0, 12.0])
 
+    def test_active_torch_function_modes_dispatch_before_native_backward(self):
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        leaf = torch.tensor(2.0, requires_grad=True)
+        loss = leaf * leaf
+        recording = RecordingMode(marker)
+        with recording:
+            result = torch.autograd.backward(loss)
+
+        self.assertIs(result, marker)
+        self.assertIsNone(leaf.grad)
+        self.assertEqual(len(recording.calls), 1)
+        function, dispatch_types, args, kwargs = recording.calls[0]
+        self.assertIs(function, torch.autograd.backward)
+        self.assertEqual(dispatch_types, (torch.Tensor,))
+        self.assertEqual(len(args), 1)
+        self.assertIs(type(args[0]), tuple)
+        self.assertEqual(len(args[0]), 1)
+        self.assertIs(args[0][0], loss)
+        self.assertEqual(
+            kwargs,
+            {
+                "grad_tensors": None,
+                "retain_graph": None,
+                "create_graph": False,
+                "inputs": None,
+            },
+        )
+
+        calls = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append((self.label, func, types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        forwarded_leaf = torch.tensor(3.0, requires_grad=True)
+        forwarded_loss = forwarded_leaf * forwarded_leaf
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                self.assertIsNone(torch.autograd.backward(forwarded_loss))
+
+        self.assertEqual([call[0] for call in calls], ["upper", "lower"])
+        self.assertTrue(
+            all(call[1] is torch.autograd.backward for call in calls)
+        )
+        self.assertTrue(all(call[2] == (torch.Tensor,) for call in calls))
+        for _, _, _, args, _ in calls:
+            self.assertEqual(len(args), 1)
+            self.assertIs(type(args[0]), tuple)
+            self.assertEqual(len(args[0]), 1)
+            self.assertIs(args[0][0], forwarded_loss)
+        self.assertEqual(forwarded_leaf.grad.item(), 6.0)
+
+    def test_autograd_backward_ignores_tensor_backward_monkeypatch(self):
+        marker = object()
+        calls = []
+        original = torch.Tensor.backward
+
+        def replacement(*args, **kwargs):
+            calls.append((args, kwargs))
+            return marker
+
+        torch.Tensor.backward = replacement
+        try:
+            leaf = torch.tensor(3.0, requires_grad=True)
+            loss = leaf * leaf
+            self.assertIs(loss.backward(), marker)
+            self.assertIsNone(leaf.grad)
+            self.assertIsNone(torch.autograd.backward(loss))
+        finally:
+            torch.Tensor.backward = original
+
+        self.assertEqual(len(calls), 1)
+        self.assertIs(calls[0][0][0], loss)
+        self.assertEqual(calls[0][1], {})
+        self.assertEqual(leaf.grad.item(), 6.0)
+
     def test_tensor_backward_errors_are_preserved(self):
         with self.assertRaisesRegex(RuntimeError, "does not require grad"):
             torch.autograd.backward(torch.tensor(1.0))
@@ -216,6 +306,8 @@ class AutogradBackwardTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "backward"))
         self.assertNotIn("backward", torch.__all__)
         self.assertFalse(hasattr(module, "grad"))
+        self.assertFalse(hasattr(torch, "_autograd_backward"))
+        self.assertNotIn("_autograd_backward", torch._C.__all__)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
