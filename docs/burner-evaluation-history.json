@@ -4961,6 +4961,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 92.5
       }
+    },
+    {
+      "key": "pr:636",
+      "recordedAt": "2026-08-22T09:37:17.945Z",
+      "label": "PR #636",
+      "kind": "leaf",
+      "prNumber": 636,
+      "title": "Expose native build capability flags",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 82.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 66.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 92.5
+      }
     }
   ]
 }
