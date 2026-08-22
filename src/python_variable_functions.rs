@@ -22,14 +22,14 @@ use crate::python::{
     movedim_variable_function, mul_variable_function, multiply_variable_function,
     neg_variable_function, negative_variable_function, permute_variable_function,
     positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sin_variable_function, sqrt_variable_function,
-    unbind_variable_function,
+    reciprocal_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
+    sqrt_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 29] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 30] = [
     "get_device",
     "scalar_tensor",
     "atleast_1d",
@@ -39,6 +39,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 29] = [
     "positive",
     "detach",
     "ravel",
+    "reciprocal",
     "neg",
     "negative",
     "exp",
@@ -88,6 +89,34 @@ Example::
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
 
 const RAVEL_DOC: &std::ffi::CStr = c"\nravel(input) -> Tensor\n\nReturn a contiguous flattened tensor. A copy is made only if needed.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.tensor([[[1, 2],\n    ...                    [3, 4]],\n    ...                   [[5, 6],\n    ...                    [7, 8]]])\n    >>> torch.ravel(t)\n    tensor([1, 2, 3, 4, 5, 6, 7, 8])\n";
+
+const RECIPROCAL_DOC: &std::ffi::CStr = cr"
+reciprocal(input, *, out=None) -> Tensor
+
+Returns a new tensor with the reciprocal of the elements of :attr:`input`
+
+.. math::
+    \text{out}_{i} = \frac{1}{\text{input}_{i}}
+
+.. note::
+    Unlike NumPy's reciprocal, torch.reciprocal supports integral inputs. Integral
+    inputs to reciprocal are automatically :ref:`promoted <type-promotion-doc>` to
+    the default scalar type.
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.randn(4)
+    >>> a
+    tensor([-0.4595, -2.1219, -1.4314,  0.7298])
+    >>> torch.reciprocal(a)
+    tensor([-2.1763, -0.4713, -0.6986,  1.3702])
+";
 
 const NEG_DOC: &std::ffi::CStr = cr"
 neg(input, *, out=None) -> Tensor
@@ -511,6 +540,7 @@ variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(detach_callback, detach_variable_function);
 variable_function_callback!(ravel_callback, ravel_variable_function);
+variable_function_callback!(reciprocal_callback, reciprocal_variable_function);
 variable_function_callback!(neg_callback, neg_variable_function);
 variable_function_callback!(negative_callback, negative_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
@@ -564,6 +594,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
         variable_function_method!(c"detach", detach_callback, c""),
         variable_function_method!(c"ravel", ravel_callback, RAVEL_DOC),
+        variable_function_method!(c"reciprocal", reciprocal_callback, RECIPROCAL_DOC),
         variable_function_method!(c"neg", neg_callback, NEG_DOC),
         variable_function_method!(c"negative", negative_callback, NEGATIVE_DOC),
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
