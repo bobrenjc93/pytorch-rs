@@ -4082,7 +4082,9 @@ fn tensor(
     let requires_grad = requires_grad.0;
     let dtype_was_explicit = dtype.is_some();
     let (dtype, device) = parse_metadata("tensor", dtype, device)?;
-    let (flattened, shape) = if let Ok(scalar) = data.extract::<f32>() {
+    let (flattened, shape) = if let Some(flat_list) = flatten_exact_float_list(data)? {
+        flat_list
+    } else if let Ok(scalar) = data.extract::<f32>() {
         (vec![scalar], Vec::new())
     } else if data.cast::<PyBytes>().is_ok() {
         return Err(PyTypeError::new_err("new(): invalid data type 'bytes'"));
@@ -10427,25 +10429,62 @@ fn is_sequence_input(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(value.hasattr("__len__")? && value.hasattr("__getitem__")?)
 }
 
+#[allow(clippy::cast_possible_truncation)]
+fn flatten_exact_float_list(value: &Bound<'_, PyAny>) -> PyResult<Option<(Vec<f32>, Vec<usize>)>> {
+    let Ok(values) = value.cast_exact::<PyList>() else {
+        return Ok(None);
+    };
+    let length = values.len();
+    for index in 0..length {
+        if !values.get_item(index)?.is_exact_instance_of::<PyFloat>() {
+            return Ok(None);
+        }
+    }
+
+    let mut output = Vec::new();
+    output.try_reserve_exact(length).map_err(|_| {
+        PyMemoryError::new_err("unable to allocate native tensor storage for float list")
+    })?;
+    for index in 0..length {
+        let item = values.get_item(index)?;
+        let Ok(item) = item.cast_exact::<PyFloat>() else {
+            return Ok(None);
+        };
+        output.push(item.value() as f32);
+    }
+    Ok(Some((output, vec![length])))
+}
+
 fn flatten_rectangular(value: &Bound<'_, PyAny>, output: &mut Vec<f32>) -> PyResult<Vec<usize>> {
     if let Ok(scalar) = value.extract::<f32>() {
         output.push(scalar);
         return Ok(Vec::new());
     }
 
+    if let Ok(values) = value.cast_exact::<PyList>() {
+        return flatten_sequence(values.len(), |index| values.get_item(index), output);
+    }
     if !is_sequence_input(value)? {
         return Err(PyTypeError::new_err(
             "tensor data must contain real numbers in a rectangular sequence",
         ));
     }
     let length = value.len()?;
+    flatten_sequence(length, |index| value.get_item(index), output)
+}
+
+fn flatten_sequence<'py>(
+    length: usize,
+    mut get_item: impl FnMut(usize) -> PyResult<Bound<'py, PyAny>>,
+    output: &mut Vec<f32>,
+) -> PyResult<Vec<usize>> {
     if length == 0 {
         return Ok(vec![0]);
     }
 
-    let first_shape = flatten_rectangular(&value.get_item(0)?, output)?;
+    let first_shape = flatten_rectangular(&get_item(0)?, output)?;
     for index in 1..length {
-        let shape = flatten_rectangular(&value.get_item(index)?, output)?;
+        let shape = flatten_rectangular(&get_item(index)?, output)?;
         if shape != first_shape {
             return Err(PyValueError::new_err(
                 "expected a rectangular sequence, but nested shapes differ",
