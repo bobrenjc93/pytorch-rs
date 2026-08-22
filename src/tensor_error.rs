@@ -332,10 +332,9 @@ fn format_memory_format_error(
 
 fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
     match error {
-        TensorError::BackwardRequiresScalar { elements } => write!(
-            formatter,
-            "grad can be implicitly created only for scalar outputs (output has {elements} elements)"
-        ),
+        TensorError::BackwardRequiresScalar { .. } => {
+            formatter.write_str("grad can be implicitly created only for scalar outputs")
+        }
         TensorError::DoesNotRequireGrad => formatter.write_str(
             "element 0 of tensors does not require grad and does not have a grad_fn",
         ),
