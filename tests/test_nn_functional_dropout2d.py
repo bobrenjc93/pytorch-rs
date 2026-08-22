@@ -639,7 +639,7 @@ class FunctionalDropout2dTests(unittest.TestCase):
                             with self.assertRaisesRegex(
                                 NotImplementedError,
                                 "^torch_rs.nn.functional.dropout2d only "
-                                "supports rank-4 inputs$",
+                                "supports rank-3 and rank-4 inputs$",
                             ):
                                 functional.dropout2d(
                                     source,

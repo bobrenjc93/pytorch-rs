@@ -158,9 +158,13 @@ fn _nn_functional_dropout(
         && input_rank != required_rank
         && metadata.legacy_rank != Some(input_rank)
     {
+        let supported_ranks = metadata.legacy_rank.map_or_else(
+            || format!("rank-{required_rank}"),
+            |legacy_rank| format!("rank-{legacy_rank} and rank-{required_rank}"),
+        );
         return Err(PyNotImplementedError::new_err(format!(
-            "torch_rs.nn.functional.{} only supports rank-{required_rank} inputs",
-            metadata.public_function
+            "torch_rs.nn.functional.{} only supports {supported_ranks} inputs",
+            metadata.public_function,
         )));
     }
 

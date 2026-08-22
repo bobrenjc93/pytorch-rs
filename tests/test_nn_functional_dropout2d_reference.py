@@ -873,8 +873,8 @@ class FunctionalDropout2dReferenceTests(unittest.TestCase):
                 self.assertIs(actual_error[0], NotImplementedError)
                 self.assertEqual(
                     actual_error[1],
-                    "torch_rs.nn.functional.dropout2d only supports rank-4 "
-                    "inputs",
+                    "torch_rs.nn.functional.dropout2d only supports rank-3 "
+                    "and rank-4 inputs",
                 )
                 self.assertEqual(actual_warnings, [])
                 self.assertIs(expected_output, expected_input)
