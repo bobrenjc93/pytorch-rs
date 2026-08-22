@@ -254,14 +254,9 @@ impl PyTensorBase {
         let arguments = validate_new_zeros_arguments(bind_new_zeros_arguments(args, kwargs)?)?;
 
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        if let Some(result) = dispatch_tensorbase_method_mode(
-            slf.py(),
-            tensor,
-            "new_zeros",
-            "torch.Tensor.new_zeros",
-            args,
-            kwargs,
-        )? {
+        if let Some(result) =
+            dispatch_new_zeros(slf.py(), tensor, &arguments.overrides, args, kwargs)?
+        {
             return Ok(result);
         }
 
@@ -3372,6 +3367,7 @@ struct ParsedNewZerosArguments<'py> {
     device: Option<Bound<'py, PyAny>>,
     pin_memory: bool,
     requires_grad: bool,
+    overrides: Vec<ProbedTorchFunctionOverride<'py>>,
 }
 
 struct FullCallArguments<'py> {
@@ -4648,12 +4644,14 @@ fn validate_new_zeros_arguments(
 
     // Generated TensorOptions bindings validate types in this order before
     // consulting TorchFunctionMode or resolving device strings and sizes.
-    let size = validate_new_zeros_size(&size, size_position)?;
-    let dtype = parse_new_zeros_dtype(dtype.as_ref())?;
-    validate_new_zeros_layout(layout.as_ref())?;
-    validate_new_zeros_device_type(device.as_ref())?;
-    let pin_memory = parse_new_zeros_bool("pin_memory", pin_memory.as_ref())?;
-    let requires_grad = parse_new_zeros_bool("requires_grad", requires_grad.as_ref())?;
+    let mut overrides = Vec::new();
+    let size = validate_new_zeros_size(&size, size_position, &mut overrides)?;
+    let dtype = parse_new_zeros_dtype(dtype.as_ref(), &mut overrides)?;
+    validate_new_zeros_layout(layout.as_ref(), &mut overrides)?;
+    let device = parse_new_zeros_device(device.as_ref(), &mut overrides)?;
+    let pin_memory = parse_new_zeros_bool("pin_memory", pin_memory.as_ref(), &mut overrides)?;
+    let requires_grad =
+        parse_new_zeros_bool("requires_grad", requires_grad.as_ref(), &mut overrides)?;
     if let Some(error) = keyword_error {
         return Err(error);
     }
@@ -4664,30 +4662,64 @@ fn validate_new_zeros_arguments(
         device,
         pin_memory,
         requires_grad,
+        overrides,
     })
 }
 
 fn validate_new_zeros_size<'py>(
     size: &Bound<'py, PyAny>,
     position: Option<usize>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<PendingNewZerosSize<'py>> {
+    let size_override = probe_torch_function_override(size);
     if let Ok(dimensions) = size.cast::<PyTuple>() {
-        return validate_new_zeros_dimensions(size, dimensions.len(), dimensions.iter(), position);
+        return validate_new_zeros_dimensions(
+            size,
+            dimensions.len(),
+            dimensions.iter(),
+            position,
+            size_override,
+            overrides,
+        );
     }
     if let Ok(dimensions) = size.cast::<PyList>() {
-        return validate_new_zeros_dimensions(size, dimensions.len(), dimensions.iter(), position);
+        return validate_new_zeros_dimensions(
+            size,
+            dimensions.len(),
+            dimensions.iter(),
+            position,
+            size_override,
+            overrides,
+        );
     }
 
-    if position.is_none() || size.is_instance_of::<PyBool>() {
+    if position.is_none() {
+        let Some(probed) = size_override else {
+            return Err(new_zeros_size_type_error(size, position)?);
+        };
+        push_ordered_new_zeros_override(overrides, probed)?;
+        return Ok(PendingNewZerosSize::Scalar(size.clone()));
+    }
+
+    if size.is_instance_of::<PyBool>() {
         return Err(new_zeros_size_type_error(size, position)?);
     }
     if is_dimension_swap_integer(size)? {
+        if let Some(probed) = size_override {
+            push_ordered_new_zeros_override(overrides, probed)?;
+        }
         return Ok(PendingNewZerosSize::Scalar(size.clone()));
     }
-    if call_python_index(size).is_err() {
+    let indexable = call_python_index(size).is_ok();
+    if !indexable && size_override.is_none() {
         return Err(new_zeros_size_type_error(size, position)?);
     }
-    if call_python_index(size).is_err() {
+    if let Some(probed) = size_override {
+        // Scalar overload matching probes an override-capable value once
+        // before integer validation and once again while collecting handlers.
+        let probed = probe_torch_function_override(size).unwrap_or(probed);
+        push_ordered_new_zeros_override(overrides, probed)?;
+    } else if call_python_index(size).is_err() {
         return Err(new_zeros_size_element_type_error(size, position, 0)?);
     }
     Ok(PendingNewZerosSize::Scalar(size.clone()))
@@ -4698,21 +4730,37 @@ fn validate_new_zeros_dimensions<'py>(
     length: usize,
     dimensions: impl Iterator<Item = Bound<'py, PyAny>>,
     position: Option<usize>,
+    sequence_override: Option<ProbedTorchFunctionOverride<'py>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
 ) -> PyResult<PendingNewZerosSize<'py>> {
     let mut validated = try_size_vector(length)?;
-    for (index, dimension) in dimensions.enumerate() {
-        let valid = !dimension.is_instance_of::<PyBool>()
-            && (is_dimension_swap_integer(&dimension)? || call_python_index(&dimension).is_ok());
-        if !valid {
+    for dimension in dimensions {
+        try_push_size(&mut validated, dimension)?;
+    }
+
+    let first_override = validated.first().and_then(probe_torch_function_override);
+    if let Some(first) = validated.first() {
+        let valid = !first.is_instance_of::<PyBool>()
+            && (is_dimension_swap_integer(first)? || call_python_index(first).is_ok());
+        if !valid && sequence_override.is_none() && first_override.is_none() {
             return if position.is_some() {
-                Err(new_zeros_size_element_type_error(
-                    &dimension, position, index,
-                )?)
+                Err(new_zeros_size_element_type_error(first, position, 0)?)
             } else {
                 Err(new_zeros_size_type_error(sequence, position)?)
             };
         }
-        try_push_size(&mut validated, dimension)?;
+    }
+
+    if let Some(probed) = sequence_override {
+        push_ordered_new_zeros_override(overrides, probed)?;
+    }
+    if let Some(probed) = first_override {
+        push_ordered_new_zeros_override(overrides, probed)?;
+    }
+    for dimension in validated.iter().skip(1) {
+        if let Some(probed) = probe_torch_function_override(dimension) {
+            push_ordered_new_zeros_override(overrides, probed)?;
+        }
     }
     Ok(PendingNewZerosSize::Dimensions(validated))
 }
@@ -4737,12 +4785,23 @@ fn new_zeros_size_element_type_error(
     )))
 }
 
-fn parse_new_zeros_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<Option<DType>> {
+fn parse_new_zeros_dtype<'py>(
+    dtype: Option<&Bound<'py, PyAny>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<Option<DType>> {
     let Some(dtype) = dtype else {
         return Ok(None);
     };
+    let probed = probe_torch_function_override(dtype);
     if let Ok(dtype) = dtype.cast::<PyDType>() {
+        if let Some(probed) = probed {
+            push_ordered_new_zeros_override(overrides, probed)?;
+        }
         return Ok(Some(dtype.try_borrow()?.inner()));
+    }
+    if let Some(probed) = probed {
+        push_ordered_new_zeros_override(overrides, probed)?;
+        return Ok(None);
     }
 
     let actual = python_type_name(dtype)?;
@@ -4751,11 +4810,22 @@ fn parse_new_zeros_dtype(dtype: Option<&Bound<'_, PyAny>>) -> PyResult<Option<DT
     )))
 }
 
-fn validate_new_zeros_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+fn validate_new_zeros_layout<'py>(
+    layout: Option<&Bound<'py, PyAny>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<()> {
     let Some(layout) = layout else {
         return Ok(());
     };
+    let probed = probe_torch_function_override(layout);
     if layout.is_instance(layout_objects(layout.py())?.layout.bind(layout.py()))? {
+        if let Some(probed) = probed {
+            push_ordered_new_zeros_override(overrides, probed)?;
+        }
+        return Ok(());
+    }
+    if let Some(probed) = probed {
+        push_ordered_new_zeros_override(overrides, probed)?;
         return Ok(());
     }
 
@@ -4765,12 +4835,23 @@ fn validate_new_zeros_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> 
     )))
 }
 
-fn validate_new_zeros_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+fn parse_new_zeros_device<'py>(
+    device: Option<&Bound<'py, PyAny>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
     let Some(device) = device else {
-        return Ok(());
+        return Ok(None);
     };
+    let probed = probe_torch_function_override(device);
     if device.cast::<PyDevice>().is_ok() || device.cast::<PyString>().is_ok() {
-        return Ok(());
+        if let Some(probed) = probed {
+            push_ordered_new_zeros_override(overrides, probed)?;
+        }
+        return Ok(Some(device.clone()));
+    }
+    if let Some(probed) = probed {
+        push_ordered_new_zeros_override(overrides, probed)?;
+        return Ok(None);
     }
 
     let actual = python_type_name(device)?;
@@ -4779,12 +4860,24 @@ fn validate_new_zeros_device_type(device: Option<&Bound<'_, PyAny>>) -> PyResult
     )))
 }
 
-fn parse_new_zeros_bool(argument: &str, value: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+fn parse_new_zeros_bool<'py>(
+    argument: &str,
+    value: Option<&Bound<'py, PyAny>>,
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+) -> PyResult<bool> {
     let Some(value) = value else {
         return Ok(false);
     };
+    let probed = probe_torch_function_override(value);
     if value.is_exact_instance_of::<PyBool>() {
+        if let Some(probed) = probed {
+            push_ordered_new_zeros_override(overrides, probed)?;
+        }
         return value.is_truthy();
+    }
+    if let Some(probed) = probed {
+        push_ordered_new_zeros_override(overrides, probed)?;
+        return Ok(false);
     }
 
     let actual = python_type_name(value)?;
@@ -4793,10 +4886,104 @@ fn parse_new_zeros_bool(argument: &str, value: Option<&Bound<'_, PyAny>>) -> PyR
     )))
 }
 
+fn push_ordered_new_zeros_override<'py>(
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+    probed: ProbedTorchFunctionOverride<'py>,
+) -> PyResult<()> {
+    let mut insertion = None;
+    for (index, existing) in overrides.iter().enumerate() {
+        if existing.dispatch_type.is(probed.precedence_type.as_any()) {
+            return Ok(());
+        }
+        let existing_type = existing
+            .dispatch_type
+            .cast::<PyType>()
+            .expect("a torch-function dispatch type is a Python type");
+        if probed.precedence_type.is_subclass(existing_type.as_any())? {
+            insertion = Some(index);
+            break;
+        }
+    }
+
+    overrides
+        .try_reserve(1)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate new_zeros dispatch operands"))?;
+    if let Some(index) = insertion {
+        overrides.insert(index, probed);
+    } else {
+        overrides.push(probed);
+    }
+    Ok(())
+}
+
+fn dispatch_new_zeros(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    overrides: &[ProbedTorchFunctionOverride<'_>],
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Option<Py<PyAny>>> {
+    if overrides.is_empty() {
+        return dispatch_tensorbase_method_mode(
+            py,
+            tensor,
+            "new_zeros",
+            "torch.Tensor.new_zeros",
+            args,
+            kwargs,
+        );
+    }
+
+    let function = py.get_type::<PyTensorBase>().getattr("new_zeros")?.unbind();
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
+    let argument_count = args
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("new_zeros dispatch argument count overflowed"))?;
+    let mut call_arguments = Vec::new();
+    call_arguments
+        .try_reserve_exact(argument_count)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate new_zeros dispatch arguments"))?;
+    call_arguments.push(tensor.clone().into_any());
+    call_arguments.extend(args.iter());
+    let call_args = PyTuple::new(py, call_arguments)?;
+
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    for probed in overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
+        py,
+        "torch.Tensor.new_zeros",
+        active_mode.get(),
+        overrides,
+    )?)
+}
+
 fn apply_new_zeros(
     tensor: &Bound<'_, PyTensor>,
     arguments: ParsedNewZerosArguments<'_>,
 ) -> PyResult<Py<PyAny>> {
+    debug_assert!(arguments.overrides.is_empty());
     let (source_dtype, source_device) = {
         let tensor = tensor.try_borrow()?;
         (tensor.inner.dtype(), tensor.inner.device())
@@ -4809,14 +4996,16 @@ fn apply_new_zeros(
             parse_device_value("new_zeros", device)
         })?;
     let dimensions = finish_new_zeros_size(arguments.size)?;
+    CoreTensor::validate_full_shape(&dimensions)
+        .map_err(|error| new_zeros_shape_error(&error, &dimensions))?;
     if arguments.pin_memory {
         return Err(PyRuntimeError::new_err(
             "new_zeros(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
         ));
     }
 
-    let inner = CoreTensor::zeros_with_metadata(dimensions.clone(), dtype, device)
-        .map_err(|error| new_zeros_shape_error(&error, &dimensions))?
+    let inner = CoreTensor::zeros_with_metadata(dimensions, dtype, device)
+        .map_err(|error| tensor_error(&error))?
         .with_requires_grad(arguments.requires_grad);
     Ok(Py::new(tensor.py(), PyTensor::new(inner))?.into_any())
 }

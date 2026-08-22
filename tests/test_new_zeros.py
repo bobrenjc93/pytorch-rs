@@ -122,6 +122,11 @@ class NewZerosTests(unittest.TestCase):
         self.assertEqual(source.new_zeros([sequence]).shape, (3,))
         self.assertEqual(sequence.calls, [2, 3])
 
+        later = StatefulIndexDimension((2, 3))
+        self.assertEqual(source.new_zeros([1, later]).shape, (1, 2))
+        self.assertEqual(later.calls, [2])
+        self.assertEqual(source.new_zeros([1, True]).shape, (1, 1))
+
     def test_size_binding_and_conversion_errors(self):
         source = torch.tensor([1.0])
         exact_cases = (
@@ -256,6 +261,12 @@ class NewZerosTests(unittest.TestCase):
                 self.assertFalse(hasattr(torch.Tensor, name))
                 self.assertFalse(hasattr(source, name))
 
+        with self.assertRaisesRegex(
+            RuntimeError,
+            rf"^Storage size calculation overflowed with sizes=\[{sys.maxsize}\]$",
+        ):
+            source.new_zeros(sys.maxsize, pin_memory=True)
+
     def test_tensorbase_descriptor_matches_the_public_method_shape(self):
         source = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "new_zeros")
@@ -271,6 +282,125 @@ class NewZerosTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             inspect.signature(descriptor)
         self.assertEqual(descriptor(source, (2,)).tolist(), [0.0, 0.0])
+
+    def test_argument_torch_function_overrides_dispatch_in_precedence_order(self):
+        source = torch.tensor([1.0])
+        descriptor = inspect.getattr_static(torch.Tensor, "new_zeros")
+        marker = object()
+        calls = []
+        index_calls = []
+
+        class IndexOverride:
+            def __index__(self):
+                index_calls.append("index")
+                return 2
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                calls.append(("index", func, types, args, kwargs))
+                return marker
+
+        dimension = IndexOverride()
+        size = [1, dimension]
+        self.assertIs(source.new_zeros(size), marker)
+        self.assertEqual(index_calls, [])
+        label, function, dispatch_types, args, kwargs = calls.pop()
+        self.assertEqual(label, "index")
+        self.assertIs(function, descriptor)
+        self.assertEqual(dispatch_types, (IndexOverride,))
+        self.assertIs(args[0], source)
+        self.assertIs(args[1], size)
+        self.assertIsNone(kwargs)
+
+        class OptionOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                calls.append(("option", func, types, args, kwargs))
+                return marker
+
+        for option in ("dtype", "layout", "device", "pin_memory", "requires_grad"):
+            value = OptionOverride()
+            with self.subTest(option=option):
+                self.assertIs(source.new_zeros((2,), **{option: value}), marker)
+                label, function, dispatch_types, args, kwargs = calls.pop()
+                self.assertEqual(label, "option")
+                self.assertIs(function, descriptor)
+                self.assertEqual(dispatch_types, (OptionOverride,))
+                self.assertEqual(args, (source, (2,)))
+                self.assertIs(kwargs[option], value)
+
+        order = []
+
+        class ParentOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("parent", types))
+                return marker
+
+        class ChildOverride(ParentOverride):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("child", types))
+                return NotImplemented
+
+        self.assertIs(
+            source.new_zeros([ParentOverride(), ChildOverride()]), marker
+        )
+        self.assertEqual(
+            order,
+            [
+                ("child", (ChildOverride, ParentOverride)),
+                ("parent", (ChildOverride, ParentOverride)),
+            ],
+        )
+
+    def test_argument_overrides_follow_active_torch_function_modes(self):
+        source = torch.tensor([1.0])
+        mode_marker = object()
+        override_marker = object()
+        order = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("override", types))
+                return override_marker
+
+        class Mode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(("mode", types))
+                return self.result
+
+        value = Override()
+        with Mode(mode_marker):
+            self.assertIs(source.new_zeros([1, value]), mode_marker)
+        self.assertEqual(order, [("mode", (Override,))])
+
+        order.clear()
+        with Mode(NotImplemented):
+            self.assertIs(source.new_zeros([1, value]), override_marker)
+        self.assertEqual(
+            order,
+            [("mode", (Override,)), ("override", (Override,))],
+        )
+
+        class DecliningOverride:
+            calls = 0
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls += 1
+                return NotImplemented
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"^Multiple dispatch failed for 'torch\.Tensor\.new_zeros'; all ",
+        ):
+            source.new_zeros([1, DecliningOverride()])
+        self.assertEqual(DecliningOverride.calls, 1)
 
     def test_torch_function_modes_receive_original_calls_and_forward(self):
         source = torch.tensor([1.0])

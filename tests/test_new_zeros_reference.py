@@ -170,7 +170,8 @@ class NewZerosReferenceTests(unittest.TestCase):
     def index_conversion_observation(self, module):
         source = module.tensor([1.0], dtype=module.float32)
         scalar_calls = []
-        sequence_calls = []
+        first_calls = []
+        later_calls = []
 
         class ScalarIndex:
             def __index__(self):
@@ -180,23 +181,160 @@ class NewZerosReferenceTests(unittest.TestCase):
 
         class SequenceIndex:
             def __index__(self):
-                value = (2, 3)[len(sequence_calls)]
-                sequence_calls.append(value)
+                value = (2, 3)[len(first_calls)]
+                first_calls.append(value)
+                return value
+
+        class LaterIndex:
+            def __index__(self):
+                value = (2, 3)[len(later_calls)]
+                later_calls.append(value)
                 return value
 
         scalar = source.new_zeros(ScalarIndex())
-        sequence = source.new_zeros([SequenceIndex()])
+        first = source.new_zeros([SequenceIndex()])
+        later = source.new_zeros([1, LaterIndex()])
         return {
             "scalar_calls": scalar_calls,
             "scalar_shape": tuple(scalar.shape),
-            "sequence_calls": sequence_calls,
-            "sequence_shape": tuple(sequence.shape),
+            "first_calls": first_calls,
+            "first_shape": tuple(first.shape),
+            "later_calls": later_calls,
+            "later_shape": tuple(later.shape),
+            "later_bool_shape": tuple(source.new_zeros([1, True]).shape),
         }
 
     def test_index_conversion_order_matches_pytorch_2_13(self):
         self.assertEqual(
             self.index_conversion_observation(torch),
             self.index_conversion_observation(reference_torch),
+        )
+
+    def argument_override_contract(self, module):
+        source = module.tensor([1.0], dtype=module.float32)
+        descriptor = inspect.getattr_static(module.Tensor, "new_zeros")
+        marker = object()
+        calls = []
+        index_calls = []
+
+        class IndexOverride:
+            def __index__(self):
+                index_calls.append("index")
+                return 2
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                calls.append((func, types, args, kwargs))
+                return marker
+
+        dimension = IndexOverride()
+        size = [1, dimension]
+        indexed_result = source.new_zeros(size)
+        function, dispatch_types, args, kwargs = calls.pop()
+
+        class OptionOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                calls.append((func, types, args, kwargs))
+                return marker
+
+        option_records = []
+        for option in ("dtype", "layout", "device", "pin_memory", "requires_grad"):
+            value = OptionOverride()
+            result = source.new_zeros((2,), **{option: value})
+            option_function, option_types, option_args, option_kwargs = calls.pop()
+            option_records.append(
+                (
+                    result is marker,
+                    option_function is descriptor,
+                    tuple(item.__name__ for item in option_types),
+                    option_args == (source, (2,)),
+                    tuple(option_kwargs),
+                    option_kwargs[option] is value,
+                )
+            )
+
+        order = []
+
+        class ParentOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("parent", tuple(item.__name__ for item in types)))
+                return marker
+
+        class ChildOverride(ParentOverride):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                order.append(("child", tuple(item.__name__ for item in types)))
+                return NotImplemented
+
+        ordered_result = source.new_zeros([ParentOverride(), ChildOverride()])
+
+        mode_order = []
+
+        class ModeOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                mode_order.append(
+                    ("override", tuple(item.__name__ for item in types))
+                )
+                return marker
+
+        class Mode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_order.append(("mode", tuple(item.__name__ for item in types)))
+                return self.result
+
+        mode_marker = object()
+        with Mode(mode_marker):
+            mode_result = source.new_zeros([1, ModeOverride()])
+        handled_mode_order = tuple(mode_order)
+
+        mode_order.clear()
+        with Mode(NotImplemented):
+            declined_mode_result = source.new_zeros([1, ModeOverride()])
+
+        class DecliningOverride:
+            calls = 0
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls += 1
+                return NotImplemented
+
+        declining_error = self.error(
+            lambda: source.new_zeros([1, DecliningOverride()])
+        )
+
+        return {
+            "indexed_result": indexed_result is marker,
+            "index_calls": index_calls,
+            "function": function is descriptor,
+            "types": tuple(item.__name__ for item in dispatch_types),
+            "receiver": args[0] is source,
+            "size_identity": args[1] is size,
+            "kwargs": kwargs,
+            "options": tuple(option_records),
+            "ordered_result": ordered_result is marker,
+            "ordered_calls": tuple(order),
+            "mode_result": mode_result is mode_marker,
+            "handled_mode_order": handled_mode_order,
+            "declined_mode_result": declined_mode_result is marker,
+            "declined_mode_order": tuple(mode_order),
+            "declining_error": (
+                declining_error[0],
+                re.sub(r"0x[0-9a-f]+", "0xADDR", declining_error[1]),
+            ),
+            "declining_calls": DecliningOverride.calls,
+        }
+
+    def test_argument_torch_function_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.argument_override_contract(torch),
+            self.argument_override_contract(reference_torch),
         )
 
     def descriptor_contract(self, module):
