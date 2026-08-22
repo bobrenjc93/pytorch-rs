@@ -252,6 +252,30 @@ class AutogradBackwardTests(unittest.TestCase):
                 loss.backward()
                 self.assertEqual(leaf.grad.item(), 4.0)
 
+    def test_defaulted_retain_graph_coerces_create_graph_twice(self):
+        class StatefulIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                if self.calls == 1:
+                    return 0
+                raise RuntimeError("second graph-option conversion")
+
+        value = StatefulIndex()
+        leaf = torch.tensor(2.0, requires_grad=True)
+        loss = leaf * leaf
+        with self.assertRaisesRegex(
+            RuntimeError, "^second graph-option conversion$"
+        ):
+            torch.autograd.backward(loss, create_graph=value)
+
+        self.assertEqual(value.calls, 2)
+        self.assertIsNone(leaf.grad)
+        loss.backward()
+        self.assertEqual(leaf.grad.item(), 4.0)
+
     def test_metadata_imports_copying_pickling_and_exports(self):
         module = importlib.import_module("torch_rs.autograd")
         function = module.backward

@@ -256,6 +256,43 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                 expected_loss.backward()
                 self.assertEqual(actual_leaf.grad.item(), expected_leaf.grad.item())
 
+    def test_defaulted_retain_graph_coercion_matches_pytorch_2_13(self):
+        class StatefulIndex:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                if self.calls == 1:
+                    return 0
+                raise RuntimeError("second graph-option conversion")
+
+        actual_value = StatefulIndex()
+        expected_value = StatefulIndex()
+        actual_leaf = torch.tensor(2.0, requires_grad=True)
+        actual_loss = actual_leaf * actual_leaf
+        expected_leaf = reference_torch.tensor(2.0, requires_grad=True)
+        expected_loss = expected_leaf * expected_leaf
+
+        self.assert_error_matches(
+            lambda: torch.autograd.backward(
+                actual_loss,
+                create_graph=actual_value,
+            ),
+            lambda: reference_torch.autograd.backward(
+                expected_loss,
+                create_graph=expected_value,
+            ),
+        )
+        self.assertEqual(actual_value.calls, expected_value.calls)
+        self.assertEqual(actual_value.calls, 2)
+        self.assertIsNone(actual_leaf.grad)
+        self.assertIsNone(expected_leaf.grad)
+
+        actual_loss.backward()
+        expected_loss.backward()
+        self.assertEqual(actual_leaf.grad.item(), expected_leaf.grad.item())
+
     def test_signature_binding_errors_match_and_do_not_mutate(self):
         actual_leaf = torch.tensor(2.0, requires_grad=True)
         actual_loss = actual_leaf * actual_leaf

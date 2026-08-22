@@ -26,14 +26,13 @@ _mode_redispatch_active = _ContextVar(
 )
 
 
-def _require_default_graph_option(name, value, *, allow_none):
-    if value is None and allow_none:
-        return
-    enabled = _operator.index(value)
-    if enabled:
-        raise NotImplementedError(
-            f"torch_rs.autograd.backward does not support {name}=True"
-        )
+def _coerce_graph_options(retain_graph, create_graph):
+    retain_graph_was_defaulted = retain_graph is None
+    if retain_graph_was_defaulted:
+        retain_graph = create_graph
+    retain_graph_enabled = bool(_operator.index(retain_graph))
+    create_graph_enabled = bool(_operator.index(create_graph))
+    return retain_graph_was_defaulted, retain_graph_enabled, create_graph_enabled
 
 
 def _single_root_tensor(tensors):
@@ -63,8 +62,23 @@ def _backward_implementation(
         raise NotImplementedError(
             "torch_rs.autograd.backward does not support explicit gradients"
         )
-    _require_default_graph_option("retain_graph", retain_graph, allow_none=True)
-    _require_default_graph_option("create_graph", create_graph, allow_none=False)
+    (
+        retain_graph_was_defaulted,
+        retain_graph_enabled,
+        create_graph_enabled,
+    ) = _coerce_graph_options(retain_graph, create_graph)
+    if retain_graph_enabled and not retain_graph_was_defaulted:
+        raise NotImplementedError(
+            "torch_rs.autograd.backward does not support retain_graph=True"
+        )
+    if create_graph_enabled:
+        raise NotImplementedError(
+            "torch_rs.autograd.backward does not support create_graph=True"
+        )
+    if retain_graph_enabled:
+        raise NotImplementedError(
+            "torch_rs.autograd.backward does not support retain_graph=True"
+        )
     if inputs is not None:
         raise NotImplementedError(
             "torch_rs.autograd.backward does not support inputs"
