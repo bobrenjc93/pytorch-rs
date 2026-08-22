@@ -22,9 +22,16 @@ FUNCTION_DOC = '''Return the current default backend for ``torch.compile``.
 
 
 class CompilerGetDefaultBackendTests(unittest.TestCase):
+    def setUp(self):
+        self.original_backend = torch.compiler.get_default_backend()
+        torch.compiler.set_default_backend(None)
+
+    def tearDown(self):
+        torch.compiler.set_default_backend(self.original_backend)
+
     def test_returns_exact_inductor_without_registry_lookups(self):
         function = torch.compiler.get_default_backend
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(function.__code__.co_names, ("_state", "default_backend"))
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -140,6 +147,8 @@ class CompilerGetDefaultBackendTests(unittest.TestCase):
             compiler.__all__,
             [
                 "assume_constant_result",
+                "reset",
+                "set_default_backend",
                 "get_default_backend",
                 "is_compiling",
                 "is_dynamo_compiling",
@@ -197,9 +206,11 @@ class CompilerGetDefaultBackendTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_setter_and_compilation_remain_unsupported(self):
-        self.assertFalse(hasattr(torch.compiler, "set_default_backend"))
-        self.assertNotIn("set_default_backend", torch.compiler.__all__)
+    def test_setter_and_reset_are_available_without_compilation(self):
+        self.assertTrue(callable(torch.compiler.reset))
+        self.assertTrue(callable(torch.compiler.set_default_backend))
+        self.assertIn("reset", torch.compiler.__all__)
+        self.assertIn("set_default_backend", torch.compiler.__all__)
         self.assertFalse(hasattr(torch.compiler, "compile"))
         self.assertFalse(hasattr(torch, "compile"))
 
@@ -218,9 +229,14 @@ import torch_rs as torch
 
 modules_before_call = set(sys.modules)
 assert torch.compiler.get_default_backend() == "inductor"
+backend = "".join(("ea", "ger"))
+assert torch.compiler.set_default_backend(backend) is None
+assert torch.compiler.get_default_backend() is backend
+assert torch.compiler.reset() is None
+assert torch.compiler.get_default_backend() is backend
+assert torch.compiler.set_default_backend(None) is None
 assert torch.compiler.get_default_backend() == "inductor"
 assert set(sys.modules) == modules_before_call
-assert not hasattr(torch.compiler, "set_default_backend")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 assert not any(
     name.startswith("torch_rs._dynamo")

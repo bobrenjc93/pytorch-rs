@@ -1,9 +1,13 @@
 from collections.abc import Callable
 from typing import Any
 
+from .. import _compiler_state as _state
+
 
 __all__ = [
     "assume_constant_result",
+    "reset",
+    "set_default_backend",
     "get_default_backend",
     "is_compiling",
     "is_dynamo_compiling",
@@ -29,13 +33,48 @@ def assume_constant_result(fn):
     return fn
 
 
+def reset() -> None:
+    """
+    Reset the in-process compiler state.
+
+    This function clears Dynamo's in-memory compilation caches and related
+    process-local state used by :func:`torch.compile`. It does not delete
+    filesystem caches, such as Inductor's disk cache.
+    """
+
+
+def set_default_backend(backend: str | Callable[..., Any] | None) -> None:
+    """Set the default backend for ``torch.compile`` when no ``backend`` argument is specified.
+
+    Passing ``None`` resets the default back to ``"inductor"``.
+
+    Args:
+        backend: A backend name (string), a callable backend, or ``None``.
+
+    Example::
+
+        >>> torch.compiler.set_default_backend("eager")
+        >>> torch.compiler.get_default_backend()
+        'eager'
+        >>> torch.compiler.set_default_backend(None)  # reset
+        >>> torch.compiler.get_default_backend()
+        'inductor'
+    """
+    if backend is None:
+        _state.default_backend = "inductor"
+        return
+    if not isinstance(backend, str) and not callable(backend):
+        raise TypeError(f"backend must be a string or callable, got {type(backend)}")
+    _state.default_backend = backend
+
+
 def get_default_backend() -> str | Callable[..., Any]:
     """Return the current default backend for ``torch.compile``.
 
     Returns:
         The current default backend (string or callable). Initially ``"inductor"``.
     """
-    return "inductor"
+    return _state.default_backend
 
 
 def is_compiling() -> bool:

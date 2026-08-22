@@ -189,6 +189,8 @@ class CompilerAssumeConstantResultTests(unittest.TestCase):
             compiler.__all__,
             [
                 "assume_constant_result",
+                "reset",
+                "set_default_backend",
                 "get_default_backend",
                 "is_compiling",
                 "is_dynamo_compiling",

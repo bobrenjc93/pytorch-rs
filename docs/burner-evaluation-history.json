@@ -5137,6 +5137,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 93.3
       }
+    },
+    {
+      "key": "pr:675",
+      "recordedAt": "2026-08-22T19:42:33.752Z",
+      "label": "PR #675",
+      "kind": "leaf",
+      "prNumber": 675,
+      "title": "Add torch.compiler.set_default_backend",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 84.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 67.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 93.4
+      }
     }
   ]
 }
