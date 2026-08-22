@@ -25,6 +25,11 @@ impl PyDType {
 #[pymethods]
 impl PyDType {
     #[getter]
+    fn abbr(&self) -> &'static str {
+        self.inner.abbr()
+    }
+
+    #[getter]
     fn itemsize(&self) -> usize {
         self.inner.element_size()
     }
