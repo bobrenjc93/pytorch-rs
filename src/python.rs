@@ -8245,11 +8245,30 @@ fn parse_true_divide_operand<'py>(
     if let Ok(tensor) = value.value.cast::<PyTensor>() {
         return Ok(BoundArithmeticOperand::Tensor(tensor.clone()));
     }
-    if let Some(probed) = probe_torch_function_override(&value.value) {
-        return Ok(BoundArithmeticOperand::Override(probed));
+
+    // The scalar overload is considered between the legacy argument parser's
+    // initial __torch_function__ probe and its tensor-type fallback. Thus a
+    // transient failure on a real scalar is accepted natively without the
+    // fallback observing a subsequently available handler.
+    let initial_handler = lookup_torch_function_handler(&value.value);
+    if initial_handler
+        .as_ref()
+        .is_some_and(|handler| !is_disabled_torch_function_handler(handler))
+    {
+        return Ok(BoundArithmeticOperand::Override(
+            probed_torch_function_override(&value.value),
+        ));
     }
     if is_real_arithmetic_scalar(&value.value)? {
         return Ok(BoundArithmeticOperand::Scalar(value.value.clone()));
+    }
+    if initial_handler.is_none()
+        && let Some(handler) = lookup_torch_function_handler(&value.value)
+        && !is_disabled_torch_function_handler(&handler)
+    {
+        return Ok(BoundArithmeticOperand::Override(
+            probed_torch_function_override(&value.value),
+        ));
     }
 
     Err(overloaded_binary_method_binding_error(

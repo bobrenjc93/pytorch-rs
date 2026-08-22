@@ -224,6 +224,93 @@ class TensorTrueDivideReferenceTests(unittest.TestCase):
             case="disabled handler mode forwarding",
         )
 
+    def test_failed_scalar_override_probe_order_matches_pytorch_2_13(self):
+        def exercise(module, scalar_base, binding, mode_behavior):
+            descriptor_events = []
+            mode_calls = []
+
+            class StatefulDescriptor:
+                def __init__(self):
+                    self.lookups = 0
+
+                def __get__(self, instance, owner):
+                    self.lookups += 1
+                    resolution = self.lookups
+                    descriptor_events.append(("lookup", resolution))
+                    if resolution == 1:
+                        raise RuntimeError("transient probe failure")
+
+                    def handler(func, dispatch_types, args=(), kwargs=None):
+                        descriptor_events.append(
+                            (
+                                "handler",
+                                resolution,
+                                func.__qualname__,
+                                tuple(value.__name__ for value in dispatch_types),
+                            )
+                        )
+                        return f"override-{resolution}"
+
+                    return handler
+
+            class Scalar(scalar_base):
+                __torch_function__ = StatefulDescriptor()
+
+            scalar = Scalar(2)
+            tensor = module.tensor([8.0])
+
+            def invoke():
+                if binding == "positional":
+                    return tensor.true_divide(scalar)
+                return tensor.true_divide(**{binding: scalar})
+
+            if mode_behavior == "direct":
+                result = invoke()
+            else:
+                class Mode(module.overrides.TorchFunctionMode):
+                    def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                        mode_calls.append(
+                            (
+                                func.__qualname__,
+                                tuple(value.__name__ for value in dispatch_types),
+                                len(args),
+                                None if kwargs is None else tuple(kwargs),
+                            )
+                        )
+                        if mode_behavior == "forward":
+                            return func(*args, **(kwargs or {}))
+                        return "mode-marker"
+
+                with Mode():
+                    result = invoke()
+
+            outcome = (
+                ("tensor", result.tolist())
+                if hasattr(result, "tolist")
+                else ("value", result)
+            )
+            return outcome, tuple(descriptor_events), tuple(mode_calls)
+
+        for scalar_base in (int, float):
+            for binding in ("positional", "other", "x2"):
+                for mode_behavior in ("direct", "intercept", "forward"):
+                    with self.subTest(
+                        scalar_base=scalar_base.__name__,
+                        binding=binding,
+                        mode_behavior=mode_behavior,
+                    ):
+                        actual = exercise(
+                            torch, scalar_base, binding, mode_behavior
+                        )
+                        expected = exercise(
+                            reference_torch, scalar_base, binding, mode_behavior
+                        )
+                        self.assertEqual(actual, expected)
+                        if mode_behavior != "forward":
+                            self.assertEqual(actual[1], (("lookup", 1),))
+                        if mode_behavior != "direct":
+                            self.assertEqual(actual[2][0][1], ())
+
     def test_no_grad_outputs_match_while_recording_remains_explicitly_unsupported(self):
         actual_left = torch.tensor([[2.0, 4.0]], requires_grad=True).transpose(0, 1)
         expected_left = reference_torch.tensor(
