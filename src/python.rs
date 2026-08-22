@@ -269,7 +269,9 @@ impl PyTensorBase {
         }
 
         let tensor = tensor.try_borrow()?;
-        let inner = if index.is_instance_of::<PyEllipsis>() {
+        let inner = if index.is_none() {
+            tensor.inner.unsqueeze_front()
+        } else if index.is_instance_of::<PyEllipsis>() {
             tensor.inner.metadata_alias()
         } else if let Ok(indices) = index.cast::<PyTuple>() {
             if indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>() {

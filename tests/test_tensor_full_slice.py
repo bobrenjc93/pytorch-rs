@@ -186,7 +186,6 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None),),
             (slice(None), 0),
             (0, slice(None)),
-            None,
         )
         for index in unsupported:
             with self.subTest(index=repr(index)):
