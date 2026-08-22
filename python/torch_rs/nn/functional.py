@@ -43,7 +43,18 @@ def _dropout1d_impl(input, p, training, inplace):
 def _dropout2d_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
     # Preserve PyTorch's pre-native invalid-input validation order.
-    input.dim()
+    input_dimension = input.dim()
+    if input_dimension == 3:
+        warnings.warn(
+            "dropout2d: Received a 3D input to dropout2d and assuming that "
+            "channel-wise 1D dropout behavior is desired - input is interpreted "
+            "as shape (N, C, L), where C is the channel dim. This behavior will "
+            "change in a future release to interpret the input as one without a "
+            "batch dimension, i.e. shape (C, H, W). To maintain the 1D "
+            "channel-wise dropout behavior, please switch to using dropout1d "
+            "instead.",
+            stacklevel=4,
+        )
     if inplace:
         return _nn_functional_dropout("dropout2d", input, p, training, True)
     return _nn_functional_dropout("dropout2d", input, p, training, False)
