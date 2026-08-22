@@ -91,6 +91,54 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             self.scalar_error_contract(reference_torch, index),
         )
 
+    def tuple_subclass_contract(self, module):
+        source = module.tensor(
+            [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], dtype=module.float32
+        )
+
+        class IntegerRemapTuple(tuple):
+            def __iter__(self):
+                return iter((0,))
+
+        selected = source[IntegerRemapTuple((slice(None),))]
+
+        class FullSliceRemapTuple(tuple):
+            def __iter__(self):
+                return iter((slice(None),))
+
+        alias = source[FullSliceRemapTuple((0,))]
+
+        class IterationErrorTuple(tuple):
+            def __iter__(self):
+                raise RuntimeError("tuple iteration exploded")
+
+        try:
+            source[IterationErrorTuple((slice(None),))]
+        except Exception as error:
+            iteration_error = type(error).__name__, str(error)
+        else:
+            self.fail("tuple subclass iteration error was suppressed")
+
+        return {
+            "selected_values": selected.tolist(),
+            "selected_shape": tuple(selected.shape),
+            "selected_stride": selected.stride(),
+            "selected_offset": selected.storage_offset(),
+            "alias_values": alias.tolist(),
+            "alias_shape": tuple(alias.shape),
+            "alias_stride": alias.stride(),
+            "alias_offset": alias.storage_offset(),
+            "alias_same_logical_view": alias.is_set_to(source),
+            "alias_same_data_pointer": alias.data_ptr() == source.data_ptr(),
+            "iteration_error": iteration_error,
+        }
+
+    def test_tuple_subclass_iteration_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.tuple_subclass_contract(torch),
+            self.tuple_subclass_contract(reference_torch),
+        )
+
     def autograd_contract(self, module, index):
         leaf = module.tensor(
             [[1.0, 2.0], [3.0, 4.0]],

@@ -208,6 +208,33 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None),)
         )
 
+    def test_tuple_subclasses_are_normalized_through_overridden_iteration(self):
+        source = torch.tensor([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
+
+        class IntegerRemapTuple(tuple):
+            def __iter__(self):
+                return iter((0,))
+
+        selected = source[IntegerRemapTuple((slice(None),))]
+        self.assertEqual(selected.tolist(), [0.0, 1.0, 2.0])
+        self.assertEqual(selected.shape, (3,))
+        self.assertEqual(selected.stride(), (1,))
+        self.assertEqual(selected.storage_offset(), 0)
+
+        class FullSliceRemapTuple(tuple):
+            def __iter__(self):
+                return iter((slice(None),))
+
+        alias = source[FullSliceRemapTuple((0,))]
+        self.assert_metadata_alias(source, alias)
+
+        class IterationErrorTuple(tuple):
+            def __iter__(self):
+                raise RuntimeError("tuple iteration exploded")
+
+        with self.assertRaisesRegex(RuntimeError, "^tuple iteration exploded$"):
+            source[IterationErrorTuple((slice(None),))]
+
     def test_existing_indices_and_unsupported_slice_forms_are_unchanged(self):
         tensor = torch.tensor(
             [

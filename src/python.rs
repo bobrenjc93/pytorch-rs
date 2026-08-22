@@ -274,6 +274,19 @@ impl PyTensorBase {
         } else if index.is_instance_of::<PyEllipsis>() {
             tensor.inner.metadata_alias()
         } else if let Ok(indices) = index.cast::<PyTuple>() {
+            // PyTorch materializes tuple subclasses through their Python iterator
+            // before interpreting any index elements.
+            let normalized_indices;
+            let indices = if index.is_exact_instance_of::<PyTuple>() {
+                indices
+            } else {
+                normalized_indices = slf
+                    .py()
+                    .get_type::<PyTuple>()
+                    .call1((index,))?
+                    .cast_into::<PyTuple>()?;
+                &normalized_indices
+            };
             if indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>() {
                 tensor.inner.metadata_alias()
             } else if indices.len() == 1 && is_exact_full_slice(&indices.get_item(0)?)? {
