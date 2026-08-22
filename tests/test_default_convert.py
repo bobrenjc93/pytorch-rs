@@ -82,6 +82,51 @@ class ConstructorFailingSequence(Sequence):
         return len(self.values)
 
 
+class OneShotMapping(Mapping):
+    def __init__(self, values):
+        self.values = dict(values) if isinstance(values, dict) else tuple(values)
+        self.read_count = 0
+
+    def __getitem__(self, key):
+        if isinstance(self.values, dict):
+            return self.values[key]
+        if key != "value":
+            raise KeyError(key)
+        index = min(self.read_count, len(self.values) - 1)
+        self.read_count += 1
+        return self.values[index]
+
+    def __iter__(self):
+        return iter(("value",))
+
+    def __len__(self):
+        return 1
+
+
+class OneShotSequence(Sequence):
+    def __init__(self, values):
+        self.values = tuple(values)
+        self.converted = isinstance(values, list)
+        self.read_count = 0
+
+    def __getitem__(self, index):
+        if self.converted:
+            return self.values[index]
+        if index not in (0, -1):
+            raise IndexError(index)
+        return self.values[min(self.read_count, len(self.values) - 1)]
+
+    def __iter__(self):
+        if self.converted:
+            return iter(self.values)
+        index = min(self.read_count, len(self.values) - 1)
+        self.read_count += 1
+        return iter((self.values[index],))
+
+    def __len__(self):
+        return 1
+
+
 class DefaultConvertTests(unittest.TestCase):
     def test_tensors_scalars_strings_and_other_leaves_preserve_identity(self):
         tensor = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
@@ -208,6 +253,18 @@ class DefaultConvertTests(unittest.TestCase):
 
         dtype = np.dtype("float32")
         self.assertIs(default_convert(dtype), dtype)
+
+    def test_numpy_rejection_is_not_retried_for_one_shot_collections(self):
+        values = (
+            OneShotMapping((np.int64(1), 1)),
+            OneShotSequence((np.int64(1), 1)),
+        )
+        for value in values:
+            with self.subTest(value_type=type(value).__name__):
+                with self.assertRaises(TypeError) as raised:
+                    default_convert(value)
+                self.assertEqual(raised.exception.args, (NUMPY_ERROR,))
+                self.assertEqual(value.read_count, 1)
 
     def test_mapping_and_sequence_types_follow_pytorch_copying_rules(self):
         nested_tuple = (1, 2)

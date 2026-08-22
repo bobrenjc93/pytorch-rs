@@ -81,6 +81,51 @@ class ConstructorFailingSequence(Sequence):
         return len(self.values)
 
 
+class OneShotMapping(Mapping):
+    def __init__(self, values):
+        self.values = dict(values) if isinstance(values, dict) else tuple(values)
+        self.read_count = 0
+
+    def __getitem__(self, key):
+        if isinstance(self.values, dict):
+            return self.values[key]
+        if key != "value":
+            raise KeyError(key)
+        index = min(self.read_count, len(self.values) - 1)
+        self.read_count += 1
+        return self.values[index]
+
+    def __iter__(self):
+        return iter(("value",))
+
+    def __len__(self):
+        return 1
+
+
+class OneShotSequence(Sequence):
+    def __init__(self, values):
+        self.values = tuple(values)
+        self.converted = isinstance(values, list)
+        self.read_count = 0
+
+    def __getitem__(self, index):
+        if self.converted:
+            return self.values[index]
+        if index not in (0, -1):
+            raise IndexError(index)
+        return self.values[min(self.read_count, len(self.values) - 1)]
+
+    def __iter__(self):
+        if self.converted:
+            return iter(self.values)
+        index = min(self.read_count, len(self.values) - 1)
+        self.read_count += 1
+        return iter((self.values[index],))
+
+    def __len__(self):
+        return 1
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class DefaultConvertReferenceTests(unittest.TestCase):
     @staticmethod
@@ -382,6 +427,27 @@ class DefaultConvertReferenceTests(unittest.TestCase):
                 converted = expected(expected_value)
                 if isinstance(converted, Mapping):
                     converted_value = next(iter(converted.values()))
+                else:
+                    converted_value = converted[0]
+                self.assertIsInstance(converted_value, reference_torch.Tensor)
+
+        one_shot_factories = (
+            lambda: OneShotMapping((np.int64(1), 1)),
+            lambda: OneShotSequence((np.int64(1), 1)),
+        )
+        for factory in one_shot_factories:
+            actual_value = factory()
+            expected_value = factory()
+            with self.subTest(one_shot_type=type(actual_value).__name__):
+                with self.assertRaises(TypeError) as raised:
+                    actual(actual_value)
+                self.assertEqual(raised.exception.args, (NUMPY_ERROR,))
+                self.assertEqual(actual_value.read_count, 1)
+
+                converted = expected(expected_value)
+                self.assertEqual(expected_value.read_count, 1)
+                if isinstance(converted, Mapping):
+                    converted_value = converted["value"]
                 else:
                     converted_value = converted[0]
                 self.assertIsInstance(converted_value, reference_torch.Tensor)

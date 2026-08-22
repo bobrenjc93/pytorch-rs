@@ -67,19 +67,25 @@ def default_convert(data):
             "torch_rs.utils.data.default_convert does not support NumPy arrays or scalars"
         )
     if isinstance(data, collections.abc.Mapping):
-        try:
-            if isinstance(data, collections.abc.MutableMapping):
-                # The mapping type may have extra properties, so we can't just
-                # use `type(data)(...)` to create the new mapping.
-                # Create a clone and update it if the mapping type is mutable.
+        if isinstance(data, collections.abc.MutableMapping):
+            # The mapping type may have extra properties, so we can't just use
+            # `type(data)(...)` to create the new mapping. Create a clone and
+            # update it if the mapping type is mutable.
+            try:
                 clone = copy.copy(data)
-                clone.update({key: default_convert(data[key]) for key in data})
-                return clone
-            return elem_type({key: default_convert(data[key]) for key in data})
+            except TypeError:
+                return {key: default_convert(data[key]) for key in data}
+            converted = {key: default_convert(data[key]) for key in data}
+            try:
+                clone.update(converted)
+            except TypeError:
+                return converted
+            return clone
+        converted = {key: default_convert(data[key]) for key in data}
+        try:
+            return elem_type(converted)
         except TypeError:
-            # The mapping type may not support `copy()` / `update(mapping)`
-            # or `__init__(iterable)`.
-            return {key: default_convert(data[key]) for key in data}
+            return converted
     if isinstance(data, tuple) and hasattr(data, "_fields"):  # namedtuple
         return elem_type(*(default_convert(item) for item in data))
     if isinstance(data, tuple):
@@ -87,18 +93,24 @@ def default_convert(data):
     if isinstance(data, collections.abc.Sequence) and not isinstance(
         data, (str, bytes)
     ):
-        try:
-            if isinstance(data, collections.abc.MutableSequence):
-                # The sequence type may have extra properties, so we can't just
-                # use `type(data)(...)` to create the new sequence.
-                # Create a clone and update it if the sequence type is mutable.
+        if isinstance(data, collections.abc.MutableSequence):
+            # The sequence type may have extra properties, so we can't just use
+            # `type(data)(...)` to create the new sequence. Create a clone and
+            # update it if the sequence type is mutable.
+            try:
                 clone = copy.copy(data)
-                for index, item in enumerate(data):
-                    clone[index] = default_convert(item)
-                return clone
-            return elem_type([default_convert(item) for item in data])
+            except TypeError:
+                return [default_convert(item) for item in data]
+            converted = [default_convert(item) for item in data]
+            try:
+                for index, item in enumerate(converted):
+                    clone[index] = item
+            except TypeError:
+                return converted
+            return clone
+        converted = [default_convert(item) for item in data]
+        try:
+            return elem_type(converted)
         except TypeError:
-            # The sequence type may not support `copy()` / `__setitem__`
-            # or `__init__(iterable)` (e.g., `range`).
-            return [default_convert(item) for item in data]
+            return converted
     return data
