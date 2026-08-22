@@ -143,6 +143,8 @@ class CompilerIsDynamoCompilingReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "assume_constant_result",
+                    "reset",
+                    "set_default_backend",
                     "get_default_backend",
                     "is_compiling",
                     "is_dynamo_compiling",

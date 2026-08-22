@@ -124,6 +124,8 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
             compiler.__all__,
             [
                 "assume_constant_result",
+                "reset",
+                "set_default_backend",
                 "get_default_backend",
                 "is_compiling",
                 "is_dynamo_compiling",
@@ -136,6 +138,8 @@ class CompilerIsDynamoCompilingTests(unittest.TestCase):
             {name for name in compiler_namespace if not name.startswith("__")},
             {
                 "assume_constant_result",
+                "reset",
+                "set_default_backend",
                 "get_default_backend",
                 "is_compiling",
                 "is_dynamo_compiling",

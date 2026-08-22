@@ -103,53 +103,66 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
         return shape
 
     def test_supported_default_threaded_and_grad_states_match_pytorch_2_13(self):
-        getter = reference_torch.compiler.get_default_backend
-        setter = reference_torch.compiler.set_default_backend
-        original_backend = getter()
+        actual_getter = torch.compiler.get_default_backend
+        actual_setter = torch.compiler.set_default_backend
+        expected_getter = reference_torch.compiler.get_default_backend
+        expected_setter = reference_torch.compiler.set_default_backend
+        original_actual = actual_getter()
+        original_expected = expected_getter()
 
         try:
-            setter(None)
+            actual_setter(None)
+            expected_setter(None)
             self.assertEqual(
                 self.supported_state_outcome(torch),
                 self.supported_state_outcome(reference_torch),
             )
         finally:
-            setter(original_backend)
+            actual_setter(original_actual)
+            expected_setter(original_expected)
 
-        self.assertEqual(torch.compiler.get_default_backend(), "inductor")
-        self.assertIs(getter(), original_backend)
+        self.assertIs(actual_getter(), original_actual)
+        self.assertIs(expected_getter(), original_expected)
 
-    def test_reference_only_setter_bounds_alternate_string_and_callable_states(self):
-        actual = torch.compiler.get_default_backend
-        expected = reference_torch.compiler.get_default_backend
-        setter = reference_torch.compiler.set_default_backend
-        original_backend = expected()
+    def test_setter_states_and_reset_match_pytorch_2_13(self):
+        actual_getter = torch.compiler.get_default_backend
+        actual_setter = torch.compiler.set_default_backend
+        expected_getter = reference_torch.compiler.get_default_backend
+        expected_setter = reference_torch.compiler.set_default_backend
+        original_actual = actual_getter()
+        original_expected = expected_getter()
         alternate_name = "".join(("ea", "ger"))
 
         def alternate_callable(graph_module, example_inputs):
             return graph_module.forward
 
         try:
-            self.assertIs(setter(None), None)
-            self.assertEqual(actual(), "inductor")
-            self.assertEqual(expected(), "inductor")
+            for value in (None, alternate_name, alternate_callable):
+                with self.subTest(value=value):
+                    self.assertIs(actual_setter(value), None)
+                    self.assertIs(expected_setter(value), None)
+                    if value is None:
+                        self.assertEqual(actual_getter(), "inductor")
+                        self.assertEqual(expected_getter(), "inductor")
+                    else:
+                        self.assertIs(actual_getter(), value)
+                        self.assertIs(expected_getter(), value)
 
-            self.assertIs(setter(alternate_name), None)
-            self.assertEqual(actual(), "inductor")
-            self.assertIs(expected(), alternate_name)
+            self.assertIs(torch.compiler.reset(), None)
+            self.assertIs(reference_torch.compiler.reset(), None)
+            self.assertIs(actual_getter(), alternate_callable)
+            self.assertIs(expected_getter(), alternate_callable)
 
-            self.assertIs(setter(alternate_callable), None)
-            self.assertEqual(actual(), "inductor")
-            self.assertIs(expected(), alternate_callable)
-
-            self.assertIs(setter(None), None)
-            self.assertEqual(actual(), "inductor")
-            self.assertEqual(expected(), "inductor")
+            self.assertIs(actual_setter(None), None)
+            self.assertIs(expected_setter(None), None)
+            self.assertEqual(actual_getter(), "inductor")
+            self.assertEqual(expected_getter(), "inductor")
         finally:
-            setter(original_backend)
+            actual_setter(original_actual)
+            expected_setter(original_expected)
 
-        self.assertEqual(actual(), "inductor")
-        self.assertIs(expected(), original_backend)
+        self.assertIs(actual_getter(), original_actual)
+        self.assertIs(expected_getter(), original_expected)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")
@@ -191,6 +204,8 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
         expected = expected_compiler.get_default_backend
         supported = {
             "assume_constant_result",
+            "reset",
+            "set_default_backend",
             "get_default_backend",
             "is_compiling",
             "is_dynamo_compiling",
@@ -253,12 +268,9 @@ class CompilerGetDefaultBackendReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_setter_and_compilation_remain_deliberately_unsupported(self):
-        self.assertTrue(hasattr(reference_torch.compiler, "set_default_backend"))
-        self.assertIn("set_default_backend", reference_torch.compiler.__all__)
-        self.assertFalse(hasattr(torch.compiler, "set_default_backend"))
-        self.assertNotIn("set_default_backend", torch.compiler.__all__)
-
+    def test_compilation_remains_deliberately_unsupported(self):
+        self.assertTrue(callable(torch.compiler.reset))
+        self.assertTrue(callable(torch.compiler.set_default_backend))
         self.assertTrue(callable(reference_torch.compile))
         self.assertTrue(callable(reference_torch.compiler.compile))
         self.assertFalse(hasattr(torch, "compile"))
