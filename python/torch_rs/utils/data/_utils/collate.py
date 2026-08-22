@@ -1,3 +1,6 @@
+import collections.abc
+import copy
+
 from torch_rs import Tensor
 
 
@@ -39,12 +42,29 @@ def default_convert(data):
         return data
     if elem_type.__module__ == "numpy":
         raise TypeError("default_convert(): NumPy arrays and scalars are not supported")
-    if elem_type is dict:
-        return {key: default_convert(data[key]) for key in data}
+    if isinstance(data, collections.abc.Mapping):
+        try:
+            if isinstance(data, collections.abc.MutableMapping):
+                clone = copy.copy(data)
+                clone.update({key: default_convert(data[key]) for key in data})
+                return clone
+            return elem_type({key: default_convert(data[key]) for key in data})
+        except TypeError:
+            return {key: default_convert(data[key]) for key in data}
     if isinstance(data, tuple) and hasattr(data, "_fields"):
         return elem_type(*(default_convert(value) for value in data))
-    if elem_type is tuple:
+    if isinstance(data, tuple):
         return [default_convert(value) for value in data]
-    if elem_type is list:
-        return [default_convert(value) for value in data]
+    if isinstance(data, collections.abc.Sequence) and not isinstance(
+        data, (str, bytes)
+    ):
+        try:
+            if isinstance(data, collections.abc.MutableSequence):
+                clone = copy.copy(data)
+                for index, value in enumerate(data):
+                    clone[index] = default_convert(value)
+                return clone
+            return elem_type([default_convert(value) for value in data])
+        except TypeError:
+            return [default_convert(value) for value in data]
     return data

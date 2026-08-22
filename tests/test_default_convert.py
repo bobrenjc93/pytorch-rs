@@ -4,12 +4,13 @@ import inspect
 import pickle
 import types
 import unittest
-from collections import UserDict, namedtuple
+from collections import OrderedDict, UserDict, UserList, namedtuple
+from collections.abc import Mapping
 
 import numpy as np
 import torch_rs as torch
 
-from torch_rs.utils.data import default_convert
+from torch_rs.utils.data import DataChunk, default_convert
 
 
 Point = namedtuple("Point", ("x", "y"))
@@ -25,6 +26,31 @@ class FancyList(list):
 
 class FancyTuple(tuple):
     pass
+
+
+class CopyRejectingDict(dict):
+    def __copy__(self):
+        raise TypeError("copy is unavailable")
+
+
+class CopyRejectingList(list):
+    def __copy__(self):
+        raise TypeError("copy is unavailable")
+
+
+class ConstructorRejectingMapping(Mapping):
+    def __init__(self, values, *, label):
+        self.values = dict(values)
+        self.label = label
+
+    def __getitem__(self, key):
+        return self.values[key]
+
+    def __iter__(self):
+        return iter(self.values)
+
+    def __len__(self):
+        return len(self.values)
 
 
 class DefaultConvertTests(unittest.TestCase):
@@ -108,25 +134,91 @@ class DefaultConvertTests(unittest.TestCase):
                     default_convert(value)
 
         array = np.arange(3, dtype=np.int64)
-        source = ["before", {"array": array}, "after"]
-        with self.assertRaisesRegex(TypeError, "NumPy arrays and scalars"):
-            default_convert(source)
-        self.assertEqual(source[0], "before")
-        self.assertIs(source[1]["array"], array)
-        self.assertEqual(source[2], "after")
-
-    def test_exotic_collection_subclasses_remain_unconverted(self):
-        collections = (
-            FancyDict(value=[1, 2]),
-            FancyList([1, (2, 3)]),
-            FancyTuple((1, [2, 3])),
-            UserDict({"value": [1, 2]}),
-            range(3),
+        wrapped_values = (
+            ["before", {"array": array}, "after"],
+            OrderedDict(array=array),
+            UserDict(array=array),
+            UserList([array]),
+            DataChunk([array]),
+            types.MappingProxyType({"array": array}),
         )
+        for source in wrapped_values:
+            with self.subTest(type=type(source).__name__):
+                with self.assertRaisesRegex(TypeError, "NumPy arrays and scalars"):
+                    default_convert(source)
 
-        for collection in collections:
-            with self.subTest(type=type(collection).__name__):
-                self.assertIs(default_convert(collection), collection)
+        self.assertIs(wrapped_values[0][1]["array"], array)
+        self.assertIs(wrapped_values[1]["array"], array)
+        self.assertIs(wrapped_values[2]["array"], array)
+        self.assertIs(wrapped_values[3][0], array)
+        self.assertIs(wrapped_values[4][0], array)
+        self.assertIs(wrapped_values[5]["array"], array)
+
+    def test_generic_mappings_use_copy_constructor_and_fallback_paths(self):
+        ordered = OrderedDict(first=(1, 2), second=[3, 4])
+        user_dict = UserDict(value=(5, 6))
+        fancy = FancyDict(value=(7, 8))
+        fancy.label = object()
+
+        for source in (ordered, user_dict, fancy):
+            with self.subTest(type=type(source).__name__):
+                converted = default_convert(source)
+                self.assertIs(type(converted), type(source))
+                self.assertIsNot(converted, source)
+                for key in source:
+                    self.assertIsNot(converted[key], source[key])
+                    self.assertEqual(converted[key], list(source[key]))
+
+        self.assertEqual(tuple(default_convert(ordered)), ("first", "second"))
+        self.assertIs(default_convert(fancy).label, fancy.label)
+
+        proxy = types.MappingProxyType({"value": (9, 10)})
+        converted_proxy = default_convert(proxy)
+        self.assertIs(type(converted_proxy), type(proxy))
+        self.assertIsNot(converted_proxy, proxy)
+        self.assertEqual(converted_proxy["value"], [9, 10])
+
+        copy_rejecting = CopyRejectingDict(value=(11, 12))
+        converted_copy_rejecting = default_convert(copy_rejecting)
+        self.assertIs(type(converted_copy_rejecting), dict)
+        self.assertEqual(converted_copy_rejecting, {"value": [11, 12]})
+
+        constructor_rejecting = ConstructorRejectingMapping(
+            {"value": (13, 14)}, label="metadata"
+        )
+        converted_constructor_rejecting = default_convert(constructor_rejecting)
+        self.assertIs(type(converted_constructor_rejecting), dict)
+        self.assertEqual(converted_constructor_rejecting, {"value": [13, 14]})
+
+    def test_generic_sequences_use_copy_constructor_and_fallback_paths(self):
+        user_list = UserList([1, (2, 3)])
+        fancy = FancyList([4, (5, 6)])
+        fancy.label = object()
+        chunk = DataChunk([7, (8, 9)])
+
+        for source in (user_list, fancy, chunk):
+            with self.subTest(type=type(source).__name__):
+                converted = default_convert(source)
+                self.assertIs(type(converted), type(source))
+                self.assertIsNot(converted, source)
+                self.assertIs(type(converted[1]), list)
+                self.assertEqual(converted[1], list(source[1]))
+
+        self.assertIs(default_convert(fancy).label, fancy.label)
+        converted_chunk = default_convert(chunk)
+        self.assertIs(converted_chunk.items, chunk.items)
+        self.assertEqual(list(converted_chunk.raw_iterator()), [7, (8, 9)])
+
+        tuple_subclass = FancyTuple((10, (11, 12)))
+        self.assertEqual(default_convert(tuple_subclass), [10, [11, 12]])
+        self.assertIs(type(default_convert(tuple_subclass)), list)
+        self.assertEqual(default_convert(range(3)), [0, 1, 2])
+        self.assertIs(type(default_convert(range(3))), list)
+
+        copy_rejecting = CopyRejectingList([13, (14, 15)])
+        converted_copy_rejecting = default_convert(copy_rejecting)
+        self.assertIs(type(converted_copy_rejecting), list)
+        self.assertEqual(converted_copy_rejecting, [13, [14, 15]])
 
     def test_signature_documentation_metadata_exports_and_unsupported_neighbors(self):
         data_module = importlib.import_module("torch_rs.utils.data")

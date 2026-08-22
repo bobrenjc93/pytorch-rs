@@ -4,7 +4,8 @@ import inspect
 import pickle
 import types
 import unittest
-from collections import namedtuple
+from collections import OrderedDict, UserDict, UserList, namedtuple
+from collections.abc import Mapping
 
 import numpy as np
 import torch_rs as torch
@@ -28,6 +29,31 @@ class FancyList(list):
 
 class FancyTuple(tuple):
     pass
+
+
+class CopyRejectingDict(dict):
+    def __copy__(self):
+        raise TypeError("copy is unavailable")
+
+
+class CopyRejectingList(list):
+    def __copy__(self):
+        raise TypeError("copy is unavailable")
+
+
+class ConstructorRejectingMapping(Mapping):
+    def __init__(self, values, *, label):
+        self.values = dict(values)
+        self.label = label
+
+    def __getitem__(self, key):
+        return self.values[key]
+
+    def __iter__(self):
+        return iter(self.values)
+
+    def __len__(self):
+        return len(self.values)
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -220,19 +246,124 @@ class DefaultConvertReferenceTests(unittest.TestCase):
                 ):
                     actual(value)
 
-    def test_exotic_collection_subclasses_remain_outside_supported_scope(self):
+    def test_generic_mapping_copy_constructor_and_fallback_behavior_matches(self):
         actual = torch.utils.data.default_convert
         expected = reference_torch.utils.data.default_convert
 
         pairs = (
-            (FancyDict(value=[1, 2]), FancyDict(value=[1, 2])),
-            (FancyList([1, (2, 3)]), FancyList([1, (2, 3)])),
-            (FancyTuple((1, [2, 3])), FancyTuple((1, [2, 3]))),
+            (
+                OrderedDict(first=(1, 2), second=[3, 4]),
+                OrderedDict(first=(1, 2), second=[3, 4]),
+            ),
+            (UserDict(value=(5, 6)), UserDict(value=(5, 6))),
+            (FancyDict(value=(7, 8)), FancyDict(value=(7, 8))),
+            (
+                types.MappingProxyType({"value": (9, 10)}),
+                types.MappingProxyType({"value": (9, 10)}),
+            ),
+            (
+                CopyRejectingDict(value=(11, 12)),
+                CopyRejectingDict(value=(11, 12)),
+            ),
+            (
+                ConstructorRejectingMapping({"value": (13, 14)}, label="actual"),
+                ConstructorRejectingMapping({"value": (13, 14)}, label="expected"),
+            ),
         )
         for actual_source, expected_source in pairs:
             with self.subTest(type=type(actual_source).__name__):
-                self.assertIs(actual(actual_source), actual_source)
-                self.assertIsNot(expected(expected_source), expected_source)
+                actual_result = actual(actual_source)
+                expected_result = expected(expected_source)
+                self.assertIs(type(actual_result), type(expected_result))
+                self.assertEqual(dict(actual_result), dict(expected_result))
+                self.assertEqual(
+                    actual_result is actual_source,
+                    expected_result is expected_source,
+                )
+
+    def test_generic_sequence_copy_constructor_and_fallback_behavior_matches(self):
+        actual = torch.utils.data.default_convert
+        expected = reference_torch.utils.data.default_convert
+        actual_chunk = torch.utils.data.DataChunk([7, (8, 9)])
+        expected_chunk = reference_torch.utils.data.DataChunk([7, (8, 9)])
+
+        pairs = (
+            (UserList([1, (2, 3)]), UserList([1, (2, 3)])),
+            (FancyList([4, (5, 6)]), FancyList([4, (5, 6)])),
+            (actual_chunk, expected_chunk),
+            (FancyTuple((10, (11, 12))), FancyTuple((10, (11, 12)))),
+            (range(3), range(3)),
+            (
+                CopyRejectingList([13, (14, 15)]),
+                CopyRejectingList([13, (14, 15)]),
+            ),
+        )
+        for actual_source, expected_source in pairs:
+            with self.subTest(type=type(actual_source).__name__):
+                actual_result = actual(actual_source)
+                expected_result = expected(expected_source)
+                self.assertEqual(
+                    type(actual_result).__name__, type(expected_result).__name__
+                )
+                self.assertEqual(list(actual_result), list(expected_result))
+                self.assertEqual(
+                    actual_result is actual_source,
+                    expected_result is expected_source,
+                )
+
+        actual_converted_chunk = actual(actual_chunk)
+        expected_converted_chunk = expected(expected_chunk)
+        self.assertEqual(
+            list(actual_converted_chunk.raw_iterator()),
+            list(expected_converted_chunk.raw_iterator()),
+        )
+        self.assertEqual(
+            actual_converted_chunk.items is actual_chunk.items,
+            expected_converted_chunk.items is expected_chunk.items,
+        )
+
+    def test_numpy_rejection_reaches_generic_mapping_and_sequence_contents(self):
+        actual = torch.utils.data.default_convert
+        expected = reference_torch.utils.data.default_convert
+        array = np.arange(3, dtype=np.float32)
+        cases = (
+            (
+                OrderedDict(payload=array),
+                OrderedDict(payload=array),
+                lambda result: result["payload"],
+            ),
+            (
+                UserDict(payload=array),
+                UserDict(payload=array),
+                lambda result: result["payload"],
+            ),
+            (
+                UserList([array]),
+                UserList([array]),
+                lambda result: result[0],
+            ),
+            (
+                torch.utils.data.DataChunk([array]),
+                reference_torch.utils.data.DataChunk([array]),
+                lambda result: result[0],
+            ),
+            (
+                types.MappingProxyType({"payload": array}),
+                types.MappingProxyType({"payload": array}),
+                lambda result: result["payload"],
+            ),
+        )
+
+        for actual_source, expected_source, extract in cases:
+            with self.subTest(type=type(actual_source).__name__):
+                expected_leaf = extract(expected(expected_source))
+                self.assertIsInstance(expected_leaf, reference_torch.Tensor)
+                with self.assertRaisesRegex(
+                    TypeError,
+                    "^default_convert\\(\\): NumPy arrays and scalars are not "
+                    "supported$",
+                ):
+                    actual(actual_source)
 
 
 if __name__ == "__main__":
