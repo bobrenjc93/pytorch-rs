@@ -86,6 +86,22 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         scalar = torch.tensor(-0.0)[None]
         self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0x8000_0000)
 
+    def test_exact_leading_singleton_tuple_uses_the_leading_unsqueeze_view(self):
+        indices = (
+            ("None", (None,)),
+            ("torch.newaxis", (torch.newaxis,)),
+        )
+        for spelling, index in indices:
+            for case, source, shape, stride, offset in self.layout_cases():
+                with self.subTest(spelling=spelling, case=case):
+                    result = source[index]
+                    self.assert_leading_unsqueeze(
+                        source, result, shape, stride, offset
+                    )
+
+        scalar = torch.tensor(-0.0)[(None,)]
+        self.assertEqual(np.asarray(scalar).view(np.uint32).item(), 0x8000_0000)
+
     def test_exact_trailing_none_and_newaxis_use_the_trailing_unsqueeze_view(self):
         indices = (
             ("None", (Ellipsis, None)),
@@ -169,11 +185,13 @@ class TensorNewAxisIndexTests(unittest.TestCase):
             return expected
         raise AssertionError(f"unknown case: {case}")
 
-    def test_autograd_and_no_grad_cover_every_supported_layout(self):
+    def assert_leading_autograd_and_no_grad(
+        self, autograd_index, no_grad_index
+    ):
         for case, _, shape, stride, offset in self.layout_cases():
             with self.subTest(case=case, mode="autograd"):
                 leaf, source = self.make_autograd_case(case)
-                result = source[None]
+                result = source[autograd_index]
                 self.assert_leading_unsqueeze(
                     source, result, shape, stride, offset
                 )
@@ -188,7 +206,7 @@ class TensorNewAxisIndexTests(unittest.TestCase):
             with self.subTest(case=case, mode="no_grad"):
                 leaf, source = self.make_autograd_case(case)
                 with torch.no_grad():
-                    result = source[torch.newaxis]
+                    result = source[no_grad_index]
                 self.assert_leading_unsqueeze(
                     source, result, shape, stride, offset
                 )
@@ -203,8 +221,16 @@ class TensorNewAxisIndexTests(unittest.TestCase):
             r"tensor\(\[\[2\.\]\], grad_fn=<UnsqueezeBackward0>\)$",
         ):
             torch.nn.functional.dropout(
-                None, p=diagnostic_leaf[None], training=False
+                None, p=diagnostic_leaf[autograd_index], training=False
             )
+
+    def test_autograd_and_no_grad_cover_every_supported_layout(self):
+        self.assert_leading_autograd_and_no_grad(None, torch.newaxis)
+
+    def test_exact_leading_tuple_autograd_and_no_grad_cover_every_layout(self):
+        self.assert_leading_autograd_and_no_grad(
+            (torch.newaxis,), (None,)
+        )
 
     def test_trailing_autograd_and_no_grad_cover_every_supported_layout(self):
         for case, _, shape, stride, offset in self.trailing_layout_cases():
@@ -243,12 +269,12 @@ class TensorNewAxisIndexTests(unittest.TestCase):
                 None, p=diagnostic_leaf[..., None], training=False
             )
 
-    def test_storage_and_autograd_survive_source_lifetime(self):
+    def assert_storage_and_autograd_survive_source_lifetime(self, index):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
 
         def retained_view():
             source = torch.tensor(values.tolist()).transpose(0, 2)[1]
-            return source[None]
+            return source[index]
 
         surviving = retained_view()
         gc.collect()
@@ -263,7 +289,7 @@ class TensorNewAxisIndexTests(unittest.TestCase):
 
         def retained_autograd_view():
             source = (leaf * 2.0).transpose(0, 2)[1]
-            return source[torch.newaxis]
+            return source[index]
 
         tracked = retained_autograd_view()
         gc.collect()
@@ -272,6 +298,12 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         expected = np.zeros_like(values)
         expected[:, :, 1] = 2.0 * np.asarray(weights)[0].T
         np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
+
+    def test_storage_and_autograd_survive_source_lifetime(self):
+        self.assert_storage_and_autograd_survive_source_lifetime(torch.newaxis)
+
+    def test_exact_leading_tuple_survives_source_lifetime(self):
+        self.assert_storage_and_autograd_survive_source_lifetime((None,))
 
     def test_trailing_storage_and_autograd_survive_source_lifetime(self):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
@@ -305,7 +337,9 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         expected[:, :, 1] = 2.0 * np.asarray(weights)[..., 0].T
         np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
 
-    def test_torch_function_mode_observes_none_before_indexing(self):
+    def assert_torch_function_mode_observes_leading_index(
+        self, recording_index, forwarding_index
+    ):
         marker = object()
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
@@ -330,7 +364,7 @@ class TensorNewAxisIndexTests(unittest.TestCase):
             with self.subTest(case=case, mode="recording"):
                 mode.calls.clear()
                 with mode:
-                    result = source[torch.newaxis]
+                    result = source[recording_index]
                     self.assertEqual(
                         torch.overrides._get_current_function_mode_stack(), [mode]
                     )
@@ -345,7 +379,7 @@ class TensorNewAxisIndexTests(unittest.TestCase):
                 self.assertEqual(dispatch_types, ())
                 self.assertEqual(len(args), 2)
                 self.assertIs(args[0], source)
-                self.assertIsNone(args[1])
+                self.assertIs(args[1], recording_index)
                 self.assertIsNone(kwargs)
                 self.assertEqual(handler_stack, ())
                 self.assertEqual(
@@ -359,10 +393,20 @@ class TensorNewAxisIndexTests(unittest.TestCase):
         for case, source, shape, stride, offset in self.layout_cases():
             with self.subTest(case=case, mode="forwarding"):
                 with ForwardingMode():
-                    result = source[None]
+                    result = source[forwarding_index]
                 self.assert_leading_unsqueeze(
                     source, result, shape, stride, offset
                 )
+
+    def test_torch_function_mode_observes_none_before_indexing(self):
+        self.assert_torch_function_mode_observes_leading_index(
+            torch.newaxis, None
+        )
+
+    def test_torch_function_mode_observes_the_exact_leading_tuple(self):
+        self.assert_torch_function_mode_observes_leading_index(
+            (torch.newaxis,), (None,)
+        )
 
     def test_torch_function_mode_observes_the_exact_trailing_tuple(self):
         marker = object()
@@ -427,7 +471,6 @@ class TensorNewAxisIndexTests(unittest.TestCase):
     def test_other_newaxis_and_public_unsqueeze_forms_remain_unsupported(self):
         tensor = torch.ones((2, 3))
         leading_mixed = (
-            (None,),
             (None, None),
             (None, 0),
             (None, Ellipsis),
