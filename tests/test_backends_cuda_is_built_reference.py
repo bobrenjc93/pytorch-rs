@@ -217,7 +217,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
         reference_torch.cuda.synchronize(device)
         self.assertEqual(result.cpu().tolist(), [4.0, 9.0])
 
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaises(RuntimeError):
@@ -243,7 +243,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 "matmul",
             }.issubset(expected_public - actual_public)
         )
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
         self.assertTrue(hasattr(reference_torch, "cuda"))
 
 

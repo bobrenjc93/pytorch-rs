@@ -193,8 +193,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(torch.accelerator.current_accelerator(), None)
         self.assertIs(torch.accelerator.is_available(), False)
         self.assertEqual(torch.accelerator.device_count(), 0)
-        self.assertFalse(hasattr(torch, "cuda"))
-        self.assertNotIn("torch_rs.cuda", sys.modules)
+        self.assertIs(sys.modules["torch_rs.cuda"], torch.cuda)
+        self.assertIs(torch.cuda.is_available(), False)
 
     def threaded_outcome(self, module):
         accelerator = module.accelerator
@@ -401,7 +401,7 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
 
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(torch.cuda.is_available(), False)
         self.assertTrue(hasattr(reference_torch, "cuda"))
         for specification in ("cuda", "cuda:0"):
             with self.subTest(specification=specification):

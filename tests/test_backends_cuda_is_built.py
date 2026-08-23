@@ -107,7 +107,7 @@ class CudaIsBuiltTests(unittest.TestCase):
         self.assertIs(child_wildcard["is_built"], function)
 
         self.assertNotIn("backends", torch.__all__)
-        self.assertFalse(hasattr(torch, "cuda"))
+        self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
         top_level_wildcard = {}
         exec("from torch_rs import *", top_level_wildcard)
         self.assertNotIn("backends", top_level_wildcard)
@@ -190,10 +190,8 @@ class CudaIsBuiltTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cuda_backend, name))
 
-        self.assertFalse(hasattr(torch, "cuda"))
-        self.assertNotIn("torch_rs.cuda", sys.modules)
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("torch_rs.cuda")
+        self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
+        self.assertIs(torch.cuda.is_available(), False)
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaisesRegex(
@@ -230,7 +228,7 @@ assert cuda.is_built is is_built
 assert is_built.__code__.co_names == ("torch", "_C", "_has_cuda")
 assert is_built() is torch._C._has_cuda is False
 assert not hasattr(torch, "_has_cuda")
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is torch._C._has_cuda is False
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules
