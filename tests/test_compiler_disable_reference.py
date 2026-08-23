@@ -48,6 +48,64 @@ if reference_torch is not None:
     )(_reference_factory_picklable_function)
 
 
+class _ActualPicklableRecursiveClass:
+    def __init__(self, value, *, increment=1):
+        self.value = value + increment
+
+    def __call__(self, increment=1):
+        return self.value + increment
+
+
+_ActualPicklableRecursiveClass = torch.compiler.disable(
+    _ActualPicklableRecursiveClass,
+    reason="recursive class pickling test",
+)
+
+
+class _ReferencePicklableRecursiveClass:
+    def __init__(self, value, *, increment=1):
+        self.value = value + increment
+
+    def __call__(self, increment=1):
+        return self.value + increment
+
+
+if reference_torch is not None:
+    _ReferencePicklableRecursiveClass = reference_torch.compiler.disable(
+        _ReferencePicklableRecursiveClass,
+        reason="recursive class pickling test",
+    )
+
+
+class _ActualPicklableConstructorWrapper:
+    def __init__(self, value, *, increment=1):
+        self.value = value + increment
+
+    def __call__(self, increment=1):
+        return self.value + increment
+
+
+_ActualPicklableConstructorWrapper = torch.compiler.disable(
+    recursive=False,
+    reason="class wrapper pickling test",
+)(_ActualPicklableConstructorWrapper)
+
+
+class _ReferencePicklableConstructorWrapper:
+    def __init__(self, value, *, increment=1):
+        self.value = value + increment
+
+    def __call__(self, increment=1):
+        return self.value + increment
+
+
+if reference_torch is not None:
+    _ReferencePicklableConstructorWrapper = reference_torch.compiler.disable(
+        recursive=False,
+        reason="class wrapper pickling test",
+    )(_ReferencePicklableConstructorWrapper)
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class CompilerDisableReferenceTests(unittest.TestCase):
     @classmethod
@@ -119,6 +177,98 @@ class CompilerDisableReferenceTests(unittest.TestCase):
         values = (wrapped(3, scale=2), wrapped(3, scale=2), calls)
         return metadata, reflection, values
 
+    def class_outcome(self, module, recursive, factory):
+        calls = []
+        reason = object()
+
+        class Constructed:
+            """Constructed class."""
+
+            shared_attribute = []
+
+            def __init__(self, value: int, /, *, scale: int = 1) -> None:
+                calls.append(("init", value, scale))
+                self.value = value * scale
+
+            def __call__(self, increment: int = 1) -> int:
+                calls.append(("call", increment))
+                return self.value + increment
+
+        original = Constructed
+        original_init = original.__init__
+        original_call = original.__call__
+        original_signature = str(inspect.signature(original))
+        if factory:
+            wrapped = module.compiler.disable(
+                recursive=recursive,
+                reason=reason,
+            )(original)
+        else:
+            wrapped = module.compiler.disable(
+                original,
+                recursive=recursive,
+                reason=reason,
+            )
+
+        if recursive:
+            wrapping = (
+                wrapped is original,
+                isinstance(wrapped, type),
+                not hasattr(wrapped, "_torchdynamo_disable"),
+                wrapped.__init__ is not original_init,
+                wrapped.__init__._torchdynamo_disable is True,
+                wrapped.__init__._torchdynamo_disable_msg is reason,
+                wrapped.__init__._torchdynamo_orig_callable is original_init,
+                wrapped.__init__._torchdynamo_wrapper_id == id(wrapped.__init__),
+                wrapped.__init__._torchdynamo_disable_recursive is True,
+                wrapped.__init__.__wrapped__ is original_init,
+                wrapped.__call__ is not original_call,
+                wrapped.__call__._torchdynamo_disable is True,
+                wrapped.__call__._torchdynamo_disable_msg is reason,
+                wrapped.__call__._torchdynamo_orig_callable is original_call,
+                wrapped.__call__._torchdynamo_wrapper_id == id(wrapped.__call__),
+                wrapped.__call__._torchdynamo_disable_recursive is True,
+                wrapped.__call__.__wrapped__ is original_call,
+            )
+        else:
+            wrapping = (
+                wrapped is not original,
+                type(wrapped) is types.FunctionType,
+                not isinstance(wrapped, type),
+                wrapped._torchdynamo_disable is True,
+                wrapped._torchdynamo_disable_msg is reason,
+                wrapped._torchdynamo_orig_callable is original,
+                wrapped._torchdynamo_wrapper_id == id(wrapped),
+                wrapped._torchdynamo_disable_recursive is False,
+                wrapped.__wrapped__ is original,
+                inspect.unwrap(wrapped) is original,
+                original.__init__ is original_init,
+                original.__call__ is original_call,
+            )
+
+        reflection = (
+            str(inspect.signature(wrapped)),
+            original_signature,
+            wrapped.__name__,
+            original.__name__,
+            wrapped.__qualname__,
+            original.__qualname__,
+            wrapped.__module__.split(".")[-1],
+            original.__module__.split(".")[-1],
+            wrapped.__doc__,
+            original.__doc__,
+            wrapped.__annotations__ is original.__annotations__,
+            wrapped.shared_attribute is original.shared_attribute,
+        )
+        instance = wrapped(3, scale=2)
+        construction = (
+            type(instance) is original,
+            instance.value,
+            instance(4),
+            calls,
+        )
+        return wrapping, reflection, construction
+
     def test_direct_wrapping_and_eager_calls_match_pytorch_2_13(self):
         for recursive in (True, False):
             with self.subTest(recursive=recursive):
@@ -126,6 +276,76 @@ class CompilerDisableReferenceTests(unittest.TestCase):
                     self.wrapped_outcome(torch, recursive),
                     self.wrapped_outcome(reference_torch, recursive),
                 )
+
+    def test_class_targets_match_pytorch_2_13(self):
+        for recursive in (True, False):
+            for factory in (False, True):
+                with self.subTest(recursive=recursive, factory=factory):
+                    actual = self.class_outcome(torch, recursive, factory)
+                    expected = self.class_outcome(
+                        reference_torch,
+                        recursive,
+                        factory,
+                    )
+                    self.assertEqual(actual, expected)
+                    self.assertTrue(all(actual[0]))
+                    self.assertEqual(actual[1][0], actual[1][1])
+                    self.assertEqual(
+                        actual[2],
+                        (
+                            True,
+                            6,
+                            10,
+                            [("init", 3, 2), ("call", 4)],
+                        ),
+                    )
+
+    def test_class_constructor_results_and_exceptions_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            module_outcomes = []
+            for recursive in (True, False):
+                sentinel = object()
+
+                class ReturnsSentinel:
+                    def __new__(cls):
+                        return sentinel
+
+                error = RuntimeError("constructor failed")
+
+                class Raises:
+                    def __init__(self):
+                        raise error
+
+                returned = module.compiler.disable(
+                    ReturnsSentinel,
+                    recursive=recursive,
+                )
+                failing = module.compiler.disable(
+                    Raises,
+                    recursive=recursive,
+                )
+                try:
+                    failing()
+                except Exception as raised:
+                    failure = (
+                        type(raised).__name__,
+                        raised.args,
+                        raised is error,
+                    )
+                else:
+                    failure = None
+                module_outcomes.append((returned() is sentinel, failure))
+            outcomes.append(module_outcomes)
+
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(
+            outcomes[0],
+            [
+                (True, ("RuntimeError", ("constructor failed",), True)),
+                (True, ("RuntimeError", ("constructor failed",), True)),
+            ],
+        )
 
     def test_method_binding_matches_pytorch_2_13(self):
         outcomes = []
@@ -288,6 +508,55 @@ class CompilerDisableReferenceTests(unittest.TestCase):
 
         self.assertEqual(outcomes[0], outcomes[1])
         self.assertEqual(outcomes[0], ((False, False), 1, (False, False)))
+
+    def test_class_recursive_truthiness_timing_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            module_outcomes = []
+            for factory in (False, True):
+                for result in (True, False):
+                    class StatefulTruthiness:
+                        def __init__(self):
+                            self.calls = 0
+
+                        def __bool__(self):
+                            self.calls += 1
+                            return result
+
+                    class Target:
+                        pass
+
+                    recursive = StatefulTruthiness()
+                    if factory:
+                        decorator = module.compiler.disable(recursive=recursive)
+                        calls_before_application = recursive.calls
+                        wrapped = decorator(Target)
+                    else:
+                        calls_before_application = None
+                        wrapped = module.compiler.disable(
+                            Target,
+                            recursive=recursive,
+                        )
+                    module_outcomes.append(
+                        (
+                            calls_before_application,
+                            recursive.calls,
+                            wrapped is Target,
+                            isinstance(wrapped, type),
+                        )
+                    )
+            outcomes.append(module_outcomes)
+
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(
+            outcomes[0],
+            [
+                (None, 1, True, True),
+                (None, 1, False, False),
+                (1, 1, True, True),
+                (1, 1, False, False),
+            ],
+        )
 
     def test_direct_bound_methods_and_repeated_wrapping_match_pytorch_2_13(self):
         outcomes = []
@@ -488,6 +757,84 @@ class CompilerDisableReferenceTests(unittest.TestCase):
                 function._torchdynamo_disable_msg,
                 "factory pickling test",
             )
+
+    def test_class_copying_and_pickling_match_pytorch_2_13(self):
+        pairs = (
+            (
+                _ActualPicklableRecursiveClass,
+                _ReferencePicklableRecursiveClass,
+            ),
+            (
+                _ActualPicklableRecursiveClass.__init__,
+                _ReferencePicklableRecursiveClass.__init__,
+            ),
+            (
+                _ActualPicklableRecursiveClass.__call__,
+                _ReferencePicklableRecursiveClass.__call__,
+            ),
+            (
+                _ActualPicklableConstructorWrapper,
+                _ReferencePicklableConstructorWrapper,
+            ),
+        )
+        for actual, expected in pairs:
+            self.assertIs(copy.copy(actual), actual)
+            self.assertIs(copy.deepcopy(actual), actual)
+            self.assertIs(copy.copy(expected), expected)
+            self.assertIs(copy.deepcopy(expected), expected)
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(
+                    target=actual.__qualname__,
+                    protocol=protocol,
+                ):
+                    self.assertIs(
+                        pickle.loads(pickle.dumps(actual, protocol)),
+                        actual,
+                    )
+                    self.assertIs(
+                        pickle.loads(pickle.dumps(expected, protocol)),
+                        expected,
+                    )
+
+        recursive_instances = (
+            _ActualPicklableRecursiveClass(4, increment=3),
+            _ReferencePicklableRecursiveClass(4, increment=3),
+        )
+        constructor_instances = (
+            _ActualPicklableConstructorWrapper(4, increment=3),
+            _ReferencePicklableConstructorWrapper(4, increment=3),
+        )
+        self.assertEqual(
+            [
+                (instance.value, instance(2))
+                for instance in recursive_instances
+            ],
+            [(7, 9), (7, 9)],
+        )
+        self.assertEqual(
+            [
+                (instance.value, instance(2))
+                for instance in constructor_instances
+            ],
+            [(7, 9), (7, 9)],
+        )
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(instance_protocol=protocol):
+                actual_restored = pickle.loads(
+                    pickle.dumps(recursive_instances[0], protocol)
+                )
+                expected_restored = pickle.loads(
+                    pickle.dumps(recursive_instances[1], protocol)
+                )
+                self.assertIs(
+                    type(actual_restored),
+                    _ActualPicklableRecursiveClass,
+                )
+                self.assertIs(
+                    type(expected_restored),
+                    _ReferencePicklableRecursiveClass,
+                )
+                self.assertEqual(actual_restored.value, expected_restored.value)
 
     def test_supported_errors_match_pytorch_2_13(self):
         actual = torch.compiler.disable

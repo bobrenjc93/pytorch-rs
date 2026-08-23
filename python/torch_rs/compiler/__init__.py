@@ -46,12 +46,18 @@ def reset() -> None:
     """
 
 
-def _disable_function(fn, recursive, reason):
-    supported_function_types = (types.FunctionType, types.MethodType)
-    if not isinstance(fn, supported_function_types):
-        raise NotImplementedError(
-            "torch.compiler.disable() currently supports only Python functions"
-        )
+_SUPPORTED_DISABLE_TARGET_ERROR = (
+    "torch.compiler.disable() currently supports only Python functions"
+)
+
+
+def _is_supported_disable_target(fn):
+    return isinstance(fn, (types.FunctionType, types.MethodType, type))
+
+
+def _innermost_disable_target(fn):
+    if not _is_supported_disable_target(fn):
+        raise NotImplementedError(_SUPPORTED_DISABLE_TARGET_ERROR)
 
     unwrapped_fn = fn
     while (
@@ -60,12 +66,23 @@ def _disable_function(fn, recursive, reason):
         == id(unwrapped_fn)
     ):
         unwrapped_fn = unwrapped_fn._torchdynamo_orig_callable
-        if not isinstance(unwrapped_fn, supported_function_types):
-            raise NotImplementedError(
-                "torch.compiler.disable() currently supports only Python functions"
-            )
+        if not _is_supported_disable_target(unwrapped_fn):
+            raise NotImplementedError(_SUPPORTED_DISABLE_TARGET_ERROR)
 
-    disable_recursive = bool(recursive)
+    return unwrapped_fn
+
+
+def _disable_callable(fn, recursive, reason):
+    unwrapped_fn = fn
+    while (
+        hasattr(unwrapped_fn, "_torchdynamo_orig_callable")
+        and getattr(unwrapped_fn, "_torchdynamo_wrapper_id", None)
+        == id(unwrapped_fn)
+    ):
+        unwrapped_fn = unwrapped_fn._torchdynamo_orig_callable
+
+    if not callable(unwrapped_fn):
+        raise NotImplementedError(_SUPPORTED_DISABLE_TARGET_ERROR)
 
     @functools.wraps(unwrapped_fn)
     def disabled_function(*args, **kwargs):
@@ -75,8 +92,23 @@ def _disable_function(fn, recursive, reason):
     disabled_function._torchdynamo_disable_msg = reason
     disabled_function._torchdynamo_orig_callable = unwrapped_fn
     disabled_function._torchdynamo_wrapper_id = id(disabled_function)
-    disabled_function._torchdynamo_disable_recursive = disable_recursive
+    disabled_function._torchdynamo_disable_recursive = recursive
     return disabled_function
+
+
+def _disable_target(fn, recursive, reason):
+    unwrapped_fn = _innermost_disable_target(fn)
+
+    if isinstance(unwrapped_fn, type) and recursive:
+        unwrapped_fn.__init__ = _disable_callable(
+            unwrapped_fn.__init__, True, reason
+        )
+        unwrapped_fn.__call__ = _disable_callable(
+            unwrapped_fn.__call__, True, reason
+        )
+        return unwrapped_fn
+
+    return _disable_callable(unwrapped_fn, recursive, reason)
 
 
 def disable(fn=None, recursive=True, *, reason=None):
@@ -89,15 +121,16 @@ def disable(fn=None, recursive=True, *, reason=None):
         recursive (optional): A boolean value indicating whether the disabling should be recursive.
         reason (optional): A string value indicating the reason for disabling the function.
     """
+    disable_recursive = bool(recursive)
+
     if fn is None:
-        disable_recursive = bool(recursive)
 
         def decorator(fn):
-            return _disable_function(fn, disable_recursive, reason)
+            return _disable_target(fn, disable_recursive, reason)
 
         return decorator
 
-    return _disable_function(fn, recursive, reason)
+    return _disable_target(fn, disable_recursive, reason)
 
 
 def set_default_backend(backend: str | Callable[..., Any] | None) -> None:

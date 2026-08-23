@@ -40,13 +40,32 @@ def _factory_picklable_function(value, *, increment=1):
     return value + increment
 
 
+class _PicklableRecursiveClass:
+    def __init__(self, value, *, increment=1):
+        self.value = value + increment
+
+    def __call__(self, increment=1):
+        return self.value + increment
+
+
+_PicklableRecursiveClass = torch.compiler.disable(
+    _PicklableRecursiveClass,
+    reason="recursive class pickling test",
+)
+
+
+@torch.compiler.disable(recursive=False, reason="class wrapper pickling test")
+class _PicklableConstructorWrapper:
+    def __init__(self, value, *, increment=1):
+        self.value = value + increment
+
+    def __call__(self, increment=1):
+        return self.value + increment
+
+
 class _Callable:
     def __call__(self):
         return "called"
-
-
-class _UnsupportedClass:
-    pass
 
 
 class CompilerDisableTests(unittest.TestCase):
@@ -193,6 +212,223 @@ class CompilerDisableTests(unittest.TestCase):
             False,
             reason,
         )
+
+    def test_truthy_class_targets_return_the_same_class(self):
+        for form in ("direct", "factory"):
+            with self.subTest(form=form):
+                calls = []
+                reason = object()
+
+                class Constructed:
+                    """Constructed class."""
+
+                    shared_attribute = []
+
+                    def __init__(self, value: int, /, *, scale: int = 1) -> None:
+                        calls.append(("init", value, scale))
+                        self.value = value * scale
+
+                    def __call__(self, increment: int = 1) -> int:
+                        calls.append(("call", increment))
+                        return self.value + increment
+
+                original = Constructed
+                original_init = original.__init__
+                original_call = original.__call__
+                original_signature = inspect.signature(original)
+
+                if form == "direct":
+                    wrapped = torch.compiler.disable(
+                        original,
+                        recursive=[True],
+                        reason=reason,
+                    )
+                else:
+                    wrapped = torch.compiler.disable(
+                        recursive=[True],
+                        reason=reason,
+                    )(original)
+
+                self.assertIs(wrapped, original)
+                self.assertIsInstance(wrapped, type)
+                self.assertFalse(hasattr(wrapped, "_torchdynamo_disable"))
+                self.assert_disable_metadata(
+                    wrapped.__init__, original_init, True, reason
+                )
+                self.assert_disable_metadata(
+                    wrapped.__call__, original_call, True, reason
+                )
+                self.assertEqual(inspect.signature(wrapped), original_signature)
+                self.assertEqual(
+                    str(inspect.signature(wrapped.__init__)),
+                    "(self, value: int, /, *, scale: int = 1) -> None",
+                )
+                self.assertEqual(
+                    str(inspect.signature(wrapped.__call__)),
+                    "(self, increment: int = 1) -> int",
+                )
+
+                instance = wrapped(3, scale=2)
+                self.assertIs(type(instance), original)
+                self.assertEqual(instance.value, 6)
+                self.assertEqual(instance(4), 10)
+                self.assertEqual(calls, [("init", 3, 2), ("call", 4)])
+
+    def test_truthy_plain_class_wraps_inherited_constructor_hooks(self):
+        class Plain:
+            pass
+
+        original_init = Plain.__init__
+        original_call = Plain.__call__
+        wrapped = torch.compiler.disable(Plain, reason="plain class")
+
+        self.assertIs(wrapped, Plain)
+        self.assert_disable_metadata(
+            wrapped.__init__, original_init, True, "plain class"
+        )
+        self.assertIs(wrapped.__call__._torchdynamo_disable, True)
+        self.assertEqual(
+            wrapped.__call__._torchdynamo_orig_callable,
+            original_call,
+        )
+        self.assertIs(
+            wrapped.__call__.__wrapped__,
+            wrapped.__call__._torchdynamo_orig_callable,
+        )
+        self.assertEqual(
+            wrapped.__call__._torchdynamo_wrapper_id,
+            id(wrapped.__call__),
+        )
+        self.assertIs(wrapped.__call__._torchdynamo_disable_recursive, True)
+        self.assertEqual(wrapped.__call__._torchdynamo_disable_msg, "plain class")
+        self.assertIs(type(wrapped()), wrapped)
+
+    def test_falsey_class_targets_return_transparent_constructor_wrappers(self):
+        for form in ("direct", "factory"):
+            with self.subTest(form=form):
+                calls = []
+                reason = object()
+
+                class Constructed:
+                    """Constructed class."""
+
+                    shared_attribute = []
+
+                    def __init__(self, value: int, /, *, scale: int = 1) -> None:
+                        calls.append((value, scale))
+                        self.value = value * scale
+
+                original = Constructed
+                original_init = original.__init__
+                original_signature = inspect.signature(original)
+
+                if form == "direct":
+                    wrapped = torch.compiler.disable(
+                        original,
+                        recursive=[],
+                        reason=reason,
+                    )
+                else:
+                    wrapped = torch.compiler.disable(
+                        recursive=[],
+                        reason=reason,
+                    )(original)
+
+                self.assertIsNot(wrapped, original)
+                self.assertIs(type(wrapped), types.FunctionType)
+                self.assertNotIsInstance(wrapped, type)
+                self.assert_disable_metadata(wrapped, original, False, reason)
+                self.assertIs(inspect.unwrap(wrapped), original)
+                self.assertEqual(inspect.signature(wrapped), original_signature)
+                self.assertEqual(wrapped.__name__, original.__name__)
+                self.assertEqual(wrapped.__qualname__, original.__qualname__)
+                self.assertEqual(wrapped.__module__, original.__module__)
+                self.assertEqual(wrapped.__doc__, original.__doc__)
+                self.assertIs(wrapped.__annotations__, original.__annotations__)
+                self.assertIs(wrapped.shared_attribute, original.shared_attribute)
+                self.assertIs(original.__init__, original_init)
+                self.assertFalse(hasattr(original, "_torchdynamo_disable"))
+
+                instance = wrapped(4, scale=3)
+                self.assertIs(type(instance), original)
+                self.assertEqual(instance.value, 12)
+                self.assertEqual(calls, [(4, 3)])
+
+    def test_class_constructor_results_and_exceptions_are_transparent(self):
+        for recursive in (True, False):
+            with self.subTest(recursive=recursive):
+                sentinel = object()
+
+                class ReturnsSentinel:
+                    def __new__(cls):
+                        return sentinel
+
+                error = RuntimeError("constructor failed")
+
+                class Raises:
+                    def __init__(self):
+                        raise error
+
+                returned = torch.compiler.disable(
+                    ReturnsSentinel,
+                    recursive=recursive,
+                )
+                self.assertIs(returned(), sentinel)
+
+                failing = torch.compiler.disable(Raises, recursive=recursive)
+                with self.assertRaises(RuntimeError) as raised:
+                    failing()
+                self.assertIs(raised.exception, error)
+
+    def test_class_targets_evaluate_recursive_truthiness_once_before_mutation(self):
+        class StatefulTruthiness:
+            def __init__(self, result):
+                self.calls = 0
+                self.result = result
+
+            def __bool__(self):
+                self.calls += 1
+                return self.result
+
+        for form in ("direct", "factory"):
+            for result in (True, False):
+                with self.subTest(form=form, result=result):
+                    class Target:
+                        pass
+
+                    recursive = StatefulTruthiness(result)
+                    if form == "direct":
+                        wrapped = torch.compiler.disable(
+                            Target,
+                            recursive=recursive,
+                        )
+                    else:
+                        factory = torch.compiler.disable(recursive=recursive)
+                        self.assertEqual(recursive.calls, 1)
+                        wrapped = factory(Target)
+
+                    self.assertEqual(recursive.calls, 1)
+                    self.assertEqual(wrapped is Target, result)
+
+        class TruthinessError(Exception):
+            pass
+
+        error = TruthinessError("recursive truthiness failed")
+
+        class RaisingTruthiness:
+            def __bool__(self):
+                raise error
+
+        class Untouched:
+            pass
+
+        original_init = Untouched.__init__
+        original_call = Untouched.__call__
+        with self.assertRaises(TruthinessError) as raised:
+            torch.compiler.disable(Untouched, recursive=RaisingTruthiness())
+        self.assertIs(raised.exception, error)
+        self.assertIs(Untouched.__init__, original_init)
+        self.assertEqual(Untouched.__call__, original_call)
 
     def test_factory_rejects_none_as_a_decorator_target(self):
         message = "torch.compiler.disable() currently supports only Python functions"
@@ -429,6 +665,50 @@ class CompilerDisableTests(unittest.TestCase):
             "factory pickling test",
         )
 
+    def test_class_targets_support_copying_and_pickling(self):
+        recursive_instance = _PicklableRecursiveClass(4, increment=3)
+        self.assertIs(type(recursive_instance), _PicklableRecursiveClass)
+        self.assertEqual(recursive_instance.value, 7)
+        self.assertEqual(recursive_instance(2), 9)
+
+        wrapped_instance = _PicklableConstructorWrapper(4, increment=3)
+        self.assertIs(
+            type(wrapped_instance),
+            _PicklableConstructorWrapper.__wrapped__,
+        )
+        self.assertEqual(wrapped_instance.value, 7)
+        self.assertEqual(wrapped_instance(2), 9)
+        self.assert_disable_metadata(
+            _PicklableConstructorWrapper,
+            _PicklableConstructorWrapper.__wrapped__,
+            False,
+            "class wrapper pickling test",
+        )
+
+        targets = (
+            _PicklableRecursiveClass,
+            _PicklableRecursiveClass.__init__,
+            _PicklableRecursiveClass.__call__,
+            _PicklableConstructorWrapper,
+        )
+        for target in targets:
+            self.assertIs(copy.copy(target), target)
+            self.assertIs(copy.deepcopy(target), target)
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                with self.subTest(target=target, protocol=protocol):
+                    self.assertIs(
+                        pickle.loads(pickle.dumps(target, protocol)),
+                        target,
+                    )
+
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(instance_protocol=protocol):
+                restored = pickle.loads(
+                    pickle.dumps(recursive_instance, protocol)
+                )
+                self.assertIs(type(restored), _PicklableRecursiveClass)
+                self.assertEqual(restored.value, 7)
+
     def test_supported_call_shape_errors_match_pytorch_2_13(self):
         disable = torch.compiler.disable
         function = lambda: None
@@ -472,9 +752,7 @@ class CompilerDisableTests(unittest.TestCase):
         target_message = (
             "torch.compiler.disable() currently supports only Python functions"
         )
-        original_init = _UnsupportedClass.__init__
         targets = (
-            _UnsupportedClass,
             len,
             [].append,
             _Callable(),
@@ -493,7 +771,6 @@ class CompilerDisableTests(unittest.TestCase):
                         f"^{re.escape(target_message)}$",
                     ):
                         decorator(target)
-        self.assertIs(_UnsupportedClass.__init__, original_init)
 
     def test_wrapping_does_not_enable_compilation_or_import_pytorch(self):
         @torch.compiler.disable
@@ -534,6 +811,29 @@ assert function._torchdynamo_disable_msg == "factory"
 assert function(1) == 2
 assert function(2) == 3
 assert calls == [1, 2]
+
+@torch.compiler.disable(reason="class")
+class RecursiveClass:
+    def __init__(self, value):
+        self.value = value
+
+assert not hasattr(RecursiveClass, "_torchdynamo_disable")
+assert RecursiveClass.__init__._torchdynamo_disable is True
+assert RecursiveClass.__init__._torchdynamo_disable_recursive is True
+assert RecursiveClass.__init__._torchdynamo_disable_msg == "class"
+assert RecursiveClass(3).value == 3
+
+@torch.compiler.disable(recursive=False, reason="constructor")
+class ConstructorWrapper:
+    def __init__(self, value):
+        self.value = value
+
+assert ConstructorWrapper._torchdynamo_disable is True
+assert ConstructorWrapper._torchdynamo_disable_recursive is False
+assert ConstructorWrapper._torchdynamo_disable_msg == "constructor"
+instance = ConstructorWrapper(4)
+assert type(instance) is ConstructorWrapper.__wrapped__
+assert instance.value == 4
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
