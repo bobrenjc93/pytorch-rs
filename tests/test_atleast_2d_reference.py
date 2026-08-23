@@ -742,6 +742,180 @@ class Atleast2dReferenceTests(unittest.TestCase):
             self.mode_contract(reference_torch),
         )
 
+    def variadic_mode_contract(self, module):
+        function = module.atleast_2d
+        sources = (
+            module.tensor(1.0, dtype=module.float32, requires_grad=True),
+            module.tensor(
+                [2.0, 3.0], dtype=module.float32, requires_grad=True
+            ),
+        )
+        marker = object()
+
+        def mode_stack():
+            return module.overrides._get_current_function_mode_stack()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (func, types, args, kwargs, len(mode_stack()))
+                )
+                return self.result
+
+        def normalize_call(call):
+            func, dispatch_types, args, kwargs, stack_depth = call
+            return (
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                len(args),
+                tuple(
+                    argument is source
+                    for argument, source in zip(args, sources, strict=True)
+                ),
+                kwargs,
+                stack_depth,
+            )
+
+        accepting = RecordingMode(marker)
+        with accepting:
+            accepting_result = function(*sources)
+            accepting_restored = mode_stack() == [accepting]
+
+        forwarding_calls = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_calls.append(
+                    (
+                        self.label,
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        len(mode_stack()),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = function(*sources)
+                forwarding_restored = mode_stack() == [lower, upper]
+
+        forwarded_metadata = tuple(
+            (
+                tuple(result.shape),
+                result.stride(),
+                result.storage_offset(),
+                result.data_ptr() == source.data_ptr(),
+                result.requires_grad,
+                result.is_leaf,
+            )
+            for result, source in zip(forwarded, sources, strict=True)
+        )
+        for result in forwarded:
+            result.sum().backward()
+        forwarded_gradients = tuple(
+            self.tensor_array(source.grad, module).copy() for source in sources
+        )
+
+        declining = RecordingMode(NotImplemented)
+        with declining:
+            try:
+                function(*sources)
+            except Exception as error:
+                declining_error = (
+                    type(error).__name__,
+                    re.sub(
+                        r"0x[0-9a-f]+",
+                        "0x<address>",
+                        self.normalize_error(error),
+                    ),
+                    error.args == (str(error),),
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a declining mode")
+            declining_restored = mode_stack() == [declining]
+
+        expected_error = ValueError("mode failed")
+
+        class RaisingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (func, types, args, kwargs, len(mode_stack()))
+                )
+                raise expected_error
+
+        raising = RaisingMode()
+        with raising:
+            try:
+                function(*sources)
+            except Exception as error:
+                raising_error = (
+                    error is expected_error,
+                    type(error).__name__,
+                    str(error),
+                    error.args,
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a raising mode")
+            raising_restored = mode_stack() == [raising]
+
+        return {
+            "accepting": (
+                accepting_result is marker,
+                tuple(map(normalize_call, accepting.calls)),
+                accepting_restored,
+            ),
+            "forwarding": tuple(
+                (
+                    label,
+                    normalize_call((func, types, args, kwargs, stack_depth)),
+                )
+                for label, func, types, args, kwargs, stack_depth in forwarding_calls
+            ),
+            "forwarded_metadata": forwarded_metadata,
+            "forwarded_gradients": forwarded_gradients,
+            "forwarding_restored": forwarding_restored,
+            "declining": (
+                declining_error,
+                tuple(map(normalize_call, declining.calls)),
+                declining_restored,
+            ),
+            "raising": (
+                raising_error,
+                tuple(map(normalize_call, raising.calls)),
+                raising_restored,
+            ),
+            "stack_depth": len(mode_stack()),
+        }
+
+    def test_variadic_torch_function_modes_match_pytorch_2_13(self):
+        actual = self.variadic_mode_contract(torch)
+        expected = self.variadic_mode_contract(reference_torch)
+        self.assertEqual(actual.keys(), expected.keys())
+        for key in actual.keys() - {"forwarded_gradients"}:
+            with self.subTest(contract=key):
+                self.assertEqual(actual[key], expected[key])
+        for actual_grad, expected_grad in zip(
+            actual["forwarded_gradients"],
+            expected["forwarded_gradients"],
+            strict=True,
+        ):
+            np.testing.assert_array_equal(actual_grad, expected_grad)
+
     def override_contract(self, module):
         function = module.atleast_2d
         marker = object()
