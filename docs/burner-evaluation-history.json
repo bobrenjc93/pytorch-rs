@@ -5329,6 +5329,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 94
       }
+    },
+    {
+      "key": "pr:723",
+      "recordedAt": "2026-08-23T07:49:54.424Z",
+      "label": "PR #723",
+      "kind": "composite",
+      "prNumber": 723,
+      "title": "YOLO generation 82: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 85.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 68.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 94
+      }
     }
   ]
 }
