@@ -209,7 +209,6 @@ class TensorEllipsisIndexTests(unittest.TestCase):
         unsupported = (
             (Ellipsis, 0),
             (0, Ellipsis),
-            (slice(None), Ellipsis),
             (Ellipsis, Ellipsis),
         )
         for index in unsupported:

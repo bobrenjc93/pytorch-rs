@@ -289,12 +289,8 @@ impl PyTensorBase {
                     .cast_into::<PyTuple>()?;
                 &normalized_indices
             };
-            if indices.is_empty()
-                || (indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>())
-            {
-                tensor.inner.metadata_alias()
-            } else if contains_only_exact_full_slices(indices)? {
-                if indices.len() > tensor.inner.shape().len() {
+            if let Some(indexed_dimensions) = metadata_alias_tuple_dimensions(indices)? {
+                if indexed_dimensions > tensor.inner.shape().len() {
                     return Err(too_many_indices(tensor.inner.shape().len()));
                 }
                 tensor.inner.metadata_alias()
@@ -9832,13 +9828,25 @@ fn is_exact_full_slice(index: &Bound<'_, PyAny>) -> PyResult<bool> {
         && slice.getattr("step")?.is_none())
 }
 
-fn contains_only_exact_full_slices(indices: &Bound<'_, PyTuple>) -> PyResult<bool> {
+// Return how many tensor dimensions an alias-only tuple consumes. A single
+// Ellipsis consumes the unmentioned dimensions, so it does not increment the
+// rank requirement.
+fn metadata_alias_tuple_dimensions(indices: &Bound<'_, PyTuple>) -> PyResult<Option<usize>> {
+    let mut indexed_dimensions = 0;
+    let mut contains_ellipsis = false;
     for index in indices.iter() {
-        if !is_exact_full_slice(&index)? {
-            return Ok(false);
+        if index.is_instance_of::<PyEllipsis>() {
+            if contains_ellipsis {
+                return Ok(None);
+            }
+            contains_ellipsis = true;
+        } else if is_exact_full_slice(&index)? {
+            indexed_dimensions += 1;
+        } else {
+            return Ok(None);
         }
     }
-    Ok(true)
+    Ok(Some(indexed_dimensions))
 }
 
 fn parse_integer_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {

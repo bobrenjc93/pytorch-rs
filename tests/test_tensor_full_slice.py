@@ -44,6 +44,20 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             ("offset-noncontiguous", base.transpose(0, rank)[1]),
         )
 
+    def full_slice_ellipsis_indices(self, slice_count):
+        full_slices = (slice(None),) * slice_count
+        return tuple(
+            (*full_slices[:position], Ellipsis, *full_slices[position:])
+            for position in range(slice_count + 1)
+        )
+
+    def full_slice_ellipsis_layout_cases(self, slice_count):
+        if slice_count == 1:
+            return self.layout_cases()
+        if slice_count == 2:
+            return self.double_full_slice_layout_cases()
+        return self.higher_rank_full_slice_layout_cases(slice_count)
+
     def assert_metadata_alias(self, source, alias):
         self.assertIsNot(alias, source)
         self.assertEqual(alias.shape, source.shape)
@@ -99,6 +113,28 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                 np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000
             )
 
+    def test_full_slice_ellipsis_tuples_return_exact_metadata_aliases(self):
+        for slice_count in range(1, 5):
+            cases = self.full_slice_ellipsis_layout_cases(slice_count)
+            signed_zero_source = torch.tensor(
+                np.full((1,) * slice_count, -0.0, dtype=np.float32).tolist()
+            )
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                for case, source in cases:
+                    with self.subTest(
+                        slice_count=slice_count,
+                        position=position,
+                        case=case,
+                    ):
+                        self.assert_metadata_alias(source, source[index])
+
+                signed_zero = signed_zero_source[index]
+                self.assertEqual(
+                    np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000
+                )
+
     def test_scalar_full_slice_raises_the_exact_pytorch_error(self):
         with self.assertRaises(IndexError) as raised:
             torch.tensor(-0.0)[:]
@@ -140,6 +176,24 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                         str(raised.exception),
                         f"too many indices for tensor of dimension {dimensions}",
                     )
+
+    def test_full_slice_ellipsis_tuples_count_only_slices_against_rank(self):
+        for slice_count in range(1, 5):
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                for dimensions in range(slice_count):
+                    with self.subTest(
+                        slice_count=slice_count,
+                        position=position,
+                        dimensions=dimensions,
+                    ):
+                        with self.assertRaises(IndexError) as raised:
+                            torch.zeros((2,) * dimensions)[index]
+                        self.assertEqual(
+                            str(raised.exception),
+                            f"too many indices for tensor of dimension {dimensions}",
+                        )
 
     def assert_autograd_gradient_node_and_no_grad_leaf_status(
         self, index, node_name, diagnostic_rank=1
@@ -208,6 +262,18 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                     diagnostic_rank=count,
                 )
 
+    def test_full_slice_ellipsis_tuples_use_alias_autograd_semantics(self):
+        for slice_count in range(1, 5):
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                with self.subTest(slice_count=slice_count, position=position):
+                    self.assert_autograd_gradient_node_and_no_grad_leaf_status(
+                        index,
+                        "AliasBackward0",
+                        diagnostic_rank=slice_count,
+                    )
+
     def test_empty_tuple_uses_alias_autograd_semantics(self):
         self.assert_autograd_gradient_node_and_no_grad_leaf_status(
             (), "AliasBackward0"
@@ -273,6 +339,16 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                 self.assert_storage_and_autograd_survive_source_lifetime(
                     (slice(None),) * count, source_rank=count
                 )
+
+    def test_full_slice_ellipsis_tuples_survive_source_lifetime(self):
+        for slice_count in range(1, 5):
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                with self.subTest(slice_count=slice_count, position=position):
+                    self.assert_storage_and_autograd_survive_source_lifetime(
+                        index, source_rank=max(slice_count, 2)
+                    )
 
     def assert_dispatches_through_tensorbase_mode_before_indexing(self, index):
         index_rank = len(index) if isinstance(index, tuple) else 1
@@ -356,6 +432,16 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                     (slice(None),) * count
                 )
 
+    def test_full_slice_ellipsis_tuples_dispatch_with_original_index(self):
+        for slice_count in range(1, 5):
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                with self.subTest(slice_count=slice_count, position=position):
+                    self.assert_dispatches_through_tensorbase_mode_before_indexing(
+                        index
+                    )
+
     def test_tuple_subclasses_are_normalized_through_overridden_iteration(self):
         source = torch.tensor([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
 
@@ -393,6 +479,13 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         triple_alias = higher_rank_source[TripleFullSliceRemapTuple((0,))]
         self.assert_metadata_alias(higher_rank_source, triple_alias)
+
+        class FullSliceEllipsisRemapTuple(tuple):
+            def __iter__(self):
+                return iter((slice(None), Ellipsis, slice(None)))
+
+        mixed_alias = source[FullSliceEllipsisRemapTuple((0,))]
+        self.assert_metadata_alias(source, mixed_alias)
 
         class EmptyRemapTuple(tuple):
             def __iter__(self):
@@ -440,13 +533,20 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None), slice(None, -1)),
             (slice(None, None, 1), slice(None)),
             (slice(None), slice(None, None, 2)),
-            (slice(None), Ellipsis),
+            (slice(1, None), Ellipsis),
+            (Ellipsis, slice(None, -1)),
+            (slice(None, None, 1), Ellipsis),
+            (Ellipsis, slice(None, None, 2)),
+            (slice(None), 0, Ellipsis),
+            (Ellipsis, 0, slice(None)),
+            (slice(None), None, Ellipsis),
+            (Ellipsis, None, slice(None)),
+            (slice(None), Ellipsis, Ellipsis),
             (slice(1, None), slice(None), slice(None)),
             (slice(None), slice(None, -1), slice(None)),
             (slice(None), slice(None, None, 1), slice(None)),
             (slice(None), slice(None, None, 2), slice(None)),
             (slice(None), 0, slice(None)),
-            (slice(None), slice(None), Ellipsis),
         )
         for index in unsupported:
             with self.subTest(index=repr(index)):
