@@ -5425,6 +5425,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96
       }
+    },
+    {
+      "key": "pr:749",
+      "recordedAt": "2026-08-23T13:14:24.079Z",
+      "label": "PR #749",
+      "kind": "leaf",
+      "prNumber": 749,
+      "title": "Add torch.set_autocast_cache_enabled state control",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 86.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 69.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }
