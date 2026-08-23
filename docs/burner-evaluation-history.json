@@ -5505,6 +5505,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96
       }
+    },
+    {
+      "key": "pr:765",
+      "recordedAt": "2026-08-23T18:35:36.638Z",
+      "label": "PR #765",
+      "kind": "leaf",
+      "prNumber": 765,
+      "title": "Support identity-only Tensor.type conversions",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 87,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 69.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }
