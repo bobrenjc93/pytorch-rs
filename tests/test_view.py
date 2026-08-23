@@ -759,6 +759,18 @@ class TensorViewTests(unittest.TestCase):
             tensor.view(range(2))
         self.assertEqual(invalid.calls, [])
 
+        invalid_size_dtype = RecordingMode(marker)
+        with invalid_size_dtype, self.assertRaises(TypeError):
+            tensor.view(size=torch.float32)
+        self.assertEqual(invalid_size_dtype.calls, [])
+
+        mixed_dimension = StatefulIndexDimension((6, 6))
+        invalid_mixed = RecordingMode(marker)
+        with invalid_mixed, self.assertRaises(TypeError):
+            tensor.view(mixed_dimension, dtype=torch.float32)
+        self.assertEqual(mixed_dimension.calls, 2)
+        self.assertEqual(invalid_mixed.calls, [])
+
         order = []
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):
@@ -848,6 +860,7 @@ class TensorViewTests(unittest.TestCase):
         )
         calls = (
             lambda: tensor.view(size=-1),
+            lambda: tensor.view(size=torch.float32),
             lambda: tensor.view(1, 2, 3),
             lambda: tensor.view(1, 1, 2, 3),
             lambda: tensor.view(True),
@@ -869,6 +882,11 @@ class TensorViewTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(TypeError, f"^{re.escape(keyword_overload)}$"):
             tensor.view(2, 3, size=(2, 3))
+
+        mixed_dimension = StatefulIndexDimension((6, 6))
+        with self.assertRaises(TypeError):
+            tensor.view(mixed_dimension, dtype=torch.float32)
+        self.assertEqual(mixed_dimension.calls, 2)
         self.assertEqual(
             (
                 tensor.shape,

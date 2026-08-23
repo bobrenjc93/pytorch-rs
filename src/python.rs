@@ -9309,9 +9309,8 @@ fn bind_view_argument<'py>(
         saw_dtype: saw_dtype_keyword,
     } = bind_view_keyword_arguments(positional, keywords)?;
 
-    if saw_dtype_keyword {
-        if positional.is_empty()
-            && keyword_shape.is_none()
+    if saw_dtype_keyword && positional.is_empty() {
+        if keyword_shape.is_none()
             && keyword_error.is_none()
             && keywords.is_some_and(|keywords| keywords.len() == 1)
             && let Some(dtype) = keyword_dtype
@@ -9361,6 +9360,9 @@ fn bind_view_argument<'py>(
             false,
         ),
         1 => (positional.get_item(0)?, true),
+        _ if keyword_error.is_some() => {
+            return Err(unsupported_view_call_error(positional, keywords)?);
+        }
         _ => return Err(unsupported_three_or_more_view_dimensions_error()),
     };
     let shape = if let Ok(shape) = value.cast::<PyTuple>() {
@@ -9368,6 +9370,14 @@ fn bind_view_argument<'py>(
     } else if let Ok(shape) = value.cast::<PyList>() {
         ViewShapeArgument::List(shape.clone())
     } else if let Ok(dtype) = value.cast::<PyDType>() {
+        if !positional_dimension {
+            if keyword_error.is_none() && keywords.is_some_and(|keywords| keywords.len() == 1) {
+                return Err(unsupported_view_size_dtype_error(
+                    positional, keywords, dtype,
+                )?);
+            }
+            return Err(unsupported_view_call_error(positional, keywords)?);
+        }
         if keyword_error.is_some() {
             return Err(unsupported_view_call_error(positional, keywords)?);
         }
@@ -9384,10 +9394,16 @@ fn bind_view_argument<'py>(
         }
         ViewShapeArgument::Dimension(value)
     } else {
+        if positional_dimension && keyword_error.is_some() {
+            return Err(unsupported_view_call_error(positional, keywords)?);
+        }
         return Err(unsupported_view_argument_error());
     };
     validate_view_shape_first(&shape)?;
     if let Some(error) = keyword_error {
+        if positional_dimension {
+            return Err(unsupported_view_call_error(positional, keywords)?);
+        }
         return Err(error);
     }
     Ok(ViewArgument::Shape(shape))
@@ -9499,6 +9515,18 @@ fn unsupported_view_call_error(
     let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
     Ok(PyTypeError::new_err(format!(
         "view() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (torch.dtype dtype)\n * (tuple of ints size)\n"
+    )))
+}
+
+fn unsupported_view_size_dtype_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+    dtype: &Bound<'_, PyDType>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    let actual = python_type_name(dtype.as_any())?;
+    Ok(PyTypeError::new_err(format!(
+        "view() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (torch.dtype dtype)\n      didn't match because some of the keywords were incorrect: size\n * (tuple of ints size)\n      didn't match because some of the arguments have invalid types: (!size={actual}!, )\n"
     )))
 }
 

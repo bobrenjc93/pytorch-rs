@@ -824,6 +824,25 @@ class TensorViewReferenceTests(unittest.TestCase):
         else:
             self.fail(f"{module.__name__} accepted a range shape")
 
+        invalid_size_dtype = RecordingMode(marker)
+        try:
+            with invalid_size_dtype:
+                tensor.view(size=module.float32)
+        except Exception as error:
+            invalid_size_dtype_error = (type(error).__name__, str(error))
+        else:
+            self.fail(f"{module.__name__} accepted a dtype through size=")
+
+        mixed_dimension = StatefulIndexDimension((6, 6))
+        invalid_mixed = RecordingMode(marker)
+        try:
+            with invalid_mixed:
+                tensor.view(mixed_dimension, dtype=module.float32)
+        except Exception as error:
+            invalid_mixed_error = (type(error).__name__, str(error))
+        else:
+            self.fail(f"{module.__name__} accepted a mixed view overload")
+
         order = []
 
         class ForwardingMode(module.overrides.TorchFunctionMode):
@@ -882,6 +901,11 @@ class TensorViewReferenceTests(unittest.TestCase):
             ),
             "invalid": invalid_error,
             "invalid_calls": len(invalid.calls),
+            "invalid_size_dtype": invalid_size_dtype_error,
+            "invalid_size_dtype_calls": len(invalid_size_dtype.calls),
+            "invalid_mixed": invalid_mixed_error,
+            "invalid_mixed_index_calls": mixed_dimension.calls,
+            "invalid_mixed_mode_calls": len(invalid_mixed.calls),
             "forwarding": tuple(
                 (label, normalize_call((func, dispatch_types, args, kwargs)))
                 for label, func, dispatch_types, args, kwargs in sequence_order
@@ -1136,6 +1160,10 @@ class TensorViewReferenceTests(unittest.TestCase):
 
         mixed_calls = (
             (
+                lambda: actual.view(size=torch.float32),
+                lambda: expected.view(size=reference_torch.float32),
+            ),
+            (
                 lambda: actual.view(torch.float32, 6),
                 lambda: expected.view(reference_torch.float32, 6),
             ),
@@ -1166,6 +1194,17 @@ class TensorViewReferenceTests(unittest.TestCase):
         )
         for actual_call, expected_call in mixed_calls:
             self.assert_error_matches(actual_call, expected_call)
+
+        actual_dimension = StatefulIndexDimension((6, 6))
+        expected_dimension = StatefulIndexDimension((6, 6))
+        self.assert_error_matches(
+            lambda: actual.view(actual_dimension, dtype=torch.float32),
+            lambda: expected.view(
+                expected_dimension, dtype=reference_torch.float32
+            ),
+        )
+        self.assertEqual(actual_dimension.calls, expected_dimension.calls)
+        self.assertEqual(actual_dimension.calls, 2)
 
         original = (
             tuple(actual.shape),
