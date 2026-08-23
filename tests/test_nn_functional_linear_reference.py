@@ -138,6 +138,84 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
             ),
         )
 
+    def make_rank_three_cases(self, module):
+        contiguous_input = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+        )
+        contiguous_weight = module.tensor(
+            np.arange(20, dtype=np.float32).reshape(5, 4).tolist(),
+            dtype=module.float32,
+        )
+        strided_input = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 4, 3).tolist(),
+            dtype=module.float32,
+        ).transpose(1, 2)
+        strided_weight = module.tensor(
+            np.arange(20, dtype=np.float32).reshape(4, 5).tolist(),
+            dtype=module.float32,
+        ).transpose(0, 1)
+        offset_input = module.tensor(
+            np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4).tolist(),
+            dtype=module.float32,
+        )[1]
+        offset_weight = module.tensor(
+            np.arange(40, dtype=np.float32).reshape(2, 5, 4).tolist(),
+            dtype=module.float32,
+        )[1]
+        offset_strided_input = module.tensor(
+            np.arange(48, dtype=np.float32).reshape(2, 2, 4, 3).tolist(),
+            dtype=module.float32,
+        )[1].transpose(1, 2)
+        offset_strided_weight = module.tensor(
+            np.arange(40, dtype=np.float32).reshape(2, 4, 5).tolist(),
+            dtype=module.float32,
+        )[1].transpose(0, 1)
+        empty_offset_input = module.zeros(
+            (2, 2, 0, 4), dtype=module.float32
+        ).transpose(1, 2)[1]
+
+        return (
+            ("contiguous batch", contiguous_input, contiguous_weight),
+            ("strided batch", strided_input, strided_weight),
+            ("offset batch", offset_input, offset_weight),
+            (
+                "offset-strided batch",
+                offset_strided_input,
+                offset_strided_weight,
+            ),
+            (
+                "zero batch",
+                module.zeros((0, 3, 4), dtype=module.float32),
+                contiguous_weight,
+            ),
+            (
+                "zero sequence",
+                module.zeros((2, 0, 4), dtype=module.float32),
+                contiguous_weight,
+            ),
+            (
+                "zero inner",
+                module.zeros((2, 3, 0), dtype=module.float32),
+                module.zeros((5, 0), dtype=module.float32),
+            ),
+            (
+                "zero outputs",
+                contiguous_input,
+                module.zeros((0, 4), dtype=module.float32),
+            ),
+            (
+                "offset zero batch",
+                empty_offset_input,
+                module.ones((5, 4), dtype=module.float32),
+            ),
+            (
+                "all zero",
+                module.zeros((0, 0, 0), dtype=module.float32),
+                module.zeros((0, 0), dtype=module.float32),
+            ),
+        )
+
     def assert_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -205,6 +283,36 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
     def test_vector_layouts_values_metadata_and_storage_match(self):
         actual_cases = self.make_vector_cases(torch)
         expected_cases = self.make_vector_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            case, actual_input, actual_weight = actual_case
+            expected_name, expected_input, expected_weight = expected_case
+            self.assertEqual(case, expected_name)
+            for form in ("positional", "explicit none", "keywords"):
+                actual = self.call(functional, actual_input, actual_weight, form)
+                expected = self.call(
+                    reference_functional, expected_input, expected_weight, form
+                )
+                self.assert_matches(actual, expected, case=(case, form))
+
+                actual_repeat = self.call(
+                    functional, actual_input, actual_weight, form
+                )
+                expected_repeat = self.call(
+                    reference_functional, expected_input, expected_weight, form
+                )
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_weight))
+                    self.assertFalse(expected.is_set_to(expected_weight))
+
+    def test_rank_three_layouts_values_metadata_and_storage_match(self):
+        actual_cases = self.make_rank_three_cases(torch)
+        expected_cases = self.make_rank_three_cases(reference_torch)
         for actual_case, expected_case in zip(
             actual_cases, expected_cases, strict=True
         ):
@@ -320,8 +428,46 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                 case=(input_requires_grad, weight_requires_grad),
             )
 
+    def test_rank_three_requires_grad_operands_match_inside_no_grad(self):
+        input_values = np.arange(12, dtype=np.float32).reshape(2, 2, 3).tolist()
+        weight_values = [[1.0, 0.0, -1.0], [2.0, 3.0, 4.0]]
+        for input_requires_grad, weight_requires_grad in (
+            (True, False),
+            (False, True),
+            (True, True),
+        ):
+            actual_input = torch.tensor(
+                input_values,
+                requires_grad=input_requires_grad,
+            )
+            actual_weight = torch.tensor(
+                weight_values,
+                requires_grad=weight_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                input_values,
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_weight = reference_torch.tensor(
+                weight_values,
+                dtype=reference_torch.float32,
+                requires_grad=weight_requires_grad,
+            )
+            with torch.no_grad():
+                actual = functional.linear(actual_input, actual_weight)
+            with reference_torch.no_grad():
+                expected = reference_functional.linear(
+                    expected_input, expected_weight
+                )
+            self.assert_matches(
+                actual,
+                expected,
+                case=(input_requires_grad, weight_requires_grad),
+            )
+
     def test_incompatible_inner_dimension_error_matches(self):
-        for shape in ((2, 3), (3,)):
+        for shape in ((2, 3), (3,), (2, 3, 4)):
             actual_input = torch.zeros(shape)
             actual_weight = torch.zeros((4, 5))
             expected_input = reference_torch.zeros(

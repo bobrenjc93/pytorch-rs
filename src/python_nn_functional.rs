@@ -5,7 +5,7 @@ use pyo3::types::{PyAny, PyModule};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
-    is_grad_enabled,
+    TensorError, is_grad_enabled,
     python::PyTensor,
     python_argument_schema::{ArgumentSchema, parse_float_like_argument},
     python_tensor_errors::tensor_error,
@@ -248,9 +248,9 @@ fn _nn_functional_linear(
     let input = input.try_borrow()?;
     let weight = weight.try_borrow()?;
     let input_rank = input.inner().shape().len();
-    if !matches!(input_rank, 1 | 2) || weight.inner().shape().len() != 2 {
+    if !matches!(input_rank, 1..=3) || weight.inner().shape().len() != 2 {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports rank-1 or rank-2 input and rank-2 weight tensors",
+            "torch_rs.nn.functional.linear only supports rank-1, rank-2, or rank-3 input and rank-2 weight tensors",
         ));
     }
     if is_grad_enabled() && (input.inner().requires_grad() || weight.inner().requires_grad()) {
@@ -263,14 +263,30 @@ fn _nn_functional_linear(
         .inner()
         .transpose(0, 1)
         .map_err(|error| tensor_error(&error))?;
-    let output = if input_rank == 1 {
-        input
+    let output = match input_rank {
+        1 => input
             .inner()
             .unsqueeze_front()
             .and_then(|input| input.matmul(&transposed_weight))
-            .and_then(|output| output.squeeze_dim(0))
-    } else {
-        input.inner().matmul(&transposed_weight)
+            .and_then(|output| output.squeeze_dim(0)),
+        2 => input.inner().matmul(&transposed_weight),
+        3 => {
+            let input_shape = input.inner().shape();
+            let output_shape = [
+                i64::try_from(input_shape[0])
+                    .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
+                i64::try_from(input_shape[1])
+                    .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
+                i64::try_from(weight.inner().shape()[0])
+                    .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
+            ];
+            input
+                .inner()
+                .flatten(0, 1)
+                .and_then(|input| input.matmul(&transposed_weight))
+                .and_then(|output| output.reshape(output_shape))
+        }
+        _ => unreachable!("linear input rank was validated above"),
     }
     .map_err(|error| tensor_error(&error))?;
     PyTensor::new(output).into_py_any(py)
