@@ -39,6 +39,29 @@ class StatefulIndexDimension:
         return value
 
 
+class TupleIndexDimension(tuple):
+    def __new__(cls, values, index_value):
+        instance = super().__new__(cls, values)
+        instance.index_value = index_value
+        instance.calls = 0
+        return instance
+
+    def __index__(self):
+        self.calls += 1
+        return self.index_value
+
+
+class ListIndexDimension(list):
+    def __init__(self, values, index_value):
+        super().__init__(values)
+        self.index_value = index_value
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        return self.index_value
+
+
 class TensorViewTests(unittest.TestCase):
     def shape_forms(self, shape):
         return (
@@ -404,6 +427,24 @@ class TensorViewTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "pos 2.*Overflow when unpacking long long"):
             tensor.view(1, 2**63)
 
+    def test_two_positional_dimensions_prefer_dual_sequence_contents(self):
+        tensor = torch.zeros((6,))
+        for dimension_type in (TupleIndexDimension, ListIndexDimension):
+            with self.subTest(dimension_type=dimension_type.__name__):
+                sequence = dimension_type((6,), 2)
+                result = tensor.view(sequence, 3)
+                self.assertEqual(result.shape, (6,))
+                self.assertEqual(result.stride(), (1,))
+                self.assertEqual(result.data_ptr(), tensor.data_ptr())
+                self.assertEqual(sequence.calls, 1)
+
+                fallback = dimension_type((2.0, 3), 2)
+                result = tensor.view(fallback, 3)
+                self.assertEqual(result.shape, (2, 3))
+                self.assertEqual(result.stride(), (3, 1))
+                self.assertEqual(result.data_ptr(), tensor.data_ptr())
+                self.assertEqual(fallback.calls, 3)
+
     def test_operator_index_poisoning_cannot_change_shape_parsing(self):
         tensor = torch.zeros((6,))
         original_index = operator.index
@@ -538,12 +579,26 @@ class TensorViewTests(unittest.TestCase):
                 return self.result
 
         size = torch.Size((2, 3))
+        tuple_index = TupleIndexDimension((6,), 2)
+        list_index = ListIndexDimension((6,), 2)
         cases = (
             ("tuple", lambda: tensor.view((2, 3)), (tensor, (2, 3)), None),
             ("list", lambda: tensor.view([2, 3]), (tensor, [2, 3]), None),
             ("Size", lambda: tensor.view(size), (tensor, size), None),
             ("integer", lambda: tensor.view(-1), (tensor, -1), None),
             ("two integers", lambda: tensor.view(2, 3), (tensor, 2, 3), None),
+            (
+                "tuple/index",
+                lambda: tensor.view(tuple_index, 3),
+                (tensor, tuple_index, 3),
+                None,
+            ),
+            (
+                "list/index",
+                lambda: tensor.view(list_index, 3),
+                (tensor, list_index, 3),
+                None,
+            ),
             (
                 "keyword",
                 lambda: tensor.view(size=(2, 3)),
@@ -562,6 +617,7 @@ class TensorViewTests(unittest.TestCase):
             self.assertEqual(dispatch_types, ())
             self.assertEqual(args, expected_args)
             self.assertEqual(kwargs, expected_kwargs)
+        self.assertEqual((tuple_index.calls, list_index.calls), (1, 1))
 
         deferred = RecordingMode(marker)
         with deferred:
@@ -658,6 +714,15 @@ class TensorViewTests(unittest.TestCase):
         for call in calls:
             with self.subTest(call=call), self.assertRaises(TypeError):
                 call()
+
+        keyword_overload = (
+            "view() received an invalid combination of arguments - got "
+            "(int, int, size=tuple), but expected one of:\n"
+            " * (torch.dtype dtype)\n"
+            " * (tuple of ints size)\n"
+        )
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(keyword_overload)}$"):
+            tensor.view(2, 3, size=(2, 3))
         np.testing.assert_array_equal(np.asarray(tensor), original)
         self.assertEqual(tensor.shape, (6,))
         self.assertEqual(tensor.stride(), (1,))

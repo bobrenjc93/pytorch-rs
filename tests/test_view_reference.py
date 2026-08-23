@@ -37,6 +37,29 @@ class StatefulIndexDimension:
         return value
 
 
+class TupleIndexDimension(tuple):
+    def __new__(cls, values, index_value):
+        instance = super().__new__(cls, values)
+        instance.index_value = index_value
+        instance.calls = 0
+        return instance
+
+    def __index__(self):
+        self.calls += 1
+        return self.index_value
+
+
+class ListIndexDimension(list):
+    def __init__(self, values, index_value):
+        super().__init__(values)
+        self.index_value = index_value
+        self.calls = 0
+
+    def __index__(self):
+        self.calls += 1
+        return self.index_value
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class TensorViewReferenceTests(unittest.TestCase):
     @classmethod
@@ -278,6 +301,42 @@ class TensorViewReferenceTests(unittest.TestCase):
             else:
                 self.fail(f"{module.__name__} accepted a nonintegral dimension")
         self.assertEqual(invalid_outcomes[0], invalid_outcomes[1])
+
+    def test_dual_sequence_index_overload_resolution_matches_pytorch_2_13(self):
+        for dimension_type in (TupleIndexDimension, ListIndexDimension):
+            outcomes = []
+            for module in (torch, reference_torch):
+                source = module.zeros((6,), dtype=module.float32)
+                sequence = dimension_type((6,), 2)
+                result = source.view(sequence, 3)
+                outcomes.append(
+                    (
+                        tuple(result.shape),
+                        result.stride(),
+                        result.storage_offset(),
+                        result.data_ptr() == source.data_ptr(),
+                        sequence.calls,
+                    )
+                )
+            with self.subTest(dimension_type=dimension_type.__name__):
+                self.assertEqual(outcomes[0], outcomes[1])
+
+            fallback_outcomes = []
+            for module in (torch, reference_torch):
+                source = module.zeros((6,), dtype=module.float32)
+                sequence = dimension_type((2.0, 3), 2)
+                result = source.view(sequence, 3)
+                fallback_outcomes.append(
+                    (
+                        tuple(result.shape),
+                        result.stride(),
+                        result.storage_offset(),
+                        result.data_ptr() == source.data_ptr(),
+                        sequence.calls,
+                    )
+                )
+            with self.subTest(fallback_type=dimension_type.__name__):
+                self.assertEqual(fallback_outcomes[0], fallback_outcomes[1])
 
     def test_inference_extreme_empty_and_view_errors_match_pytorch_2_13(self):
         actual_source = torch.tensor(
@@ -610,12 +669,16 @@ class TensorViewReferenceTests(unittest.TestCase):
             )
 
         records = []
+        tuple_index = TupleIndexDimension((6,), 2)
+        list_index = ListIndexDimension((6,), 2)
         calls = (
             lambda: tensor.view((2, 3)),
             lambda: tensor.view([2, 3]),
             lambda: tensor.view(module.Size((2, 3))),
             lambda: tensor.view(-1),
             lambda: tensor.view(2, 3),
+            lambda: tensor.view(tuple_index, 3),
+            lambda: tensor.view(list_index, 3),
             lambda: tensor.view(size=(2, 3)),
         )
         for call in calls:
@@ -682,6 +745,7 @@ class TensorViewReferenceTests(unittest.TestCase):
 
         return {
             "records": tuple(records),
+            "dual_sequence_index_calls": (tuple_index.calls, list_index.calls),
             "deferred": (
                 deferred_result is marker,
                 tuple(map(normalize_call, deferred.calls)),
@@ -934,6 +998,11 @@ class TensorViewReferenceTests(unittest.TestCase):
             with self.assertRaises(TypeError):
                 actual_call()
             self.assertEqual(expected_call().numel(), 6)
+
+        self.assert_error_matches(
+            lambda: actual.view(2, 3, size=(2, 3)),
+            lambda: expected.view(2, 3, size=(2, 3)),
+        )
 
         with self.assertRaises(TypeError):
             actual.view(size=-1)

@@ -9254,15 +9254,30 @@ fn bind_view_shape_argument<'py>(
     if positional.len() == 2 {
         let first = positional.get_item(0)?;
         if !is_view_shape_dimension(&first) {
-            return Err(unsupported_two_dimension_view_argument_error(positional)?);
+            return Err(unsupported_view_call_error(positional, keywords)?);
+        }
+        let sequence_shape = if let Ok(shape) = first.cast::<PyTuple>() {
+            Some(ViewShapeArgument::Tuple(shape.clone()))
+        } else if let Ok(shape) = first.cast::<PyList>() {
+            Some(ViewShapeArgument::List(shape.clone()))
+        } else {
+            None
+        };
+        if let Some(shape) = sequence_shape
+            && validate_view_shape_first(&shape).is_ok()
+        {
+            if keyword_error.is_some() {
+                return Err(unsupported_view_call_error(positional, keywords)?);
+            }
+            return Ok(shape);
         }
         // The two public overloads each probe the first variadic dimension
         // before mode dispatch. The remaining conversions happen afterward.
         if !is_view_shape_dimension(&first) {
-            return Err(unsupported_two_dimension_view_argument_error(positional)?);
+            return Err(unsupported_view_call_error(positional, keywords)?);
         }
-        if let Some(error) = keyword_error {
-            return Err(error);
+        if keyword_error.is_some() {
+            return Err(unsupported_view_call_error(positional, keywords)?);
         }
         return Ok(ViewShapeArgument::Tuple(positional.clone()));
     }
@@ -9401,16 +9416,13 @@ fn unsupported_view_integer_error() -> PyErr {
     )
 }
 
-fn unsupported_two_dimension_view_argument_error(
-    dimensions: &Bound<'_, PyTuple>,
+fn unsupported_view_call_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyErr> {
-    let types = dimensions
-        .iter()
-        .map(|dimension| python_type_name(&dimension))
-        .collect::<PyResult<Vec<_>>>()?
-        .join(", ");
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
     Ok(PyTypeError::new_err(format!(
-        "view() received an invalid combination of arguments - got ({types}), but expected one of:\n * (torch.dtype dtype)\n * (tuple of ints size)\n"
+        "view() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (torch.dtype dtype)\n * (tuple of ints size)\n"
     )))
 }
 
