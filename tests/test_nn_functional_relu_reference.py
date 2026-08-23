@@ -1,4 +1,5 @@
 import inspect
+import re
 import types
 import unittest
 
@@ -200,6 +201,279 @@ class FunctionalReluReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assertIsNone(actual_leaf.grad)
                 self.assertIsNone(expected_leaf.grad)
+
+    def dispatch_contract(self, module):
+        function = module.nn.functional.relu
+        source = module.tensor(
+            [-1.0, 2.0], dtype=module.float32, requires_grad=True
+        )
+        marker = object()
+
+        def mode_stack():
+            return module.overrides._get_current_function_mode_stack()
+
+        def normalize_call(call, argument):
+            func, dispatch_types, args, kwargs, stack_depth = call
+            return (
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                len(args) == 1 and args[0] is argument,
+                kwargs,
+                stack_depth,
+            )
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs, len(mode_stack())))
+                return marker
+
+        override = Override()
+        override_result = function(override, True)
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (func, types, args, kwargs, len(mode_stack()))
+                )
+                return self.result
+
+        accepting = RecordingMode(marker)
+        with accepting:
+            accepting_result = function(input=source, inplace=True)
+            accepting_restored = mode_stack() == [accepting]
+
+        forwarding_events = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label, events):
+                self.label = label
+                self.events = events
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.events.append(
+                    (
+                        self.label,
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        len(mode_stack()),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower", forwarding_events)
+        upper = ForwardingMode("upper", forwarding_events)
+        with lower:
+            with upper:
+                forwarded = function(source, False)
+                forwarding_restored = mode_stack() == [lower, upper]
+        forwarded.sum().backward()
+
+        declining = RecordingMode(NotImplemented)
+        with declining:
+            try:
+                function(source)
+            except Exception as error:
+                declining_error = (
+                    type(error).__name__,
+                    re.sub(
+                        r"0x[0-9a-f]+",
+                        "0x<address>",
+                        str(error).replace("torch_rs.nn", "torch.nn"),
+                    ),
+                    error.args == (str(error),),
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a declining mode")
+            declining_restored = mode_stack() == [declining]
+
+        mode_fallback_events = []
+
+        class FallbackOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                mode_fallback_events.append(
+                    ("override", func, types, args, kwargs, len(mode_stack()))
+                )
+                return marker
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                mode_fallback_events.append(
+                    ("mode", func, types, args, kwargs, len(mode_stack()))
+                )
+                return NotImplemented
+
+        fallback = FallbackOverride()
+        fallback_mode = DecliningMode()
+        with fallback_mode:
+            fallback_result = function(fallback, inplace=True)
+            fallback_restored = mode_stack() == [fallback_mode]
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        try:
+            function(DecliningOverride())
+        except Exception as error:
+            override_declining_error = (
+                type(error).__name__,
+                str(error).replace("torch_rs.nn", "torch.nn"),
+                error.args == (str(error),),
+            )
+        else:
+            self.fail(f"{module.__name__} accepted a declining override")
+
+        expected_override_error = ValueError("relu override failed")
+
+        class RaisingOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                raise expected_override_error
+
+        raising_override = RaisingOverride()
+        restoring_mode = RecordingMode(NotImplemented)
+        with restoring_mode:
+            try:
+                function(raising_override)
+            except Exception as error:
+                override_raising_error = (
+                    error is expected_override_error,
+                    type(error).__name__,
+                    str(error),
+                    error.args,
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a raising override")
+            override_raising_restored = mode_stack() == [restoring_mode]
+
+        expected_error = ValueError("relu mode failed")
+
+        class RaisingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (func, types, args, kwargs, len(mode_stack()))
+                )
+                raise expected_error
+
+        recovery_events = []
+        recovery = ForwardingMode("recovery", recovery_events)
+        raising = RaisingMode()
+        with recovery:
+            try:
+                with raising:
+                    function(source)
+            except Exception as error:
+                raising_error = (
+                    error is expected_error,
+                    type(error).__name__,
+                    str(error),
+                    error.args,
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a raising mode")
+            raising_restored = mode_stack() == [recovery]
+            recovered = function(source)
+
+        return {
+            "override": (
+                override_result is marker,
+                tuple(normalize_call(call, override) for call in Override.calls),
+            ),
+            "accepting": (
+                accepting_result is marker,
+                tuple(normalize_call(call, source) for call in accepting.calls),
+                accepting_restored,
+            ),
+            "forwarding": tuple(
+                (
+                    label,
+                    normalize_call(
+                        (func, types, args, kwargs, stack_depth), source
+                    ),
+                )
+                for label, func, types, args, kwargs, stack_depth in forwarding_events
+            ),
+            "forwarded": (
+                forwarded.tolist(),
+                tuple(forwarded.shape),
+                forwarded.stride(),
+                forwarded.storage_offset(),
+                forwarded.requires_grad,
+                forwarded.is_leaf,
+                source.grad.tolist(),
+                forwarding_restored,
+            ),
+            "declining": (
+                declining_error,
+                tuple(normalize_call(call, source) for call in declining.calls),
+                declining_restored,
+            ),
+            "mode_fallback": (
+                fallback_result is marker,
+                tuple(
+                    (
+                        label,
+                        normalize_call(
+                            (func, types, args, kwargs, stack_depth), fallback
+                        ),
+                    )
+                    for (
+                        label,
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        stack_depth,
+                    ) in mode_fallback_events
+                ),
+                fallback_restored,
+            ),
+            "override_errors": (
+                override_declining_error,
+                override_raising_error,
+                tuple(
+                    normalize_call(call, raising_override)
+                    for call in restoring_mode.calls
+                ),
+                override_raising_restored,
+            ),
+            "raising": (
+                raising_error,
+                tuple(normalize_call(call, source) for call in raising.calls),
+                raising_restored,
+                tuple(
+                    (
+                        label,
+                        normalize_call(
+                            (func, types, args, kwargs, stack_depth), source
+                        ),
+                    )
+                    for label, func, types, args, kwargs, stack_depth in recovery_events
+                ),
+                recovered.tolist(),
+            ),
+            "stack_depth": len(mode_stack()),
+        }
+
+    def test_torch_function_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.dispatch_contract(torch),
+            self.dispatch_contract(reference_torch),
+        )
 
     def test_inplace_true_is_explicitly_unsupported_and_non_mutating(self):
         leaf = torch.tensor(

@@ -133,6 +133,234 @@ class FunctionalReluTests(unittest.TestCase):
         self.assertEqual(untracked.tolist(), [[0.0, 0.0], [2.0, 3.0]])
         self.assertIsNone(untracked_leaf.grad)
 
+    def test_torch_function_overrides_receive_the_public_normalized_call(self):
+        replacement = object()
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return replacement
+
+        source = Override()
+        calls = (
+            (lambda: functional.relu(source), False),
+            (lambda: functional.relu(source, True), True),
+            (
+                lambda: functional.relu(input=source, inplace=True),
+                True,
+            ),
+        )
+        for case, (call, expected_inplace) in enumerate(calls):
+            with self.subTest(case=case):
+                self.assertIs(call(), replacement)
+                func, dispatch_types, args, kwargs = Override.calls[-1]
+                self.assertIs(func, functional.relu)
+                self.assertEqual(dispatch_types, (Override,))
+                self.assertEqual(args, (source,))
+                self.assertEqual(kwargs, {"inplace": expected_inplace})
+
+        events = []
+
+        class Mode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(("mode", func, types, args, kwargs))
+                return NotImplemented
+
+        class ModeFallback:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("override", func, types, args, kwargs))
+                return replacement
+
+        mode = Mode()
+        fallback = ModeFallback()
+        with mode:
+            self.assertIs(functional.relu(fallback, inplace=True), replacement)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [mode]
+            )
+        self.assertEqual(
+            tuple(event[0] for event in events), ("mode", "override")
+        )
+        for _, func, dispatch_types, args, kwargs in events:
+            self.assertIs(func, functional.relu)
+            self.assertEqual(dispatch_types, (ModeFallback,))
+            self.assertEqual(args, (fallback,))
+            self.assertEqual(kwargs, {"inplace": True})
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "^no implementation found for "
+            "'torch_rs.nn.functional.relu' on types that implement "
+            "__torch_function__:",
+        ):
+            functional.relu(DecliningOverride())
+
+        expected_error = ValueError("relu override failed")
+
+        class RaisingOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                raise expected_error
+
+        restoring_mode = Mode()
+        with restoring_mode:
+            with self.assertRaises(ValueError) as raised:
+                functional.relu(RaisingOverride())
+            self.assertIs(raised.exception, expected_error)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [restoring_mode],
+            )
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+    def test_torch_function_modes_forward_decline_raise_and_restore_stack(self):
+        source = torch.tensor([-1.0, 2.0], requires_grad=True)
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        len(
+                            torch.overrides._get_current_function_mode_stack()
+                        ),
+                    )
+                )
+                return self.result
+
+        accepting = RecordingMode(marker)
+        with accepting:
+            self.assertIs(
+                functional.relu(input=source, inplace=True), marker
+            )
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [accepting],
+            )
+        func, dispatch_types, args, kwargs, stack_depth = accepting.calls[0]
+        self.assertIs(func, functional.relu)
+        self.assertEqual(dispatch_types, (torch.Tensor,))
+        self.assertEqual(args, (source,))
+        self.assertEqual(kwargs, {"inplace": True})
+        self.assertEqual(stack_depth, 0)
+
+        forwarding_events = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_events.append(
+                    (
+                        self.label,
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        len(
+                            torch.overrides._get_current_function_mode_stack()
+                        ),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = functional.relu(source, False)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(),
+                    [lower, upper],
+                )
+        self.assertEqual(
+            tuple(event[0] for event in forwarding_events),
+            ("upper", "lower"),
+        )
+        self.assertEqual(tuple(event[-1] for event in forwarding_events), (1, 0))
+        for _, func, dispatch_types, args, kwargs, _ in forwarding_events:
+            self.assertIs(func, functional.relu)
+            self.assertEqual(dispatch_types, (torch.Tensor,))
+            self.assertEqual(args, (source,))
+            self.assertEqual(kwargs, {"inplace": False})
+        self.assertEqual(forwarded.tolist(), [0.0, 2.0])
+        forwarded.sum().backward()
+        self.assertEqual(source.grad.tolist(), [0.0, 1.0])
+
+        declining = RecordingMode(NotImplemented)
+        with declining:
+            with self.assertRaisesRegex(
+                TypeError,
+                "^no implementation found for "
+                "'torch_rs.nn.functional.relu' on types that implement "
+                r"__torch_function__: \[\] nor in mode ",
+            ):
+                functional.relu(source)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [declining],
+            )
+        self.assertEqual(
+            tuple(call[1] for call in declining.calls),
+            ((torch.Tensor,), ()),
+        )
+        self.assertEqual(tuple(call[-1] for call in declining.calls), (0, 0))
+
+        expected_error = ValueError("relu mode failed")
+
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.stack_depth = None
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.stack_depth = len(
+                    torch.overrides._get_current_function_mode_stack()
+                )
+                raise expected_error
+
+        recovery_events = []
+
+        class RecoveryMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                recovery_events.append(func)
+                return func(*args, **(kwargs or {}))
+
+        recovery = RecoveryMode()
+        raising = RaisingMode()
+        with recovery:
+            with self.assertRaises(ValueError) as raised:
+                with raising:
+                    functional.relu(source)
+            self.assertIs(raised.exception, expected_error)
+            self.assertEqual(raising.stack_depth, 1)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [recovery],
+            )
+            recovered = functional.relu(source)
+        self.assertEqual(recovery_events, [functional.relu])
+        self.assertEqual(recovered.tolist(), [0.0, 2.0])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
     def test_inplace_true_fails_before_mutating_the_input(self):
         leaf = torch.tensor(
             [[9.0, 9.0, 9.0], [-1.0, 2.0, -0.0]], requires_grad=True

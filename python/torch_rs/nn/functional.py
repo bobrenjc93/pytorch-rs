@@ -24,6 +24,14 @@ def _validate_dropout_probability(p):
         )
 
 
+def _relu_impl(input, inplace):
+    if inplace:
+        raise NotImplementedError(
+            "torch_rs.nn.functional.relu does not support inplace=True"
+        )
+    return torch.relu(input)
+
+
 def _dropout_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
     if inplace:
@@ -121,11 +129,12 @@ def relu(input: Tensor, inplace: bool = False) -> Tensor:
     Applies the rectified linear unit function element-wise. See
     :class:`~torch.nn.ReLU` for more details.
     """
-    if inplace:
-        raise NotImplementedError(
-            "torch_rs.nn.functional.relu does not support inplace=True"
-        )
-    return torch.relu(input)
+    return _dispatch_unary_torch_function(
+        relu,
+        _relu_impl,
+        input,
+        {"inplace": inplace},
+    )
 
 
 def dropout(
