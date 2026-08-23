@@ -2,7 +2,10 @@
 
 import os as _os
 
+import torch_rs as _torch
+
 __all__ = [
+    "get_default_backend_for_device",
     "get_pg_count",
     "is_gloo_available",
     "is_initialized",
@@ -12,6 +15,27 @@ __all__ = [
     "is_xccl_available",
     "get_node_local_rank",
 ]
+
+
+def get_default_backend_for_device(device: str | _torch.device) -> str:
+    """
+    Return the default backend for the given device.
+
+    Args:
+        device (Union[str, torch.device]): The device to get the default backend for.
+
+    Returns:
+        The default backend for the given device as a lower case string.
+
+    """
+    if isinstance(device, _torch.device):
+        device_str = device.type
+    else:
+        device_str = _torch.device(device).type
+
+    if device_str == "cpu":
+        return "gloo"
+    raise ValueError(f"Default backend not registered for device : {device}")
 
 
 def get_pg_count() -> int:
