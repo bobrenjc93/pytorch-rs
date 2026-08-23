@@ -98,6 +98,28 @@ fn is_autocast_cache_enabled(
     Ok(AUTOCAST_CACHE_ENABLED.get())
 }
 
+fn clear_autocast_cache(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch.clear_autocast_cache() takes no keyword arguments",
+        ));
+    }
+    if !args.is_empty() {
+        return Err(PyTypeError::new_err(format!(
+            "torch.clear_autocast_cache() takes no arguments ({} given)",
+            args.len()
+        )));
+    }
+
+    // Autocast execution is not implemented, so the associated weight cache
+    // is always empty. Clearing it is therefore an exact no-op and must not
+    // disturb the thread-local cache-enabled flag or grad mode.
+    Ok(())
+}
+
 fn set_autocast_cache_enabled(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
@@ -265,6 +287,7 @@ const IS_VIEW_REPLAY_ENABLED_SIGNATURE_DOC: &CStr =
 // retaining the custom PyTorch-qualified argument diagnostics below.
 const IS_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC: &CStr =
     c"is_autocast_cache_enabled($self, /)\n--\n\n";
+const CLEAR_AUTOCAST_CACHE_SIGNATURE_DOC: &CStr = c"clear_autocast_cache($self, /)\n--\n\n";
 const SET_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC: &CStr =
     c"set_autocast_cache_enabled($self, object, /)\n--\n\n";
 const IS_ANOMALY_ENABLED_SIGNATURE_DOC: &CStr = c"is_anomaly_enabled($self, /)\n--\n\n";
@@ -362,6 +385,22 @@ unsafe fn is_autocast_cache_enabled_callback(
     is_autocast_cache_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn clear_autocast_cache_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    clear_autocast_cache(&args, kwargs.as_ref())?;
+    Ok(py.None().into_ptr())
 }
 
 #[allow(
@@ -482,14 +521,15 @@ unsafe fn get_num_interop_threads_callback(
 
 fn add_autocast_cache_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
-    let (is_autocast_cache_enabled_doc, set_autocast_cache_enabled_doc) =
+    let (is_autocast_cache_enabled_doc, clear_autocast_cache_doc, set_autocast_cache_enabled_doc) =
         if py.version_info() >= (3, 13) {
             (
                 IS_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC,
+                CLEAR_AUTOCAST_CACHE_SIGNATURE_DOC,
                 SET_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC,
             )
         } else {
-            (c"", c"")
+            (c"", c"", c"")
         };
     module.add_function(PyCFunction::new_with_keywords(
         py,
@@ -499,6 +539,16 @@ fn add_autocast_cache_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
         ),
         c"is_autocast_cache_enabled",
         is_autocast_cache_enabled_doc,
+        Some(module),
+    )?)?;
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            clear_autocast_cache_callback
+        ),
+        c"clear_autocast_cache",
+        clear_autocast_cache_doc,
         Some(module),
     )?)?;
     module.add_function(PyCFunction::new_with_keywords(
