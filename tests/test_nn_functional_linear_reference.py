@@ -352,14 +352,24 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
 
-        actual_bias = torch.zeros((4,))
-        expected_bias = reference_torch.zeros((4,), dtype=reference_torch.float32)
-        with self.assertRaises(Exception) as actual_raised:
-            functional.linear(actual_input, actual_weight, actual_bias)
-        with self.assertRaises(Exception) as expected_raised:
-            reference_functional.linear(expected_input, expected_weight, expected_bias)
-        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
-        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+        for bias_features in (4, 5):
+            actual_bias = torch.zeros((bias_features,))
+            expected_bias = reference_torch.zeros(
+                (bias_features,), dtype=reference_torch.float32
+            )
+            with self.subTest(bias_features=bias_features):
+                with self.assertRaises(Exception) as actual_raised:
+                    functional.linear(actual_input, actual_weight, actual_bias)
+                with self.assertRaises(Exception) as expected_raised:
+                    reference_functional.linear(
+                        expected_input, expected_weight, expected_bias
+                    )
+                self.assertIs(
+                    type(actual_raised.exception), type(expected_raised.exception)
+                )
+                self.assertEqual(
+                    str(actual_raised.exception), str(expected_raised.exception)
+                )
 
     def test_rank_one_bias_length_errors_match(self):
         for rows in (0, 2):
@@ -387,6 +397,32 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     str(actual_raised.exception), str(expected_raised.exception)
+                )
+
+    def test_rank_one_bias_signed_zero_bits_match(self):
+        cases = (
+            ("negative weight", [[0.0]], [[-1.0]]),
+            ("negative input", [[-0.0]], [[1.0]]),
+            ("positive product", [[0.0]], [[1.0]]),
+            ("opposite product", [[-0.0]], [[-1.0]]),
+            ("zero inner", [[]], [[]]),
+        )
+        for case, input_values, weight_values in cases:
+            actual = functional.linear(
+                torch.tensor(input_values),
+                torch.tensor(weight_values),
+                torch.tensor([-0.0]),
+            )
+            expected = reference_functional.linear(
+                reference_torch.tensor(input_values, dtype=reference_torch.float32),
+                reference_torch.tensor(weight_values, dtype=reference_torch.float32),
+                reference_torch.tensor([-0.0], dtype=reference_torch.float32),
+            )
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, sign_bits=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual).reshape(-1).view(np.uint32),
+                    expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
                 )
 
 

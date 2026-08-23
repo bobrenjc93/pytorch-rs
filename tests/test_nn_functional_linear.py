@@ -165,7 +165,7 @@ class FunctionalLinearTests(unittest.TestCase):
             for form, call in calls:
                 self.assert_matches_composition(call(), expected, case=(case, form))
 
-    def test_rank_one_bias_reuses_broadcast_add_with_linear_layouts(self):
+    def test_rank_one_bias_uses_bias_seeded_matmul_with_linear_layouts(self):
         for case, input, weight, bias in self.layout_cases():
             expected = input.matmul(weight.transpose(0, 1)) + bias
             if expected.shape == (0, 1):
@@ -207,6 +207,8 @@ class FunctionalLinearTests(unittest.TestCase):
             functional.linear(input, weight)
         with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
             functional.linear(input, weight, torch.zeros((4,)))
+        with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
+            functional.linear(input, weight, torch.zeros((5,)))
 
     def test_bias_length_mismatch_uses_pytorch_expansion_error(self):
         weight = torch.zeros((4, 3))
@@ -220,6 +222,26 @@ class FunctionalLinearTests(unittest.TestCase):
             with self.subTest(rows=rows):
                 with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
                     functional.linear(torch.zeros((rows, 3)), weight, bias)
+
+    def test_bias_seeds_signed_zero_accumulators(self):
+        cases = (
+            ("negative weight", [[0.0]], [[-1.0]], 0x80000000),
+            ("negative input", [[-0.0]], [[1.0]], 0x80000000),
+            ("positive product", [[0.0]], [[1.0]], 0x00000000),
+            ("opposite product", [[-0.0]], [[-1.0]], 0x00000000),
+            ("zero inner", [[]], [[]], 0x80000000),
+        )
+        for case, input_values, weight_values, expected_bits in cases:
+            output = functional.linear(
+                torch.tensor(input_values),
+                torch.tensor(weight_values),
+                torch.tensor([-0.0]),
+            )
+            with self.subTest(case=case):
+                self.assertEqual(
+                    np.asarray(output).reshape(-1).view(np.uint32).item(),
+                    expected_bits,
+                )
 
     def test_requires_grad_operands_need_no_grad(self):
         cases = ((True, False), (False, True), (True, True))

@@ -2506,6 +2506,48 @@ impl Tensor {
     /// Returns an error unless both tensors are matrices with compatible inner
     /// dimensions.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        self.matmul_with_initializer(other, |_, _, output_elements| {
+            filled_storage(output_elements, 0.0)
+        })
+    }
+
+    /// Multiplies two rank-2 matrices after broadcasting a rank-1 bias across
+    /// the output rows.
+    ///
+    /// Bias values seed the accumulators before products are added, matching
+    /// `addmm` ordering while reusing the ordinary matrix multiplication loop.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless both matrix operands and the row bias have
+    /// compatible shapes, or when result allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn matmul_with_row_bias(
+        &self,
+        other: &Self,
+        bias: &Self,
+    ) -> Result<Self, TensorError> {
+        self.matmul_with_initializer(other, |rows, columns, output_elements| {
+            if bias.shape.len() != 1 || bias.shape[0] != columns {
+                let mut expected_bias_shape = try_result_vector(1, output_elements)?;
+                expected_bias_shape.push(columns);
+                return Err(TensorError::ShapeMismatch {
+                    left: expected_bias_shape,
+                    right: try_clone_result_shape(&bias.shape, bias.elements)?,
+                });
+            }
+
+            let negative_zero =
+                Self::full_with_metadata([rows, columns], -0.0, self.dtype(), self.device())?;
+            Ok(negative_zero.add(bias)?.into_vec())
+        })
+    }
+
+    fn matmul_with_initializer(
+        &self,
+        other: &Self,
+        initialize: impl FnOnce(usize, usize, usize) -> Result<Vec<f32>, TensorError>,
+    ) -> Result<Self, TensorError> {
         if self.shape.len() != 2 || other.shape.len() != 2 {
             return Err(TensorError::MatmulRequiresMatrices {
                 left: self.shape.clone(),
@@ -2525,7 +2567,8 @@ impl Tensor {
         output_shape.push(rows);
         output_shape.push(columns);
         let (output_elements, output_strides) = validated_layout(&output_shape)?;
-        let mut output = filled_storage(output_elements, 0.0)?;
+        let mut output = initialize(rows, columns, output_elements)?;
+        debug_assert_eq!(output.len(), output_elements);
         if let (Some(left_data), Some(right_data)) =
             (self.contiguous_slice(), other.contiguous_slice())
         {
@@ -4901,6 +4944,25 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    #[test]
+    fn row_biased_matmul_seeds_accumulators_before_products() {
+        let bias = Tensor::from_vec(vec![-0.0], [1]).unwrap();
+        let negative_product = Tensor::from_vec(vec![0.0], [1, 1])
+            .unwrap()
+            .matmul_with_row_bias(&Tensor::from_vec(vec![-1.0], [1, 1]).unwrap(), &bias)
+            .unwrap();
+        assert_eq!(
+            negative_product.as_slice()[0].to_bits(),
+            (-0.0_f32).to_bits()
+        );
+
+        let empty_inner = Tensor::zeros([1, 0])
+            .unwrap()
+            .matmul_with_row_bias(&Tensor::zeros([0, 1]).unwrap(), &bias)
+            .unwrap();
+        assert_eq!(empty_inner.as_slice()[0].to_bits(), (-0.0_f32).to_bits());
     }
 
     #[test]
