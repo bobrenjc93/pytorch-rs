@@ -54,6 +54,14 @@ DROPOUT2D_3D_WARNING = (
     "dropout1d instead."
 )
 
+DROPOUT2D_2D_WARNING = (
+    "dropout2d: Received a 2-D input to dropout2d, which is deprecated and will "
+    "result in an error in a future release. To retain the behavior and silence "
+    "this warning, please use dropout instead. Note that dropout2d exists to "
+    "provide channel-wise dropout on inputs with 2 spatial dimensions, a channel "
+    "dimension, and an optional batch dimension (i.e. 3D or 4D inputs)."
+)
+
 
 class FunctionalDropout2dTests(unittest.TestCase):
     def make_nonempty_cases(self, *, requires_grad):
@@ -110,6 +118,29 @@ class FunctionalDropout2dTests(unittest.TestCase):
         offset = backing[1]
         return contiguous, offset, offset.transpose(1, 2)
 
+    def make_rank_two_nonempty_cases(self, *, requires_grad):
+        contiguous = torch.tensor(
+            [[1.0, -2.0, 3.0], [-4.0, 5.0, -6.0]],
+            requires_grad=requires_grad,
+        )
+        backing = torch.tensor(
+            [
+                [
+                    [9.0, 10.0, 11.0, 12.0],
+                    [13.0, 14.0, 15.0, 16.0],
+                    [17.0, 18.0, 19.0, 20.0],
+                ],
+                [
+                    [-1.0, 2.0, -3.0, 4.0],
+                    [-5.0, 6.0, -7.0, 8.0],
+                    [-9.0, 10.0, -11.0, 12.0],
+                ],
+            ],
+            requires_grad=requires_grad,
+        )
+        offset = backing[1]
+        return contiguous, offset, offset.transpose(0, 1)
+
     def snapshot(self, tensor):
         return (
             id(tensor),
@@ -134,6 +165,11 @@ class FunctionalDropout2dTests(unittest.TestCase):
         self.assertEqual(len(caught), 1)
         self.assertIs(caught[0].category, UserWarning)
         self.assertEqual(str(caught[0].message), DROPOUT2D_3D_WARNING)
+
+    def assert_deprecated_rank_two_warning(self, caught):
+        self.assertEqual(len(caught), 1)
+        self.assertIs(caught[0].category, UserWarning)
+        self.assertEqual(str(caught[0].message), DROPOUT2D_2D_WARNING)
 
     def test_imports_signature_documentation_and_pickling(self):
         imported_nn = importlib.import_module("torch_rs.nn")
@@ -316,6 +352,59 @@ class FunctionalDropout2dTests(unittest.TestCase):
                         self.assert_legacy_rank_three_warning(caught)
                         self.assert_unchanged_identity(output, source, before)
 
+    def test_rank_two_identity_paths_warn_and_preserve_exact_inputs(self):
+        calls = (
+            (0.75, False, False),
+            (1.0, False, True),
+            (0, True, False),
+            (torch.tensor(0.0), True, True),
+        )
+        for case, source in enumerate(
+            self.make_rank_two_nonempty_cases(requires_grad=True)
+        ):
+            for probability, training, inplace in calls:
+                before = self.snapshot(source)
+                with self.subTest(
+                    case=case,
+                    probability=type(probability),
+                    training=training,
+                    inplace=inplace,
+                ):
+                    with warnings.catch_warnings(record=True) as caught:
+                        warnings.simplefilter("always")
+                        output = functional.dropout2d(
+                            source,
+                            p=probability,
+                            training=training,
+                            inplace=inplace,
+                        )
+                    self.assert_deprecated_rank_two_warning(caught)
+                    self.assert_unchanged_identity(output, source, before)
+
+        empty_sources = (
+            torch.zeros((2, 0), requires_grad=True),
+            torch.zeros((0, 3), requires_grad=True).transpose(0, 1),
+        )
+        for case, source in enumerate(empty_sources):
+            for probability in (0.25, 1.0, torch.tensor(0.5)):
+                for inplace in (False, True):
+                    before = self.snapshot(source)
+                    with self.subTest(
+                        empty_case=case,
+                        probability=type(probability),
+                        inplace=inplace,
+                    ):
+                        with warnings.catch_warnings(record=True) as caught:
+                            warnings.simplefilter("always")
+                            output = functional.dropout2d(
+                                source,
+                                p=probability,
+                                training=True,
+                                inplace=inplace,
+                            )
+                        self.assert_deprecated_rank_two_warning(caught)
+                        self.assert_unchanged_identity(output, source, before)
+
     def test_rank_three_identity_preserves_autograd_and_no_grad_state(self):
         leaf = torch.tensor(
             [[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True
@@ -345,6 +434,40 @@ class FunctionalDropout2dTests(unittest.TestCase):
                     untracked_source, p=0.75, training=False
                 )
         self.assert_legacy_rank_three_warning(caught)
+        self.assertIs(unchanged, untracked_source)
+        self.assertTrue(unchanged.requires_grad)
+        self.assertFalse(unchanged.is_leaf)
+        self.assertIsNone(untracked_leaf.grad)
+
+    def test_rank_two_identity_preserves_autograd_and_no_grad_state(self):
+        leaf = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+        )
+        source = leaf.transpose(0, 1)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            output = functional.dropout2d(
+                source, p=0, training=True, inplace=True
+            )
+        self.assert_deprecated_rank_two_warning(caught)
+        self.assertIs(output, source)
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        self.assertEqual(output.output_nr, source.output_nr)
+
+        weights = torch.tensor([[2.0, 3.0], [5.0, 7.0]])
+        (output * weights).sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[2.0, 5.0], [3.0, 7.0]])
+
+        untracked_leaf = torch.zeros((2, 3), requires_grad=True)
+        untracked_source = untracked_leaf.transpose(0, 1)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with torch.no_grad():
+                unchanged = functional.dropout2d(
+                    untracked_source, p=0.75, training=False, inplace=True
+                )
+        self.assert_deprecated_rank_two_warning(caught)
         self.assertIs(unchanged, untracked_source)
         self.assertTrue(unchanged.requires_grad)
         self.assertFalse(unchanged.is_leaf)
@@ -515,6 +638,45 @@ class FunctionalDropout2dTests(unittest.TestCase):
         self.assertEqual(len(caught), 1)
         self.assertIs(caught[0].category, np.exceptions.ComplexWarning)
 
+    def test_rank_two_warning_validation_order(self):
+        source = torch.zeros((2, 3))
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with self.assertRaisesRegex(
+                ValueError,
+                "^dropout probability has to be between 0 and 1, but got -0.1$",
+            ):
+                functional.dropout2d(
+                    source, p=-0.1, training="invalid", inplace=True
+                )
+        self.assertEqual(caught, [])
+
+        error_cases = (
+            (
+                lambda: functional.dropout2d(
+                    source, p=Decimal("0"), training=False
+                ),
+                "feature_dropout(): argument 'p' (position 2) must be float, "
+                "not decimal.Decimal",
+            ),
+            (
+                lambda: functional.dropout2d(
+                    source, p=0, training=np.bool_(False), inplace=True
+                ),
+                "feature_dropout_(): argument 'train' (position 3) must be "
+                "bool, not numpy.bool",
+            ),
+        )
+        for case, (call, message) in enumerate(error_cases):
+            with self.subTest(case=case):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    with self.assertRaises(TypeError) as raised:
+                        call()
+                self.assertEqual(str(raised.exception), message)
+                self.assert_deprecated_rank_two_warning(caught)
+
     def test_overrides_and_modes_receive_the_public_function(self):
         replacement = object()
 
@@ -593,6 +755,31 @@ class FunctionalDropout2dTests(unittest.TestCase):
         self.assertEqual(len(mode.calls), 1)
         self.assert_legacy_rank_three_warning(caught)
 
+        source = torch.zeros((2, 3))
+        mode = RecordingMode()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with mode:
+                output = functional.dropout2d(
+                    source, p=0.5, training=False, inplace=True
+                )
+        self.assertEqual(output, "mode-result")
+        self.assertEqual(caught, [])
+        self.assertEqual(len(mode.calls), 1)
+        self.assertIs(mode.calls[0][0], functional.dropout2d)
+
+        mode = RecordingMode(forward=True)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            with mode:
+                output = functional.dropout2d(
+                    source, p=0, training=True, inplace=True
+                )
+        self.assertIs(output, source)
+        self.assertEqual(len(mode.calls), 1)
+        self.assertIs(mode.calls[0][0], functional.dropout2d)
+        self.assert_deprecated_rank_two_warning(caught)
+
     def test_sampling_and_unsupported_ranks_are_explicitly_rejected(self):
         sources = (
             torch.tensor(
@@ -600,6 +787,9 @@ class FunctionalDropout2dTests(unittest.TestCase):
             ),
             torch.tensor(
                 [[[1.0, 2.0], [3.0, 4.0]]], requires_grad=True
+            ),
+            torch.tensor(
+                [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
             ),
         )
         for source in sources:
@@ -624,7 +814,9 @@ class FunctionalDropout2dTests(unittest.TestCase):
                                     training=True,
                                     inplace=inplace,
                                 )
-                        if len(source.shape) == 3:
+                        if len(source.shape) == 2:
+                            self.assert_deprecated_rank_two_warning(caught)
+                        elif len(source.shape) == 3:
                             self.assert_legacy_rank_three_warning(caught)
                         else:
                             self.assertEqual(caught, [])
@@ -639,9 +831,7 @@ class FunctionalDropout2dTests(unittest.TestCase):
         unsupported_ranks = (
             torch.tensor(-0.0),
             torch.zeros((2,)),
-            torch.zeros((2, 3)),
             torch.zeros((2, 3, 4, 5, 6)),
-            torch.zeros((2, 0)),
             torch.zeros((2, 0, 3, 4, 5)),
         )
         identity_modes = ((0.5, False), (0.0, True), (0.5, True))
@@ -660,7 +850,7 @@ class FunctionalDropout2dTests(unittest.TestCase):
                             with self.assertRaisesRegex(
                                 NotImplementedError,
                                 "^torch_rs.nn.functional.dropout2d only "
-                                "supports rank-3 or rank-4 inputs$",
+                                "supports rank-2 or rank-3 or rank-4 inputs$",
                             ):
                                 functional.dropout2d(
                                     source,
