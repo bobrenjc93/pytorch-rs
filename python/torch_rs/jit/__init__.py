@@ -1,6 +1,7 @@
 import warnings as _warnings
 from typing import Any as _Any
 
+from torch_rs import _jit_state as _state
 import torch_rs._jit_internal as _jit_internal
 from torch_rs._jit_internal import _isinstance, export, ignore, is_scripting, unused
 from torch_rs.jit._script import Attribute
@@ -10,6 +11,7 @@ from torch_rs.jit._trace import _script_if_tracing, is_tracing
 __all__ = [
     "Attribute",
     "annotate",
+    "enable_onednn_fusion",
     "export",
     "ignore",
     "isinstance",
@@ -50,13 +52,22 @@ class strict_fusion:
         pass
 
 
+def enable_onednn_fusion(enabled: bool) -> None:
+    """Enable or disables onednn JIT fusion based on the parameter `enabled`.
+
+    .. deprecated:: 2.5
+        TorchScript is deprecated, please use ``torch.compile`` instead.
+    """
+    _state.set_onednn_fusion_enabled(enabled)
+
+
 def onednn_fusion_enabled():
     """Return whether onednn JIT fusion is enabled.
 
     .. deprecated:: 2.5
         TorchScript is deprecated, please use ``torch.compile`` instead.
     """
-    return False
+    return _state.onednn_fusion_enabled
 
 
 def annotate(the_type, the_value):

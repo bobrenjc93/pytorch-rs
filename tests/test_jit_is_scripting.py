@@ -131,6 +131,7 @@ class JitIsScriptingTests(unittest.TestCase):
             [
                 "Attribute",
                 "annotate",
+                "enable_onednn_fusion",
                 "export",
                 "ignore",
                 "isinstance",
@@ -145,6 +146,7 @@ class JitIsScriptingTests(unittest.TestCase):
             {
                 "Attribute",
                 "annotate",
+                "enable_onednn_fusion",
                 "export",
                 "ignore",
                 "isinstance",
@@ -168,6 +170,7 @@ class JitIsScriptingTests(unittest.TestCase):
             {
                 "Attribute",
                 "annotate",
+                "enable_onednn_fusion",
                 "export",
                 "ignore",
                 "isinstance",

@@ -237,6 +237,7 @@ class JitStrictFusionTests(unittest.TestCase):
         supported = {
             "Attribute",
             "annotate",
+            "enable_onednn_fusion",
             "export",
             "ignore",
             "isinstance",
@@ -250,6 +251,7 @@ class JitStrictFusionTests(unittest.TestCase):
             [
                 "Attribute",
                 "annotate",
+                "enable_onednn_fusion",
                 "export",
                 "ignore",
                 "isinstance",
@@ -369,7 +371,6 @@ class JitStrictFusionTests(unittest.TestCase):
             "CompilationUnit",
             "ScriptFunction",
             "ScriptModule",
-            "enable_onednn_fusion",
             "script",
             "set_fusion_strategy",
             "trace",

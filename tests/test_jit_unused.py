@@ -230,6 +230,7 @@ class JitUnusedTests(unittest.TestCase):
             [
                 "Attribute",
                 "annotate",
+                "enable_onednn_fusion",
                 "export",
                 "ignore",
                 "isinstance",
@@ -244,6 +245,7 @@ class JitUnusedTests(unittest.TestCase):
             {
                 "Attribute",
                 "annotate",
+                "enable_onednn_fusion",
                 "export",
                 "ignore",
                 "isinstance",
@@ -262,6 +264,7 @@ class JitUnusedTests(unittest.TestCase):
             {
                 "Attribute",
                 "annotate",
+                "enable_onednn_fusion",
                 "export",
                 "ignore",
                 "isinstance",

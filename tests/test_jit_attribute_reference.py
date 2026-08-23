@@ -158,6 +158,7 @@ class JitAttributeReferenceTests(unittest.TestCase):
         wildcard_supported = {
             "Attribute",
             "annotate",
+            "enable_onednn_fusion",
             "export",
             "ignore",
             "isinstance",
@@ -258,6 +259,7 @@ class JitAttributeReferenceTests(unittest.TestCase):
             {
                 "Attribute",
                 "annotate",
+                "enable_onednn_fusion",
                 "export",
                 "ignore",
                 "isinstance",

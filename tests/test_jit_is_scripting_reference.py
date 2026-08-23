@@ -147,6 +147,7 @@ class JitIsScriptingReferenceTests(unittest.TestCase):
         wildcard_supported = {
             "Attribute",
             "annotate",
+            "enable_onednn_fusion",
             "export",
             "ignore",
             "isinstance",

@@ -173,6 +173,7 @@ class JitAttributeTests(unittest.TestCase):
         supported = {
             "Attribute",
             "annotate",
+            "enable_onednn_fusion",
             "export",
             "ignore",
             "isinstance",
@@ -187,6 +188,7 @@ class JitAttributeTests(unittest.TestCase):
             [
                 "Attribute",
                 "annotate",
+                "enable_onednn_fusion",
                 "export",
                 "ignore",
                 "isinstance",

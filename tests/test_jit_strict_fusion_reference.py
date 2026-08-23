@@ -365,6 +365,7 @@ class JitStrictFusionReferenceTests(unittest.TestCase):
         wildcard_supported = {
             "Attribute",
             "annotate",
+            "enable_onednn_fusion",
             "export",
             "ignore",
             "isinstance",
@@ -478,7 +479,6 @@ class JitStrictFusionReferenceTests(unittest.TestCase):
             "CompilationUnit",
             "ScriptFunction",
             "ScriptModule",
-            "enable_onednn_fusion",
             "script",
             "set_fusion_strategy",
             "trace",
