@@ -358,6 +358,209 @@ class TensorPermuteTests(unittest.TestCase):
             ["first", "first", "second", "third"],
         )
 
+    def test_torch_function_modes_receive_original_calls_and_restore_stack(self):
+        tensor = torch.zeros((2, 3, 4), requires_grad=True)
+        descriptor = inspect.getattr_static(torch.Tensor, "permute")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return self.result
+
+        tuple_dimensions = (2, 0, 1)
+        list_dimensions = [2, 0, 1]
+        keyword_tuple_dimensions = (2, 0, 1)
+        keyword_list_dimensions = [2, 0, 1]
+        cases = (
+            ("variadic", lambda: tensor.permute(2, 0, 1), (tensor, 2, 0, 1), None),
+            (
+                "tuple",
+                lambda: tensor.permute(tuple_dimensions),
+                (tensor, tuple_dimensions),
+                None,
+            ),
+            (
+                "list",
+                lambda: tensor.permute(list_dimensions),
+                (tensor, list_dimensions),
+                None,
+            ),
+            (
+                "keyword tuple",
+                lambda: tensor.permute(dims=keyword_tuple_dimensions),
+                (tensor,),
+                {"dims": keyword_tuple_dimensions},
+            ),
+            (
+                "keyword list",
+                lambda: tensor.permute(dims=keyword_list_dimensions),
+                (tensor,),
+                {"dims": keyword_list_dimensions},
+            ),
+            ("rank replacement", lambda: tensor.permute(0, 1), (tensor, 0, 1), None),
+            (
+                "duplicate replacement",
+                lambda: tensor.permute(0, 1, 1),
+                (tensor, 0, 1, 1),
+                None,
+            ),
+            (
+                "range replacement",
+                lambda: tensor.permute(0, 1, 3),
+                (tensor, 0, 1, 3),
+                None,
+            ),
+            (
+                "deferred element conversion",
+                lambda: tensor.permute([0, 1.5, 2]),
+                (tensor, [0, 1.5, 2]),
+                None,
+            ),
+        )
+        for case, call, expected_args, expected_kwargs in cases:
+            mode = RecordingMode(marker)
+            with self.subTest(case=case), mode:
+                result = call()
+            self.assertIs(result, marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, expected_args)
+            self.assertEqual(kwargs, expected_kwargs)
+            if case in ("tuple", "list"):
+                self.assertIs(args[1], expected_args[1])
+            elif case in ("keyword tuple", "keyword list"):
+                self.assertIs(kwargs["dims"], expected_kwargs["dims"])
+
+        class StatefulIndex:
+            def __init__(self, name, calls, value):
+                self.name = name
+                self.calls = calls
+                self.value = value
+
+            def __index__(self):
+                self.calls.append(self.name)
+                return self.value
+
+        for style, expected_calls in (
+            ("variadic", ["first", "first"]),
+            ("sequence", ["first"]),
+            ("keyword", ["first"]),
+        ):
+            index_calls = []
+            dimensions = [
+                StatefulIndex("first", index_calls, 2),
+                StatefulIndex("second", index_calls, 0),
+                StatefulIndex("third", index_calls, 1),
+            ]
+            mode = RecordingMode(marker)
+            with self.subTest(index_style=style), mode:
+                if style == "variadic":
+                    result = tensor.permute(*dimensions)
+                elif style == "sequence":
+                    result = tensor.permute(dimensions)
+                else:
+                    result = tensor.permute(dims=dimensions)
+            self.assertIs(result, marker)
+            self.assertEqual(index_calls, expected_calls)
+
+        forwarding_events = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label, events):
+                self.label = label
+                self.events = events
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.events.append(
+                    (
+                        self.label,
+                        func,
+                        dispatch_types,
+                        args,
+                        kwargs,
+                        len(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        forwarded_dimensions = [2, 0, 1]
+        with ForwardingMode("lower", forwarding_events):
+            with ForwardingMode("upper", forwarding_events):
+                forwarded = tensor.permute(dims=forwarded_dimensions)
+        self.assertEqual([event[0] for event in forwarding_events], ["upper", "lower"])
+        self.assertEqual([event[5] for event in forwarding_events], [1, 0])
+        for _, function, dispatch_types, args, kwargs, _ in forwarding_events:
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (tensor,))
+            self.assertEqual(kwargs, {"dims": forwarded_dimensions})
+            self.assertIs(kwargs["dims"], forwarded_dimensions)
+        self.assertEqual(forwarded.shape, (4, 2, 3))
+        self.assertEqual(forwarded.stride(), (1, 12, 4))
+        self.assertEqual(forwarded.data_ptr(), tensor.data_ptr())
+        self.assertTrue(forwarded.requires_grad)
+        self.assertFalse(forwarded.is_leaf)
+        forwarded.sum().backward()
+        np.testing.assert_array_equal(np.asarray(tensor.grad), np.ones((2, 3, 4)))
+
+        declining = RecordingMode(NotImplemented)
+        lower = RecordingMode(marker)
+        with lower:
+            with self.assertRaises(TypeError) as raised:
+                with declining:
+                    tensor.permute(2, 0, 1)
+            self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 1)
+        self.assertTrue(
+            str(raised.exception).startswith(
+                "Multiple dispatch failed for 'torch.Tensor.permute'; all "
+                "__torch_function__ handlers returned NotImplemented:"
+            )
+        )
+        self.assertEqual(len(declining.calls), 1)
+        self.assertEqual(lower.calls, [])
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
+
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.stack_depth = None
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.stack_depth = len(
+                    torch.overrides._get_current_function_mode_stack()
+                )
+                raise ValueError("permute mode failed")
+
+        recovery_events = []
+        raising = RaisingMode()
+        with ForwardingMode("lower", recovery_events):
+            with self.assertRaisesRegex(ValueError, "^permute mode failed$"):
+                with raising:
+                    tensor.permute(2, 0, 1)
+            self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 1)
+            recovered = tensor.permute(2, 0, 1)
+        self.assertEqual(raising.stack_depth, 1)
+        self.assertEqual([event[0] for event in recovery_events], ["lower"])
+        self.assertEqual(recovered.shape, (4, 2, 3))
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
+
+        invalid = RecordingMode(marker)
+        for call in (
+            lambda: tensor.permute(),
+            lambda: tensor.permute(1.5),
+            lambda: tensor.permute(2, 0, 1, unexpected=None),
+        ):
+            with self.subTest(invalid_call=call), self.assertRaises(TypeError):
+                with invalid:
+                    call()
+        self.assertEqual(invalid.calls, [])
+
     def test_descriptor_metadata_matches_pytorch_shape(self):
         descriptor = inspect.getattr_static(torch.Tensor, "permute")
         tensor = torch.zeros((2, 3, 4))

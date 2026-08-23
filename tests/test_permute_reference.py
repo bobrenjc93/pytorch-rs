@@ -327,6 +327,264 @@ class TensorPermuteReferenceTests(unittest.TestCase):
                 case=style,
             )
 
+    def mode_contract(self, module):
+        tensor = module.zeros((2, 3, 4), dtype=module.float32, requires_grad=True)
+        descriptor = inspect.getattr_static(module.Tensor, "permute")
+        marker = object()
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return self.result
+
+        def normalize_argument(argument):
+            if isinstance(argument, module.Tensor):
+                return ("self",)
+            if isinstance(argument, (list, tuple)):
+                return (type(argument).__name__, tuple(argument))
+            return ("value", argument)
+
+        def normalize_kwargs(kwargs):
+            if kwargs is None:
+                return None
+            return tuple(
+                (key, normalize_argument(value)) for key, value in kwargs.items()
+            )
+
+        forms = []
+        tuple_dimensions = (2, 0, 1)
+        list_dimensions = [2, 0, 1]
+        size_dimensions = module.Size((2, 0, 1))
+        keyword_dimensions = [2, 0, 1]
+        calls = (
+            ("variadic", lambda: tensor.permute(2, 0, 1), None, False),
+            ("tuple", lambda: tensor.permute(tuple_dimensions), tuple_dimensions, False),
+            ("list", lambda: tensor.permute(list_dimensions), list_dimensions, False),
+            ("Size", lambda: tensor.permute(size_dimensions), size_dimensions, False),
+            (
+                "keyword",
+                lambda: tensor.permute(dims=keyword_dimensions),
+                keyword_dimensions,
+                True,
+            ),
+            ("rank", lambda: tensor.permute(0, 1), None, False),
+            ("duplicate", lambda: tensor.permute(0, 1, 1), None, False),
+            ("range", lambda: tensor.permute(0, 1, 3), None, False),
+            (
+                "deferred conversion",
+                lambda: tensor.permute([0, 1.5, 2]),
+                None,
+                False,
+            ),
+        )
+        for label, call, original, keyword in calls:
+            mode = RecordingMode(marker)
+            with mode:
+                result = call()
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            if original is None:
+                original_preserved = True
+            elif keyword:
+                original_preserved = kwargs["dims"] is original
+            else:
+                original_preserved = args[1] is original
+            forms.append(
+                (
+                    label,
+                    result is marker,
+                    len(mode.calls),
+                    function is descriptor,
+                    type(function).__name__,
+                    function.__qualname__,
+                    dispatch_types,
+                    tuple(normalize_argument(argument) for argument in args),
+                    normalize_kwargs(kwargs),
+                    original_preserved,
+                )
+            )
+
+        class StatefulIndex:
+            def __init__(self, name, events, value):
+                self.name = name
+                self.events = events
+                self.value = value
+
+            def __index__(self):
+                self.events.append(self.name)
+                return self.value
+
+        index_records = []
+        for style in ("variadic", "sequence", "keyword"):
+            events = []
+            dimensions = [
+                StatefulIndex("first", events, 2),
+                StatefulIndex("second", events, 0),
+                StatefulIndex("third", events, 1),
+            ]
+            mode = RecordingMode(marker)
+            with mode:
+                if style == "variadic":
+                    result = tensor.permute(*dimensions)
+                elif style == "sequence":
+                    result = tensor.permute(dimensions)
+                else:
+                    result = tensor.permute(dims=dimensions)
+            _, _, args, kwargs = mode.calls[0]
+            if style == "variadic":
+                original_preserved = all(
+                    argument is original
+                    for argument, original in zip(args[1:], dimensions, strict=True)
+                )
+            elif style == "sequence":
+                original_preserved = args[1] is dimensions
+            else:
+                original_preserved = kwargs["dims"] is dimensions
+            index_records.append(
+                (style, tuple(events), result is marker, original_preserved)
+            )
+
+        forwarding_events = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label, events):
+                self.label = label
+                self.events = events
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.events.append(
+                    (
+                        self.label,
+                        func is descriptor,
+                        dispatch_types,
+                        tuple(normalize_argument(argument) for argument in args),
+                        normalize_kwargs(kwargs),
+                        len(module.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        forwarded_dimensions = [2, 0, 1]
+        with ForwardingMode("lower", forwarding_events):
+            with ForwardingMode("upper", forwarding_events):
+                forwarded = tensor.permute(dims=forwarded_dimensions)
+        forwarded.sum().backward()
+        forwarded_contract = (
+            tuple(forwarded.shape),
+            forwarded.stride(),
+            forwarded.storage_offset(),
+            forwarded.data_ptr() == tensor.data_ptr(),
+            forwarded.requires_grad,
+            forwarded.is_leaf,
+            tensor.grad.tolist(),
+        )
+
+        no_grad_tensor = module.zeros(
+            (2, 3, 4), dtype=module.float32, requires_grad=True
+        )
+        no_grad_events = []
+        with module.no_grad():
+            with ForwardingMode("lower", no_grad_events):
+                no_grad_result = no_grad_tensor.permute(2, 0, 1)
+        no_grad_contract = (
+            tuple(no_grad_result.shape),
+            no_grad_result.stride(),
+            no_grad_result.data_ptr() == no_grad_tensor.data_ptr(),
+            no_grad_result.requires_grad,
+            no_grad_result.is_leaf,
+            no_grad_tensor.grad is None,
+        )
+
+        declining = RecordingMode(NotImplemented)
+        lower = RecordingMode(marker)
+        with lower:
+            try:
+                with declining:
+                    tensor.permute(2, 0, 1)
+            except Exception as error:
+                declining_error = type(error).__name__, str(error).splitlines()[0]
+                declining_stack_inside = len(
+                    module.overrides._get_current_function_mode_stack()
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a declining permute mode")
+
+        class RaisingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.call = None
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.call = (
+                    func is descriptor,
+                    dispatch_types,
+                    tuple(normalize_argument(argument) for argument in args),
+                    normalize_kwargs(kwargs),
+                    len(module.overrides._get_current_function_mode_stack()),
+                )
+                raise ValueError("permute mode failed")
+
+        recovery_events = []
+        raising = RaisingMode()
+        with ForwardingMode("lower", recovery_events):
+            try:
+                with raising:
+                    tensor.permute(2, 0, 1)
+            except Exception as error:
+                raising_error = type(error).__name__, str(error)
+                raising_stack_inside = len(
+                    module.overrides._get_current_function_mode_stack()
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a raising permute mode")
+            recovered = tensor.permute(2, 0, 1)
+
+        invalid_records = []
+        for call in (
+            lambda: tensor.permute(),
+            lambda: tensor.permute(1.5),
+            lambda: tensor.permute(2, 0, 1, unexpected=None),
+        ):
+            invalid = RecordingMode(marker)
+            try:
+                with invalid:
+                    call()
+            except Exception as error:
+                invalid_records.append(
+                    (type(error).__name__, str(error), len(invalid.calls))
+                )
+            else:
+                self.fail(f"{module.__name__} accepted an invalid permute call")
+
+        return {
+            "forms": tuple(forms),
+            "index_records": tuple(index_records),
+            "forwarding_events": tuple(forwarding_events),
+            "forwarded": forwarded_contract,
+            "no_grad_events": tuple(no_grad_events),
+            "no_grad": no_grad_contract,
+            "declining_error": declining_error,
+            "declining_calls": len(declining.calls),
+            "declining_lower_calls": len(lower.calls),
+            "declining_stack_inside": declining_stack_inside,
+            "raising_error": raising_error,
+            "raising_call": raising.call,
+            "raising_stack_inside": raising_stack_inside,
+            "recovery_events": tuple(recovery_events),
+            "recovered": (tuple(recovered.shape), recovered.stride()),
+            "invalid": tuple(invalid_records),
+            "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+        }
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        self.assertEqual(
+            self.mode_contract(torch),
+            self.mode_contract(reference_torch),
+        )
+
     def test_descriptor_metadata_and_unbound_behavior_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual_descriptor = inspect.getattr_static(torch.Tensor, "permute")
