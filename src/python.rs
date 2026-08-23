@@ -9756,7 +9756,7 @@ struct PyTypeObjectNamePrefix {
     unsafe_code,
     reason = "CPython exposes tp_name only as a type-object field before Python 3.13"
 )]
-fn cpython_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+pub(crate) fn cpython_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     let value_type = value.get_type();
     let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
     // SAFETY: every classic CPython type object starts with PyVarObject and
