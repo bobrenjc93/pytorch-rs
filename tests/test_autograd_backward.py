@@ -160,7 +160,9 @@ class AutogradBackwardTests(unittest.TestCase):
                     root_sequence_type=root_sequence_type,
                     grad_sequence_type=grad_sequence_type,
                 ):
-                    leaf = torch.tensor([[5.0]], requires_grad=True)
+                    leaf = torch.tensor([[0.0]], requires_grad=True)
+                    (leaf * 16_777_216.0).sum().backward()
+                    self.assertEqual(leaf.grad.tolist(), [[16_777_216.0]])
                     roots = root_sequence_type((leaf, leaf))
                     grad_tensors = (
                         None
@@ -173,7 +175,41 @@ class AutogradBackwardTests(unittest.TestCase):
                             roots, grad_tensors=grad_tensors
                         )
                     )
-                    self.assertEqual(leaf.grad.tolist(), [[2.0]])
+                    self.assertEqual(leaf.grad.tolist(), [[16_777_218.0]])
+
+    def test_two_roots_preflight_native_backward_eligibility(self):
+        for root_sequence_type in (tuple, list):
+            for invalid_index in (0, 1):
+                with self.subTest(
+                    root_sequence_type=root_sequence_type,
+                    invalid_index=invalid_index,
+                ):
+                    ordinary = torch.tensor(1.0, requires_grad=True)
+                    base = torch.tensor(
+                        [[2.0, 3.0]], requires_grad=True
+                    )
+                    with torch.no_grad():
+                        no_grad_view = base.transpose(0, 1)[0]
+                    self.assertEqual(no_grad_view.shape, (1,))
+                    self.assertEqual(no_grad_view.stride(), (2,))
+                    self.assertTrue(no_grad_view.requires_grad)
+                    self.assertTrue(no_grad_view.is_leaf)
+                    roots = [ordinary, ordinary]
+                    roots[invalid_index] = no_grad_view
+
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "^element "
+                        f"{invalid_index} of tensors does not require grad "
+                        "and does not have a grad_fn$",
+                    ):
+                        torch.autograd.backward(root_sequence_type(roots))
+
+                    self.assertIsNone(ordinary.grad)
+                    self.assertIsNone(no_grad_view.grad)
+                    self.assertIsNone(base.grad)
+                    ordinary.backward()
+                    self.assertEqual(ordinary.grad.item(), 1.0)
 
     def test_empty_root_calls_are_non_mutating_noops(self):
         calls = (
@@ -970,6 +1006,9 @@ class AutogradBackwardTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "backward"))
         self.assertNotIn("backward", torch.__all__)
         self.assertFalse(hasattr(module, "grad"))
+        self.assertTrue(hasattr(torch._C, "_backward_leaf_pair"))
+        self.assertNotIn("_backward_leaf_pair", torch._C.__all__)
+        self.assertFalse(hasattr(torch, "_backward_leaf_pair"))
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)

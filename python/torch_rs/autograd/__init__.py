@@ -17,6 +17,7 @@ _TensorOrTensorsOrGradEdge = _Union[
     _Sequence["GradientEdge"],
 ]
 _TensorOrOptionalTensors = _Tensor | _Sequence[_Tensor | None]
+_backward_leaf_pair = _C._backward_leaf_pair
 
 _ROOT_ERROR = (
     "torch_rs.autograd.backward only supports an exact native Tensor, "
@@ -153,10 +154,10 @@ def backward(
             "torch_rs.autograd.backward does not support inputs"
         )
 
-    # Multi-root execution is restricted to leaves, so these individually
-    # repeatable traversals cannot partially consume a shared operation graph.
-    for root in roots:
-        root.backward()
+    if len(roots) == 2:
+        _backward_leaf_pair(*roots)
+    elif roots:
+        roots[0].backward()
 
 
 is_multithreading_enabled = _C._is_multithreading_enabled

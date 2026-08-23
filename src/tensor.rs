@@ -897,6 +897,43 @@ impl Tensor {
         run_backward(meta, self.output_nr)
     }
 
+    /// Accumulates unit gradients from two one-element leaf roots as one
+    /// transaction.
+    ///
+    /// Duplicate roots are combined before touching their existing gradient,
+    /// matching a single multi-root engine traversal instead of two separately
+    /// rounded updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns the index of the first root without native leaf autograd
+    /// metadata. Both roots are checked before either gradient is changed.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn backward_leaf_pair(first: &Self, second: &Self) -> Result<(), usize> {
+        let first_meta = first.backward_leaf_meta().ok_or(0_usize)?;
+        let second_meta = second.backward_leaf_meta().ok_or(1_usize)?;
+
+        let _backward_traversal = BACKWARD_TRAVERSAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if Arc::ptr_eq(first_meta, second_meta) {
+            accumulate_leaf_gradient(first_meta, vec![2.0]);
+        } else {
+            accumulate_leaf_gradient(first_meta, vec![1.0]);
+            accumulate_leaf_gradient(second_meta, vec![1.0]);
+        }
+        Ok(())
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn backward_leaf_meta(&self) -> Option<&Arc<AutogradMeta>> {
+        if self.elements != 1 {
+            return None;
+        }
+        let meta = self.autograd.as_ref()?;
+        matches!(&meta.kind, AutogradKind::Leaf { .. }).then_some(meta)
+    }
+
     fn records_grad(&self) -> bool {
         self.requires_grad() && is_grad_enabled()
     }
@@ -5633,6 +5670,47 @@ mod tests {
                 .map(f32::to_bits)
                 .eq([0xffc1_2345, 0x7fc5_4321])
         );
+    }
+
+    #[test]
+    fn paired_leaf_backward_prevalidates_and_combines_duplicate_roots() {
+        let duplicate = Tensor::from_vec(vec![0.0], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        duplicate
+            .mul_scalar(16_777_216.0)
+            .unwrap()
+            .backward()
+            .unwrap();
+        assert_eq!(
+            duplicate.grad().unwrap().unwrap().as_slice(),
+            [16_777_216.0]
+        );
+
+        Tensor::backward_leaf_pair(&duplicate, &duplicate).unwrap();
+        assert_eq!(
+            duplicate.grad().unwrap().unwrap().as_slice(),
+            [16_777_218.0]
+        );
+
+        let ordinary = Tensor::from_vec(vec![1.0], [])
+            .unwrap()
+            .with_requires_grad(true);
+        let base = Tensor::from_vec(vec![2.0, 3.0], [1, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let no_grad_view = {
+            let _guard = crate::no_grad();
+            base.transpose(0, 1).unwrap().index([0]).unwrap()
+        };
+        assert!(no_grad_view.requires_grad());
+        assert!(no_grad_view.is_leaf());
+        assert_eq!(no_grad_view.stride(), [2]);
+
+        assert_eq!(Tensor::backward_leaf_pair(&ordinary, &no_grad_view), Err(1));
+        assert_eq!(Tensor::backward_leaf_pair(&no_grad_view, &ordinary), Err(0));
+        assert!(ordinary.grad().unwrap().is_none());
+        assert!(base.grad().unwrap().is_none());
     }
 
     #[test]

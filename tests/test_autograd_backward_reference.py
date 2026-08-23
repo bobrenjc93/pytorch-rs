@@ -217,7 +217,9 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
         first_result = backward(roots)
         second_result = backward(roots)
 
-        duplicate_leaf = module.tensor([[5.0]], requires_grad=True)
+        duplicate_leaf = module.tensor([[0.0]], requires_grad=True)
+        (duplicate_leaf * 16_777_216.0).sum().backward()
+        duplicate_initial_gradient = duplicate_leaf.grad.tolist()
         duplicate_result = backward(
             root_sequence_type((duplicate_leaf, duplicate_leaf))
         )
@@ -232,8 +234,43 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             ),
             scalar_leaf.grad.item(),
             strided_leaf.grad.tolist(),
+            duplicate_initial_gradient,
             duplicate_result,
             duplicate_leaf.grad.tolist(),
+        )
+
+    def unavailable_leaf_outcome(
+        self, module, root_sequence_type, invalid_index
+    ):
+        ordinary = module.tensor(1.0, requires_grad=True)
+        base = module.tensor([[2.0, 3.0]], requires_grad=True)
+        with module.no_grad():
+            no_grad_view = base.transpose(0, 1)[0]
+        roots = [ordinary, ordinary]
+        roots[invalid_index] = no_grad_view
+
+        try:
+            module.autograd.backward(root_sequence_type(roots))
+        except Exception as error:
+            outcome = (type(error).__name__, str(error), error.args)
+        else:
+            raise AssertionError("a no-grad view cannot seed backward")
+        gradients_after_error = (
+            ordinary.grad,
+            no_grad_view.grad,
+            base.grad,
+        )
+        ordinary.backward()
+        return (
+            (
+                tuple(no_grad_view.shape),
+                no_grad_view.stride(),
+                no_grad_view.requires_grad,
+                no_grad_view.is_leaf,
+            ),
+            outcome,
+            gradients_after_error,
+            ordinary.grad.item(),
         )
 
     def test_single_root_default_calls_match_pytorch_2_13(self):
@@ -281,6 +318,21 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                     )
                     expected = self.two_leaf_outcome(
                         reference_torch, root_sequence_type, form
+                    )
+                    self.assertEqual(actual, expected)
+
+    def test_two_roots_preflight_native_backward_eligibility(self):
+        for root_sequence_type in (tuple, list):
+            for invalid_index in (0, 1):
+                with self.subTest(
+                    root_sequence_type=root_sequence_type,
+                    invalid_index=invalid_index,
+                ):
+                    actual = self.unavailable_leaf_outcome(
+                        torch, root_sequence_type, invalid_index
+                    )
+                    expected = self.unavailable_leaf_outcome(
+                        reference_torch, root_sequence_type, invalid_index
                     )
                     self.assertEqual(actual, expected)
 

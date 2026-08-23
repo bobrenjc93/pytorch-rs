@@ -4534,6 +4534,28 @@ fn add_warn_always_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+#[pyfunction(name = "_backward_leaf_pair", signature = (first, second, /), text_signature = None)]
+fn backward_leaf_pair_native(
+    first: &Bound<'_, PyTensor>,
+    second: &Bound<'_, PyTensor>,
+) -> PyResult<()> {
+    let first = first.try_borrow()?;
+    let second = second.try_borrow()?;
+    CoreTensor::backward_leaf_pair(&first.inner, &second.inner).map_err(|index| {
+        PyRuntimeError::new_err(format!(
+            "element {index} of tensors does not require grad and does not have a grad_fn"
+        ))
+    })
+}
+
+fn add_backward_leaf_pair_builtin(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(backward_leaf_pair_native, module)?)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_backward_leaf_pair",))?;
+    Ok(())
+}
+
 fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<MemoryFormat> {
     let Some(memory_format) = memory_format else {
         return Ok(MemoryFormat::Preserve);
@@ -10746,6 +10768,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
     add_default_dtype_validator(module)?;
     add_warn_always_builtins(module)?;
+    add_backward_leaf_pair_builtin(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     add_no_grad(module)?;
