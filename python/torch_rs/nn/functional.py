@@ -8,7 +8,25 @@ from torch_rs import Tensor
 from torch_rs._diagnostics import _format_single_element_tensor
 from torch_rs.overrides import _dispatch_unary_torch_function
 
-from ..torch_rs import _nn_functional_dropout
+from ..torch_rs import _nn_functional_dropout, _nn_functional_linear
+
+
+_LINEAR_DOC = r"""
+linear(input, weight, bias=None) -> Tensor
+
+Applies the bias-free rank-2 transformation
+:math:`\mathrm{output} = \mathrm{input} \, \mathrm{weight}^{T}`.
+
+The current native implementation requires exact ``torch_rs.Tensor`` operands
+with CPU ``float32`` storage and shape ``(rows, in_features)`` for ``input``
+and ``(out_features, in_features)`` for ``weight``. ``bias`` must be ``None``.
+It returns a fresh, independent row-major tensor with shape
+``(rows, out_features)``.
+
+Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
+recording are not supported. Gradient-requiring operands may be used inside
+``torch.no_grad()``.
+"""
 
 
 def _validate_dropout_probability(p):
@@ -89,12 +107,8 @@ def _alpha_dropout_impl(input, p, training, inplace):
 def _feature_alpha_dropout_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
     if inplace:
-        return _nn_functional_dropout(
-            "feature_alpha_dropout", input, p, training, True
-        )
-    return _nn_functional_dropout(
-        "feature_alpha_dropout", input, p, training, False
-    )
+        return _nn_functional_dropout("feature_alpha_dropout", input, p, training, True)
+    return _nn_functional_dropout("feature_alpha_dropout", input, p, training, False)
 
 
 def _dropout_range_probability(p):
@@ -126,6 +140,13 @@ def relu(input: Tensor, inplace: bool = False) -> Tensor:
             "torch_rs.nn.functional.relu does not support inplace=True"
         )
     return torch.relu(input)
+
+
+def linear(input: Tensor, weight: Tensor, bias: Tensor | None = None) -> Tensor:
+    return _nn_functional_linear(input, weight, bias)
+
+
+linear.__doc__ = _LINEAR_DOC
 
 
 def dropout(
