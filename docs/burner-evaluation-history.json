@@ -5377,6 +5377,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96
       }
+    },
+    {
+      "key": "pr:736",
+      "recordedAt": "2026-08-23T10:32:23.454Z",
+      "label": "PR #736",
+      "kind": "leaf",
+      "prNumber": 736,
+      "title": "Dispatch Tensor.sin through TorchFunctionMode",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 86.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 68.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }
