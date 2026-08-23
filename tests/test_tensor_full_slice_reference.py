@@ -42,6 +42,22 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             base.transpose(0, 3)[1],
         )
 
+    def higher_rank_full_slice_layout_cases(self, module, rank):
+        shape = tuple(range(2, rank + 2))
+        values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
+        base_shape = (2, *shape)
+        base_values = np.arange(np.prod(base_shape), dtype=np.float32).reshape(
+            base_shape
+        )
+        base = module.tensor(base_values.tolist(), dtype=module.float32)
+        empty_shape = (shape[0], 0, *shape[2:])
+        return (
+            module.tensor(values.tolist(), dtype=module.float32),
+            module.zeros(empty_shape, dtype=module.float32),
+            base[1],
+            base.transpose(0, rank)[1],
+        )
+
     def alias_contract(self, source, index):
         alias = source[index]
         values = np.asarray(alias.detach(), dtype=np.float32).reshape(-1)
@@ -96,6 +112,24 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                     self.alias_contract(expected, index),
                 )
 
+    def test_three_or_more_full_slice_tuple_layout_aliases_match_pytorch_2_13(
+        self,
+    ):
+        for count in (3, 4):
+            index = (slice(None),) * count
+            actual_cases = self.higher_rank_full_slice_layout_cases(torch, count)
+            expected_cases = self.higher_rank_full_slice_layout_cases(
+                reference_torch, count
+            )
+            for case, (actual, expected) in enumerate(
+                zip(actual_cases, expected_cases, strict=True)
+            ):
+                with self.subTest(count=count, case=case):
+                    self.assertEqual(
+                        self.alias_contract(actual, index),
+                        self.alias_contract(expected, index),
+                    )
+
     def scalar_error_contract(self, module, index):
         try:
             module.tensor(-0.0, dtype=module.float32)[index]
@@ -121,7 +155,7 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             module.zeros(shape, dtype=module.float32)[index]
         except Exception as error:
             return type(error).__name__, str(error)
-        self.fail("lower-rank double full slice unexpectedly succeeded")
+        self.fail("lower-rank full-slice tuple unexpectedly succeeded")
 
     def test_double_full_slice_lower_rank_errors_match_pytorch_2_13(self):
         index = (slice(None), slice(None))
@@ -131,6 +165,19 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                     self.lower_rank_error_contract(torch, shape, index),
                     self.lower_rank_error_contract(reference_torch, shape, index),
                 )
+
+    def test_three_or_more_full_slice_lower_rank_errors_match_pytorch_2_13(self):
+        for count in (3, 4):
+            index = (slice(None),) * count
+            for dimensions in range(count):
+                shape = (2,) * dimensions
+                with self.subTest(count=count, dimensions=dimensions):
+                    self.assertEqual(
+                        self.lower_rank_error_contract(torch, shape, index),
+                        self.lower_rank_error_contract(
+                            reference_torch, shape, index
+                        ),
+                    )
 
     def tuple_subclass_contract(self, module):
         source = module.tensor(
@@ -154,6 +201,17 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                 return iter((slice(None), slice(None)))
 
         double_alias = source[DoubleFullSliceRemapTuple((0,))]
+
+        higher_rank_source = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+        )
+
+        class TripleFullSliceRemapTuple(tuple):
+            def __iter__(self):
+                return iter((slice(None),) * 3)
+
+        triple_alias = higher_rank_source[TripleFullSliceRemapTuple((0,))]
 
         class EmptyRemapTuple(tuple):
             def __iter__(self):
@@ -192,6 +250,16 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             "double_alias_same_data_pointer": (
                 double_alias.data_ptr() == source.data_ptr()
             ),
+            "triple_alias_values": triple_alias.tolist(),
+            "triple_alias_shape": tuple(triple_alias.shape),
+            "triple_alias_stride": triple_alias.stride(),
+            "triple_alias_offset": triple_alias.storage_offset(),
+            "triple_alias_same_logical_view": triple_alias.is_set_to(
+                higher_rank_source
+            ),
+            "triple_alias_same_data_pointer": (
+                triple_alias.data_ptr() == higher_rank_source.data_ptr()
+            ),
             "empty_alias_values": empty_alias.tolist(),
             "empty_alias_shape": tuple(empty_alias.shape),
             "empty_alias_stride": empty_alias.stride(),
@@ -211,8 +279,14 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         )
 
     def autograd_contract(self, module, index):
+        index_rank = len(index) if isinstance(index, tuple) else 1
+        rank = max(index_rank, 2)
+        shape = (2,) * rank
+        values = np.arange(1, np.prod(shape) + 1, dtype=np.float32).reshape(
+            shape
+        )
         leaf = module.tensor(
-            [[1.0, 2.0], [3.0, 4.0]],
+            values.tolist(),
             dtype=module.float32,
             requires_grad=True,
         )
@@ -227,14 +301,15 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             alias.stride(),
             alias.storage_offset(),
         )
-        weights = module.tensor(
-            [[10.0, 20.0], [30.0, 40.0]], dtype=module.float32
+        weight_values = np.arange(10, 10 + np.prod(shape), dtype=np.float32).reshape(
+            shape
         )
+        weights = module.tensor(weight_values.tolist(), dtype=module.float32)
         (alias * weights).sum().backward()
         return metadata, np.asarray(leaf.grad).copy()
 
     def node_diagnostic(self, module, index, rank=1):
-        values = [2.0] if rank == 1 else [[2.0]]
+        values = np.full((1,) * rank, 2.0, dtype=np.float32).tolist()
         leaf = module.tensor(values, dtype=module.float32, requires_grad=True)
         try:
             module.nn.functional.dropout(None, p=leaf[index], training=False)
@@ -243,8 +318,14 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         self.fail("dropout unexpectedly accepted an out-of-range tensor probability")
 
     def no_grad_contract(self, module, index):
+        index_rank = len(index) if isinstance(index, tuple) else 1
+        rank = max(index_rank, 2)
+        shape = (2,) * rank
+        values = np.arange(1, np.prod(shape) + 1, dtype=np.float32).reshape(
+            shape
+        )
         leaf = module.tensor(
-            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            values.tolist(),
             dtype=module.float32,
             requires_grad=True,
         )
@@ -295,17 +376,27 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             (slice(None), slice(None)), diagnostic_rank=2
         )
 
+    def test_three_or_more_full_slice_tuple_autograd_matches_pytorch_2_13(self):
+        for count in (3, 4):
+            with self.subTest(count=count):
+                self.assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(
+                    (slice(None),) * count, diagnostic_rank=count
+                )
+
     def test_empty_tuple_autograd_matches_pytorch_2_13(self):
         self.assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(())
 
-    def lifetime_contract(self, module, index):
-        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+    def lifetime_contract(self, module, index, source_rank=2):
+        input_shape = tuple(range(2, source_rank + 3))
+        values = np.arange(np.prod(input_shape), dtype=np.float32).reshape(
+            input_shape
+        )
         leaf = module.tensor(
             values.tolist(), dtype=module.float32, requires_grad=True
         )
 
         def make_alias():
-            source = (leaf * 2.0).transpose(0, 2)[1]
+            source = (leaf * 2.0).transpose(0, source_rank)[1]
             return source[index]
 
         alias = make_alias()
@@ -318,16 +409,19 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             alias.requires_grad,
             alias.is_leaf,
         )
-        weights = module.tensor(
-            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=module.float32
-        )
+        weight_values = np.arange(
+            1, np.prod(alias.shape) + 1, dtype=np.float32
+        ).reshape(alias.shape)
+        weights = module.tensor(weight_values.tolist(), dtype=module.float32)
         (alias * weights).sum().backward()
         return metadata, np.asarray(leaf.grad).copy()
 
-    def assert_source_lifetime_matches_pytorch_2_13(self, index):
-        actual_metadata, actual_gradient = self.lifetime_contract(torch, index)
+    def assert_source_lifetime_matches_pytorch_2_13(self, index, source_rank=2):
+        actual_metadata, actual_gradient = self.lifetime_contract(
+            torch, index, source_rank
+        )
         expected_metadata, expected_gradient = self.lifetime_contract(
-            reference_torch, index
+            reference_torch, index, source_rank
         )
         self.assertEqual(actual_metadata, expected_metadata)
         np.testing.assert_array_equal(actual_gradient, expected_gradient)
@@ -343,10 +437,20 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             (slice(None), slice(None))
         )
 
+    def test_three_or_more_full_slice_tuple_source_lifetime_matches_pytorch_2_13(
+        self,
+    ):
+        for count in (3, 4):
+            with self.subTest(count=count):
+                self.assert_source_lifetime_matches_pytorch_2_13(
+                    (slice(None),) * count, source_rank=count
+                )
+
     def mode_dispatch_contract(self, module, index):
-        source = module.tensor(
-            [[1.0, 2.0], [3.0, 4.0]], dtype=module.float32
-        )
+        index_rank = len(index) if isinstance(index, tuple) else 1
+        shape = (2,) * max(index_rank, 2)
+        values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
+        source = module.tensor(values.tolist(), dtype=module.float32)
         scalar = module.tensor(1.0, dtype=module.float32)
         marker = object()
 
@@ -449,6 +553,15 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
             (slice(None), slice(None))
         )
+
+    def test_three_or_more_full_slice_tuple_mode_dispatch_matches_pytorch_2_13(
+        self,
+    ):
+        for count in (3, 4):
+            with self.subTest(count=count):
+                self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
+                    (slice(None),) * count
+                )
 
 
 if __name__ == "__main__":
