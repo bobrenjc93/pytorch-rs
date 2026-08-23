@@ -222,6 +222,73 @@ class CompilerDisableReferenceTests(unittest.TestCase):
 
         self.assertEqual(outcomes[0], outcomes[1])
 
+    def test_factory_none_rejection_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            module_outcomes = []
+            for recursive in (True, False):
+                factory = module.compiler.disable(recursive=recursive)
+                try:
+                    factory(None)
+                except Exception:
+                    module_outcomes.append(True)
+                else:
+                    module_outcomes.append(False)
+            outcomes.append(module_outcomes)
+
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(outcomes[0], [True, True])
+
+    def test_factory_recursive_snapshot_and_reuse_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            mutable_recursive = []
+            mutable_factory = module.compiler.disable(
+                recursive=mutable_recursive,
+            )
+            mutable_recursive.append(True)
+
+            class StatefulTruthiness:
+                def __init__(self):
+                    self.calls = 0
+
+                def __bool__(self):
+                    self.calls += 1
+                    return self.calls > 1
+
+            stateful_recursive = StatefulTruthiness()
+            stateful_factory = module.compiler.disable(
+                recursive=stateful_recursive,
+            )
+
+            def first():
+                return "first"
+
+            def second():
+                return "second"
+
+            mutable_wrappers = (mutable_factory(first), mutable_factory(second))
+            stateful_wrappers = (
+                stateful_factory(first),
+                stateful_factory(second),
+            )
+            outcomes.append(
+                (
+                    tuple(
+                        wrapper._torchdynamo_disable_recursive
+                        for wrapper in mutable_wrappers
+                    ),
+                    stateful_recursive.calls,
+                    tuple(
+                        wrapper._torchdynamo_disable_recursive
+                        for wrapper in stateful_wrappers
+                    ),
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(outcomes[0], ((False, False), 1, (False, False)))
+
     def test_direct_bound_methods_and_repeated_wrapping_match_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):

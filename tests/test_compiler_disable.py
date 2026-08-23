@@ -194,6 +194,53 @@ class CompilerDisableTests(unittest.TestCase):
             reason,
         )
 
+    def test_factory_rejects_none_as_a_decorator_target(self):
+        message = "torch.compiler.disable() currently supports only Python functions"
+        for factory in (
+            torch.compiler.disable(),
+            torch.compiler.disable(recursive=False),
+        ):
+            with self.subTest(factory=factory):
+                with self.assertRaisesRegex(
+                    NotImplementedError,
+                    f"^{re.escape(message)}$",
+                ):
+                    factory(None)
+
+    def test_factory_snapshots_recursive_truthiness_and_is_reusable(self):
+        recursive = []
+        reason = object()
+        factory = torch.compiler.disable(recursive=recursive, reason=reason)
+        recursive.append(True)
+
+        def first():
+            return "first"
+
+        def second():
+            return "second"
+
+        first_wrapper = factory(first)
+        second_wrapper = factory(second)
+        self.assert_disable_metadata(first_wrapper, first, False, reason)
+        self.assert_disable_metadata(second_wrapper, second, False, reason)
+
+        class StatefulTruthiness:
+            def __init__(self):
+                self.calls = 0
+
+            def __bool__(self):
+                self.calls += 1
+                return self.calls > 1
+
+        stateful = StatefulTruthiness()
+        stateful_factory = torch.compiler.disable(recursive=stateful)
+        self.assertEqual(stateful.calls, 1)
+        stateful_first = stateful_factory(first)
+        stateful_second = stateful_factory(second)
+        self.assertEqual(stateful.calls, 1)
+        self.assertIs(stateful_first._torchdynamo_disable_recursive, False)
+        self.assertIs(stateful_second._torchdynamo_disable_recursive, False)
+
     def test_factory_decorated_methods_keep_descriptor_binding(self):
         reason = object()
 
