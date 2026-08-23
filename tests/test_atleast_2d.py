@@ -134,6 +134,42 @@ class Atleast2dTests(unittest.TestCase):
                 self.assertIs(type(result), tuple)
                 self.assertEqual(result, ())
 
+    def test_variadic_tensors_use_native_views_in_order(self):
+        base = self.make_base()
+        empty_strided = (
+            torch.zeros((2, 0, 3)).transpose(0, 2)[1].transpose(0, 1)[1]
+        )
+        sources = (
+            torch.tensor(-0.0),
+            base.transpose(0, 2)[3, 2, 1],
+            base[1, 2],
+            base.transpose(0, 2)[3].transpose(0, 1)[1],
+            torch.zeros((0,)),
+            empty_strided,
+            base[1],
+            base.transpose(0, 2),
+            torch.zeros((2, 0, 3)).transpose(0, 2)[1],
+        )
+        result = torch.atleast_2d(*sources)
+        self.assertIs(type(result), tuple)
+        self.assertEqual(len(result), len(sources))
+
+        for source, item in zip(sources, result, strict=True):
+            direct = torch.atleast_2d(source)
+            if len(source.shape) >= 2:
+                self.assertIs(item, source)
+            else:
+                self.assertIsNot(item, source)
+                self.assertTrue(item.is_set_to(direct))
+            self.assertEqual(item.shape, direct.shape)
+            self.assertEqual(item.stride(), direct.stride())
+            self.assertEqual(item.storage_offset(), direct.storage_offset())
+            self.assertEqual(item.data_ptr(), source.data_ptr())
+            self.assertIs(item.dtype, source.dtype)
+            self.assertEqual(item.device, source.device)
+            self.assertEqual(item.layout, source.layout)
+            np.testing.assert_array_equal(np.asarray(item), np.asarray(direct))
+
     def test_autograd_repeated_backward_and_no_grad(self):
         scalar_leaf = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
         scalar_result = torch.atleast_2d(scalar_leaf[1])
@@ -292,6 +328,115 @@ class Atleast2dTests(unittest.TestCase):
                     no_grad_matrix_leaf.grad.tolist(), [[2.0, 2.0]]
                 )
 
+    def test_variadic_autograd_repeated_backward_and_no_grad(self):
+        scalar_leaf = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
+        scalar = scalar_leaf[1]
+        vector_leaf = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            requires_grad=True,
+        )
+        vector = vector_leaf.transpose(0, 2)[3].transpose(0, 1)[1]
+        empty_leaf = torch.zeros((2, 0, 3), requires_grad=True)
+        empty = empty_leaf.transpose(0, 2)[1].transpose(0, 1)[1]
+        matrix_leaf = torch.tensor([[1.0, 2.0]], requires_grad=True)
+        matrix = matrix_leaf * 2.0
+
+        results = torch.atleast_2d(scalar, vector, empty, matrix)
+        self.assertIs(type(results), tuple)
+        scalar_result, vector_result, empty_result, matrix_result = results
+        self.assertEqual(scalar_result.shape, (1, 1))
+        self.assertEqual(scalar_result.stride(), (1, 1))
+        self.assertFalse(scalar_result.is_leaf)
+        self.assertEqual(scalar_result.data_ptr(), scalar.data_ptr())
+        self.assertEqual(vector_result.shape, (1, 3))
+        self.assertEqual(vector_result.stride(), (12, 4))
+        self.assertFalse(vector_result.is_leaf)
+        self.assertEqual(vector_result.data_ptr(), vector.data_ptr())
+        self.assertEqual(empty_result.shape, (1, 0))
+        self.assertEqual(empty_result.stride(), (0, 3))
+        self.assertEqual(empty_result.data_ptr(), empty.data_ptr())
+        self.assertIs(matrix_result, matrix)
+
+        scalar_loss = scalar_result.sum()
+        scalar_loss.backward()
+        scalar_loss.backward()
+        self.assertEqual(scalar_leaf.grad.tolist(), [0.0, 2.0, 0.0])
+
+        vector_loss = vector_result.sum()
+        vector_loss.backward()
+        vector_loss.backward()
+        expected_vector_grad = np.zeros((2, 3, 4), dtype=np.float32)
+        expected_vector_grad[1, :, 3] = 2.0
+        np.testing.assert_array_equal(
+            np.asarray(vector_leaf.grad), expected_vector_grad
+        )
+
+        empty_result.sum().backward()
+        self.assertEqual(empty_leaf.grad.shape, (2, 0, 3))
+        self.assertEqual(empty_leaf.grad.tolist(), [[], []])
+
+        matrix_result.sum().backward()
+        self.assertEqual(matrix_leaf.grad.tolist(), [[2.0, 2.0]])
+
+        no_grad_scalar_leaf = torch.tensor(
+            [1.0, 2.0, 3.0], requires_grad=True
+        )
+        no_grad_scalar = no_grad_scalar_leaf[1]
+        no_grad_vector_leaf = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            requires_grad=True,
+        )
+        no_grad_vector = no_grad_vector_leaf.transpose(0, 2)[3].transpose(
+            0, 1
+        )[1]
+        no_grad_empty_leaf = torch.zeros((2, 0, 3), requires_grad=True)
+        no_grad_empty = no_grad_empty_leaf.transpose(0, 2)[1].transpose(
+            0, 1
+        )[1]
+        no_grad_matrix_leaf = torch.tensor(
+            [[1.0, 2.0]], requires_grad=True
+        )
+        no_grad_matrix = no_grad_matrix_leaf * 2.0
+        with torch.no_grad():
+            (
+                scalar_result,
+                vector_result,
+                empty_result,
+                matrix_result,
+            ) = torch.atleast_2d(
+                no_grad_scalar,
+                no_grad_vector,
+                no_grad_empty,
+                no_grad_matrix,
+            )
+
+        for result, source, leaf in (
+            (scalar_result, no_grad_scalar, no_grad_scalar_leaf),
+            (vector_result, no_grad_vector, no_grad_vector_leaf),
+            (empty_result, no_grad_empty, no_grad_empty_leaf),
+        ):
+            self.assertTrue(result.requires_grad)
+            self.assertTrue(result.is_leaf)
+            self.assertEqual(result.output_nr, 0)
+            self.assertEqual(result.storage_offset(), source.storage_offset())
+            self.assertEqual(result.data_ptr(), source.data_ptr())
+            (result * result).sum().backward()
+            self.assertIsNone(leaf.grad)
+            self.assertIsNone(result.grad)
+
+        self.assertEqual(scalar_result.shape, (1, 1))
+        self.assertEqual(scalar_result.stride(), (1, 1))
+        self.assertEqual(vector_result.shape, (1, 3))
+        self.assertEqual(vector_result.stride(), (12, 4))
+        self.assertEqual(empty_result.shape, (1, 0))
+        self.assertEqual(empty_result.stride(), (0, 3))
+
+        self.assertIs(matrix_result, no_grad_matrix)
+        self.assertTrue(matrix_result.requires_grad)
+        self.assertFalse(matrix_result.is_leaf)
+        matrix_result.sum().backward()
+        self.assertEqual(no_grad_matrix_leaf.grad.tolist(), [[2.0, 2.0]])
+
     def test_modes_and_overrides_receive_the_public_function(self):
         source = torch.tensor([1.0, 2.0])
         marker = object()
@@ -353,6 +498,40 @@ class Atleast2dTests(unittest.TestCase):
                 ):
                     torch.atleast_2d(sequence)
         self.assertEqual(Override.calls, [])
+
+    def test_variadic_overrides_and_modes_are_explicitly_unsupported(self):
+        source = torch.tensor([1.0, 2.0])
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return object()
+
+        value = Override()
+        for args in ((source, value), (value, source)):
+            with self.subTest(args=args), self.assertRaisesRegex(
+                TypeError, f"^{re.escape(UNSUPPORTED)}$"
+            ):
+                torch.atleast_2d(*args)
+        self.assertEqual(Override.calls, [])
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return object()
+
+        mode = RecordingMode()
+        with mode, self.assertRaisesRegex(
+            TypeError, f"^{re.escape(UNSUPPORTED)}$"
+        ):
+            torch.atleast_2d(source, source)
+        self.assertEqual(mode.calls, [])
 
     def test_outer_sequence_overrides_and_modes_precede_the_fast_path(self):
         source = torch.tensor([1.0, 2.0])
@@ -480,7 +659,9 @@ class Atleast2dTests(unittest.TestCase):
 
         source = torch.tensor(1.0)
         unsupported_calls = (
-            lambda: torch.atleast_2d(source, source),
+            lambda: torch.atleast_2d(source, None),
+            lambda: torch.atleast_2d(None, source),
+            lambda: torch.atleast_2d(source, source, 1),
         )
         for call in unsupported_calls:
             with self.subTest(call=call), self.assertRaisesRegex(
