@@ -179,6 +179,8 @@ class AutocastCacheEnabledReferenceTests(unittest.TestCase):
             (torch.tensor(True), reference_torch.tensor(True)),
             (torch.float32, reference_torch.float32),
             (torch.device("cpu"), reference_torch.device("cpu")),
+            (torch.strided, reference_torch.strided),
+            (torch.Size([2]), reference_torch.Size([2])),
         )
 
         for state in (False, True):

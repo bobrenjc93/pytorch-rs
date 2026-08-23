@@ -70,6 +70,8 @@ class AutocastCacheEnabledTests(unittest.TestCase):
             (torch.tensor(True), "Tensor"),
             (torch.float32, "torch.dtype"),
             (torch.device("cpu"), "torch.device"),
+            (torch.strided, "torch.layout"),
+            (torch.Size([2]), "torch.Size"),
         )
 
         for state in (False, True):

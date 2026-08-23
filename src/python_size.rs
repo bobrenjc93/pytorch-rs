@@ -44,25 +44,14 @@ fn python_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     let value_type = value.get_type();
     let native_name = native_pytorch_type_name(value);
     let cpython_name = type_object_name(&value_type)?;
-    let name = native_name
-        .or_else(|| {
-            if !is_immutable_type(&value_type) {
-                return None;
-            }
-            match cpython_name.to_bytes() {
-                b"torch_rs.layout" => Some("torch.layout"),
-                b"torch_rs.Size" => Some("torch.Size"),
-                _ => None,
-            }
-        })
-        .map_or_else(
-            || {
-                cpython_name
-                    .to_str()
-                    .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))
-            },
-            Ok,
-        )?;
+    let name = native_name.map_or_else(
+        || {
+            cpython_name
+                .to_str()
+                .map_err(|_| PyRuntimeError::new_err("Python tp_name is not valid UTF-8"))
+        },
+        Ok,
+    )?;
     let mut output = String::new();
     output
         .try_reserve_exact(name.len())
@@ -125,15 +114,6 @@ fn is_native_immutable_type(value_type: &Bound<'_, PyType>) -> bool {
     // SAFETY: value_type is a live Python type object for the duration of the call.
     let flags = unsafe { ffi::PyType_GetFlags(value_type.as_type_ptr()) };
     flags & ffi::Py_TPFLAGS_IMMUTABLETYPE != 0 && flags & ffi::Py_TPFLAGS_HEAPTYPE == 0
-}
-
-#[allow(
-    unsafe_code,
-    reason = "PyType_GetFlags reads immutable flags from a live type through the stable ABI"
-)]
-fn is_immutable_type(value_type: &Bound<'_, PyType>) -> bool {
-    // SAFETY: value_type is a live Python type object for the duration of the call.
-    (unsafe { ffi::PyType_GetFlags(value_type.as_type_ptr()) }) & ffi::Py_TPFLAGS_IMMUTABLETYPE != 0
 }
 
 fn has_numpy_integer_ancestry(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {

@@ -9753,6 +9753,34 @@ fn cpython_type_name_with(
     try_string_from_str_with(name, allocation)
 }
 
+#[allow(
+    unsafe_code,
+    reason = "PyType_GetFlags and tp_name identify immutable native types through the stable CPython ABI"
+)]
+fn immutable_native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'static str> {
+    let value_type = value.get_type();
+    // SAFETY: value_type is a live Python type object for the duration of the call.
+    let flags = unsafe { ffi::PyType_GetFlags(value_type.as_type_ptr()) };
+    if flags & ffi::Py_TPFLAGS_IMMUTABLETYPE == 0 {
+        return None;
+    }
+
+    let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
+    // SAFETY: every classic CPython type object starts with PyVarObject and
+    // tp_name. The value keeps its type alive while the immutable name is read.
+    let name = unsafe { (*prefix).tp_name };
+    if name.is_null() {
+        return None;
+    }
+    // SAFETY: CPython requires tp_name to point to a NUL-terminated string for
+    // the lifetime of the immutable type object.
+    match unsafe { CStr::from_ptr(name) }.to_bytes() {
+        b"torch_rs.layout" => Some("torch.layout"),
+        b"torch_rs.Size" => Some("torch.Size"),
+        _ => None,
+    }
+}
+
 pub(crate) fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'static str> {
     if value.is_exact_instance_of::<PyTensor>() {
         Some("Tensor")
@@ -9763,7 +9791,7 @@ pub(crate) fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'sta
     } else if value.is_exact_instance_of::<PyMemoryFormat>() {
         Some("torch.memory_format")
     } else {
-        None
+        immutable_native_pytorch_type_name(value)
     }
 }
 
