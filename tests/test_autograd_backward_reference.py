@@ -121,6 +121,54 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             np.asarray(leaf.grad).copy(),
         )
 
+    @staticmethod
+    def run_two_root_backward(module, roots, form):
+        if form == "omitted":
+            return module.autograd.backward(roots)
+        if form == "explicit None":
+            return module.autograd.backward(roots, grad_tensors=None)
+        if form == "tuple grad_tensors":
+            return module.autograd.backward(roots, (None, None))
+        if form == "list grad_tensors":
+            return module.autograd.backward(
+                roots, grad_tensors=[None, None]
+            )
+        raise AssertionError(f"unknown form: {form}")
+
+    def two_leaf_outcome(self, module, root_sequence_type, form):
+        scalar_leaf = module.tensor(2.0, requires_grad=True)
+        strided_leaf = module.tensor([[3.0]], requires_grad=True)
+        roots = root_sequence_type((scalar_leaf, strided_leaf))
+
+        first_result = self.run_two_root_backward(module, roots, form)
+        first_gradients = (
+            np.asarray(scalar_leaf.grad).copy(),
+            np.asarray(strided_leaf.grad).copy(),
+        )
+        second_result = self.run_two_root_backward(module, roots, form)
+        second_gradients = (
+            np.asarray(scalar_leaf.grad).copy(),
+            np.asarray(strided_leaf.grad).copy(),
+        )
+        return (
+            first_result,
+            second_result,
+            tuple(strided_leaf.shape),
+            strided_leaf.stride(),
+            first_gradients,
+            second_gradients,
+        )
+
+    def duplicate_leaf_outcome(self, module, root_sequence_type, form):
+        leaf = module.tensor([4.0], requires_grad=True)
+        roots = root_sequence_type((leaf, leaf))
+
+        first_result = self.run_two_root_backward(module, roots, form)
+        first_gradient = np.asarray(leaf.grad).copy()
+        second_result = self.run_two_root_backward(module, roots, form)
+        second_gradient = np.asarray(leaf.grad).copy()
+        return first_result, second_result, first_gradient, second_gradient
+
     def graph_outcome(self, module, root_sequence_type, grad_sequence_type=None):
         grad_tensors = self.default_grad_tensors(grad_sequence_type)
         reusable_leaf = module.tensor([1.0, 2.0], requires_grad=True)
@@ -228,6 +276,64 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                         np.testing.assert_array_equal(
                             actual_gradient, expected_gradient
                         )
+
+    def test_two_leaf_roots_match_pytorch_2_13(self):
+        forms = (
+            "omitted",
+            "explicit None",
+            "tuple grad_tensors",
+            "list grad_tensors",
+        )
+        for root_sequence_type in (tuple, list):
+            for form in forms:
+                with self.subTest(
+                    root_sequence_type=root_sequence_type, form=form
+                ):
+                    actual = self.two_leaf_outcome(
+                        torch, root_sequence_type, form
+                    )
+                    expected = self.two_leaf_outcome(
+                        reference_torch, root_sequence_type, form
+                    )
+                    self.assertIsNone(actual[0])
+                    self.assertIsNone(actual[1])
+                    self.assertIsNone(expected[0])
+                    self.assertIsNone(expected[1])
+                    self.assertEqual(actual[2:4], expected[2:4])
+                    for actual_gradients, expected_gradients in zip(
+                        actual[4:], expected[4:]
+                    ):
+                        for actual_gradient, expected_gradient in zip(
+                            actual_gradients, expected_gradients
+                        ):
+                            np.testing.assert_array_equal(
+                                actual_gradient, expected_gradient
+                            )
+
+    def test_duplicate_two_leaf_roots_match_pytorch_2_13(self):
+        forms = (
+            "omitted",
+            "explicit None",
+            "tuple grad_tensors",
+            "list grad_tensors",
+        )
+        for root_sequence_type in (tuple, list):
+            for form in forms:
+                with self.subTest(
+                    root_sequence_type=root_sequence_type, form=form
+                ):
+                    actual = self.duplicate_leaf_outcome(
+                        torch, root_sequence_type, form
+                    )
+                    expected = self.duplicate_leaf_outcome(
+                        reference_torch, root_sequence_type, form
+                    )
+                    self.assertIsNone(actual[0])
+                    self.assertIsNone(actual[1])
+                    self.assertIsNone(expected[0])
+                    self.assertIsNone(expected[1])
+                    np.testing.assert_array_equal(actual[2], expected[2])
+                    np.testing.assert_array_equal(actual[3], expected[3])
 
     def test_accumulation_graph_reuse_and_freeing_match_pytorch_2_13(self):
         for root_sequence_type in (None, tuple, list):
