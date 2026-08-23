@@ -38,6 +38,12 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             return root
         return sequence_type((root,))
 
+    @staticmethod
+    def default_grad_tensors(sequence_type):
+        if sequence_type is None:
+            return None
+        return sequence_type((None,))
+
     def supported_outcome(self, module, form, sequence_type):
         leaf = module.tensor([2.0, -3.0], requires_grad=True)
         loss = (leaf * leaf).sum()
@@ -61,32 +67,58 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             )
         elif form == "integer false":
             result = module.autograd.backward(roots, None, 0, 0)
+        elif form == "tuple grad_tensors":
+            result = module.autograd.backward(roots, (None,))
+        elif form == "list grad_tensors":
+            result = module.autograd.backward(roots, grad_tensors=[None])
         else:
             raise AssertionError(f"unknown form: {form}")
         return result, np.asarray(leaf.grad).copy()
 
-    def graph_outcome(self, module, sequence_type):
+    def graph_outcome(self, module, root_sequence_type, grad_sequence_type=None):
+        grad_tensors = self.default_grad_tensors(grad_sequence_type)
         reusable_leaf = module.tensor([1.0, 2.0], requires_grad=True)
         reusable_loss = reusable_leaf.transpose(0, 0).sum()
-        module.autograd.backward(self.roots(reusable_loss, sequence_type))
-        module.autograd.backward(self.roots(reusable_loss, sequence_type))
+        module.autograd.backward(
+            self.roots(reusable_loss, root_sequence_type),
+            grad_tensors=grad_tensors,
+        )
+        module.autograd.backward(
+            self.roots(reusable_loss, root_sequence_type),
+            grad_tensors=grad_tensors,
+        )
 
         scalar_leaf = module.tensor(7.0, requires_grad=True)
-        module.autograd.backward(self.roots(scalar_leaf, sequence_type))
-        module.autograd.backward(self.roots(scalar_leaf, sequence_type))
+        module.autograd.backward(
+            self.roots(scalar_leaf, root_sequence_type),
+            grad_tensors=grad_tensors,
+        )
+        module.autograd.backward(
+            self.roots(scalar_leaf, root_sequence_type),
+            grad_tensors=grad_tensors,
+        )
 
         freed_leaf = module.tensor([2.0, 3.0], requires_grad=True)
         freed_loss = (freed_leaf * freed_leaf).sum()
-        module.autograd.backward(self.roots(freed_loss, sequence_type))
+        module.autograd.backward(
+            self.roots(freed_loss, root_sequence_type),
+            grad_tensors=grad_tensors,
+        )
         first_gradient = np.asarray(freed_leaf.grad).copy()
         try:
-            module.autograd.backward(self.roots(freed_loss, sequence_type))
+            module.autograd.backward(
+                self.roots(freed_loss, root_sequence_type),
+                grad_tensors=grad_tensors,
+            )
         except RuntimeError as error:
             repeated_error = (type(error).__name__, str(error), error.args)
         else:
             raise AssertionError("a value-dependent graph must be freed")
         module.autograd.backward(
-            self.roots((freed_leaf * freed_leaf).sum(), sequence_type)
+            self.roots(
+                (freed_leaf * freed_leaf).sum(), root_sequence_type
+            ),
+            grad_tensors=grad_tensors,
         )
 
         return (
@@ -105,6 +137,8 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                 "explicit defaults",
                 "positional defaults",
                 "integer false",
+                "tuple grad_tensors",
+                "list grad_tensors",
             ):
                 with self.subTest(sequence_type=sequence_type, form=form):
                     actual_result, actual_gradient = self.supported_outcome(
@@ -120,81 +154,129 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                     )
 
     def test_accumulation_graph_reuse_and_freeing_match_pytorch_2_13(self):
-        for sequence_type in (None, tuple, list):
-            with self.subTest(sequence_type=sequence_type):
-                actual = self.graph_outcome(torch, sequence_type)
-                expected = self.graph_outcome(reference_torch, sequence_type)
-                np.testing.assert_array_equal(actual[0], expected[0])
-                self.assertEqual(actual[1], expected[1])
-                np.testing.assert_array_equal(actual[2], expected[2])
-                self.assertEqual(actual[3], expected[3])
-                np.testing.assert_array_equal(actual[4], expected[4])
+        for root_sequence_type in (None, tuple, list):
+            for grad_sequence_type in (None, tuple, list):
+                with self.subTest(
+                    root_sequence_type=root_sequence_type,
+                    grad_sequence_type=grad_sequence_type,
+                ):
+                    actual = self.graph_outcome(
+                        torch, root_sequence_type, grad_sequence_type
+                    )
+                    expected = self.graph_outcome(
+                        reference_torch,
+                        root_sequence_type,
+                        grad_sequence_type,
+                    )
+                    np.testing.assert_array_equal(actual[0], expected[0])
+                    self.assertEqual(actual[1], expected[1])
+                    np.testing.assert_array_equal(actual[2], expected[2])
+                    self.assertEqual(actual[3], expected[3])
+                    np.testing.assert_array_equal(actual[4], expected[4])
 
     def test_native_engine_errors_match_pytorch_2_13(self):
-        for sequence_type in (None, tuple, list):
-            cases = (
-                (
-                    lambda: torch.autograd.backward(
-                        self.roots(torch.tensor(1.0), sequence_type)
-                    ),
-                    lambda: reference_torch.autograd.backward(
-                        self.roots(
-                            reference_torch.tensor(1.0), sequence_type
-                        )
-                    ),
-                ),
-                (
-                    lambda: torch.autograd.backward(
-                        self.roots(
-                            torch.tensor(
-                                [1.0, 2.0], requires_grad=True
-                            ),
-                            sequence_type,
-                        )
-                    ),
-                    lambda: reference_torch.autograd.backward(
-                        self.roots(
-                            reference_torch.tensor(
-                                [1.0, 2.0], requires_grad=True
-                            ),
-                            sequence_type,
-                        )
-                    ),
-                ),
-            )
-            for case, (actual_call, expected_call) in enumerate(cases):
-                with self.subTest(sequence_type=sequence_type, case=case):
-                    self.assert_error_matches(actual_call, expected_call)
-
-    def test_graph_option_conversion_errors_match_and_do_not_mutate(self):
-        for sequence_type in (None, tuple, list):
-            for name, value in (("retain_graph", 0.5), ("create_graph", None)):
-                with self.subTest(
-                    sequence_type=sequence_type, name=name, value=value
-                ):
-                    actual_leaf = torch.tensor(2.0, requires_grad=True)
-                    actual_loss = actual_leaf * actual_leaf
-                    expected_leaf = reference_torch.tensor(
-                        2.0, requires_grad=True
-                    )
-                    expected_loss = expected_leaf * expected_leaf
-                    self.assert_error_matches(
+        for root_sequence_type in (None, tuple, list):
+            for grad_sequence_type in (None, tuple, list):
+                actual_grad_tensors = self.default_grad_tensors(
+                    grad_sequence_type
+                )
+                expected_grad_tensors = self.default_grad_tensors(
+                    grad_sequence_type
+                )
+                cases = (
+                    (
                         lambda: torch.autograd.backward(
-                            self.roots(actual_loss, sequence_type),
-                            **{name: value},
+                            self.roots(
+                                torch.tensor(1.0), root_sequence_type
+                            ),
+                            grad_tensors=actual_grad_tensors,
                         ),
                         lambda: reference_torch.autograd.backward(
-                            self.roots(expected_loss, sequence_type),
-                            **{name: value},
+                            self.roots(
+                                reference_torch.tensor(1.0),
+                                root_sequence_type,
+                            ),
+                            grad_tensors=expected_grad_tensors,
                         ),
-                    )
-                    self.assertIsNone(actual_leaf.grad)
-                    self.assertIsNone(expected_leaf.grad)
-                    actual_loss.backward()
-                    expected_loss.backward()
-                    self.assertEqual(
-                        actual_leaf.grad.item(), expected_leaf.grad.item()
-                    )
+                    ),
+                    (
+                        lambda: torch.autograd.backward(
+                            self.roots(
+                                torch.tensor(
+                                    [1.0, 2.0], requires_grad=True
+                                ),
+                                root_sequence_type,
+                            ),
+                            grad_tensors=actual_grad_tensors,
+                        ),
+                        lambda: reference_torch.autograd.backward(
+                            self.roots(
+                                reference_torch.tensor(
+                                    [1.0, 2.0], requires_grad=True
+                                ),
+                                root_sequence_type,
+                            ),
+                            grad_tensors=expected_grad_tensors,
+                        ),
+                    ),
+                )
+                for case, (actual_call, expected_call) in enumerate(cases):
+                    with self.subTest(
+                        root_sequence_type=root_sequence_type,
+                        grad_sequence_type=grad_sequence_type,
+                        case=case,
+                    ):
+                        self.assert_error_matches(actual_call, expected_call)
+
+    def test_graph_option_conversion_errors_match_and_do_not_mutate(self):
+        for root_sequence_type in (None, tuple, list):
+            for grad_sequence_type in (None, tuple, list):
+                for name, value in (
+                    ("retain_graph", 0.5),
+                    ("create_graph", None),
+                ):
+                    with self.subTest(
+                        root_sequence_type=root_sequence_type,
+                        grad_sequence_type=grad_sequence_type,
+                        name=name,
+                        value=value,
+                    ):
+                        actual_leaf = torch.tensor(2.0, requires_grad=True)
+                        actual_loss = actual_leaf * actual_leaf
+                        expected_leaf = reference_torch.tensor(
+                            2.0, requires_grad=True
+                        )
+                        expected_loss = expected_leaf * expected_leaf
+                        actual_grad_tensors = self.default_grad_tensors(
+                            grad_sequence_type
+                        )
+                        expected_grad_tensors = self.default_grad_tensors(
+                            grad_sequence_type
+                        )
+                        self.assert_error_matches(
+                            lambda: torch.autograd.backward(
+                                self.roots(
+                                    actual_loss, root_sequence_type
+                                ),
+                                grad_tensors=actual_grad_tensors,
+                                **{name: value},
+                            ),
+                            lambda: reference_torch.autograd.backward(
+                                self.roots(
+                                    expected_loss, root_sequence_type
+                                ),
+                                grad_tensors=expected_grad_tensors,
+                                **{name: value},
+                            ),
+                        )
+                        self.assertIsNone(actual_leaf.grad)
+                        self.assertIsNone(expected_leaf.grad)
+                        actual_loss.backward()
+                        expected_loss.backward()
+                        self.assertEqual(
+                            actual_leaf.grad.item(),
+                            expected_leaf.grad.item(),
+                        )
 
     def test_signature_binding_errors_match_and_do_not_mutate(self):
         actual_leaf = torch.tensor(2.0, requires_grad=True)

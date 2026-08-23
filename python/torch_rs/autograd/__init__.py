@@ -41,6 +41,17 @@ def _normalize_single_root(tensors):
     )
 
 
+def _require_default_grad_tensors(grad_tensors):
+    if grad_tensors is None:
+        return
+    if type(grad_tensors) is tuple or type(grad_tensors) is list:
+        if len(grad_tensors) == 1 and grad_tensors[0] is None:
+            return
+    raise NotImplementedError(
+        "torch_rs.autograd.backward does not support explicit gradients"
+    )
+
+
 def backward(
     tensors: _TensorOrTensorsOrGradEdge,
     grad_tensors: _TensorOrOptionalTensors | None = None,
@@ -109,10 +120,7 @@ def backward(
             the values are used as the input tensors.
     """
     root = _normalize_single_root(tensors)
-    if grad_tensors is not None:
-        raise NotImplementedError(
-            "torch_rs.autograd.backward does not support explicit gradients"
-        )
+    _require_default_grad_tensors(grad_tensors)
     _require_default_graph_option("retain_graph", retain_graph, allow_none=True)
     _require_default_graph_option("create_graph", create_graph, allow_none=False)
     if grad_variables is not None:
