@@ -1,3 +1,4 @@
+import gc
 import inspect
 import operator
 import re
@@ -106,6 +107,119 @@ class TensorViewReferenceTests(unittest.TestCase):
                 (3, 2, 2, 2),
             ),
         )
+
+    def make_dtype_layout_cases(self, module):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        leaf = module.tensor(
+            values.tolist(), dtype=module.float32, requires_grad=True
+        )
+        return (
+            (
+                "scalar",
+                module.tensor(
+                    -0.0, dtype=module.float32, requires_grad=True
+                ),
+            ),
+            (
+                "empty-offset",
+                module.zeros(
+                    (2, 0, 3), dtype=module.float32, requires_grad=True
+                ).transpose(0, 2)[1],
+            ),
+            ("contiguous-offset", (leaf * 2.0)[1]),
+            ("noncontiguous-offset", (leaf * 3.0).transpose(0, 2)[1]),
+        )
+
+    def dtype_view_observation(self, module, source, *, alias, keyword):
+        dtype = module.float if alias else module.float32
+        result = source.view(dtype=dtype) if keyword else source.view(dtype)
+        return (
+            result is not source,
+            result.is_set_to(source),
+            tuple(result.shape),
+            result.stride(),
+            result.storage_offset(),
+            result.is_contiguous(),
+            result.requires_grad,
+            result.is_leaf,
+            str(result.dtype),
+            str(result.device),
+            result.data_ptr() == source.data_ptr(),
+            self.tensor_array(result, module).copy(),
+        )
+
+    def test_same_dtype_views_match_pytorch_2_13(self):
+        actual_cases = self.make_dtype_layout_cases(torch)
+        expected_cases = self.make_dtype_layout_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            case, actual_source = actual_case
+            expected_name, expected_source = expected_case
+            self.assertEqual(case, expected_name)
+            for alias in (False, True):
+                for keyword in (False, True):
+                    with self.subTest(
+                        case=case, alias=alias, keyword=keyword
+                    ):
+                        actual = self.dtype_view_observation(
+                            torch,
+                            actual_source,
+                            alias=alias,
+                            keyword=keyword,
+                        )
+                        expected = self.dtype_view_observation(
+                            reference_torch,
+                            expected_source,
+                            alias=alias,
+                            keyword=keyword,
+                        )
+                        self.assertEqual(actual[:-1], expected[:-1])
+                        np.testing.assert_array_equal(actual[-1], expected[-1])
+
+            self.assertTrue(actual_source.requires_grad)
+            self.assertTrue(expected_source.requires_grad)
+
+    def test_same_dtype_view_lifetimes_match_pytorch_2_13(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+        def retain(module, *, keyword):
+            temporary = module.tensor(
+                values.tolist(), dtype=module.float32, requires_grad=True
+            )
+            source = (temporary * 3.0).transpose(0, 2)[1]
+            if keyword:
+                return source.view(dtype=module.float)
+            return source.view(module.float32)
+
+        retained = []
+        for keyword in (False, True):
+            retained.append(
+                (
+                    retain(torch, keyword=keyword),
+                    retain(reference_torch, keyword=keyword),
+                )
+            )
+        gc.collect()
+
+        for actual, expected in retained:
+            self.assertEqual(
+                (
+                    tuple(actual.shape),
+                    actual.stride(),
+                    actual.storage_offset(),
+                    actual.requires_grad,
+                    actual.is_leaf,
+                ),
+                (
+                    tuple(expected.shape),
+                    expected.stride(),
+                    expected.storage_offset(),
+                    expected.requires_grad,
+                    expected.is_leaf,
+                ),
+            )
+            np.testing.assert_array_equal(np.asarray(actual), expected.numpy())
 
     def shape_argument(self, module, form, shape):
         if form == "tuple" or form == "keyword":
@@ -650,6 +764,8 @@ class TensorViewReferenceTests(unittest.TestCase):
         def normalize(value):
             if value is tensor:
                 return "self"
+            if value is module.float32:
+                return "float32"
             if isinstance(value, list):
                 return "list", tuple(value)
             if isinstance(value, tuple):
@@ -680,6 +796,10 @@ class TensorViewReferenceTests(unittest.TestCase):
             lambda: tensor.view(tuple_index, 3),
             lambda: tensor.view(list_index, 3),
             lambda: tensor.view(size=(2, 3)),
+            lambda: tensor.view(module.float32),
+            lambda: tensor.view(module.float),
+            lambda: tensor.view(dtype=module.float32),
+            lambda: tensor.view(dtype=module.float),
         )
         for call in calls:
             mode = RecordingMode(marker)
@@ -730,6 +850,12 @@ class TensorViewReferenceTests(unittest.TestCase):
             with ForwardingMode("upper"):
                 variadic_forwarded = tensor.view(2, 3)
         variadic_order = tuple(order)
+
+        order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                dtype_forwarded = tensor.view(dtype=module.float)
+        dtype_order = tuple(order)
 
         declining = RecordingMode(NotImplemented)
         try:
@@ -785,6 +911,20 @@ class TensorViewReferenceTests(unittest.TestCase):
                 variadic_forwarded.stride(),
                 variadic_forwarded.storage_offset(),
                 variadic_forwarded.data_ptr() == tensor.data_ptr(),
+            ),
+            "dtype_forwarding": tuple(
+                (label, normalize_call((func, dispatch_types, args, kwargs)))
+                for label, func, dispatch_types, args, kwargs in dtype_order
+            ),
+            "dtype_forwarded": (
+                dtype_forwarded is not tensor,
+                dtype_forwarded.is_set_to(tensor),
+                tuple(dtype_forwarded.shape),
+                dtype_forwarded.stride(),
+                dtype_forwarded.storage_offset(),
+                dtype_forwarded.requires_grad,
+                dtype_forwarded.is_leaf,
+                dtype_forwarded.data_ptr() == tensor.data_ptr(),
             ),
             "declining": declining_error,
             "declining_calls": len(declining.calls),
@@ -987,22 +1127,61 @@ class TensorViewReferenceTests(unittest.TestCase):
     def test_deliberately_unsupported_overloads_remain_outside_the_binding(self):
         actual = torch.zeros((6,), dtype=torch.float32)
         expected = reference_torch.zeros((6,), dtype=reference_torch.float32)
-        cases = (
+        for actual_call, expected_call in (
             (lambda: actual.view(1, 2, 3), lambda: expected.view(1, 2, 3)),
-            (
-                lambda: actual.view(torch.float32),
-                lambda: expected.view(reference_torch.float32),
-            ),
-        )
-        for actual_call, expected_call in cases:
+        ):
             with self.assertRaises(TypeError):
                 actual_call()
             self.assertEqual(expected_call().numel(), 6)
 
-        self.assert_error_matches(
-            lambda: actual.view(2, 3, size=(2, 3)),
-            lambda: expected.view(2, 3, size=(2, 3)),
+        mixed_calls = (
+            (
+                lambda: actual.view(torch.float32, 6),
+                lambda: expected.view(reference_torch.float32, 6),
+            ),
+            (
+                lambda: actual.view(torch.float32, size=(6,)),
+                lambda: expected.view(reference_torch.float32, size=(6,)),
+            ),
+            (
+                lambda: actual.view(dtype=torch.float32, size=(6,)),
+                lambda: expected.view(
+                    dtype=reference_torch.float32, size=(6,)
+                ),
+            ),
+            (
+                lambda: actual.view(torch.float32, dtype=torch.float32),
+                lambda: expected.view(
+                    reference_torch.float32, dtype=reference_torch.float32
+                ),
+            ),
+            (
+                lambda: actual.view((6,), dtype=torch.float32),
+                lambda: expected.view((6,), dtype=reference_torch.float32),
+            ),
+            (
+                lambda: actual.view(2, 3, size=(2, 3)),
+                lambda: expected.view(2, 3, size=(2, 3)),
+            ),
         )
+        for actual_call, expected_call in mixed_calls:
+            self.assert_error_matches(actual_call, expected_call)
+
+        original = (
+            tuple(actual.shape),
+            actual.stride(),
+            actual.storage_offset(),
+            actual.data_ptr(),
+            np.asarray(actual).copy(),
+        )
+        for dtype in (reference_torch.float64, reference_torch.int32):
+            for keyword in (False, True):
+                with self.subTest(dtype=dtype, keyword=keyword):
+                    with self.assertRaises(TypeError):
+                        if keyword:
+                            actual.view(dtype=dtype)
+                        else:
+                            actual.view(dtype)
 
         with self.assertRaises(TypeError):
             actual.view(size=-1)
@@ -1012,6 +1191,16 @@ class TensorViewReferenceTests(unittest.TestCase):
             actual.view(True)
         with self.assertRaises(TypeError):
             expected.view(True)
+        self.assertEqual(
+            (
+                tuple(actual.shape),
+                actual.stride(),
+                actual.storage_offset(),
+                actual.data_ptr(),
+            ),
+            original[:-1],
+        )
+        np.testing.assert_array_equal(np.asarray(actual), original[-1])
 
 
 if __name__ == "__main__":

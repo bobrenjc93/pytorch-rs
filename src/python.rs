@@ -1061,7 +1061,7 @@ Example::
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyAny>> {
-        let shape = bind_view_shape_argument(args, kwargs)?;
+        let argument = bind_view_argument(args, kwargs)?;
         let tensor = slf.as_any().cast::<PyTensor>()?;
         if let Some(result) = dispatch_tensorbase_method_mode(
             slf.py(),
@@ -1074,12 +1074,27 @@ Example::
             return Ok(result);
         }
 
-        let shape = parse_view_shape_argument(shape)?;
-        let inner = tensor
-            .try_borrow()?
-            .inner
-            .view(shape)
-            .map_err(|error| tensor_error(&error))?;
+        let inner = match argument {
+            ViewArgument::Shape(shape) => {
+                let shape = parse_view_shape_argument(shape)?;
+                tensor
+                    .try_borrow()?
+                    .inner
+                    .view(shape)
+                    .map_err(|error| tensor_error(&error))?
+            }
+            ViewArgument::DType(dtype) => {
+                let dtype = dtype.try_borrow()?.inner();
+                let tensor = tensor.try_borrow()?;
+                if dtype != tensor.inner.dtype() {
+                    return Err(unsupported_view_dtype_error());
+                }
+                tensor
+                    .inner
+                    .detach()
+                    .map_err(|error| tensor_error(&error))?
+            }
+        };
         Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
     }
 
@@ -9224,37 +9239,87 @@ enum ViewShapeArgument<'py> {
     List(Bound<'py, PyList>),
 }
 
-fn bind_view_shape_argument<'py>(
+enum ViewArgument<'py> {
+    Shape(ViewShapeArgument<'py>),
+    DType(Bound<'py, PyDType>),
+}
+
+struct ViewKeywordArguments<'py> {
+    shape: Option<Bound<'py, PyAny>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    error: Option<PyErr>,
+    saw_dtype: bool,
+}
+
+fn bind_view_keyword_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<ViewShapeArgument<'py>> {
-    let mut keyword_shape = None;
-    let mut keyword_error = None;
-    if let Some(keywords) = keywords {
-        for (key, value) in keywords {
-            let key = key.extract::<String>()?;
-            match key.as_str() {
-                "size" => {
-                    if positional.is_empty() && keyword_shape.is_none() {
-                        keyword_shape = Some(value);
-                    } else {
-                        keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err("view() got multiple values for argument 'size'")
-                        });
-                    }
-                }
-                "dtype" if positional.is_empty() => {
-                    return Err(unsupported_view_dtype_error());
-                }
-                _ => {
-                    keyword_error.get_or_insert_with(|| {
-                        PyTypeError::new_err(format!(
-                            "view() got an unexpected keyword argument '{key}'"
-                        ))
+) -> PyResult<ViewKeywordArguments<'py>> {
+    let mut arguments = ViewKeywordArguments {
+        shape: None,
+        dtype: None,
+        error: None,
+        saw_dtype: false,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "size" if positional.is_empty() && arguments.shape.is_none() => {
+                arguments.shape = Some(value);
+            }
+            "size" => {
+                arguments.error.get_or_insert_with(|| {
+                    PyTypeError::new_err("view() got multiple values for argument 'size'")
+                });
+            }
+            "dtype" => {
+                arguments.saw_dtype = true;
+                if positional.is_empty() && arguments.shape.is_none() && arguments.dtype.is_none() {
+                    arguments.dtype = Some(value);
+                } else {
+                    arguments.error.get_or_insert_with(|| {
+                        PyTypeError::new_err("view() got multiple values for argument 'dtype'")
                     });
                 }
             }
+            _ => {
+                arguments.error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "view() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
         }
+    }
+    Ok(arguments)
+}
+
+fn bind_view_argument<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ViewArgument<'py>> {
+    let ViewKeywordArguments {
+        shape: keyword_shape,
+        dtype: keyword_dtype,
+        error: keyword_error,
+        saw_dtype: saw_dtype_keyword,
+    } = bind_view_keyword_arguments(positional, keywords)?;
+
+    if saw_dtype_keyword {
+        if positional.is_empty()
+            && keyword_shape.is_none()
+            && keyword_error.is_none()
+            && keywords.is_some_and(|keywords| keywords.len() == 1)
+            && let Some(dtype) = keyword_dtype
+            && let Ok(dtype) = dtype.cast_into::<PyDType>()
+        {
+            return Ok(ViewArgument::DType(dtype));
+        }
+        return Err(unsupported_view_call_error(positional, keywords)?);
     }
 
     if positional.len() == 2 {
@@ -9275,7 +9340,7 @@ fn bind_view_shape_argument<'py>(
             if keyword_error.is_some() {
                 return Err(unsupported_view_call_error(positional, keywords)?);
             }
-            return Ok(shape);
+            return Ok(ViewArgument::Shape(shape));
         }
         // The two public overloads each probe the first variadic dimension
         // before mode dispatch. The remaining conversions happen afterward.
@@ -9285,7 +9350,9 @@ fn bind_view_shape_argument<'py>(
         if keyword_error.is_some() {
             return Err(unsupported_view_call_error(positional, keywords)?);
         }
-        return Ok(ViewShapeArgument::Tuple(positional.clone()));
+        return Ok(ViewArgument::Shape(ViewShapeArgument::Tuple(
+            positional.clone(),
+        )));
     }
 
     let (value, positional_dimension) = match positional.len() {
@@ -9300,8 +9367,11 @@ fn bind_view_shape_argument<'py>(
         ViewShapeArgument::Tuple(shape.clone())
     } else if let Ok(shape) = value.cast::<PyList>() {
         ViewShapeArgument::List(shape.clone())
-    } else if value.cast::<PyDType>().is_ok() {
-        return Err(unsupported_view_dtype_error());
+    } else if let Ok(dtype) = value.cast::<PyDType>() {
+        if keyword_error.is_some() {
+            return Err(unsupported_view_call_error(positional, keywords)?);
+        }
+        return Ok(ViewArgument::DType(dtype.clone()));
     } else if is_view_shape_dimension(&value) {
         if !positional_dimension {
             return Err(unsupported_view_integer_error());
@@ -9320,7 +9390,7 @@ fn bind_view_shape_argument<'py>(
     if let Some(error) = keyword_error {
         return Err(error);
     }
-    Ok(shape)
+    Ok(ViewArgument::Shape(shape))
 }
 
 fn validate_view_shape_first(shape: &ViewShapeArgument<'_>) -> PyResult<()> {
