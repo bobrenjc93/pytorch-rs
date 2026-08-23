@@ -111,11 +111,9 @@ class TopLevelExpTests(unittest.TestCase):
         )
         source = leaf.transpose(0, 1)[1]
 
-        # Tensor.exp retains its existing behavior; only the new top-level
-        # wrapper guards the missing autograd edge.
         method_output = source.exp()
-        self.assertFalse(method_output.requires_grad)
-        self.assertTrue(method_output.is_leaf)
+        self.assertTrue(method_output.requires_grad)
+        self.assertFalse(method_output.is_leaf)
 
         for form, call in self.supported_calls(source):
             with self.subTest(form=form, mode="recording"):
@@ -127,8 +125,9 @@ class TopLevelExpTests(unittest.TestCase):
             with self.subTest(form=form, mode="no_grad"):
                 with torch.no_grad():
                     output = call()
+                    expected = source.exp()
                 self.assert_matches_method(
-                    output, method_output, case=(form, "no_grad")
+                    output, expected, case=(form, "no_grad")
                 )
 
         detached = source.detach()
@@ -137,7 +136,7 @@ class TopLevelExpTests(unittest.TestCase):
         )
 
     def test_concrete_out_tensor_is_rejected_without_mutation(self):
-        source = torch.tensor([0.0, 1.0])
+        source = torch.tensor([0.0, 1.0], requires_grad=True)
         destination = torch.tensor([17.0, 19.0])
         for form, call in (
             ("positional", lambda: torch.exp(source, out=destination)),
@@ -152,8 +151,11 @@ class TopLevelExpTests(unittest.TestCase):
                     call()
                 self.assertEqual(destination.tolist(), [17.0, 19.0])
 
+        detached = source.detach()
         self.assert_matches_method(
-            torch.exp(source, out=None), source.exp(), case="explicit out none"
+            torch.exp(detached, out=None),
+            detached.exp(),
+            case="explicit out none",
         )
 
     def test_modes_and_overrides_observe_calls_before_native_limits(self):

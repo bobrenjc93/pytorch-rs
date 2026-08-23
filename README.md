@@ -165,7 +165,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `Tensor.ravel()` and top-level `torch.ravel()` share the native view-or-copy path: row-contiguous inputs alias storage through a new one-dimensional wrapper, while other layouts are materialized.
 
-`Tensor.exp()` and inference-only `torch.exp()` share the native float32 CPU kernel. Top-level calls accept `out=None`; concrete output tensors and calls that would record an autograd edge remain explicitly unsupported.
+Differentiable `Tensor.exp()` and inference-only `torch.exp()` share the native float32 CPU kernel. The method records an `ExpBackward0` edge for gradient-requiring inputs, while top-level calls accept `out=None` and continue to reject concrete output tensors or calls that would record an autograd edge.
 
 `torch.can_cast` and `torch.promote_types` accept the existing `torch.float32`/`torch.float` singleton aliases in positional or canonical keyword forms. Casting between the supported aliases returns `True`, while promotion returns the same canonical singleton. No additional dtype, casting pair, or promotion pair is exposed.
 
