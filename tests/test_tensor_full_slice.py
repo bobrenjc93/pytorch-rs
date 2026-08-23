@@ -18,6 +18,16 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             ("offset-noncontiguous", base.transpose(0, 3)[1]),
         )
 
+    def double_full_slice_layout_cases(self):
+        values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
+        base = torch.tensor(values.tolist())
+        return (
+            ("matrix", torch.tensor([[-0.0, 1.0], [2.0, 3.0]])),
+            ("empty", torch.zeros((2, 0, 3))),
+            ("offset", base[1]),
+            ("offset-noncontiguous", base.transpose(0, 3)[1]),
+        )
+
     def assert_metadata_alias(self, source, alias):
         self.assertIsNot(alias, source)
         self.assertEqual(alias.shape, source.shape)
@@ -48,6 +58,16 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         signed_zero = torch.tensor([-0.0])[index]
         self.assertEqual(np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000)
 
+    def test_double_full_slice_tuple_returns_a_distinct_exact_metadata_alias(self):
+        index = (slice(None), slice(None))
+        for case, source in self.double_full_slice_layout_cases():
+            with self.subTest(case=case):
+                alias = source[index]
+                self.assert_metadata_alias(source, alias)
+
+        signed_zero = torch.tensor([[-0.0]])[index]
+        self.assertEqual(np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000)
+
     def test_scalar_full_slice_raises_the_exact_pytorch_error(self):
         with self.assertRaises(IndexError) as raised:
             torch.tensor(-0.0)[:]
@@ -64,8 +84,22 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             "too many indices for tensor of dimension 0",
         )
 
+    def test_double_full_slice_tuple_requires_rank_two(self):
+        index = (slice(None), slice(None))
+        for dimensions, source in (
+            (0, torch.tensor(-0.0)),
+            (1, torch.tensor([-0.0, 1.0])),
+        ):
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaises(IndexError) as raised:
+                    source[index]
+                self.assertEqual(
+                    str(raised.exception),
+                    f"too many indices for tensor of dimension {dimensions}",
+                )
+
     def assert_autograd_gradient_node_and_no_grad_leaf_status(
-        self, index, node_name
+        self, index, node_name, diagnostic_rank=1
     ):
         leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
         alias = leaf[index]
@@ -76,11 +110,17 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         (alias * weights).sum().backward()
         self.assertEqual(leaf.grad.tolist(), weights.tolist())
 
-        diagnostic_leaf = torch.tensor([2.0], requires_grad=True)
+        if diagnostic_rank == 1:
+            diagnostic_values = [2.0]
+            diagnostic_pattern = r"\[2\.\]"
+        else:
+            diagnostic_values = [[2.0]]
+            diagnostic_pattern = r"\[\[2\.\]\]"
+        diagnostic_leaf = torch.tensor(diagnostic_values, requires_grad=True)
         with self.assertRaisesRegex(
             ValueError,
             r"^dropout probability has to be between 0 and 1, but got "
-            rf"tensor\(\[2\.\], grad_fn=<{node_name}>\)$",
+            rf"tensor\({diagnostic_pattern}, grad_fn=<{node_name}>\)$",
         ):
             torch.nn.functional.dropout(
                 None, p=diagnostic_leaf[index], training=False
@@ -105,6 +145,11 @@ class TensorFullSliceIndexTests(unittest.TestCase):
     def test_singleton_full_slice_tuple_uses_alias_autograd_semantics(self):
         self.assert_autograd_gradient_node_and_no_grad_leaf_status(
             (slice(None),), "AliasBackward0"
+        )
+
+    def test_double_full_slice_tuple_uses_alias_autograd_semantics(self):
+        self.assert_autograd_gradient_node_and_no_grad_leaf_status(
+            (slice(None), slice(None)), "AliasBackward0", diagnostic_rank=2
         )
 
     def test_empty_tuple_uses_alias_autograd_semantics(self):
@@ -145,6 +190,11 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
     def test_singleton_full_slice_tuple_survives_source_lifetime(self):
         self.assert_storage_and_autograd_survive_source_lifetime((slice(None),))
+
+    def test_double_full_slice_tuple_survives_source_lifetime(self):
+        self.assert_storage_and_autograd_survive_source_lifetime(
+            (slice(None), slice(None))
+        )
 
     def assert_dispatches_through_tensorbase_mode_before_indexing(self, index):
         source = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
@@ -213,6 +263,11 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None),)
         )
 
+    def test_double_full_slice_tuple_dispatches_with_original_index(self):
+        self.assert_dispatches_through_tensorbase_mode_before_indexing(
+            (slice(None), slice(None))
+        )
+
     def test_tuple_subclasses_are_normalized_through_overridden_iteration(self):
         source = torch.tensor([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
 
@@ -232,6 +287,13 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         alias = source[FullSliceRemapTuple((0,))]
         self.assert_metadata_alias(source, alias)
+
+        class DoubleFullSliceRemapTuple(tuple):
+            def __iter__(self):
+                return iter((slice(None), slice(None)))
+
+        double_alias = source[DoubleFullSliceRemapTuple((0,))]
+        self.assert_metadata_alias(source, double_alias)
 
         class EmptyRemapTuple(tuple):
             def __iter__(self):
@@ -275,7 +337,11 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None, None, 2),),
             (slice(None), 0),
             (0, slice(None)),
-            (slice(None), slice(None)),
+            (slice(1, None), slice(None)),
+            (slice(None), slice(None, -1)),
+            (slice(None, None, 1), slice(None)),
+            (slice(None), slice(None, None, 2)),
+            (slice(None), slice(None), slice(None)),
             (slice(None), Ellipsis),
         )
         for index in unsupported:
