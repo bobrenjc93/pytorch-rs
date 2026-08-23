@@ -75,6 +75,52 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             raise AssertionError(f"unknown form: {form}")
         return result, np.asarray(leaf.grad).copy()
 
+    def empty_outcome(self, module, form, sequence_type):
+        leaf = module.tensor([2.0, 3.0], requires_grad=True)
+        leaf.sum().backward()
+        initial_gradient = np.asarray(leaf.grad).copy()
+        loss = (leaf * leaf).sum()
+        roots = sequence_type()
+
+        if form == "positional":
+            result = module.autograd.backward(roots)
+        elif form == "keyword":
+            result = module.autograd.backward(tensors=roots)
+        elif form == "explicit defaults":
+            result = module.autograd.backward(
+                roots,
+                grad_tensors=None,
+                retain_graph=None,
+                create_graph=False,
+                grad_variables=None,
+                inputs=None,
+            )
+        elif form == "positional defaults":
+            result = module.autograd.backward(
+                roots, None, False, False, None, None
+            )
+        elif form == "integer false":
+            result = module.autograd.backward(roots, None, 0, 0)
+        elif form == "empty tuple grad_tensors":
+            result = module.autograd.backward(roots, ())
+        elif form == "empty list grad_tensors":
+            result = module.autograd.backward(roots, grad_tensors=[])
+        elif form == "tuple singleton None grad_tensors":
+            result = module.autograd.backward(roots, (None,))
+        elif form == "list singleton None grad_tensors":
+            result = module.autograd.backward(roots, grad_tensors=[None])
+        else:
+            raise AssertionError(f"unknown form: {form}")
+
+        gradient_after_empty_backward = np.asarray(leaf.grad).copy()
+        loss.backward()
+        return (
+            result,
+            initial_gradient,
+            gradient_after_empty_backward,
+            np.asarray(leaf.grad).copy(),
+        )
+
     def graph_outcome(self, module, root_sequence_type, grad_sequence_type=None):
         grad_tensors = self.default_grad_tensors(grad_sequence_type)
         reusable_leaf = module.tensor([1.0, 2.0], requires_grad=True)
@@ -152,6 +198,36 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                     np.testing.assert_array_equal(
                         actual_gradient, expected_gradient
                     )
+
+    def test_empty_root_noops_match_pytorch_2_13(self):
+        forms = (
+            "positional",
+            "keyword",
+            "explicit defaults",
+            "positional defaults",
+            "integer false",
+            "empty tuple grad_tensors",
+            "empty list grad_tensors",
+            "tuple singleton None grad_tensors",
+            "list singleton None grad_tensors",
+        )
+        for sequence_type in (tuple, list):
+            for form in forms:
+                with self.subTest(sequence_type=sequence_type, form=form):
+                    actual = self.empty_outcome(torch, form, sequence_type)
+                    expected = self.empty_outcome(
+                        reference_torch, form, sequence_type
+                    )
+                    self.assertIsNone(actual[0])
+                    self.assertIsNone(expected[0])
+                    np.testing.assert_array_equal(actual[1], actual[2])
+                    np.testing.assert_array_equal(expected[1], expected[2])
+                    for actual_gradient, expected_gradient in zip(
+                        actual[1:], expected[1:]
+                    ):
+                        np.testing.assert_array_equal(
+                            actual_gradient, expected_gradient
+                        )
 
     def test_accumulation_graph_reuse_and_freeing_match_pytorch_2_13(self):
         for root_sequence_type in (None, tuple, list):
