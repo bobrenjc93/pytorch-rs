@@ -3,9 +3,10 @@
 from collections.abc import Sequence
 
 from .overrides import (
-    _dispatch_exact_native_variadic_torch_function,
     _dispatch_unary_torch_function,
+    _dispatch_variadic_torch_function,
     _get_current_function_mode,
+    _has_variadic_torch_function_override,
 )
 from .torch_rs import (
     Size,
@@ -161,9 +162,11 @@ def atleast_2d(*tensors):
         ()
     """
     if len(tensors) > 1:
-        if any(type(tensor) is not Tensor for tensor in tensors):
+        if any(
+            type(tensor) is not Tensor for tensor in tensors
+        ) and not _has_variadic_torch_function_override(tensors):
             raise TypeError(_ATLEAST_2D_VARIADIC_UNSUPPORTED)
-        return _dispatch_exact_native_variadic_torch_function(
+        return _dispatch_variadic_torch_function(
             atleast_2d,
             _atleast_2d_variadic_impl,
             tensors,
@@ -238,7 +241,7 @@ def atleast_3d(*tensors):
     if len(tensors) > 1:
         if any(type(tensor) is not Tensor for tensor in tensors):
             raise TypeError(_ATLEAST_3D_VARIADIC_UNSUPPORTED)
-        return _dispatch_exact_native_variadic_torch_function(
+        return _dispatch_variadic_torch_function(
             atleast_3d,
             _atleast_3d_variadic_impl,
             tensors,

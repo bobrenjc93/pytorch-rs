@@ -976,6 +976,221 @@ class Atleast2dReferenceTests(unittest.TestCase):
             self.override_contract(reference_torch),
         )
 
+    def variadic_override_contract(self, module):
+        function = module.atleast_2d
+        source = module.tensor([1.0, 2.0], dtype=module.float32)
+        marker = object()
+        events = []
+
+        def mode_stack_labels():
+            return tuple(
+                mode.label
+                for mode in module.overrides._get_current_function_mode_stack()
+            )
+
+        def record(label, func, types, args, kwargs):
+            events.append(
+                (
+                    label,
+                    func,
+                    types,
+                    args,
+                    kwargs,
+                    mode_stack_labels(),
+                )
+            )
+
+        def normalize(recorded, operands):
+            normalized = []
+            for label, func, dispatch_types, args, kwargs, modes in recorded:
+                normalized.append(
+                    (
+                        label,
+                        func is function,
+                        tuple(item.__name__ for item in dispatch_types),
+                        len(args),
+                        tuple(
+                            argument is operand
+                            for argument, operand in zip(
+                                args, operands, strict=True
+                            )
+                        ),
+                        kwargs,
+                        modes,
+                    )
+                )
+            return tuple(normalized)
+
+        class BaseOverride:
+            label = "base"
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                record(cls.label, func, types, args, kwargs)
+                return NotImplemented
+
+        class SubOverride(BaseOverride):
+            label = "sub"
+
+        class AcceptingOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                record("accepting", func, types, args, kwargs)
+                return marker
+
+        operands = (
+            BaseOverride(),
+            source,
+            AcceptingOverride(),
+            SubOverride(),
+            BaseOverride(),
+        )
+        direct_result = function(*operands)
+        direct = (direct_result is marker, normalize(events, operands))
+
+        events.clear()
+
+        class DisabledOverride:
+            __torch_function__ = (
+                reference_torch._C._disabled_torch_function_impl
+            )
+
+        disabled_operands = (
+            source,
+            DisabledOverride(),
+            AcceptingOverride(),
+        )
+        disabled_result = function(*disabled_operands)
+        disabled = (
+            disabled_result is marker,
+            normalize(events, disabled_operands),
+        )
+
+        events.clear()
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                record(self.label, func, types, args, kwargs)
+                return func(*args, **(kwargs or {}))
+
+        mode_operands = (source, AcceptingOverride())
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                nested_result = function(*mode_operands)
+                nested_restored = (
+                    module.overrides._get_current_function_mode_stack()
+                    == [lower, upper]
+                )
+        nested = (
+            nested_result is marker,
+            normalize(events, mode_operands),
+            nested_restored,
+            not module.overrides._get_current_function_mode_stack(),
+        )
+
+        events.clear()
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                record(self.label, func, types, args, kwargs)
+                return NotImplemented
+
+        declining_mode = DecliningMode("declining-mode")
+        with declining_mode:
+            mode_result = function(*mode_operands)
+            mode_restored = (
+                module.overrides._get_current_function_mode_stack()
+                == [declining_mode]
+            )
+        declining_mode_outcome = (
+            mode_result is marker,
+            normalize(events, mode_operands),
+            mode_restored,
+        )
+
+        events.clear()
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                record("declining-override", func, types, args, kwargs)
+                return NotImplemented
+
+        declining_operands = (source, DecliningOverride())
+        try:
+            function(*declining_operands)
+        except Exception as error:
+            declining_error = (
+                type(error).__name__,
+                self.normalize_error(error).replace(
+                    "torch_rs.Tensor", "torch.Tensor"
+                ),
+                error.args == (str(error),),
+            )
+        else:
+            self.fail(f"{module.__name__} accepted declining operands")
+        declining = (
+            declining_error,
+            normalize(events, declining_operands),
+        )
+
+        events.clear()
+        expected_error = ValueError("operand failed")
+
+        class RaisingOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                record("raising-override", func, types, args, kwargs)
+                raise expected_error
+
+        raising_operands = (source, RaisingOverride())
+        raising_mode = DecliningMode("raising-mode")
+        with raising_mode:
+            try:
+                function(*raising_operands)
+            except Exception as error:
+                raising_error = (
+                    error is expected_error,
+                    type(error).__name__,
+                    str(error),
+                    error.args,
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a raising operand")
+            raising_restored = (
+                module.overrides._get_current_function_mode_stack()
+                == [raising_mode]
+            )
+        raising = (
+            raising_error,
+            normalize(events, raising_operands),
+            raising_restored,
+            not module.overrides._get_current_function_mode_stack(),
+        )
+
+        return {
+            "direct": direct,
+            "disabled": disabled,
+            "nested": nested,
+            "declining-mode": declining_mode_outcome,
+            "declining-operands": declining,
+            "raising": raising,
+        }
+
+    def test_variadic_operand_overrides_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.variadic_override_contract(torch),
+            self.variadic_override_contract(reference_torch),
+        )
+
     def test_metadata_signature_documentation_exports_and_pickle_match(self):
         actual_functional = importlib.import_module("torch_rs.functional")
         expected_functional = importlib.import_module("torch.functional")

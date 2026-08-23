@@ -158,51 +158,125 @@ def _dispatch_unary_torch_function(
     raise TypeError(message)
 
 
-def _dispatch_exact_native_variadic_torch_function(
+def _overloaded_variadic_arguments(inputs, include_tensor=True):
+    overloaded_types = set()
+    overloaded_args = []
+    for input in inputs:
+        input_type = type(input)
+        if input_type in overloaded_types:
+            continue
+
+        if input_type is Tensor:
+            if not include_tensor:
+                continue
+        elif not hasattr(input_type, "__torch_function__"):
+            continue
+        elif _is_disabled_torch_function_impl(input_type.__torch_function__):
+            continue
+
+        if overloaded_types:
+            index = len(overloaded_args)
+            for old_index, old_arg in enumerate(overloaded_args):
+                if issubclass(input_type, type(old_arg)):
+                    index = old_index
+                    break
+            overloaded_args.insert(index, input)
+            overloaded_types.add(input_type)
+        else:
+            overloaded_args = [input]
+            overloaded_types = {input_type}
+    return overloaded_args
+
+
+def _has_variadic_torch_function_override(inputs):
+    for input in inputs:
+        input_type = type(input)
+        if input_type is Tensor or not hasattr(
+            input_type, "__torch_function__"
+        ):
+            continue
+        if not _is_disabled_torch_function_impl(
+            input_type.__torch_function__
+        ):
+            return True
+    return False
+
+
+def _dispatch_variadic_torch_function(
     public_function,
     implementation,
     inputs,
     keyword_arguments,
     include_tensor=True,
 ):
-    """Dispatch exact native variadic inputs through the active mode only."""
+    """Dispatch variadic inputs through modes and distinct operand overrides."""
+    overloaded_args = _overloaded_variadic_arguments(inputs, include_tensor)
     mode = _get_current_function_mode()
-    if mode is None:
+    if mode is None and (
+        not overloaded_args
+        or all(type(argument) is Tensor for argument in overloaded_args)
+    ):
         return implementation(inputs)
 
-    dispatch_types = (Tensor,) if include_tensor else ()
-    popped_mode = _pop_mode()
-    mode_kwargs = keyword_arguments.copy()
-    try:
-        result = popped_mode.__torch_function__(
-            public_function,
-            dispatch_types,
-            inputs,
-            mode_kwargs,
-        )
-    finally:
-        _push_mode(popped_mode)
-    if result is not NotImplemented:
-        return result
+    types = tuple(type(argument) for argument in overloaded_args)
+    dispatch_kwargs = keyword_arguments.copy()
+    if mode is not None:
+        popped_mode = _pop_mode()
+        try:
+            result = popped_mode.__torch_function__(
+                public_function,
+                types,
+                inputs,
+                dispatch_kwargs,
+            )
+        finally:
+            _push_mode(popped_mode)
+        if result is not NotImplemented:
+            return result
 
-    if include_tensor:
-        # PyTorch retries through Tensor.__torch_function__. That fallback
-        # re-enters the public wrapper with the same mode active, but without
-        # including the exact Tensor type in the next dispatch.
-        if mode_kwargs:
-            return public_function(*inputs, **mode_kwargs)
-        return _dispatch_exact_native_variadic_torch_function(
+    for overloaded_arg in overloaded_args:
+        if type(overloaded_arg) is Tensor:
+            # Tensor's native fallback only re-enters the public wrapper when
+            # it is the sole overloaded type. Alongside operand overrides it
+            # declines so the next distinct type receives the call.
+            if len(overloaded_args) == 1:
+                if dispatch_kwargs:
+                    return public_function(*inputs, **dispatch_kwargs)
+                return _dispatch_variadic_torch_function(
+                    public_function,
+                    implementation,
+                    inputs,
+                    keyword_arguments,
+                    include_tensor=False,
+                )
+            continue
+
+        torch_func_method = overloaded_arg.__torch_function__
+        if (
+            hasattr(torch_func_method, "__self__")
+            and torch_func_method.__self__ is overloaded_arg
+        ):
+            warnings.warn(
+                "Defining your `__torch_function__ as a plain method is "
+                "deprecated and will be an error in future, please define "
+                "it as a classmethod.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        result = torch_func_method(
             public_function,
-            implementation,
+            types,
             inputs,
-            keyword_arguments,
-            include_tensor=False,
+            dispatch_kwargs,
         )
+        if result is not NotImplemented:
+            return result
 
     func_name = f"{public_function.__module__}.{public_function.__name__}"
     message = (
         f"no implementation found for '{func_name}' on types that implement "
-        f"__torch_function__: []"
+        f"__torch_function__: {[type(arg) for arg in overloaded_args]}"
     )
     current_mode = _get_current_function_mode()
     if current_mode is not None:

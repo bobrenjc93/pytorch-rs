@@ -499,40 +499,190 @@ class Atleast2dTests(unittest.TestCase):
                     torch.atleast_2d(sequence)
         self.assertEqual(Override.calls, [])
 
-    def test_variadic_operand_overrides_remain_explicitly_unsupported(self):
+    def test_variadic_operand_overrides_follow_subclass_precedence(self):
         source = torch.tensor([1.0, 2.0])
+        marker = object()
+        events = []
 
-        class Override:
-            calls = []
+        class BaseOverride:
+            label = "base"
+            result = NotImplemented
 
             @classmethod
             def __torch_function__(cls, func, types, args=(), kwargs=None):
-                cls.calls.append((func, types, args, kwargs))
-                return object()
+                events.append((cls.label, func, types, args, kwargs))
+                return cls.result
+
+        class SubOverride(BaseOverride):
+            label = "sub"
+
+        class AcceptingOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("accepting", func, types, args, kwargs))
+                return marker
+
+        operands = (
+            BaseOverride(),
+            source,
+            AcceptingOverride(),
+            SubOverride(),
+            BaseOverride(),
+        )
+        self.assertIs(torch.atleast_2d(*operands), marker)
+        self.assertEqual([event[0] for event in events], ["sub", "base", "accepting"])
+        self.assertTrue(all(event[1] is torch.atleast_2d for event in events))
+        self.assertTrue(
+            all(
+                event[2]
+                == (SubOverride, BaseOverride, torch.Tensor, AcceptingOverride)
+                for event in events
+            )
+        )
+        self.assertTrue(
+            all(
+                len(event[3]) == len(operands)
+                and all(
+                    argument is operand
+                    for argument, operand in zip(
+                        event[3], operands, strict=True
+                    )
+                )
+                for event in events
+            )
+        )
+        self.assertTrue(all(event[4] == {} for event in events))
+        self.assertEqual(len({id(event[4]) for event in events}), 1)
+
+    def test_variadic_operand_overrides_follow_modes_and_restore_the_stack(self):
+        source = torch.tensor([1.0, 2.0])
+        override_marker = object()
+        mode_marker = object()
+        events = []
+
+        def stack():
+            return tuple(torch.overrides._get_current_function_mode_stack())
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(("override", func, types, args, kwargs, stack()))
+                return override_marker
 
         value = Override()
-        for args in ((source, value), (value, source)):
-            with self.subTest(args=args), self.assertRaisesRegex(
-                TypeError, f"^{re.escape(UNSUPPORTED)}$"
-            ):
-                torch.atleast_2d(*args)
-        self.assertEqual(Override.calls, [])
+        operands = (source, value)
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
-            def __init__(self):
-                self.calls = []
+            def __init__(self, label, result):
+                self.label = label
+                self.result = result
 
             def __torch_function__(self, func, types, args=(), kwargs=None):
-                self.calls.append((func, types, args, kwargs))
-                return object()
+                events.append(
+                    (self.label, func, types, args, kwargs, stack())
+                )
+                return self.result
 
-        mode = RecordingMode()
-        for args in ((source, value), (value, source), (source, None)):
-            with self.subTest(mode_args=args), mode, self.assertRaisesRegex(
-                TypeError, f"^{re.escape(UNSUPPORTED)}$"
+        accepting = RecordingMode("accepting-mode", mode_marker)
+        with accepting:
+            self.assertIs(torch.atleast_2d(*operands), mode_marker)
+            self.assertEqual(stack(), (accepting,))
+        self.assertEqual([event[0] for event in events], ["accepting-mode"])
+
+        events.clear()
+        declining = RecordingMode("declining-mode", NotImplemented)
+        with declining:
+            self.assertIs(torch.atleast_2d(*operands), override_marker)
+            self.assertEqual(stack(), (declining,))
+        self.assertEqual(
+            [event[0] for event in events],
+            ["declining-mode", "override"],
+        )
+        self.assertEqual(events[0][5], ())
+        self.assertEqual(events[1][5], (declining,))
+        self.assertIs(events[0][4], events[1][4])
+
+        events.clear()
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(
+                    (self.label, func, types, args, kwargs, stack())
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                self.assertIs(torch.atleast_2d(*operands), override_marker)
+                self.assertEqual(stack(), (lower, upper))
+        self.assertEqual(
+            [event[0] for event in events],
+            ["upper", "lower", "override"],
+        )
+        self.assertEqual(events[0][5], (lower,))
+        self.assertEqual(events[1][5], ())
+        self.assertEqual(events[2][5], ())
+        self.assertTrue(all(event[1] is torch.atleast_2d for event in events))
+        self.assertTrue(
+            all(event[2] == (torch.Tensor, Override) for event in events)
+        )
+        self.assertTrue(all(event[3] == operands for event in events))
+        self.assertTrue(all(event[4] == {} for event in events))
+        self.assertEqual(stack(), ())
+
+    def test_variadic_operand_override_failures_restore_the_stack(self):
+        source = torch.tensor([1.0, 2.0])
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "^no implementation found for "
+            "'torch_rs\\.functional\\.atleast_2d' on types that implement "
+            "__torch_function__:",
+        ):
+            torch.atleast_2d(source, DecliningOverride())
+
+        expected_error = ValueError("operand failed")
+
+        class RaisingOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                raise expected_error
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        mode = DecliningMode()
+        with mode:
+            with self.assertRaisesRegex(
+                TypeError,
+                "^no implementation found for "
+                "'torch_rs\\.functional\\.atleast_2d' on types that "
+                "implement __torch_function__:",
             ):
-                torch.atleast_2d(*args)
-        self.assertEqual(mode.calls, [])
+                torch.atleast_2d(source, DecliningOverride())
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [mode]
+            )
+
+        with mode:
+            with self.assertRaises(ValueError) as raised:
+                torch.atleast_2d(source, RaisingOverride())
+            self.assertIs(raised.exception, expected_error)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [mode]
+            )
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
     def test_variadic_exact_tensors_dispatch_through_nested_modes(self):
         scalar = torch.tensor(1.0)
@@ -797,6 +947,21 @@ class Atleast2dTests(unittest.TestCase):
                 TypeError, f"^{re.escape(UNSUPPORTED)}$"
             ):
                 call()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return object()
+
+        mode = RecordingMode()
+        with mode, self.assertRaisesRegex(
+            TypeError, f"^{re.escape(UNSUPPORTED)}$"
+        ):
+            torch.atleast_2d(source, None)
+        self.assertEqual(mode.calls, [])
 
         mixed_sequences = (
             (source, None),
