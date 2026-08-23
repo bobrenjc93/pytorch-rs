@@ -5537,6 +5537,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96
       }
+    },
+    {
+      "key": "pr:772",
+      "recordedAt": "2026-08-23T20:34:48.345Z",
+      "label": "PR #772",
+      "kind": "leaf",
+      "prNumber": 772,
+      "title": "Accept two scalar leaf roots in torch.autograd.backward",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 87.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 70,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }
