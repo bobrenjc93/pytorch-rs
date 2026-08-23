@@ -3506,7 +3506,18 @@ fn materialize_contiguous_trailing_broadcast(
         if trailing_singleton && left.shape[..prefix_end] == right.shape[..prefix_end] {
             return materialize_contiguous_trailing_singleton_broadcast(left, right, operation);
         }
-        return Ok(None);
+        // A rank-two [1, N] row is the same reusable contiguous trailing
+        // slice as [N], but retains its leading singleton dimension.
+        if left.shape.len() != 2 || left.shape[1] != right.shape[1] {
+            return Ok(None);
+        }
+        if left.shape[0] != 1 && right.shape[0] == 1 {
+            (left, right, false)
+        } else if right.shape[0] != 1 && left.shape[0] == 1 {
+            (right, left, true)
+        } else {
+            return Ok(None);
+        }
     } else {
         return Ok(None);
     };
@@ -4783,6 +4794,37 @@ mod tests {
         left + right
     }
 
+    fn assert_contiguous_trailing_broadcast_matches_fallback(left: &Tensor, right: &Tensor) {
+        let shared_left = shared_gradient_copy(left);
+        let shared_right = shared_gradient_copy(right);
+        let expected = binary_outputs(&shared_left, &shared_right);
+
+        for actual in [
+            binary_outputs(left, right),
+            binary_outputs(left, &shared_right),
+            binary_outputs(&shared_left, right),
+        ] {
+            for (actual, expected) in actual.into_iter().zip(&expected) {
+                assert_eq!(actual.shape(), expected.shape());
+                assert_eq!(actual.stride(), expected.stride());
+                assert_eq!(actual.storage_offset(), expected.storage_offset());
+                assert_eq!(actual.dtype(), expected.dtype());
+                assert_eq!(actual.device(), expected.device());
+                assert!(
+                    actual
+                        .logical_values()
+                        .map(f32::to_bits)
+                        .eq(expected.logical_values().map(f32::to_bits))
+                );
+            }
+        }
+    }
+
+    fn assert_uses_contiguous_trailing_broadcast_fast_path(left: &Tensor, right: &Tensor) {
+        let output = materialize_contiguous_trailing_broadcast(left, right, &add_values).unwrap();
+        assert!(output.is_some());
+    }
+
     fn offset_contiguous_tensor(bits: &[u32], shape: &[usize]) -> Tensor {
         let elements = shape.iter().product::<usize>();
         assert_eq!(bits.len(), elements);
@@ -5219,6 +5261,95 @@ mod tests {
         let empty_vector = Tensor::zeros([0]).unwrap();
         assert_matches_fallback(&empty_broad, &empty_vector);
         assert_matches_fallback(&empty_vector, &empty_broad);
+    }
+
+    #[test]
+    fn contiguous_rank_two_row_broadcast_is_bitwise_identical_to_fallback() {
+        let matrix = Tensor::from_vec(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x3f80_0000,
+                0xbf80_0000,
+                0x7f80_0000,
+                0xff80_0000,
+                0x0000_0001,
+                0x8000_0001,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [2, 4],
+        )
+        .unwrap();
+        let row = Tensor::from_vec(
+            [0x8000_0000, 0x0000_0000, 0xbf80_0000, 0x4000_0000]
+                .map(f32::from_bits)
+                .to_vec(),
+            [1, 4],
+        )
+        .unwrap();
+        for (left, right) in [(&matrix, &row), (&row, &matrix)] {
+            assert_uses_contiguous_trailing_broadcast_fast_path(left, right);
+            assert_contiguous_trailing_broadcast_matches_fallback(left, right);
+        }
+
+        let offset_matrix = offset_contiguous_tensor(
+            &[
+                0x7f81_2345,
+                0xffc1_2345,
+                0x7fc5_4321,
+                0xff85_4321,
+                0xffc6_789a,
+                0x7f86_789a,
+                0xff81_abcd,
+                0x7fc2_abcd,
+            ],
+            &[2, 4],
+        );
+        let offset_row = offset_contiguous_tensor(
+            &[0xffc5_4321, 0x7f85_6789, 0x8000_0000, 0x0000_0000],
+            &[1, 4],
+        );
+        assert_eq!(offset_matrix.storage_offset(), 8);
+        assert_eq!(offset_row.storage_offset(), 4);
+        for (left, right) in [(&offset_matrix, &offset_row), (&offset_row, &offset_matrix)] {
+            assert_uses_contiguous_trailing_broadcast_fast_path(left, right);
+            assert_contiguous_trailing_broadcast_matches_fallback(left, right);
+        }
+
+        let strided_matrix = offset_strided_matrix([
+            0x7f81_2345,
+            0xffc5_4321,
+            0x7f80_0000,
+            0xff80_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x3f80_0000,
+        ]);
+        let fallback_row =
+            offset_contiguous_tensor(&[0xff85_4321, 0x8000_0000, 0x3f80_0000], &[1, 3]);
+        for (left, right) in [
+            (&strided_matrix, &fallback_row),
+            (&fallback_row, &strided_matrix),
+        ] {
+            assert!(
+                materialize_contiguous_trailing_broadcast(left, right, &add_values)
+                    .unwrap()
+                    .is_none()
+            );
+            assert_contiguous_trailing_broadcast_matches_fallback(left, right);
+        }
+
+        let empty_matrix = Tensor::zeros([0, 4]).unwrap();
+        assert!(
+            materialize_contiguous_trailing_broadcast(&empty_matrix, &row, &add_values)
+                .unwrap()
+                .is_none()
+        );
+        assert_contiguous_trailing_broadcast_matches_fallback(&empty_matrix, &row);
+        assert_contiguous_trailing_broadcast_matches_fallback(&row, &empty_matrix);
     }
 
     #[test]
