@@ -1,0 +1,245 @@
+import copy
+import importlib
+import inspect
+import pickle
+import pickletools
+import re
+import sys
+import types
+import typing
+import unittest
+
+import torch_rs as torch
+
+try:
+    import torch as reference_torch
+except ImportError:
+    reference_torch = None
+
+
+@unittest.skipIf(reference_torch is None, "install the reference dependency group")
+class MpsIsBuiltReferenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if reference_torch.__version__.split("+")[0] != "2.13.0":
+            raise AssertionError(
+                "backends.mps.is_built differentials require pinned PyTorch 2.13.0"
+            )
+
+    def assert_error_matches(self, actual_call, expected_call):
+        with self.assertRaises(Exception) as actual_raised:
+            actual_call()
+        with self.assertRaises(Exception) as expected_raised:
+            expected_call()
+        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
+        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+        self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
+
+    def pickle_shape(self, function, protocol):
+        shape = []
+        for opcode, argument, _ in pickletools.genops(
+            pickle.dumps(function, protocol=protocol)
+        ):
+            if opcode.name == "FRAME":
+                argument = "<frame length>"
+            elif isinstance(argument, str):
+                argument = argument.replace("torch_rs", "torch")
+            shape.append((opcode.name, argument))
+        return shape
+
+    def test_signature_documentation_and_identity_match_pytorch_2_13(self):
+        actual_module = importlib.import_module("torch_rs.backends.mps")
+        expected_module = importlib.import_module("torch.backends.mps")
+        actual = actual_module.is_built
+        expected = expected_module.is_built
+
+        self.assertIsNone(actual_module.__doc__)
+        self.assertEqual(actual_module.__doc__, expected_module.__doc__)
+        self.assertEqual(
+            actual_module.__all__,
+            [name for name in expected_module.__all__ if name == "is_built"],
+        )
+        self.assertIs(type(actual), types.FunctionType)
+        self.assertIs(type(expected), types.FunctionType)
+        self.assertEqual(str(inspect.signature(actual)), str(inspect.signature(expected)))
+        self.assertEqual(inspect.get_annotations(actual), inspect.get_annotations(expected))
+        self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
+        self.assertEqual(actual.__name__, expected.__name__)
+        self.assertEqual(actual.__qualname__, expected.__qualname__)
+        self.assertEqual(
+            actual.__module__.replace("torch_rs", "torch"), expected.__module__
+        )
+        self.assertIs(inspect.getmodule(actual), actual_module)
+        self.assertIs(inspect.getmodule(expected), expected_module)
+        self.assertEqual(actual.__doc__, expected.__doc__)
+        self.assertEqual(actual.__defaults__, expected.__defaults__)
+        self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
+        self.assertEqual(actual.__dict__, expected.__dict__)
+        self.assertEqual(
+            hasattr(actual, "__text_signature__"),
+            hasattr(expected, "__text_signature__"),
+        )
+        self.assertEqual(actual.__code__.co_names, expected.__code__.co_names)
+
+    def test_imports_copying_and_pickling_match_the_supported_scope(self):
+        actual_backends = importlib.import_module("torch_rs.backends")
+        expected_backends = importlib.import_module("torch.backends")
+        actual_module = importlib.import_module("torch_rs.backends.mps")
+        expected_module = importlib.import_module("torch.backends.mps")
+        actual = actual_module.is_built
+        expected = expected_module.is_built
+
+        self.assertIs(torch.backends, actual_backends)
+        self.assertIs(reference_torch.backends, expected_backends)
+        self.assertIs(actual_backends.mps, actual_module)
+        self.assertIs(expected_backends.mps, expected_module)
+        self.assertIs(sys.modules["torch_rs.backends.mps"], actual_module)
+        self.assertIs(sys.modules["torch.backends.mps"], expected_module)
+
+        for package_name, module, function in (
+            ("torch_rs", actual_module, actual),
+            ("torch", expected_module, expected),
+        ):
+            backend_import = {}
+            function_import = {}
+            exec(f"from {package_name}.backends import mps", backend_import)
+            exec(
+                f"from {package_name}.backends.mps import is_built",
+                function_import,
+            )
+            self.assertIs(backend_import["mps"], module)
+            self.assertIs(function_import["is_built"], function)
+
+        actual_child_wildcard = {}
+        expected_child_wildcard = {}
+        exec("from torch_rs.backends.mps import *", actual_child_wildcard)
+        exec("from torch.backends.mps import *", expected_child_wildcard)
+        self.assertEqual(
+            {name for name in actual_child_wildcard if not name.startswith("__")},
+            {
+                name
+                for name in expected_child_wildcard
+                if name == "is_built"
+            },
+        )
+
+        self.assertIs(copy.copy(actual), actual)
+        self.assertIs(copy.copy(expected), expected)
+        self.assertIs(copy.deepcopy(actual), actual)
+        self.assertIs(copy.deepcopy(expected), expected)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
+                self.assertIs(pickle.loads(pickle.dumps(expected, protocol)), expected)
+                self.assertEqual(
+                    self.pickle_shape(actual, protocol),
+                    self.pickle_shape(expected, protocol),
+                )
+
+    def reload_contract(self, root):
+        parent = root.backends
+        module = parent.mps
+        old_function = module.is_built
+        namespace = module.__dict__
+        reloaded = importlib.reload(module)
+        new_function = module.is_built
+
+        try:
+            pickle.dumps(old_function)
+        except Exception as error:
+            stale_pickle_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-fA-F]+", "0x...", str(error)).replace(
+                    "torch_rs", "torch"
+                ),
+            )
+        else:
+            self.fail("a stale MPS build query remained pickleable")
+
+        return (
+            reloaded is module,
+            module.__dict__ is namespace,
+            parent.mps is module,
+            sys.modules[module.__name__] is module,
+            old_function is not new_function,
+            copy.copy(new_function) is new_function,
+            copy.deepcopy(new_function) is new_function,
+            pickle.loads(pickle.dumps(new_function)) is new_function,
+            stale_pickle_error,
+        )
+
+    def test_reload_behavior_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.reload_contract(torch),
+            self.reload_contract(reference_torch),
+        )
+        actual = torch.backends.mps.is_built
+        expected = reference_torch.backends.mps.is_built
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertEqual(
+                    self.pickle_shape(actual, protocol),
+                    self.pickle_shape(expected, protocol),
+                )
+
+    def test_argument_errors_match_pytorch_2_13(self):
+        actual = torch.backends.mps.is_built
+        expected = reference_torch.backends.mps.is_built
+        cases = (
+            (lambda: actual(None), lambda: expected(None)),
+            (lambda: actual(None, None), lambda: expected(None, None)),
+            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
+            (
+                lambda: actual(None, enabled=True),
+                lambda: expected(None, enabled=True),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
+
+    def test_build_metadata_and_runtime_boundary_match_the_supported_scope(self):
+        actual = torch.backends.mps.is_built()
+        expected = reference_torch.backends.mps.is_built()
+
+        self.assertIs(type(actual), bool)
+        self.assertIs(type(expected), bool)
+        self.assertIs(actual, torch._C._has_mps)
+        self.assertIs(actual, False)
+        self.assertFalse(hasattr(torch, "_has_mps"))
+        self.assertNotIn("_has_mps", torch.__all__)
+        self.assertNotIn("_has_mps", torch._C.__all__)
+
+        self.assertFalse(hasattr(torch.backends.mps, "is_available"))
+        self.assertTrue(hasattr(reference_torch.backends.mps, "is_available"))
+        self.assertFalse(hasattr(torch, "mps"))
+        self.assertTrue(hasattr(reference_torch, "mps"))
+        self.assertFalse(hasattr(torch.Tensor, "mps"))
+        self.assertFalse(hasattr(torch.Tensor, "to"))
+        self.assertTrue(hasattr(reference_torch.Tensor, "to"))
+
+    def test_only_the_mps_build_query_is_exposed(self):
+        actual_module = torch.backends.mps
+        expected_module = reference_torch.backends.mps
+        actual_public = {
+            name for name in vars(actual_module) if not name.startswith("_")
+        }
+        expected_public = {
+            name for name in vars(expected_module) if not name.startswith("_")
+        }
+
+        self.assertEqual(actual_public, {"is_built", "torch"})
+        self.assertTrue(actual_public.issubset(expected_public))
+        self.assertTrue(
+            {
+                "get_core_count",
+                "get_name",
+                "is_available",
+                "is_macos13_or_newer",
+                "is_macos_or_newer",
+            }.issubset(expected_public - actual_public)
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
