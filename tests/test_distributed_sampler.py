@@ -385,6 +385,7 @@ class DistributedSamplerTests(unittest.TestCase):
                 "StackDataset",
                 "Subset",
                 "TensorDataset",
+                "default_convert",
                 "get_worker_info",
             ],
         )
