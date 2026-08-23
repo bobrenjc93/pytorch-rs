@@ -1129,6 +1129,7 @@ Example::
     name = "Tensor",
     module = "torch_rs",
     extends = PyTensorBase,
+    weakref,
     skip_from_py_object
 )]
 pub(crate) struct PyTensor {
@@ -3518,6 +3519,28 @@ impl PyTensor {
     #[classattr]
     fn __array_priority__() -> f64 {
         1000.0
+    }
+
+    // Tensor.__hash__ returns the wrapper identity in PyTorch, rather than
+    // object.__hash__'s shifted pointer value.
+    fn __hash__(slf: &Bound<'_, Self>) -> usize {
+        slf.as_ptr().addr()
+    }
+
+    // PyO3 allocates and manages the weak-reference slot, but native classes
+    // need an explicit descriptor to expose the standard metadata attribute.
+    #[doc = "list of weak references to the object"]
+    #[getter]
+    fn __weakref__(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
+        let references = PyModule::import(slf.py(), "weakref")?
+            .getattr("getweakrefs")?
+            .call1((slf.as_any(),))?;
+        let references = references.cast::<PyList>()?;
+        if references.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(references.get_item(0)?.unbind()))
+        }
     }
 
     #[doc = "\nReturns the number of bytes consumed by the \"view\" of elements of the Tensor\nif the Tensor does not use sparse storage layout.\nDefined to be :meth:`~Tensor.numel()` * :meth:`~Tensor.element_size()`\n"]

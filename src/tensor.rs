@@ -4501,6 +4501,13 @@ mod tests {
     use std::cell::RefCell;
     use std::sync::Arc;
 
+    #[cfg(feature = "python-bindings")]
+    use pyo3::prelude::*;
+    #[cfg(feature = "python-bindings")]
+    use pyo3::types::{PyWeakrefMethods, PyWeakrefReference};
+
+    #[cfg(feature = "python-bindings")]
+    use crate::python::PyTensor;
     use crate::storage::Storage;
 
     use super::{
@@ -5691,6 +5698,40 @@ mod tests {
             );
         }
         assert!(output.requires_grad());
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn python_weak_reference_does_not_retain_storage_or_autograd_graph() {
+        let leaf = Tensor::ones([4]).unwrap().with_requires_grad(true);
+        let leaf_storage = Arc::downgrade(&leaf.storage);
+        let leaf_autograd = Arc::downgrade(leaf.autograd.as_ref().unwrap());
+        let output = leaf.square().unwrap();
+        let output_storage = Arc::downgrade(&output.storage);
+        let output_autograd = Arc::downgrade(output.autograd.as_ref().unwrap());
+        drop(leaf);
+
+        assert!(leaf_storage.upgrade().is_some());
+        assert!(leaf_autograd.upgrade().is_some());
+
+        Python::initialize();
+        Python::attach(|py| {
+            let wrapper = Py::new(py, PyTensor::new(output)).unwrap();
+            let reference = PyWeakrefReference::new(wrapper.bind(py).as_any()).unwrap();
+            assert!(
+                reference
+                    .upgrade()
+                    .is_some_and(|referent| referent.is(wrapper.bind(py)))
+            );
+
+            drop(wrapper);
+            assert!(reference.upgrade().is_none());
+        });
+
+        assert!(output_storage.upgrade().is_none());
+        assert!(output_autograd.upgrade().is_none());
+        assert!(leaf_storage.upgrade().is_none());
+        assert!(leaf_autograd.upgrade().is_none());
     }
 
     #[test]
