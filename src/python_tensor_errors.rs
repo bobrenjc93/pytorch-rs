@@ -39,6 +39,7 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::BackwardRequiresScalar { .. }
         | TensorError::AutogradRecordingUnsupported { .. }
         | TensorError::DoesNotRequireGrad
+        | TensorError::DoesNotRequireGradAt { .. }
         | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),
         TensorError::InvalidScalarIndex
         | TensorError::SliceCannotApplyToScalar

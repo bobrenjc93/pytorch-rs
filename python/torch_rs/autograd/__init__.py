@@ -10,6 +10,7 @@ from .grad_mode import no_grad as no_grad
 
 
 _Tensor = _C.Tensor
+_backward_leaf_roots = _C._backward_leaf_roots
 _TensorOrTensorsOrGradEdge = _Union[
     _Tensor,
     _Sequence[_Tensor],
@@ -29,27 +30,45 @@ def _require_default_graph_option(name, value, *, allow_none):
         )
 
 
-def _normalize_root(tensors):
+def _require_supported_two_roots(roots):
+    if any(
+        root.numel() != 1 or not root.requires_grad or not root.is_leaf
+        for root in roots
+    ):
+        raise NotImplementedError(
+            "torch_rs.autograd.backward only supports two roots when both "
+            "are one-element native leaf Tensors requiring gradients"
+        )
+
+
+def _normalize_roots(tensors):
     if type(tensors) is _Tensor:
-        return tensors
+        return (tensors,)
     if type(tensors) is tuple or type(tensors) is list:
         if len(tensors) == 0:
-            return None
+            return ()
         if len(tensors) == 1 and type(tensors[0]) is _Tensor:
-            return tensors[0]
+            return (tensors[0],)
+        if len(tensors) == 2 and all(type(root) is _Tensor for root in tensors):
+            roots = tuple(tensors)
+            _require_supported_two_roots(roots)
+            return roots
     raise TypeError(
         "torch_rs.autograd.backward only supports an exact native Tensor, "
-        "directly or in an exact one-element tuple or list"
+        "directly or in an exact tuple or list containing at most two exact "
+        "native Tensors"
     )
 
 
-def _require_default_grad_tensors(grad_tensors, *, allow_empty):
+def _require_default_grad_tensors(grad_tensors, *, root_count):
     if grad_tensors is None:
         return
     if type(grad_tensors) is tuple or type(grad_tensors) is list:
-        if allow_empty and len(grad_tensors) == 0:
+        if root_count == 0 and len(grad_tensors) == 0:
             return
-        if len(grad_tensors) == 1 and grad_tensors[0] is None:
+        if len(grad_tensors) == max(1, root_count) and all(
+            gradient is None for gradient in grad_tensors
+        ):
             return
     raise NotImplementedError(
         "torch_rs.autograd.backward does not support explicit gradients"
@@ -123,8 +142,8 @@ def backward(
             ``dict(model.named_parameters())``) is also accepted, in which case
             the values are used as the input tensors.
     """
-    root = _normalize_root(tensors)
-    _require_default_grad_tensors(grad_tensors, allow_empty=root is None)
+    roots = _normalize_roots(tensors)
+    _require_default_grad_tensors(grad_tensors, root_count=len(roots))
     _require_default_graph_option("retain_graph", retain_graph, allow_none=True)
     _require_default_graph_option("create_graph", create_graph, allow_none=False)
     if grad_variables is not None:
@@ -136,8 +155,10 @@ def backward(
             "torch_rs.autograd.backward does not support inputs"
         )
 
-    if root is not None:
-        root.backward()
+    if len(roots) == 2:
+        _backward_leaf_roots(*roots)
+    elif roots:
+        roots[0].backward()
 
 
 is_multithreading_enabled = _C._is_multithreading_enabled

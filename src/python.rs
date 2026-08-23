@@ -4216,6 +4216,12 @@ fn tensor(
         .map_err(|error| tensor_error(&error))
 }
 
+#[pyfunction]
+fn _backward_leaf_roots(first: &PyTensor, second: &PyTensor) -> PyResult<()> {
+    CoreTensor::backward_leaf_roots(first.inner(), second.inner())
+        .map_err(|error| tensor_error(&error))
+}
+
 fn scalar_tensor_impl(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
@@ -10764,6 +10770,10 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
+    module.add_function(wrap_pyfunction!(_backward_leaf_roots, module)?)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_backward_leaf_roots",))?;
     torch_function_mode_stack::add_torch_function_mode_stack(module)?;
     add_torch_function_probe(module)?;
     add_variable_functions(module)?;

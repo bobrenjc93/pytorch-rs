@@ -121,6 +121,101 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             np.asarray(leaf.grad).copy(),
         )
 
+    @staticmethod
+    def run_two_root_backward(module, roots, form):
+        if form == "omitted":
+            return module.autograd.backward(roots)
+        if form == "explicit None":
+            return module.autograd.backward(roots, grad_tensors=None)
+        if form == "tuple grad_tensors":
+            return module.autograd.backward(roots, (None, None))
+        if form == "list grad_tensors":
+            return module.autograd.backward(
+                roots, grad_tensors=[None, None]
+            )
+        raise AssertionError(f"unknown form: {form}")
+
+    def two_leaf_outcome(self, module, root_sequence_type, form):
+        scalar_leaf = module.tensor(2.0, requires_grad=True)
+        strided_leaf = module.tensor([[3.0]], requires_grad=True)
+        roots = root_sequence_type((scalar_leaf, strided_leaf))
+
+        first_result = self.run_two_root_backward(module, roots, form)
+        first_gradients = (
+            np.asarray(scalar_leaf.grad).copy(),
+            np.asarray(strided_leaf.grad).copy(),
+        )
+        second_result = self.run_two_root_backward(module, roots, form)
+        second_gradients = (
+            np.asarray(scalar_leaf.grad).copy(),
+            np.asarray(strided_leaf.grad).copy(),
+        )
+        return (
+            first_result,
+            second_result,
+            tuple(strided_leaf.shape),
+            strided_leaf.stride(),
+            first_gradients,
+            second_gradients,
+        )
+
+    def duplicate_leaf_outcome(self, module, root_sequence_type, form):
+        leaf = module.tensor([4.0], requires_grad=True)
+        roots = root_sequence_type((leaf, leaf))
+
+        first_result = self.run_two_root_backward(module, roots, form)
+        first_gradient = np.asarray(leaf.grad).copy()
+        second_result = self.run_two_root_backward(module, roots, form)
+        second_gradient = np.asarray(leaf.grad).copy()
+        return first_result, second_result, first_gradient, second_gradient
+
+    def precision_duplicate_outcome(self, module, root_sequence_type, form):
+        leaf = module.tensor([1.0], requires_grad=True)
+        (leaf * 16_777_216.0).backward()
+        existing_gradient = leaf.grad
+        roots = root_sequence_type((leaf, leaf))
+
+        result = self.run_two_root_backward(module, roots, form)
+        return (
+            result,
+            leaf.grad is existing_gradient,
+            np.asarray(leaf.grad).copy(),
+        )
+
+    def rejected_no_grad_view_outcome(
+        self, module, root_sequence_type, form
+    ):
+        first = module.tensor(3.0, requires_grad=True)
+        source = module.tensor([[1.0, 2.0]], requires_grad=True)
+        with module.no_grad():
+            invalid = source.transpose(0, 1)[1]
+        roots = root_sequence_type((first, invalid))
+
+        try:
+            self.run_two_root_backward(module, roots, form)
+        except RuntimeError as error:
+            failure = (type(error).__name__, str(error), error.args)
+        else:
+            raise AssertionError("a no_grad view cannot seed backward")
+        untouched = (
+            first.grad is None,
+            invalid.grad is None,
+            source.grad is None,
+        )
+        first.backward()
+        source.sum().backward()
+        return (
+            failure,
+            tuple(invalid.shape),
+            invalid.stride(),
+            invalid.storage_offset(),
+            invalid.requires_grad,
+            invalid.is_leaf,
+            untouched,
+            first.grad.item(),
+            np.asarray(source.grad).copy(),
+        )
+
     def graph_outcome(self, module, root_sequence_type, grad_sequence_type=None):
         grad_tensors = self.default_grad_tensors(grad_sequence_type)
         reusable_leaf = module.tensor([1.0, 2.0], requires_grad=True)
@@ -228,6 +323,108 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                         np.testing.assert_array_equal(
                             actual_gradient, expected_gradient
                         )
+
+    def test_two_leaf_roots_match_pytorch_2_13(self):
+        forms = (
+            "omitted",
+            "explicit None",
+            "tuple grad_tensors",
+            "list grad_tensors",
+        )
+        for root_sequence_type in (tuple, list):
+            for form in forms:
+                with self.subTest(
+                    root_sequence_type=root_sequence_type, form=form
+                ):
+                    actual = self.two_leaf_outcome(
+                        torch, root_sequence_type, form
+                    )
+                    expected = self.two_leaf_outcome(
+                        reference_torch, root_sequence_type, form
+                    )
+                    self.assertIsNone(actual[0])
+                    self.assertIsNone(actual[1])
+                    self.assertIsNone(expected[0])
+                    self.assertIsNone(expected[1])
+                    self.assertEqual(actual[2:4], expected[2:4])
+                    for actual_gradients, expected_gradients in zip(
+                        actual[4:], expected[4:]
+                    ):
+                        for actual_gradient, expected_gradient in zip(
+                            actual_gradients, expected_gradients
+                        ):
+                            np.testing.assert_array_equal(
+                                actual_gradient, expected_gradient
+                            )
+
+    def test_duplicate_two_leaf_roots_match_pytorch_2_13(self):
+        forms = (
+            "omitted",
+            "explicit None",
+            "tuple grad_tensors",
+            "list grad_tensors",
+        )
+        for root_sequence_type in (tuple, list):
+            for form in forms:
+                with self.subTest(
+                    root_sequence_type=root_sequence_type, form=form
+                ):
+                    actual = self.duplicate_leaf_outcome(
+                        torch, root_sequence_type, form
+                    )
+                    expected = self.duplicate_leaf_outcome(
+                        reference_torch, root_sequence_type, form
+                    )
+                    self.assertIsNone(actual[0])
+                    self.assertIsNone(actual[1])
+                    self.assertIsNone(expected[0])
+                    self.assertIsNone(expected[1])
+                    np.testing.assert_array_equal(actual[2], expected[2])
+                    np.testing.assert_array_equal(actual[3], expected[3])
+
+    def test_duplicate_root_precision_boundary_matches_pytorch_2_13(self):
+        forms = (
+            "omitted",
+            "explicit None",
+            "tuple grad_tensors",
+            "list grad_tensors",
+        )
+        for root_sequence_type in (tuple, list):
+            for form in forms:
+                with self.subTest(
+                    root_sequence_type=root_sequence_type, form=form
+                ):
+                    actual = self.precision_duplicate_outcome(
+                        torch, root_sequence_type, form
+                    )
+                    expected = self.precision_duplicate_outcome(
+                        reference_torch, root_sequence_type, form
+                    )
+                    self.assertIsNone(actual[0])
+                    self.assertIsNone(expected[0])
+                    self.assertEqual(actual[1], expected[1])
+                    np.testing.assert_array_equal(actual[2], expected[2])
+
+    def test_no_grad_view_second_root_failure_matches_pytorch_2_13(self):
+        forms = (
+            "omitted",
+            "explicit None",
+            "tuple grad_tensors",
+            "list grad_tensors",
+        )
+        for root_sequence_type in (tuple, list):
+            for form in forms:
+                with self.subTest(
+                    root_sequence_type=root_sequence_type, form=form
+                ):
+                    actual = self.rejected_no_grad_view_outcome(
+                        torch, root_sequence_type, form
+                    )
+                    expected = self.rejected_no_grad_view_outcome(
+                        reference_torch, root_sequence_type, form
+                    )
+                    self.assertEqual(actual[:8], expected[:8])
+                    np.testing.assert_array_equal(actual[8], expected[8])
 
     def test_accumulation_graph_reuse_and_freeing_match_pytorch_2_13(self):
         for root_sequence_type in (None, tuple, list):
