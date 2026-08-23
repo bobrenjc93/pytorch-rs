@@ -1,4 +1,5 @@
 import inspect
+import re
 import sys
 import types
 import unittest
@@ -326,6 +327,248 @@ class TensorPermuteReferenceTests(unittest.TestCase):
                 expected_source=expected_source,
                 case=style,
             )
+
+    def mode_contract(self, module):
+        tensor = module.zeros((2, 3, 4), dtype=module.float32)
+        descriptor = inspect.getattr_static(module.Tensor, "permute")
+        marker = object()
+
+        def mode_stack():
+            return module.overrides._get_current_function_mode_stack()
+
+        def stack_matches(*expected):
+            stack = mode_stack()
+            return len(stack) == len(expected) and all(
+                actual is wanted for actual, wanted in zip(stack, expected)
+            )
+
+        class StatefulIndex:
+            def __init__(self, name, calls, value):
+                self.name = name
+                self.calls = calls
+                self.value = value
+
+            def __index__(self):
+                self.calls.append(self.name)
+                return self.value
+
+        def normalize(value):
+            if value is tensor:
+                return "self"
+            if isinstance(value, list):
+                return "list", tuple(normalize(item) for item in value)
+            if isinstance(value, tuple):
+                return "tuple", tuple(normalize(item) for item in value)
+            if isinstance(value, StatefulIndex):
+                return "index", value.name
+            return value
+
+        def normalize_call(call):
+            func, dispatch_types, args, kwargs, stack_depth = call
+            return (
+                func is descriptor,
+                type(func).__name__,
+                func.__qualname__,
+                dispatch_types,
+                tuple(normalize(argument) for argument in args),
+                {key: normalize(value) for key, value in kwargs.items()}
+                if kwargs is not None
+                else None,
+                stack_depth,
+            )
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append(
+                    (func, dispatch_types, args, kwargs, len(mode_stack()))
+                )
+                return self.result
+
+        dimensions_tuple = (2, 0, 1)
+        dimensions_list = [2, 0, 1]
+        calls = (
+            lambda: tensor.permute(2, 0, 1),
+            lambda: tensor.permute(dimensions_tuple),
+            lambda: tensor.permute(dimensions_list),
+            lambda: tensor.permute(dims=dimensions_tuple),
+            lambda: tensor.permute(dims=dimensions_list),
+            lambda: tensor.permute(0, 1),
+            lambda: tensor.permute(0, 1, 1),
+            lambda: tensor.permute(0, 1, 3),
+            lambda: tensor.permute(0, 1.5, 2),
+        )
+        records = []
+        for call in calls:
+            mode = RecordingMode(marker)
+            with mode:
+                result = call()
+                restored_inside = stack_matches(mode)
+            records.append(
+                (
+                    result is marker,
+                    tuple(map(normalize_call, mode.calls)),
+                    restored_inside,
+                    not mode_stack(),
+                )
+            )
+
+        invalid = RecordingMode(marker)
+        try:
+            with invalid:
+                tensor.permute([1.5, 0, 2])
+        except Exception as error:
+            invalid_error = type(error).__name__, str(error)
+        else:
+            self.fail(f"{module.__name__} accepted an invalid leading dimension")
+
+        index_records = []
+        for style in ("variadic", "sequence", "keyword"):
+            index_calls = []
+            dimensions = [
+                StatefulIndex("first", index_calls, 2),
+                StatefulIndex("second", index_calls, 0),
+                StatefulIndex("third", index_calls, 1),
+            ]
+            mode = RecordingMode(marker)
+            with mode:
+                if style == "variadic":
+                    result = tensor.permute(*dimensions)
+                elif style == "sequence":
+                    result = tensor.permute(dimensions)
+                else:
+                    result = tensor.permute(dims=dimensions)
+            index_records.append(
+                (
+                    style,
+                    result is marker,
+                    tuple(index_calls),
+                    tuple(map(normalize_call, mode.calls)),
+                )
+            )
+
+        forwarding_calls = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                forwarding_calls.append(
+                    (
+                        self.label,
+                        func,
+                        dispatch_types,
+                        args,
+                        kwargs,
+                        len(mode_stack()),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = tensor.permute(dims=dimensions_list)
+                forwarding_restored = stack_matches(lower, upper)
+
+        declining = RecordingMode(NotImplemented)
+        bypassed_lower = RecordingMode(marker)
+        with bypassed_lower:
+            with declining:
+                try:
+                    tensor.permute(0, 1, 2)
+                except Exception as error:
+                    declining_error = (
+                        type(error).__name__,
+                        re.sub(r"0x[0-9a-f]+", "0xADDR", str(error)),
+                        error.args == (str(error),),
+                    )
+                else:
+                    self.fail(f"{module.__name__} accepted a declining mode")
+                declining_restored = stack_matches(bypassed_lower, declining)
+
+        expected_error = ValueError("permute mode failed")
+
+        class RaisingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append(
+                    (func, dispatch_types, args, kwargs, len(mode_stack()))
+                )
+                raise expected_error
+
+        raising = RaisingMode()
+        with raising:
+            try:
+                tensor.permute(2, 0, 1)
+            except Exception as error:
+                raising_error = (
+                    error is expected_error,
+                    type(error).__name__,
+                    str(error),
+                    error.args,
+                )
+            else:
+                self.fail(f"{module.__name__} accepted a raising mode")
+            raising_restored = stack_matches(raising)
+
+        recovered = tensor.permute(2, 0, 1)
+        return {
+            "records": tuple(records),
+            "invalid": (
+                invalid_error,
+                len(invalid.calls),
+                not mode_stack(),
+            ),
+            "index_records": tuple(index_records),
+            "forwarding": tuple(
+                (
+                    label,
+                    normalize_call((func, types, args, kwargs, stack_depth)),
+                )
+                for label, func, types, args, kwargs, stack_depth in forwarding_calls
+            ),
+            "forwarded": (
+                tuple(forwarded.shape),
+                forwarded.stride(),
+                forwarded.storage_offset(),
+                forwarded.data_ptr() == tensor.data_ptr(),
+            ),
+            "forwarding_restored": forwarding_restored,
+            "declining": (
+                declining_error,
+                tuple(map(normalize_call, declining.calls)),
+                len(bypassed_lower.calls),
+                declining_restored,
+                not mode_stack(),
+            ),
+            "raising": (
+                raising_error,
+                tuple(map(normalize_call, raising.calls)),
+                raising_restored,
+                not mode_stack(),
+            ),
+            "recovered": (
+                tuple(recovered.shape),
+                recovered.stride(),
+                recovered.storage_offset(),
+                recovered.data_ptr() == tensor.data_ptr(),
+            ),
+        }
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        self.assertEqual(
+            self.mode_contract(torch),
+            self.mode_contract(reference_torch),
+        )
 
     def test_descriptor_metadata_and_unbound_behavior_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")

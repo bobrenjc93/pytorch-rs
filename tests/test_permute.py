@@ -358,6 +358,198 @@ class TensorPermuteTests(unittest.TestCase):
             ["first", "first", "second", "third"],
         )
 
+    def test_torch_function_modes_receive_original_calls_before_native_validation(self):
+        tensor = torch.zeros((2, 3, 4))
+        descriptor = inspect.getattr_static(torch.Tensor, "permute")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return self.result
+
+        dimensions_tuple = (2, 0, 1)
+        dimensions_list = [2, 0, 1]
+        cases = (
+            ("variadic", lambda: tensor.permute(2, 0, 1), (2, 0, 1), None),
+            (
+                "tuple",
+                lambda: tensor.permute(dimensions_tuple),
+                (dimensions_tuple,),
+                None,
+            ),
+            (
+                "list",
+                lambda: tensor.permute(dimensions_list),
+                (dimensions_list,),
+                None,
+            ),
+            (
+                "keyword tuple",
+                lambda: tensor.permute(dims=dimensions_tuple),
+                (),
+                {"dims": dimensions_tuple},
+            ),
+            (
+                "keyword list",
+                lambda: tensor.permute(dims=dimensions_list),
+                (),
+                {"dims": dimensions_list},
+            ),
+            ("rank mismatch", lambda: tensor.permute(0, 1), (0, 1), None),
+            ("duplicate", lambda: tensor.permute(0, 1, 1), (0, 1, 1), None),
+            ("out of range", lambda: tensor.permute(0, 1, 3), (0, 1, 3), None),
+            (
+                "deferred element type",
+                lambda: tensor.permute(0, 1.5, 2),
+                (0, 1.5, 2),
+                None,
+            ),
+        )
+        for case, call, expected_arguments, expected_kwargs in cases:
+            mode = RecordingMode(marker)
+            with self.subTest(case=case), mode:
+                result = call()
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [mode]
+                )
+            self.assertIs(result, marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertIs(args[0], tensor)
+            self.assertEqual(args[1:], expected_arguments)
+            self.assertEqual(kwargs, expected_kwargs)
+            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        invalid = RecordingMode(marker)
+        with invalid, self.assertRaises(TypeError):
+            tensor.permute([1.5, 0, 2])
+        self.assertEqual(invalid.calls, [])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+    def test_torch_function_mode_forwarding_declining_raising_and_restoration(self):
+        tensor = torch.zeros((2, 3, 4))
+        descriptor = inspect.getattr_static(torch.Tensor, "permute")
+        dimensions = [2, 0, 1]
+        events = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                events.append(
+                    (
+                        self.label,
+                        func,
+                        dispatch_types,
+                        args,
+                        kwargs,
+                        tuple(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = tensor.permute(dims=dimensions)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [lower, upper]
+                )
+        self.assertEqual([event[0] for event in events], ["upper", "lower"])
+        self.assertEqual(events[0][5], (lower,))
+        self.assertEqual(events[1][5], ())
+        for _, function, dispatch_types, args, kwargs, _ in events:
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (tensor,))
+            self.assertEqual(kwargs, {"dims": dimensions})
+        self.assertEqual(forwarded.shape, (4, 2, 3))
+        self.assertEqual(forwarded.stride(), (1, 12, 4))
+        self.assertEqual(forwarded.data_ptr(), tensor.data_ptr())
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return self.result
+
+        declining = RecordingMode(NotImplemented)
+        bypassed_lower = RecordingMode(object())
+        with bypassed_lower:
+            with declining:
+                with self.assertRaises(TypeError) as raised:
+                    tensor.permute(0, 1, 2)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(),
+                    [bypassed_lower, declining],
+                )
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [bypassed_lower]
+            )
+        self.assertTrue(
+            str(raised.exception).startswith(
+                "Multiple dispatch failed for 'torch.Tensor.permute'; all "
+                "__torch_function__ handlers returned NotImplemented:"
+            )
+        )
+        self.assertEqual(len(declining.calls), 1)
+        self.assertEqual(bypassed_lower.calls, [])
+
+        expected_error = ValueError("permute mode failed")
+
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func,
+                        dispatch_types,
+                        args,
+                        kwargs,
+                        tuple(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                raise expected_error
+
+        raising = RaisingMode()
+        with raising:
+            try:
+                tensor.permute(2, 0, 1)
+            except ValueError as error:
+                self.assertIs(error, expected_error)
+            else:
+                self.fail("Tensor.permute accepted a raising mode")
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [raising]
+            )
+        self.assertEqual(len(raising.calls), 1)
+        function, dispatch_types, args, kwargs, callback_stack = raising.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(args, (tensor, 2, 0, 1))
+        self.assertIsNone(kwargs)
+        self.assertEqual(callback_stack, ())
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        recovered = tensor.permute(2, 0, 1)
+        self.assertEqual(recovered.shape, (4, 2, 3))
+        self.assertEqual(recovered.data_ptr(), tensor.data_ptr())
+
     def test_descriptor_metadata_matches_pytorch_shape(self):
         descriptor = inspect.getattr_static(torch.Tensor, "permute")
         tensor = torch.zeros((2, 3, 4))

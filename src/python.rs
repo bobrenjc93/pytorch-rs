@@ -859,10 +859,26 @@ impl PyTensorBase {
         slf: &Bound<'_, Self>,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<PyTensor> {
+    ) -> PyResult<Py<PyAny>> {
         let dimensions = bind_permute_dimensions(args, kwargs)?;
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        permute_tensor(&tensor.inner, dimensions).map(PyTensor::new)
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        // The generated binding resolves the overload shape before dispatch,
+        // but leaves element conversion and native permutation validation to
+        // an explicitly forwarded call.
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "permute",
+            "torch.Tensor.permute",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        let dimensions = parse_permute_dimension_arguments(dimensions)?;
+        let inner = permute_tensor(&tensor.try_borrow()?.inner, dimensions)?;
+        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -9442,10 +9458,10 @@ enum PermuteDimensionArguments<'py> {
     Variadic(Bound<'py, PyTuple>),
 }
 
-fn bind_permute_dimensions(
-    positional: &Bound<'_, PyTuple>,
-    keywords: Option<&Bound<'_, PyDict>>,
-) -> PyResult<Vec<i64>> {
+fn bind_permute_dimensions<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<PermuteDimensionArguments<'py>> {
     let mut keyword_dimensions = None;
     let mut keyword_error = None;
     if let Some(keywords) = keywords {
@@ -9517,7 +9533,7 @@ fn bind_permute_dimensions(
         PermuteDimensionArguments::Variadic(positional.clone())
     };
 
-    parse_permute_dimension_arguments(arguments)
+    Ok(arguments)
 }
 
 fn parse_permute_dimension_arguments(
