@@ -5265,6 +5265,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 94
       }
+    },
+    {
+      "key": "pr:704",
+      "recordedAt": "2026-08-23T03:35:24.504Z",
+      "label": "PR #704",
+      "kind": "leaf",
+      "prNumber": 704,
+      "title": "Support exact-native variadic torch.atleast_1d",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 85.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 68,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 94
+      }
     }
   ]
 }
