@@ -2340,6 +2340,12 @@ fn view_reuses_reshape_stride_analysis_without_copying() {
             elements: 6,
         })
     );
+
+    let wrap_equal_shape = [1, i64::MAX, i64::MAX];
+    assert_eq!(
+        Tensor::zeros([1]).unwrap().view(wrap_equal_shape),
+        Err(TensorError::ViewIncompatibleLayout)
+    );
 }
 
 #[test]

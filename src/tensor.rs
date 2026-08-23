@@ -2031,6 +2031,10 @@ impl Tensor {
     /// failure.
     pub fn reshape(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
         let resolved = self.resolve_reshape_shape(shape.as_ref())?;
+        // Reshape may materialize a copy after view analysis fails, so reject
+        // shapes whose concrete element count cannot be represented before
+        // entering that fallback path.
+        let _ = element_count(&resolved)?;
         self.reshape_resolved(resolved)
     }
 
@@ -2050,6 +2054,12 @@ impl Tensor {
     /// or metadata allocation failure.
     pub fn view(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
         let resolved = self.resolve_reshape_shape(shape.as_ref())?;
+        if self.elements == 0 {
+            // Empty views validate concrete numel before computing their
+            // resize-style strides. Nonempty wrap-equal shapes instead
+            // continue to layout analysis, as PyTorch does.
+            let _ = element_count(&resolved)?;
+        }
         self.view_resolved(resolved)
     }
 
@@ -2122,14 +2132,6 @@ impl Tensor {
             }
             resolved[index] = usize::try_from(elements / specified_elements)
                 .map_err(|_| TensorError::ElementCountOverflow)?;
-        }
-
-        let resolved_elements = element_count(&resolved)?;
-        if resolved_elements != self.elements {
-            return Err(TensorError::ReshapeElementCountMismatch {
-                shape: try_clone_reshape_shape(requested, self.elements)?,
-                elements: self.elements,
-            });
         }
 
         Ok(resolved)
