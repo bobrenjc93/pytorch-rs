@@ -5249,6 +5249,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 94
       }
+    },
+    {
+      "key": "pr:702",
+      "recordedAt": "2026-08-23T02:33:38.583Z",
+      "label": "PR #702",
+      "kind": "leaf",
+      "prNumber": 702,
+      "title": "Support class targets in torch.compiler.disable",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 85.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 67.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 94.1
+      }
     }
   ]
 }
