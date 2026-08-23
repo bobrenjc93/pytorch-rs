@@ -104,6 +104,9 @@ pub enum TensorError {
         operation: &'static str,
     },
     DoesNotRequireGrad,
+    DoesNotRequireGradAt {
+        index: usize,
+    },
     BackwardGraphFreed,
 }
 
@@ -189,15 +192,8 @@ impl Display for TensorError {
             | Self::ElementCountOverflow
             | Self::StrideCalculationOverflow
             | Self::NegativeStrides { .. }) => format_stride_error(formatter, error),
-            Self::StorageCapacityOverflow { elements } => write!(
-                formatter,
-                "storage for a tensor with {elements} elements exceeds the platform capacity"
-            ),
-            Self::AllocationFailed { elements } => {
-                write!(
-                    formatter,
-                    "failed to allocate storage for {elements} elements"
-                )
+            error @ (Self::StorageCapacityOverflow { .. } | Self::AllocationFailed { .. }) => {
+                format_storage_error(formatter, error)
             }
             error @ (Self::UnsupportedMemoryFormat { .. }
             | Self::ContiguousPreserveFormatUnsupported
@@ -207,6 +203,7 @@ impl Display for TensorError {
             error @ (Self::BackwardRequiresScalar { .. }
             | Self::AutogradRecordingUnsupported { .. }
             | Self::DoesNotRequireGrad
+            | Self::DoesNotRequireGradAt { .. }
             | Self::BackwardGraphFreed) => format_autograd_error(formatter, error),
         }
     }
@@ -332,6 +329,22 @@ fn format_stride_error(formatter: &mut Formatter<'_>, error: &TensorError) -> st
     }
 }
 
+fn format_storage_error(formatter: &mut Formatter<'_>, error: &TensorError) -> std::fmt::Result {
+    match error {
+        TensorError::StorageCapacityOverflow { elements } => write!(
+            formatter,
+            "storage for a tensor with {elements} elements exceeds the platform capacity"
+        ),
+        TensorError::AllocationFailed { elements } => {
+            write!(
+                formatter,
+                "failed to allocate storage for {elements} elements"
+            )
+        }
+        _ => unreachable!("only storage allocation errors are formatted here"),
+    }
+}
+
 fn format_memory_format_error(
     formatter: &mut Formatter<'_>,
     error: &TensorError,
@@ -369,6 +382,10 @@ fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> 
         }
         TensorError::DoesNotRequireGrad => formatter.write_str(
             "element 0 of tensors does not require grad and does not have a grad_fn",
+        ),
+        TensorError::DoesNotRequireGradAt { index } => write!(
+            formatter,
+            "element {index} of tensors does not require grad and does not have a grad_fn"
         ),
         TensorError::BackwardGraphFreed => formatter.write_str(
             "Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). Saved intermediate values of the graph are freed when you call .backward() or autograd.grad(). Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.",

@@ -882,6 +882,11 @@ impl Tensor {
     /// Returns an error for multi-element outputs, tensors which do not require
     /// gradients, or graphs already consumed by a prior backward pass.
     pub fn backward(&self) -> Result<(), TensorError> {
+        let meta = self.implicit_backward_root()?;
+        run_backward(meta, self.output_nr)
+    }
+
+    fn implicit_backward_root(&self) -> Result<&Arc<AutogradMeta>, TensorError> {
         if !self.requires_grad() {
             return Err(TensorError::DoesNotRequireGrad);
         }
@@ -890,11 +895,50 @@ impl Tensor {
                 elements: self.elements,
             });
         }
-        let meta = self
-            .autograd
+        self.autograd
             .as_ref()
-            .ok_or(TensorError::DoesNotRequireGrad)?;
-        run_backward(meta, self.output_nr)
+            .ok_or(TensorError::DoesNotRequireGrad)
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn backward_leaf_roots(first: &Self, second: &Self) -> Result<(), TensorError> {
+        // Keep root validation and gradient commits in one transaction. In
+        // particular, views created under no_grad can report requires_grad and
+        // leaf status without owning a gradient accumulator.
+        let _backward_traversal = BACKWARD_TRAVERSAL
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut roots = Vec::with_capacity(2);
+        for (index, root) in [first, second].into_iter().enumerate() {
+            let meta = root.implicit_backward_root().map_err(|error| {
+                if matches!(error, TensorError::DoesNotRequireGrad) {
+                    TensorError::DoesNotRequireGradAt { index }
+                } else {
+                    error
+                }
+            })?;
+            if !matches!(&meta.kind, AutogradKind::Leaf { .. }) {
+                return Err(TensorError::DoesNotRequireGradAt { index });
+            }
+            roots.push((Arc::clone(meta), root.output_nr));
+        }
+
+        let mut gradients = HashMap::new();
+        let mut unique_roots = Vec::with_capacity(2);
+        for (meta, output_nr) in roots {
+            let key = gradient_key(&meta, output_nr);
+            if !gradients.contains_key(&key) {
+                unique_roots.push((Arc::clone(&meta), output_nr));
+            }
+            add_gradient(&mut gradients, &meta, output_nr, vec![1.0]);
+        }
+        for (meta, output_nr) in unique_roots {
+            let gradient = gradients
+                .remove(&gradient_key(&meta, output_nr))
+                .expect("every unique leaf root must have an aggregated gradient");
+            accumulate_leaf_gradient(&meta, gradient);
+        }
+        Ok(())
     }
 
     fn records_grad(&self) -> bool {
@@ -5557,6 +5601,48 @@ mod tests {
                 ])
         );
         assert_eq!(saved_loss.backward(), Err(TensorError::BackwardGraphFreed));
+    }
+
+    #[test]
+    fn leaf_root_batch_aggregates_duplicate_seeds_before_existing_gradient() {
+        let leaf = Tensor::from_vec(vec![1.0], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        leaf.mul_scalar(16_777_216.0).unwrap().backward().unwrap();
+
+        Tensor::backward_leaf_roots(&leaf, &leaf).unwrap();
+
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [16_777_218.0]);
+    }
+
+    #[test]
+    fn leaf_root_batch_rejects_no_grad_view_before_committing() {
+        let first = Tensor::from_vec(vec![3.0], [])
+            .unwrap()
+            .with_requires_grad(true);
+        let source = Tensor::from_vec(vec![1.0, 2.0], [1, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = {
+            let _guard = crate::no_grad();
+            source.transpose(0, 1).unwrap().index([1]).unwrap()
+        };
+        assert_eq!(view.shape(), [1]);
+        assert_eq!(view.stride(), [2]);
+        assert_eq!(view.storage_offset(), 1);
+        assert!(view.requires_grad());
+        assert!(view.is_leaf());
+
+        assert_eq!(
+            Tensor::backward_leaf_roots(&first, &view),
+            Err(TensorError::DoesNotRequireGradAt { index: 1 })
+        );
+        assert!(first.grad().unwrap().is_none());
+        assert!(source.grad().unwrap().is_none());
+        assert!(view.grad().unwrap().is_none());
+
+        first.backward().unwrap();
+        assert_eq!(first.grad().unwrap().unwrap().as_slice(), [1.0]);
     }
 
     #[test]

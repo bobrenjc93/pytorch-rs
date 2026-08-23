@@ -10,6 +10,7 @@ from .grad_mode import no_grad as no_grad
 
 
 _Tensor = _C.Tensor
+_backward_leaf_roots = _C._backward_leaf_roots
 _TensorOrTensorsOrGradEdge = _Union[
     _Tensor,
     _Sequence[_Tensor],
@@ -154,8 +155,10 @@ def backward(
             "torch_rs.autograd.backward does not support inputs"
         )
 
-    for root in roots:
-        root.backward()
+    if len(roots) == 2:
+        _backward_leaf_roots(*roots)
+    elif roots:
+        roots[0].backward()
 
 
 is_multithreading_enabled = _C._is_multithreading_enabled

@@ -230,6 +230,72 @@ class AutogradBackwardTests(unittest.TestCase):
                     )
                     self.assertEqual(leaf.grad.tolist(), [4.0])
 
+    def test_duplicate_roots_aggregate_before_existing_leaf_gradient(self):
+        for root_sequence_type in (tuple, list):
+            for grad_sequence_type in (None, tuple, list):
+                with self.subTest(
+                    root_sequence_type=root_sequence_type,
+                    grad_sequence_type=grad_sequence_type,
+                ):
+                    leaf = torch.tensor([1.0], requires_grad=True)
+                    (leaf * 16_777_216.0).backward()
+                    existing_gradient = leaf.grad
+                    roots = root_sequence_type((leaf, leaf))
+                    grad_tensors = (
+                        None
+                        if grad_sequence_type is None
+                        else grad_sequence_type((None, None))
+                    )
+
+                    self.assertIsNone(
+                        torch.autograd.backward(
+                            roots, grad_tensors=grad_tensors
+                        )
+                    )
+                    self.assertIs(leaf.grad, existing_gradient)
+                    self.assertEqual(leaf.grad.tolist(), [16_777_218.0])
+
+    def test_no_grad_view_second_root_is_rejected_before_first_mutates(self):
+        for root_sequence_type in (tuple, list):
+            for grad_sequence_type in (None, tuple, list):
+                with self.subTest(
+                    root_sequence_type=root_sequence_type,
+                    grad_sequence_type=grad_sequence_type,
+                ):
+                    first = torch.tensor(3.0, requires_grad=True)
+                    source = torch.tensor(
+                        [[1.0, 2.0]], requires_grad=True
+                    )
+                    with torch.no_grad():
+                        invalid = source.transpose(0, 1)[1]
+                    self.assertEqual(invalid.shape, (1,))
+                    self.assertEqual(invalid.stride(), (2,))
+                    self.assertEqual(invalid.storage_offset(), 1)
+                    self.assertTrue(invalid.requires_grad)
+                    self.assertTrue(invalid.is_leaf)
+                    grad_tensors = (
+                        None
+                        if grad_sequence_type is None
+                        else grad_sequence_type((None, None))
+                    )
+
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "element 1 of tensors does not require grad",
+                    ):
+                        torch.autograd.backward(
+                            root_sequence_type((first, invalid)),
+                            grad_tensors=grad_tensors,
+                        )
+                    self.assertIsNone(first.grad)
+                    self.assertIsNone(invalid.grad)
+                    self.assertIsNone(source.grad)
+
+                    first.backward()
+                    source.sum().backward()
+                    self.assertEqual(first.grad.item(), 1.0)
+                    self.assertEqual(source.grad.tolist(), [[1.0, 1.0]])
+
     def test_graph_reuse_freeing_and_accumulation_follow_tensor_backward(self):
         for sequence_type in (None, tuple, list):
             with self.subTest(sequence_type=sequence_type):
