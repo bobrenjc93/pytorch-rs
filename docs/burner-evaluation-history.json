@@ -5457,6 +5457,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96
       }
+    },
+    {
+      "key": "pr:756",
+      "recordedAt": "2026-08-23T15:03:40.182Z",
+      "label": "PR #756",
+      "kind": "leaf",
+      "prNumber": 756,
+      "title": "Accept default-equivalent Tensor.backward arguments",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 86.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 69.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }
