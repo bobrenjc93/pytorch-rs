@@ -86,6 +86,11 @@ class TensorTypeReferenceTests(unittest.TestCase):
             tensor.type(),
             tensor.type(*()),
             tensor.type(**{}),
+            tensor.type(None),
+            tensor.type(dtype=None),
+            tensor.type(non_blocking=False),
+            tensor.type(non_blocking=True),
+            tensor.type(None, True),
             descriptor(tensor),
         )
         after = (
@@ -106,6 +111,50 @@ class TensorTypeReferenceTests(unittest.TestCase):
             "state_unchanged": before == after,
         }
 
+    def conversion_contract(self, module, tensor):
+        before = (
+            tensor.tolist(),
+            tuple(tensor.shape),
+            tuple(tensor.stride()),
+            tensor.storage_offset(),
+            tensor.data_ptr(),
+            str(tensor.dtype),
+            str(tensor.device),
+            str(tensor.layout),
+            tensor.requires_grad,
+            tensor.is_leaf,
+            tensor.output_nr,
+        )
+        converted = (
+            tensor.type(module.float32),
+            tensor.type(module.float),
+            tensor.type("torch.FloatTensor"),
+            tensor.type(dtype=module.float32),
+            tensor.type(dtype=module.float),
+            tensor.type(dtype="torch.FloatTensor"),
+            tensor.type(module.float32, False),
+            tensor.type(module.float32, True),
+            tensor.type("torch.FloatTensor", non_blocking=False),
+            tensor.type(dtype=module.float, non_blocking=True),
+        )
+        after = (
+            tensor.tolist(),
+            tuple(tensor.shape),
+            tuple(tensor.stride()),
+            tensor.storage_offset(),
+            tensor.data_ptr(),
+            str(tensor.dtype),
+            str(tensor.device),
+            str(tensor.layout),
+            tensor.requires_grad,
+            tensor.is_leaf,
+            tensor.output_nr,
+        )
+        return {
+            "all_exact_identity": all(result is tensor for result in converted),
+            "state_unchanged": before == after,
+        }
+
     def test_cpu_float32_query_matches_pytorch_2_13(self):
         actual_leaf, actual_tracked, actual_cases = self.tensor_cases(torch)
         expected_leaf, expected_tracked, expected_cases = self.tensor_cases(
@@ -118,9 +167,13 @@ class TensorTypeReferenceTests(unittest.TestCase):
                 self.assertEqual(
                     self.query_contract(actual), self.query_contract(expected)
                 )
+                self.assertEqual(
+                    self.conversion_contract(torch, actual),
+                    self.conversion_contract(reference_torch, expected),
+                )
 
-        actual_tracked.type()
-        expected_tracked.type()
+        actual_tracked.type(torch.float32)
+        expected_tracked.type(reference_torch.float32)
         actual_tracked.sum().backward()
         expected_tracked.sum().backward()
         self.assertEqual(actual_leaf.grad.tolist(), expected_leaf.grad.tolist())
@@ -225,6 +278,48 @@ class TensorTypeReferenceTests(unittest.TestCase):
             empty_kwargs_result = tensor.type(**{})
         _, _, empty_kwargs_args, empty_kwargs = empty_kwargs_recording.calls[0]
 
+        def original_call(call):
+            recording = RecordingMode(marker)
+            with recording:
+                result = call()
+            function, dispatch_types, args, kwargs = recording.calls[0]
+            return {
+                "intercepted": result is marker,
+                "call_count": len(recording.calls),
+                "function_is_descriptor": function is descriptor,
+                "types_empty": dispatch_types == (),
+                "args": tuple(
+                    "receiver" if value is tensor else repr(value)
+                    for value in args
+                ),
+                "kwargs": (
+                    None
+                    if kwargs is None
+                    else tuple((key, repr(value)) for key, value in kwargs.items())
+                ),
+            }
+
+        original_calls = (
+            original_call(lambda: tensor.type(module.float32)),
+            original_call(lambda: tensor.type("torch.FloatTensor", True)),
+            original_call(
+                lambda: tensor.type(
+                    dtype=module.float, non_blocking=False
+                )
+            ),
+            original_call(lambda: tensor.type(None, non_blocking=True)),
+            original_call(lambda: tensor.type(1)),
+        )
+
+        rejected_before_dispatch = RecordingMode(marker)
+        try:
+            with rejected_before_dispatch:
+                tensor.type(module.float32, non_blocking=0)
+        except Exception as error:
+            strict_bool_error = (type(error).__name__, str(error))
+        else:
+            strict_bool_error = None
+
         order = []
 
         class ForwardingMode(module.overrides.TorchFunctionMode):
@@ -237,7 +332,9 @@ class TensorTypeReferenceTests(unittest.TestCase):
 
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = tensor.type()
+                forwarded = tensor.type(
+                    "torch.FloatTensor", non_blocking=True
+                )
 
         declining = RecordingMode(NotImplemented)
         lower = RecordingMode(marker)
@@ -281,8 +378,11 @@ class TensorTypeReferenceTests(unittest.TestCase):
                 len(empty_kwargs_args) == 1 and empty_kwargs_args[0] is tensor
             ),
             "empty_kwargs": empty_kwargs,
+            "original_calls": original_calls,
+            "strict_bool_error": strict_bool_error,
+            "strict_bool_dispatch_calls": len(rejected_before_dispatch.calls),
             "forwarding_order": order,
-            "forwarded": forwarded,
+            "forwarded_is_tensor": forwarded is tensor,
             "declining_error": declining_error,
             "declining_calls": len(declining.calls),
             "lower_calls": len(lower.calls),
@@ -296,38 +396,76 @@ class TensorTypeReferenceTests(unittest.TestCase):
             self.mode_contract(reference_torch),
         )
 
-    def test_dtype_string_and_non_blocking_conversion_scope_is_excluded(self):
+    def argument_error_contract(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        calls = (
+            lambda: tensor.type(module.float32, False, None),
+            lambda: tensor.type(module.float32, dtype=module.float32),
+            lambda: tensor.type(module.float32, False, non_blocking=True),
+            lambda: tensor.type(module.float32, 0),
+            lambda: tensor.type(dtype=module.float32, non_blocking=1),
+            lambda: tensor.type(module.float32, non_blocking=None),
+            lambda: tensor.type(unknown=True),
+        )
+        outcomes = []
+        for call in calls:
+            try:
+                call()
+            except Exception as error:
+                outcomes.append((type(error).__name__, str(error)))
+            else:
+                outcomes.append(("result",))
+        return tuple(outcomes)
+
+    def test_binding_and_strict_bool_errors_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.argument_error_contract(torch),
+            self.argument_error_contract(reference_torch),
+        )
+
+    def test_other_targets_and_deprecated_async_remain_unsupported(self):
         actual = torch.tensor([1.0], dtype=torch.float32)
+        before = (
+            actual.tolist(),
+            actual.data_ptr(),
+            actual.shape,
+            actual.stride(),
+            actual.storage_offset(),
+            actual.requires_grad,
+            actual.is_leaf,
+        )
         unsupported_calls = (
-            lambda: actual.type(torch.float32),
-            lambda: actual.type("torch.FloatTensor"),
-            lambda: actual.type(dtype=torch.float32),
-            lambda: actual.type(non_blocking=False),
-            lambda: actual.type(non_blocking=True),
-            lambda: actual.type(torch.float32, False),
-            lambda: actual.type("torch.FloatTensor", non_blocking=True),
+            lambda: actual.type("torch.DoubleTensor"),
+            lambda: actual.type("torch.cuda.FloatTensor"),
+            lambda: actual.type(reference_torch.float32),
+            lambda: actual.type(reference_torch.float64),
+            lambda: actual.type(torch.Tensor),
+            lambda: actual.type(1),
             lambda: actual.type(**{"async": False}),
+            lambda: actual.type(torch.float32, **{"async": True}),
         )
         for call in unsupported_calls:
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
                     call()
+                after = (
+                    actual.tolist(),
+                    actual.data_ptr(),
+                    actual.shape,
+                    actual.stride(),
+                    actual.storage_offset(),
+                    actual.requires_grad,
+                    actual.is_leaf,
+                )
+                self.assertEqual(after, before)
 
         expected = reference_torch.tensor(
             [1.0], dtype=reference_torch.float32
         )
-        for converted in (
-            expected.type(reference_torch.float32),
-            expected.type("torch.FloatTensor"),
-            expected.type(dtype=reference_torch.float32),
-            expected.type(non_blocking=False),
-            expected.type(non_blocking=True),
-            expected.type(reference_torch.float32, False),
-            expected.type("torch.FloatTensor", non_blocking=True),
-        ):
-            self.assertTrue(
-                converted is expected or converted == "torch.FloatTensor"
-            )
+        self.assertIsNot(
+            expected.type(reference_torch.float64),
+            expected,
+        )
 
     def test_h100_cuda_type_name_bounds_the_unsupported_device_surface(self):
         if not reference_torch.cuda.is_available():
