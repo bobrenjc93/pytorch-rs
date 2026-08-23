@@ -433,6 +433,123 @@ class TensorPermuteTests(unittest.TestCase):
         self.assertEqual(invalid.calls, [])
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
+    def test_dimension_overrides_are_ordered_and_follow_a_declining_mode(self):
+        tensor = torch.zeros((2, 3, 4))
+        descriptor = inspect.getattr_static(torch.Tensor, "permute")
+        marker = object()
+        override_calls = []
+
+        class BaseDimension(int):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                override_calls.append((cls, func, dispatch_types, args, kwargs))
+                return NotImplemented
+
+        class DerivedDimension(BaseDimension):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                override_calls.append((cls, func, dispatch_types, args, kwargs))
+                return NotImplemented
+
+        class AcceptingDimension(int):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                override_calls.append((cls, func, dispatch_types, args, kwargs))
+                return marker
+
+        dimensions = (
+            BaseDimension(2),
+            DerivedDimension(0),
+            AcceptingDimension(1),
+        )
+        result = tensor.permute(*dimensions)
+        self.assertIs(result, marker)
+        self.assertEqual(
+            [entry[0] for entry in override_calls],
+            [DerivedDimension, BaseDimension, AcceptingDimension],
+        )
+        for _, function, dispatch_types, args, kwargs in override_calls:
+            self.assertIs(function, descriptor)
+            self.assertEqual(
+                dispatch_types,
+                (DerivedDimension, BaseDimension, AcceptingDimension),
+            )
+            self.assertIs(args[0], tensor)
+            self.assertTrue(
+                all(
+                    actual is expected
+                    for actual, expected in zip(args[1:], dimensions)
+                )
+            )
+            self.assertIsNone(kwargs)
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return self.result
+
+        override_calls.clear()
+        accepting_mode = RecordingMode(object())
+        with accepting_mode:
+            result = tensor.permute(dimensions)
+        self.assertIs(result, accepting_mode.result)
+        self.assertEqual(override_calls, [])
+        function, dispatch_types, args, kwargs = accepting_mode.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(
+            dispatch_types,
+            (DerivedDimension, BaseDimension, AcceptingDimension),
+        )
+        self.assertIs(args[0], tensor)
+        self.assertIs(args[1], dimensions)
+        self.assertIsNone(kwargs)
+
+        override_calls.clear()
+        declining_mode = RecordingMode(NotImplemented)
+        keyword_dimensions = list(dimensions)
+        with declining_mode:
+            result = tensor.permute(dims=keyword_dimensions)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [declining_mode]
+            )
+        self.assertIs(result, marker)
+        self.assertEqual(
+            [entry[0] for entry in override_calls],
+            [DerivedDimension, BaseDimension, AcceptingDimension],
+        )
+        function, dispatch_types, args, kwargs = declining_mode.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(
+            dispatch_types,
+            (DerivedDimension, BaseDimension, AcceptingDimension),
+        )
+        self.assertEqual(args, (tensor,))
+        self.assertEqual(kwargs, {"dims": keyword_dimensions})
+        self.assertIs(kwargs["dims"], keyword_dimensions)
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        index_calls = []
+
+        class IndexDimension:
+            def __index__(self):
+                index_calls.append("index")
+                return 2
+
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                return marker
+
+        index_dimension = IndexDimension()
+        intercepting_mode = RecordingMode(marker)
+        with intercepting_mode:
+            self.assertIs(tensor.permute(index_dimension, 0, 1), marker)
+        self.assertEqual(index_calls, ["index"])
+        self.assertEqual(intercepting_mode.calls[0][1], (IndexDimension,))
+
     def test_torch_function_mode_forwarding_declining_raising_and_restoration(self):
         tensor = torch.zeros((2, 3, 4))
         descriptor = inspect.getattr_static(torch.Tensor, "permute")

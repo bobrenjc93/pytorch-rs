@@ -31,7 +31,7 @@ use crate::{
     python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_tensor_queries::add_tensor_queries,
     python_torch_function_mode as torch_function_mode_stack,
-    python_torch_function_probe::add_torch_function_probe,
+    python_torch_function_probe::{add_torch_function_probe, is_disabled_torch_function_handler},
     python_variable_functions::{add_variable_functions, variable_function},
 };
 
@@ -862,21 +862,23 @@ impl PyTensorBase {
     ) -> PyResult<Py<PyAny>> {
         let dimensions = bind_permute_dimensions(args, kwargs)?;
         let tensor = slf.as_any().cast::<PyTensor>()?;
+        let overrides = ordered_permute_overrides(&dimensions)?;
         // The generated binding resolves the overload shape before dispatch,
         // but leaves element conversion and native permutation validation to
         // an explicitly forwarded call.
-        if let Some(result) = dispatch_tensorbase_method_mode(
+        if let Some(result) = dispatch_tensorbase_method_overrides(
             slf.py(),
             tensor,
             "permute",
             "torch.Tensor.permute",
             args,
             kwargs,
+            &overrides,
         )? {
             return Ok(result);
         }
 
-        let dimensions = parse_permute_dimension_arguments(dimensions)?;
+        let dimensions = parse_permute_dimension_arguments(dimensions.arguments)?;
         let inner = permute_tensor(&tensor.try_borrow()?.inner, dimensions)?;
         Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
     }
@@ -2027,6 +2029,29 @@ fn probe_torch_function_override<'py>(
 
 #[allow(
     unsafe_code,
+    reason = "permute binding parity requires an exception-suppressing enabled-handler probe"
+)]
+fn probe_permute_torch_function_override<'py>(
+    value: &Bound<'py, PyAny>,
+) -> Option<ProbedTorchFunctionOverride<'py>> {
+    // SAFETY: `value` is live for the call and the attribute name is a static,
+    // NUL-terminated string. A non-null result is a new owned reference.
+    let handler =
+        unsafe { ffi::PyObject_GetAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) };
+    if handler.is_null() {
+        // PyTorch's generated argument parser suppresses failures from this
+        // override probe and continues ordinary dimension validation.
+        // SAFETY: the GIL is held while clearing the active Python exception.
+        unsafe { ffi::PyErr_Clear() };
+        return None;
+    }
+    // SAFETY: PyObject_GetAttrString returned a new owned reference above.
+    let handler = unsafe { Bound::<PyAny>::from_owned_ptr(value.py(), handler) };
+    (!is_disabled_torch_function_handler(&handler)).then(|| probed_torch_function_override(value))
+}
+
+#[allow(
+    unsafe_code,
     reason = "dtype argument parity requires CPython's one-shot exception-suppressing attribute probe"
 )]
 fn probe_dtype_torch_function_override<'py>(
@@ -2406,15 +2431,30 @@ pub(crate) fn dispatch_tensorbase_method_mode(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Option<Py<PyAny>>> {
-    if torch_function_mode_stack::is_empty() {
+    // Parsed method arguments are metadata or options rather than overloaded
+    // tensor operands, so PyTorch supplies no dispatch types even though the
+    // receiver remains in args.
+    dispatch_tensorbase_method_overrides(py, tensor, method, qualified_method, args, kwargs, &[])
+}
+
+fn dispatch_tensorbase_method_overrides(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    method: &'static str,
+    qualified_method: &'static str,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+    overrides: &[ProbedTorchFunctionOverride<'_>],
+) -> PyResult<Option<Py<PyAny>>> {
+    if torch_function_mode_stack::is_empty() && overrides.is_empty() {
         return Ok(None);
     }
 
     let function = py.get_type::<PyTensorBase>().getattr(method)?.unbind();
-    // Parsed method arguments are metadata or options rather than overloaded
-    // tensor operands, so PyTorch supplies no dispatch types even though the
-    // receiver remains in args.
-    let types = PyTuple::empty(py);
+    let types = PyTuple::new(
+        py,
+        overrides.iter().map(|probed| probed.dispatch_type.clone()),
+    )?;
     let argument_count = args.len().checked_add(1).ok_or_else(|| {
         PyMemoryError::new_err(format!("{method} dispatch argument count overflowed"))
     })?;
@@ -2428,24 +2468,49 @@ pub(crate) fn dispatch_tensorbase_method_mode(
     call_arguments.extend(args.iter());
     let call_args = PyTuple::new(py, call_arguments)?;
 
-    // Disable the top mode for the complete attempt so explicit forwarding
+    // Disable the top mode while its callback runs so explicit forwarding
     // through the TensorBase descriptor reaches the next mode.
     let active_mode = torch_function_mode_stack::pop();
-    let Some(mode) = active_mode.get() else {
-        return Ok(None);
-    };
-    validate_torch_function_mode_handler(mode.bind(py))?;
-    let handler = mode.bind(py).getattr("__torch_function__")?;
-    let result = call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
-    if !is_not_implemented(py, &result) {
-        return Ok(Some(result));
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
     }
 
-    Err(torch_function_dispatch_error(
+    if overrides.is_empty() {
+        return Err(torch_function_dispatch_error(
+            py,
+            qualified_method,
+            active_mode.get(),
+            None,
+        )?);
+    }
+
+    // PyTorch restores a declining mode before trying argument overrides.
+    // This is observable to those handlers and lets exceptions unwind with
+    // the complete mode stack already in place.
+    let declined_mode = active_mode.get().map(|mode| mode.clone_ref(py));
+    let mut active_mode = active_mode;
+    active_mode.restore();
+
+    for probed in overrides {
+        let handler = resolve_torch_function_override(py, probed)?;
+        let result =
+            call_torch_function_handler(py, &handler, &function, &types, &call_args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(Some(result));
+        }
+    }
+
+    Err(torch_function_dispatch_error_for_overrides(
         py,
         qualified_method,
-        Some(mode),
-        None,
+        declined_mode.as_ref(),
+        overrides,
     )?)
 }
 
@@ -3203,33 +3268,43 @@ fn ordered_binary_overrides<'py>(
         .map_err(|_| PyMemoryError::new_err(allocation_error))?;
 
     if let Some(probed) = first {
-        overrides.push(probed.clone());
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
     }
     if let Some(probed) = second {
-        let Some(first) = overrides.first() else {
-            overrides.push(probed.clone());
-            return Ok(overrides);
-        };
-        // PyTorch reports a class-valued operand itself in the dispatch types,
-        // but orders an incoming operand by its runtime type. Its metaclass is
-        // therefore compared with the first reported class, preserving class
-        // argument order and repeated class identities without changing
-        // ordinary instance subclass precedence.
-        if first.dispatch_type.is(probed.precedence_type.as_any()) {
-            return Ok(overrides);
-        }
+        insert_ordered_torch_function_override(&mut overrides, probed)?;
+    }
+    Ok(overrides)
+}
 
-        let first_type = first
+fn insert_ordered_torch_function_override<'py>(
+    overrides: &mut Vec<ProbedTorchFunctionOverride<'py>>,
+    probed: &ProbedTorchFunctionOverride<'py>,
+) -> PyResult<()> {
+    // PyTorch reports a class-valued operand itself in the dispatch types,
+    // but orders an incoming operand by its runtime type. Its metaclass is
+    // therefore compared with each reported class, preserving class argument
+    // order and repeated class identities without changing ordinary instance
+    // subclass precedence.
+    if overrides
+        .iter()
+        .any(|existing| existing.dispatch_type.is(probed.precedence_type.as_any()))
+    {
+        return Ok(());
+    }
+
+    let mut insertion = overrides.len();
+    for (index, existing) in overrides.iter().enumerate() {
+        let existing_type = existing
             .dispatch_type
             .cast::<PyType>()
             .expect("a torch-function dispatch type is a Python type");
-        if probed.precedence_type.is_subclass(first_type.as_any())? {
-            overrides.insert(0, probed.clone());
-        } else {
-            overrides.push(probed.clone());
+        if probed.precedence_type.is_subclass(existing_type.as_any())? {
+            insertion = index;
+            break;
         }
     }
-    Ok(overrides)
+    overrides.insert(insertion, probed.clone());
+    Ok(())
 }
 
 fn ordered_matmul_overrides<'py>(
@@ -9458,10 +9533,15 @@ enum PermuteDimensionArguments<'py> {
     Variadic(Bound<'py, PyTuple>),
 }
 
+struct BoundPermuteDimensions<'py> {
+    arguments: PermuteDimensionArguments<'py>,
+    scan_sequence_elements_for_overrides: bool,
+}
+
 fn bind_permute_dimensions<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
-) -> PyResult<PermuteDimensionArguments<'py>> {
+) -> PyResult<BoundPermuteDimensions<'py>> {
     let mut keyword_dimensions = None;
     let mut keyword_error = None;
     if let Some(keywords) = keywords {
@@ -9485,6 +9565,7 @@ fn bind_permute_dimensions<'py>(
         }
     }
 
+    let mut scan_sequence_elements_for_overrides = true;
     let arguments = if positional.is_empty() {
         let Some(dimensions) = keyword_dimensions else {
             return Err(PyTypeError::new_err(
@@ -9494,7 +9575,8 @@ fn bind_permute_dimensions<'py>(
         let Some(arguments) = permute_sequence_arguments(&dimensions) else {
             return Err(permute_argument_type_error(&dimensions, None)?);
         };
-        validate_permute_sequence_first(&arguments, &dimensions, None)?;
+        scan_sequence_elements_for_overrides =
+            validate_permute_method_sequence_first(&arguments, &dimensions, None)?;
         if let Some(error) = keyword_error {
             return Err(error);
         }
@@ -9502,15 +9584,19 @@ fn bind_permute_dimensions<'py>(
     } else if positional.len() == 1 {
         let first = positional.get_item(0)?;
         let arguments = if let Some(arguments) = permute_sequence_arguments(&first) {
-            validate_permute_sequence_first(&arguments, &first, Some(1))?;
+            scan_sequence_elements_for_overrides =
+                validate_permute_method_sequence_first(&arguments, &first, Some(1))?;
             arguments
-        } else if is_permute_variadic_dimension(&first)? {
-            if !is_permute_variadic_dimension(&first)? {
+        } else {
+            let is_dimension = is_permute_variadic_dimension(&first)?;
+            let has_override = probe_permute_torch_function_override(&first).is_some();
+            if !is_dimension && !has_override {
+                return Err(permute_argument_type_error(&first, Some(1))?);
+            }
+            if !has_override && !is_permute_variadic_dimension(&first)? {
                 return Err(permute_argument_type_error(&first, Some(1))?);
             }
             PermuteDimensionArguments::Variadic(positional.clone())
-        } else {
-            return Err(permute_argument_type_error(&first, Some(1))?);
         };
         if let Some(error) = keyword_error {
             return Err(error);
@@ -9518,13 +9604,15 @@ fn bind_permute_dimensions<'py>(
         arguments
     } else {
         let first = positional.get_item(0)?;
-        if !is_permute_variadic_dimension(&first)? {
+        let is_dimension = is_permute_variadic_dimension(&first)?;
+        let has_override = probe_permute_torch_function_override(&first).is_some();
+        if !is_dimension && !has_override {
             return Err(PyTypeError::new_err(format!(
                 "permute() takes 1 positional argument but {} were given",
                 positional.len()
             )));
         }
-        if !is_permute_variadic_dimension(&first)? {
+        if !has_override && !is_permute_variadic_dimension(&first)? {
             return Err(permute_argument_type_error(&first, Some(1))?);
         }
         if let Some(error) = keyword_error {
@@ -9533,7 +9621,10 @@ fn bind_permute_dimensions<'py>(
         PermuteDimensionArguments::Variadic(positional.clone())
     };
 
-    Ok(arguments)
+    Ok(BoundPermuteDimensions {
+        arguments,
+        scan_sequence_elements_for_overrides,
+    })
 }
 
 fn parse_permute_dimension_arguments(
@@ -9590,6 +9681,84 @@ fn validate_permute_sequence_first(
     Err(PyTypeError::new_err(format!(
         "permute(): argument 'dims' (position {position}) must be tuple of ints, but found element of type {actual} at pos 0"
     )))
+}
+
+fn validate_permute_method_sequence_first(
+    arguments: &PermuteDimensionArguments<'_>,
+    outer: &Bound<'_, PyAny>,
+    position: Option<usize>,
+) -> PyResult<bool> {
+    let first = match arguments {
+        PermuteDimensionArguments::Tuple(dimensions) => dimensions.get_item(0).ok(),
+        PermuteDimensionArguments::List(dimensions) => dimensions.get_item(0).ok(),
+        PermuteDimensionArguments::Variadic(_) => None,
+    };
+    let Some(first) = first else {
+        return Ok(true);
+    };
+    if is_permute_variadic_dimension(&first)?
+        || probe_permute_torch_function_override(&first).is_some()
+    {
+        return Ok(true);
+    }
+    if probe_permute_torch_function_override(outer).is_some() {
+        return Ok(false);
+    }
+    let Some(position) = position else {
+        return Err(permute_argument_type_error(outer, None)?);
+    };
+    let actual = python_type_name(&first)?;
+    Err(PyTypeError::new_err(format!(
+        "permute(): argument 'dims' (position {position}) must be tuple of ints, but found element of type {actual} at pos 0"
+    )))
+}
+
+fn ordered_permute_overrides<'py>(
+    dimensions: &BoundPermuteDimensions<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let (outer, length) = match &dimensions.arguments {
+        PermuteDimensionArguments::Tuple(dimensions) => {
+            (Some(dimensions.as_any()), dimensions.len())
+        }
+        PermuteDimensionArguments::List(dimensions) => {
+            (Some(dimensions.as_any()), dimensions.len())
+        }
+        PermuteDimensionArguments::Variadic(dimensions) => (None, dimensions.len()),
+    };
+    let capacity = length
+        .checked_add(usize::from(outer.is_some()))
+        .ok_or_else(|| PyMemoryError::new_err("permute dispatch argument count overflowed"))?;
+    let mut overrides = Vec::new();
+    overrides
+        .try_reserve_exact(capacity)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate permute dispatch operands"))?;
+
+    if let Some(outer) = outer
+        && let Some(probed) = probe_permute_torch_function_override(outer)
+    {
+        insert_ordered_torch_function_override(&mut overrides, &probed)?;
+    }
+    if !dimensions.scan_sequence_elements_for_overrides {
+        return Ok(overrides);
+    }
+    match &dimensions.arguments {
+        PermuteDimensionArguments::Tuple(dimensions)
+        | PermuteDimensionArguments::Variadic(dimensions) => {
+            for dimension in dimensions.iter() {
+                if let Some(probed) = probe_permute_torch_function_override(&dimension) {
+                    insert_ordered_torch_function_override(&mut overrides, &probed)?;
+                }
+            }
+        }
+        PermuteDimensionArguments::List(dimensions) => {
+            for dimension in dimensions.iter() {
+                if let Some(probed) = probe_permute_torch_function_override(&dimension) {
+                    insert_ordered_torch_function_override(&mut overrides, &probed)?;
+                }
+            }
+        }
+    }
+    Ok(overrides)
 }
 
 fn is_permute_variadic_dimension(dimension: &Bound<'_, PyAny>) -> PyResult<bool> {

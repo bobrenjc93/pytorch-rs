@@ -570,6 +570,216 @@ class TensorPermuteReferenceTests(unittest.TestCase):
             self.mode_contract(reference_torch),
         )
 
+    def dimension_override_contract(self, module):
+        tensor = module.zeros((2, 3, 4), dtype=module.float32)
+        descriptor = inspect.getattr_static(module.Tensor, "permute")
+        marker = object()
+        events = []
+
+        def mode_stack():
+            return module.overrides._get_current_function_mode_stack()
+
+        def normalize(value):
+            if value is tensor:
+                return "self"
+            if isinstance(value, list):
+                return "list", tuple(normalize(item) for item in value)
+            if isinstance(value, tuple):
+                return "tuple", tuple(normalize(item) for item in value)
+            if isinstance(value, IndexDimension):
+                return "IndexDimension"
+            if isinstance(value, int):
+                return type(value).__name__, int(value)
+            return type(value).__name__
+
+        def record(label, func, dispatch_types, args, kwargs):
+            events.append(
+                (
+                    label,
+                    func is descriptor,
+                    func.__qualname__,
+                    tuple(dispatch_type.__name__ for dispatch_type in dispatch_types),
+                    tuple(normalize(argument) for argument in args),
+                    {key: normalize(value) for key, value in kwargs.items()}
+                    if kwargs is not None
+                    else None,
+                    len(mode_stack()),
+                )
+            )
+
+        class BaseDimension(int):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                record("base", func, dispatch_types, args, kwargs)
+                return NotImplemented
+
+        class DerivedDimension(BaseDimension):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                record("derived", func, dispatch_types, args, kwargs)
+                return NotImplemented
+
+        class AcceptingDimension(int):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                record("accepting", func, dispatch_types, args, kwargs)
+                return marker
+
+        class DimensionSequence(list):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                record("sequence", func, dispatch_types, args, kwargs)
+                return marker
+
+        index_calls = []
+
+        class IndexDimension:
+            def __index__(self):
+                index_calls.append("index")
+                return 2
+
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                record("index", func, dispatch_types, args, kwargs)
+                return marker
+
+        dimensions = (
+            BaseDimension(2),
+            DerivedDimension(0),
+            AcceptingDimension(1),
+        )
+        result = tensor.permute(*dimensions)
+        ordered_events = tuple(events)
+
+        forms = []
+        for style in ("tuple", "list", "keyword"):
+            events.clear()
+            dimension = AcceptingDimension(0)
+            if style == "tuple":
+                result_for_form = tensor.permute((2, dimension, 1))
+            elif style == "list":
+                result_for_form = tensor.permute([2, dimension, 1])
+            else:
+                result_for_form = tensor.permute(dims=[2, dimension, 1])
+            forms.append((style, result_for_form is marker, tuple(events)))
+
+        events.clear()
+        repeated_dimensions = (
+            AcceptingDimension(2),
+            AcceptingDimension(0),
+            1,
+        )
+        repeated_result = tensor.permute(*repeated_dimensions)
+        repeated_events = tuple(events)
+
+        events.clear()
+        sequence = DimensionSequence([1.5, AcceptingDimension(0), 2])
+        sequence_result = tensor.permute(sequence)
+        sequence_events = tuple(events)
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func is descriptor,
+                        func.__qualname__,
+                        tuple(
+                            dispatch_type.__name__
+                            for dispatch_type in dispatch_types
+                        ),
+                        tuple(normalize(argument) for argument in args),
+                        {key: normalize(value) for key, value in kwargs.items()}
+                        if kwargs is not None
+                        else None,
+                        len(mode_stack()),
+                    )
+                )
+                return self.result
+
+        events.clear()
+        accepting_mode = RecordingMode(object())
+        with accepting_mode:
+            accepting_result = tensor.permute(dimensions)
+            accepting_restored = mode_stack() == [accepting_mode]
+        accepting_events = tuple(events)
+
+        events.clear()
+        declining_mode = RecordingMode(NotImplemented)
+        with declining_mode:
+            declining_result = tensor.permute(dims=list(dimensions))
+            declining_restored = mode_stack() == [declining_mode]
+        declining_events = tuple(events)
+
+        events.clear()
+        index_dimension = IndexDimension()
+        index_mode = RecordingMode(marker)
+        with index_mode:
+            index_result = tensor.permute(index_dimension, 0, 1)
+
+        class DecliningDimension(int):
+            @classmethod
+            def __torch_function__(cls, func, dispatch_types, args=(), kwargs=None):
+                record("declining", func, dispatch_types, args, kwargs)
+                return NotImplemented
+
+        events.clear()
+        try:
+            tensor.permute(DecliningDimension(2), 0, 1)
+        except Exception as error:
+            all_declined = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-f]+", "0xADDR", str(error)),
+            )
+        else:
+            self.fail(f"{module.__name__} accepted a declining dimension override")
+
+        class DisabledDimension(int):
+            __torch_function__ = reference_torch._C._disabled_torch_function_impl
+
+        disabled_result = tensor.permute(DisabledDimension(2), 0, 1)
+
+        return {
+            "ordered": (result is marker, ordered_events),
+            "forms": tuple(forms),
+            "repeated": (repeated_result is marker, repeated_events),
+            "sequence": (sequence_result is marker, sequence_events),
+            "accepting_mode": (
+                accepting_result is accepting_mode.result,
+                tuple(accepting_mode.calls),
+                accepting_events,
+                accepting_restored,
+            ),
+            "declining_mode": (
+                declining_result is marker,
+                tuple(declining_mode.calls),
+                declining_events,
+                declining_restored,
+            ),
+            "index_mode": (
+                index_result is marker,
+                tuple(index_calls),
+                tuple(index_mode.calls),
+            ),
+            "all_declined": (all_declined, tuple(events)),
+            "disabled": (
+                tuple(disabled_result.shape),
+                disabled_result.stride(),
+                disabled_result.data_ptr() == tensor.data_ptr(),
+            ),
+            "stack_empty": not mode_stack(),
+        }
+
+    def test_dimension_override_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        self.assertEqual(
+            self.dimension_override_contract(torch),
+            self.dimension_override_contract(reference_torch),
+        )
+
     def test_descriptor_metadata_and_unbound_behavior_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual_descriptor = inspect.getattr_static(torch.Tensor, "permute")
