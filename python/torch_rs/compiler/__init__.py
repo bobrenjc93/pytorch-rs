@@ -57,9 +57,10 @@ def disable(fn=None, recursive=True, *, reason=None):
         reason (optional): A string value indicating the reason for disabling the function.
     """
     if fn is None:
-        raise NotImplementedError(
-            "torch.compiler.disable() without a function is not supported"
-        )
+        def decorator(fn):
+            return disable(fn, recursive=recursive, reason=reason)
+
+        return decorator
 
     supported_function_types = (types.FunctionType, types.MethodType)
     if not isinstance(fn, supported_function_types):
