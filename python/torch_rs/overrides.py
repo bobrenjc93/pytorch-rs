@@ -101,6 +101,7 @@ def _dispatch_unary_torch_function(
     mode = _get_current_function_mode()
     overloaded_args = _overloaded_unary_arguments(input, include_tensor)
     types = tuple(type(argument) for argument in overloaded_args)
+    dispatch_kwargs = keyword_arguments.copy()
     if mode is not None:
         popped_mode = _pop_mode()
         try:
@@ -108,7 +109,7 @@ def _dispatch_unary_torch_function(
                 public_function,
                 types,
                 (input,),
-                keyword_arguments.copy(),
+                dispatch_kwargs,
             )
         finally:
             _push_mode(popped_mode)
@@ -121,7 +122,7 @@ def _dispatch_unary_torch_function(
                 public_function,
                 implementation,
                 input,
-                keyword_arguments,
+                dispatch_kwargs,
                 include_tensor=False,
             )
 
@@ -142,7 +143,7 @@ def _dispatch_unary_torch_function(
             public_function,
             types,
             (input,),
-            keyword_arguments.copy(),
+            dispatch_kwargs,
         )
         if result is not NotImplemented:
             return result

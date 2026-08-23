@@ -475,6 +475,102 @@ class FunctionalReluReferenceTests(unittest.TestCase):
             self.dispatch_contract(reference_torch),
         )
 
+    def rewritten_kwargs_contract(self, module):
+        function = module.nn.functional.relu
+        source = module.tensor([-1.0], dtype=module.float32)
+
+        def mode_stack():
+            return module.overrides._get_current_function_mode_stack()
+
+        class RewritingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func is function,
+                        tuple(item.__name__ for item in types),
+                        len(args) == 1 and args[0] is source,
+                        kwargs.copy(),
+                        id(kwargs),
+                        len(mode_stack()),
+                    )
+                )
+                if len(self.calls) == 1:
+                    kwargs["inplace"] = True
+                    return NotImplemented
+                return kwargs["inplace"]
+
+        rewriting = RewritingMode()
+        with rewriting:
+            exact_result = function(source)
+            exact_restored = mode_stack() == [rewriting]
+
+        fallback_events = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                fallback_events.append(
+                    (
+                        "override",
+                        func is function,
+                        tuple(item.__name__ for item in types),
+                        len(args) == 1 and args[0] is override,
+                        kwargs.copy(),
+                        id(kwargs),
+                        len(mode_stack()),
+                    )
+                )
+                return kwargs["inplace"]
+
+        class FallbackMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                fallback_events.append(
+                    (
+                        "mode",
+                        func is function,
+                        tuple(item.__name__ for item in types),
+                        len(args) == 1 and args[0] is override,
+                        kwargs.copy(),
+                        id(kwargs),
+                        len(mode_stack()),
+                    )
+                )
+                kwargs["inplace"] = True
+                return NotImplemented
+
+        override = Override()
+        fallback_mode = FallbackMode()
+        with fallback_mode:
+            fallback_result = function(override)
+            fallback_restored = mode_stack() == [fallback_mode]
+
+        return {
+            "exact_result": exact_result,
+            "exact_calls": tuple(call[:4] + call[5:] for call in rewriting.calls),
+            "exact_fresh_retry_kwargs": (
+                rewriting.calls[0][4] != rewriting.calls[1][4]
+            ),
+            "exact_restored": exact_restored,
+            "fallback_result": fallback_result,
+            "fallback_events": tuple(
+                event[:5] + event[6:] for event in fallback_events
+            ),
+            "fallback_shared_kwargs": (
+                fallback_events[0][5] == fallback_events[1][5]
+            ),
+            "fallback_restored": fallback_restored,
+            "stack_depth": len(mode_stack()),
+        }
+
+    def test_declining_mode_kwargs_rewrites_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.rewritten_kwargs_contract(torch),
+            self.rewritten_kwargs_contract(reference_torch),
+        )
+
     def test_inplace_true_is_explicitly_unsupported_and_non_mutating(self):
         leaf = torch.tensor(
             [[9.0, 9.0, 9.0], [-1.0, 2.0, -0.0]], requires_grad=True

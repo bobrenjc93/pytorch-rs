@@ -223,6 +223,87 @@ class FunctionalReluTests(unittest.TestCase):
             )
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
+    def test_declining_modes_preserve_rewritten_kwargs_for_fallback(self):
+        source = torch.tensor([-1.0])
+
+        class RewritingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (types, kwargs.copy(), id(kwargs))
+                )
+                if len(self.calls) == 1:
+                    kwargs["inplace"] = True
+                    return NotImplemented
+                return kwargs["inplace"]
+
+        rewriting = RewritingMode()
+        with rewriting:
+            self.assertIs(functional.relu(source), True)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [rewriting],
+            )
+        self.assertEqual(
+            tuple(call[:2] for call in rewriting.calls),
+            (
+                ((torch.Tensor,), {"inplace": False}),
+                ((), {"inplace": True}),
+            ),
+        )
+        self.assertNotEqual(rewriting.calls[0][2], rewriting.calls[1][2])
+
+        events = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        "override",
+                        kwargs.copy(),
+                        id(kwargs),
+                        len(
+                            torch.overrides._get_current_function_mode_stack()
+                        ),
+                    )
+                )
+                return kwargs["inplace"]
+
+        class RewritingFallbackMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        "mode",
+                        kwargs.copy(),
+                        id(kwargs),
+                        len(
+                            torch.overrides._get_current_function_mode_stack()
+                        ),
+                    )
+                )
+                kwargs["inplace"] = True
+                return NotImplemented
+
+        fallback_mode = RewritingFallbackMode()
+        with fallback_mode:
+            self.assertIs(functional.relu(Override()), True)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [fallback_mode],
+            )
+        self.assertEqual(
+            tuple((label, kwargs, depth) for label, kwargs, _, depth in events),
+            (
+                ("mode", {"inplace": False}, 0),
+                ("override", {"inplace": True}, 1),
+            ),
+        )
+        self.assertEqual(events[0][2], events[1][2])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
     def test_torch_function_modes_forward_decline_raise_and_restore_stack(self):
         source = torch.tensor([-1.0, 2.0], requires_grad=True)
         marker = object()
