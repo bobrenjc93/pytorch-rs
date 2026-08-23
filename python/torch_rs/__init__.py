@@ -15,6 +15,18 @@ from .torch_rs import *
 _C = _native
 _sys.modules[f"{__name__}._C"] = _C
 
+
+def _reduce_method_descriptor(descriptor):
+    if descriptor.__objclass__ is Tensor.__base__:
+        return _builtins.getattr, (Tensor, descriptor.__name__)
+    return descriptor.__reduce__()
+
+
+# TensorBase keeps PyTorch's public ``torch._C`` owner metadata, while this
+# package must not install a competing top-level ``torch._C`` module. Resolve
+# its inherited method descriptors through the public Tensor class instead.
+_copyreg.pickle(type(Tensor.relu), _reduce_method_descriptor)
+
 # PyTorch's memory-format reducers use dotted public names such as
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
 # from this package without adding ``torch`` to wildcard imports.

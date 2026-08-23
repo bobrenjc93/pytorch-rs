@@ -1,5 +1,6 @@
 import inspect
 import json
+import pickle
 import subprocess
 import sys
 import types
@@ -627,6 +628,11 @@ class ReluReferenceTests(unittest.TestCase):
             "types_match": (
                 type(descriptor) is types.MethodDescriptorType,
                 type(bound) is types.BuiltinMethodType,
+            ),
+            "pickle_identities": tuple(
+                pickle.loads(pickle.dumps(descriptor, protocol=protocol))
+                is descriptor
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
             ),
             "errors": tuple(
                 self.error(call)
