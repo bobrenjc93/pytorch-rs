@@ -5473,6 +5473,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96
       }
+    },
+    {
+      "key": "pr:759",
+      "recordedAt": "2026-08-23T15:42:02.841Z",
+      "label": "PR #759",
+      "kind": "leaf",
+      "prNumber": 759,
+      "title": "Expose torch.clear_autocast_cache",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 86.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 69.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }
