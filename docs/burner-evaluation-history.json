@@ -5249,6 +5249,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 94
       }
+    },
+    {
+      "key": "pr:701",
+      "recordedAt": "2026-08-23T02:42:05.027Z",
+      "label": "PR #701",
+      "kind": "leaf",
+      "prNumber": 701,
+      "title": "Expose torch.backends.cuda.is_built",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 85.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 67.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 94
+      }
     }
   ]
 }
