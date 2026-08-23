@@ -9251,7 +9251,7 @@ fn bind_view_shape_argument<'py>(
         }
     }
 
-    if positional.len() == 2 {
+    if positional.len() >= 2 {
         let first = positional.get_item(0)?;
         if !is_view_shape_dimension(&first) {
             return Err(unsupported_view_call_error(positional, keywords)?);
@@ -9271,7 +9271,7 @@ fn bind_view_shape_argument<'py>(
             }
             return Ok(shape);
         }
-        // The two public overloads each probe the first variadic dimension
+        // The dtype and shape overloads each probe the first variadic dimension
         // before mode dispatch. The remaining conversions happen afterward.
         if !is_view_shape_dimension(&first) {
             return Err(unsupported_view_call_error(positional, keywords)?);
@@ -9282,13 +9282,13 @@ fn bind_view_shape_argument<'py>(
         return Ok(ViewShapeArgument::Tuple(positional.clone()));
     }
 
-    let (value, positional_dimension) = match positional.len() {
-        0 => (
+    let (value, positional_dimension) = if positional.is_empty() {
+        (
             keyword_shape.ok_or_else(unsupported_view_argument_error)?,
             false,
-        ),
-        1 => (positional.get_item(0)?, true),
-        _ => return Err(unsupported_three_or_more_view_dimensions_error()),
+        )
+    } else {
+        (positional.get_item(0)?, true)
     };
     let shape = if let Ok(shape) = value.cast::<PyTuple>() {
         ViewShapeArgument::Tuple(shape.clone())
@@ -9424,12 +9424,6 @@ fn unsupported_view_call_error(
     Ok(PyTypeError::new_err(format!(
         "view() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (torch.dtype dtype)\n * (tuple of ints size)\n"
     )))
-}
-
-fn unsupported_three_or_more_view_dimensions_error() -> PyErr {
-    PyTypeError::new_err(
-        "view(): three or more positional dimensions are not supported; pass a tuple, list, or torch.Size",
-    )
 }
 
 fn unsupported_view_dtype_error() -> PyErr {
