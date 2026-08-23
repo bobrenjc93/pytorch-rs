@@ -19,24 +19,34 @@ FUNCTION_DOC = """Returns True if the global warn_always flag is turned on. Refe
 
 
 class IsWarnAlwaysEnabledTests(unittest.TestCase):
-    def test_default_false_is_exact_and_preserves_grad_mode(self):
+    def setUp(self):
+        self.original = torch.is_warn_always_enabled()
+        torch.set_warn_always(False)
+
+    def tearDown(self):
+        torch.set_warn_always(self.original)
+
+    def test_mutable_state_is_exact_and_preserves_grad_mode(self):
         function = torch.is_warn_always_enabled
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(function.__code__.co_names, ("_C", "_get_warnAlways"))
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
-        def assert_query_preserves_grad_mode(expected_grad_state):
+        def assert_query_preserves_grad_mode(expected_grad_state, expected_warn_state):
             self.assertIs(torch.is_grad_enabled(), expected_grad_state)
-            self.assertIs(function(), False)
+            self.assertIs(function(), expected_warn_state)
             self.assertIs(torch.is_grad_enabled(), expected_grad_state)
 
-        assert_query_preserves_grad_mode(True)
-        with torch.no_grad():
-            assert_query_preserves_grad_mode(False)
-            with torch.no_grad():
-                assert_query_preserves_grad_mode(False)
-            assert_query_preserves_grad_mode(False)
-        assert_query_preserves_grad_mode(True)
+        for warn_state in (False, True, False):
+            with self.subTest(warn_state=warn_state):
+                torch.set_warn_always(warn_state)
+                assert_query_preserves_grad_mode(True, warn_state)
+                with torch.no_grad():
+                    assert_query_preserves_grad_mode(False, warn_state)
+                    with torch.no_grad():
+                        assert_query_preserves_grad_mode(False, warn_state)
+                    assert_query_preserves_grad_mode(False, warn_state)
+                assert_query_preserves_grad_mode(True, warn_state)
 
     def test_default_false_is_stable_across_threads_and_grad_modes(self):
         function = torch.is_warn_always_enabled
@@ -156,9 +166,15 @@ class IsWarnAlwaysEnabledTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_warn_always_setter_remains_unsupported(self):
-        self.assertFalse(hasattr(torch, "set_warn_always"))
-        self.assertNotIn("set_warn_always", torch.__all__)
+    def test_warn_always_setter_and_private_native_state_are_exposed(self):
+        self.assertTrue(hasattr(torch, "set_warn_always"))
+        self.assertEqual(torch.__all__.count("set_warn_always"), 1)
+        self.assertTrue(hasattr(torch._C, "_set_warnAlways"))
+        self.assertTrue(hasattr(torch._C, "_get_warnAlways"))
+        self.assertFalse(hasattr(torch, "_set_warnAlways"))
+        self.assertFalse(hasattr(torch, "_get_warnAlways"))
+        self.assertNotIn("_set_warnAlways", torch._C.__all__)
+        self.assertNotIn("_get_warnAlways", torch._C.__all__)
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""
@@ -174,7 +190,10 @@ sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
 assert torch.is_warn_always_enabled() is False
-assert not hasattr(torch, "set_warn_always")
+assert torch.set_warn_always(True) is None
+assert torch.is_warn_always_enabled() is True
+assert torch.set_warn_always(False) is None
+assert torch.is_warn_always_enabled() is False
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

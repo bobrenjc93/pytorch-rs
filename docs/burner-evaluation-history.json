@@ -5281,6 +5281,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 94
       }
+    },
+    {
+      "key": "pr:707",
+      "recordedAt": "2026-08-23T04:23:27.785Z",
+      "label": "PR #707",
+      "kind": "leaf",
+      "prNumber": 707,
+      "title": "Add mutable torch.set_warn_always control",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 85.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 68.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 94
+      }
     }
   ]
 }

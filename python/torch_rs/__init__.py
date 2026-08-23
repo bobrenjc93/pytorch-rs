@@ -90,11 +90,24 @@ def get_float32_matmul_precision() -> str:
     return "highest"
 
 
+def set_warn_always(b: _builtins.bool, /) -> None:
+    r"""When this flag is False (default) then some PyTorch warnings may only
+    appear once per process. This helps avoid excessive warning information.
+    Setting it to True causes these warnings to always appear, which may be
+    helpful when debugging.
+
+    Args:
+        b (:class:`bool`): If True, force warnings to always be emitted
+                           If False, set to the default behaviour
+    """
+    _C._set_warnAlways(b)
+
+
 def is_warn_always_enabled() -> _builtins.bool:
     r"""Returns True if the global warn_always flag is turned on. Refer to
     :func:`torch.set_warn_always` documentation for more details.
     """
-    return False
+    return _C._get_warnAlways()
 
 
 def set_default_dtype(d: "torch.dtype", /) -> None:
@@ -181,6 +194,7 @@ __all__ = [
     "get_default_device",
     "get_device_module",
     "get_float32_matmul_precision",
+    "set_warn_always",
     "is_warn_always_enabled",
     "e",
     "pi",

@@ -35,6 +35,16 @@ class IsWarnAlwaysEnabledReferenceTests(unittest.TestCase):
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
+    def setUp(self):
+        self.original_actual = torch.is_warn_always_enabled()
+        self.original_expected = reference_torch.is_warn_always_enabled()
+        torch.set_warn_always(False)
+        reference_torch.set_warn_always(False)
+
+    def tearDown(self):
+        torch.set_warn_always(self.original_actual)
+        reference_torch.set_warn_always(self.original_expected)
+
     def supported_state_outcome(self, module):
         function = module.is_warn_always_enabled
 
@@ -42,7 +52,7 @@ class IsWarnAlwaysEnabledReferenceTests(unittest.TestCase):
             before = module.is_grad_enabled()
             result = function()
             after = module.is_grad_enabled()
-            return before, result is False, after
+            return before, result, type(result) is bool, after
 
         states = [query_outcome()]
         with module.no_grad():
@@ -91,45 +101,32 @@ class IsWarnAlwaysEnabledReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_supported_default_threaded_and_grad_states_match_pytorch_2_13(self):
-        original = reference_torch.is_warn_always_enabled()
-        try:
-            reference_torch.set_warn_always(False)
-            self.assertEqual(
-                self.supported_state_outcome(torch),
-                self.supported_state_outcome(reference_torch),
-            )
-        finally:
-            reference_torch.set_warn_always(original)
+    def test_mutable_threaded_and_grad_states_match_pytorch_2_13(self):
+        for state in (False, True, False):
+            with self.subTest(state=state):
+                torch.set_warn_always(state)
+                reference_torch.set_warn_always(state)
+                self.assertIs(torch.is_warn_always_enabled(), state)
+                self.assertIs(reference_torch.is_warn_always_enabled(), state)
+                self.assertEqual(
+                    self.supported_state_outcome(torch),
+                    self.supported_state_outcome(reference_torch),
+                )
 
+    def test_each_setter_controls_only_its_own_native_runtime(self):
+        torch.set_warn_always(False)
+        reference_torch.set_warn_always(False)
+        torch.set_warn_always(True)
+        self.assertIs(torch.is_warn_always_enabled(), True)
+        self.assertIs(reference_torch.is_warn_always_enabled(), False)
+
+        reference_torch.set_warn_always(True)
+        torch.set_warn_always(False)
         self.assertIs(torch.is_warn_always_enabled(), False)
-        self.assertIs(reference_torch.is_warn_always_enabled(), original)
+        self.assertIs(reference_torch.is_warn_always_enabled(), True)
 
-    def test_reference_only_setter_bounds_the_unsupported_true_state(self):
-        actual = torch.is_warn_always_enabled
-        expected = reference_torch.is_warn_always_enabled
-        original = expected()
-
-        try:
-            reference_torch.set_warn_always(False)
-            actual_states = [actual()]
-            expected_states = [expected()]
-
-            reference_torch.set_warn_always(True)
-            actual_states.append(actual())
-            expected_states.append(expected())
-
-            reference_torch.set_warn_always(False)
-            actual_states.append(actual())
-            expected_states.append(expected())
-        finally:
-            reference_torch.set_warn_always(original)
-
-        for state in actual_states:
-            self.assertIs(state, False)
-        self.assertEqual(expected_states, [False, True, False])
-        for state in expected_states:
-            self.assertIs(type(state), bool)
+        reference_torch.set_warn_always(False)
+        self.assertIs(reference_torch.is_warn_always_enabled(), False)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_module = importlib.import_module("torch_rs")
@@ -204,11 +201,14 @@ class IsWarnAlwaysEnabledReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_warn_always_setter_remains_deliberately_unsupported(self):
+    def test_warn_always_setter_is_exported_like_pytorch_2_13(self):
         self.assertTrue(hasattr(reference_torch, "set_warn_always"))
         self.assertIn("set_warn_always", reference_torch.__all__)
-        self.assertFalse(hasattr(torch, "set_warn_always"))
-        self.assertNotIn("set_warn_always", torch.__all__)
+        self.assertTrue(hasattr(torch, "set_warn_always"))
+        self.assertEqual(
+            torch.__all__.count("set_warn_always"),
+            reference_torch.__all__.count("set_warn_always"),
+        )
 
 
 if __name__ == "__main__":

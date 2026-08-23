@@ -43,6 +43,7 @@ static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
@@ -4489,10 +4490,40 @@ fn strided_object(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
 }
 
 pub(crate) fn warn_once(py: Python<'_>, emitted: &AtomicBool, message: &CStr) -> PyResult<()> {
-    if emitted.swap(true, Ordering::Relaxed) {
+    // Always-warning mode deliberately bypasses the per-site marker. An unused
+    // marker must therefore remain available if the process later returns to
+    // the default once-only policy, while a marker consumed before always mode
+    // remains consumed after the policy is disabled again.
+    if !WARN_ALWAYS_ENABLED.load(Ordering::SeqCst) && emitted.swap(true, Ordering::Relaxed) {
         return Ok(());
     }
     PyErr::warn(py, &py.get_type::<PyUserWarning>(), message, 1)
+}
+
+#[pyfunction(name = "_set_warnAlways", signature = (b, /), text_signature = None)]
+fn set_warn_always_native(b: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !b.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(b)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "setWarnOnlyOnce expects a bool, but got {type_name}"
+        )));
+    }
+    WARN_ALWAYS_ENABLED.store(b.is_truthy()?, Ordering::SeqCst);
+    Ok(())
+}
+
+#[pyfunction(name = "_get_warnAlways", signature = (), text_signature = None)]
+fn get_warn_always_native() -> bool {
+    WARN_ALWAYS_ENABLED.load(Ordering::SeqCst)
+}
+
+fn add_warn_always_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(set_warn_always_native, module)?)?;
+    module.add_function(wrap_pyfunction!(get_warn_always_native, module)?)?;
+    let exports = module.getattr("__all__")?;
+    exports.call_method1("remove", ("_set_warnAlways",))?;
+    exports.call_method1("remove", ("_get_warnAlways",))?;
+    Ok(())
 }
 
 fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<MemoryFormat> {
@@ -10619,6 +10650,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDType>()?;
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
     add_default_dtype_validator(module)?;
+    add_warn_always_builtins(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     add_no_grad(module)?;
