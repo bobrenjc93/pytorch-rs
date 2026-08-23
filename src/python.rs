@@ -299,6 +299,14 @@ impl PyTensorBase {
                 }
                 tensor.inner.metadata_alias()
             } else if indices.len() == 2
+                && is_exact_full_slice(&indices.get_item(0)?)?
+                && is_exact_full_slice(&indices.get_item(1)?)?
+            {
+                if tensor.inner.shape().len() < 2 {
+                    return Err(too_many_indices(tensor.inner.shape().len()));
+                }
+                tensor.inner.metadata_alias()
+            } else if indices.len() == 2
                 && indices.get_item(0)?.is_instance_of::<PyEllipsis>()
                 && indices.get_item(1)?.is_none()
             {
