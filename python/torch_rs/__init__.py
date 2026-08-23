@@ -3,6 +3,7 @@
 import builtins as _builtins
 import copyreg as _copyreg
 import functools as _functools
+import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
 from math import e, inf, nan, pi
 
@@ -16,16 +17,39 @@ _C = _native
 _sys.modules[f"{__name__}._C"] = _C
 
 
-def _reduce_method_descriptor(descriptor):
-    if descriptor.__objclass__ is Tensor.__base__:
-        return _builtins.getattr, (Tensor, descriptor.__name__)
-    return descriptor.__reduce__()
+def _make_method_descriptor_reducer(previous_reducer):
+    if getattr(previous_reducer, "_torch_rs_tensorbase_reducer", False):
+        previous_reducer = previous_reducer._torch_rs_previous_reducer
+
+    def reduce_method_descriptor(descriptor):
+        if descriptor.__objclass__ is Tensor.__base__:
+            return _builtins.getattr, (Tensor, descriptor.__name__)
+        if previous_reducer is not None:
+            return previous_reducer(descriptor)
+        return descriptor.__reduce__()
+
+    reduce_method_descriptor._torch_rs_tensorbase_reducer = True
+    reduce_method_descriptor._torch_rs_previous_reducer = previous_reducer
+    return reduce_method_descriptor
 
 
 # TensorBase keeps PyTorch's public ``torch._C`` owner metadata, while this
 # package must not install a competing top-level ``torch._C`` module. Resolve
-# its inherited method descriptors through the public Tensor class instead.
-_copyreg.pickle(type(Tensor.relu), _reduce_method_descriptor)
+# its inherited method descriptors through the public Tensor class instead,
+# while preserving process-wide reducers installed before this package.
+_method_descriptor_type = type(Tensor.relu)
+_reduce_method_descriptor = _make_method_descriptor_reducer(
+    _copyreg.dispatch_table.get(_method_descriptor_type)
+)
+_copyreg.pickle(_method_descriptor_type, _reduce_method_descriptor)
+_reduce_forking_method_descriptor = _make_method_descriptor_reducer(
+    _multiprocessing_reduction.ForkingPickler._extra_reducers.get(
+        _method_descriptor_type
+    )
+)
+_multiprocessing_reduction.ForkingPickler.register(
+    _method_descriptor_type, _reduce_forking_method_descriptor
+)
 
 # PyTorch's memory-format reducers use dotted public names such as
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
@@ -238,4 +262,5 @@ from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _copyreg, _functools, _native, _sys
+del _copyreg, _functools, _method_descriptor_type, _multiprocessing_reduction
+del _native, _sys

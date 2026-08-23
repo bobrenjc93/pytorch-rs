@@ -5,6 +5,7 @@ import subprocess
 import sys
 import types
 import unittest
+from multiprocessing.reduction import ForkingPickler
 
 import numpy as np
 import torch_rs as torch
@@ -634,6 +635,11 @@ class ReluReferenceTests(unittest.TestCase):
                 is descriptor
                 for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
             ),
+            "forking_pickle_identities": tuple(
+                pickle.loads(ForkingPickler.dumps(descriptor, protocol=protocol))
+                is descriptor
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+            ),
             "errors": tuple(
                 self.error(call)
                 for call in (
@@ -655,6 +661,67 @@ class ReluReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.callable_contract(torch),
             self.callable_contract(reference_torch),
+        )
+
+    def test_existing_method_descriptor_reducers_are_preserved(self):
+        source = r'''
+import copyreg
+import importlib
+import json
+import multiprocessing.reduction as reduction
+import pickle
+import sys
+import types
+
+events = []
+
+def copyreg_reducer(descriptor):
+    events.append(["copyreg", descriptor is str.upper])
+    return getattr, (descriptor.__objclass__, descriptor.__name__)
+
+def forking_reducer(descriptor):
+    events.append(["forking", descriptor is str.upper])
+    return getattr, (descriptor.__objclass__, descriptor.__name__)
+
+descriptor_type = types.MethodDescriptorType
+copyreg.pickle(descriptor_type, copyreg_reducer)
+reduction.ForkingPickler.register(descriptor_type, forking_reducer)
+
+module = importlib.import_module("torch_rs")
+relu = module.Tensor.relu
+copyreg_str = pickle.loads(pickle.dumps(str.upper))
+forking_str = pickle.loads(reduction.ForkingPickler.dumps(str.upper))
+events_after_str = list(events)
+copyreg_relu = pickle.loads(pickle.dumps(relu))
+forking_relu = pickle.loads(reduction.ForkingPickler.dumps(relu))
+
+print(json.dumps({
+    "copyreg_str": copyreg_str is str.upper,
+    "forking_str": forking_str is str.upper,
+    "events_after_str": events_after_str,
+    "relu_round_trips": [copyreg_relu is relu, forking_relu is relu],
+    "relu_bypasses_previous": events == events_after_str,
+    "torch_not_imported": not any(
+        name == "torch" or name.startswith("torch.") for name in sys.modules
+    ),
+}, sort_keys=True))
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            json.loads(completed.stdout),
+            {
+                "copyreg_str": True,
+                "events_after_str": [["copyreg", True], ["forking", True]],
+                "forking_str": True,
+                "relu_bypasses_previous": True,
+                "relu_round_trips": [True, True],
+                "torch_not_imported": True,
+            },
         )
 
     @staticmethod
