@@ -101,6 +101,11 @@ class TensorTypeTests(unittest.TestCase):
                     tensor.type(),
                     tensor.type(*()),
                     tensor.type(**{}),
+                    tensor.type(None),
+                    tensor.type(dtype=None),
+                    tensor.type(non_blocking=False),
+                    tensor.type(non_blocking=True),
+                    tensor.type(None, True),
                     descriptor(tensor),
                 )
 
@@ -110,6 +115,55 @@ class TensorTypeTests(unittest.TestCase):
                 self.assertEqual(self.metadata(tensor), before)
 
         tracked.type()
+        tracked.sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[2.0, 2.0], [2.0, 2.0]])
+
+    def test_supported_conversions_return_the_exact_tensor_without_mutation(self):
+        leaf, tracked, cases = self.tensor_cases()
+
+        for case, tensor in cases:
+            calls = (
+                ("float32 positional", lambda: tensor.type(torch.float32)),
+                ("float alias positional", lambda: tensor.type(torch.float)),
+                ("legacy string positional", lambda: tensor.type("torch.FloatTensor")),
+                ("float32 keyword", lambda: tensor.type(dtype=torch.float32)),
+                ("float alias keyword", lambda: tensor.type(dtype=torch.float)),
+                (
+                    "legacy string keyword",
+                    lambda: tensor.type(dtype="torch.FloatTensor"),
+                ),
+                (
+                    "false positional non-blocking",
+                    lambda: tensor.type(torch.float32, False),
+                ),
+                (
+                    "true positional non-blocking",
+                    lambda: tensor.type(torch.float32, True),
+                ),
+                (
+                    "false keyword non-blocking",
+                    lambda: tensor.type(
+                        "torch.FloatTensor", non_blocking=False
+                    ),
+                ),
+                (
+                    "true keyword non-blocking",
+                    lambda: tensor.type(dtype=torch.float, non_blocking=True),
+                ),
+            )
+            for form, call in calls:
+                with self.subTest(
+                    case=case,
+                    form=form,
+                    shape=tensor.shape,
+                    stride=tensor.stride(),
+                ):
+                    before = self.metadata(tensor)
+                    result = call()
+                    self.assertIs(result, tensor)
+                    self.assertEqual(self.metadata(tensor), before)
+
+        self.assertIs(tracked.type(torch.float32), tracked)
         tracked.sum().backward()
         self.assertEqual(leaf.grad.tolist(), [[2.0, 2.0], [2.0, 2.0]])
 
@@ -177,42 +231,50 @@ class TensorTypeTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), message)
 
-    def test_conversion_and_non_blocking_forms_remain_unsupported(self):
+    def test_argument_errors_and_unsupported_targets_do_not_mutate(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "type")
         before = self.metadata(tensor)
         calls = (
             (
-                lambda: tensor.type(torch.float32),
-                "type() takes 0 positional arguments but 1 was given",
+                lambda: tensor.type(torch.float32, False, None),
+                "type() takes from 0 to 2 positional arguments but 3 were given",
             ),
             (
-                lambda: tensor.type("torch.FloatTensor"),
-                "type() takes 0 positional arguments but 1 was given",
+                lambda: descriptor(tensor, torch.float32, False, None),
+                "type() takes from 0 to 2 positional arguments but 3 were given",
             ),
             (
-                lambda: tensor.type(None, False),
-                "type() takes 0 positional arguments but 2 were given",
+                lambda: tensor.type(torch.float32, dtype=torch.float32),
+                "type() got multiple values for argument 'dtype'",
             ),
             (
-                lambda: descriptor(tensor, torch.float32),
-                "type() takes 0 positional arguments but 1 was given",
+                lambda: tensor.type(torch.float32, False, non_blocking=True),
+                "type() got multiple values for argument 'non_blocking'",
             ),
             (
-                lambda: tensor.type(dtype=torch.float32),
-                "type() got an unexpected keyword argument 'dtype'",
+                lambda: tensor.type(torch.float32, 0),
+                "type(): argument 'non_blocking' (position 2) must be bool, not int",
             ),
             (
-                lambda: tensor.type(non_blocking=False),
-                "type() got an unexpected keyword argument 'non_blocking'",
+                lambda: tensor.type(dtype=torch.float32, non_blocking=1),
+                "type(): argument 'non_blocking' must be bool, not int",
             ),
             (
-                lambda: tensor.type(non_blocking=True),
-                "type() got an unexpected keyword argument 'non_blocking'",
+                lambda: tensor.type(torch.float32, non_blocking=None),
+                "type(): argument 'non_blocking' must be bool, not NoneType",
             ),
             (
                 lambda: tensor.type(**{"async": False}),
                 "type() got an unexpected keyword argument 'async'",
+            ),
+            (
+                lambda: tensor.type(torch.float32, **{"async": True}),
+                "type() got an unexpected keyword argument 'async'",
+            ),
+            (
+                lambda: tensor.type(unknown=True),
+                "type() got an unexpected keyword argument 'unknown'",
             ),
         )
         for call, message in calls:
@@ -220,6 +282,25 @@ class TensorTypeTests(unittest.TestCase):
                 with self.assertRaises(TypeError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
+                self.assertEqual(self.metadata(tensor), before)
+
+        unsupported_targets = (
+            "torch.DoubleTensor",
+            "torch.cuda.FloatTensor",
+            "torch.FloatTensor ",
+            torch.Tensor,
+            float,
+            1,
+            object(),
+        )
+        for target in unsupported_targets:
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(
+                    TypeError,
+                    r"^type\(\): only torch\.float32 and "
+                    r"'torch\.FloatTensor' are supported$",
+                ):
+                    tensor.type(target)
                 self.assertEqual(self.metadata(tensor), before)
 
     def test_torch_function_modes_receive_descriptor_and_forward(self):
@@ -248,6 +329,49 @@ class TensorTypeTests(unittest.TestCase):
         self.assertIs(args[0], tensor)
         self.assertIsNone(kwargs)
 
+        original_calls = (
+            ((torch.float32,), None),
+            (("torch.FloatTensor", True), None),
+            ((), {"dtype": torch.float, "non_blocking": False}),
+            ((object(),), {"non_blocking": True}),
+        )
+        for positional, keywords in original_calls:
+            recording = RecordingMode(marker)
+            with recording:
+                if keywords is None:
+                    intercepted = tensor.type(*positional)
+                else:
+                    intercepted = tensor.type(*positional, **keywords)
+            self.assertIs(intercepted, marker)
+            self.assertEqual(len(recording.calls), 1)
+            function, dispatch_types, args, kwargs = recording.calls[0]
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(len(args), len(positional) + 1)
+            self.assertIs(args[0], tensor)
+            for actual, expected in zip(args[1:], positional, strict=True):
+                self.assertIs(actual, expected)
+            if keywords is None:
+                self.assertIsNone(kwargs)
+            else:
+                self.assertEqual(kwargs, keywords)
+                for name, value in keywords.items():
+                    self.assertIs(kwargs[name], value)
+
+        rejected = RecordingMode(marker)
+        with rejected:
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^type\(\): argument 'non_blocking' must be bool, not int$",
+            ):
+                tensor.type(torch.float32, non_blocking=0)
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^type\(\) got an unexpected keyword argument 'async'$",
+            ):
+                tensor.type(torch.float32, **{"async": False})
+        self.assertEqual(rejected.calls, [])
+
         order = []
 
         class ForwardingMode(torch.overrides.TorchFunctionMode):
@@ -260,9 +384,11 @@ class TensorTypeTests(unittest.TestCase):
 
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = tensor.type()
+                forwarded = tensor.type(
+                    "torch.FloatTensor", non_blocking=True
+                )
         self.assertEqual(order, ["upper", "lower"])
-        self.assertEqual(forwarded, "torch.FloatTensor")
+        self.assertIs(forwarded, tensor)
 
         declining = RecordingMode(NotImplemented)
         lower = RecordingMode(marker)
