@@ -5553,6 +5553,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96
       }
+    },
+    {
+      "key": "pr:774",
+      "recordedAt": "2026-08-23T21:26:28.374Z",
+      "label": "PR #774",
+      "kind": "leaf",
+      "prNumber": 774,
+      "title": "Support vector inputs in bias-free functional.linear",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 87.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 70.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }
