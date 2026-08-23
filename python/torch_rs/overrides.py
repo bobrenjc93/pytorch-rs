@@ -7,8 +7,11 @@ from .torch_rs import (
     Tensor,
     _get_function_stack_at,
     _has_torch_function_unary as has_torch_function_unary,
+    _is_torch_function_subclass_disabled,
     _len_torch_function_stack,
+    _pop_torch_function_subclass_disable,
     _pop_torch_function_stack,
+    _push_torch_function_subclass_disable,
     _push_on_torch_function_stack,
 )
 
@@ -66,6 +69,15 @@ def _get_current_function_mode_stack():
     ]
 
 
+class _DisableTorchFunctionSubclass:
+    def __enter__(self):
+        _push_torch_function_subclass_disable()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        _pop_torch_function_subclass_disable()
+
+
 def _is_disabled_torch_function_impl(handler):
     return (
         isinstance(handler, _types.BuiltinFunctionType)
@@ -75,6 +87,8 @@ def _is_disabled_torch_function_impl(handler):
 
 
 def _overloaded_unary_arguments(input, include_tensor):
+    if _is_torch_function_subclass_disabled():
+        return []
     input_type = type(input)
     if input_type is Tensor:
         # A mode-triggered handle_torch_function call includes the ordinary
@@ -187,17 +201,18 @@ def _dispatch_exact_native_variadic_torch_function(
 
     if include_tensor:
         # PyTorch retries through Tensor.__torch_function__. That fallback
-        # re-enters the public wrapper with the same mode active, but without
-        # including the exact Tensor type in the next dispatch.
-        if mode_kwargs:
-            return public_function(*inputs, **mode_kwargs)
-        return _dispatch_exact_native_variadic_torch_function(
-            public_function,
-            implementation,
-            inputs,
-            keyword_arguments,
-            include_tensor=False,
-        )
+        # re-enters the public wrapper with the same mode active while
+        # disabling ordinary Tensor-subclass overrides.
+        with _DisableTorchFunctionSubclass():
+            if mode_kwargs:
+                return public_function(*inputs, **mode_kwargs)
+            return _dispatch_exact_native_variadic_torch_function(
+                public_function,
+                implementation,
+                inputs,
+                keyword_arguments,
+                include_tensor=False,
+            )
 
     func_name = f"{public_function.__module__}.{public_function.__name__}"
     message = (

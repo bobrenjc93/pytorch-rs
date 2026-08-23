@@ -916,6 +916,142 @@ class Atleast2dReferenceTests(unittest.TestCase):
         ):
             np.testing.assert_array_equal(actual_grad, expected_grad)
 
+    def subclass_disable_fallback_contract(self, module):
+        function = module.atleast_2d
+        sources = (
+            module.tensor(1.0, dtype=module.float32),
+            module.tensor([2.0, 3.0], dtype=module.float32),
+        )
+        marker = object()
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        value = Override()
+        single_mode_calls = []
+
+        class ProbeMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                nested = None
+                if not types:
+                    try:
+                        result = module.positive(value)
+                    except Exception as error:
+                        nested = ("error", type(error).__name__)
+                    else:
+                        nested = ("result", result is marker)
+                single_mode_calls.append(
+                    (
+                        tuple(dispatch_type.__name__ for dispatch_type in types),
+                        module.overrides.has_torch_function_unary(value),
+                        nested,
+                    )
+                )
+                return NotImplemented
+
+        try:
+            with ProbeMode():
+                function(*sources)
+        except Exception as error:
+            single_mode_error = type(error).__name__
+        else:
+            single_mode_error = None
+
+        nested_mode_calls = []
+
+        class LowerMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                nested_mode_calls.append(
+                    (
+                        "lower",
+                        tuple(dispatch_type.__name__ for dispatch_type in types),
+                        module.overrides.has_torch_function_unary(value),
+                    )
+                )
+                return NotImplemented
+
+        class UpperMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                nested_mode_calls.append(
+                    (
+                        "upper",
+                        tuple(dispatch_type.__name__ for dispatch_type in types),
+                    )
+                )
+                if types:
+                    return NotImplemented
+                try:
+                    result = function(value)
+                except Exception as error:
+                    nested_mode_calls.append(
+                        ("nested_python", "error", type(error).__name__)
+                    )
+                else:
+                    nested_mode_calls.append(
+                        ("nested_python", "result", result is marker)
+                    )
+                try:
+                    result = module.positive(value)
+                except Exception as error:
+                    nested_mode_calls.append(
+                        ("nested_native", "error", type(error).__name__)
+                    )
+                else:
+                    nested_mode_calls.append(
+                        ("nested_native", "result", result is marker)
+                    )
+                return marker
+
+        with LowerMode():
+            with UpperMode():
+                nested_mode_result = function(*sources)
+
+        return {
+            "single": (tuple(single_mode_calls), single_mode_error),
+            "nested": (nested_mode_result is marker, tuple(nested_mode_calls)),
+            "override_calls": len(override_calls),
+            "restored_probe": module.overrides.has_torch_function_unary(value),
+            "stack_depth": len(
+                module.overrides._get_current_function_mode_stack()
+            ),
+        }
+
+    def test_variadic_tensor_fallback_disables_subclass_overrides(self):
+        expected = self.subclass_disable_fallback_contract(reference_torch)
+        self.assertEqual(
+            expected,
+            {
+                "single": (
+                    (
+                        (("Tensor",), True, None),
+                        ((), False, ("error", "TypeError")),
+                    ),
+                    "TypeError",
+                ),
+                "nested": (
+                    True,
+                    (
+                        ("upper", ("Tensor",)),
+                        ("upper", ()),
+                        ("lower", (), False),
+                        ("nested_python", "error", "TypeError"),
+                        ("nested_native", "error", "TypeError"),
+                    ),
+                ),
+                "override_calls": 0,
+                "restored_probe": True,
+                "stack_depth": 0,
+            },
+        )
+        self.assertEqual(
+            self.subclass_disable_fallback_contract(torch),
+            expected,
+        )
+
     def override_contract(self, module):
         function = module.atleast_2d
         marker = object()

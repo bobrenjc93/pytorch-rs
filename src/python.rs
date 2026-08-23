@@ -1978,6 +1978,10 @@ enum TensorBaseModeTarget {
 fn probe_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
+    if torch_function_mode_stack::are_subclasses_disabled() {
+        return None;
+    }
+
     // PyTorch's argument parser uses the legacy, exception-suppressing
     // PyObject_HasAttr API here. If the initial probe fails, its tensor-type
     // fallback retries once before rejecting the input. The actual callable is
@@ -2003,6 +2007,10 @@ fn probe_torch_function_override<'py>(
 fn probe_dtype_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
+    if torch_function_mode_stack::are_subclasses_disabled() {
+        return None;
+    }
+
     // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
     // __torch_function__ lookup through a tensor-type fallback.
     // SAFETY: `value` is live for this call and the attribute name is a static,

@@ -37,6 +37,9 @@ fn has_torch_function_unary(value: &Bound<'_, PyAny>) -> bool {
     if !python_torch_function_mode::is_empty() {
         return true;
     }
+    if python_torch_function_mode::are_subclasses_disabled() {
+        return false;
+    }
     if value.is_exact_instance_of::<PyTensor>() {
         return false;
     }
