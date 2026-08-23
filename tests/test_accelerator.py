@@ -409,9 +409,8 @@ class AcceleratorTests(unittest.TestCase):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
 
-        self.assertFalse(hasattr(torch, "cuda"))
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("torch_rs.cuda")
+        self.assertIs(importlib.import_module("torch_rs.cuda"), torch.cuda)
+        self.assertIs(torch.cuda.is_available(), False)
         for specification in ("cuda", "cuda:0"):
             with self.subTest(specification=specification):
                 with self.assertRaisesRegex(
@@ -449,7 +448,7 @@ assert torch.accelerator.is_available() is False
 count = torch.accelerator.device_count()
 assert type(count) is int and count == 0
 assert set(sys.modules) == modules_before_calls
-assert not hasattr(torch, "cuda")
+assert torch.cuda.is_available() is False
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 '''
         completed = subprocess.run(

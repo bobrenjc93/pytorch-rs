@@ -213,6 +213,7 @@ from . import autograd as autograd
 from . import backends as backends
 from . import compiler as compiler
 from . import cpu as cpu
+from . import cuda as cuda
 from . import distributed as distributed
 from . import functional as functional
 from . import jit as jit
