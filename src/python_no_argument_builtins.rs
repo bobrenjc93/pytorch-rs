@@ -1,17 +1,22 @@
-//! Stable-ABI bindings for PyTorch-style no-argument built-in functions.
+//! Stable-ABI bindings for PyTorch-style state built-in functions.
 
-use std::ffi::CStr;
+use std::{cell::Cell, ffi::CStr};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyCFunction, PyDict, PyModule, PyTuple};
+use pyo3::types::{PyAny, PyBool, PyCFunction, PyDict, PyModule, PyTuple};
 
 use crate::{
     DType, is_grad_enabled as core_is_grad_enabled,
+    python::python_type_name,
     python_dtype::{PyDType, dtype_object},
 };
+
+thread_local! {
+    static AUTOCAST_CACHE_ENABLED: Cell<bool> = const { Cell::new(true) };
+}
 
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
 #[allow(clippy::doc_markdown)]
@@ -90,7 +95,34 @@ fn is_autocast_cache_enabled(
             args.len()
         )));
     }
-    Ok(true)
+    Ok(AUTOCAST_CACHE_ENABLED.get())
+}
+
+fn set_autocast_cache_enabled(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch.set_autocast_cache_enabled() takes no keyword arguments",
+        ));
+    }
+    if args.len() != 1 {
+        return Err(PyTypeError::new_err(format!(
+            "torch.set_autocast_cache_enabled() takes exactly one argument ({} given)",
+            args.len()
+        )));
+    }
+
+    let enabled = args.get_item(0)?;
+    if !enabled.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(&enabled)?;
+        return Err(PyTypeError::new_err(format!(
+            "enabled must be a bool (got {type_name})"
+        )));
+    }
+    AUTOCAST_CACHE_ENABLED.set(enabled.is_truthy()?);
+    Ok(())
 }
 
 fn is_view_replay_enabled(
@@ -228,11 +260,13 @@ const IS_VIEW_REPLAY_ENABLED_DOC: &CStr = c"Returns True if view-replay is curre
 const IS_VIEW_REPLAY_ENABLED_SIGNATURE_DOC: &CStr =
     c"_is_view_replay_enabled($self, /)\n--\n\nReturns True if view-replay is currently enabled.";
 // PyTorch leaves these built-ins' documentation null. On CPython 3.13+ their
-// METH_NOARGS definitions nevertheless expose the synthesized `($self, /)`
-// signature; signature-only internal docs reproduce both observations while
+// METH_NOARGS and METH_O definitions nevertheless expose synthesized
+// signatures; signature-only internal docs reproduce both observations while
 // retaining the custom PyTorch-qualified argument diagnostics below.
 const IS_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC: &CStr =
     c"is_autocast_cache_enabled($self, /)\n--\n\n";
+const SET_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC: &CStr =
+    c"set_autocast_cache_enabled($self, object, /)\n--\n\n";
 const IS_ANOMALY_ENABLED_SIGNATURE_DOC: &CStr = c"is_anomaly_enabled($self, /)\n--\n\n";
 const IS_ANOMALY_CHECK_NAN_ENABLED_SIGNATURE_DOC: &CStr =
     c"is_anomaly_check_nan_enabled($self, /)\n--\n\n";
@@ -328,6 +362,22 @@ unsafe fn is_autocast_cache_enabled_callback(
     is_autocast_cache_enabled(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_autocast_cache_enabled_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    set_autocast_cache_enabled(&args, kwargs.as_ref())?;
+    Ok(py.None().into_ptr())
 }
 
 #[allow(
@@ -430,11 +480,17 @@ unsafe fn get_num_interop_threads_callback(
         .map(Py::into_ptr)
 }
 
-fn add_autocast_cache_builtin(
-    module: &Bound<'_, PyModule>,
-    is_autocast_cache_enabled_doc: &'static CStr,
-) -> PyResult<()> {
+fn add_autocast_cache_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
+    let (is_autocast_cache_enabled_doc, set_autocast_cache_enabled_doc) =
+        if py.version_info() >= (3, 13) {
+            (
+                IS_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC,
+                SET_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC,
+            )
+        } else {
+            (c"", c"")
+        };
     module.add_function(PyCFunction::new_with_keywords(
         py,
         pyo3::impl_::trampoline::get_trampoline_function!(
@@ -443,6 +499,16 @@ fn add_autocast_cache_builtin(
         ),
         c"is_autocast_cache_enabled",
         is_autocast_cache_enabled_doc,
+        Some(module),
+    )?)?;
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            set_autocast_cache_enabled_callback
+        ),
+        c"set_autocast_cache_enabled",
+        set_autocast_cache_enabled_doc,
         Some(module),
     )?)?;
     Ok(())
@@ -524,7 +590,6 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
     let (
         is_grad_enabled_doc,
         is_inference_mode_enabled_doc,
-        is_autocast_cache_enabled_doc,
         is_multithreading_enabled_doc,
         is_view_replay_enabled_doc,
         is_anomaly_enabled_doc,
@@ -536,7 +601,6 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         (
             IS_GRAD_ENABLED_SIGNATURE_DOC,
             IS_INFERENCE_MODE_ENABLED_SIGNATURE_DOC,
-            IS_AUTOCAST_CACHE_ENABLED_SIGNATURE_DOC,
             IS_MULTITHREADING_ENABLED_SIGNATURE_DOC,
             IS_VIEW_REPLAY_ENABLED_SIGNATURE_DOC,
             IS_ANOMALY_ENABLED_SIGNATURE_DOC,
@@ -549,7 +613,6 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         (
             IS_GRAD_ENABLED_DOC,
             IS_INFERENCE_MODE_ENABLED_DOC,
-            c"",
             IS_MULTITHREADING_ENABLED_DOC,
             IS_VIEW_REPLAY_ENABLED_DOC,
             c"",
@@ -579,7 +642,7 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         is_inference_mode_enabled_doc,
         Some(module),
     )?)?;
-    add_autocast_cache_builtin(module, is_autocast_cache_enabled_doc)?;
+    add_autocast_cache_builtins(module)?;
     add_multithreading_builtin(module, is_multithreading_enabled_doc)?;
     add_view_replay_builtin(module, is_view_replay_enabled_doc)?;
     add_anomaly_builtins(
