@@ -272,12 +272,27 @@ fn _nn_functional_linear(
         2 => input.inner().matmul(&transposed_weight),
         3 => {
             let input_shape = input.inner().shape();
+            let weight_shape = weight.inner().shape();
+            // PyTorch's rank-3 by rank-2 matmul folds the leading dimensions
+            // when they are stride-compatible, the input is empty, or the
+            // matrix operand requires gradients. Otherwise its batched path
+            // reports this layout-dependent inner-dimension error.
+            let folds_to_matrix = weight.inner().requires_grad()
+                || input.inner().numel() == 0
+                || input.inner().stride()[1].checked_mul(input_shape[1])
+                    == Some(input.inner().stride()[0]);
+            if !folds_to_matrix && input_shape[2] != weight_shape[1] {
+                return Err(PyRuntimeError::new_err(format!(
+                    "Expected size for first two dimensions of batch2 tensor to be: [{}, {}] but got: [{}, {}].",
+                    input_shape[0], input_shape[2], input_shape[0], weight_shape[1]
+                )));
+            }
             let output_shape = [
                 i64::try_from(input_shape[0])
                     .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
                 i64::try_from(input_shape[1])
                     .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
-                i64::try_from(weight.inner().shape()[0])
+                i64::try_from(weight_shape[0])
                     .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
             ];
             input

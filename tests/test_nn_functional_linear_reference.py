@@ -488,6 +488,59 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                     str(actual_raised.exception), str(expected_raised.exception)
                 )
 
+    def test_noncontiguous_rank_three_inner_dimension_error_matches(self):
+        cases = (
+            (
+                "unfoldable leading transpose",
+                torch.zeros((3, 2, 4)).transpose(0, 1),
+                torch.zeros((5, 6)),
+                reference_torch.zeros(
+                    (3, 2, 4), dtype=reference_torch.float32
+                ).transpose(0, 1),
+                reference_torch.zeros((5, 6), dtype=reference_torch.float32),
+            ),
+            (
+                "foldable permutation",
+                torch.zeros((2, 3, 4)).permute(1, 2, 0),
+                torch.zeros((5, 4)),
+                reference_torch.zeros(
+                    (2, 3, 4), dtype=reference_torch.float32
+                ).permute(1, 2, 0),
+                reference_torch.zeros((5, 4), dtype=reference_torch.float32),
+            ),
+        )
+        for case, actual_input, actual_weight, expected_input, expected_weight in cases:
+            with self.subTest(case=case):
+                with self.assertRaises(Exception) as actual_raised:
+                    functional.linear(actual_input, actual_weight)
+                with self.assertRaises(Exception) as expected_raised:
+                    reference_functional.linear(expected_input, expected_weight)
+                self.assertIs(
+                    type(actual_raised.exception), type(expected_raised.exception)
+                )
+                self.assertEqual(
+                    str(actual_raised.exception), str(expected_raised.exception)
+                )
+
+    def test_noncontiguous_rank_three_tracked_weight_error_matches_in_no_grad(self):
+        actual_input = torch.zeros((3, 2, 4)).transpose(0, 1)
+        actual_weight = torch.zeros((5, 6), requires_grad=True)
+        expected_input = reference_torch.zeros(
+            (3, 2, 4), dtype=reference_torch.float32
+        ).transpose(0, 1)
+        expected_weight = reference_torch.zeros(
+            (5, 6), dtype=reference_torch.float32, requires_grad=True
+        )
+
+        with torch.no_grad():
+            with self.assertRaises(Exception) as actual_raised:
+                functional.linear(actual_input, actual_weight)
+        with reference_torch.no_grad():
+            with self.assertRaises(Exception) as expected_raised:
+                reference_functional.linear(expected_input, expected_weight)
+        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
+        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

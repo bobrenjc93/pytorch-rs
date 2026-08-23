@@ -288,6 +288,17 @@ class FunctionalLinearTests(unittest.TestCase):
                 torch.zeros((5, 6)),
                 "mat1 and mat2 shapes cannot be multiplied (6x4 and 6x5)",
             ),
+            (
+                torch.zeros((3, 2, 4)).transpose(0, 1),
+                torch.zeros((5, 6)),
+                "Expected size for first two dimensions of batch2 tensor to be: "
+                "[2, 4] but got: [2, 6].",
+            ),
+            (
+                torch.zeros((2, 3, 4)).permute(1, 2, 0),
+                torch.zeros((5, 4)),
+                "mat1 and mat2 shapes cannot be multiplied (12x2 and 4x5)",
+            ),
         )
         for input, weight, message in cases:
             with self.subTest(input=input.shape):
@@ -338,6 +349,15 @@ class FunctionalLinearTests(unittest.TestCase):
                     self.assertTrue(output.is_leaf)
                     self.assertIsNone(input.grad)
                     self.assertIsNone(weight.grad)
+
+        noncontiguous_input = torch.zeros((3, 2, 4)).transpose(0, 1)
+        incompatible_weight = torch.zeros((5, 6), requires_grad=True)
+        with torch.no_grad():
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^mat1 and mat2 shapes cannot be multiplied \(6x4 and 6x5\)$",
+            ):
+                functional.linear(noncontiguous_input, incompatible_weight)
 
     def test_unsupported_features_are_rejected_before_native_composition(self):
         matrix = torch.ones((2, 2), requires_grad=True)
