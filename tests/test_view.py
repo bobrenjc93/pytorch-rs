@@ -1,3 +1,4 @@
+import gc
 import inspect
 import operator
 import re
@@ -148,6 +149,101 @@ class TensorViewTests(unittest.TestCase):
                 (4, 12, 2, 1),
                 0,
             ),
+        )
+
+    def make_dtype_layout_cases(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        leaf = torch.tensor(values.tolist(), requires_grad=True)
+        return (
+            ("scalar", torch.tensor(-0.0, requires_grad=True)),
+            (
+                "empty-offset",
+                torch.zeros((2, 0, 3), requires_grad=True).transpose(0, 2)[1],
+            ),
+            ("contiguous-offset", (leaf * 2.0)[1]),
+            ("noncontiguous-offset", (leaf * 3.0).transpose(0, 2)[1]),
+        )
+
+    def test_same_dtype_overload_returns_fresh_detached_storage_aliases(self):
+        forms = (
+            ("float32 positional", torch.float32, False),
+            ("float positional", torch.float, False),
+            ("float32 keyword", torch.float32, True),
+            ("float keyword", torch.float, True),
+        )
+        for case, source in self.make_dtype_layout_cases():
+            source_contract = (
+                source.shape,
+                source.stride(),
+                source.storage_offset(),
+                source.requires_grad,
+                source.is_leaf,
+                source.data_ptr(),
+                np.asarray(source.detach()).copy(),
+            )
+            results = []
+            for form, dtype, keyword in forms:
+                with self.subTest(case=case, form=form):
+                    result = (
+                        source.view(dtype=dtype) if keyword else source.view(dtype)
+                    )
+                    self.assertIsNot(result, source)
+                    self.assertTrue(result.is_set_to(source))
+                    self.assertEqual(result.shape, source.shape)
+                    self.assertEqual(result.stride(), source.stride())
+                    self.assertEqual(
+                        result.storage_offset(), source.storage_offset()
+                    )
+                    self.assertEqual(result.is_contiguous(), source.is_contiguous())
+                    self.assertIs(result.dtype, source.dtype)
+                    self.assertEqual(result.device, source.device)
+                    self.assertEqual(result.data_ptr(), source.data_ptr())
+                    self.assertFalse(result.requires_grad)
+                    self.assertTrue(result.is_leaf)
+                    self.assertFalse((result + 1.0).requires_grad)
+                    np.testing.assert_array_equal(
+                        np.asarray(result), source_contract[-1]
+                    )
+                    results.append(result)
+
+            for index, result in enumerate(results):
+                for other in results[index + 1 :]:
+                    self.assertIsNot(result, other)
+            self.assertEqual(
+                (
+                    source.shape,
+                    source.stride(),
+                    source.storage_offset(),
+                    source.requires_grad,
+                    source.is_leaf,
+                    source.data_ptr(),
+                ),
+                source_contract[:-1],
+            )
+            np.testing.assert_array_equal(
+                np.asarray(source.detach()), source_contract[-1]
+            )
+
+    def test_same_dtype_alias_outlives_temporary_source_owners(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+        def retain_positional():
+            temporary = torch.tensor(values.tolist(), requires_grad=True)
+            return (temporary * 2.0).transpose(0, 2)[1].view(torch.float32)
+
+        def retain_keyword():
+            temporary = torch.tensor(values.tolist(), requires_grad=True)
+            return (temporary * 3.0).transpose(0, 2)[1].view(dtype=torch.float)
+
+        positional = retain_positional()
+        keyword = retain_keyword()
+        gc.collect()
+
+        np.testing.assert_array_equal(
+            np.asarray(positional), (values * 2.0).transpose(2, 1, 0)[1]
+        )
+        np.testing.assert_array_equal(
+            np.asarray(keyword), (values * 3.0).transpose(2, 1, 0)[1]
         )
 
     def test_tuple_list_size_and_keyword_delegate_to_native_view(self):
@@ -605,6 +701,30 @@ class TensorViewTests(unittest.TestCase):
                 (tensor,),
                 {"size": (2, 3)},
             ),
+            (
+                "dtype positional",
+                lambda: tensor.view(torch.float32),
+                (tensor, torch.float32),
+                None,
+            ),
+            (
+                "dtype alias positional",
+                lambda: tensor.view(torch.float),
+                (tensor, torch.float),
+                None,
+            ),
+            (
+                "dtype keyword",
+                lambda: tensor.view(dtype=torch.float32),
+                (tensor,),
+                {"dtype": torch.float32},
+            ),
+            (
+                "dtype alias keyword",
+                lambda: tensor.view(dtype=torch.float),
+                (tensor,),
+                {"dtype": torch.float},
+            ),
         )
         for case, call, expected_args, expected_kwargs in cases:
             mode = RecordingMode(marker)
@@ -638,6 +758,18 @@ class TensorViewTests(unittest.TestCase):
         with invalid, self.assertRaises(TypeError):
             tensor.view(range(2))
         self.assertEqual(invalid.calls, [])
+
+        invalid_size_dtype = RecordingMode(marker)
+        with invalid_size_dtype, self.assertRaises(TypeError):
+            tensor.view(size=torch.float32)
+        self.assertEqual(invalid_size_dtype.calls, [])
+
+        mixed_dimension = StatefulIndexDimension((6, 6))
+        invalid_mixed = RecordingMode(marker)
+        with invalid_mixed, self.assertRaises(TypeError):
+            tensor.view(mixed_dimension, dtype=torch.float32)
+        self.assertEqual(mixed_dimension.calls, 2)
+        self.assertEqual(invalid_mixed.calls, [])
 
         order = []
 
@@ -687,6 +819,21 @@ class TensorViewTests(unittest.TestCase):
         self.assertEqual(forwarded.shape, (2, 3))
         self.assertEqual(forwarded.data_ptr(), tensor.data_ptr())
 
+        order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor.view(dtype=torch.float)
+        self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
+        for _, function, dispatch_types, args, kwargs in order:
+            self.assertIs(function, descriptor)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, (tensor,))
+            self.assertEqual(kwargs, {"dtype": torch.float})
+        self.assertIsNot(forwarded, tensor)
+        self.assertTrue(forwarded.is_set_to(tensor))
+        self.assertFalse(forwarded.requires_grad)
+        self.assertTrue(forwarded.is_leaf)
+
         declining = RecordingMode(NotImplemented)
         with self.assertRaises(TypeError) as raised:
             with declining:
@@ -700,16 +847,28 @@ class TensorViewTests(unittest.TestCase):
         self.assertEqual(len(declining.calls), 1)
         self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
 
-    def test_keyword_integer_three_or_more_and_dtype_overloads_remain_unsupported(self):
+    def test_unsupported_shape_and_mixed_overloads_do_not_mutate_the_source(self):
         tensor = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        original = np.asarray(tensor).copy()
+        original = (
+            tensor.shape,
+            tensor.stride(),
+            tensor.storage_offset(),
+            tensor.data_ptr(),
+            tensor.requires_grad,
+            tensor.is_leaf,
+            np.asarray(tensor).copy(),
+        )
         calls = (
             lambda: tensor.view(size=-1),
+            lambda: tensor.view(size=torch.float32),
             lambda: tensor.view(1, 2, 3),
             lambda: tensor.view(1, 1, 2, 3),
-            lambda: tensor.view(torch.float32),
-            lambda: tensor.view(dtype=torch.float32),
             lambda: tensor.view(True),
+            lambda: tensor.view(torch.float32, 6),
+            lambda: tensor.view(torch.float32, size=(6,)),
+            lambda: tensor.view(dtype=torch.float32, size=(6,)),
+            lambda: tensor.view(torch.float32, dtype=torch.float32),
+            lambda: tensor.view((6,), dtype=torch.float32),
         )
         for call in calls:
             with self.subTest(call=call), self.assertRaises(TypeError):
@@ -723,9 +882,23 @@ class TensorViewTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(TypeError, f"^{re.escape(keyword_overload)}$"):
             tensor.view(2, 3, size=(2, 3))
-        np.testing.assert_array_equal(np.asarray(tensor), original)
-        self.assertEqual(tensor.shape, (6,))
-        self.assertEqual(tensor.stride(), (1,))
+
+        mixed_dimension = StatefulIndexDimension((6, 6))
+        with self.assertRaises(TypeError):
+            tensor.view(mixed_dimension, dtype=torch.float32)
+        self.assertEqual(mixed_dimension.calls, 2)
+        self.assertEqual(
+            (
+                tensor.shape,
+                tensor.stride(),
+                tensor.storage_offset(),
+                tensor.data_ptr(),
+                tensor.requires_grad,
+                tensor.is_leaf,
+            ),
+            original[:-1],
+        )
+        np.testing.assert_array_equal(np.asarray(tensor), original[-1])
 
 
 if __name__ == "__main__":
