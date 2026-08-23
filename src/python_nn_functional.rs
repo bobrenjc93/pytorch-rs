@@ -247,9 +247,10 @@ fn _nn_functional_linear(
     let weight = exact_linear_tensor(weight)?;
     let input = input.try_borrow()?;
     let weight = weight.try_borrow()?;
-    if input.inner().shape().len() != 2 || weight.inner().shape().len() != 2 {
+    let input_rank = input.inner().shape().len();
+    if !matches!(input_rank, 1 | 2) || weight.inner().shape().len() != 2 {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports rank-2 input and weight tensors",
+            "torch_rs.nn.functional.linear only supports rank-1 or rank-2 input and rank-2 weight tensors",
         ));
     }
     if is_grad_enabled() && (input.inner().requires_grad() || weight.inner().requires_grad()) {
@@ -262,10 +263,16 @@ fn _nn_functional_linear(
         .inner()
         .transpose(0, 1)
         .map_err(|error| tensor_error(&error))?;
-    let output = input
-        .inner()
-        .matmul(&transposed_weight)
-        .map_err(|error| tensor_error(&error))?;
+    let output = if input_rank == 1 {
+        input
+            .inner()
+            .unsqueeze_front()
+            .and_then(|input| input.matmul(&transposed_weight))
+            .and_then(|output| output.squeeze_dim(0))
+    } else {
+        input.inner().matmul(&transposed_weight)
+    }
+    .map_err(|error| tensor_error(&error))?;
     PyTensor::new(output).into_py_any(py)
 }
 
