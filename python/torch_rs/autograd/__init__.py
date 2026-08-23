@@ -29,10 +29,12 @@ def _require_default_graph_option(name, value, *, allow_none):
         )
 
 
-def _normalize_single_root(tensors):
+def _normalize_root(tensors):
     if type(tensors) is _Tensor:
         return tensors
     if type(tensors) is tuple or type(tensors) is list:
+        if len(tensors) == 0:
+            return None
         if len(tensors) == 1 and type(tensors[0]) is _Tensor:
             return tensors[0]
     raise TypeError(
@@ -41,10 +43,12 @@ def _normalize_single_root(tensors):
     )
 
 
-def _require_default_grad_tensors(grad_tensors):
+def _require_default_grad_tensors(grad_tensors, *, allow_empty):
     if grad_tensors is None:
         return
     if type(grad_tensors) is tuple or type(grad_tensors) is list:
+        if allow_empty and len(grad_tensors) == 0:
+            return
         if len(grad_tensors) == 1 and grad_tensors[0] is None:
             return
     raise NotImplementedError(
@@ -119,8 +123,8 @@ def backward(
             ``dict(model.named_parameters())``) is also accepted, in which case
             the values are used as the input tensors.
     """
-    root = _normalize_single_root(tensors)
-    _require_default_grad_tensors(grad_tensors)
+    root = _normalize_root(tensors)
+    _require_default_grad_tensors(grad_tensors, allow_empty=root is None)
     _require_default_graph_option("retain_graph", retain_graph, allow_none=True)
     _require_default_graph_option("create_graph", create_graph, allow_none=False)
     if grad_variables is not None:
@@ -132,7 +136,8 @@ def backward(
             "torch_rs.autograd.backward does not support inputs"
         )
 
-    root.backward()
+    if root is not None:
+        root.backward()
 
 
 is_multithreading_enabled = _C._is_multithreading_enabled
