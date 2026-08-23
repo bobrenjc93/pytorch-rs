@@ -175,6 +175,67 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             np.asarray(freed_leaf.grad).copy(),
         )
 
+    def two_leaf_outcome(self, module, root_sequence_type, form):
+        scalar_leaf = module.tensor(2.0, requires_grad=True)
+        strided_leaf = module.tensor([3.0], requires_grad=True)
+        roots = root_sequence_type((scalar_leaf, strided_leaf))
+
+        def backward(current_roots):
+            if form == "omitted":
+                return module.autograd.backward(current_roots)
+            if form == "keyword roots":
+                return module.autograd.backward(tensors=current_roots)
+            if form == "none":
+                return module.autograd.backward(
+                    current_roots, grad_tensors=None
+                )
+            if form == "explicit defaults":
+                return module.autograd.backward(
+                    current_roots,
+                    grad_tensors=None,
+                    retain_graph=None,
+                    create_graph=False,
+                    grad_variables=None,
+                    inputs=None,
+                )
+            if form == "positional defaults":
+                return module.autograd.backward(
+                    current_roots, None, False, False, None, None
+                )
+            if form == "integer false":
+                return module.autograd.backward(current_roots, None, 0, 0)
+            if form == "tuple":
+                return module.autograd.backward(
+                    current_roots, grad_tensors=(None, None)
+                )
+            if form == "list":
+                return module.autograd.backward(
+                    current_roots, grad_tensors=[None, None]
+                )
+            raise AssertionError(f"unknown form: {form}")
+
+        first_result = backward(roots)
+        second_result = backward(roots)
+
+        duplicate_leaf = module.tensor([[5.0]], requires_grad=True)
+        duplicate_result = backward(
+            root_sequence_type((duplicate_leaf, duplicate_leaf))
+        )
+        return (
+            first_result,
+            second_result,
+            (
+                tuple(strided_leaf.shape),
+                strided_leaf.stride(),
+                strided_leaf.requires_grad,
+                strided_leaf.is_leaf,
+            ),
+            scalar_leaf.grad.item(),
+            strided_leaf.grad.tolist(),
+            duplicate_result,
+            duplicate_leaf.grad.tolist(),
+        )
+
     def test_single_root_default_calls_match_pytorch_2_13(self):
         for sequence_type in (None, tuple, list):
             for form in (
@@ -198,6 +259,30 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                     np.testing.assert_array_equal(
                         actual_gradient, expected_gradient
                     )
+
+    def test_two_leaf_roots_match_pytorch_2_13(self):
+        for root_sequence_type in (tuple, list):
+            for form in (
+                "omitted",
+                "keyword roots",
+                "none",
+                "explicit defaults",
+                "positional defaults",
+                "integer false",
+                "tuple",
+                "list",
+            ):
+                with self.subTest(
+                    root_sequence_type=root_sequence_type,
+                    form=form,
+                ):
+                    actual = self.two_leaf_outcome(
+                        torch, root_sequence_type, form
+                    )
+                    expected = self.two_leaf_outcome(
+                        reference_torch, root_sequence_type, form
+                    )
+                    self.assertEqual(actual, expected)
 
     def test_empty_root_noops_match_pytorch_2_13(self):
         forms = (
