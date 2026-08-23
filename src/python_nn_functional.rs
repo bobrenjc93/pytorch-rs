@@ -49,7 +49,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         inplace_operation: "feature_dropout_",
         supports_tensor_probability: true,
         supports_probability_one: false,
-        supported_ranks: Some(&[3, 4]),
+        supported_ranks: Some(&[2, 3, 4]),
     },
     DropoutMetadata {
         public_function: "dropout3d",
