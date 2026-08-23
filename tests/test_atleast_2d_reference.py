@@ -165,6 +165,42 @@ class Atleast2dReferenceTests(unittest.TestCase):
                 self.assertIs(type(expected), tuple)
                 self.assertEqual(actual, expected)
 
+    def test_variadic_values_layouts_and_aliasing_match_pytorch_2_13(self):
+        actual_cases = self.make_layout_cases(torch)
+        expected_cases = self.make_layout_cases(reference_torch)
+        actual_results = torch.atleast_2d(
+            *(source for _, source in actual_cases)
+        )
+        expected_results = reference_torch.atleast_2d(
+            *(source for _, source in expected_cases)
+        )
+        self.assertIs(type(actual_results), tuple)
+        self.assertIs(type(expected_results), tuple)
+        self.assertEqual(len(actual_results), len(expected_results))
+
+        for (
+            (name, actual_source),
+            (expected_name, expected_source),
+            actual_result,
+            expected_result,
+        ) in zip(
+            actual_cases,
+            expected_cases,
+            actual_results,
+            expected_results,
+            strict=True,
+        ):
+            with self.subTest(case=name):
+                self.assertEqual(name, expected_name)
+                actual = self.observe_result(
+                    torch, actual_source, actual_result
+                )
+                expected = self.observe_result(
+                    reference_torch, expected_source, expected_result
+                )
+                self.assertEqual(actual[:-1], expected[:-1])
+                np.testing.assert_array_equal(actual[-1], expected[-1])
+
     def autograd_outcome(self, module):
         scalar_leaf = module.tensor(
             [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
@@ -414,6 +450,155 @@ class Atleast2dReferenceTests(unittest.TestCase):
             self.tensor_array(matrix_leaf.grad, module).copy(),
         )
 
+    def variadic_autograd_outcome(self, module):
+        scalar_leaf = module.tensor(
+            [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
+        )
+        scalar = scalar_leaf[1]
+        vector_leaf = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        vector = vector_leaf.transpose(0, 2)[3].transpose(0, 1)[1]
+        empty_leaf = module.zeros(
+            (2, 0, 3), dtype=module.float32, requires_grad=True
+        )
+        empty = empty_leaf.transpose(0, 2)[1].transpose(0, 1)[1]
+        matrix_leaf = module.tensor(
+            [[1.0, 2.0]], dtype=module.float32, requires_grad=True
+        )
+        matrix = matrix_leaf * 2.0
+
+        results = module.atleast_2d(scalar, vector, empty, matrix)
+        scalar_result, vector_result, empty_result, matrix_result = results
+        metadata = (
+            type(results) is tuple,
+            (
+                tuple(scalar_result.shape),
+                scalar_result.stride(),
+                scalar_result.storage_offset(),
+                scalar_result.requires_grad,
+                scalar_result.is_leaf,
+                scalar_result.output_nr,
+                scalar_result.data_ptr() == scalar.data_ptr(),
+                scalar_result.is_set_to(module.atleast_2d(scalar)),
+            ),
+            (
+                tuple(vector_result.shape),
+                vector_result.stride(),
+                vector_result.storage_offset(),
+                vector_result.requires_grad,
+                vector_result.is_leaf,
+                vector_result.output_nr,
+                vector_result.data_ptr() == vector.data_ptr(),
+                vector_result.is_set_to(module.atleast_2d(vector)),
+            ),
+            (
+                tuple(empty_result.shape),
+                empty_result.stride(),
+                empty_result.storage_offset(),
+                empty_result.requires_grad,
+                empty_result.is_leaf,
+                empty_result.output_nr,
+                empty_result.data_ptr() == empty.data_ptr(),
+                empty_result.is_set_to(module.atleast_2d(empty)),
+            ),
+            (
+                matrix_result is matrix,
+                matrix_result.requires_grad,
+                matrix_result.is_leaf,
+                matrix_result.output_nr,
+            ),
+        )
+
+        scalar_loss = scalar_result.sum()
+        scalar_loss.backward()
+        scalar_loss.backward()
+        vector_loss = vector_result.sum()
+        vector_loss.backward()
+        vector_loss.backward()
+        empty_result.sum().backward()
+        matrix_result.sum().backward()
+        return (
+            metadata,
+            self.tensor_array(scalar_leaf.grad, module).copy(),
+            self.tensor_array(vector_leaf.grad, module).copy(),
+            self.tensor_array(empty_leaf.grad, module).copy(),
+            self.tensor_array(matrix_leaf.grad, module).copy(),
+        )
+
+    def variadic_no_grad_outcome(self, module):
+        scalar_leaf = module.tensor(
+            [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
+        )
+        scalar = scalar_leaf[1]
+        vector_leaf = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        vector = vector_leaf.transpose(0, 2)[3].transpose(0, 1)[1]
+        empty_leaf = module.zeros(
+            (2, 0, 3), dtype=module.float32, requires_grad=True
+        )
+        empty = empty_leaf.transpose(0, 2)[1].transpose(0, 1)[1]
+        matrix_leaf = module.tensor(
+            [[1.0, 2.0]], dtype=module.float32, requires_grad=True
+        )
+        matrix = matrix_leaf * 2.0
+        with module.no_grad():
+            results = module.atleast_2d(scalar, vector, empty, matrix)
+        scalar_result, vector_result, empty_result, matrix_result = results
+
+        (scalar_result * scalar_result).sum().backward()
+        (vector_result * vector_result).sum().backward()
+        (empty_result * empty_result).sum().backward()
+        matrix_result.sum().backward()
+        return (
+            (
+                type(results) is tuple,
+                tuple(scalar_result.shape),
+                scalar_result.stride(),
+                scalar_result.storage_offset(),
+                scalar_result.requires_grad,
+                scalar_result.is_leaf,
+                scalar_result.output_nr,
+                scalar_result.data_ptr() == scalar.data_ptr(),
+                self.grad_array(scalar_leaf, module),
+                self.grad_array(scalar_result, module),
+            ),
+            (
+                tuple(vector_result.shape),
+                vector_result.stride(),
+                vector_result.storage_offset(),
+                vector_result.requires_grad,
+                vector_result.is_leaf,
+                vector_result.output_nr,
+                vector_result.data_ptr() == vector.data_ptr(),
+                self.grad_array(vector_leaf, module),
+                self.grad_array(vector_result, module),
+            ),
+            (
+                tuple(empty_result.shape),
+                empty_result.stride(),
+                empty_result.storage_offset(),
+                empty_result.requires_grad,
+                empty_result.is_leaf,
+                empty_result.output_nr,
+                empty_result.data_ptr() == empty.data_ptr(),
+                self.grad_array(empty_leaf, module),
+                self.grad_array(empty_result, module),
+            ),
+            (
+                matrix_result is matrix,
+                matrix_result.requires_grad,
+                matrix_result.is_leaf,
+                matrix_result.output_nr,
+            ),
+            self.tensor_array(matrix_leaf.grad, module).copy(),
+        )
+
     def test_autograd_repeated_backward_and_no_grad_match_pytorch_2_13(self):
         actual = self.autograd_outcome(torch)
         expected = self.autograd_outcome(reference_torch)
@@ -457,6 +642,22 @@ class Atleast2dReferenceTests(unittest.TestCase):
                 np.testing.assert_array_equal(
                     actual_no_grad[-1], expected_no_grad[-1]
                 )
+
+    def test_variadic_autograd_and_no_grad_match_pytorch_2_13(self):
+        actual = self.variadic_autograd_outcome(torch)
+        expected = self.variadic_autograd_outcome(reference_torch)
+        self.assertEqual(actual[0], expected[0])
+        for actual_grad, expected_grad in zip(
+            actual[1:], expected[1:], strict=True
+        ):
+            np.testing.assert_array_equal(actual_grad, expected_grad)
+
+        actual_no_grad = self.variadic_no_grad_outcome(torch)
+        expected_no_grad = self.variadic_no_grad_outcome(reference_torch)
+        self.assertEqual(actual_no_grad[:-1], expected_no_grad[:-1])
+        np.testing.assert_array_equal(
+            actual_no_grad[-1], expected_no_grad[-1]
+        )
 
     def mode_contract(self, module):
         function = module.atleast_2d
@@ -662,10 +863,12 @@ class Atleast2dReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_variadic_and_mixed_forms_remain_unsupported(self):
+    def test_mixed_variadic_and_sequence_forms_remain_unsupported(self):
         source = torch.tensor(1.0)
         unsupported = (
-            lambda: torch.atleast_2d(source, source),
+            lambda: torch.atleast_2d(source, None),
+            lambda: torch.atleast_2d(None, source),
+            lambda: torch.atleast_2d(source, source, 1),
         )
         for call in unsupported:
             with self.subTest(call=call), self.assertRaisesRegex(
