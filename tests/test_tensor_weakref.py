@@ -93,6 +93,7 @@ class TensorWeakReferenceTests(unittest.TestCase):
         tensor = torch.tensor([1.0])
 
         self.assertIn("__weakref__", tensor_type.__dict__)
+        self.assertNotIn("_torch_rs_weakref_slot", tensor_type.__dict__)
         self.assertNotIn("__weakref__", tensor_base.__dict__)
         self.assertNotEqual(tensor_type.__weakrefoffset__, 0)
         self.assertEqual(tensor_base.__weakrefoffset__, 0)
@@ -143,6 +144,17 @@ class TensorWeakReferenceTests(unittest.TestCase):
         self.assertEqual(tensor_type.__hash__(tensor), id(tensor))
         self.assertEqual(hash(tensor), id(tensor))
         self.assertNotEqual(hash(tensor), object.__hash__(tensor))
+
+    def test_weakref_slot_lookup_ignores_module_monkeypatches(self):
+        tensor = torch.tensor([1.0])
+        original_getweakrefs = weakref.getweakrefs
+        weakref.getweakrefs = lambda _: ["spoofed"]
+        try:
+            self.assertIsNone(tensor.__weakref__)
+            reference = weakref.ref(tensor)
+            self.assertIs(tensor.__weakref__, reference)
+        finally:
+            weakref.getweakrefs = original_getweakrefs
 
     def test_callbacks_fire_once_and_dead_references_match_python(self):
         for case, factory in self.tensor_factories():
@@ -203,21 +215,83 @@ class TensorWeakReferenceTests(unittest.TestCase):
         collect_garbage()
         self.assertIsNone(alias_reference())
 
-        leaf = torch.tensor([2.0, 3.0], requires_grad=True)
-        nonleaf = leaf * 4.0
-        loss = nonleaf.sum()
-        references = tuple(weakref.ref(value) for value in (leaf, nonleaf, loss))
-        loss_proxy = weakref.proxy(loss)
+        untracked_source = torch.tensor([3.0], requires_grad=True)
+        untracked_reference = weakref.ref(untracked_source)
+        with torch.no_grad():
+            untracked_result = untracked_source * 2.0
+        del untracked_source
+        collect_garbage()
+        self.assertIsNone(untracked_reference())
+        self.assertFalse(untracked_result.requires_grad)
+        self.assertEqual(untracked_result.tolist(), [6.0])
 
-        loss_proxy.backward()
-        gradient = leaf.grad
+        leaf = torch.tensor([2.0, 3.0], requires_grad=True)
+        leaf_events = []
+        leaf_reference = weakref.ref(
+            leaf, lambda _: leaf_events.append("leaf collected")
+        )
+        leaf_proxy = weakref.proxy(leaf)
+        nonleaf = leaf * 4.0
+        nonleaf_reference = weakref.ref(nonleaf)
+        loss = nonleaf.sum()
+        del leaf, nonleaf
+        collect_garbage()
+
+        self.assertIsNotNone(leaf_reference())
+        self.assertIsNone(nonleaf_reference())
+        self.assertEqual(leaf_events, [])
+
+        loss.backward()
+        gradient = leaf_proxy.grad
         gradient_reference = weakref.ref(gradient)
         self.assertEqual(gradient.tolist(), [4.0, 4.0])
 
-        del gradient, loss_proxy, loss, nonleaf, leaf
+        del gradient, loss
         collect_garbage()
-        self.assertTrue(all(reference() is None for reference in references))
+        self.assertIsNone(leaf_reference())
         self.assertIsNone(gradient_reference())
+        self.assertEqual(leaf_events, ["leaf collected"])
+        with self.assertRaisesRegex(
+            ReferenceError, "^weakly-referenced object no longer exists$"
+        ):
+            leaf_proxy.grad
+
+        collect_garbage()
+        self.assertEqual(leaf_events, ["leaf collected"])
+
+    def test_views_retain_only_their_root_wrapper(self):
+        source = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        source_events = []
+        source_reference = weakref.ref(
+            source, lambda _: source_events.append("source collected")
+        )
+        source_proxy = weakref.proxy(source)
+        view = source.transpose(0, 1)
+        view_reference = weakref.ref(view)
+        nested_view = view[1]
+
+        del source
+        collect_garbage()
+        self.assertIsNotNone(source_reference())
+        self.assertEqual(source_proxy.tolist(), [[1.0, 2.0], [3.0, 4.0]])
+
+        del view
+        collect_garbage()
+        self.assertIsNone(view_reference())
+        self.assertIsNotNone(source_reference())
+        self.assertEqual(nested_view.tolist(), [2.0, 4.0])
+
+        del nested_view
+        collect_garbage()
+        self.assertIsNone(source_reference())
+        self.assertEqual(source_events, ["source collected"])
+        with self.assertRaisesRegex(
+            ReferenceError, "^weakly-referenced object no longer exists$"
+        ):
+            source_proxy.tolist()
+
+        collect_garbage()
+        self.assertEqual(source_events, ["source collected"])
 
 
 if __name__ == "__main__":

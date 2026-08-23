@@ -270,55 +270,62 @@ impl PyTensorBase {
             }
         }
 
-        let tensor = tensor.try_borrow()?;
-        let inner = if index.is_none() {
-            tensor.inner.unsqueeze_front()
-        } else if index.is_instance_of::<PyEllipsis>() {
-            tensor.inner.metadata_alias()
-        } else if let Ok(indices) = index.cast::<PyTuple>() {
-            // PyTorch materializes tuple subclasses through their Python iterator
-            // before interpreting any index elements.
-            let normalized_indices;
-            let indices = if index.is_exact_instance_of::<PyTuple>() {
-                indices
-            } else {
-                normalized_indices = slf
-                    .py()
-                    .get_type::<PyTuple>()
-                    .call1((index,))?
-                    .cast_into::<PyTuple>()?;
-                &normalized_indices
-            };
-            if let Some(indexed_dimensions) = metadata_alias_tuple_dimensions(indices)? {
-                if indexed_dimensions > tensor.inner.shape().len() {
-                    return Err(too_many_indices(tensor.inner.shape().len()));
-                }
+        let inner = {
+            let tensor = tensor.try_borrow()?;
+            if index.is_none() {
+                tensor.inner.unsqueeze_front()
+            } else if index.is_instance_of::<PyEllipsis>() {
                 tensor.inner.metadata_alias()
-            } else if indices.len() == 2
-                && indices.get_item(0)?.is_instance_of::<PyEllipsis>()
-                && indices.get_item(1)?.is_none()
-            {
-                tensor.inner.unsqueeze_back()
-            } else if indices.len() > tensor.inner.shape().len() {
-                return Err(too_many_indices(tensor.inner.shape().len()));
+            } else if let Ok(indices) = index.cast::<PyTuple>() {
+                // PyTorch materializes tuple subclasses through their Python iterator
+                // before interpreting any index elements.
+                let normalized_indices;
+                let indices = if index.is_exact_instance_of::<PyTuple>() {
+                    indices
+                } else {
+                    normalized_indices = slf
+                        .py()
+                        .get_type::<PyTuple>()
+                        .call1((index,))?
+                        .cast_into::<PyTuple>()?;
+                    &normalized_indices
+                };
+                if let Some(indexed_dimensions) = metadata_alias_tuple_dimensions(indices)? {
+                    if indexed_dimensions > tensor.inner.shape().len() {
+                        return Err(too_many_indices(tensor.inner.shape().len()));
+                    }
+                    tensor.inner.metadata_alias()
+                } else if indices.len() == 2
+                    && indices.get_item(0)?.is_instance_of::<PyEllipsis>()
+                    && indices.get_item(1)?.is_none()
+                {
+                    tensor.inner.unsqueeze_back()
+                } else if indices.len() > tensor.inner.shape().len() {
+                    return Err(too_many_indices(tensor.inner.shape().len()));
+                } else {
+                    let indices =
+                        parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
+                    tensor.inner.index(indices)
+                }
+            } else if is_exact_full_slice(index)? {
+                tensor.inner.index_full_slice()
+            } else if is_fast_integer_index(index)? {
+                let index = parse_integer_index(index)?;
+                tensor.inner.index_integer(index)
             } else {
-                let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
-                tensor.inner.index(indices)
+                if tensor.inner.shape().is_empty() {
+                    return Err(too_many_indices(0));
+                }
+                let index = parse_integer_index(index)?;
+                tensor.inner.index([index])
             }
-        } else if is_exact_full_slice(index)? {
-            tensor.inner.index_full_slice()
-        } else if is_fast_integer_index(index)? {
-            let index = parse_integer_index(index)?;
-            tensor.inner.index_integer(index)
-        } else {
-            if tensor.inner.shape().is_empty() {
-                return Err(too_many_indices(0));
-            }
-            let index = parse_integer_index(index)?;
-            tensor.inner.index([index])
-        }
-        .map_err(|error| tensor_error(&error))?;
-        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
+            .map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(
+            slf.py(),
+            PyTensor::from_unary_result(slf.py(), tensor, inner)?,
+        )?
+        .into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -489,7 +496,10 @@ impl PyTensorBase {
                 .try_copy_with_memory_format(memory_format)
                 .map_err(|error| tensor_error(&error))?
         };
-        Py::new(slf.py(), PyTensor::new(inner))
+        Py::new(
+            slf.py(),
+            PyTensor::from_unary_result(slf.py(), tensor, inner)?,
+        )
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -543,7 +553,10 @@ impl PyTensorBase {
                 .try_copy_with_memory_format(memory_format)
                 .map_err(|error| tensor_error(&error))?
         };
-        Py::new(slf.py(), PyTensor::new(inner))
+        Py::new(
+            slf.py(),
+            PyTensor::from_unary_result(slf.py(), tensor, inner)?,
+        )
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -731,7 +744,11 @@ impl PyTensorBase {
             let tensor = tensor.try_borrow()?;
             tensor.inner.sin().map_err(|error| tensor_error(&error))?
         };
-        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+        Ok(Py::new(
+            slf.py(),
+            PyTensor::from_unary_result(slf.py(), tensor, output)?,
+        )?
+        .into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -748,7 +765,11 @@ impl PyTensorBase {
             let tensor = tensor.try_borrow()?;
             tensor.inner.sqrt().map_err(|error| tensor_error(&error))?
         };
-        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+        Ok(Py::new(
+            slf.py(),
+            PyTensor::from_unary_result(slf.py(), tensor, output)?,
+        )?
+        .into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -768,7 +789,11 @@ impl PyTensorBase {
                 .square()
                 .map_err(|error| tensor_error(&error))?
         };
-        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+        Ok(Py::new(
+            slf.py(),
+            PyTensor::from_unary_result(slf.py(), tensor, output)?,
+        )?
+        .into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -789,7 +814,11 @@ impl PyTensorBase {
                 .reciprocal()
                 .map_err(|error| tensor_error(&error))?
         };
-        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+        Ok(Py::new(
+            slf.py(),
+            PyTensor::from_unary_result(slf.py(), tensor, output)?,
+        )?
+        .into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -807,8 +836,8 @@ impl PyTensorBase {
     #[doc = "\nneg() -> Tensor\n\nSee :func:`torch.neg`\n"]
     #[pyo3(text_signature = None)]
     fn neg(slf: &Bound<'_, Self>) -> PyResult<PyTensor> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        tensor.negated()
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        PyTensor::negated(tensor)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -816,8 +845,8 @@ impl PyTensorBase {
     #[doc = "\nnegative() -> Tensor\n\nSee :func:`torch.negative`\n"]
     #[pyo3(text_signature = None)]
     fn negative(slf: &Bound<'_, Self>) -> PyResult<PyTensor> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        tensor.negated()
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        PyTensor::negated(tensor)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -829,8 +858,8 @@ impl PyTensorBase {
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<PyTensor> {
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        tensor.multiplication_method(MultiplicationOperation::Multiply, args, kwargs)
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        PyTensor::multiplication_method(tensor, MultiplicationOperation::Multiply, args, kwargs)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -861,8 +890,9 @@ impl PyTensorBase {
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<PyTensor> {
         let dimensions = bind_permute_dimensions(args, kwargs)?;
-        let tensor = slf.as_any().cast::<PyTensor>()?.try_borrow()?;
-        permute_tensor(&tensor.inner, dimensions).map(PyTensor::new)
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        let inner = permute_tensor(&tensor.try_borrow()?.inner, dimensions)?;
+        PyTensor::from_unary_result(slf.py(), tensor, inner)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -907,13 +937,13 @@ impl PyTensorBase {
 
         let shape = tensor_shape_as_i64(other)?;
 
-        slf.as_any()
-            .cast::<PyTensor>()?
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        let inner = tensor
             .try_borrow()?
             .inner
             .reshape(shape)
-            .map(PyTensor::new)
-            .map_err(|error| tensor_error(&error))
+            .map_err(|error| tensor_error(&error))?;
+        PyTensor::from_unary_result(slf.py(), tensor, inner)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1080,7 +1110,11 @@ Example::
             .inner
             .view(shape)
             .map_err(|error| tensor_error(&error))?;
-        Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
+        Ok(Py::new(
+            slf.py(),
+            PyTensor::from_unary_result(slf.py(), tensor, inner)?,
+        )?
+        .into_any())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -1124,7 +1158,17 @@ Example::
     }
 }
 
-/// Python-facing tensor backed by the native Rust tensor core.
+/// A Python wrapper retained because PyTorch exposes it through object lifetime.
+///
+/// Views retain their root wrapper, while recorded autograd results retain the
+/// leaf wrappers that receive gradients. The flags let later results propagate
+/// only those roots instead of keeping every intermediate wrapper alive.
+struct PyTensorOwner {
+    tensor: Py<PyTensor>,
+    view_root: bool,
+    autograd_leaf: bool,
+}
+
 #[pyclass(
     name = "Tensor",
     module = "torch_rs",
@@ -1135,7 +1179,25 @@ Example::
 pub(crate) struct PyTensor {
     inner: CoreTensor,
     grad_cache: PyOnceLock<Py<PyTensor>>,
+    owners: Vec<PyTensorOwner>,
 }
+
+const fn tensor_weakref_slot_offset() -> ffi::Py_ssize_t {
+    let pyo3::impl_::pyclass::PyObjectOffset::Absolute(offset) =
+        pyo3::impl_::pyclass::weaklist_offset::<PyTensor>();
+    offset
+}
+
+#[allow(deprecated)]
+const TENSOR_WEAKREF_MEMBER: ffi::PyMemberDef = ffi::PyMemberDef {
+    name: c"__weakref__".as_ptr(),
+    // T_OBJECT maps a null weak-list head to None, matching the native slot
+    // descriptor. T_OBJECT_EX would instead raise AttributeError.
+    type_code: ffi::_Py_T_OBJECT,
+    offset: tensor_weakref_slot_offset(),
+    flags: ffi::Py_READONLY,
+    doc: core::ptr::null(),
+};
 
 impl From<PyTensor> for PyClassInitializer<PyTensor> {
     fn from(tensor: PyTensor) -> Self {
@@ -1161,7 +1223,91 @@ impl PyTensor {
         Self {
             inner,
             grad_cache: PyOnceLock::new(),
+            owners: Vec::new(),
         }
+    }
+
+    pub(crate) fn from_unary_result(
+        py: Python<'_>,
+        input: &Bound<'_, Self>,
+        inner: CoreTensor,
+    ) -> PyResult<Self> {
+        let retains_autograd_leaves = inner.requires_grad() && !inner.is_leaf();
+        let retains_view_root = inner.shares_storage_with(&input.try_borrow()?.inner);
+        let mut output = Self::new(inner);
+        if retains_view_root {
+            output.retain_view_root(py, input)?;
+        }
+        if retains_autograd_leaves {
+            output.retain_autograd_leaves(py, input)?;
+        }
+        Ok(output)
+    }
+
+    pub(crate) fn from_binary_result(
+        py: Python<'_>,
+        left: &Bound<'_, Self>,
+        right: &Bound<'_, Self>,
+        inner: CoreTensor,
+    ) -> PyResult<Self> {
+        let retains_autograd_leaves = inner.requires_grad() && !inner.is_leaf();
+        let mut output = Self::new(inner);
+        if retains_autograd_leaves {
+            output.retain_autograd_leaves(py, left)?;
+            output.retain_autograd_leaves(py, right)?;
+        }
+        Ok(output)
+    }
+
+    fn retain_view_root(&mut self, py: Python<'_>, input: &Bound<'_, Self>) -> PyResult<()> {
+        let inherited = input
+            .try_borrow()?
+            .owners
+            .iter()
+            .find(|owner| owner.view_root)
+            .map(|owner| (owner.tensor.clone_ref(py), owner.autograd_leaf));
+        if let Some((owner, autograd_leaf)) = inherited {
+            self.retain_owner(owner, true, autograd_leaf)
+        } else {
+            self.retain_owner(input.clone().unbind(), true, false)
+        }
+    }
+
+    fn retain_autograd_leaves(&mut self, py: Python<'_>, input: &Bound<'_, Self>) -> PyResult<()> {
+        let input_ref = input.try_borrow()?;
+        if input_ref.inner.requires_grad() && input_ref.inner.is_leaf() {
+            self.retain_owner(input.clone().unbind(), false, true)?;
+        }
+        for owner in input_ref.owners.iter().filter(|owner| owner.autograd_leaf) {
+            self.retain_owner(owner.tensor.clone_ref(py), false, true)?;
+        }
+        Ok(())
+    }
+
+    fn retain_owner(
+        &mut self,
+        tensor: Py<Self>,
+        view_root: bool,
+        autograd_leaf: bool,
+    ) -> PyResult<()> {
+        if let Some(owner) = self
+            .owners
+            .iter_mut()
+            .find(|owner| owner.tensor.as_ptr() == tensor.as_ptr())
+        {
+            owner.view_root |= view_root;
+            owner.autograd_leaf |= autograd_leaf;
+            return Ok(());
+        }
+        self.owners.try_reserve_exact(1).map_err(|_| {
+            PyMemoryError::new_err("unable to retain source Tensor wrapper ownership")
+        })?;
+        self.owners.push(PyTensorOwner {
+            tensor,
+            view_root,
+            autograd_leaf,
+        });
+        Ok(())
     }
 
     pub(crate) const fn inner(&self) -> &CoreTensor {
@@ -1285,7 +1431,7 @@ pub(crate) fn atleast_1d_variable_function(
             .reshape([1])
             .map_err(|error| tensor_error(&error))?
     };
-    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+    Ok(Py::new(py, PyTensor::from_unary_result(py, tensor, inner)?)?.into_any())
 }
 
 pub(crate) fn atleast_2d_variable_function(
@@ -1324,7 +1470,7 @@ pub(crate) fn atleast_2d_variable_function(
         }
         .map_err(|error| tensor_error(&error))?
     };
-    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+    Ok(Py::new(py, PyTensor::from_unary_result(py, tensor, inner)?)?.into_any())
 }
 
 pub(crate) fn atleast_3d_variable_function(
@@ -1367,7 +1513,7 @@ pub(crate) fn atleast_3d_variable_function(
         }
         .map_err(|error| tensor_error(&error))?
     };
-    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+    Ok(Py::new(py, PyTensor::from_unary_result(py, tensor, inner)?)?.into_any())
 }
 
 pub(crate) fn adjoint_variable_function(
@@ -1577,13 +1723,12 @@ pub(crate) fn permute_variable_function(
         return Err(keyword_error);
     }
     let dimensions = parse_permute_dimension_arguments(dimension_arguments)?;
-    let tensor = input.try_borrow()?;
-    Ok(Bound::new(
-        py,
-        permute_tensor(&tensor.inner, dimensions).map(PyTensor::new)?,
-    )?
-    .into_any()
-    .unbind())
+    let inner = permute_tensor(&input.try_borrow()?.inner, dimensions)?;
+    Ok(
+        Bound::new(py, PyTensor::from_unary_result(py, input, inner)?)?
+            .into_any()
+            .unbind(),
+    )
 }
 
 pub(crate) fn movedim_variable_function(
@@ -1640,7 +1785,11 @@ fn dimension_move_tensor_method(
         &destination,
     )?;
     let inner = movedim_tensor(&tensor.try_borrow()?.inner, source, destination)?;
-    Ok(Py::new(slf.py(), PyTensor::new(inner))?.into_any())
+    Ok(Py::new(
+        slf.py(),
+        PyTensor::from_unary_result(slf.py(), tensor, inner)?,
+    )?
+    .into_any())
 }
 
 fn dimension_move_variable_function(
@@ -1974,7 +2123,7 @@ fn matrix_adjoint(
                 .inner
                 .matrix_transpose()
                 .map_err(|error| transpose_error(&error))?;
-            Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+            Ok(Py::new(py, PyTensor::from_unary_result(py, tensor, inner)?)?.into_any())
         }
     }
 }
@@ -2205,9 +2354,14 @@ fn unbind_first_dimension(
         .inner
         .unbind_first_dimension()
         .map_err(|error| tensor_error(&error))?;
-    Ok(PyTuple::new(py, outputs.into_iter().map(PyTensor::new))?
-        .into_any()
-        .unbind())
+    let mut wrapped = Vec::new();
+    wrapped
+        .try_reserve_exact(outputs.len())
+        .map_err(|_| PyMemoryError::new_err("unable to retain unbind Tensor ownership"))?;
+    for inner in outputs {
+        wrapped.push(PyTensor::from_unary_result(py, tensor, inner)?);
+    }
+    Ok(PyTuple::new(py, wrapped)?.into_any().unbind())
 }
 
 fn select_first_dimension(
@@ -2217,33 +2371,35 @@ fn select_first_dimension(
     index: i64,
     operation: &str,
 ) -> PyResult<Py<PyAny>> {
-    let tensor = tensor.try_borrow()?;
-    let shape = tensor.inner.shape();
-    if shape.is_empty() {
-        return Err(PyIndexError::new_err(
-            "select() cannot be applied to a 0-dim tensor.",
-        ));
-    }
-    let axis = normalize_dimension(dimension, shape.len())?;
-    if axis != 0 {
-        return Err(PyRuntimeError::new_err(format!(
-            "{operation} only supports dimension 0"
-        )));
-    }
-
-    let inner = tensor.inner.index_integer(index).map_err(|error| {
-        if let TensorError::IndexOutOfBounds {
-            index, dimension, ..
-        } = &error
-        {
-            PyIndexError::new_err(format!(
-                "select(): index {index} out of range for tensor of size {shape:?} at dimension {dimension}"
-            ))
-        } else {
-            tensor_error(&error)
+    let inner = {
+        let tensor = tensor.try_borrow()?;
+        let shape = tensor.inner.shape();
+        if shape.is_empty() {
+            return Err(PyIndexError::new_err(
+                "select() cannot be applied to a 0-dim tensor.",
+            ));
         }
-    })?;
-    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+        let axis = normalize_dimension(dimension, shape.len())?;
+        if axis != 0 {
+            return Err(PyRuntimeError::new_err(format!(
+                "{operation} only supports dimension 0"
+            )));
+        }
+
+        tensor.inner.index_integer(index).map_err(|error| {
+            if let TensorError::IndexOutOfBounds {
+                index, dimension, ..
+            } = &error
+            {
+                PyIndexError::new_err(format!(
+                    "select(): index {index} out of range for tensor of size {shape:?} at dimension {dimension}"
+                ))
+            } else {
+                tensor_error(&error)
+            }
+        })?
+    };
+    Ok(Py::new(py, PyTensor::from_unary_result(py, tensor, inner)?)?.into_any())
 }
 
 fn dispatch_top_level_unbind(
@@ -2638,7 +2794,7 @@ fn apply_top_level_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResu
         .inner
         .ravel()
         .map_err(|error| tensor_error(&error))?;
-    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+    Ok(Py::new(py, PyTensor::from_unary_result(py, tensor, inner)?)?.into_any())
 }
 
 fn apply_top_level_detach(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
@@ -2737,15 +2893,17 @@ fn apply_top_level_unary_out(
     let BoundTensorOrTorchFunction::Tensor(input) = &call.input else {
         unreachable!("unary-out overrides were dispatched before the native path")
     };
-    let input = input.try_borrow()?;
-    if input.inner.requires_grad()
-        && is_grad_enabled()
-        && let Some(error) = operation.autograd_unsupported_error
-    {
-        return Err(PyRuntimeError::new_err(error));
-    }
-    let output = (operation.apply)(&input.inner).map_err(|error| tensor_error(&error))?;
-    Ok(Py::new(py, PyTensor::new(output))?.into_any())
+    let output = {
+        let input_ref = input.try_borrow()?;
+        if input_ref.inner.requires_grad()
+            && is_grad_enabled()
+            && let Some(error) = operation.autograd_unsupported_error
+        {
+            return Err(PyRuntimeError::new_err(error));
+        }
+        (operation.apply)(&input_ref.inner).map_err(|error| tensor_error(&error))?
+    };
+    Ok(Py::new(py, PyTensor::from_unary_result(py, input, output)?)?.into_any())
 }
 
 fn dispatch_is_conj(
@@ -3004,7 +3162,7 @@ fn apply_top_level_movedim(
         destination,
     )?;
     let inner = movedim_tensor(&input.try_borrow()?.inner, source, destination)?;
-    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+    Ok(Py::new(py, PyTensor::from_unary_result(py, input, inner)?)?.into_any())
 }
 
 fn dispatch_view_as(
@@ -3096,7 +3254,7 @@ fn apply_view_as(
         .inner
         .view(shape)
         .map_err(|error| tensor_error(&error))?;
-    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+    Ok(Py::new(py, PyTensor::from_unary_result(py, tensor, inner)?)?.into_any())
 }
 
 fn dispatch_matmul(
@@ -3109,8 +3267,7 @@ fn dispatch_matmul(
     if torch_function_mode_stack::is_empty()
         && let BoundTensorOrTorchFunction::Tensor(other) = other
     {
-        let other = other.try_borrow()?;
-        let result = tensor.try_borrow()?.matrix_multiply(&other)?;
+        let result = PyTensor::matrix_multiply(tensor, other)?;
         return Ok(Py::new(py, result)?.into_any());
     }
 
@@ -3170,8 +3327,7 @@ fn dispatch_matmul(
                     None,
                 )?);
             }
-            let other = other.try_borrow()?;
-            let result = tensor.try_borrow()?.matrix_multiply(&other)?;
+            let result = PyTensor::matrix_multiply(tensor, other)?;
             Ok(Py::new(py, result)?.into_any())
         }
     }
@@ -3278,8 +3434,7 @@ fn dispatch_top_level_matmul(
         else {
             unreachable!("matmul overrides were collected before the native fast path")
         };
-        let other = other.try_borrow()?;
-        let result = input.try_borrow()?.matrix_multiply(&other)?;
+        let result = PyTensor::matrix_multiply(input, other)?;
         return Ok(Py::new(py, result)?.into_any());
     }
 
@@ -3370,15 +3525,23 @@ fn apply_top_level_multiplication(
     input: &BoundMulOperand<'_>,
     other: &BoundMulOperand<'_>,
 ) -> PyResult<Py<PyAny>> {
-    let result = match (input, other) {
+    let output = match (input, other) {
         (BoundMulOperand::Tensor(input), BoundMulOperand::Tensor(other)) => {
-            let other = other.try_borrow()?;
-            BinaryOperation::Multiply.apply_tensors(&input.try_borrow()?.inner, &other.inner)
+            let result = {
+                let input_ref = input.try_borrow()?;
+                let other_ref = other.try_borrow()?;
+                BinaryOperation::Multiply.apply_tensors(&input_ref.inner, &other_ref.inner)
+            }
+            .map_err(|error| tensor_error(&error))?;
+            PyTensor::from_binary_result(py, input, other, result)?
         }
         (BoundMulOperand::Tensor(tensor), BoundMulOperand::Scalar(scalar))
         | (BoundMulOperand::Scalar(scalar), BoundMulOperand::Tensor(tensor)) => {
             let scalar = parse_top_level_mul_scalar(scalar)?;
-            BinaryOperation::Multiply.apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
+            let result = BinaryOperation::Multiply
+                .apply_scalar(&tensor.try_borrow()?.inner, scalar, false)
+                .map_err(|error| tensor_error(&error))?;
+            PyTensor::from_unary_result(py, tensor, result)?
         }
         (BoundMulOperand::Scalar(_), BoundMulOperand::Scalar(_)) => {
             return Err(PyTypeError::new_err(format!(
@@ -3390,11 +3553,7 @@ fn apply_top_level_multiplication(
             unreachable!("multiplication overrides were dispatched before the native path")
         }
     };
-    Ok(Py::new(
-        py,
-        PyTensor::new(result.map_err(|error| tensor_error(&error))?),
-    )?
-    .into_any())
+    Ok(Py::new(py, output)?.into_any())
 }
 
 fn parse_top_level_mul_scalar(value: &Bound<'_, PyAny>) -> PyResult<f32> {
@@ -3518,14 +3677,21 @@ impl MultiplicationOperation {
 impl PyTensor {
     #[doc = "list of weak references to the object"]
     #[getter]
-    fn __weakref__(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
-        let weakrefs =
-            PyModule::import(slf.py(), "weakref")?.call_method1("getweakrefs", (slf,))?;
-        if weakrefs.len()? == 0 {
-            Ok(None)
-        } else {
-            Ok(Some(weakrefs.get_item(0)?.unbind()))
+    #[allow(
+        unsafe_code,
+        reason = "stable-ABI direct read of PyO3's weak-reference slot"
+    )]
+    fn __weakref__(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let mut member = TENSOR_WEAKREF_MEMBER;
+        // SAFETY: `slf` is a live PyTensor allocation and the member offset is
+        // the weak-reference slot offset computed by PyO3 for that exact type.
+        unsafe {
+            Bound::<PyAny>::from_owned_ptr_or_err(
+                slf.py(),
+                ffi::PyMember_GetOne(slf.as_ptr().cast(), &raw mut member),
+            )
         }
+        .map(Bound::unbind)
     }
 
     #[classattr]
@@ -3546,48 +3712,59 @@ impl PyTensor {
 
     /// NumPy-style transpose view with every dimension reversed.
     #[getter(T)]
-    fn numpy_transpose(&self, py: Python<'_>) -> PyResult<Self> {
-        match self.inner.shape().len() {
-            0 => warn_once(py, &T_SCALAR_WARNING_EMITTED, T_SCALAR_WARNING)?,
-            2 => {}
-            _ => warn_once(py, &T_NON_MATRIX_WARNING_EMITTED, T_NON_MATRIX_WARNING)?,
-        }
-        self.inner
-            .reverse_dimensions()
-            .map(Self::new)
-            .map_err(|error| transpose_error(&error))
+    fn numpy_transpose(slf: &Bound<'_, Self>) -> PyResult<Self> {
+        let inner = {
+            let tensor = slf.try_borrow()?;
+            match tensor.inner.shape().len() {
+                0 => warn_once(slf.py(), &T_SCALAR_WARNING_EMITTED, T_SCALAR_WARNING)?,
+                2 => {}
+                _ => warn_once(
+                    slf.py(),
+                    &T_NON_MATRIX_WARNING_EMITTED,
+                    T_NON_MATRIX_WARNING,
+                )?,
+            }
+            tensor
+                .inner
+                .reverse_dimensions()
+                .map_err(|error| transpose_error(&error))?
+        };
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
     /// Matrix transpose view with the final two dimensions swapped.
     #[getter(mT)]
-    fn matrix_transpose(slf: PyRef<'_, Self>) -> PyResult<Py<Self>> {
-        let rank = slf.inner.shape().len();
+    fn matrix_transpose(slf: &Bound<'_, Self>) -> PyResult<Py<Self>> {
+        let rank = slf.try_borrow()?.inner.shape().len();
         if rank == 0 {
             warn_once(slf.py(), &MT_SCALAR_WARNING_EMITTED, MT_SCALAR_WARNING)?;
-            return Ok(slf.into());
+            return Ok(slf.clone().unbind());
         }
         let inner = slf
+            .try_borrow()?
             .inner
             .matrix_transpose()
             .map_err(|error| transpose_error(&error))?;
-        Py::new(slf.py(), Self::new(inner))
+        Py::new(slf.py(), Self::from_unary_result(slf.py(), slf, inner)?)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nt() -> Tensor\n\nSee :func:`torch.t`\n"]
     #[pyo3(text_signature = None)]
-    fn t(&self) -> PyResult<Self> {
-        let rank = self.inner.shape().len();
+    fn t(slf: &Bound<'_, Self>) -> PyResult<Self> {
+        let rank = slf.try_borrow()?.inner.shape().len();
         if rank > 2 {
             return Err(PyRuntimeError::new_err(format!(
                 "t() expects a tensor with <= 2 dimensions, but self is {rank}D"
             )));
         }
-        self.inner
+        let inner = slf
+            .try_borrow()?
+            .inner
             .t()
-            .map(Self::new)
-            .map_err(|error| transpose_error(&error))
+            .map_err(|error| transpose_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
     #[pyo3(signature = (dim=None))]
@@ -3636,7 +3813,7 @@ impl PyTensor {
 
     #[pyo3(signature = (*args, **kwargs), text_signature = "(*, memory_format=torch.contiguous_format)")]
     fn contiguous(
-        slf: PyRef<'_, Self>,
+        slf: &Bound<'_, Self>,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<Self>> {
@@ -3665,19 +3842,24 @@ impl PyTensor {
             }
         }
 
-        if slf.inner.is_contiguous_with_memory_format(memory_format) {
-            return Ok(slf.into());
+        if slf
+            .try_borrow()?
+            .inner
+            .is_contiguous_with_memory_format(memory_format)
+        {
+            return Ok(slf.clone().unbind());
         }
         let inner = slf
+            .try_borrow()?
             .inner
             .try_contiguous(memory_format)
             .map_err(|error| tensor_error(&error))?;
-        Py::new(slf.py(), Self::new(inner))
+        Py::new(slf.py(), Self::from_unary_result(slf.py(), slf, inner)?)
     }
 
     #[pyo3(signature = (*args, **kwargs))]
     fn transpose(
-        &self,
+        slf: &Bound<'_, Self>,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
@@ -3688,10 +3870,12 @@ impl PyTensor {
         }
         let [dim0, dim1] =
             parse_dimension_swap_dimensions("transpose", ["dim0", "dim1"], &dim0, &dim1)?;
-        self.inner
+        let inner = slf
+            .try_borrow()?
+            .inner
             .transpose(dim0, dim1)
-            .map(Self::new)
-            .map_err(|error| transpose_error(&error))
+            .map_err(|error| transpose_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -3699,7 +3883,7 @@ impl PyTensor {
     #[doc = "\nswapdims(dim0, dim1) -> Tensor\n\nSee :func:`torch.swapdims`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn swapdims(
-        &self,
+        slf: &Bound<'_, Self>,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
@@ -3710,10 +3894,12 @@ impl PyTensor {
         }
         let [dim0, dim1] =
             parse_dimension_swap_dimensions("swapdims", ["dim0", "dim1"], &dim0, &dim1)?;
-        self.inner
+        let inner = slf
+            .try_borrow()?
+            .inner
             .transpose(dim0, dim1)
-            .map(Self::new)
-            .map_err(|error| transpose_error(&error))
+            .map_err(|error| transpose_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -3721,7 +3907,7 @@ impl PyTensor {
     #[doc = "\nswapaxes(axis0, axis1) -> Tensor\n\nSee :func:`torch.swapaxes`\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn swapaxes(
-        &self,
+        slf: &Bound<'_, Self>,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
@@ -3732,50 +3918,58 @@ impl PyTensor {
         }
         let [axis0, axis1] =
             parse_dimension_swap_dimensions("swapaxes", ["axis0", "axis1"], &axis0, &axis1)?;
-        self.inner
+        let inner = slf
+            .try_borrow()?
+            .inner
             .transpose(axis0, axis1)
-            .map(Self::new)
-            .map_err(|error| transpose_error(&error))
+            .map_err(|error| transpose_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
     #[pyo3(signature = (*args, **kwargs), text_signature = "(dim=None)")]
     fn squeeze(
-        &self,
+        slf: &Bound<'_, Self>,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Self> {
         let dimensions = bind_method_squeeze_arguments(args, kwargs)?;
-        apply_squeeze(&self.inner, dimensions)
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+        let inner = apply_squeeze(&slf.try_borrow()?.inner, dimensions)
+            .map_err(|error| tensor_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
     #[pyo3(signature = (*args, **kwargs), text_signature = "(start_dim=0, end_dim=-1)")]
     fn flatten(
-        slf: PyRef<'_, Self>,
+        slf: &Bound<'_, Self>,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<Self>> {
         let (start_dim, end_dim) = bind_method_flatten_arguments(args, kwargs)?;
-        let inner = slf
-            .inner
-            .flatten(start_dim, end_dim)
-            .map_err(|error| tensor_error(&error))?;
-        if same_tensor_metadata(&slf.inner, &inner) {
-            return Ok(slf.into());
-        }
-        Py::new(slf.py(), Self::new(inner))
+        let inner = {
+            let tensor = slf.try_borrow()?;
+            let inner = tensor
+                .inner
+                .flatten(start_dim, end_dim)
+                .map_err(|error| tensor_error(&error))?;
+            if same_tensor_metadata(&tensor.inner, &inner) {
+                return Ok(slf.clone().unbind());
+            }
+            inner
+        };
+        Py::new(slf.py(), Self::from_unary_result(slf.py(), slf, inner)?)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nravel() -> Tensor\n\nsee :func:`torch.ravel`\n"]
     #[pyo3(text_signature = None)]
-    fn ravel(&self) -> PyResult<Self> {
-        self.inner
+    fn ravel(slf: &Bound<'_, Self>) -> PyResult<Self> {
+        let inner = slf
+            .try_borrow()?
+            .inner
             .ravel()
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+            .map_err(|error| tensor_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
     fn __iter__(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -3796,15 +3990,17 @@ impl PyTensor {
 
     #[pyo3(signature = (*shape_dimensions, shape=None))]
     fn reshape(
-        &self,
+        slf: &Bound<'_, Self>,
         shape_dimensions: &Bound<'_, PyTuple>,
         shape: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let shape = parse_reshape_shape(shape_dimensions, shape)?;
-        self.inner
+        let inner = slf
+            .try_borrow()?
+            .inner
             .reshape(shape)
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+            .map_err(|error| tensor_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
     #[pyo3(signature = (dtype=None, copy=None))]
@@ -3893,12 +4089,14 @@ impl PyTensor {
     }
 
     #[pyo3(signature = (*, memory_format=None))]
-    fn clone(&self, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+    fn clone(slf: &Bound<'_, Self>, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let memory_format = parse_clone_memory_format(memory_format)?;
-        self.inner
+        let inner = slf
+            .try_borrow()?
+            .inner
             .try_clone_with_memory_format(memory_format)
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+            .map_err(|error| tensor_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
     fn detach(&self) -> PyResult<Self> {
@@ -3912,70 +4110,79 @@ impl PyTensor {
         self.inner.backward().map_err(|error| tensor_error(&error))
     }
 
-    fn relu(&self) -> PyResult<Self> {
-        self.inner
+    fn relu(slf: &Bound<'_, Self>) -> PyResult<Self> {
+        let inner = slf
+            .try_borrow()?
+            .inner
             .relu()
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+            .map_err(|error| tensor_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
-    fn exp(&self) -> PyResult<Self> {
-        self.inner
+    fn exp(slf: &Bound<'_, Self>) -> PyResult<Self> {
+        let inner = slf
+            .try_borrow()?
+            .inner
             .exp()
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+            .map_err(|error| tensor_error(&error))?;
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
-    fn sum(&self) -> Self {
-        Self::new(self.inner.sum())
+    fn sum(slf: &Bound<'_, Self>) -> PyResult<Self> {
+        let inner = slf.try_borrow()?.inner.sum();
+        Self::from_unary_result(slf.py(), slf, inner)
     }
 
-    fn __add__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        self.binary_operation(py, other, BinaryOperation::Add, false)
+    fn __add__(slf: &Bound<'_, Self>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        Self::binary_operation(slf, other, BinaryOperation::Add, false)
     }
 
-    fn __radd__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        self.binary_operation(py, other, BinaryOperation::Add, true)
+    fn __radd__(slf: &Bound<'_, Self>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        Self::binary_operation(slf, other, BinaryOperation::Add, true)
     }
 
-    fn __sub__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        self.binary_operation(py, other, BinaryOperation::Subtract, false)
+    fn __sub__(slf: &Bound<'_, Self>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        Self::binary_operation(slf, other, BinaryOperation::Subtract, false)
     }
 
-    fn __rsub__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        self.binary_operation(py, other, BinaryOperation::Subtract, true)
+    fn __rsub__(slf: &Bound<'_, Self>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        Self::binary_operation(slf, other, BinaryOperation::Subtract, true)
     }
 
-    fn __mul__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        self.binary_operation(py, other, BinaryOperation::Multiply, false)
+    fn __mul__(slf: &Bound<'_, Self>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        Self::binary_operation(slf, other, BinaryOperation::Multiply, false)
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nmul(value) -> Tensor\n\nSee :func:`torch.mul`.\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
-    fn mul(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
-        self.multiplication_method(MultiplicationOperation::Mul, args, kwargs)
+    fn mul(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
+        Self::multiplication_method(slf, MultiplicationOperation::Mul, args, kwargs)
     }
 
-    fn __rmul__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        self.binary_operation(py, other, BinaryOperation::Multiply, true)
+    fn __rmul__(slf: &Bound<'_, Self>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        Self::binary_operation(slf, other, BinaryOperation::Multiply, true)
     }
 
-    fn __neg__(&self) -> PyResult<Self> {
-        self.negated()
+    fn __neg__(slf: &Bound<'_, Self>) -> PyResult<Self> {
+        Self::negated(slf)
     }
 
-    fn __truediv__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        self.binary_operation(py, other, BinaryOperation::Divide, false)
+    fn __truediv__(slf: &Bound<'_, Self>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        Self::binary_operation(slf, other, BinaryOperation::Divide, false)
     }
 
-    fn __rtruediv__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-        self.binary_operation(py, other, BinaryOperation::Divide, true)
+    fn __rtruediv__(slf: &Bound<'_, Self>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        Self::binary_operation(slf, other, BinaryOperation::Divide, true)
     }
 
-    fn __matmul__(&self, other: &Self) -> PyResult<Self> {
-        self.matrix_multiply(other)
+    fn __matmul__(slf: &Bound<'_, Self>, other: &Bound<'_, Self>) -> PyResult<Self> {
+        Self::matrix_multiply(slf, other)
     }
 
     fn __bool__(&self) -> PyResult<bool> {
@@ -4004,22 +4211,26 @@ impl PyTensor {
 }
 
 impl PyTensor {
-    fn matrix_multiply(&self, other: &Self) -> PyResult<Self> {
-        self.inner
-            .matmul(&other.inner)
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+    fn matrix_multiply(input: &Bound<'_, Self>, other: &Bound<'_, Self>) -> PyResult<Self> {
+        let inner = input
+            .try_borrow()?
+            .inner
+            .matmul(&other.try_borrow()?.inner)
+            .map_err(|error| tensor_error(&error))?;
+        Self::from_binary_result(input.py(), input, other, inner)
     }
 
-    fn negated(&self) -> PyResult<Self> {
-        self.inner
+    fn negated(input: &Bound<'_, Self>) -> PyResult<Self> {
+        let inner = input
+            .try_borrow()?
+            .inner
             .negate()
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
+            .map_err(|error| tensor_error(&error))?;
+        Self::from_unary_result(input.py(), input, inner)
     }
 
     fn multiplication_method(
-        &self,
+        input: &Bound<'_, Self>,
         operation: MultiplicationOperation,
         args: &Bound<'_, PyTuple>,
         kwargs: Option<&Bound<'_, PyDict>>,
@@ -4047,8 +4258,12 @@ impl PyTensor {
         }
 
         let result = if let Some(other_tensor) = other_tensor {
-            let other_tensor = other_tensor.try_borrow()?;
-            BinaryOperation::Multiply.apply_tensors(&self.inner, &other_tensor.inner)
+            let result = BinaryOperation::Multiply.apply_tensors(
+                &input.try_borrow()?.inner,
+                &other_tensor.try_borrow()?.inner,
+            );
+            let inner = result.map_err(|error| tensor_error(&error))?;
+            return Self::from_binary_result(input.py(), input, other_tensor, inner);
         } else {
             let scalar = match scalar.expect("a non-tensor mul operand has a scalar parse result") {
                 Ok(Some(scalar)) => scalar,
@@ -4066,10 +4281,15 @@ impl PyTensor {
             if matches!(scalar, ParsedArithmeticScalar::WideNumpyUnsigned) {
                 return Err(PyTypeError::new_err("an integer is required"));
             }
-            BinaryOperation::Multiply.apply_scalar(&self.inner, scalar.into_f32(), false)
+            BinaryOperation::Multiply.apply_scalar(
+                &input.try_borrow()?.inner,
+                scalar.into_f32(),
+                false,
+            )
         };
 
-        result.map(Self::new).map_err(|error| tensor_error(&error))
+        let inner = result.map_err(|error| tensor_error(&error))?;
+        Self::from_unary_result(input.py(), input, inner)
     }
 
     pub(crate) fn truth_value(&self) -> PyResult<bool> {
@@ -4125,19 +4345,24 @@ impl PyTensor {
     }
 
     fn binary_operation(
-        &self,
-        py: Python<'_>,
+        input: &Bound<'_, Self>,
         other: &Bound<'_, PyAny>,
         operation: BinaryOperation,
         reverse: bool,
     ) -> PyResult<Py<PyAny>> {
+        let py = input.py();
         let result = if let Ok(other) = other.cast::<Self>() {
-            let other = other.try_borrow()?;
-            if reverse {
-                operation.apply_tensors(&other.inner, &self.inner)
-            } else {
-                operation.apply_tensors(&self.inner, &other.inner)
-            }
+            let result = {
+                let input = input.try_borrow()?;
+                let other_ref = other.try_borrow()?;
+                if reverse {
+                    operation.apply_tensors(&other_ref.inner, &input.inner)
+                } else {
+                    operation.apply_tensors(&input.inner, &other_ref.inner)
+                }
+            };
+            let inner = result.map_err(|error| tensor_error(&error))?;
+            return Self::from_binary_result(py, input, other, inner)?.into_py_any(py);
         } else {
             let Some(scalar) = parse_arithmetic_scalar(other)? else {
                 return Ok(py.NotImplemented());
@@ -4145,7 +4370,7 @@ impl PyTensor {
             let scalar = match scalar {
                 ParsedArithmeticScalar::WideNumpyUnsigned => {
                     if reverse && matches!(operation, BinaryOperation::Divide) {
-                        return self.numpy_reflected_divide(py, other);
+                        return input.try_borrow()?.numpy_reflected_divide(py, other);
                     }
                     return Ok(py.NotImplemented());
                 }
@@ -4154,10 +4379,11 @@ impl PyTensor {
             if matches!(operation, BinaryOperation::Subtract) && scalar.is_python_bool() {
                 return Err(bool_subtraction_error());
             }
-            operation.apply_scalar(&self.inner, scalar.into_f32(), reverse)
+            operation.apply_scalar(&input.try_borrow()?.inner, scalar.into_f32(), reverse)
         };
 
-        Self::new(result.map_err(|error| tensor_error(&error))?).into_py_any(py)
+        let inner = result.map_err(|error| tensor_error(&error))?;
+        Self::from_unary_result(py, input, inner)?.into_py_any(py)
     }
 }
 
@@ -4268,13 +4494,17 @@ fn parse_factory_requires_grad(
 }
 
 #[pyfunction(signature = (input, *, memory_format=None))]
-fn clone(input: &PyTensor, memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<PyTensor> {
+fn clone(
+    input: &Bound<'_, PyTensor>,
+    memory_format: Option<&Bound<'_, PyAny>>,
+) -> PyResult<PyTensor> {
     let memory_format = parse_clone_memory_format(memory_format)?;
-    input
+    let inner = input
+        .try_borrow()?
         .inner
         .try_clone_with_memory_format(memory_format)
-        .map(PyTensor::new)
-        .map_err(|error| tensor_error(&error))
+        .map_err(|error| tensor_error(&error))?;
+    PyTensor::from_unary_result(input.py(), input, inner)
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
@@ -4284,7 +4514,7 @@ fn relu(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResu
         .value
         .cast::<PyTensor>()
         .expect("the relu input type was checked while binding");
-    tensor.try_borrow()?.relu()
+    PyTensor::relu(tensor)
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = None)]
@@ -4329,7 +4559,7 @@ fn t(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<
         .value
         .cast::<PyTensor>()
         .expect("the t input type was checked while binding");
-    tensor.try_borrow()?.t()
+    PyTensor::t(tensor)
 }
 
 #[pyfunction(signature = (*args, **kwargs))]
@@ -4374,18 +4604,18 @@ fn apply_top_level_dimension_swap(
             &input_type,
         )
     })?;
-    let input_tensor = input_tensor.try_borrow()?;
     let [dim0, dim1] = parse_dimension_swap_dimensions(
         operation,
         [argument_names[1], argument_names[2]],
         &dim0,
         &dim1,
     )?;
-    input_tensor
+    let inner = input_tensor
+        .try_borrow()?
         .inner
         .transpose(dim0, dim1)
-        .map(PyTensor::new)
-        .map_err(|error| transpose_error(&error))
+        .map_err(|error| transpose_error(&error))?;
+    PyTensor::from_unary_result(args.py(), input_tensor, inner)
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = "(input, dim=None)")]
@@ -4408,10 +4638,9 @@ fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyR
             )?);
         }
     };
-    let input = input.try_borrow()?;
-    apply_squeeze(&input.inner, dimension)
-        .map(PyTensor::new)
-        .map_err(|error| tensor_error(&error))
+    let inner = apply_squeeze(&input.try_borrow()?.inner, dimension)
+        .map_err(|error| tensor_error(&error))?;
+    PyTensor::from_unary_result(args.py(), input, inner)
 }
 
 #[pyfunction(signature = (*args, **kwargs), text_signature = "(input, start_dim=0, end_dim=-1)")]
@@ -4431,13 +4660,13 @@ fn flatten(
             .flatten(start_dim, end_dim)
             .map_err(|error| tensor_error(&error))?
     };
-    let tensor = input_object.bind(args.py()).try_borrow()?;
-    if same_tensor_metadata(&tensor.inner, &inner) {
-        drop(tensor);
+    if same_tensor_metadata(&tensor.try_borrow()?.inner, &inner) {
         return Ok(input_object);
     }
-    drop(tensor);
-    Py::new(args.py(), PyTensor::new(inner))
+    Py::new(
+        args.py(),
+        PyTensor::from_unary_result(args.py(), tensor, inner)?,
+    )
 }
 
 #[pyfunction(

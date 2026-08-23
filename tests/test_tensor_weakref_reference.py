@@ -99,6 +99,8 @@ class TensorWeakReferenceReferenceTests(unittest.TestCase):
 
         return {
             "tensor_declares_weakref": "__weakref__" in tensor_type.__dict__,
+            "implementation_slot_is_hidden": "_torch_rs_weakref_slot"
+            not in tensor_type.__dict__,
             "base_declares_weakref": "__weakref__" in tensor_base.__dict__,
             "tensor_has_weakref_offset": tensor_type.__weakrefoffset__ != 0,
             "base_weakref_offset": tensor_base.__weakrefoffset__,
@@ -166,6 +168,18 @@ class TensorWeakReferenceReferenceTests(unittest.TestCase):
             "scaled_values": (proxy * 2.0).tolist(),
         }
 
+    def slot_lookup_contract(self, module):
+        tensor = module.tensor([1.0], dtype=module.float32)
+        original_getweakrefs = weakref.getweakrefs
+        weakref.getweakrefs = lambda _: ["spoofed"]
+        try:
+            initial_value = tensor.__weakref__
+            reference = weakref.ref(tensor)
+            live_value_is_reference = tensor.__weakref__ is reference
+        finally:
+            weakref.getweakrefs = original_getweakrefs
+        return initial_value, live_value_is_reference
+
     def collection_contract(self, module, factory):
         events = []
         tensor = factory()
@@ -227,28 +241,104 @@ class TensorWeakReferenceReferenceTests(unittest.TestCase):
         del alias
         collect_garbage()
 
+        untracked_source = module.tensor(
+            [3.0], dtype=module.float32, requires_grad=True
+        )
+        untracked_reference = weakref.ref(untracked_source)
+        with module.no_grad():
+            untracked_result = untracked_source * 2.0
+        del untracked_source
+        collect_garbage()
+        untracked_result_contract = (
+            untracked_reference() is None,
+            untracked_result.requires_grad,
+            untracked_result.tolist(),
+        )
+
         leaf = module.tensor(
             [2.0, 3.0], dtype=module.float32, requires_grad=True
         )
-        nonleaf = leaf * 4.0
-        loss = nonleaf.sum()
-        graph_references = tuple(
-            weakref.ref(value) for value in (leaf, nonleaf, loss)
+        leaf_events = []
+        leaf_reference = weakref.ref(
+            leaf, lambda _: leaf_events.append("leaf collected")
         )
-        loss_proxy = weakref.proxy(loss)
-        loss_proxy.backward()
-        gradient = leaf.grad
-        gradient_reference = weakref.ref(gradient)
-        gradient_result = (gradient is leaf.grad, gradient.tolist())
+        leaf_proxy = weakref.proxy(leaf)
+        nonleaf = leaf * 4.0
+        nonleaf_reference = weakref.ref(nonleaf)
+        loss = nonleaf.sum()
+        del leaf, nonleaf
+        collect_garbage()
+        graph_retention = (
+            leaf_reference() is not None,
+            nonleaf_reference() is None,
+            tuple(leaf_events),
+        )
 
-        del gradient, loss, nonleaf, leaf
+        loss.backward()
+        gradient = leaf_proxy.grad
+        gradient_reference = weakref.ref(gradient)
+        gradient_result = (gradient is leaf_proxy.grad, gradient.tolist())
+
+        del gradient, loss
         collect_garbage()
         graph_result = (
-            tuple(reference() is None for reference in graph_references),
+            leaf_reference() is None,
+            nonleaf_reference() is None,
             gradient_reference() is None,
-            self.error(lambda: loss_proxy.item()),
+            tuple(leaf_events),
+            self.error(lambda: leaf_proxy.grad),
         )
-        return storage_result, alias_reference() is None, gradient_result, graph_result
+        collect_garbage()
+        callbacks_are_exactly_once = tuple(leaf_events) == graph_result[3]
+
+        view_source = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], dtype=module.float32
+        )
+        view_events = []
+        view_source_reference = weakref.ref(
+            view_source, lambda _: view_events.append("source collected")
+        )
+        view_source_proxy = weakref.proxy(view_source)
+        view = view_source.transpose(0, 1)
+        view_reference = weakref.ref(view)
+        nested_view = view[1]
+        del view_source
+        collect_garbage()
+        view_root_retention = (
+            view_source_reference() is not None,
+            view_source_proxy.tolist(),
+            tuple(view_events),
+        )
+        del view
+        collect_garbage()
+        nested_view_retention = (
+            view_reference() is None,
+            view_source_reference() is not None,
+            nested_view.tolist(),
+        )
+        del nested_view
+        collect_garbage()
+        view_collection = (
+            view_source_reference() is None,
+            tuple(view_events),
+            self.error(lambda: view_source_proxy.tolist()),
+        )
+        collect_garbage()
+        view_callbacks_are_exactly_once = tuple(view_events) == view_collection[1]
+
+        return (
+            storage_result,
+            alias_reference() is None,
+            untracked_result_contract,
+            graph_retention,
+            gradient_result,
+            graph_result,
+            callbacks_are_exactly_once,
+            view_root_retention,
+            nested_view_retention,
+            view_collection,
+            view_callbacks_are_exactly_once,
+        )
 
     def test_descriptor_and_hash_metadata_match_pytorch_2_13(self):
         self.assertEqual(
@@ -268,6 +358,12 @@ class TensorWeakReferenceReferenceTests(unittest.TestCase):
                     self.live_contract(torch, actual_factory),
                     self.live_contract(reference_torch, expected_factory),
                 )
+
+    def test_slot_lookup_ignores_module_monkeypatches_like_pytorch_2_13(self):
+        self.assertEqual(
+            self.slot_lookup_contract(torch),
+            self.slot_lookup_contract(reference_torch),
+        )
 
     def test_collection_semantics_match_pytorch_2_13(self):
         actual_factories = tensor_factories(torch)

@@ -184,7 +184,7 @@ fn _nn_functional_dropout(
                 .unsqueeze_front()
                 .and_then(|input| input.squeeze_dim(0))
                 .map_err(|error| tensor_error(&error))?;
-            return PyTensor::new(output).into_py_any(py);
+            return PyTensor::from_unary_result(py, tensor, output)?.into_py_any(py);
         }
         return Ok(tensor.clone().unbind().into_any());
     }
@@ -195,7 +195,7 @@ fn _nn_functional_dropout(
             .inner()
             .mul_scalar(0.0)
             .map_err(|error| tensor_error(&error))?;
-        return PyTensor::new(output).into_py_any(py);
+        return PyTensor::from_unary_result(py, tensor, output)?.into_py_any(py);
     }
 
     Err(PyNotImplementedError::new_err(format!(
