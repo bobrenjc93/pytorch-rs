@@ -190,14 +190,14 @@ def _overloaded_variadic_arguments(inputs, include_tensor=True):
 
 def _has_variadic_torch_function_override(inputs):
     for input in inputs:
-        input_type = type(input)
-        if input_type is Tensor or not hasattr(
-            input_type, "__torch_function__"
-        ):
+        if type(input) is Tensor:
             continue
-        if not _is_disabled_torch_function_impl(
-            input_type.__torch_function__
-        ):
+        try:
+            handler = input.__torch_function__
+        except BaseException:
+            # PyTorch's fast instance probe clears every descriptor failure.
+            continue
+        if not _is_disabled_torch_function_impl(handler):
             return True
     return False
 

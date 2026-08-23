@@ -1191,6 +1191,60 @@ class Atleast2dReferenceTests(unittest.TestCase):
             self.variadic_override_contract(reference_torch),
         )
 
+    def variadic_override_probe_edge_outcome(self, module):
+        source = module.tensor([1.0, 2.0], dtype=module.float32)
+        descriptor_error = RuntimeError("descriptor failed")
+        descriptor_lookups = []
+
+        class BrokenOverride:
+            @property
+            def __torch_function__(self):
+                descriptor_lookups.append(self)
+                raise descriptor_error
+
+        broken = BrokenOverride()
+        try:
+            module.atleast_2d(source, broken)
+        except BaseException as error:
+            descriptor_outcome = (
+                type(error).__name__,
+                error is descriptor_error,
+                bool(descriptor_lookups),
+                all(instance is broken for instance in descriptor_lookups),
+            )
+        else:
+            self.fail(f"{module.__name__} accepted a broken descriptor")
+
+        class InstanceDisabledOverride:
+            calls = 0
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls += 1
+                return object()
+
+        disabled = InstanceDisabledOverride()
+        disabled.__torch_function__ = (
+            reference_torch._C._disabled_torch_function_impl
+        )
+        try:
+            module.atleast_2d(source, disabled)
+        except BaseException as error:
+            disabled_outcome = (
+                type(error).__name__,
+                InstanceDisabledOverride.calls,
+            )
+        else:
+            self.fail(f"{module.__name__} accepted an instance-disabled handler")
+
+        return descriptor_outcome, disabled_outcome
+
+    def test_variadic_override_probe_edges_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.variadic_override_probe_edge_outcome(torch),
+            self.variadic_override_probe_edge_outcome(reference_torch),
+        )
+
     def test_metadata_signature_documentation_exports_and_pickle_match(self):
         actual_functional = importlib.import_module("torch_rs.functional")
         expected_functional = importlib.import_module("torch.functional")

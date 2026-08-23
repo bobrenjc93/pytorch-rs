@@ -684,6 +684,23 @@ class Atleast2dTests(unittest.TestCase):
             )
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
+    def test_variadic_override_probe_suppresses_descriptor_failures(self):
+        source = torch.tensor([1.0, 2.0])
+        lookups = []
+
+        class BrokenOverride:
+            @property
+            def __torch_function__(self):
+                lookups.append(self)
+                raise RuntimeError("descriptor failed")
+
+        value = BrokenOverride()
+        with self.assertRaisesRegex(
+            TypeError, f"^{re.escape(UNSUPPORTED)}$"
+        ):
+            torch.atleast_2d(source, value)
+        self.assertEqual(lookups, [value])
+
     def test_variadic_exact_tensors_dispatch_through_nested_modes(self):
         scalar = torch.tensor(1.0)
         vector = torch.tensor([2.0, 3.0])
