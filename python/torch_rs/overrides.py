@@ -158,4 +158,56 @@ def _dispatch_unary_torch_function(
     raise TypeError(message)
 
 
+def _dispatch_exact_native_variadic_torch_function(
+    public_function,
+    implementation,
+    inputs,
+    keyword_arguments,
+    include_tensor=True,
+):
+    """Dispatch exact native variadic inputs through the active mode only."""
+    mode = _get_current_function_mode()
+    if mode is None:
+        return implementation(inputs)
+
+    dispatch_types = (Tensor,) if include_tensor else ()
+    popped_mode = _pop_mode()
+    mode_kwargs = keyword_arguments.copy()
+    try:
+        result = popped_mode.__torch_function__(
+            public_function,
+            dispatch_types,
+            inputs,
+            mode_kwargs,
+        )
+    finally:
+        _push_mode(popped_mode)
+    if result is not NotImplemented:
+        return result
+
+    if include_tensor:
+        # PyTorch retries through Tensor.__torch_function__. That fallback
+        # re-enters the public wrapper with the same mode active, but without
+        # including the exact Tensor type in the next dispatch.
+        if mode_kwargs:
+            return public_function(*inputs, **mode_kwargs)
+        return _dispatch_exact_native_variadic_torch_function(
+            public_function,
+            implementation,
+            inputs,
+            keyword_arguments,
+            include_tensor=False,
+        )
+
+    func_name = f"{public_function.__module__}.{public_function.__name__}"
+    message = (
+        f"no implementation found for '{func_name}' on types that implement "
+        f"__torch_function__: []"
+    )
+    current_mode = _get_current_function_mode()
+    if current_mode is not None:
+        message += f" nor in mode {current_mode}"
+    raise TypeError(message)
+
+
 __all__ = ["TorchFunctionMode"]
