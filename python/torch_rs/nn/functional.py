@@ -14,18 +14,18 @@ from ..torch_rs import _nn_functional_dropout, _nn_functional_linear
 _LINEAR_DOC = r"""
 linear(input, weight, bias=None) -> Tensor
 
-Applies the bias-free rank-2 transformation
-:math:`\mathrm{output} = \mathrm{input} \, \mathrm{weight}^{T}`.
+Applies the rank-2 transformation
+:math:`\mathrm{output} = \mathrm{input} \, \mathrm{weight}^{T} + \mathrm{bias}`.
 
 The current native implementation requires exact ``torch_rs.Tensor`` operands
 with CPU ``float32`` storage and shape ``(rows, in_features)`` for ``input``
-and ``(out_features, in_features)`` for ``weight``. ``bias`` must be ``None``.
-It returns a fresh, independent row-major tensor with shape
-``(rows, out_features)``.
+and ``(out_features, in_features)`` for ``weight``. ``bias`` may be ``None`` or
+an exact rank-1 tensor with shape ``(out_features,)``. It returns a fresh,
+independent row-major tensor with shape ``(rows, out_features)``.
 
 Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
-recording are not supported. Gradient-requiring operands may be used inside
-``torch.no_grad()``.
+recording for gradient-requiring operands are not supported. Such operands may
+be used inside ``torch.no_grad()``.
 """
 
 

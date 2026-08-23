@@ -58,39 +58,69 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
         empty_offset_input = module.zeros((2, 0, 2), dtype=module.float32).transpose(
             0, 2
         )[1]
+        bias_values = np.asarray([0.5, -1.25, 2.0, -3.5], dtype=np.float32)
+        contiguous_bias = module.tensor(bias_values.tolist(), dtype=module.float32)
+        strided_bias = module.tensor(
+            np.stack((bias_values, np.full(4, 99.0, dtype=np.float32)), axis=1).tolist(),
+            dtype=module.float32,
+        ).transpose(0, 1)[0]
+        offset_bias = module.tensor(
+            np.stack((np.full(4, 99.0, dtype=np.float32), bias_values)).tolist(),
+            dtype=module.float32,
+        )[1]
+        offset_strided_bias = module.tensor(
+            np.arange(16, dtype=np.float32).reshape(2, 4, 2).tolist(),
+            dtype=module.float32,
+        )[1].transpose(0, 1)[0]
+        singleton_bias = module.tensor(
+            [[0.5, 99.0]], dtype=module.float32
+        ).transpose(0, 1)[0]
+        empty_bias = module.zeros((0,), dtype=module.float32)
         return (
-            ("contiguous", contiguous_input, contiguous_weight),
-            ("strided", strided_input, strided_weight),
-            ("offset", offset_input, offset_weight),
+            ("contiguous", contiguous_input, contiguous_weight, contiguous_bias),
+            ("strided", strided_input, strided_weight, strided_bias),
+            ("offset", offset_input, offset_weight, offset_bias),
             (
                 "offset-strided",
                 offset_strided_input,
                 offset_strided_weight,
+                offset_strided_bias,
             ),
             (
                 "zero rows",
                 module.zeros((0, 3), dtype=module.float32),
                 contiguous_weight,
+                contiguous_bias,
+            ),
+            (
+                "zero rows singleton output",
+                module.zeros((0, 3), dtype=module.float32),
+                module.ones((1, 3), dtype=module.float32),
+                singleton_bias,
             ),
             (
                 "zero inner",
                 module.zeros((2, 0), dtype=module.float32),
                 module.zeros((4, 0), dtype=module.float32),
+                strided_bias,
             ),
             (
                 "zero outputs",
                 contiguous_input,
                 module.zeros((0, 3), dtype=module.float32),
+                empty_bias,
             ),
             (
                 "offset zero rows",
                 empty_offset_input,
                 module.ones((4, 2), dtype=module.float32),
+                offset_bias,
             ),
             (
                 "all zero",
                 module.zeros((0, 0), dtype=module.float32),
                 module.zeros((0, 0), dtype=module.float32),
+                empty_bias,
             ),
         )
 
@@ -120,6 +150,14 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
             return module_functional.linear(input, weight, None)
         return module_functional.linear(input=input, weight=weight, bias=None)
 
+    @staticmethod
+    def call_with_bias(module_functional, input, weight, bias, form):
+        if form == "positional":
+            return module_functional.linear(input, weight, bias)
+        if form == "bias keyword":
+            return module_functional.linear(input, weight, bias=bias)
+        return module_functional.linear(input=input, weight=weight, bias=bias)
+
     def test_name_and_signature_surface(self):
         self.assertEqual(
             functional.linear.__name__, reference_functional.linear.__name__
@@ -134,8 +172,8 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
         for actual_case, expected_case in zip(
             actual_cases, expected_cases, strict=True
         ):
-            case, actual_input, actual_weight = actual_case
-            expected_name, expected_input, expected_weight = expected_case
+            case, actual_input, actual_weight, _ = actual_case
+            expected_name, expected_input, expected_weight, _ = expected_case
             self.assertEqual(case, expected_name)
             for form in ("positional", "explicit none", "keywords"):
                 actual = self.call(functional, actual_input, actual_weight, form)
@@ -155,6 +193,49 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                     self.assertFalse(expected.is_set_to(expected_input))
                     self.assertFalse(actual.is_set_to(actual_weight))
                     self.assertFalse(expected.is_set_to(expected_weight))
+
+    def test_rank_one_bias_values_layouts_and_storage_match(self):
+        actual_cases = self.make_cases(torch)
+        expected_cases = self.make_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            case, actual_input, actual_weight, actual_bias = actual_case
+            expected_name, expected_input, expected_weight, expected_bias = expected_case
+            self.assertEqual(case, expected_name)
+            for form in ("positional", "bias keyword", "keywords"):
+                actual = self.call_with_bias(
+                    functional, actual_input, actual_weight, actual_bias, form
+                )
+                expected = self.call_with_bias(
+                    reference_functional,
+                    expected_input,
+                    expected_weight,
+                    expected_bias,
+                    form,
+                )
+                self.assert_matches(actual, expected, case=(case, form))
+
+                actual_repeat = self.call_with_bias(
+                    functional, actual_input, actual_weight, actual_bias, form
+                )
+                expected_repeat = self.call_with_bias(
+                    reference_functional,
+                    expected_input,
+                    expected_weight,
+                    expected_bias,
+                    form,
+                )
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    for actual_operand, expected_operand in (
+                        (actual_input, expected_input),
+                        (actual_weight, expected_weight),
+                        (actual_bias, expected_bias),
+                    ):
+                        self.assertFalse(actual.is_set_to(actual_operand))
+                        self.assertFalse(expected.is_set_to(expected_operand))
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, weight_requires_grad in (
@@ -206,6 +287,59 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                 case=(input_requires_grad, weight_requires_grad),
             )
 
+    def test_rank_one_bias_requires_grad_operands_match_inside_no_grad(self):
+        for input_requires_grad, weight_requires_grad, bias_requires_grad in (
+            (True, False, False),
+            (False, True, False),
+            (False, False, True),
+            (True, True, False),
+            (True, False, True),
+            (False, True, True),
+            (True, True, True),
+        ):
+            actual_input = torch.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                requires_grad=input_requires_grad,
+            )
+            actual_weight = torch.tensor(
+                [[1.0, 0.0, -1.0], [2.0, 3.0, 4.0]],
+                requires_grad=weight_requires_grad,
+            )
+            actual_bias = torch.tensor(
+                [0.5, -1.5],
+                requires_grad=bias_requires_grad,
+            )
+            expected_input = reference_torch.tensor(
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                dtype=reference_torch.float32,
+                requires_grad=input_requires_grad,
+            )
+            expected_weight = reference_torch.tensor(
+                [[1.0, 0.0, -1.0], [2.0, 3.0, 4.0]],
+                dtype=reference_torch.float32,
+                requires_grad=weight_requires_grad,
+            )
+            expected_bias = reference_torch.tensor(
+                [0.5, -1.5],
+                dtype=reference_torch.float32,
+                requires_grad=bias_requires_grad,
+            )
+            with torch.no_grad():
+                actual = functional.linear(actual_input, actual_weight, actual_bias)
+            with reference_torch.no_grad():
+                expected = reference_functional.linear(
+                    expected_input, expected_weight, expected_bias
+                )
+            self.assert_matches(
+                actual,
+                expected,
+                case=(
+                    input_requires_grad,
+                    weight_requires_grad,
+                    bias_requires_grad,
+                ),
+            )
+
     def test_incompatible_inner_dimension_error_matches(self):
         actual_input = torch.zeros((2, 3))
         actual_weight = torch.zeros((4, 5))
@@ -217,6 +351,43 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
             reference_functional.linear(expected_input, expected_weight)
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
+        actual_bias = torch.zeros((4,))
+        expected_bias = reference_torch.zeros((4,), dtype=reference_torch.float32)
+        with self.assertRaises(Exception) as actual_raised:
+            functional.linear(actual_input, actual_weight, actual_bias)
+        with self.assertRaises(Exception) as expected_raised:
+            reference_functional.linear(expected_input, expected_weight, expected_bias)
+        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
+        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
+    def test_rank_one_bias_length_errors_match(self):
+        for rows in (0, 2):
+            actual_input = torch.zeros((rows, 3))
+            actual_weight = torch.zeros((4, 3))
+            actual_bias = torch.zeros((5,))
+            expected_input = reference_torch.zeros(
+                (rows, 3), dtype=reference_torch.float32
+            )
+            expected_weight = reference_torch.zeros(
+                (4, 3), dtype=reference_torch.float32
+            )
+            expected_bias = reference_torch.zeros(
+                (5,), dtype=reference_torch.float32
+            )
+            with self.subTest(rows=rows):
+                with self.assertRaises(Exception) as actual_raised:
+                    functional.linear(actual_input, actual_weight, actual_bias)
+                with self.assertRaises(Exception) as expected_raised:
+                    reference_functional.linear(
+                        expected_input, expected_weight, expected_bias
+                    )
+                self.assertIs(
+                    type(actual_raised.exception), type(expected_raised.exception)
+                )
+                self.assertEqual(
+                    str(actual_raised.exception), str(expected_raised.exception)
+                )
 
 
 if __name__ == "__main__":

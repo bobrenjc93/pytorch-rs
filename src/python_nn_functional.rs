@@ -14,6 +14,8 @@ use crate::{
 
 const LINEAR_EXACT_TENSORS_ERROR: &str =
     "linear() only supports exact native Tensor input and weight operands";
+const LINEAR_EXACT_BIAS_ERROR: &str =
+    "linear() only supports an exact native Tensor bias or bias=None";
 
 const DROPOUT_METADATA: [DropoutMetadata; 6] = [
     DropoutMetadata {
@@ -225,6 +227,22 @@ fn exact_linear_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, Py
         .clone())
 }
 
+fn exact_linear_bias<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
+    if !value.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(LINEAR_EXACT_BIAS_ERROR));
+    }
+    Ok(value
+        .cast::<PyTensor>()
+        .expect("an exact PyTensor instance must downcast")
+        .clone())
+}
+
+fn linear_bias_size_error(rows: usize, out_features: usize, bias_features: usize) -> PyErr {
+    PyRuntimeError::new_err(format!(
+        "The expanded size of the tensor ({out_features}) must match the existing size ({bias_features}) at non-singleton dimension 1.  Target sizes: [{rows}, {out_features}].  Tensor sizes: [{bias_features}]"
+    ))
+}
+
 #[pyfunction]
 fn _nn_functional_linear(
     py: Python<'_>,
@@ -237,22 +255,40 @@ fn _nn_functional_linear(
             "linear() does not support an active TorchFunctionMode",
         ));
     }
-    if !bias.is_none() {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports bias=None",
-        ));
-    }
 
     let input = exact_linear_tensor(input)?;
     let weight = exact_linear_tensor(weight)?;
+    let bias = (!bias.is_none())
+        .then(|| exact_linear_bias(bias))
+        .transpose()?;
     let input = input.try_borrow()?;
     let weight = weight.try_borrow()?;
+    let bias = bias.as_ref().map(Bound::try_borrow).transpose()?;
     if input.inner().shape().len() != 2 || weight.inner().shape().len() != 2 {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.linear only supports rank-2 input and weight tensors",
         ));
     }
-    if is_grad_enabled() && (input.inner().requires_grad() || weight.inner().requires_grad()) {
+    if let Some(bias) = &bias {
+        if bias.inner().shape().len() != 1 {
+            return Err(PyNotImplementedError::new_err(
+                "torch_rs.nn.functional.linear only supports a rank-1 bias tensor",
+            ));
+        }
+        let rows = input.inner().shape()[0];
+        let out_features = weight.inner().shape()[0];
+        let bias_features = bias.inner().shape()[0];
+        if bias_features != out_features {
+            return Err(linear_bias_size_error(rows, out_features, bias_features));
+        }
+    }
+    if is_grad_enabled()
+        && (input.inner().requires_grad()
+            || weight.inner().requires_grad()
+            || bias
+                .as_ref()
+                .is_some_and(|bias| bias.inner().requires_grad()))
+    {
         return Err(PyRuntimeError::new_err(
             "linear(): autograd recording is not supported",
         ));
@@ -262,10 +298,24 @@ fn _nn_functional_linear(
         .inner()
         .transpose(0, 1)
         .map_err(|error| tensor_error(&error))?;
-    let output = input
+    let mut output = input
         .inner()
         .matmul(&transposed_weight)
         .map_err(|error| tensor_error(&error))?;
+    if let Some(bias) = bias {
+        output = output
+            .add(bias.inner())
+            .map_err(|error| tensor_error(&error))?;
+        if output.shape() == [0, 1] {
+            // TensorIterator gives a broadcast add with this shape stride
+            // (1, 0), while linear's addmm path canonicalizes it to (1, 1).
+            // Rebuild only the view metadata and retain add's fresh storage.
+            output = output
+                .squeeze_dim(1)
+                .and_then(|output| output.unsqueeze_back())
+                .map_err(|error| tensor_error(&error))?;
+        }
+    }
     PyTensor::new(output).into_py_any(py)
 }
 
