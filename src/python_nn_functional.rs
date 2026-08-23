@@ -24,7 +24,7 @@ const DROPOUT_METADATA: [DropoutMetadata; 6] = [
         operation: "alpha_dropout",
         inplace_operation: "alpha_dropout_",
         supports_tensor_probability: false,
-        supports_probability_one: false,
+        supports_probability_one: true,
         supported_ranks: None,
     },
     DropoutMetadata {
