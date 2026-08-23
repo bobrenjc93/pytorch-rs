@@ -44,6 +44,16 @@ def _dropout2d_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
     # Preserve PyTorch's pre-native invalid-input validation order.
     input_dimension = input.dim()
+    if input_dimension == 2:
+        warnings.warn(
+            "dropout2d: Received a 2-D input to dropout2d, which is deprecated "
+            "and will result in an error in a future release. To retain the "
+            "behavior and silence this warning, please use dropout instead. "
+            "Note that dropout2d exists to provide channel-wise dropout on "
+            "inputs with 2 spatial dimensions, a channel dimension, and an "
+            "optional batch dimension (i.e. 3D or 4D inputs).",
+            stacklevel=4,
+        )
     if input_dimension == 3:
         warnings.warn(
             "dropout2d: Received a 3D input to dropout2d and assuming that "
