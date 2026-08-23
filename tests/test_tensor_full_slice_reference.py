@@ -58,6 +58,20 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             base.transpose(0, rank)[1],
         )
 
+    def full_slice_ellipsis_indices(self, slice_count):
+        full_slices = (slice(None),) * slice_count
+        return tuple(
+            (*full_slices[:position], Ellipsis, *full_slices[position:])
+            for position in range(slice_count + 1)
+        )
+
+    def full_slice_ellipsis_layout_cases(self, module, slice_count):
+        if slice_count == 1:
+            return self.layout_cases(module)
+        if slice_count == 2:
+            return self.double_full_slice_layout_cases(module)
+        return self.higher_rank_full_slice_layout_cases(module, slice_count)
+
     def alias_contract(self, source, index):
         alias = source[index]
         values = np.asarray(alias.detach(), dtype=np.float32).reshape(-1)
@@ -130,6 +144,30 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                         self.alias_contract(expected, index),
                     )
 
+    def test_full_slice_ellipsis_tuple_layout_aliases_match_pytorch_2_13(self):
+        for slice_count in range(1, 5):
+            actual_cases = self.full_slice_ellipsis_layout_cases(
+                torch, slice_count
+            )
+            expected_cases = self.full_slice_ellipsis_layout_cases(
+                reference_torch, slice_count
+            )
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                for case, (actual, expected) in enumerate(
+                    zip(actual_cases, expected_cases, strict=True)
+                ):
+                    with self.subTest(
+                        slice_count=slice_count,
+                        position=position,
+                        case=case,
+                    ):
+                        self.assertEqual(
+                            self.alias_contract(actual, index),
+                            self.alias_contract(expected, index),
+                        )
+
     def scalar_error_contract(self, module, index):
         try:
             module.tensor(-0.0, dtype=module.float32)[index]
@@ -179,6 +217,25 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                         ),
                     )
 
+    def test_full_slice_ellipsis_rank_errors_match_pytorch_2_13(self):
+        for slice_count in range(1, 5):
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                for dimensions in range(slice_count):
+                    shape = (2,) * dimensions
+                    with self.subTest(
+                        slice_count=slice_count,
+                        position=position,
+                        dimensions=dimensions,
+                    ):
+                        self.assertEqual(
+                            self.lower_rank_error_contract(torch, shape, index),
+                            self.lower_rank_error_contract(
+                                reference_torch, shape, index
+                            ),
+                        )
+
     def tuple_subclass_contract(self, module):
         source = module.tensor(
             [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], dtype=module.float32
@@ -212,6 +269,12 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                 return iter((slice(None),) * 3)
 
         triple_alias = higher_rank_source[TripleFullSliceRemapTuple((0,))]
+
+        class FullSliceEllipsisRemapTuple(tuple):
+            def __iter__(self):
+                return iter((slice(None), Ellipsis, slice(None)))
+
+        mixed_alias = source[FullSliceEllipsisRemapTuple((0,))]
 
         class EmptyRemapTuple(tuple):
             def __iter__(self):
@@ -259,6 +322,14 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             ),
             "triple_alias_same_data_pointer": (
                 triple_alias.data_ptr() == higher_rank_source.data_ptr()
+            ),
+            "mixed_alias_values": mixed_alias.tolist(),
+            "mixed_alias_shape": tuple(mixed_alias.shape),
+            "mixed_alias_stride": mixed_alias.stride(),
+            "mixed_alias_offset": mixed_alias.storage_offset(),
+            "mixed_alias_same_logical_view": mixed_alias.is_set_to(source),
+            "mixed_alias_same_data_pointer": (
+                mixed_alias.data_ptr() == source.data_ptr()
             ),
             "empty_alias_values": empty_alias.tolist(),
             "empty_alias_shape": tuple(empty_alias.shape),
@@ -383,6 +454,16 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                     (slice(None),) * count, diagnostic_rank=count
                 )
 
+    def test_full_slice_ellipsis_tuple_autograd_matches_pytorch_2_13(self):
+        for slice_count in range(1, 5):
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                with self.subTest(slice_count=slice_count, position=position):
+                    self.assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(
+                        index, diagnostic_rank=slice_count
+                    )
+
     def test_empty_tuple_autograd_matches_pytorch_2_13(self):
         self.assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(())
 
@@ -445,6 +526,18 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                 self.assert_source_lifetime_matches_pytorch_2_13(
                     (slice(None),) * count, source_rank=count
                 )
+
+    def test_full_slice_ellipsis_tuple_source_lifetime_matches_pytorch_2_13(
+        self,
+    ):
+        for slice_count in range(1, 5):
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                with self.subTest(slice_count=slice_count, position=position):
+                    self.assert_source_lifetime_matches_pytorch_2_13(
+                        index, source_rank=max(slice_count, 2)
+                    )
 
     def mode_dispatch_contract(self, module, index):
         index_rank = len(index) if isinstance(index, tuple) else 1
@@ -562,6 +655,16 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                 self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
                     (slice(None),) * count
                 )
+
+    def test_full_slice_ellipsis_tuple_mode_dispatch_matches_pytorch_2_13(self):
+        for slice_count in range(1, 5):
+            for position, index in enumerate(
+                self.full_slice_ellipsis_indices(slice_count)
+            ):
+                with self.subTest(slice_count=slice_count, position=position):
+                    self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
+                        index
+                    )
 
 
 if __name__ == "__main__":
