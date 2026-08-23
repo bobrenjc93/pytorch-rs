@@ -238,6 +238,7 @@ class DistributedGetNodeLocalRankTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "get_default_backend_for_device",
                 "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
@@ -278,6 +279,7 @@ class DistributedGetNodeLocalRankTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_default_backend_for_device",
                 "get_pg_count",
                 "get_node_local_rank",
                 "is_available",

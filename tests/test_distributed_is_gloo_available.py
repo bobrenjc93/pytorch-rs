@@ -138,6 +138,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "get_default_backend_for_device",
                 "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
@@ -175,6 +176,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_default_backend_for_device",
                 "get_pg_count",
                 "is_available",
                 "is_gloo_available",
@@ -199,6 +201,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         self.assertEqual(
             {name for name in owner_namespace if not name.startswith("__")},
             {
+                "get_default_backend_for_device",
                 "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
@@ -270,6 +273,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
             {name for name in vars(distributed) if not name.startswith("_")},
             {
                 "distributed_c10d",
+                "get_default_backend_for_device",
                 "get_pg_count",
                 "is_available",
                 "is_gloo_available",
@@ -288,6 +292,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
                 if not name.startswith("_")
             },
             {
+                "get_default_backend_for_device",
                 "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",

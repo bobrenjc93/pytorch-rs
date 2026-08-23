@@ -173,6 +173,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 for name in expected_c10d.__all__
                 if name
                 in {
+                    "get_default_backend_for_device",
                     "get_pg_count",
                     "is_gloo_available",
                     "is_initialized",
@@ -261,6 +262,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "get_default_backend_for_device",
                 "get_pg_count",
                 "is_available",
                 "is_gloo_available",
@@ -277,6 +279,7 @@ class DistributedIsNcclAvailableReferenceTests(unittest.TestCase):
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
             {
+                "get_default_backend_for_device",
                 "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
