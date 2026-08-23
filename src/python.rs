@@ -731,6 +731,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nsin() -> Tensor\n\nSee :func:`torch.sin`\n"]
+    #[pyo3(text_signature = None)]
+    fn sin(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "sin")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.sin().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nsqrt() -> Tensor\n\nSee :func:`torch.sqrt`\n"]
     #[pyo3(text_signature = None)]
     fn sqrt(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2144,7 +2161,9 @@ fn dispatch_tensorbase_mode(
     let legacy_no_argument_method = cpython_compat::uses_legacy_tensorbase_redispatch(py)
         && matches!(
             target,
-            TensorBaseModeTarget::Method("const_data_ptr" | "reciprocal" | "sqrt" | "square")
+            TensorBaseModeTarget::Method(
+                "const_data_ptr" | "reciprocal" | "sin" | "sqrt" | "square"
+            )
         );
     if legacy_no_argument_method {
         cpython_compat::probe_tensorbase_legacy_redispatch(py)?;
@@ -3895,13 +3914,6 @@ impl PyTensor {
     fn relu(&self) -> PyResult<Self> {
         self.inner
             .relu()
-            .map(Self::new)
-            .map_err(|error| tensor_error(&error))
-    }
-
-    fn sin(&self) -> PyResult<Self> {
-        self.inner
-            .sin()
             .map(Self::new)
             .map_err(|error| tensor_error(&error))
     }
