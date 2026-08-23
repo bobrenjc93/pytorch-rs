@@ -28,6 +28,22 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             ("offset-noncontiguous", base.transpose(0, 3)[1]),
         )
 
+    def higher_rank_full_slice_layout_cases(self, rank):
+        shape = tuple(range(2, rank + 2))
+        values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
+        base_shape = (2, *shape)
+        base_values = np.arange(np.prod(base_shape), dtype=np.float32).reshape(
+            base_shape
+        )
+        base = torch.tensor(base_values.tolist())
+        empty_shape = (shape[0], 0, *shape[2:])
+        return (
+            ("contiguous", torch.tensor(values.tolist())),
+            ("empty", torch.zeros(empty_shape)),
+            ("offset", base[1]),
+            ("offset-noncontiguous", base.transpose(0, rank)[1]),
+        )
+
     def assert_metadata_alias(self, source, alias):
         self.assertIsNot(alias, source)
         self.assertEqual(alias.shape, source.shape)
@@ -68,6 +84,21 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         signed_zero = torch.tensor([[-0.0]])[index]
         self.assertEqual(np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000)
 
+    def test_three_or_more_full_slice_tuples_return_exact_metadata_aliases(self):
+        for count in (3, 4):
+            index = (slice(None),) * count
+            for case, source in self.higher_rank_full_slice_layout_cases(count):
+                with self.subTest(count=count, case=case):
+                    alias = source[index]
+                    self.assert_metadata_alias(source, alias)
+
+            signed_zero = torch.tensor(
+                np.full((1,) * count, -0.0, dtype=np.float32).tolist()
+            )[index]
+            self.assertEqual(
+                np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000
+            )
+
     def test_scalar_full_slice_raises_the_exact_pytorch_error(self):
         with self.assertRaises(IndexError) as raised:
             torch.tensor(-0.0)[:]
@@ -98,24 +129,42 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                     f"too many indices for tensor of dimension {dimensions}",
                 )
 
+    def test_three_or_more_full_slice_tuples_require_sufficient_rank(self):
+        for count in (3, 4):
+            index = (slice(None),) * count
+            for dimensions in range(count):
+                with self.subTest(count=count, dimensions=dimensions):
+                    with self.assertRaises(IndexError) as raised:
+                        torch.zeros((2,) * dimensions)[index]
+                    self.assertEqual(
+                        str(raised.exception),
+                        f"too many indices for tensor of dimension {dimensions}",
+                    )
+
     def assert_autograd_gradient_node_and_no_grad_leaf_status(
         self, index, node_name, diagnostic_rank=1
     ):
-        leaf = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        rank = max(diagnostic_rank, 2)
+        shape = (2,) * rank
+        values = np.arange(1, np.prod(shape) + 1, dtype=np.float32).reshape(shape)
+        leaf = torch.tensor(values.tolist(), requires_grad=True)
         alias = leaf[index]
         self.assert_metadata_alias(leaf, alias)
         self.assertTrue(alias.requires_grad)
         self.assertFalse(alias.is_leaf)
-        weights = torch.tensor([[10.0, 20.0], [30.0, 40.0]])
+        weight_values = np.arange(10, 10 + np.prod(shape), dtype=np.float32).reshape(
+            shape
+        )
+        weights = torch.tensor(weight_values.tolist())
         (alias * weights).sum().backward()
         self.assertEqual(leaf.grad.tolist(), weights.tolist())
 
-        if diagnostic_rank == 1:
-            diagnostic_values = [2.0]
-            diagnostic_pattern = r"\[2\.\]"
-        else:
-            diagnostic_values = [[2.0]]
-            diagnostic_pattern = r"\[\[2\.\]\]"
+        diagnostic_values = np.full(
+            (1,) * diagnostic_rank, 2.0, dtype=np.float32
+        ).tolist()
+        diagnostic_pattern = (
+            r"\[" * diagnostic_rank + r"2\." + r"\]" * diagnostic_rank
+        )
         diagnostic_leaf = torch.tensor(diagnostic_values, requires_grad=True)
         with self.assertRaisesRegex(
             ValueError,
@@ -126,9 +175,7 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                 None, p=diagnostic_leaf[index], training=False
             )
 
-        no_grad_leaf = torch.tensor(
-            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True
-        )
+        no_grad_leaf = torch.tensor(values.tolist(), requires_grad=True)
         no_grad_source = no_grad_leaf.transpose(0, 1)
         with torch.no_grad():
             no_grad_alias = no_grad_source[index]
@@ -152,37 +199,61 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None), slice(None)), "AliasBackward0", diagnostic_rank=2
         )
 
+    def test_three_or_more_full_slice_tuples_use_alias_autograd_semantics(self):
+        for count in (3, 4):
+            with self.subTest(count=count):
+                self.assert_autograd_gradient_node_and_no_grad_leaf_status(
+                    (slice(None),) * count,
+                    "AliasBackward0",
+                    diagnostic_rank=count,
+                )
+
     def test_empty_tuple_uses_alias_autograd_semantics(self):
         self.assert_autograd_gradient_node_and_no_grad_leaf_status(
             (), "AliasBackward0"
         )
 
-    def assert_storage_and_autograd_survive_source_lifetime(self, index):
-        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+    def assert_storage_and_autograd_survive_source_lifetime(
+        self, index, source_rank=2
+    ):
+        input_shape = tuple(range(2, source_rank + 3))
+        values = np.arange(np.prod(input_shape), dtype=np.float32).reshape(
+            input_shape
+        )
+        input_strides = tuple(
+            int(np.prod(input_shape[dimension + 1 :]))
+            for dimension in range(len(input_shape))
+        )
+        expected_shape = (*input_shape[1:-1], input_shape[0])
+        expected_stride = (*input_strides[1:-1], input_strides[0])
+        expected_values = np.swapaxes(values, 0, source_rank)[1]
 
         def retained_view():
-            source = torch.tensor(values.tolist()).transpose(0, 2)[1]
+            source = torch.tensor(values.tolist()).transpose(0, source_rank)[1]
             return source[index]
 
         surviving = retained_view()
         gc.collect()
-        self.assertEqual(surviving.shape, (3, 2))
-        self.assertEqual(surviving.stride(), (4, 12))
+        self.assertEqual(surviving.shape, expected_shape)
+        self.assertEqual(surviving.stride(), expected_stride)
         self.assertEqual(surviving.storage_offset(), 1)
-        np.testing.assert_array_equal(np.asarray(surviving), values[:, :, 1].T)
+        np.testing.assert_array_equal(np.asarray(surviving), expected_values)
 
         leaf = torch.tensor(values.tolist(), requires_grad=True)
 
         def retained_autograd_view():
-            source = (leaf * 2.0).transpose(0, 2)[1]
+            source = (leaf * 2.0).transpose(0, source_rank)[1]
             return source[index]
 
         tracked = retained_autograd_view()
         gc.collect()
-        weights = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        weight_values = np.arange(
+            1, np.prod(tracked.shape) + 1, dtype=np.float32
+        ).reshape(tracked.shape)
+        weights = torch.tensor(weight_values.tolist())
         (tracked * weights).sum().backward()
         expected = np.zeros_like(values)
-        expected[:, :, 1] = 2.0 * np.asarray(weights).T
+        expected[..., 1] = 2.0 * np.moveaxis(weight_values, -1, 0)
         np.testing.assert_array_equal(np.asarray(leaf.grad), expected)
 
     def test_slice_storage_and_autograd_survive_source_lifetime(self):
@@ -196,8 +267,18 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None), slice(None))
         )
 
+    def test_three_or_more_full_slice_tuples_survive_source_lifetime(self):
+        for count in (3, 4):
+            with self.subTest(count=count):
+                self.assert_storage_and_autograd_survive_source_lifetime(
+                    (slice(None),) * count, source_rank=count
+                )
+
     def assert_dispatches_through_tensorbase_mode_before_indexing(self, index):
-        source = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        index_rank = len(index) if isinstance(index, tuple) else 1
+        shape = (2,) * max(index_rank, 2)
+        values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
+        source = torch.tensor(values.tolist())
         marker = object()
 
         class RecordingMode(torch.overrides.TorchFunctionMode):
@@ -268,6 +349,13 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None), slice(None))
         )
 
+    def test_three_or_more_full_slice_tuples_dispatch_with_original_index(self):
+        for count in (3, 4):
+            with self.subTest(count=count):
+                self.assert_dispatches_through_tensorbase_mode_before_indexing(
+                    (slice(None),) * count
+                )
+
     def test_tuple_subclasses_are_normalized_through_overridden_iteration(self):
         source = torch.tensor([[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]])
 
@@ -294,6 +382,17 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         double_alias = source[DoubleFullSliceRemapTuple((0,))]
         self.assert_metadata_alias(source, double_alias)
+
+        higher_rank_source = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )
+
+        class TripleFullSliceRemapTuple(tuple):
+            def __iter__(self):
+                return iter((slice(None),) * 3)
+
+        triple_alias = higher_rank_source[TripleFullSliceRemapTuple((0,))]
+        self.assert_metadata_alias(higher_rank_source, triple_alias)
 
         class EmptyRemapTuple(tuple):
             def __iter__(self):
@@ -341,8 +440,13 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None), slice(None, -1)),
             (slice(None, None, 1), slice(None)),
             (slice(None), slice(None, None, 2)),
-            (slice(None), slice(None), slice(None)),
             (slice(None), Ellipsis),
+            (slice(1, None), slice(None), slice(None)),
+            (slice(None), slice(None, -1), slice(None)),
+            (slice(None), slice(None, None, 1), slice(None)),
+            (slice(None), slice(None, None, 2), slice(None)),
+            (slice(None), 0, slice(None)),
+            (slice(None), slice(None), Ellipsis),
         )
         for index in unsupported:
             with self.subTest(index=repr(index)):

@@ -5345,6 +5345,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 94
       }
+    },
+    {
+      "key": "pr:726",
+      "recordedAt": "2026-08-23T08:43:14.920Z",
+      "label": "PR #726",
+      "kind": "leaf",
+      "prNumber": 726,
+      "title": "Support three-or-more full-slice tuple indexing",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 85.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 68.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 95
+      }
     }
   ]
 }
