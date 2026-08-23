@@ -392,10 +392,8 @@ class TensorSquareTests(unittest.TestCase):
                 tensor.square(1)
         self.assertEqual(invalid_mode.calls, [])
 
-    def test_top_level_inplace_dtype_and_device_extensions_remain_unsupported(self):
+    def test_inplace_dtype_and_device_extensions_remain_unsupported(self):
         tensor = torch.tensor([2.0])
-        self.assertFalse(hasattr(torch, "square"))
-        self.assertNotIn("square", torch.__all__)
         self.assertFalse(hasattr(torch.Tensor, "square_"))
         self.assertFalse(hasattr(tensor, "square_"))
         with self.assertRaises(TypeError):
