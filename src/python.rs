@@ -9251,13 +9251,29 @@ fn bind_view_shape_argument<'py>(
         }
     }
 
+    if positional.len() == 2 {
+        let first = positional.get_item(0)?;
+        if !is_view_shape_dimension(&first) {
+            return Err(unsupported_two_dimension_view_argument_error(positional)?);
+        }
+        // The two public overloads each probe the first variadic dimension
+        // before mode dispatch. The remaining conversions happen afterward.
+        if !is_view_shape_dimension(&first) {
+            return Err(unsupported_two_dimension_view_argument_error(positional)?);
+        }
+        if let Some(error) = keyword_error {
+            return Err(error);
+        }
+        return Ok(ViewShapeArgument::Tuple(positional.clone()));
+    }
+
     let (value, positional_dimension) = match positional.len() {
         0 => (
             keyword_shape.ok_or_else(unsupported_view_argument_error)?,
             false,
         ),
         1 => (positional.get_item(0)?, true),
-        _ => return Err(unsupported_view_integer_error()),
+        _ => return Err(unsupported_three_or_more_view_dimensions_error()),
     };
     let shape = if let Ok(shape) = value.cast::<PyTuple>() {
         ViewShapeArgument::Tuple(shape.clone())
@@ -9382,6 +9398,25 @@ fn unsupported_view_argument_error() -> PyErr {
 fn unsupported_view_integer_error() -> PyErr {
     PyTypeError::new_err(
         "view(): variadic integer shapes are not supported; pass a tuple, list, or torch.Size",
+    )
+}
+
+fn unsupported_two_dimension_view_argument_error(
+    dimensions: &Bound<'_, PyTuple>,
+) -> PyResult<PyErr> {
+    let types = dimensions
+        .iter()
+        .map(|dimension| python_type_name(&dimension))
+        .collect::<PyResult<Vec<_>>>()?
+        .join(", ");
+    Ok(PyTypeError::new_err(format!(
+        "view() received an invalid combination of arguments - got ({types}), but expected one of:\n * (torch.dtype dtype)\n * (tuple of ints size)\n"
+    )))
+}
+
+fn unsupported_three_or_more_view_dimensions_error() -> PyErr {
+    PyTypeError::new_err(
+        "view(): three or more positional dimensions are not supported; pass a tuple, list, or torch.Size",
     )
 }
 
