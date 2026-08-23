@@ -5361,6 +5361,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 95
       }
+    },
+    {
+      "key": "pr:734",
+      "recordedAt": "2026-08-23T09:44:59.072Z",
+      "label": "PR #734",
+      "kind": "leaf",
+      "prNumber": 734,
+      "title": "Normalize full-slice tuples containing Ellipsis",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 86,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 68.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }
