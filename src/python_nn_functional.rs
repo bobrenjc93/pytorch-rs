@@ -1,14 +1,19 @@
 //! Native bridges for Python neural-network functional operators.
 
-use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError};
+use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError};
 use pyo3::types::{PyAny, PyModule};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
+    is_grad_enabled,
     python::PyTensor,
     python_argument_schema::{ArgumentSchema, parse_float_like_argument},
     python_tensor_errors::tensor_error,
+    python_torch_function_mode,
 };
+
+const LINEAR_EXACT_TENSORS_ERROR: &str =
+    "linear() only supports exact native Tensor input and weight operands";
 
 const DROPOUT_METADATA: [DropoutMetadata; 6] = [
     DropoutMetadata {
@@ -210,10 +215,65 @@ fn _nn_functional_dropout_tensor_autograd_suffix(input: &PyTensor) -> String {
     )
 }
 
+fn exact_linear_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
+    if !value.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(LINEAR_EXACT_TENSORS_ERROR));
+    }
+    Ok(value
+        .cast::<PyTensor>()
+        .expect("an exact PyTensor instance must downcast")
+        .clone())
+}
+
+#[pyfunction]
+fn _nn_functional_linear(
+    py: Python<'_>,
+    input: &Bound<'_, PyAny>,
+    weight: &Bound<'_, PyAny>,
+    bias: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    if !python_torch_function_mode::is_empty() {
+        return Err(PyTypeError::new_err(
+            "linear() does not support an active TorchFunctionMode",
+        ));
+    }
+    if !bias.is_none() {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.linear only supports bias=None",
+        ));
+    }
+
+    let input = exact_linear_tensor(input)?;
+    let weight = exact_linear_tensor(weight)?;
+    let input = input.try_borrow()?;
+    let weight = weight.try_borrow()?;
+    if input.inner().shape().len() != 2 || weight.inner().shape().len() != 2 {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.linear only supports rank-2 input and weight tensors",
+        ));
+    }
+    if is_grad_enabled() && (input.inner().requires_grad() || weight.inner().requires_grad()) {
+        return Err(PyRuntimeError::new_err(
+            "linear(): autograd recording is not supported",
+        ));
+    }
+
+    let transposed_weight = weight
+        .inner()
+        .transpose(0, 1)
+        .map_err(|error| tensor_error(&error))?;
+    let output = input
+        .inner()
+        .matmul(&transposed_weight)
+        .map_err(|error| tensor_error(&error))?;
+    PyTensor::new(output).into_py_any(py)
+}
+
 pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResult<()> {
     for function in [
         wrap_pyfunction!(_nn_functional_dropout, module)?,
         wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?,
+        wrap_pyfunction!(_nn_functional_linear, module)?,
     ] {
         let name = function.getattr("__name__")?;
         module.add_function(function.clone())?;

@@ -8,7 +8,32 @@ from torch_rs import Tensor
 from torch_rs._diagnostics import _format_single_element_tensor
 from torch_rs.overrides import _dispatch_unary_torch_function
 
-from ..torch_rs import _nn_functional_dropout
+from ..torch_rs import _nn_functional_dropout, _nn_functional_linear
+
+
+_LINEAR_DOC = r"""
+linear(input, weight, bias=None) -> Tensor
+
+Applies a linear transformation to the incoming data: :math:`y = xA^T + b`.
+
+This operation supports 2-D :attr:`weight` with :ref:`sparse layout<sparse-docs>`
+
+
+.. warning::
+    Sparse support is a beta feature and some layout(s)/dtype/device combinations may not be supported,
+    or may not have autograd support. If you notice missing functionality please
+    open a feature request.
+
+This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
+
+Shape:
+
+    - Input: :math:`(*, in\_features)` where `*` means any number of
+      additional dimensions, including none
+    - Weight: :math:`(out\_features, in\_features)` or :math:`(in\_features)`
+    - Bias: :math:`(out\_features)` or :math:`()`
+    - Output: :math:`(*, out\_features)` or :math:`(*)`, based on the shape of the weight
+"""
 
 
 def _validate_dropout_probability(p):
@@ -89,12 +114,8 @@ def _alpha_dropout_impl(input, p, training, inplace):
 def _feature_alpha_dropout_impl(input, p, training, inplace):
     _validate_dropout_probability(p)
     if inplace:
-        return _nn_functional_dropout(
-            "feature_alpha_dropout", input, p, training, True
-        )
-    return _nn_functional_dropout(
-        "feature_alpha_dropout", input, p, training, False
-    )
+        return _nn_functional_dropout("feature_alpha_dropout", input, p, training, True)
+    return _nn_functional_dropout("feature_alpha_dropout", input, p, training, False)
 
 
 def _dropout_range_probability(p):
@@ -126,6 +147,13 @@ def relu(input: Tensor, inplace: bool = False) -> Tensor:
             "torch_rs.nn.functional.relu does not support inplace=True"
         )
     return torch.relu(input)
+
+
+def linear(input: Tensor, weight: Tensor, bias: Tensor | None = None) -> Tensor:
+    return _nn_functional_linear(input, weight, bias)
+
+
+linear.__doc__ = _LINEAR_DOC
 
 
 def dropout(
