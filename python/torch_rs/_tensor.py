@@ -36,6 +36,11 @@ def _is_shared_implementation(input):
 # Defining the method in a Python class gives it PyTorch's function metadata.
 # The module binding is replaced with the native class immediately afterward.
 class Tensor:
+    def __hash__(self):
+        # Match PyTorch's wrapper-identity hash rather than object.__hash__,
+        # which shifts the object's address on CPython.
+        return id(self)
+
     def backward(
         self, gradient=None, retain_graph=None, create_graph=False, inputs=None
     ):
@@ -113,10 +118,12 @@ class Tensor:
         )
 
 
+_hash = Tensor.__hash__
 _backward = Tensor.backward
 _is_shared = Tensor.is_shared
 Tensor = _NativeTensor
+Tensor.__hash__ = _hash
 Tensor.backward = _backward
 Tensor.is_shared = _is_shared
 
-del _backward, _is_shared, _NativeTensor
+del _hash, _backward, _is_shared, _NativeTensor

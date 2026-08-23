@@ -1129,6 +1129,7 @@ Example::
     name = "Tensor",
     module = "torch_rs",
     extends = PyTensorBase,
+    weakref,
     skip_from_py_object
 )]
 pub(crate) struct PyTensor {
@@ -3515,6 +3516,18 @@ impl MultiplicationOperation {
 
 #[pymethods]
 impl PyTensor {
+    #[doc = "list of weak references to the object"]
+    #[getter]
+    fn __weakref__(slf: &Bound<'_, Self>) -> PyResult<Option<Py<PyAny>>> {
+        let weakrefs =
+            PyModule::import(slf.py(), "weakref")?.call_method1("getweakrefs", (slf,))?;
+        if weakrefs.len()? == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(weakrefs.get_item(0)?.unbind()))
+        }
+    }
+
     #[classattr]
     fn __array_priority__() -> f64 {
         1000.0
