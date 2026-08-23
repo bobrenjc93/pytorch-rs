@@ -15,6 +15,13 @@ class FunctionalLinearTests(unittest.TestCase):
         transposed_weight = weight.transpose(0, 1)
         if len(input.shape) == 1:
             return input[None].matmul(transposed_weight).squeeze(0)
+        if len(input.shape) == 3:
+            output_shape = (*input.shape[:-1], weight.shape[0])
+            return (
+                input.flatten(0, 1)
+                .matmul(transposed_weight)
+                .reshape(output_shape)
+            )
         return input.matmul(transposed_weight)
 
     def assert_matches_matmul(self, actual, expected, *, case):
@@ -101,6 +108,50 @@ class FunctionalLinearTests(unittest.TestCase):
             ("all zero", torch.zeros((0,)), torch.zeros((0, 0))),
         )
 
+    def rank_three_cases(self):
+        contiguous_input = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
+        )
+        contiguous_weight = torch.tensor(
+            np.arange(20, dtype=np.float32).reshape(5, 4).tolist()
+        )
+        strided_input = torch.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 4, 3).tolist()
+        ).transpose(1, 2)
+        strided_weight = torch.tensor(
+            np.arange(20, dtype=np.float32).reshape(4, 5).tolist()
+        ).transpose(0, 1)
+        offset_input = torch.tensor(
+            np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4).tolist()
+        )[1]
+        offset_weight = torch.tensor(
+            np.arange(40, dtype=np.float32).reshape(2, 5, 4).tolist()
+        )[1]
+        offset_strided_input = torch.tensor(
+            np.arange(48, dtype=np.float32).reshape(2, 2, 4, 3).tolist()
+        )[1].transpose(1, 2)
+        offset_strided_weight = torch.tensor(
+            np.arange(40, dtype=np.float32).reshape(2, 4, 5).tolist()
+        )[1].transpose(0, 1)
+        empty_offset_input = torch.zeros((2, 2, 0, 4)).transpose(1, 2)[1]
+
+        return (
+            ("contiguous batch", contiguous_input, contiguous_weight),
+            ("strided batch", strided_input, strided_weight),
+            ("offset batch", offset_input, offset_weight),
+            (
+                "offset-strided batch",
+                offset_strided_input,
+                offset_strided_weight,
+            ),
+            ("zero batch", torch.zeros((0, 3, 4)), contiguous_weight),
+            ("zero sequence", torch.zeros((2, 0, 4)), contiguous_weight),
+            ("zero inner", torch.zeros((2, 3, 0)), torch.zeros((5, 0))),
+            ("zero outputs", contiguous_input, torch.zeros((0, 4))),
+            ("offset zero batch", empty_offset_input, torch.ones((5, 4))),
+            ("all zero", torch.zeros((0, 0, 0)), torch.zeros((0, 0))),
+        )
+
     def test_import_signature_documentation_and_exports(self):
         imported = importlib.import_module("torch_rs.nn.functional")
         from torch_rs.nn.functional import linear
@@ -117,7 +168,7 @@ class FunctionalLinearTests(unittest.TestCase):
         self.assertTrue(linear.__doc__.startswith("\nlinear(input, weight, bias=None)"))
         normalized_doc = " ".join(linear.__doc__.split())
         for documented_limit in (
-            "bias-free rank-1 or rank-2 transformation",
+            "bias-free rank-1, rank-2, or rank-3 transformation",
             "exact ``torch_rs.Tensor`` operands",
             "CPU ``float32`` storage",
             "``bias`` must be ``None``",
@@ -181,6 +232,23 @@ class FunctionalLinearTests(unittest.TestCase):
             for form, call in calls:
                 self.assert_matches_matmul(call(), expected, case=(case, form))
 
+    def test_rank_three_layouts_reuse_flatten_transpose_matmul_and_reshape(self):
+        for case, input, weight in self.rank_three_cases():
+            expected = self.linear_composition(input, weight)
+            calls = (
+                ("positional", lambda: functional.linear(input, weight)),
+                (
+                    "explicit none",
+                    lambda: functional.linear(input, weight, None),
+                ),
+                (
+                    "keywords",
+                    lambda: functional.linear(input=input, weight=weight, bias=None),
+                ),
+            )
+            for form, call in calls:
+                self.assert_matches_matmul(call(), expected, case=(case, form))
+
     def test_every_call_returns_fresh_storage_including_empty_outputs(self):
         cases = tuple(
             (f"matrix {case}", input, weight)
@@ -188,6 +256,9 @@ class FunctionalLinearTests(unittest.TestCase):
         ) + tuple(
             (f"vector {case}", input, weight)
             for case, input, weight in self.vector_cases()
+        ) + tuple(
+            (f"rank-three {case}", input, weight)
+            for case, input, weight in self.rank_three_cases()
         )
         for case, input, weight in cases:
             first = functional.linear(input, weight)
@@ -212,6 +283,22 @@ class FunctionalLinearTests(unittest.TestCase):
                 torch.zeros((4, 5)),
                 "mat1 and mat2 shapes cannot be multiplied (1x3 and 5x4)",
             ),
+            (
+                torch.zeros((2, 3, 4)),
+                torch.zeros((5, 6)),
+                "mat1 and mat2 shapes cannot be multiplied (6x4 and 6x5)",
+            ),
+            (
+                torch.zeros((3, 2, 4)).transpose(0, 1),
+                torch.zeros((5, 6)),
+                "Expected size for first two dimensions of batch2 tensor to be: "
+                "[2, 4] but got: [2, 6].",
+            ),
+            (
+                torch.zeros((2, 3, 4)).permute(1, 2, 0),
+                torch.zeros((5, 4)),
+                "mat1 and mat2 shapes cannot be multiplied (12x2 and 4x5)",
+            ),
         )
         for input, weight, message in cases:
             with self.subTest(input=input.shape):
@@ -222,6 +309,13 @@ class FunctionalLinearTests(unittest.TestCase):
         for rank, input_values in (
             (1, [1.0, 2.0, 3.0]),
             (2, [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+            (
+                3,
+                [
+                    [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                    [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+                ],
+            ),
         ):
             for input_requires_grad, weight_requires_grad in (
                 (True, False),
@@ -256,11 +350,21 @@ class FunctionalLinearTests(unittest.TestCase):
                     self.assertIsNone(input.grad)
                     self.assertIsNone(weight.grad)
 
+        noncontiguous_input = torch.zeros((3, 2, 4)).transpose(0, 1)
+        incompatible_weight = torch.zeros((5, 6), requires_grad=True)
+        with torch.no_grad():
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"^mat1 and mat2 shapes cannot be multiplied \(6x4 and 6x5\)$",
+            ):
+                functional.linear(noncontiguous_input, incompatible_weight)
+
     def test_unsupported_features_are_rejected_before_native_composition(self):
         matrix = torch.ones((2, 2), requires_grad=True)
         vector = torch.ones((2,), requires_grad=True)
         scalar = torch.tensor(1.0)
         rank_three = torch.ones((1, 2, 2))
+        rank_four = torch.ones((1, 1, 2, 2))
 
         with self.assertRaisesRegex(
             NotImplementedError,
@@ -270,7 +374,7 @@ class FunctionalLinearTests(unittest.TestCase):
 
         for input, weight in (
             (scalar, matrix),
-            (rank_three, matrix),
+            (rank_four, matrix),
             (matrix, vector),
             (vector, rank_three),
         ):
@@ -278,7 +382,7 @@ class FunctionalLinearTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     NotImplementedError,
                     r"^torch_rs\.nn\.functional\.linear only supports "
-                    r"rank-1 or rank-2 input and rank-2 weight tensors$",
+                    r"rank-1, rank-2, or rank-3 input and rank-2 weight tensors$",
                 ):
                     functional.linear(input, weight)
 
