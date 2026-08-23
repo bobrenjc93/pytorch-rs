@@ -5297,6 +5297,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 94
       }
+    },
+    {
+      "key": "pr:713",
+      "recordedAt": "2026-08-23T05:12:49.436Z",
+      "label": "PR #713",
+      "kind": "composite",
+      "prNumber": 713,
+      "title": "YOLO generation 80: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 85.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 68.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 94
+      }
     }
   ]
 }
