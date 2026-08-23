@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
-    PyValueError,
+    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
+    PyTypeError, PyUserWarning, PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -746,6 +746,55 @@ impl PyTensorBase {
             return Ok(result);
         }
 
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor
+                .inner
+                .square()
+                .map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\npow(exponent) -> Tensor\n\nSee :func:`torch.pow`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn pow(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        let exponent = bind_pow_exponent(args, kwargs)?;
+        let Some(exponent_kind) = classify_pow_exponent(&exponent.value)? else {
+            return Err(pow_binding_error(args, kwargs)?);
+        };
+
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "pow",
+            "torch.Tensor.pow",
+            args,
+            kwargs,
+        )? {
+            return Ok(result);
+        }
+
+        if exponent_kind != PowExponentKind::RealScalar {
+            return Err(unsupported_pow_exponent());
+        }
+        let supported_exponent = parse_arithmetic_scalar(&exponent.value)
+            .ok()
+            .flatten()
+            .is_some_and(|value| arithmetic_scalar_is_two(&value));
+        if !supported_exponent {
+            return Err(unsupported_pow_exponent());
+        }
+
+        // Validate the deliberately narrow overload before entering the core,
+        // so unsupported exponents cannot allocate result metadata or storage.
         let output = {
             let tensor = tensor.try_borrow()?;
             tensor
@@ -1723,6 +1772,12 @@ enum ParsedArithmeticScalar {
     PythonBool(bool),
     Number(ParsedFillValue),
     WideNumpyUnsigned,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PowExponentKind {
+    RealScalar,
+    Unsupported,
 }
 
 #[derive(Clone, Copy)]
@@ -8181,6 +8236,32 @@ fn is_real_arithmetic_scalar(value: &Bound<'_, PyAny>) -> PyResult<bool> {
         || value.is_instance(&numpy.getattr("floating")?)?)
 }
 
+fn classify_pow_exponent(value: &Bound<'_, PyAny>) -> PyResult<Option<PowExponentKind>> {
+    if value.cast::<PyTensor>().is_ok() || value.is_instance_of::<PyComplex>() {
+        return Ok(Some(PowExponentKind::Unsupported));
+    }
+    if value.is_instance_of::<PyInt>() || value.is_instance_of::<PyFloat>() {
+        return Ok(Some(PowExponentKind::RealScalar));
+    }
+
+    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
+        return Ok(None);
+    };
+    if !value.is_instance(&numpy.getattr("generic")?)? {
+        return Ok(None);
+    }
+    if value.is_instance(&numpy.getattr("bool_")?)?
+        || value.is_instance(&numpy.getattr("integer")?)?
+        || value.is_instance(&numpy.getattr("floating")?)?
+    {
+        return Ok(Some(PowExponentKind::RealScalar));
+    }
+    if value.is_instance(&numpy.getattr("complexfloating")?)? {
+        return Ok(Some(PowExponentKind::Unsupported));
+    }
+    Ok(None)
+}
+
 fn parse_top_level_multiplication_operand<'py>(
     operation: MultiplicationOperation,
     argument: &str,
@@ -8227,6 +8308,29 @@ fn bind_matmul_argument<'py>(
         ));
     }
     bind_other_argument_with_x2_fallback("matmul", positional, keywords)
+}
+
+fn bind_pow_exponent<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ParsedCallArgument<'py>> {
+    if positional.len() == 1 && keywords.is_none_or(PyDictMethods::is_empty) {
+        return Ok(ParsedCallArgument {
+            value: positional.get_item(0)?,
+            position: Some(1),
+        });
+    }
+    if positional.is_empty()
+        && let Some(keywords) = keywords
+        && keywords.len() == 1
+        && let Some(exponent) = keywords.get_item("exponent")?
+    {
+        return Ok(ParsedCallArgument {
+            value: exponent,
+            position: None,
+        });
+    }
+    Err(pow_binding_error(positional, keywords)?)
 }
 
 fn bind_multiplication_argument<'py>(
@@ -8529,6 +8633,22 @@ fn multiply_binding_error(
     positional: &Bound<'_, PyTuple>,
     keywords: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyErr> {
+    tensor_number_binding_error("multiply", "other", positional, keywords)
+}
+
+fn pow_binding_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    tensor_number_binding_error("pow", "exponent", positional, keywords)
+}
+
+fn tensor_number_binding_error(
+    function: &str,
+    argument: &str,
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
     let allocation = PythonAllocationFallback::new(positional.py());
     let summary = call_type_summary_with(
         positional,
@@ -8544,14 +8664,14 @@ fn multiply_binding_error(
             let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
             let number_detail = call_argument_type_description_with(&value, &allocation)?;
             (
-                multiply_invalid_type_mismatch(
+                tensor_number_invalid_type_mismatch(
                     &tensor_detail,
                     &actual_type,
                     "Tensor",
                     None,
                     &allocation,
                 )?,
-                multiply_invalid_type_mismatch(
+                tensor_number_invalid_type_mismatch(
                     &number_detail,
                     &actual_type,
                     "Number",
@@ -8566,28 +8686,28 @@ fn multiply_binding_error(
                 .next()
                 .expect("a single keyword argument remains present");
             let key = pytorch_keyword_name(&key)?;
-            if key == "other" {
+            if key == argument {
                 let actual_type = python_type_name_with(&value, &allocation)?;
                 let tensor_detail = call_argument_type_description_with(&value, &allocation)?;
                 let number_detail = call_argument_type_description_with(&value, &allocation)?;
                 (
-                    multiply_invalid_type_mismatch(
+                    tensor_number_invalid_type_mismatch(
                         &tensor_detail,
                         &actual_type,
                         "Tensor",
-                        Some("other"),
+                        Some(argument),
                         &allocation,
                     )?,
-                    multiply_invalid_type_mismatch(
+                    tensor_number_invalid_type_mismatch(
                         &number_detail,
                         &actual_type,
                         "Number",
-                        Some("other"),
+                        Some(argument),
                         &allocation,
                     )?,
                 )
             } else {
-                let mismatch = multiply_invalid_keyword_mismatch(key, &allocation)?;
+                let mismatch = tensor_number_invalid_keyword_mismatch(key, &allocation)?;
                 (try_string_from_str_with(&mismatch, &allocation)?, mismatch)
             }
         }
@@ -8595,18 +8715,24 @@ fn multiply_binding_error(
         (String::new(), String::new())
     };
 
-    let mut message = try_string_from_str_with(
-        "multiply() received an invalid combination of arguments - got (",
+    let mut message = try_string_from_str_with(function, &allocation)?;
+    try_push_string_with(
+        &mut message,
+        "() received an invalid combination of arguments - got (",
         &allocation,
     )?;
     try_push_string_with(&mut message, &summary, &allocation)?;
     try_push_string_with(
         &mut message,
-        "), but expected one of:\n * (Tensor other)",
+        "), but expected one of:\n * (Tensor ",
         &allocation,
     )?;
+    try_push_string_with(&mut message, argument, &allocation)?;
+    try_push_string_with(&mut message, ")", &allocation)?;
     try_push_string_with(&mut message, &tensor_mismatch, &allocation)?;
-    try_push_string_with(&mut message, "\n * (Number other)", &allocation)?;
+    try_push_string_with(&mut message, "\n * (Number ", &allocation)?;
+    try_push_string_with(&mut message, argument, &allocation)?;
+    try_push_string_with(&mut message, ")", &allocation)?;
     try_push_string_with(&mut message, &number_mismatch, &allocation)?;
     try_push_string_with(&mut message, "\n", &allocation)?;
     if let Some(nul) = message.find('\0') {
@@ -8621,7 +8747,7 @@ fn multiply_binding_error(
     Ok(PyErr::from_value(exception))
 }
 
-fn multiply_invalid_type_mismatch(
+fn tensor_number_invalid_type_mismatch(
     detail: &str,
     actual_type: &str,
     expected_type: &str,
@@ -8651,7 +8777,7 @@ fn multiply_invalid_type_mismatch(
     Ok(mismatch)
 }
 
-fn multiply_invalid_keyword_mismatch(
+fn tensor_number_invalid_keyword_mismatch(
     keyword: &str,
     allocation: &PythonAllocationFallback<'_>,
 ) -> PyResult<String> {
@@ -10336,6 +10462,23 @@ impl ParsedArithmeticScalar {
             }
         }
     }
+}
+
+fn arithmetic_scalar_is_two(value: &ParsedArithmeticScalar) -> bool {
+    match value {
+        ParsedArithmeticScalar::PythonBool(_)
+        | ParsedArithmeticScalar::WideNumpyUnsigned
+        | ParsedArithmeticScalar::Number(ParsedFillValue::TensorScalar(_)) => false,
+        ParsedArithmeticScalar::Number(ParsedFillValue::Float(value)) => {
+            value.to_bits() == 2.0_f64.to_bits()
+        }
+        ParsedArithmeticScalar::Number(ParsedFillValue::SignedInteger(value)) => *value == 2,
+        ParsedArithmeticScalar::Number(ParsedFillValue::UnsignedInteger(value)) => *value == 2,
+    }
+}
+
+fn unsupported_pow_exponent() -> PyErr {
+    PyNotImplementedError::new_err("Tensor.pow only supports the real scalar exponent 2")
 }
 
 fn fill_value_overflow() -> PyErr {
