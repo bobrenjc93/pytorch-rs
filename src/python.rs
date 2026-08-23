@@ -292,9 +292,15 @@ impl PyTensorBase {
                 || (indices.len() == 1 && indices.get_item(0)?.is_instance_of::<PyEllipsis>())
             {
                 tensor.inner.metadata_alias()
-            } else if indices.len() == 1 && is_exact_full_slice(&indices.get_item(0)?)? {
+            } else if is_exact_full_slice_tuple(indices, 1)? {
                 if tensor.inner.shape().is_empty() {
                     return Err(too_many_indices(0));
+                }
+                tensor.inner.metadata_alias()
+            } else if is_exact_full_slice_tuple(indices, 2)? {
+                let rank = tensor.inner.shape().len();
+                if rank < 2 {
+                    return Err(too_many_indices(rank));
                 }
                 tensor.inner.metadata_alias()
             } else if indices.len() == 2
@@ -9799,6 +9805,18 @@ fn is_exact_full_slice(index: &Bound<'_, PyAny>) -> PyResult<bool> {
     Ok(slice.getattr("start")?.is_none()
         && slice.getattr("stop")?.is_none()
         && slice.getattr("step")?.is_none())
+}
+
+fn is_exact_full_slice_tuple(indices: &Bound<'_, PyTuple>, length: usize) -> PyResult<bool> {
+    if indices.len() != length {
+        return Ok(false);
+    }
+    for index in indices.iter() {
+        if !is_exact_full_slice(&index)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn parse_integer_index(index: &Bound<'_, PyAny>) -> PyResult<i64> {
