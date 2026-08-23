@@ -66,6 +66,10 @@ def _atleast_1d_impl(input):
     )
 
 
+def _atleast_1d_variadic_impl(tensors):
+    return tuple(_VF_atleast_1d(tensor) for tensor in tensors)
+
+
 def atleast_1d(*tensors):
     r"""
     Returns a 1-dimensional view of each input tensor with zero dimensions.
@@ -97,10 +101,13 @@ def atleast_1d(*tensors):
         ()
     """
     if len(tensors) > 1:
-        return _atleast_variadic(
+        if any(type(tensor) is not Tensor for tensor in tensors):
+            raise TypeError(_ATLEAST_1D_VARIADIC_UNSUPPORTED)
+        return _dispatch_exact_native_variadic_torch_function(
+            atleast_1d,
+            _atleast_1d_variadic_impl,
             tensors,
-            _VF_atleast_1d,
-            _ATLEAST_1D_VARIADIC_UNSUPPORTED,
+            {},
         )
     if not tensors:
         if _get_current_function_mode() is not None:
