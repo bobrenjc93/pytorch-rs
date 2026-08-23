@@ -83,6 +83,26 @@ class FunctionalLinearTests(unittest.TestCase):
         self.assertIsNone(linear.__kwdefaults__)
         self.assertFalse(hasattr(linear, "__text_signature__"))
         self.assertTrue(linear.__doc__.startswith("\nlinear(input, weight, bias=None)"))
+        normalized_doc = " ".join(linear.__doc__.split())
+        for documented_limit in (
+            "bias-free rank-2 transformation",
+            "exact ``torch_rs.Tensor`` operands",
+            "CPU ``float32`` storage",
+            "``bias`` must be ``None``",
+            "fresh, independent row-major tensor",
+            "Tensor subclasses",
+            "active ``TorchFunctionMode`` contexts",
+            "active autograd recording",
+            "inside ``torch.no_grad()``",
+        ):
+            self.assertIn(documented_limit, normalized_doc)
+        for unsupported_claim in (
+            "sparse layout",
+            "TensorFloat32",
+            "additional dimensions",
+            "Bias: :math:",
+        ):
+            self.assertNotIn(unsupported_claim, normalized_doc)
         signature = inspect.signature(linear)
         self.assertEqual(tuple(signature.parameters), ("input", "weight", "bias"))
         self.assertIs(signature.parameters["input"].annotation, torch.Tensor)

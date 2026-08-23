@@ -120,11 +120,10 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
             return module_functional.linear(input, weight, None)
         return module_functional.linear(input=input, weight=weight, bias=None)
 
-    def test_metadata_documentation_and_signature_surface(self):
+    def test_name_and_signature_surface(self):
         self.assertEqual(
             functional.linear.__name__, reference_functional.linear.__name__
         )
-        self.assertEqual(functional.linear.__doc__, reference_functional.linear.__doc__)
         signature = inspect.signature(functional.linear)
         self.assertEqual(tuple(signature.parameters), ("input", "weight", "bias"))
         self.assertIsNone(signature.parameters["bias"].default)

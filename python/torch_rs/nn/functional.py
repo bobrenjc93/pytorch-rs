@@ -14,25 +14,18 @@ from ..torch_rs import _nn_functional_dropout, _nn_functional_linear
 _LINEAR_DOC = r"""
 linear(input, weight, bias=None) -> Tensor
 
-Applies a linear transformation to the incoming data: :math:`y = xA^T + b`.
+Applies the bias-free rank-2 transformation
+:math:`\mathrm{output} = \mathrm{input} \, \mathrm{weight}^{T}`.
 
-This operation supports 2-D :attr:`weight` with :ref:`sparse layout<sparse-docs>`
+The current native implementation requires exact ``torch_rs.Tensor`` operands
+with CPU ``float32`` storage and shape ``(rows, in_features)`` for ``input``
+and ``(out_features, in_features)`` for ``weight``. ``bias`` must be ``None``.
+It returns a fresh, independent row-major tensor with shape
+``(rows, out_features)``.
 
-
-.. warning::
-    Sparse support is a beta feature and some layout(s)/dtype/device combinations may not be supported,
-    or may not have autograd support. If you notice missing functionality please
-    open a feature request.
-
-This operator supports :ref:`TensorFloat32<tf32_on_ampere>`.
-
-Shape:
-
-    - Input: :math:`(*, in\_features)` where `*` means any number of
-      additional dimensions, including none
-    - Weight: :math:`(out\_features, in\_features)` or :math:`(in\_features)`
-    - Bias: :math:`(out\_features)` or :math:`()`
-    - Output: :math:`(*, out\_features)` or :math:`(*)`, based on the shape of the weight
+Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
+recording are not supported. Gradient-requiring operands may be used inside
+``torch.no_grad()``.
 """
 
 
