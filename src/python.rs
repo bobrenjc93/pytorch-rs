@@ -47,7 +47,8 @@ static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
 // tensor runtime to infer capabilities.
-const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 3] = [
+const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 4] = [
+    ("_has_cuda", false),
     ("has_openmp", false),
     ("has_mkl", false),
     ("has_lapack", false),
@@ -10582,6 +10583,12 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     for (name, enabled) in NATIVE_BUILD_CAPABILITIES {
         module.add(name, enabled)?;
     }
+    // PyTorch keeps this private build flag on torch._C. Removing it from the
+    // extension's generated export list also prevents the package wildcard
+    // import from copying it onto the public torch_rs module.
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_has_cuda",))?;
     module.add("Size", size_type_object(py)?.clone_ref(py))?;
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();
