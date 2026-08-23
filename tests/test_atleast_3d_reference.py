@@ -177,6 +177,42 @@ class Atleast3dReferenceTests(unittest.TestCase):
                 self.assertIs(type(expected), tuple)
                 self.assertEqual(actual, expected)
 
+    def test_variadic_values_layouts_and_aliasing_match_pytorch_2_13(self):
+        actual_cases = self.make_layout_cases(torch)
+        expected_cases = self.make_layout_cases(reference_torch)
+        actual_results = torch.atleast_3d(
+            *(source for _, source in actual_cases)
+        )
+        expected_results = reference_torch.atleast_3d(
+            *(source for _, source in expected_cases)
+        )
+        self.assertIs(type(actual_results), tuple)
+        self.assertIs(type(expected_results), tuple)
+        self.assertEqual(len(actual_results), len(expected_results))
+
+        for (
+            (name, actual_source),
+            (expected_name, expected_source),
+            actual_result,
+            expected_result,
+        ) in zip(
+            actual_cases,
+            expected_cases,
+            actual_results,
+            expected_results,
+            strict=True,
+        ):
+            with self.subTest(case=name):
+                self.assertEqual(name, expected_name)
+                actual = self.observe_result(
+                    torch, actual_source, actual_result
+                )
+                expected = self.observe_result(
+                    reference_torch, expected_source, expected_result
+                )
+                self.assertEqual(actual[:-1], expected[:-1])
+                np.testing.assert_array_equal(actual[-1], expected[-1])
+
     def autograd_outcome(self, module):
         scalar_leaf = module.tensor(
             [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
@@ -456,6 +492,160 @@ class Atleast3dReferenceTests(unittest.TestCase):
             self.grad_list(rank_three_leaf, module),
         )
 
+    def variadic_autograd_outcome(self, module):
+        scalar_leaf = module.tensor(
+            [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
+        )
+        scalar = scalar_leaf[1]
+        vector_leaf = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        vector = vector_leaf.transpose(0, 2)[3].transpose(0, 1)[1]
+        matrix_leaf = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        matrix = matrix_leaf[1].transpose(0, 1)
+        empty_vector_leaf = module.zeros(
+            (2, 0, 3), dtype=module.float32, requires_grad=True
+        )
+        empty_vector = (
+            empty_vector_leaf.transpose(0, 2)[1].transpose(0, 1)[1]
+        )
+        empty_matrix_leaf = module.zeros(
+            (2, 0, 3), dtype=module.float32, requires_grad=True
+        )
+        empty_matrix = empty_matrix_leaf.transpose(0, 2)[1]
+        rank_three_leaf = module.zeros(
+            (1, 2, 3), dtype=module.float32, requires_grad=True
+        )
+        rank_three = rank_three_leaf * 2.0
+        sources = (
+            scalar,
+            vector,
+            matrix,
+            empty_vector,
+            empty_matrix,
+            rank_three,
+        )
+
+        results = module.atleast_3d(*sources)
+        metadata = (
+            type(results) is tuple,
+            tuple(
+                (
+                    result is source,
+                    tuple(result.shape),
+                    result.stride(),
+                    result.storage_offset(),
+                    result.requires_grad,
+                    result.is_leaf,
+                    result.output_nr,
+                    result.data_ptr() == source.data_ptr(),
+                    result.is_set_to(module.atleast_3d(source)),
+                )
+                for source, result in zip(sources, results, strict=True)
+            ),
+        )
+
+        for index, result in enumerate(results):
+            loss = result.sum()
+            loss.backward()
+            if index < 3:
+                loss.backward()
+
+        return (
+            metadata,
+            self.grad_list(scalar_leaf, module),
+            self.grad_list(vector_leaf, module),
+            self.grad_list(matrix_leaf, module),
+            self.grad_list(empty_vector_leaf, module),
+            self.grad_list(empty_matrix_leaf, module),
+            self.grad_list(rank_three_leaf, module),
+        )
+
+    def variadic_no_grad_outcome(self, module):
+        scalar_leaf = module.tensor(
+            [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
+        )
+        scalar = scalar_leaf[1]
+        vector_leaf = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        vector = vector_leaf.transpose(0, 2)[3].transpose(0, 1)[1]
+        matrix_leaf = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        matrix = matrix_leaf[1].transpose(0, 1)
+        empty_vector_leaf = module.zeros(
+            (2, 0, 3), dtype=module.float32, requires_grad=True
+        )
+        empty_vector = (
+            empty_vector_leaf.transpose(0, 2)[1].transpose(0, 1)[1]
+        )
+        empty_matrix_leaf = module.zeros(
+            (2, 0, 3), dtype=module.float32, requires_grad=True
+        )
+        empty_matrix = empty_matrix_leaf.transpose(0, 2)[1]
+        rank_three_leaf = module.zeros(
+            (1, 2, 3), dtype=module.float32, requires_grad=True
+        )
+        rank_three = rank_three_leaf * 2.0
+        sources = (
+            scalar,
+            vector,
+            matrix,
+            empty_vector,
+            empty_matrix,
+            rank_three,
+        )
+        with module.no_grad():
+            results = module.atleast_3d(*sources)
+
+        for result in results[:5]:
+            (result * result).sum().backward()
+        results[5].sum().backward()
+        return (
+            type(results) is tuple,
+            tuple(
+                (
+                    result is source,
+                    tuple(result.shape),
+                    result.stride(),
+                    result.storage_offset(),
+                    result.requires_grad,
+                    result.is_leaf,
+                    result.output_nr,
+                    result.data_ptr() == source.data_ptr(),
+                    None if index == 5 else self.grad_list(leaf, module),
+                    None if index == 5 else self.grad_list(result, module),
+                )
+                for index, (source, result, leaf) in enumerate(
+                    zip(
+                        sources,
+                        results,
+                        (
+                            scalar_leaf,
+                            vector_leaf,
+                            matrix_leaf,
+                            empty_vector_leaf,
+                            empty_matrix_leaf,
+                            rank_three_leaf,
+                        ),
+                        strict=True,
+                    )
+                )
+            ),
+            self.grad_list(rank_three_leaf, module),
+        )
+
     def test_autograd_repeated_backward_and_no_grad_match_pytorch_2_13(self):
         self.assertEqual(
             self.autograd_outcome(torch),
@@ -481,6 +671,16 @@ class Atleast3dReferenceTests(unittest.TestCase):
                         reference_torch, sequence_type
                     ),
                 )
+
+    def test_variadic_autograd_and_no_grad_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.variadic_autograd_outcome(torch),
+            self.variadic_autograd_outcome(reference_torch),
+        )
+        self.assertEqual(
+            self.variadic_no_grad_outcome(torch),
+            self.variadic_no_grad_outcome(reference_torch),
+        )
 
     def mode_contract(self, module):
         function = module.atleast_3d
@@ -686,10 +886,12 @@ class Atleast3dReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_variadic_and_mixed_forms_remain_unsupported(self):
+    def test_mixed_variadic_and_sequence_forms_remain_unsupported(self):
         source = torch.tensor(1.0)
         unsupported = (
-            lambda: torch.atleast_3d(source, source),
+            lambda: torch.atleast_3d(source, None),
+            lambda: torch.atleast_3d(None, source),
+            lambda: torch.atleast_3d(source, source, 1),
         )
         for call in unsupported:
             with self.subTest(call=call), self.assertRaisesRegex(
