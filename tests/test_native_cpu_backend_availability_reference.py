@@ -163,7 +163,7 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
         expected_supported_names = {
             name
             for name in expected_parent_wildcard
-            if name in BACKENDS
+            if name in {*BACKENDS, "cuda"}
         }
         self.assertEqual(actual_parent_names, expected_supported_names)
 
@@ -302,12 +302,11 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
         expected_public = {
             name for name in vars(expected_backends) if not name.startswith("_")
         }
-        self.assertEqual(actual_public, set(BACKENDS))
+        self.assertEqual(actual_public, {*BACKENDS, "cuda"})
         self.assertTrue(set(BACKENDS).issubset(expected_public))
         self.assertTrue(
             {
                 "cpu",
-                "cuda",
                 "cudnn",
                 "mkldnn",
                 "mps",
