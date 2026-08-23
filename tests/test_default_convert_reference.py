@@ -120,7 +120,7 @@ class DefaultConvertReferenceTests(unittest.TestCase):
             np.asarray(actual_leaf.grad), expected_leaf.grad.detach().cpu().numpy()
         )
 
-    def test_metadata_exports_copying_and_pickling_match_pytorch_2_13(self):
+    def test_metadata_exports_copying_and_pickling_match_supported_scope(self):
         actual_data = importlib.import_module("torch_rs.utils.data")
         expected_data = importlib.import_module("torch.utils.data")
         actual_collate = importlib.import_module("torch_rs.utils.data._utils.collate")
@@ -139,7 +139,11 @@ class DefaultConvertReferenceTests(unittest.TestCase):
         )
         self.assertEqual(actual.__name__, expected.__name__)
         self.assertEqual(actual.__qualname__, expected.__qualname__)
-        self.assertEqual(actual.__doc__, expected.__doc__)
+        self.assertNotEqual(actual.__doc__, expected.__doc__)
+        self.assertIn("Return a supported data leaf unchanged", actual.__doc__)
+        self.assertIn("recursive conversion", actual.__doc__)
+        self.assertNotIn("Convert each NumPy array element", actual.__doc__)
+        self.assertIn("Convert each NumPy array element", expected.__doc__)
         self.assertEqual(actual.__defaults__, expected.__defaults__)
         self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
         self.assertEqual(actual.__dict__, expected.__dict__)
@@ -150,7 +154,13 @@ class DefaultConvertReferenceTests(unittest.TestCase):
 
         self.assertIs(actual_data.default_convert, actual_collate.default_convert)
         self.assertIs(expected_data.default_convert, expected_collate.default_convert)
-        self.assertEqual(actual_collate.__doc__, expected_collate.__doc__)
+        self.assertNotEqual(actual_collate.__doc__, expected_collate.__doc__)
+        self.assertEqual(
+            actual_collate.__doc__,
+            "Leaf-only conversion helpers for :mod:`torch_rs.utils.data`.",
+        )
+        self.assertNotIn("DataLoader", actual_collate.__doc__)
+        self.assertNotIn("default_collate", actual_collate.__doc__)
         self.assertEqual(
             hasattr(actual_collate, "__all__"),
             hasattr(expected_collate, "__all__"),

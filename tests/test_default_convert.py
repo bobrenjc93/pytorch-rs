@@ -173,7 +173,12 @@ class DefaultConvertTests(unittest.TestCase):
         )
         self.assertEqual(default_convert.__name__, "default_convert")
         self.assertEqual(default_convert.__qualname__, "default_convert")
-        self.assertIn("Convert each NumPy array element", default_convert.__doc__)
+        self.assertIn("Return a supported data leaf unchanged", default_convert.__doc__)
+        self.assertIn("preserve their\n    identity", default_convert.__doc__)
+        self.assertIn("recursive conversion", default_convert.__doc__)
+        self.assertNotIn("Convert each NumPy array element", default_convert.__doc__)
+        self.assertNotIn("DataLoader", default_convert.__doc__)
+        self.assertNotIn("default_collate", default_convert.__doc__)
         self.assertIsNone(default_convert.__defaults__)
         self.assertIsNone(default_convert.__kwdefaults__)
         self.assertEqual(default_convert.__dict__, {})
@@ -182,6 +187,12 @@ class DefaultConvertTests(unittest.TestCase):
         self.assertIs(torch.utils.data.default_convert, default_convert)
         self.assertIs(data_module.default_convert, default_convert)
         self.assertIs(collate_module.default_convert, default_convert)
+        self.assertEqual(
+            collate_module.__doc__,
+            "Leaf-only conversion helpers for :mod:`torch_rs.utils.data`.",
+        )
+        self.assertNotIn("DataLoader", collate_module.__doc__)
+        self.assertNotIn("default_collate", collate_module.__doc__)
         self.assertNotIn("default_convert", private_package.__dict__)
         self.assertNotIn("default_convert", dataset_module.__dict__)
         self.assertEqual(data_module.__all__.count("default_convert"), 1)
