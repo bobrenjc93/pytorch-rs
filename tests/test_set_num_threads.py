@@ -233,10 +233,25 @@ class SetNumThreadsTests(unittest.TestCase):
                 self.assertIs(torch.get_num_threads(), 1)
 
     def test_rejects_nonpositive_and_overflowing_integers(self):
-        for value in (0, -1, _IntSubclass(0), np.int64(-1)):
+        for value in (0, -1, -(2**31), _IntSubclass(0), np.int64(-1)):
             with self.subTest(value=repr(value)):
                 message = "set_num_threads expects a positive integer"
                 with self.assertRaises(RuntimeError) as raised:
+                    torch.set_num_threads(value)
+                self.assertEqual(str(raised.exception), message)
+                self.assertEqual(raised.exception.args, (message,))
+                self.assertIs(torch.get_num_threads(), 1)
+
+        for value in (
+            2**31,
+            -(2**31) - 1,
+            np.int64(2**31),
+            np.int64(-(2**31) - 1),
+            np.uint32(2**31),
+        ):
+            with self.subTest(value=repr(value)):
+                message = "Overflow when unpacking long"
+                with self.assertRaises(ValueError) as raised:
                     torch.set_num_threads(value)
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
@@ -252,7 +267,7 @@ class SetNumThreadsTests(unittest.TestCase):
                 self.assertIs(torch.get_num_threads(), 1)
 
     def test_rejects_worker_counts_above_one_without_state_change(self):
-        for value in (2, 8, 2**63 - 1, _IntSubclass(2), np.int64(2)):
+        for value in (2, 8, 2**31 - 1, _IntSubclass(2), np.int64(2)):
             with self.subTest(value=repr(value)):
                 with self.assertRaises(RuntimeError) as raised:
                     torch.set_num_threads(value)
@@ -262,6 +277,24 @@ class SetNumThreadsTests(unittest.TestCase):
                     (UNSUPPORTED_WORKER_COUNT,),
                 )
                 self.assertIs(torch.get_num_threads(), 1)
+
+    def test_numpy_integer_classification_ignores_mutable_module_attributes(self):
+        original_integer = np.integer
+        numpy_one = np.int64(1)
+        try:
+            np.integer = int
+            self.assertIs(torch.set_num_threads(numpy_one), None)
+            self.assertIs(torch.get_num_threads(), 1)
+
+            np.integer = _IndexOne
+            message = "set_num_threads expects an int, but got _IndexOne"
+            with self.assertRaises(RuntimeError) as raised:
+                torch.set_num_threads(_IndexOne())
+            self.assertEqual(str(raised.exception), message)
+            self.assertEqual(raised.exception.args, (message,))
+            self.assertIs(torch.get_num_threads(), 1)
+        finally:
+            np.integer = original_integer
 
     def test_set_num_interop_threads_remains_unsupported(self):
         self.assertFalse(hasattr(torch, "set_num_interop_threads"))

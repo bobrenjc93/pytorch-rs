@@ -136,7 +136,10 @@ fn is_immutable_type(value_type: &Bound<'_, PyType>) -> bool {
     (unsafe { ffi::PyType_GetFlags(value_type.as_type_ptr()) }) & ffi::Py_TPFLAGS_IMMUTABLETYPE != 0
 }
 
-fn has_numpy_integer_ancestry(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<bool> {
+pub(crate) fn has_numpy_integer_ancestry(
+    py: Python<'_>,
+    value: &Bound<'_, PyAny>,
+) -> PyResult<bool> {
     // Calling type's base descriptor bypasses any metaclass override of
     // __getattribute__, and __mro__ itself is immutable.
     let mro = py

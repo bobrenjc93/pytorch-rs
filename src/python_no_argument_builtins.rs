@@ -6,12 +6,13 @@ use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyOverflowError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyCFunction, PyDict, PyInt, PyModule, PyTuple, PyType};
+use pyo3::types::{PyAny, PyBool, PyCFunction, PyDict, PyInt, PyModule, PyTuple};
 
 use crate::{
     DType, is_grad_enabled as core_is_grad_enabled,
     python::python_type_name,
     python_dtype::{PyDType, dtype_object},
+    python_size::has_numpy_integer_ancestry,
 };
 
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
@@ -202,16 +203,11 @@ fn is_num_threads_integer(value: &Bound<'_, PyAny>) -> PyResult<bool> {
     if value.is_instance_of::<PyInt>() {
         return Ok(true);
     }
-
-    let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
-        return Ok(false);
-    };
-    let numpy_integer = numpy.getattr("integer")?.cast_into::<PyType>()?;
-    value.get_type().is_subclass(numpy_integer.as_any())
+    has_numpy_integer_ancestry(value.py(), value)
 }
 
-fn unpack_num_threads(value: &Bound<'_, PyAny>) -> PyResult<i64> {
-    value.extract::<i64>().map_err(|error| {
+fn unpack_num_threads(value: &Bound<'_, PyAny>) -> PyResult<i32> {
+    let value = value.extract::<i64>().map_err(|error| {
         let py = value.py();
         let message = error.value(py).to_string();
         let is_range_overflow = error.is_instance_of::<PyOverflowError>(py)
@@ -225,7 +221,8 @@ fn unpack_num_threads(value: &Bound<'_, PyAny>) -> PyResult<i64> {
         } else {
             error
         }
-    })
+    })?;
+    i32::try_from(value).map_err(|_| PyValueError::new_err("Overflow when unpacking long"))
 }
 
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.

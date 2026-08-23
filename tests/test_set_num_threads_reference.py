@@ -240,6 +240,12 @@ class SetNumThreadsReferenceTests(unittest.TestCase):
             (-1, -1),
             (_IntSubclass(0), _IntSubclass(0)),
             (np.int64(-1), np.int64(-1)),
+            (-(2**31), -(2**31)),
+            (2**31, 2**31),
+            (-(2**31) - 1, -(2**31) - 1),
+            (np.int64(2**31), np.int64(2**31)),
+            (np.int64(-(2**31) - 1), np.int64(-(2**31) - 1)),
+            (np.uint32(2**31), np.uint32(2**31)),
             (2**100, 2**100),
             (-(2**100), -(2**100)),
             (np.uint64(2**63), np.uint64(2**63)),
@@ -258,6 +264,30 @@ class SetNumThreadsReferenceTests(unittest.TestCase):
                     self.assertIs(torch.get_num_threads(), 1)
                     self.assertEqual(reference_torch.get_num_threads(), 1)
         finally:
+            reference_torch.set_num_threads(original_reference_threads)
+
+    def test_numpy_integer_classification_ignores_mutable_module_attributes(self):
+        original_integer = np.integer
+        original_reference_threads = reference_torch.get_num_threads()
+        numpy_one = np.int64(1)
+        try:
+            reference_torch.set_num_threads(1)
+
+            np.integer = int
+            self.assertIs(torch.set_num_threads(numpy_one), None)
+            self.assertIs(reference_torch.set_num_threads(numpy_one), None)
+            self.assertIs(torch.get_num_threads(), 1)
+            self.assertEqual(reference_torch.get_num_threads(), 1)
+
+            np.integer = _IndexOne
+            self.assert_error_matches(
+                lambda: torch.set_num_threads(_IndexOne()),
+                lambda: reference_torch.set_num_threads(_IndexOne()),
+            )
+            self.assertIs(torch.get_num_threads(), 1)
+            self.assertEqual(reference_torch.get_num_threads(), 1)
+        finally:
+            np.integer = original_integer
             reference_torch.set_num_threads(original_reference_threads)
 
     def test_multiworker_values_are_the_deliberate_single_worker_boundary(self):
