@@ -32,6 +32,22 @@ if reference_torch is not None:
     )
 
 
+@torch.compiler.disable(recursive=False, reason="factory pickling test")
+def _actual_factory_picklable_function(value):
+    return value + 1
+
+
+def _reference_factory_picklable_function(value):
+    return value + 1
+
+
+if reference_torch is not None:
+    _reference_factory_picklable_function = reference_torch.compiler.disable(
+        recursive=False,
+        reason="factory pickling test",
+    )(_reference_factory_picklable_function)
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class CompilerDisableReferenceTests(unittest.TestCase):
     @classmethod
@@ -148,6 +164,131 @@ class CompilerDisableReferenceTests(unittest.TestCase):
 
         self.assertEqual(outcomes[0], outcomes[1])
 
+    def test_factory_forms_and_method_binding_match_pytorch_2_13(self):
+        outcomes = []
+        reason = object()
+        for module in (torch, reference_torch):
+            default_factory = module.compiler.disable()
+            configured_factory = module.compiler.disable(
+                fn=None,
+                recursive=False,
+                reason=reason,
+            )
+
+            class Accumulator:
+                def __init__(self):
+                    self.total = 0
+
+                def add(self, value):
+                    self.total += value
+                    return self.total
+
+                def fail(self):
+                    raise RuntimeError(self.total)
+
+            original_add = Accumulator.add
+            original_fail = Accumulator.fail
+            Accumulator.add = default_factory(Accumulator.add)
+            Accumulator.fail = configured_factory(Accumulator.fail)
+            left = Accumulator()
+            right = Accumulator()
+            try:
+                left.fail()
+            except RuntimeError as error:
+                failure = (type(error), error.args)
+            else:
+                failure = None
+            outcomes.append(
+                (
+                    callable(default_factory),
+                    callable(configured_factory),
+                    isinstance(left.add, types.MethodType),
+                    left.add.__self__ is left,
+                    left.add.__func__ is Accumulator.add,
+                    Accumulator.add.__wrapped__ is original_add,
+                    Accumulator.add._torchdynamo_orig_callable is original_add,
+                    Accumulator.add._torchdynamo_disable_recursive,
+                    Accumulator.add._torchdynamo_disable_msg,
+                    Accumulator.fail.__wrapped__ is original_fail,
+                    Accumulator.fail._torchdynamo_orig_callable is original_fail,
+                    Accumulator.fail._torchdynamo_disable_recursive,
+                    Accumulator.fail._torchdynamo_disable_msg is reason,
+                    left.add(2),
+                    left.add(3),
+                    right.add(7),
+                    failure,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_factory_none_rejection_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            module_outcomes = []
+            for recursive in (True, False):
+                factory = module.compiler.disable(recursive=recursive)
+                try:
+                    factory(None)
+                except Exception:
+                    module_outcomes.append(True)
+                else:
+                    module_outcomes.append(False)
+            outcomes.append(module_outcomes)
+
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(outcomes[0], [True, True])
+
+    def test_factory_recursive_snapshot_and_reuse_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            mutable_recursive = []
+            mutable_factory = module.compiler.disable(
+                recursive=mutable_recursive,
+            )
+            mutable_recursive.append(True)
+
+            class StatefulTruthiness:
+                def __init__(self):
+                    self.calls = 0
+
+                def __bool__(self):
+                    self.calls += 1
+                    return self.calls > 1
+
+            stateful_recursive = StatefulTruthiness()
+            stateful_factory = module.compiler.disable(
+                recursive=stateful_recursive,
+            )
+
+            def first():
+                return "first"
+
+            def second():
+                return "second"
+
+            mutable_wrappers = (mutable_factory(first), mutable_factory(second))
+            stateful_wrappers = (
+                stateful_factory(first),
+                stateful_factory(second),
+            )
+            outcomes.append(
+                (
+                    tuple(
+                        wrapper._torchdynamo_disable_recursive
+                        for wrapper in mutable_wrappers
+                    ),
+                    stateful_recursive.calls,
+                    tuple(
+                        wrapper._torchdynamo_disable_recursive
+                        for wrapper in stateful_wrappers
+                    ),
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(outcomes[0], ((False, False), 1, (False, False)))
+
     def test_direct_bound_methods_and_repeated_wrapping_match_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):
@@ -174,6 +315,31 @@ class CompilerDisableReferenceTests(unittest.TestCase):
                     wrapped_bound(3),
                     wrapped_bound.__wrapped__ is bound,
                     wrapped_bound._torchdynamo_orig_callable is bound,
+                    second(3),
+                    second is not first,
+                    second.__wrapped__ is function,
+                    second._torchdynamo_orig_callable is function,
+                    second._torchdynamo_disable_msg,
+                    second._torchdynamo_disable_recursive,
+                )
+            )
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_factory_repeated_wrapping_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+
+            def function(value):
+                return value + 2
+
+            first = module.compiler.disable()(function)
+            second = module.compiler.disable(
+                recursive=False,
+                reason="second",
+            )(first)
+            outcomes.append(
+                (
                     second(3),
                     second is not first,
                     second.__wrapped__ is function,
@@ -295,17 +461,33 @@ class CompilerDisableReferenceTests(unittest.TestCase):
                     self.pickle_shape(expected, protocol),
                 )
 
-        for function in (_actual_picklable_function, _reference_picklable_function):
+        for function in (
+            _actual_picklable_function,
+            _reference_picklable_function,
+            _actual_factory_picklable_function,
+            _reference_factory_picklable_function,
+        ):
             self.assertIs(copy.copy(function), function)
             self.assertIs(copy.deepcopy(function), function)
             self.assertEqual(function(4), 5)
             self.assertIs(function._torchdynamo_disable, True)
-            self.assertIs(function._torchdynamo_disable_recursive, True)
             for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
                 with self.subTest(wrapped=function.__name__, protocol=protocol):
                     self.assertIs(
                         pickle.loads(pickle.dumps(function, protocol)), function
                     )
+
+        for function in (_actual_picklable_function, _reference_picklable_function):
+            self.assertIs(function._torchdynamo_disable_recursive, True)
+        for function in (
+            _actual_factory_picklable_function,
+            _reference_factory_picklable_function,
+        ):
+            self.assertIs(function._torchdynamo_disable_recursive, False)
+            self.assertEqual(
+                function._torchdynamo_disable_msg,
+                "factory pickling test",
+            )
 
     def test_supported_errors_match_pytorch_2_13(self):
         actual = torch.compiler.disable

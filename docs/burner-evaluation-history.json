@@ -5217,6 +5217,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 93.8
       }
+    },
+    {
+      "key": "pr:694",
+      "recordedAt": "2026-08-23T00:45:40.649Z",
+      "label": "PR #694",
+      "kind": "leaf",
+      "prNumber": 694,
+      "title": "Support torch.compiler.disable decorator factories",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 84.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 67.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 93.9
+      }
     }
   ]
 }

@@ -46,21 +46,7 @@ def reset() -> None:
     """
 
 
-def disable(fn=None, recursive=True, *, reason=None):
-    """
-    This function provides a decorator to disable compilation on a function.
-    It also provides the option of recursively disabling called functions.
-
-    Args:
-        fn (optional): The function to disable
-        recursive (optional): A boolean value indicating whether the disabling should be recursive.
-        reason (optional): A string value indicating the reason for disabling the function.
-    """
-    if fn is None:
-        raise NotImplementedError(
-            "torch.compiler.disable() without a function is not supported"
-        )
-
+def _disable_function(fn, recursive, reason):
     supported_function_types = (types.FunctionType, types.MethodType)
     if not isinstance(fn, supported_function_types):
         raise NotImplementedError(
@@ -91,6 +77,27 @@ def disable(fn=None, recursive=True, *, reason=None):
     disabled_function._torchdynamo_wrapper_id = id(disabled_function)
     disabled_function._torchdynamo_disable_recursive = disable_recursive
     return disabled_function
+
+
+def disable(fn=None, recursive=True, *, reason=None):
+    """
+    This function provides a decorator to disable compilation on a function.
+    It also provides the option of recursively disabling called functions.
+
+    Args:
+        fn (optional): The function to disable
+        recursive (optional): A boolean value indicating whether the disabling should be recursive.
+        reason (optional): A string value indicating the reason for disabling the function.
+    """
+    if fn is None:
+        disable_recursive = bool(recursive)
+
+        def decorator(fn):
+            return _disable_function(fn, disable_recursive, reason)
+
+        return decorator
+
+    return _disable_function(fn, recursive, reason)
 
 
 def set_default_backend(backend: str | Callable[..., Any] | None) -> None:
