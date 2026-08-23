@@ -30,6 +30,18 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             base.transpose(0, 3)[1],
         )
 
+    def double_full_slice_layout_cases(self, module):
+        values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
+        base = module.tensor(values.tolist(), dtype=module.float32)
+        return (
+            module.tensor(
+                [[-0.0, 1.0], [2.0, 3.0]], dtype=module.float32
+            ),
+            module.zeros((2, 0, 3), dtype=module.float32),
+            base[1],
+            base.transpose(0, 3)[1],
+        )
+
     def alias_contract(self, source, index):
         alias = source[index]
         values = np.asarray(alias.detach(), dtype=np.float32).reshape(-1)
@@ -71,6 +83,19 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             (slice(None),)
         )
 
+    def test_double_full_slice_tuple_layout_aliases_match_pytorch_2_13(self):
+        index = (slice(None), slice(None))
+        actual_cases = self.double_full_slice_layout_cases(torch)
+        expected_cases = self.double_full_slice_layout_cases(reference_torch)
+        for case, (actual, expected) in enumerate(
+            zip(actual_cases, expected_cases, strict=True)
+        ):
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.alias_contract(actual, index),
+                    self.alias_contract(expected, index),
+                )
+
     def scalar_error_contract(self, module, index):
         try:
             module.tensor(-0.0, dtype=module.float32)[index]
@@ -91,6 +116,22 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             self.scalar_error_contract(reference_torch, index),
         )
 
+    def lower_rank_error_contract(self, module, shape, index):
+        try:
+            module.zeros(shape, dtype=module.float32)[index]
+        except Exception as error:
+            return type(error).__name__, str(error)
+        self.fail("lower-rank double full slice unexpectedly succeeded")
+
+    def test_double_full_slice_lower_rank_errors_match_pytorch_2_13(self):
+        index = (slice(None), slice(None))
+        for shape in ((), (2,)):
+            with self.subTest(shape=shape):
+                self.assertEqual(
+                    self.lower_rank_error_contract(torch, shape, index),
+                    self.lower_rank_error_contract(reference_torch, shape, index),
+                )
+
     def tuple_subclass_contract(self, module):
         source = module.tensor(
             [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], dtype=module.float32
@@ -107,6 +148,12 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                 return iter((slice(None),))
 
         alias = source[FullSliceRemapTuple((0,))]
+
+        class DoubleFullSliceRemapTuple(tuple):
+            def __iter__(self):
+                return iter((slice(None), slice(None)))
+
+        double_alias = source[DoubleFullSliceRemapTuple((0,))]
 
         class EmptyRemapTuple(tuple):
             def __iter__(self):
@@ -137,6 +184,14 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             "alias_offset": alias.storage_offset(),
             "alias_same_logical_view": alias.is_set_to(source),
             "alias_same_data_pointer": alias.data_ptr() == source.data_ptr(),
+            "double_alias_values": double_alias.tolist(),
+            "double_alias_shape": tuple(double_alias.shape),
+            "double_alias_stride": double_alias.stride(),
+            "double_alias_offset": double_alias.storage_offset(),
+            "double_alias_same_logical_view": double_alias.is_set_to(source),
+            "double_alias_same_data_pointer": (
+                double_alias.data_ptr() == source.data_ptr()
+            ),
             "empty_alias_values": empty_alias.tolist(),
             "empty_alias_shape": tuple(empty_alias.shape),
             "empty_alias_stride": empty_alias.stride(),
@@ -178,8 +233,9 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         (alias * weights).sum().backward()
         return metadata, np.asarray(leaf.grad).copy()
 
-    def node_diagnostic(self, module, index):
-        leaf = module.tensor([2.0], dtype=module.float32, requires_grad=True)
+    def node_diagnostic(self, module, index, rank=1):
+        values = [2.0] if rank == 1 else [[2.0]]
+        leaf = module.tensor(values, dtype=module.float32, requires_grad=True)
         try:
             module.nn.functional.dropout(None, p=leaf[index], training=False)
         except ValueError as error:
@@ -207,7 +263,7 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         )
 
     def assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(
-        self, index
+        self, index, diagnostic_rank=1
     ):
         actual_metadata, actual_gradient = self.autograd_contract(torch, index)
         expected_metadata, expected_gradient = self.autograd_contract(
@@ -216,8 +272,8 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         self.assertEqual(actual_metadata, expected_metadata)
         np.testing.assert_array_equal(actual_gradient, expected_gradient)
         self.assertEqual(
-            self.node_diagnostic(torch, index),
-            self.node_diagnostic(reference_torch, index),
+            self.node_diagnostic(torch, index, diagnostic_rank),
+            self.node_diagnostic(reference_torch, index, diagnostic_rank),
         )
         self.assertEqual(
             self.no_grad_contract(torch, index),
@@ -232,6 +288,11 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
     def test_singleton_tuple_autograd_matches_pytorch_2_13(self):
         self.assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(
             (slice(None),)
+        )
+
+    def test_double_full_slice_tuple_autograd_matches_pytorch_2_13(self):
+        self.assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(
+            (slice(None), slice(None)), diagnostic_rank=2
         )
 
     def test_empty_tuple_autograd_matches_pytorch_2_13(self):
@@ -276,6 +337,11 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
 
     def test_singleton_tuple_source_lifetime_matches_pytorch_2_13(self):
         self.assert_source_lifetime_matches_pytorch_2_13((slice(None),))
+
+    def test_double_full_slice_tuple_source_lifetime_matches_pytorch_2_13(self):
+        self.assert_source_lifetime_matches_pytorch_2_13(
+            (slice(None), slice(None))
+        )
 
     def mode_dispatch_contract(self, module, index):
         source = module.tensor(
@@ -377,6 +443,11 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
     def test_singleton_tuple_mode_dispatch_matches_pytorch_2_13(self):
         self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
             (slice(None),)
+        )
+
+    def test_double_full_slice_tuple_mode_dispatch_matches_pytorch_2_13(self):
+        self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
+            (slice(None), slice(None))
         )
 
 
