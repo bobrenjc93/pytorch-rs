@@ -647,7 +647,7 @@ class Atleast3dTests(unittest.TestCase):
                     torch.atleast_3d(sequence)
         self.assertEqual(Override.calls, [])
 
-    def test_variadic_overrides_and_modes_are_explicitly_unsupported(self):
+    def test_variadic_operand_overrides_remain_explicitly_unsupported(self):
         source = torch.tensor([1.0, 2.0])
 
         class Override:
@@ -675,11 +675,143 @@ class Atleast3dTests(unittest.TestCase):
                 return object()
 
         mode = RecordingMode()
-        with mode, self.assertRaisesRegex(
-            TypeError, f"^{re.escape(UNSUPPORTED)}$"
-        ):
-            torch.atleast_3d(source, source)
+        for args in ((source, value), (value, source), (source, None)):
+            with self.subTest(mode_args=args), mode, self.assertRaisesRegex(
+                TypeError, f"^{re.escape(UNSUPPORTED)}$"
+            ):
+                torch.atleast_3d(*args)
         self.assertEqual(mode.calls, [])
+
+    def test_variadic_exact_tensors_dispatch_through_nested_modes(self):
+        scalar = torch.tensor(1.0)
+        vector = torch.tensor([2.0, 3.0])
+        sources = (scalar, vector)
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        accepting = RecordingMode(marker)
+        with accepting:
+            result = torch.atleast_3d(*sources)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [accepting],
+            )
+        self.assertIs(result, marker)
+        self.assertEqual(
+            accepting.calls,
+            [(torch.atleast_3d, (torch.Tensor,), sources, {})],
+        )
+
+        calls = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append(
+                    (
+                        self.label,
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        tuple(
+                            torch.overrides._get_current_function_mode_stack()
+                        ),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                results = torch.atleast_3d(*sources)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(),
+                    [lower, upper],
+                )
+
+        self.assertEqual([call[0] for call in calls], ["upper", "lower"])
+        self.assertTrue(all(call[1] is torch.atleast_3d for call in calls))
+        self.assertTrue(all(call[2] == (torch.Tensor,) for call in calls))
+        self.assertTrue(all(call[3] == sources for call in calls))
+        self.assertTrue(all(call[4] == {} for call in calls))
+        self.assertEqual(calls[0][5], (lower,))
+        self.assertEqual(calls[1][5], ())
+        self.assertEqual(
+            torch.overrides._get_current_function_mode_stack(), []
+        )
+        self.assertEqual(
+            tuple(result.shape for result in results),
+            ((1, 1, 1), (1, 2, 1)),
+        )
+        self.assertTrue(
+            all(
+                result.data_ptr() == source.data_ptr()
+                for result, source in zip(results, sources, strict=True)
+            )
+        )
+
+    def test_variadic_declining_and_raising_modes_restore_the_stack(self):
+        sources = (torch.tensor(1.0), torch.tensor([2.0, 3.0]))
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return NotImplemented
+
+        declining = DecliningMode()
+        with declining:
+            with self.assertRaisesRegex(
+                TypeError,
+                "^no implementation found for "
+                "'torch_rs\\.functional\\.atleast_3d' on types that implement "
+                "__torch_function__: \\[\\] nor in mode ",
+            ):
+                torch.atleast_3d(*sources)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [declining],
+            )
+        self.assertEqual(
+            declining.calls,
+            [
+                (torch.atleast_3d, (torch.Tensor,), sources, {}),
+                (torch.atleast_3d, (), sources, {}),
+            ],
+        )
+
+        expected_error = ValueError("mode failed")
+
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                raise expected_error
+
+        raising = RaisingMode()
+        with raising:
+            with self.assertRaises(ValueError) as raised:
+                torch.atleast_3d(*sources)
+            self.assertIs(raised.exception, expected_error)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(),
+                [raising],
+            )
+        self.assertEqual(
+            torch.overrides._get_current_function_mode_stack(), []
+        )
 
     def test_outer_sequence_overrides_and_modes_precede_the_fast_path(self):
         source = torch.tensor([1.0, 2.0])

@@ -191,6 +191,10 @@ def _atleast_3d_impl(input):
     )
 
 
+def _atleast_3d_variadic_impl(tensors):
+    return tuple(_VF_atleast_3d(tensor) for tensor in tensors)
+
+
 def atleast_3d(*tensors):
     r"""
     Returns a 3-dimensional view of each input tensor with zero dimensions.
@@ -232,10 +236,13 @@ def atleast_3d(*tensors):
         ()
     """
     if len(tensors) > 1:
-        return _atleast_variadic(
+        if any(type(tensor) is not Tensor for tensor in tensors):
+            raise TypeError(_ATLEAST_3D_VARIADIC_UNSUPPORTED)
+        return _dispatch_exact_native_variadic_torch_function(
+            atleast_3d,
+            _atleast_3d_variadic_impl,
             tensors,
-            _VF_atleast_3d,
-            _ATLEAST_3D_VARIADIC_UNSUPPORTED,
+            {},
         )
     if not tensors:
         if _get_current_function_mode() is not None:
