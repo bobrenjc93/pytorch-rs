@@ -5233,6 +5233,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 93.9
       }
+    },
+    {
+      "key": "pr:696",
+      "recordedAt": "2026-08-23T01:36:35.060Z",
+      "label": "PR #696",
+      "kind": "leaf",
+      "prNumber": 696,
+      "title": "Expose top-level torch.square",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 85,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 67.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 94
+      }
     }
   ]
 }
