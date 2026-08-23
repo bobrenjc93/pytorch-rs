@@ -632,6 +632,150 @@ class Atleast1dReferenceTests(unittest.TestCase):
         ):
             np.testing.assert_array_equal(actual_grad, expected_grad)
 
+    def variadic_nested_override_fallback_contract(self, module):
+        function = module.atleast_1d
+        sources = (
+            module.tensor(1.0, dtype=module.float32),
+            module.tensor([2.0, 3.0], dtype=module.float32),
+        )
+        marker = object()
+        nested_marker = object()
+        nested_outcomes = []
+        test_case = self
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return nested_marker
+
+        value = Override()
+
+        class FallbackMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                if types:
+                    return NotImplemented
+                probe = module.overrides.has_torch_function_unary(value)
+                try:
+                    module.neg(value)
+                except Exception as error:
+                    nested_outcomes.append(
+                        (
+                            probe,
+                            "error",
+                            type(error).__name__,
+                            test_case.normalize_error(error),
+                        )
+                    )
+                else:
+                    nested_outcomes.append((probe, "result", None, None))
+                return marker
+
+        mode = FallbackMode()
+        with mode:
+            result = function(*sources)
+            stack_restored = (
+                module.overrides._get_current_function_mode_stack() == [mode]
+            )
+
+        def normalize_call(call):
+            func, dispatch_types, args, kwargs = call
+            return (
+                func is function,
+                tuple(item.__name__ for item in dispatch_types),
+                tuple(
+                    argument is source
+                    for argument, source in zip(args, sources, strict=True)
+                ),
+                kwargs,
+            )
+
+        nested_override_count = len(Override.calls)
+        restored_result = module.neg(value)
+        return (
+            result is marker,
+            tuple(map(normalize_call, mode.calls)),
+            tuple(nested_outcomes),
+            nested_override_count,
+            restored_result is nested_marker,
+            len(Override.calls),
+            stack_restored,
+            len(module.overrides._get_current_function_mode_stack()),
+        )
+
+    def test_variadic_mode_fallback_disables_nested_overrides_like_pytorch_2_13(
+        self,
+    ):
+        self.assertEqual(
+            self.variadic_nested_override_fallback_contract(torch),
+            self.variadic_nested_override_fallback_contract(reference_torch),
+        )
+
+    def variadic_reentrant_fallback_contract(self, module):
+        function = module.atleast_1d
+        sources = (
+            module.tensor(1.0, dtype=module.float32),
+            module.tensor([2.0, 3.0], dtype=module.float32),
+        )
+        marker = object()
+        calls = []
+
+        def record(label, func, dispatch_types, args, kwargs):
+            calls.append(
+                (
+                    label,
+                    func is function,
+                    tuple(item.__name__ for item in dispatch_types),
+                    tuple(
+                        argument is source
+                        for argument, source in zip(args, sources, strict=True)
+                    ),
+                    kwargs,
+                    len(module.overrides._get_current_function_mode_stack()),
+                )
+            )
+
+        class LowerMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                record("lower", func, types, args, kwargs)
+                return marker
+
+        class UpperMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                record("upper", func, types, args, kwargs)
+                if types:
+                    return NotImplemented
+                return func(*args, **(kwargs or {}))
+
+        lower = LowerMode()
+        upper = UpperMode()
+        with lower:
+            with upper:
+                result = function(*sources)
+                stack_restored = (
+                    module.overrides._get_current_function_mode_stack()
+                    == [lower, upper]
+                )
+
+        return (
+            result is marker,
+            tuple(calls),
+            stack_restored,
+            len(module.overrides._get_current_function_mode_stack()),
+        )
+
+    def test_variadic_reentrant_fallback_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.variadic_reentrant_fallback_contract(torch),
+            self.variadic_reentrant_fallback_contract(reference_torch),
+        )
+
     def override_contract(self, module):
         function = module.atleast_1d
         marker = object()

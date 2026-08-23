@@ -430,6 +430,140 @@ class Atleast1dTests(unittest.TestCase):
             torch.overrides._get_current_function_mode_stack(), []
         )
 
+    def test_variadic_mode_fallback_disables_nested_override_dispatch(self):
+        sources = (torch.tensor(1.0), torch.tensor([2.0, 3.0]))
+        marker = object()
+        nested_marker = object()
+        nested_outcomes = []
+
+        class Override:
+            calls = []
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.calls.append((func, types, args, kwargs))
+                return nested_marker
+
+        value = Override()
+
+        class FallbackMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                if types:
+                    return NotImplemented
+                probe = torch.overrides.has_torch_function_unary(value)
+                try:
+                    torch.neg(value)
+                except Exception as error:
+                    nested_outcomes.append(
+                        (probe, type(error).__name__, str(error))
+                    )
+                else:
+                    nested_outcomes.append((probe, "result", None))
+                return marker
+
+        mode = FallbackMode()
+        with mode:
+            result = torch.atleast_1d(*sources)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [mode]
+            )
+
+        self.assertIs(result, marker)
+        self.assertEqual(
+            mode.calls,
+            [
+                (torch.atleast_1d, (torch.Tensor,), sources, {}),
+                (torch.atleast_1d, (), sources, {}),
+            ],
+        )
+        self.assertEqual(
+            nested_outcomes,
+            [
+                (
+                    False,
+                    "TypeError",
+                    "neg(): argument 'input' (position 1) must be Tensor, not Override",
+                )
+            ],
+        )
+        self.assertEqual(Override.calls, [])
+
+        self.assertIs(torch.neg(value), nested_marker)
+        self.assertEqual(len(Override.calls), 1)
+
+    def test_variadic_disabled_retry_reaches_lower_mode_without_tensor_type(self):
+        sources = (torch.tensor(1.0), torch.tensor([2.0, 3.0]))
+        marker = object()
+        calls = []
+
+        class LowerMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append(
+                    (
+                        "lower",
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        tuple(
+                            torch.overrides._get_current_function_mode_stack()
+                        ),
+                    )
+                )
+                return marker
+
+        class UpperMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append(
+                    (
+                        "upper",
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        tuple(
+                            torch.overrides._get_current_function_mode_stack()
+                        ),
+                    )
+                )
+                if types:
+                    return NotImplemented
+                return func(*args, **(kwargs or {}))
+
+        lower = LowerMode()
+        upper = UpperMode()
+        with lower:
+            with upper:
+                result = torch.atleast_1d(*sources)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(),
+                    [lower, upper],
+                )
+
+        self.assertIs(result, marker)
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "upper",
+                    torch.atleast_1d,
+                    (torch.Tensor,),
+                    sources,
+                    {},
+                    (lower,),
+                ),
+                ("upper", torch.atleast_1d, (), sources, {}, (lower,)),
+                ("lower", torch.atleast_1d, (), sources, {}, ()),
+            ],
+        )
+        self.assertEqual(
+            torch.overrides._get_current_function_mode_stack(), []
+        )
+
     def test_outer_sequence_overrides_and_modes_precede_the_fast_path(self):
         source = torch.tensor(2.0)
         marker = object()

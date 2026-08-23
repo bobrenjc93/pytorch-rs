@@ -7,8 +7,11 @@ from .torch_rs import (
     Tensor,
     _get_function_stack_at,
     _has_torch_function_unary as has_torch_function_unary,
+    _is_torch_function_subclass_disabled,
     _len_torch_function_stack,
+    _pop_torch_function_subclass_disabled,
     _pop_torch_function_stack,
+    _push_torch_function_subclass_disabled,
     _push_on_torch_function_stack,
 )
 
@@ -75,6 +78,8 @@ def _is_disabled_torch_function_impl(handler):
 
 
 def _overloaded_unary_arguments(input, include_tensor):
+    if _is_torch_function_subclass_disabled():
+        return []
     input_type = type(input)
     if input_type is Tensor:
         # A mode-triggered handle_torch_function call includes the ordinary
@@ -170,6 +175,8 @@ def _dispatch_exact_native_variadic_torch_function(
     if mode is None:
         return implementation(inputs)
 
+    if _is_torch_function_subclass_disabled():
+        include_tensor = False
     dispatch_types = (Tensor,) if include_tensor else ()
     popped_mode = _pop_mode()
     mode_kwargs = keyword_arguments.copy()
@@ -187,17 +194,21 @@ def _dispatch_exact_native_variadic_torch_function(
 
     if include_tensor:
         # PyTorch retries through Tensor.__torch_function__. That fallback
-        # re-enters the public wrapper with the same mode active, but without
-        # including the exact Tensor type in the next dispatch.
-        if mode_kwargs:
-            return public_function(*inputs, **mode_kwargs)
-        return _dispatch_exact_native_variadic_torch_function(
-            public_function,
-            implementation,
-            inputs,
-            keyword_arguments,
-            include_tensor=False,
-        )
+        # re-enters the public wrapper with the same mode active while
+        # suppressing all subclass dispatch until the retry completes.
+        _push_torch_function_subclass_disabled()
+        try:
+            if mode_kwargs:
+                return public_function(*inputs, **mode_kwargs)
+            return _dispatch_exact_native_variadic_torch_function(
+                public_function,
+                implementation,
+                inputs,
+                keyword_arguments,
+                include_tensor=False,
+            )
+        finally:
+            _pop_torch_function_subclass_disabled()
 
     func_name = f"{public_function.__module__}.{public_function.__name__}"
     message = (
