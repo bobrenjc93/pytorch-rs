@@ -448,6 +448,10 @@ class TensorViewTests(unittest.TestCase):
                 "cannot reshape tensor of 0 elements into shape [1, 0, -1] because "
                 "the unspecified dimension size -1 can be any value and is ambiguous",
             ),
+            (
+                lambda: torch.zeros((1,)).view(1, 2**31, sys.maxsize),
+                f"shape '[1, {2**31}, {sys.maxsize}]' is invalid for input of size 1",
+            ),
         )
         for call, message in variadic_cases:
             with self.subTest(variadic_error=message):

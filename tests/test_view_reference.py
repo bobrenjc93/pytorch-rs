@@ -555,6 +555,14 @@ class TensorViewReferenceTests(unittest.TestCase):
                 ).view(1, 0, -1),
             ),
             (
+                lambda: torch.zeros((1,), dtype=torch.float32).view(
+                    1, 2**31, sys.maxsize
+                ),
+                lambda: reference_torch.zeros(
+                    (1,), dtype=reference_torch.float32
+                ).view(1, 2**31, sys.maxsize),
+            ),
+            (
                 lambda: torch.zeros((0,), dtype=torch.float32).view((0, -1)),
                 lambda: reference_torch.zeros(
                     (0,), dtype=reference_torch.float32

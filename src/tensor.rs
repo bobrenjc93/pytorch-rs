@@ -2072,6 +2072,24 @@ impl Tensor {
             }
         }
 
+        // PyTorch performs the requested-numel compatibility check in signed
+        // 64-bit arithmetic before calculating concrete metadata. Preserve
+        // that ordering so an overflowing, non-matching shape is reported as
+        // an invalid reshape rather than as an internal element-count overflow.
+        let specified_elements = requested
+            .iter()
+            .copied()
+            .filter(|dimension| *dimension != -1)
+            .fold(1_i64, i64::wrapping_mul);
+        let elements =
+            i64::try_from(self.elements).map_err(|_| TensorError::ElementCountOverflow)?;
+        if inferred_index.is_none() && specified_elements != elements {
+            return Err(TensorError::ReshapeElementCountMismatch {
+                shape: try_clone_reshape_shape(requested, self.elements)?,
+                elements: self.elements,
+            });
+        }
+
         let mut resolved = try_result_vector(requested.len(), self.elements)?;
         for dimension in requested.iter().copied() {
             let dimension = if dimension == -1 {
@@ -2083,13 +2101,6 @@ impl Tensor {
         }
 
         if let Some(index) = inferred_index {
-            let specified_elements = requested
-                .iter()
-                .copied()
-                .filter(|dimension| *dimension != -1)
-                .fold(1_i64, i64::wrapping_mul);
-            let elements =
-                i64::try_from(self.elements).map_err(|_| TensorError::ElementCountOverflow)?;
             if !((specified_elements > 0 && elements % specified_elements == 0)
                 || elements == specified_elements)
             {

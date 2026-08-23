@@ -3095,4 +3095,13 @@ fn reshape_reports_pytorch_compatible_invalid_shape_errors() {
         tensor.reshape([large, 4, -1, -1]).unwrap_err(),
         TensorError::ReshapeMultipleInferredDimensions
     );
+
+    let overflowing_shape = [1, 1_i64 << 31, i64::MAX];
+    let expected = TensorError::ReshapeElementCountMismatch {
+        shape: overflowing_shape.to_vec(),
+        elements: 1,
+    };
+    let one = Tensor::zeros([1]).unwrap();
+    assert_eq!(one.reshape(overflowing_shape), Err(expected.clone()));
+    assert_eq!(one.view(overflowing_shape), Err(expected));
 }
