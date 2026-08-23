@@ -375,41 +375,47 @@ class TensorViewReferenceTests(unittest.TestCase):
                 self.fail(f"{module.__name__} accepted a nonintegral dimension")
         self.assertEqual(invalid_outcomes[0], invalid_outcomes[1])
 
-    def test_dual_sequence_index_overload_resolution_matches_pytorch_2_13(self):
+    def test_multi_sequence_index_overload_resolution_matches_pytorch_2_13(self):
         for dimension_type in (TupleIndexDimension, ListIndexDimension):
-            outcomes = []
-            for module in (torch, reference_torch):
-                source = module.zeros((6,), dtype=module.float32)
-                sequence = dimension_type((6,), 2)
-                result = source.view(sequence, 3)
-                outcomes.append(
-                    (
-                        tuple(result.shape),
-                        result.stride(),
-                        result.storage_offset(),
-                        result.data_ptr() == source.data_ptr(),
-                        sequence.calls,
+            for size, trailing in ((6, (3,)), (24, (3, 4))):
+                outcomes = []
+                for module in (torch, reference_torch):
+                    source = module.zeros((size,), dtype=module.float32)
+                    sequence = dimension_type((size,), 2)
+                    result = source.view(sequence, *trailing)
+                    outcomes.append(
+                        (
+                            tuple(result.shape),
+                            result.stride(),
+                            result.storage_offset(),
+                            result.data_ptr() == source.data_ptr(),
+                            sequence.calls,
+                        )
                     )
-                )
-            with self.subTest(dimension_type=dimension_type.__name__):
-                self.assertEqual(outcomes[0], outcomes[1])
+                with self.subTest(
+                    dimension_type=dimension_type.__name__, arity=len(trailing) + 1
+                ):
+                    self.assertEqual(outcomes[0], outcomes[1])
 
-            fallback_outcomes = []
-            for module in (torch, reference_torch):
-                source = module.zeros((6,), dtype=module.float32)
-                sequence = dimension_type((2.0, 3), 2)
-                result = source.view(sequence, 3)
-                fallback_outcomes.append(
-                    (
-                        tuple(result.shape),
-                        result.stride(),
-                        result.storage_offset(),
-                        result.data_ptr() == source.data_ptr(),
-                        sequence.calls,
+                fallback_outcomes = []
+                for module in (torch, reference_torch):
+                    source = module.zeros((size,), dtype=module.float32)
+                    sequence = dimension_type((2.0, 3), 2)
+                    result = source.view(sequence, *trailing)
+                    fallback_outcomes.append(
+                        (
+                            tuple(result.shape),
+                            result.stride(),
+                            result.storage_offset(),
+                            result.data_ptr() == source.data_ptr(),
+                            sequence.calls,
+                        )
                     )
-                )
-            with self.subTest(fallback_type=dimension_type.__name__):
-                self.assertEqual(fallback_outcomes[0], fallback_outcomes[1])
+                with self.subTest(
+                    fallback_type=dimension_type.__name__,
+                    arity=len(trailing) + 1,
+                ):
+                    self.assertEqual(fallback_outcomes[0], fallback_outcomes[1])
 
     def test_inference_extreme_empty_and_view_errors_match_pytorch_2_13(self):
         actual_source = torch.tensor(
@@ -745,6 +751,8 @@ class TensorViewReferenceTests(unittest.TestCase):
         records = []
         tuple_index = TupleIndexDimension((6,), 2)
         list_index = ListIndexDimension((6,), 2)
+        multi_tuple_index = TupleIndexDimension((6,), 2)
+        multi_list_index = ListIndexDimension((6,), 2)
         calls = (
             lambda: tensor.view((2, 3)),
             lambda: tensor.view([2, 3]),
@@ -754,6 +762,8 @@ class TensorViewReferenceTests(unittest.TestCase):
             lambda: tensor.view(1, 2, -1),
             lambda: tensor.view(tuple_index, 3),
             lambda: tensor.view(list_index, 3),
+            lambda: tensor.view(multi_tuple_index, 2, 3),
+            lambda: tensor.view(multi_list_index, 2, 3),
             lambda: tensor.view(size=(2, 3)),
         )
         for call in calls:
@@ -824,7 +834,12 @@ class TensorViewReferenceTests(unittest.TestCase):
 
         return {
             "records": tuple(records),
-            "dual_sequence_index_calls": (tuple_index.calls, list_index.calls),
+            "sequence_index_calls": (
+                tuple_index.calls,
+                list_index.calls,
+                multi_tuple_index.calls,
+                multi_list_index.calls,
+            ),
             "deferred": (
                 deferred_result is marker,
                 tuple(map(normalize_call, deferred.calls)),

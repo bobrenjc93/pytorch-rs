@@ -503,23 +503,29 @@ class TensorViewTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "pos 3.*Overflow when unpacking long long"):
             tensor.view(1, 1, 2**63)
 
-    def test_two_positional_dimensions_prefer_dual_sequence_contents(self):
-        tensor = torch.zeros((6,))
+    def test_multi_positional_dimensions_prefer_sequence_contents(self):
         for dimension_type in (TupleIndexDimension, ListIndexDimension):
-            with self.subTest(dimension_type=dimension_type.__name__):
-                sequence = dimension_type((6,), 2)
-                result = tensor.view(sequence, 3)
-                self.assertEqual(result.shape, (6,))
-                self.assertEqual(result.stride(), (1,))
-                self.assertEqual(result.data_ptr(), tensor.data_ptr())
-                self.assertEqual(sequence.calls, 1)
+            for size, trailing, expected_stride in (
+                (6, (3,), (3, 1)),
+                (24, (3, 4), (12, 4, 1)),
+            ):
+                with self.subTest(
+                    dimension_type=dimension_type.__name__, arity=len(trailing) + 1
+                ):
+                    tensor = torch.zeros((size,))
+                    sequence = dimension_type((size,), 2)
+                    result = tensor.view(sequence, *trailing)
+                    self.assertEqual(result.shape, (size,))
+                    self.assertEqual(result.stride(), (1,))
+                    self.assertEqual(result.data_ptr(), tensor.data_ptr())
+                    self.assertEqual(sequence.calls, 1)
 
-                fallback = dimension_type((2.0, 3), 2)
-                result = tensor.view(fallback, 3)
-                self.assertEqual(result.shape, (2, 3))
-                self.assertEqual(result.stride(), (3, 1))
-                self.assertEqual(result.data_ptr(), tensor.data_ptr())
-                self.assertEqual(fallback.calls, 3)
+                    fallback = dimension_type((2.0, 3), 2)
+                    result = tensor.view(fallback, *trailing)
+                    self.assertEqual(result.shape, (2, *trailing))
+                    self.assertEqual(result.stride(), expected_stride)
+                    self.assertEqual(result.data_ptr(), tensor.data_ptr())
+                    self.assertEqual(fallback.calls, 3)
 
     def test_operator_index_poisoning_cannot_change_shape_parsing(self):
         tensor = torch.zeros((6,))
@@ -661,6 +667,8 @@ class TensorViewTests(unittest.TestCase):
         size = torch.Size((2, 3))
         tuple_index = TupleIndexDimension((6,), 2)
         list_index = ListIndexDimension((6,), 2)
+        multi_tuple_index = TupleIndexDimension((6,), 2)
+        multi_list_index = ListIndexDimension((6,), 2)
         cases = (
             ("tuple", lambda: tensor.view((2, 3)), (tensor, (2, 3)), None),
             ("list", lambda: tensor.view([2, 3]), (tensor, [2, 3]), None),
@@ -686,6 +694,18 @@ class TensorViewTests(unittest.TestCase):
                 None,
             ),
             (
+                "tuple/index/multi",
+                lambda: tensor.view(multi_tuple_index, 2, 3),
+                (tensor, multi_tuple_index, 2, 3),
+                None,
+            ),
+            (
+                "list/index/multi",
+                lambda: tensor.view(multi_list_index, 2, 3),
+                (tensor, multi_list_index, 2, 3),
+                None,
+            ),
+            (
                 "keyword",
                 lambda: tensor.view(size=(2, 3)),
                 (tensor,),
@@ -703,7 +723,15 @@ class TensorViewTests(unittest.TestCase):
             self.assertEqual(dispatch_types, ())
             self.assertEqual(args, expected_args)
             self.assertEqual(kwargs, expected_kwargs)
-        self.assertEqual((tuple_index.calls, list_index.calls), (1, 1))
+        self.assertEqual(
+            (
+                tuple_index.calls,
+                list_index.calls,
+                multi_tuple_index.calls,
+                multi_list_index.calls,
+            ),
+            (1, 1, 1, 1),
+        )
 
         deferred = RecordingMode(marker)
         with deferred:

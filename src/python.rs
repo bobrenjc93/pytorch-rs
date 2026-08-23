@@ -9256,22 +9256,22 @@ fn bind_view_shape_argument<'py>(
         if !is_view_shape_dimension(&first) {
             return Err(unsupported_view_call_error(positional, keywords)?);
         }
-        if positional.len() == 2 {
-            let sequence_shape = if let Ok(shape) = first.cast::<PyTuple>() {
-                Some(ViewShapeArgument::Tuple(shape.clone()))
-            } else if let Ok(shape) = first.cast::<PyList>() {
-                Some(ViewShapeArgument::List(shape.clone()))
-            } else {
-                None
-            };
-            if let Some(shape) = sequence_shape
-                && validate_view_shape_first(&shape).is_ok()
-            {
-                if keyword_error.is_some() {
-                    return Err(unsupported_view_call_error(positional, keywords)?);
-                }
-                return Ok(shape);
+        // PyTorch tries the sequence overload before the variadic overload at
+        // every multi-argument arity, ignoring later arguments when it wins.
+        let sequence_shape = if let Ok(shape) = first.cast::<PyTuple>() {
+            Some(ViewShapeArgument::Tuple(shape.clone()))
+        } else if let Ok(shape) = first.cast::<PyList>() {
+            Some(ViewShapeArgument::List(shape.clone()))
+        } else {
+            None
+        };
+        if let Some(shape) = sequence_shape
+            && validate_view_shape_first(&shape).is_ok()
+        {
+            if keyword_error.is_some() {
+                return Err(unsupported_view_call_error(positional, keywords)?);
             }
+            return Ok(shape);
         }
         // The two public overloads each probe the first variadic dimension
         // before mode dispatch. The remaining conversions happen afterward.
