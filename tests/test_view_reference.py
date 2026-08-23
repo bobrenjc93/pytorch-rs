@@ -62,6 +62,10 @@ class TensorViewReferenceTests(unittest.TestCase):
         values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
         base = module.tensor(values.tolist(), dtype=module.float32)
         noncontiguous = base.transpose(0, 1)
+        noncontiguous_matrix = module.tensor(
+            np.arange(6, dtype=np.float32).reshape(2, 3).tolist(),
+            dtype=module.float32,
+        ).transpose(0, 1)
         return (
             ("scalar", module.tensor(-0.0, dtype=module.float32), ()),
             (
@@ -75,7 +79,13 @@ class TensorViewReferenceTests(unittest.TestCase):
                 (0, 1),
             ),
             ("contiguous", base, (6, 4)),
+            ("contiguous-inferred", base, (3, -1)),
             ("contiguous-offset", base[1], (2, 6)),
+            (
+                "noncontiguous-two-dimensional",
+                noncontiguous_matrix,
+                (3, 2),
+            ),
             ("noncontiguous-same-shape", noncontiguous, (3, 2, 4)),
             (
                 "noncontiguous-compatible-split",
@@ -85,7 +95,7 @@ class TensorViewReferenceTests(unittest.TestCase):
         )
 
     def shape_argument(self, module, form, shape):
-        if form == "tuple" or form == "keyword":
+        if form in ("tuple", "keyword", "two-positional"):
             return tuple(shape)
         if form == "list":
             return list(shape)
@@ -93,13 +103,16 @@ class TensorViewReferenceTests(unittest.TestCase):
             return module.Size(shape)
         raise AssertionError(form)
 
+    def call_view(self, source, form, argument):
+        if form == "keyword":
+            return source.view(size=argument)
+        if form == "two-positional":
+            return source.view(*argument)
+        return source.view(argument)
+
     def view_observation(self, module, source, shape, form):
         argument = self.shape_argument(module, form, shape)
-        result = (
-            source.view(size=argument)
-            if form == "keyword"
-            else source.view(argument)
-        )
+        result = self.call_view(source, form, argument)
         direct = source.reshape(tuple(result.shape))
         return (
             tuple(result.shape),
@@ -124,7 +137,10 @@ class TensorViewReferenceTests(unittest.TestCase):
             case, actual_source, shape = actual_case
             expected_name, expected_source, expected_shape = expected_case
             self.assertEqual((case, shape), (expected_name, expected_shape))
-            for form in ("tuple", "list", "Size", "keyword"):
+            forms = ("tuple", "list", "Size", "keyword")
+            if len(shape) == 2:
+                forms += ("two-positional",)
+            for form in forms:
                 with self.subTest(case=case, form=form):
                     actual = self.view_observation(torch, actual_source, shape, form)
                     expected = self.view_observation(
@@ -268,10 +284,20 @@ class TensorViewReferenceTests(unittest.TestCase):
                 lambda: expected_noncontiguous.view((6, 4)),
             ),
             (
+                lambda: actual_noncontiguous.view(6, 4),
+                lambda: expected_noncontiguous.view(6, 4),
+            ),
+            (
                 lambda: torch.zeros((6,), dtype=torch.float32).view((2, 2)),
                 lambda: reference_torch.zeros(
                     (6,), dtype=reference_torch.float32
                 ).view((2, 2)),
+            ),
+            (
+                lambda: torch.zeros((6,), dtype=torch.float32).view(2, 2),
+                lambda: reference_torch.zeros(
+                    (6,), dtype=reference_torch.float32
+                ).view(2, 2),
             ),
             (
                 lambda: torch.zeros((6,), dtype=torch.float32).view((-1, -1)),
@@ -280,16 +306,34 @@ class TensorViewReferenceTests(unittest.TestCase):
                 ).view((-1, -1)),
             ),
             (
+                lambda: torch.zeros((6,), dtype=torch.float32).view(-1, -1),
+                lambda: reference_torch.zeros(
+                    (6,), dtype=reference_torch.float32
+                ).view(-1, -1),
+            ),
+            (
                 lambda: torch.zeros((6,), dtype=torch.float32).view((2, -2)),
                 lambda: reference_torch.zeros(
                     (6,), dtype=reference_torch.float32
                 ).view((2, -2)),
             ),
             (
+                lambda: torch.zeros((6,), dtype=torch.float32).view(2, -2),
+                lambda: reference_torch.zeros(
+                    (6,), dtype=reference_torch.float32
+                ).view(2, -2),
+            ),
+            (
                 lambda: torch.zeros((0,), dtype=torch.float32).view((0, -1)),
                 lambda: reference_torch.zeros(
                     (0,), dtype=reference_torch.float32
                 ).view((0, -1)),
+            ),
+            (
+                lambda: torch.zeros((0,), dtype=torch.float32).view(0, -1),
+                lambda: reference_torch.zeros(
+                    (0,), dtype=reference_torch.float32
+                ).view(0, -1),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(error_cases):
@@ -325,7 +369,7 @@ class TensorViewReferenceTests(unittest.TestCase):
             requires_grad=True,
         )
         source = leaf.transpose(0, 1)
-        result = source.view((3, -1))
+        result = source.view(3, -1)
         metadata = (
             tuple(result.shape),
             result.stride(),
@@ -381,7 +425,7 @@ class TensorViewReferenceTests(unittest.TestCase):
         )
         source = leaf.transpose(0, 1)
         with module.no_grad():
-            result = source.view(module.Size((3, 2)))
+            result = source.view(3, 2)
         return (
             tuple(result.shape),
             result.stride(),
@@ -448,6 +492,7 @@ class TensorViewReferenceTests(unittest.TestCase):
             descriptor.__get__(None, module.Tensor) is descriptor,
             tuple(descriptor(tensor, (2, 1)).shape),
             tuple(descriptor(tensor, -1).shape),
+            tuple(descriptor(tensor, 2, 1).shape),
             tuple(descriptor(tensor, size=[2, 1]).shape),
         )
 
@@ -500,6 +545,7 @@ class TensorViewReferenceTests(unittest.TestCase):
             lambda: tensor.view([2, 3]),
             lambda: tensor.view(module.Size((2, 3))),
             lambda: tensor.view(-1),
+            lambda: tensor.view(2, 3),
             lambda: tensor.view(size=(2, 3)),
         )
         for call in calls:
@@ -512,6 +558,10 @@ class TensorViewReferenceTests(unittest.TestCase):
         with deferred:
             deferred_result = tensor.view((2, 3.0))
 
+        deferred_two_positional = RecordingMode(marker)
+        with deferred_two_positional:
+            deferred_two_positional_result = tensor.view(2, 3.0)
+
         invalid = RecordingMode(marker)
         try:
             with invalid:
@@ -520,6 +570,15 @@ class TensorViewReferenceTests(unittest.TestCase):
             invalid_error = type(error).__name__
         else:
             self.fail(f"{module.__name__} accepted a range shape")
+
+        invalid_two_positional = RecordingMode(marker)
+        try:
+            with invalid_two_positional:
+                tensor.view(2.0, 3)
+        except Exception as error:
+            invalid_two_positional_error = type(error).__name__
+        else:
+            self.fail(f"{module.__name__} accepted an invalid leading dimension")
 
         order = []
 
@@ -542,6 +601,12 @@ class TensorViewReferenceTests(unittest.TestCase):
                 integer_forwarded = tensor.view(-1)
         integer_order = tuple(order)
 
+        order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                two_positional_forwarded = tensor.view(2, 3)
+        two_positional_order = tuple(order)
+
         declining = RecordingMode(NotImplemented)
         try:
             with declining:
@@ -560,8 +625,14 @@ class TensorViewReferenceTests(unittest.TestCase):
                 deferred_result is marker,
                 tuple(map(normalize_call, deferred.calls)),
             ),
+            "deferred_two_positional": (
+                deferred_two_positional_result is marker,
+                tuple(map(normalize_call, deferred_two_positional.calls)),
+            ),
             "invalid": invalid_error,
             "invalid_calls": len(invalid.calls),
+            "invalid_two_positional": invalid_two_positional_error,
+            "invalid_two_positional_calls": len(invalid_two_positional.calls),
             "forwarding": tuple(
                 (label, normalize_call((func, dispatch_types, args, kwargs)))
                 for label, func, dispatch_types, args, kwargs in sequence_order
@@ -581,6 +652,16 @@ class TensorViewReferenceTests(unittest.TestCase):
                 integer_forwarded.stride(),
                 integer_forwarded.storage_offset(),
                 integer_forwarded.data_ptr() == tensor.data_ptr(),
+            ),
+            "two_positional_forwarding": tuple(
+                (label, normalize_call((func, dispatch_types, args, kwargs)))
+                for label, func, dispatch_types, args, kwargs in two_positional_order
+            ),
+            "two_positional_forwarded": (
+                tuple(two_positional_forwarded.shape),
+                two_positional_forwarded.stride(),
+                two_positional_forwarded.storage_offset(),
+                two_positional_forwarded.data_ptr() == tensor.data_ptr(),
             ),
             "declining": declining_error,
             "declining_calls": len(declining.calls),
@@ -628,6 +709,91 @@ class TensorViewReferenceTests(unittest.TestCase):
         for error in (actual_overflow.exception, expected_overflow.exception):
             self.assertIn("failed to unpack the object at pos 1", str(error))
             self.assertIn("Overflow when unpacking long long", str(error))
+
+    def test_two_positional_dimension_conversion_matches_pytorch_2_13(self):
+        actual = torch.zeros((6,), dtype=torch.float32)
+        expected = reference_torch.zeros((6,), dtype=reference_torch.float32)
+        shape_factories = (
+            lambda: (IntSubclass(2), np.int64(3)),
+            lambda: (IndexDimension(2), np.uint32(3)),
+            lambda: (6, True),
+        )
+        for factory in shape_factories:
+            actual_shape = factory()
+            expected_shape = factory()
+            actual_result = actual.view(*actual_shape)
+            expected_result = expected.view(*expected_shape)
+            self.assertEqual(
+                (
+                    tuple(actual_result.shape),
+                    actual_result.stride(),
+                    actual_result.data_ptr() == actual.data_ptr(),
+                ),
+                (
+                    tuple(expected_result.shape),
+                    expected_result.stride(),
+                    expected_result.data_ptr() == expected.data_ptr(),
+                ),
+            )
+
+        outcomes = []
+        for module in (torch, reference_torch):
+            first = StatefulIndexDimension((2, 1, 2))
+            second = StatefulIndexDimension((3,))
+            result = module.zeros((6,), dtype=module.float32).view(first, second)
+            outcomes.append(
+                (
+                    tuple(result.shape),
+                    result.stride(),
+                    first.calls,
+                    second.calls,
+                )
+            )
+        self.assertEqual(outcomes[0], outcomes[1])
+
+        for actual_call, expected_call, position in (
+            (lambda: actual.view(2**63, 1), lambda: expected.view(2**63, 1), 1),
+            (lambda: actual.view(1, 2**63), lambda: expected.view(1, 2**63), 2),
+        ):
+            with self.assertRaises(TypeError) as actual_overflow:
+                actual_call()
+            with self.assertRaises(TypeError) as expected_overflow:
+                expected_call()
+            for error in (actual_overflow.exception, expected_overflow.exception):
+                self.assertIn(
+                    f"failed to unpack the object at pos {position}", str(error)
+                )
+                self.assertIn("Overflow when unpacking long long", str(error))
+
+    def test_two_positional_mixed_argument_errors_match_pytorch_2_13(self):
+        actual = torch.zeros((6,), dtype=torch.float32)
+        expected = reference_torch.zeros((6,), dtype=reference_torch.float32)
+        cases = (
+            (lambda: actual.view(2, 3.0), lambda: expected.view(2, 3.0)),
+            (lambda: actual.view(2.0, 3), lambda: expected.view(2.0, 3)),
+            (lambda: actual.view((2,), 3), lambda: expected.view((2,), 3)),
+            (lambda: actual.view(2, (3,)), lambda: expected.view(2, (3,))),
+            (lambda: actual.view(True, 6), lambda: expected.view(True, 6)),
+            (
+                lambda: actual.view(torch.float32, 6),
+                lambda: expected.view(reference_torch.float32, 6),
+            ),
+            (
+                lambda: actual.view(6, torch.float32),
+                lambda: expected.view(6, reference_torch.float32),
+            ),
+            (
+                lambda: actual.view(2, 3, size=(6,)),
+                lambda: expected.view(2, 3, size=(6,)),
+            ),
+            (
+                lambda: actual.view(2, 3, dtype=torch.float32),
+                lambda: expected.view(2, 3, dtype=reference_torch.float32),
+            ),
+        )
+        for case, (actual_call, expected_call) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_error_matches(actual_call, expected_call)
 
     def test_single_dimension_conversion_matches_pytorch_2_13(self):
         actual = torch.zeros((6,), dtype=torch.float32)
@@ -685,6 +851,20 @@ class TensorViewReferenceTests(unittest.TestCase):
                     expected_result.data_ptr() == expected.data_ptr(),
                 ),
             )
+            actual_two_positional = actual.view(2, 3)
+            expected_two_positional = expected.view(2, 3)
+            self.assertEqual(
+                (
+                    tuple(actual_two_positional.shape),
+                    actual_two_positional.stride(),
+                    actual_two_positional.data_ptr() == actual.data_ptr(),
+                ),
+                (
+                    tuple(expected_two_positional.shape),
+                    expected_two_positional.stride(),
+                    expected_two_positional.data_ptr() == expected.data_ptr(),
+                ),
+            )
             self.assert_error_matches(
                 lambda: actual.view((2, 3.0)),
                 lambda: expected.view((2, 3.0)),
@@ -710,10 +890,18 @@ class TensorViewReferenceTests(unittest.TestCase):
         actual = torch.zeros((6,), dtype=torch.float32)
         expected = reference_torch.zeros((6,), dtype=reference_torch.float32)
         cases = (
-            (lambda: actual.view(2, 3), lambda: expected.view(2, 3)),
+            (lambda: actual.view(1, 2, 3), lambda: expected.view(1, 2, 3)),
+            (
+                lambda: actual.view(1, 1, 2, 3),
+                lambda: expected.view(1, 1, 2, 3),
+            ),
             (
                 lambda: actual.view(torch.float32),
                 lambda: expected.view(reference_torch.float32),
+            ),
+            (
+                lambda: actual.view(dtype=torch.float32),
+                lambda: expected.view(dtype=reference_torch.float32),
             ),
         )
         for actual_call, expected_call in cases:

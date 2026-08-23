@@ -9208,6 +9208,7 @@ enum ViewShapeArgument<'py> {
     Dimension(Bound<'py, PyAny>),
     Tuple(Bound<'py, PyTuple>),
     List(Bound<'py, PyList>),
+    TwoDimensions(Bound<'py, PyTuple>),
 }
 
 fn bind_view_shape_argument<'py>(
@@ -9243,13 +9244,30 @@ fn bind_view_shape_argument<'py>(
         }
     }
 
+    if positional.len() == 2 {
+        let first = positional.get_item(0)?;
+        // PyTorch's overloaded parser checks the leading variadic dimension
+        // once for each public overload before mode dispatch. The second
+        // dimension remains deferred until the native shape is unpacked.
+        if !is_view_shape_dimension(&first) {
+            return Err(view_invalid_combination_error(positional, keywords)?);
+        }
+        if !is_view_shape_dimension(&first) {
+            return Err(view_invalid_combination_error(positional, keywords)?);
+        }
+        if keyword_error.is_some() {
+            return Err(view_invalid_combination_error(positional, keywords)?);
+        }
+        return Ok(ViewShapeArgument::TwoDimensions(positional.clone()));
+    }
+
     let (value, positional_dimension) = match positional.len() {
         0 => (
             keyword_shape.ok_or_else(unsupported_view_argument_error)?,
             false,
         ),
         1 => (positional.get_item(0)?, true),
-        _ => return Err(unsupported_view_integer_error()),
+        _ => return Err(unsupported_view_positional_dimensions_error()),
     };
     let shape = if let Ok(shape) = value.cast::<PyTuple>() {
         ViewShapeArgument::Tuple(shape.clone())
@@ -9280,7 +9298,7 @@ fn bind_view_shape_argument<'py>(
 
 fn validate_view_shape_first(shape: &ViewShapeArgument<'_>) -> PyResult<()> {
     let first = match shape {
-        ViewShapeArgument::Dimension(_) => None,
+        ViewShapeArgument::Dimension(_) | ViewShapeArgument::TwoDimensions(_) => None,
         ViewShapeArgument::Tuple(dimensions) => dimensions.get_item(0).ok(),
         ViewShapeArgument::List(dimensions) => dimensions.get_item(0).ok(),
     };
@@ -9325,7 +9343,7 @@ fn parse_view_shape_argument(shape: ViewShapeArgument<'_>) -> PyResult<Vec<i64>>
         ViewShapeArgument::Dimension(dimension) => {
             parse_view_shape_dimensions(1, std::iter::once(dimension))
         }
-        ViewShapeArgument::Tuple(dimensions) => {
+        ViewShapeArgument::Tuple(dimensions) | ViewShapeArgument::TwoDimensions(dimensions) => {
             parse_view_shape_dimensions(dimensions.len(), dimensions.iter())
         }
         ViewShapeArgument::List(dimensions) => {
@@ -9367,14 +9385,30 @@ fn view_shape_dimension_unpack_error(
 
 fn unsupported_view_argument_error() -> PyErr {
     PyTypeError::new_err(
-        "view() supports exactly one positional integer, tuple, list, or torch.Size shape argument",
+        "view() supports one positional integer, tuple, list, or torch.Size shape argument, or exactly two positional integer dimensions",
     )
 }
 
 fn unsupported_view_integer_error() -> PyErr {
     PyTypeError::new_err(
-        "view(): variadic integer shapes are not supported; pass a tuple, list, or torch.Size",
+        "view(): integer size= is not supported; pass the dimension positionally or use a tuple, list, or torch.Size",
     )
+}
+
+fn unsupported_view_positional_dimensions_error() -> PyErr {
+    PyTypeError::new_err(
+        "view(): three or more positional dimensions are not supported; pass a tuple, list, or torch.Size",
+    )
+}
+
+fn view_invalid_combination_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "view() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (torch.dtype dtype)\n * (tuple of ints size)\n"
+    )))
 }
 
 fn unsupported_view_dtype_error() -> PyErr {
