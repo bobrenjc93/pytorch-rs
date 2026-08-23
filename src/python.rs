@@ -9251,13 +9251,44 @@ fn bind_view_shape_argument<'py>(
         }
     }
 
+    if positional.len() == 2 {
+        let first = positional.get_item(0)?;
+        if !is_view_shape_dimension(&first) {
+            return Err(unsupported_view_call_error(positional, keywords)?);
+        }
+        let sequence_shape = if let Ok(shape) = first.cast::<PyTuple>() {
+            Some(ViewShapeArgument::Tuple(shape.clone()))
+        } else if let Ok(shape) = first.cast::<PyList>() {
+            Some(ViewShapeArgument::List(shape.clone()))
+        } else {
+            None
+        };
+        if let Some(shape) = sequence_shape
+            && validate_view_shape_first(&shape).is_ok()
+        {
+            if keyword_error.is_some() {
+                return Err(unsupported_view_call_error(positional, keywords)?);
+            }
+            return Ok(shape);
+        }
+        // The two public overloads each probe the first variadic dimension
+        // before mode dispatch. The remaining conversions happen afterward.
+        if !is_view_shape_dimension(&first) {
+            return Err(unsupported_view_call_error(positional, keywords)?);
+        }
+        if keyword_error.is_some() {
+            return Err(unsupported_view_call_error(positional, keywords)?);
+        }
+        return Ok(ViewShapeArgument::Tuple(positional.clone()));
+    }
+
     let (value, positional_dimension) = match positional.len() {
         0 => (
             keyword_shape.ok_or_else(unsupported_view_argument_error)?,
             false,
         ),
         1 => (positional.get_item(0)?, true),
-        _ => return Err(unsupported_view_integer_error()),
+        _ => return Err(unsupported_three_or_more_view_dimensions_error()),
     };
     let shape = if let Ok(shape) = value.cast::<PyTuple>() {
         ViewShapeArgument::Tuple(shape.clone())
@@ -9382,6 +9413,22 @@ fn unsupported_view_argument_error() -> PyErr {
 fn unsupported_view_integer_error() -> PyErr {
     PyTypeError::new_err(
         "view(): variadic integer shapes are not supported; pass a tuple, list, or torch.Size",
+    )
+}
+
+fn unsupported_view_call_error(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "view() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (torch.dtype dtype)\n * (tuple of ints size)\n"
+    )))
+}
+
+fn unsupported_three_or_more_view_dimensions_error() -> PyErr {
+    PyTypeError::new_err(
+        "view(): three or more positional dimensions are not supported; pass a tuple, list, or torch.Size",
     )
 }
 
