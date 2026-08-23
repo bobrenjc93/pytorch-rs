@@ -19,6 +19,9 @@ _ATLEAST_1D_SEQUENCE_UNSUPPORTED = (
     "atleast_1d() sequence inputs only support an exact tuple or list of "
     "exact Tensors"
 )
+_ATLEAST_1D_VARIADIC_UNSUPPORTED = (
+    "atleast_1d() only supports a single Tensor input"
+)
 _ATLEAST_2D_SEQUENCE_UNSUPPORTED = (
     "atleast_2d() sequence inputs only support an exact tuple or list of "
     "exact Tensors"
@@ -78,7 +81,13 @@ def atleast_1d(*tensors):
         ()
     """
     if len(tensors) > 1:
-        raise TypeError("atleast_1d() only supports a single Tensor input")
+        if _get_current_function_mode() is not None:
+            raise TypeError(_ATLEAST_1D_VARIADIC_UNSUPPORTED)
+        return _atleast_sequence(
+            tensors,
+            _VF_atleast_1d,
+            _ATLEAST_1D_VARIADIC_UNSUPPORTED,
+        )
     if not tensors:
         if _get_current_function_mode() is not None:
             return _VF_atleast_1d(tensors)

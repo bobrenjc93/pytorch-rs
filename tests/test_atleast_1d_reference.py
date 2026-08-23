@@ -147,6 +147,42 @@ class Atleast1dReferenceTests(unittest.TestCase):
                 self.assertIs(type(expected), tuple)
                 self.assertEqual(actual, expected)
 
+    def test_variadic_values_layouts_and_aliasing_match_pytorch_2_13(self):
+        actual_cases = self.make_layout_cases(torch)
+        expected_cases = self.make_layout_cases(reference_torch)
+        actual_results = torch.atleast_1d(
+            *(source for _, source in actual_cases)
+        )
+        expected_results = reference_torch.atleast_1d(
+            *(source for _, source in expected_cases)
+        )
+        self.assertIs(type(actual_results), tuple)
+        self.assertIs(type(expected_results), tuple)
+        self.assertEqual(len(actual_results), len(expected_results))
+
+        for (
+            (name, actual_source),
+            (expected_name, expected_source),
+            actual_result,
+            expected_result,
+        ) in zip(
+            actual_cases,
+            expected_cases,
+            actual_results,
+            expected_results,
+            strict=True,
+        ):
+            with self.subTest(case=name):
+                self.assertEqual(name, expected_name)
+                actual = self.observe_result(
+                    torch, actual_source, actual_result
+                )
+                expected = self.observe_result(
+                    reference_torch, expected_source, expected_result
+                )
+                self.assertEqual(actual[:-1], expected[:-1])
+                np.testing.assert_array_equal(actual[-1], expected[-1])
+
     def autograd_outcome(self, module):
         leaf = module.tensor(
             [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
@@ -247,6 +283,58 @@ class Atleast1dReferenceTests(unittest.TestCase):
             ),
         )
 
+    def variadic_autograd_outcome(self, module):
+        leaf = module.tensor(
+            [1.0, 2.0, 3.0], dtype=module.float32, requires_grad=True
+        )
+        scalar = leaf[1]
+        results = module.atleast_1d(scalar, leaf)
+        scalar_result, vector_result = results
+        metadata = (
+            type(results) is tuple,
+            tuple(scalar_result.shape),
+            scalar_result.stride(),
+            scalar_result.storage_offset(),
+            scalar_result.requires_grad,
+            scalar_result.is_leaf,
+            scalar_result.data_ptr() == scalar.data_ptr(),
+            scalar_result.is_set_to(scalar.reshape((1,))),
+            vector_result is leaf,
+        )
+        loss = scalar_result.sum()
+        loss.backward()
+        loss.backward()
+        return metadata, self.tensor_array(leaf.grad, module).copy()
+
+    def variadic_no_grad_outcome(self, module):
+        scalar = module.tensor(3.0, dtype=module.float32, requires_grad=True)
+        vector_leaf = module.tensor(
+            [1.0, 2.0], dtype=module.float32, requires_grad=True
+        )
+        vector = vector_leaf * 2.0
+        with module.no_grad():
+            results = module.atleast_1d(scalar, vector)
+        scalar_result, vector_result = results
+        (scalar_result * scalar_result).sum().backward()
+        return (
+            type(results) is tuple,
+            (
+                tuple(scalar_result.shape),
+                scalar_result.stride(),
+                scalar_result.storage_offset(),
+                scalar_result.requires_grad,
+                scalar_result.is_leaf,
+                scalar_result.data_ptr() == scalar.data_ptr(),
+                scalar.grad,
+                scalar_result.grad,
+            ),
+            (
+                vector_result is vector,
+                vector_result.requires_grad,
+                vector_result.is_leaf,
+            ),
+        )
+
     def test_autograd_repeated_backward_and_no_grad_match_pytorch_2_13(self):
         actual_metadata, actual_grad = self.autograd_outcome(torch)
         expected_metadata, expected_grad = self.autograd_outcome(reference_torch)
@@ -274,6 +362,18 @@ class Atleast1dReferenceTests(unittest.TestCase):
                         reference_torch, sequence_type
                     ),
                 )
+
+    def test_variadic_autograd_and_no_grad_match_pytorch_2_13(self):
+        actual_metadata, actual_grad = self.variadic_autograd_outcome(torch)
+        expected_metadata, expected_grad = self.variadic_autograd_outcome(
+            reference_torch
+        )
+        self.assertEqual(actual_metadata, expected_metadata)
+        np.testing.assert_array_equal(actual_grad, expected_grad)
+        self.assertEqual(
+            self.variadic_no_grad_outcome(torch),
+            self.variadic_no_grad_outcome(reference_torch),
+        )
 
     def mode_contract(self, module):
         function = module.atleast_1d
@@ -479,10 +579,12 @@ class Atleast1dReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_variadic_and_mixed_forms_remain_unsupported(self):
+    def test_mixed_variadic_and_sequence_forms_remain_unsupported(self):
         source = torch.tensor(1.0)
         unsupported = (
-            lambda: torch.atleast_1d(source, source),
+            lambda: torch.atleast_1d(source, None),
+            lambda: torch.atleast_1d(None, source),
+            lambda: torch.atleast_1d(source, source, 1),
         )
         for call in unsupported:
             with self.subTest(call=call), self.assertRaisesRegex(
