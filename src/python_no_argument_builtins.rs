@@ -10,7 +10,7 @@ use pyo3::types::{PyAny, PyBool, PyCFunction, PyDict, PyModule, PyTuple};
 
 use crate::{
     DType, is_grad_enabled as core_is_grad_enabled,
-    python::{cpython_type_name, native_pytorch_type_name},
+    python::python_type_name,
     python_dtype::{PyDType, dtype_object},
 };
 
@@ -116,11 +116,7 @@ fn set_autocast_cache_enabled(
 
     let enabled = args.get_item(0)?;
     if !enabled.is_exact_instance_of::<PyBool>() {
-        let type_name = if let Some(name) = native_pytorch_type_name(&enabled) {
-            name.to_owned()
-        } else {
-            cpython_type_name(&enabled)?
-        };
+        let type_name = python_type_name(&enabled)?;
         return Err(PyTypeError::new_err(format!(
             "enabled must be a bool (got {type_name})"
         )));

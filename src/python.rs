@@ -9756,7 +9756,7 @@ struct PyTypeObjectNamePrefix {
     unsafe_code,
     reason = "CPython exposes tp_name only as a type-object field before Python 3.13"
 )]
-pub(crate) fn cpython_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
+fn cpython_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     let value_type = value.get_type();
     let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
     // SAFETY: every classic CPython type object starts with PyVarObject and
@@ -9814,13 +9814,28 @@ pub(crate) fn native_pytorch_type_name(value: &Bound<'_, PyAny>) -> Option<&'sta
     }
 }
 
+fn dynamically_created_pytorch_type_name(name: &str) -> Option<&'static str> {
+    match name {
+        "torch_rs.Size" => Some("torch.Size"),
+        "torch_rs.layout" => Some("torch.layout"),
+        "torch_rs.finfo" => Some("torch.finfo"),
+        _ => None,
+    }
+}
+
 pub(crate) fn python_type_name(value: &Bound<'_, PyAny>) -> PyResult<String> {
     if let Some(name) = native_pytorch_type_name(value) {
         let mut output = String::new();
         try_push_string(&mut output, name)?;
         Ok(output)
     } else {
-        cpython_type_name(value)
+        let name = cpython_type_name(value)?;
+        let Some(pytorch_name) = dynamically_created_pytorch_type_name(&name) else {
+            return Ok(name);
+        };
+        let mut output = String::new();
+        try_push_string(&mut output, pytorch_name)?;
+        Ok(output)
     }
 }
 
@@ -9831,7 +9846,11 @@ fn python_type_name_with(
     if let Some(name) = native_pytorch_type_name(value) {
         try_string_from_str_with(name, allocation)
     } else {
-        cpython_type_name_with(value, allocation)
+        let name = cpython_type_name_with(value, allocation)?;
+        let Some(pytorch_name) = dynamically_created_pytorch_type_name(&name) else {
+            return Ok(name);
+        };
+        try_string_from_str_with(pytorch_name, allocation)
     }
 }
 

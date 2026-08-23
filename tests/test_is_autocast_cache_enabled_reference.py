@@ -278,6 +278,35 @@ class IsAutocastCacheEnabledReferenceTests(unittest.TestCase):
             torch.set_autocast_cache_enabled(actual_previous)
             reference_torch.set_autocast_cache_enabled(expected_previous)
 
+        native_value_factories = (
+            ("Size", lambda module: module.Size([1])),
+            ("layout", lambda module: module.strided),
+            ("finfo", lambda module: module.finfo()),
+        )
+        try:
+            for name, factory in native_value_factories:
+                for initial in (True, False):
+                    with self.subTest(
+                        api="setter", native_type=name, initial=initial
+                    ):
+                        torch.set_autocast_cache_enabled(initial)
+                        reference_torch.set_autocast_cache_enabled(initial)
+                        self.assert_error_matches(
+                            lambda: torch.set_autocast_cache_enabled(
+                                factory(torch)
+                            ),
+                            lambda: reference_torch.set_autocast_cache_enabled(
+                                factory(reference_torch)
+                            ),
+                        )
+                        self.assertIs(torch.is_autocast_cache_enabled(), initial)
+                        self.assertIs(
+                            reference_torch.is_autocast_cache_enabled(), initial
+                        )
+        finally:
+            torch.set_autocast_cache_enabled(actual_previous)
+            reference_torch.set_autocast_cache_enabled(expected_previous)
+
         self.assertEqual(BoolLike.calls, 0)
         self.assertIs(
             torch.is_autocast_cache_enabled(**{}),

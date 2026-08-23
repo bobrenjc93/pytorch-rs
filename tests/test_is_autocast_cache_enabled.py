@@ -265,6 +265,22 @@ class IsAutocastCacheEnabledTests(unittest.TestCase):
                 lambda: setter(torch.device("cpu")),
                 "enabled must be a bool (got torch.device)",
             ),
+            (
+                lambda: setter(torch.preserve_format),
+                "enabled must be a bool (got torch.memory_format)",
+            ),
+            (
+                lambda: setter(torch.Size([1])),
+                "enabled must be a bool (got torch.Size)",
+            ),
+            (
+                lambda: setter(torch.strided),
+                "enabled must be a bool (got torch.layout)",
+            ),
+            (
+                lambda: setter(torch.finfo()),
+                "enabled must be a bool (got torch.finfo)",
+            ),
             (lambda: setter(BoolLike()), "enabled must be a bool (got BoolLike)"),
         )
         for initial in (True, False):
