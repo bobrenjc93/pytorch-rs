@@ -1052,6 +1052,80 @@ class Atleast2dReferenceTests(unittest.TestCase):
             expected,
         )
 
+    def reentrant_variadic_fallback_contract(self, module):
+        function = module.atleast_2d
+        sources = (
+            module.tensor(1.0, dtype=module.float32),
+            module.tensor([2.0, 3.0], dtype=module.float32),
+        )
+        outer_marker = object()
+        reentrant_marker = object()
+        calls = []
+
+        class LowerMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append(
+                    (
+                        "lower",
+                        len(args),
+                        tuple(dispatch_type.__name__ for dispatch_type in types),
+                    )
+                )
+                if len(args) == len(sources) and types:
+                    return reentrant_marker
+                return NotImplemented
+
+        class UpperMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                calls.append(
+                    (
+                        "upper",
+                        len(args),
+                        tuple(dispatch_type.__name__ for dispatch_type in types),
+                    )
+                )
+                if types:
+                    return NotImplemented
+                try:
+                    result = function(*sources)
+                except Exception as error:
+                    calls.append(("reentrant", "error", type(error).__name__))
+                else:
+                    calls.append(
+                        ("reentrant", "result", result is reentrant_marker)
+                    )
+                return outer_marker
+
+        with LowerMode():
+            with UpperMode():
+                result = function(*sources)
+
+        return (
+            result is outer_marker,
+            tuple(calls),
+            len(module.overrides._get_current_function_mode_stack()),
+        )
+
+    def test_reentrant_variadic_fallback_keeps_subclasses_disabled(self):
+        expected = self.reentrant_variadic_fallback_contract(reference_torch)
+        self.assertEqual(
+            expected,
+            (
+                True,
+                (
+                    ("upper", 2, ("Tensor",)),
+                    ("upper", 2, ()),
+                    ("lower", 2, ()),
+                    ("reentrant", "error", "TypeError"),
+                ),
+                0,
+            ),
+        )
+        self.assertEqual(
+            self.reentrant_variadic_fallback_contract(torch),
+            expected,
+        )
+
     def override_contract(self, module):
         function = module.atleast_2d
         marker = object()

@@ -184,7 +184,10 @@ def _dispatch_exact_native_variadic_torch_function(
     if mode is None:
         return implementation(inputs)
 
-    dispatch_types = (Tensor,) if include_tensor else ()
+    tensor_fallback_enabled = (
+        include_tensor and not _is_torch_function_subclass_disabled()
+    )
+    dispatch_types = (Tensor,) if tensor_fallback_enabled else ()
     popped_mode = _pop_mode()
     mode_kwargs = keyword_arguments.copy()
     try:
@@ -199,7 +202,7 @@ def _dispatch_exact_native_variadic_torch_function(
     if result is not NotImplemented:
         return result
 
-    if include_tensor:
+    if tensor_fallback_enabled:
         # PyTorch retries through Tensor.__torch_function__. That fallback
         # re-enters the public wrapper with the same mode active while
         # disabling ordinary Tensor-subclass overrides.
