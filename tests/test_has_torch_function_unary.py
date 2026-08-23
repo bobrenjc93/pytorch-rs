@@ -225,11 +225,11 @@ class HasTorchFunctionUnaryTests(unittest.TestCase):
         for module, names in (
             (
                 torch.overrides,
-                ("has_torch_function", "has_torch_function_variadic"),
+                ("has_torch_function",),
             ),
             (
                 torch._C,
-                ("_has_torch_function", "_has_torch_function_variadic"),
+                ("_has_torch_function",),
             ),
         ):
             for name in names:

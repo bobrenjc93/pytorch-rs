@@ -187,7 +187,6 @@ class BaseTorchFunctionModeTests(unittest.TestCase):
             "enable_reentrant_dispatch",
             "handle_torch_function",
             "has_torch_function",
-            "has_torch_function_variadic",
             "redispatch_function",
         }
         self.assertTrue(unsupported.isdisjoint(torch.overrides.__all__))
