@@ -36,6 +36,7 @@ use crate::{
 };
 
 static LAYOUT_OBJECTS: PyOnceLock<PyLayoutObjects> = PyOnceLock::new();
+static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 static T_NON_MATRIX_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static T_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static H_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
@@ -4489,10 +4490,34 @@ fn strided_object(py: Python<'_>) -> PyResult<&'static Py<PyAny>> {
 }
 
 pub(crate) fn warn_once(py: Python<'_>, emitted: &AtomicBool, message: &CStr) -> PyResult<()> {
-    if emitted.swap(true, Ordering::Relaxed) {
+    if !WARN_ALWAYS_ENABLED.load(Ordering::SeqCst) && emitted.swap(true, Ordering::SeqCst) {
         return Ok(());
     }
     PyErr::warn(py, &py.get_type::<PyUserWarning>(), message, 1)
+}
+
+#[pyfunction(name = "_set_warnAlways", signature = (b, /))]
+fn set_warn_always(b: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !b.is_instance_of::<PyBool>() {
+        let type_name = python_type_name(b)?;
+        let type_name = match type_name.as_str() {
+            "torch_rs.layout" => "torch.layout",
+            "torch_rs.Size" => "torch.Size",
+            "torch_rs.finfo" => "torch.finfo",
+            type_name => type_name,
+        };
+        return Err(PyRuntimeError::new_err(format!(
+            "setWarnOnlyOnce expects a bool, but got {type_name}"
+        )));
+    }
+
+    WARN_ALWAYS_ENABLED.store(b.extract::<bool>()?, Ordering::SeqCst);
+    Ok(())
+}
+
+#[pyfunction(name = "_get_warnAlways")]
+fn get_warn_always() -> bool {
+    WARN_ALWAYS_ENABLED.load(Ordering::SeqCst)
 }
 
 fn parse_clone_memory_format(memory_format: Option<&Bound<'_, PyAny>>) -> PyResult<MemoryFormat> {
@@ -10619,6 +10644,11 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDType>()?;
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
     add_default_dtype_validator(module)?;
+    module.add_function(wrap_pyfunction!(set_warn_always, module)?)?;
+    module.add_function(wrap_pyfunction!(get_warn_always, module)?)?;
+    for name in ["_set_warnAlways", "_get_warnAlways"] {
+        module.getattr("__all__")?.call_method1("remove", (name,))?;
+    }
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     add_no_grad(module)?;
