@@ -303,6 +303,43 @@ class CompilerDisableTests(unittest.TestCase):
         self.assertEqual(wrapped.__call__._torchdynamo_disable_msg, "plain class")
         self.assertIs(type(wrapped()), wrapped)
 
+    def test_truthy_class_preserves_class_valued_call_hooks(self):
+        for form in ("direct", "factory"):
+            with self.subTest(form=form):
+                reason = object()
+
+                class Product:
+                    def __init__(self, value, *, scale=1):
+                        self.value = value * scale
+
+                original_product_init = Product.__init__
+
+                class Factory:
+                    __call__ = Product
+
+                if form == "direct":
+                    wrapped = torch.compiler.disable(Factory, reason=reason)
+                else:
+                    wrapped = torch.compiler.disable(reason=reason)(Factory)
+
+                self.assertIs(wrapped, Factory)
+                self.assertIs(wrapped.__call__, Product)
+                self.assertFalse(hasattr(wrapped.__call__, "_torchdynamo_disable"))
+                self.assert_disable_metadata(
+                    Product.__init__,
+                    original_product_init,
+                    True,
+                    reason,
+                )
+
+                product = wrapped()(3, scale=4)
+                self.assertIs(type(product), Product)
+                self.assertEqual(product.value, 12)
+                self.assertEqual(
+                    str(inspect.signature(wrapped.__call__)),
+                    "(value, *, scale=1)",
+                )
+
     def test_falsey_class_targets_return_transparent_constructor_wrappers(self):
         for form in ("direct", "factory"):
             with self.subTest(form=form):

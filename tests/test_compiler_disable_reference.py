@@ -300,6 +300,82 @@ class CompilerDisableReferenceTests(unittest.TestCase):
                         ),
                     )
 
+    def test_class_valued_call_hooks_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            module_outcomes = []
+            for factory_form in (False, True):
+                reason = object()
+
+                class Product:
+                    def __init__(self, value, *, scale=1):
+                        self.value = value * scale
+
+                original_product_init = Product.__init__
+
+                class Factory:
+                    __call__ = Product
+
+                if factory_form:
+                    wrapped = module.compiler.disable(reason=reason)(Factory)
+                else:
+                    wrapped = module.compiler.disable(Factory, reason=reason)
+
+                product = wrapped()(3, scale=4)
+                module_outcomes.append(
+                    (
+                        wrapped is Factory,
+                        wrapped.__call__ is Product,
+                        isinstance(wrapped.__call__, type),
+                        not hasattr(wrapped.__call__, "_torchdynamo_disable"),
+                        Product.__init__ is not original_product_init,
+                        Product.__init__._torchdynamo_disable is True,
+                        Product.__init__._torchdynamo_disable_msg is reason,
+                        Product.__init__._torchdynamo_orig_callable
+                        is original_product_init,
+                        Product.__init__._torchdynamo_disable_recursive is True,
+                        str(inspect.signature(wrapped.__call__)),
+                        type(product) is Product,
+                        product.value,
+                    )
+                )
+            outcomes.append(module_outcomes)
+
+        self.assertEqual(outcomes[0], outcomes[1])
+        self.assertEqual(
+            outcomes[0],
+            [
+                (
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    "(value, *, scale=1)",
+                    True,
+                    12,
+                ),
+                (
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    True,
+                    "(value, *, scale=1)",
+                    True,
+                    12,
+                ),
+            ],
+        )
+
     def test_class_constructor_results_and_exceptions_match_pytorch_2_13(self):
         outcomes = []
         for module in (torch, reference_torch):

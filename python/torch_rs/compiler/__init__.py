@@ -81,6 +81,15 @@ def _disable_callable(fn, recursive, reason):
     ):
         unwrapped_fn = unwrapped_fn._torchdynamo_orig_callable
 
+    if isinstance(unwrapped_fn, type) and recursive:
+        unwrapped_fn.__init__ = _disable_callable(
+            unwrapped_fn.__init__, True, reason
+        )
+        unwrapped_fn.__call__ = _disable_callable(
+            unwrapped_fn.__call__, True, reason
+        )
+        return unwrapped_fn
+
     if not callable(unwrapped_fn):
         raise NotImplementedError(_SUPPORTED_DISABLE_TARGET_ERROR)
 
@@ -98,16 +107,6 @@ def _disable_callable(fn, recursive, reason):
 
 def _disable_target(fn, recursive, reason):
     unwrapped_fn = _innermost_disable_target(fn)
-
-    if isinstance(unwrapped_fn, type) and recursive:
-        unwrapped_fn.__init__ = _disable_callable(
-            unwrapped_fn.__init__, True, reason
-        )
-        unwrapped_fn.__call__ = _disable_callable(
-            unwrapped_fn.__call__, True, reason
-        )
-        return unwrapped_fn
-
     return _disable_callable(unwrapped_fn, recursive, reason)
 
 
