@@ -196,6 +196,381 @@ class TensorMovedimReferenceTests(unittest.TestCase):
             case="no-grad-view",
         )
 
+    def test_singleton_sequence_aliases_match_pytorch_2_13(self):
+        def apply(
+            module, operation, tensor, source, destination, *, keyword=False
+        ):
+            if operation.startswith("Tensor."):
+                function = getattr(tensor, operation.removeprefix("Tensor."))
+                if keyword:
+                    return function(source=source, destination=destination)
+                return function(source, destination)
+            function = getattr(module, operation.removeprefix("torch."))
+            if keyword:
+                return function(
+                    input=tensor, source=source, destination=destination
+                )
+            return function(tensor, source, destination)
+
+        def sequence(module, form, dimension):
+            if form == "tuple":
+                return (dimension,)
+            if form == "list":
+                return [dimension]
+            return module.Size([dimension])
+
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        actual_base = torch.tensor(values.tolist())
+        expected_base = reference_torch.tensor(values)
+        cases = (
+            (
+                "scalar",
+                torch.tensor(2.5),
+                reference_torch.tensor(2.5),
+                -1,
+                0,
+            ),
+            (
+                "empty",
+                torch.zeros((2, 0, 3)),
+                reference_torch.zeros((2, 0, 3)),
+                -1,
+                0,
+            ),
+            (
+                "offset",
+                actual_base.transpose(0, 2)[1],
+                expected_base.transpose(0, 2)[1],
+                -1,
+                0,
+            ),
+            (
+                "noncontiguous",
+                actual_base.transpose(0, 2),
+                expected_base.transpose(0, 2),
+                0,
+                -1,
+            ),
+        )
+        operations = (
+            "Tensor.movedim",
+            "Tensor.moveaxis",
+            "torch.movedim",
+            "torch.moveaxis",
+        )
+        forms = ("tuple", "list", "Size")
+        for case, actual_input, expected_input, source, destination in cases:
+            for operation in operations:
+                for source_form in forms:
+                    for destination_form in forms:
+                        actual = apply(
+                            torch,
+                            operation,
+                            actual_input,
+                            sequence(torch, source_form, source),
+                            sequence(torch, destination_form, destination),
+                        )
+                        expected = apply(
+                            reference_torch,
+                            operation,
+                            expected_input,
+                            sequence(reference_torch, source_form, source),
+                            sequence(
+                                reference_torch,
+                                destination_form,
+                                destination,
+                            ),
+                        )
+                        self.assert_matches(
+                            actual,
+                            expected,
+                            actual_source=actual_input,
+                            expected_source=expected_input,
+                            case=(
+                                f"singleton-{case}-{operation}-"
+                                f"{source_form}-{destination_form}"
+                            ),
+                        )
+
+        actual_input = actual_base.transpose(0, 2)[1]
+        expected_input = expected_base.transpose(0, 2)[1]
+        for operation in operations:
+            actual = apply(
+                torch,
+                operation,
+                actual_input,
+                torch.Size([-1]),
+                [0],
+                keyword=True,
+            )
+            expected = apply(
+                reference_torch,
+                operation,
+                expected_input,
+                reference_torch.Size([-1]),
+                [0],
+                keyword=True,
+            )
+            self.assert_matches(
+                actual,
+                expected,
+                actual_source=actual_input,
+                expected_source=expected_input,
+                case=f"singleton-keyword-{operation}",
+            )
+
+        weights = np.linspace(-2.0, 3.0, num=24, dtype=np.float32).reshape(
+            4, 2, 3
+        )
+        for operation in operations:
+            actual_leaf = torch.tensor(values.tolist(), requires_grad=True)
+            expected_leaf = reference_torch.tensor(values, requires_grad=True)
+            actual = apply(torch, operation, actual_leaf, (-1,), [0])
+            expected = apply(
+                reference_torch, operation, expected_leaf, (-1,), [0]
+            )
+            self.assert_matches(
+                actual,
+                expected,
+                actual_source=actual_leaf,
+                expected_source=expected_leaf,
+                case=f"singleton-autograd-{operation}",
+            )
+            (actual * torch.tensor(weights.tolist())).sum().backward()
+            (expected * reference_torch.tensor(weights)).sum().backward()
+            self.assert_matches(
+                actual_leaf.grad,
+                expected_leaf.grad,
+                case=f"singleton-gradient-{operation}",
+            )
+
+            actual_empty = torch.zeros((2, 0, 3), requires_grad=True)
+            expected_empty = reference_torch.zeros(
+                (2, 0, 3), requires_grad=True
+            )
+            apply(
+                torch,
+                operation,
+                actual_empty,
+                torch.Size([0]),
+                (-1,),
+            ).sum().backward()
+            apply(
+                reference_torch,
+                operation,
+                expected_empty,
+                reference_torch.Size([0]),
+                (-1,),
+            ).sum().backward()
+            self.assert_matches(
+                actual_empty.grad,
+                expected_empty.grad,
+                case=f"singleton-empty-gradient-{operation}",
+            )
+
+            with torch.no_grad():
+                actual_untracked = apply(
+                    torch,
+                    operation,
+                    actual_leaf,
+                    [0],
+                    torch.Size([1]),
+                )
+            with reference_torch.no_grad():
+                expected_untracked = apply(
+                    reference_torch,
+                    operation,
+                    expected_leaf,
+                    [0],
+                    reference_torch.Size([1]),
+                )
+            self.assert_matches(
+                actual_untracked,
+                expected_untracked,
+                actual_source=actual_leaf,
+                expected_source=expected_leaf,
+                case=f"singleton-no-grad-{operation}",
+            )
+
+    def test_singleton_sequence_index_and_mode_behavior_match_pytorch_2_13(self):
+        def conversion_contract(module, operation):
+            state = {"destination_converted": False, "calls": []}
+
+            class StatefulIndex:
+                def __init__(self, role):
+                    self.role = role
+
+                def __index__(self):
+                    state["calls"].append(self.role)
+                    if self.role == "destination":
+                        state["destination_converted"] = True
+                        return 1
+                    return 0 if state["destination_converted"] else 2
+
+            tensor = module.zeros((2, 3, 4), dtype=module.float32)
+            source = (StatefulIndex("source"),)
+            destination = [StatefulIndex("destination")]
+            name = operation.split(".", 1)[1]
+            if operation.startswith("Tensor."):
+                result = getattr(tensor, name)(source, destination)
+            else:
+                result = getattr(module, name)(tensor, source, destination)
+            return state["calls"], tuple(result.shape), result.stride()
+
+        def contract(module, operation):
+            tensor = module.zeros((2, 3, 4), dtype=module.float32)
+            marker = object()
+
+            class IndexDimension:
+                def __init__(self, value):
+                    self.value = value
+                    self.calls = 0
+
+                def __index__(self):
+                    self.calls += 1
+                    return self.value
+
+            class RecordingMode(module.overrides.TorchFunctionMode):
+                def __init__(self, result):
+                    self.result = result
+                    self.calls = []
+
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    self.calls.append((func, types, args, kwargs))
+                    return self.result
+
+            method = operation.startswith("Tensor.")
+            name = operation.split(".", 1)[1]
+            function = getattr(module.Tensor if method else module, name)
+
+            source = IndexDimension(-1)
+            destination = IndexDimension(0)
+            source_sequence = (source,)
+            destination_sequence = [destination]
+            mode = RecordingMode(marker)
+            with mode:
+                if method:
+                    result = getattr(tensor, name)(
+                        source_sequence, destination_sequence
+                    )
+                else:
+                    result = getattr(module, name)(
+                        tensor, source_sequence, destination_sequence
+                    )
+            called_function, types, args, kwargs = mode.calls[0]
+
+            keyword_source = IndexDimension(0)
+            keyword_destination = IndexDimension(1)
+            keyword_source_sequence = [keyword_source]
+            keyword_destination_sequence = (keyword_destination,)
+            keyword_mode = RecordingMode(marker)
+            with keyword_mode:
+                if method:
+                    keyword_result = getattr(tensor, name)(
+                        source=keyword_source_sequence,
+                        destination=keyword_destination_sequence,
+                    )
+                else:
+                    keyword_result = getattr(module, name)(
+                        input=tensor,
+                        source=keyword_source_sequence,
+                        destination=keyword_destination_sequence,
+                    )
+            (
+                keyword_function,
+                keyword_types,
+                keyword_args,
+                keyword_kwargs,
+            ) = keyword_mode.calls[0]
+
+            return {
+                "positional_intercepted": result is marker,
+                "positional_function": called_function is function,
+                "positional_types": types,
+                "positional_tensor": args[0] is tensor,
+                "positional_source": args[1] is source_sequence,
+                "positional_destination": args[2] is destination_sequence,
+                "positional_kwargs": kwargs,
+                "positional_index_calls": (source.calls, destination.calls),
+                "keyword_intercepted": keyword_result is marker,
+                "keyword_function": keyword_function is function,
+                "keyword_types": keyword_types,
+                "keyword_receiver": method
+                and len(keyword_args) == 1
+                and keyword_args[0] is tensor,
+                "keyword_args_empty": not method and keyword_args == (),
+                "keyword_source": keyword_kwargs["source"]
+                is keyword_source_sequence,
+                "keyword_destination": keyword_kwargs["destination"]
+                is keyword_destination_sequence,
+                "keyword_input": method
+                or keyword_kwargs.get("input") is tensor,
+                "keyword_index_calls": (
+                    keyword_source.calls,
+                    keyword_destination.calls,
+                ),
+            }
+
+        for operation in (
+            "Tensor.movedim",
+            "Tensor.moveaxis",
+            "torch.movedim",
+            "torch.moveaxis",
+        ):
+            with self.subTest(operation=operation):
+                self.assertEqual(
+                    conversion_contract(torch, operation),
+                    conversion_contract(reference_torch, operation),
+                )
+                self.assertEqual(
+                    contract(torch, operation),
+                    contract(reference_torch, operation),
+                )
+
+    def test_singleton_sequence_binding_errors_match_pytorch_2_13(self):
+        actual = torch.zeros((2, 3, 4))
+        expected = reference_torch.zeros((2, 3, 4))
+
+        def call(module, operation, tensor, source, destination):
+            name = operation.split(".", 1)[1]
+            if operation.startswith("Tensor."):
+                return getattr(tensor, name)(source, destination)
+            return getattr(module, name)(tensor, source, destination)
+
+        for operation in (
+            "Tensor.movedim",
+            "Tensor.moveaxis",
+            "torch.movedim",
+            "torch.moveaxis",
+        ):
+            for source, destination in (
+                (0, (2,)),
+                ((0,), 2),
+                ((True,), (0,)),
+                ((1.5,), (0,)),
+            ):
+                with self.subTest(
+                    operation=operation,
+                    source=source,
+                    destination=destination,
+                ):
+                    self.assert_error_matches(
+                        lambda: call(
+                            torch,
+                            operation,
+                            actual,
+                            source,
+                            destination,
+                        ),
+                        lambda: call(
+                            reference_torch,
+                            operation,
+                            expected,
+                            source,
+                            destination,
+                        ),
+                    )
+
     def test_integer_binding_conversion_and_errors_match_pytorch_2_13(self):
         class IntegerSubclass(int):
             pass

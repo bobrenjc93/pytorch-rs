@@ -508,26 +508,259 @@ class TensorMovedimTests(unittest.TestCase):
             msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
         )
 
-    def test_sequence_dimensions_remain_out_of_scope(self):
+    def test_singleton_sequence_dimensions_reuse_the_integer_view_engine(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        base = torch.tensor(values.tolist())
+        tensors = (
+            ("scalar", torch.tensor(2.5), -1, 0),
+            ("empty", torch.zeros((2, 0, 3)), -1, 0),
+            ("offset", base.transpose(0, 2)[1], -1, 0),
+            ("noncontiguous", base.transpose(0, 2), 0, -1),
+        )
+        operations = (
+            (
+                "Tensor.movedim",
+                lambda tensor, source, destination: tensor.movedim(
+                    source, destination
+                ),
+            ),
+            (
+                "Tensor.moveaxis",
+                lambda tensor, source, destination: tensor.moveaxis(
+                    source, destination
+                ),
+            ),
+            (
+                "torch.movedim",
+                lambda tensor, source, destination: torch.movedim(
+                    tensor, source, destination
+                ),
+            ),
+            (
+                "torch.moveaxis",
+                lambda tensor, source, destination: torch.moveaxis(
+                    tensor, source, destination
+                ),
+            ),
+        )
+        sequence_forms = (
+            ("tuple", lambda dimension: (dimension,)),
+            ("list", lambda dimension: [dimension]),
+            ("Size", lambda dimension: torch.Size([dimension])),
+        )
+
+        for case, tensor, source, destination in tensors:
+            expected = tensor.movedim(source, destination)
+            for operation_name, operation in operations:
+                for source_name, source_form in sequence_forms:
+                    for destination_name, destination_form in sequence_forms:
+                        with self.subTest(
+                            case=case,
+                            operation=operation_name,
+                            source=source_name,
+                            destination=destination_name,
+                        ):
+                            moved = operation(
+                                tensor,
+                                source_form(source),
+                                destination_form(destination),
+                            )
+                            self.assertEqual(moved.shape, expected.shape)
+                            self.assertEqual(moved.stride(), expected.stride())
+                            self.assertEqual(
+                                moved.storage_offset(), expected.storage_offset()
+                            )
+                            self.assertEqual(moved.data_ptr(), tensor.data_ptr())
+                            self.assert_values(moved, expected)
+
+        source = base.transpose(0, 2)[1]
+        expected = source.movedim(-1, 0)
+        keyword_results = (
+            source.movedim(source=(-1,), destination=[0]),
+            source.moveaxis(source=[-1], destination=torch.Size([0])),
+            torch.movedim(
+                input=source,
+                source=torch.Size([-1]),
+                destination=(0,),
+            ),
+            torch.moveaxis(
+                input=source,
+                source=(-1,),
+                destination=torch.Size([0]),
+            ),
+        )
+        for moved in keyword_results:
+            self.assertEqual(moved.shape, expected.shape)
+            self.assertEqual(moved.stride(), expected.stride())
+            self.assertEqual(moved.storage_offset(), expected.storage_offset())
+            self.assertEqual(moved.data_ptr(), source.data_ptr())
+            self.assert_values(moved, expected)
+
+    def test_singleton_sequence_autograd_empty_and_no_grad_reuse_view_policy(self):
+        values = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+        weights = np.linspace(-2.0, 3.0, num=24, dtype=np.float32).reshape(
+            4, 2, 3
+        )
+        operations = (
+            (
+                "Tensor.movedim",
+                lambda tensor, source, destination: tensor.movedim(
+                    source, destination
+                ),
+            ),
+            (
+                "Tensor.moveaxis",
+                lambda tensor, source, destination: tensor.moveaxis(
+                    source, destination
+                ),
+            ),
+            (
+                "torch.movedim",
+                lambda tensor, source, destination: torch.movedim(
+                    tensor, source, destination
+                ),
+            ),
+            (
+                "torch.moveaxis",
+                lambda tensor, source, destination: torch.moveaxis(
+                    tensor, source, destination
+                ),
+            ),
+        )
+
+        for operation_name, operation in operations:
+            with self.subTest(operation=operation_name):
+                leaf = torch.tensor(values.tolist(), requires_grad=True)
+                moved = operation(leaf, (-1,), [0])
+                self.assertTrue(moved.requires_grad)
+                self.assertFalse(moved.is_leaf)
+                self.assertEqual(moved.data_ptr(), leaf.data_ptr())
+                (moved * torch.tensor(weights.tolist())).sum().backward()
+                self.assert_values(leaf.grad, np.moveaxis(weights, 0, -1))
+
+                empty = torch.zeros((2, 0, 3), requires_grad=True)
+                operation(empty, torch.Size([0]), (-1,)).sum().backward()
+                self.assert_values(
+                    empty.grad, np.zeros((2, 0, 3), dtype=np.float32)
+                )
+
+                with torch.no_grad():
+                    untracked = operation(leaf, [0], torch.Size([1]))
+                self.assertTrue(untracked.requires_grad)
+                self.assertTrue(untracked.is_leaf)
+                self.assertEqual(untracked.data_ptr(), leaf.data_ptr())
+                self.assertEqual(untracked.shape, (3, 2, 4))
+                self.assertEqual(untracked.stride(), (4, 12, 1))
+
+    def test_singleton_sequence_index_protocol_conversion_and_mode_dispatch(self):
+        tensor = torch.zeros((2, 3, 4))
+        operations = (
+            (
+                "Tensor.movedim",
+                lambda source, destination: tensor.movedim(
+                    source, destination
+                ),
+            ),
+            (
+                "Tensor.moveaxis",
+                lambda source, destination: tensor.moveaxis(
+                    source, destination
+                ),
+            ),
+            (
+                "torch.movedim",
+                lambda source, destination: torch.movedim(
+                    tensor, source, destination
+                ),
+            ),
+            (
+                "torch.moveaxis",
+                lambda source, destination: torch.moveaxis(
+                    tensor, source, destination
+                ),
+            ),
+        )
+
+        for operation_name, operation in operations:
+            state = {"destination_converted": False, "calls": []}
+
+            class StatefulIndex:
+                def __init__(self, role):
+                    self.role = role
+
+                def __index__(self):
+                    state["calls"].append(self.role)
+                    if self.role == "destination":
+                        state["destination_converted"] = True
+                        return 1
+                    return 0 if state["destination_converted"] else 2
+
+            moved = operation(
+                (StatefulIndex("source"),),
+                [StatefulIndex("destination")],
+            )
+            with self.subTest(operation=operation_name, behavior="conversion"):
+                self.assertEqual(
+                    state["calls"],
+                    ["source", "destination", "destination", "source"],
+                )
+                self.assertEqual(moved.shape, (3, 2, 4))
+                self.assertEqual(moved.stride(), (4, 12, 1))
+
+            source = CustomIndex()
+            destination = CustomIndex()
+            marker = object()
+
+            class RecordingMode(torch.overrides.TorchFunctionMode):
+                def __init__(self):
+                    self.calls = []
+
+                def __torch_function__(self, func, types, args=(), kwargs=None):
+                    self.calls.append((func, types, args, kwargs))
+                    return marker
+
+            mode = RecordingMode()
+            with mode:
+                result = operation((source,), [destination])
+            with self.subTest(operation=operation_name, behavior="mode"):
+                self.assertIs(result, marker)
+                self.assertEqual(source.calls, 1)
+                self.assertEqual(destination.calls, 1)
+                self.assertEqual(len(mode.calls), 1)
+                _, _, forwarded_args, forwarded_kwargs = mode.calls[0]
+                self.assertIs(forwarded_args[0], tensor)
+                self.assertIs(forwarded_args[1][0], source)
+                self.assertIs(forwarded_args[2][0], destination)
+                self.assertIsNone(forwarded_kwargs)
+
+    def test_unsupported_sequence_dimensions_and_mixed_forms_are_rejected(self):
         tensor = torch.zeros((2, 3, 4))
         self.assertTrue(hasattr(torch, "movedim"))
         self.assertTrue(hasattr(torch, "moveaxis"))
         self.assertIn("moveaxis", torch.__all__)
         self.assertTrue(hasattr(torch.Tensor, "moveaxis"))
         for source, destination in (
+            (0, (2,)),
+            ((0,), 2),
             ((0, 2), (2, 0)),
             ([0, 2], [2, 0]),
             ((), ()),
+            ([], []),
+            (torch.Size(), torch.Size()),
+            (torch.Size([0, 2]), torch.Size([2, 0])),
         ):
             with self.subTest(source=source, destination=destination):
-                with self.assertRaises(TypeError):
-                    tensor.movedim(source, destination)
-                with self.assertRaises(TypeError):
-                    torch.movedim(tensor, source, destination)
-                with self.assertRaises(TypeError):
-                    torch.moveaxis(tensor, source, destination)
-                with self.assertRaises(TypeError):
-                    tensor.moveaxis(source, destination)
+                for operation in (
+                    lambda: tensor.movedim(source, destination),
+                    lambda: torch.movedim(tensor, source, destination),
+                    lambda: torch.moveaxis(tensor, source, destination),
+                    lambda: tensor.moveaxis(source, destination),
+                ):
+                    with self.assertRaisesRegex(
+                        TypeError,
+                        r"received an invalid combination of arguments",
+                    ):
+                        operation()
 
     def test_tensorbase_descriptor_metadata_and_unbound_behavior(self):
         tensor = torch.zeros((2, 3, 4))
