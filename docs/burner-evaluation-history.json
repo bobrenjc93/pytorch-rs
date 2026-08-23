@@ -5313,6 +5313,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 94
       }
+    },
+    {
+      "key": "pr:716",
+      "recordedAt": "2026-08-23T06:51:06.570Z",
+      "label": "PR #716",
+      "kind": "leaf",
+      "prNumber": 716,
+      "title": "Expose CPU-build torch.cuda.is_available",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 85.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 68.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 94
+      }
     }
   ]
 }
