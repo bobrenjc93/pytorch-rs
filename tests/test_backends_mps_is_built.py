@@ -21,6 +21,11 @@ FUNCTION_DOC = """Return whether PyTorch is built with MPS support.
     and devices, we would be able to use it.
     """
 
+if sys.version_info >= (3, 13):
+    # CPython 3.13+ cleans function docstring indentation while preserving
+    # the terminating newline.
+    FUNCTION_DOC = inspect.cleandoc(FUNCTION_DOC) + "\n"
+
 
 class MpsIsBuiltTests(unittest.TestCase):
     def test_returns_exact_false_native_build_metadata_without_runtime_probes(self):
