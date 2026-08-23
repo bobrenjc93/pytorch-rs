@@ -46,6 +46,12 @@ def _atleast_sequence(input, variable_function, unsupported):
     return variable_function(input)
 
 
+def _atleast_variadic(tensors, variable_function, unsupported):
+    if _get_current_function_mode() is not None:
+        raise TypeError(unsupported)
+    return _atleast_sequence(tensors, variable_function, unsupported)
+
+
 def _atleast_1d_impl(input):
     if type(input) is Tensor:
         return _VF_atleast_1d(input)
@@ -87,9 +93,7 @@ def atleast_1d(*tensors):
         ()
     """
     if len(tensors) > 1:
-        if _get_current_function_mode() is not None:
-            raise TypeError(_ATLEAST_1D_VARIADIC_UNSUPPORTED)
-        return _atleast_sequence(
+        return _atleast_variadic(
             tensors,
             _VF_atleast_1d,
             _ATLEAST_1D_VARIADIC_UNSUPPORTED,
@@ -149,9 +153,7 @@ def atleast_2d(*tensors):
         ()
     """
     if len(tensors) > 1:
-        if _get_current_function_mode() is not None:
-            raise TypeError(_ATLEAST_2D_VARIADIC_UNSUPPORTED)
-        return _atleast_sequence(
+        return _atleast_variadic(
             tensors,
             _VF_atleast_2d,
             _ATLEAST_2D_VARIADIC_UNSUPPORTED,
@@ -219,9 +221,7 @@ def atleast_3d(*tensors):
         ()
     """
     if len(tensors) > 1:
-        if _get_current_function_mode() is not None:
-            raise TypeError(_ATLEAST_3D_VARIADIC_UNSUPPORTED)
-        return _atleast_sequence(
+        return _atleast_variadic(
             tensors,
             _VF_atleast_3d,
             _ATLEAST_3D_VARIADIC_UNSUPPORTED,
