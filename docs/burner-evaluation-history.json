@@ -5521,6 +5521,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96
       }
+    },
+    {
+      "key": "pr:769",
+      "recordedAt": "2026-08-23T19:34:40.312Z",
+      "label": "PR #769",
+      "kind": "leaf",
+      "prNumber": 769,
+      "title": "Add bias-free rank-2 torch.nn.functional.linear",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 87.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 69.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }
