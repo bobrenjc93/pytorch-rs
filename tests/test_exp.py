@@ -1,7 +1,10 @@
 import inspect
+import pickle
+import subprocess
 import sys
 import types
 import unittest
+from multiprocessing.reduction import ForkingPickler
 
 import numpy as np
 import torch_rs as torch
@@ -183,6 +186,56 @@ class TensorExpTests(unittest.TestCase):
                 with self.assertRaises(TypeError) as raised:
                     call()
                 self.assertEqual(str(raised.exception), message)
+
+    def test_tensorbase_descriptor_round_trips_through_both_picklers(self):
+        descriptor = inspect.getattr_static(torch.Tensor, "exp")
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol, pickler="pickle"):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(descriptor, protocol)), descriptor
+                )
+            with self.subTest(protocol=protocol, pickler="ForkingPickler"):
+                self.assertIs(
+                    pickle.loads(ForkingPickler.dumps(descriptor, protocol)),
+                    descriptor,
+                )
+
+    def test_registration_preserves_preexisting_descriptor_reducers(self):
+        source = r'''
+import copyreg
+import importlib
+import inspect
+import pickle
+import types
+from multiprocessing.reduction import ForkingPickler
+
+def standard_reducer(descriptor):
+    return str, ("standard reducer",)
+
+def forking_reducer(descriptor):
+    return str, ("forking reducer",)
+
+copyreg.pickle(types.MethodDescriptorType, standard_reducer)
+ForkingPickler.register(types.MethodDescriptorType, forking_reducer)
+
+import torch_rs as torch
+
+def check_reducers():
+    descriptor = inspect.getattr_static(torch.Tensor, "exp")
+    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+        assert pickle.loads(pickle.dumps(descriptor, protocol)) is descriptor
+        assert pickle.loads(ForkingPickler.dumps(descriptor, protocol)) is descriptor
+        assert pickle.loads(pickle.dumps(str.upper, protocol)) == "standard reducer"
+        assert (
+            pickle.loads(ForkingPickler.dumps(str.upper, protocol))
+            == "forking reducer"
+        )
+
+check_reducers()
+torch = importlib.reload(torch)
+check_reducers()
+'''
+        subprocess.run([sys.executable, "-c", source], check=True)
 
     def test_torch_function_modes_dispatch_before_native_and_restore_stack(self):
         tensor = torch.tensor([0.5], requires_grad=True)

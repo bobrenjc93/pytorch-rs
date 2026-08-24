@@ -1,9 +1,11 @@
 import inspect
 import json
+import pickle
 import subprocess
 import sys
 import types
 import unittest
+from multiprocessing.reduction import ForkingPickler
 
 import numpy as np
 import torch_rs as torch
@@ -217,6 +219,24 @@ class ExpReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.callable_contract(torch),
             self.callable_contract(reference_torch),
+        )
+
+    @staticmethod
+    def descriptor_pickle_contract(module):
+        descriptor = inspect.getattr_static(module.Tensor, "exp")
+        return tuple(
+            (
+                pickle.loads(pickle.dumps(descriptor, protocol)) is descriptor,
+                pickle.loads(ForkingPickler.dumps(descriptor, protocol))
+                is descriptor,
+            )
+            for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+        )
+
+    def test_descriptor_pickle_round_trips_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.descriptor_pickle_contract(torch),
+            self.descriptor_pickle_contract(reference_torch),
         )
 
     @staticmethod

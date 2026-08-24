@@ -3,7 +3,9 @@
 import builtins as _builtins
 import copyreg as _copyreg
 import functools as _functools
+import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
+import types as _types
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
@@ -14,6 +16,9 @@ from .torch_rs import *
 # owners remain importable without creating or modifying a top-level ``torch``.
 _C = _native
 _sys.modules[f"{__name__}._C"] = _C
+# TensorBase reports PyTorch's ``torch._C`` metadata, so retain its actual
+# native class privately for package-local descriptor reconstruction.
+_TensorBase = Tensor.__base__
 
 # PyTorch's memory-format reducers use dotted public names such as
 # ``torch.channels_last``. Mirror its module self-alias so those names resolve
@@ -181,6 +186,56 @@ def _reduce_layout(value):
 
 _copyreg.pickle(layout, _reduce_layout)
 
+
+# The default method-descriptor reduction tries to import ``torch._C`` and
+# cannot resolve torch-rs's metadata-compatible TensorBase. Handle only that
+# owner and delegate every other descriptor to the reducer already in place.
+def _get_tensorbase_method_descriptor(name):
+    """Return a native TensorBase method descriptor by name."""
+    return getattr(_TensorBase, name)
+
+
+def _make_tensorbase_method_descriptor_reducer(previous):
+    if getattr(
+        previous,
+        "_torch_rs_tensorbase_method_descriptor_reducer",
+        False,
+    ):
+        previous = getattr(
+            previous,
+            "_torch_rs_previous_method_descriptor_reducer",
+            None,
+        )
+
+    def reducer(descriptor):
+        if descriptor.__objclass__ is _TensorBase:
+            return _get_tensorbase_method_descriptor, (descriptor.__name__,)
+        if previous is not None:
+            return previous(descriptor)
+        return descriptor.__reduce__()
+
+    reducer._torch_rs_tensorbase_method_descriptor_reducer = True
+    reducer._torch_rs_previous_method_descriptor_reducer = previous
+    return reducer
+
+
+_reduce_tensorbase_method_descriptor = _make_tensorbase_method_descriptor_reducer(
+    _copyreg.dispatch_table.get(_types.MethodDescriptorType)
+)
+_copyreg.pickle(_types.MethodDescriptorType, _reduce_tensorbase_method_descriptor)
+
+_reduce_tensorbase_method_descriptor_for_forking = (
+    _make_tensorbase_method_descriptor_reducer(
+        _multiprocessing_reduction.ForkingPickler._extra_reducers.get(
+            _types.MethodDescriptorType
+        )
+    )
+)
+_multiprocessing_reduction.ForkingPickler.register(
+    _types.MethodDescriptorType,
+    _reduce_tensorbase_method_descriptor_for_forking,
+)
+
 __doc__ = _native.__doc__
 # Keep package-only exports out of the native module's list, just as PyTorch's
 # numeric constants live on ``torch`` rather than ``torch._C``.  A separate
@@ -226,4 +281,11 @@ from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
 from .functional import broadcast_shapes as broadcast_shapes
 
-del _copyreg, _functools, _native, _sys
+del (
+    _copyreg,
+    _functools,
+    _multiprocessing_reduction,
+    _native,
+    _sys,
+    _types,
+)
