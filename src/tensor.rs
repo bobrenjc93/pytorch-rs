@@ -2595,6 +2595,19 @@ impl Tensor {
         self.unary_map(ceil_value)
     }
 
+    /// Rounds every element toward zero to the nearest integer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn trunc(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "trunc" });
+        }
+        self.unary_map(trunc_value)
+    }
+
     /// Applies the logistic sigmoid function element by element.
     ///
     /// # Errors
@@ -4771,6 +4784,18 @@ fn ceil_value(value: f32) -> f32 {
     }
 }
 
+fn trunc_value(value: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let bits = value.to_bits();
+    if bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        // PyTorch quiets signaling NaNs while retaining their sign and payload.
+        f32::from_bits(bits | QUIET_NAN_MASK)
+    } else {
+        value.trunc()
+    }
+}
+
 fn sigmoid_value(value: f32) -> f32 {
     1.0 / (1.0 + (-value).exp())
 }
@@ -5835,6 +5860,7 @@ mod tests {
             (tensor.exp().unwrap(), shared.exp().unwrap()),
             (tensor.floor().unwrap(), shared.floor().unwrap()),
             (tensor.ceil().unwrap(), shared.ceil().unwrap()),
+            (tensor.trunc().unwrap(), shared.trunc().unwrap()),
             (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
@@ -6204,6 +6230,10 @@ mod tests {
         );
         assert_eq!(
             tensor.ceil(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.trunc(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
