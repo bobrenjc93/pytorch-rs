@@ -657,9 +657,9 @@ class TensorTanhTests(unittest.TestCase):
                 with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
                     call()
 
-    def test_functional_and_inplace_forms_remain_unsupported(self):
+    def test_functional_form_is_exposed_and_inplace_forms_remain_unsupported(self):
         tensor = torch.tensor([0.5])
-        self.assertFalse(hasattr(torch.nn.functional, "tanh"))
+        self.assertTrue(hasattr(torch.nn.functional, "tanh"))
         self.assertFalse(hasattr(torch.Tensor, "tanh_"))
         self.assertFalse(hasattr(tensor, "tanh_"))
         self.assertFalse(hasattr(torch, "tanh_"))

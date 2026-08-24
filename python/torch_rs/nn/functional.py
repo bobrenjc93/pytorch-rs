@@ -146,6 +146,17 @@ def relu(input: Tensor, inplace: bool = False) -> Tensor:
     return torch.relu(input)
 
 
+def tanh(input):
+    r"""tanh(input) -> Tensor
+
+    Applies element-wise,
+    :math:`\text{Tanh}(x) = \tanh(x) = \frac{\exp(x) - \exp(-x)}{\exp(x) + \exp(-x)}`
+
+    See :class:`~torch.nn.Tanh` for more details.
+    """
+    return input.tanh()
+
+
 def linear(input: Tensor, weight: Tensor, bias: Tensor | None = None) -> Tensor:
     return _nn_functional_linear(input, weight, bias)
 
