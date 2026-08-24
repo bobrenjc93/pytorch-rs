@@ -842,6 +842,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nsign() -> Tensor\n\nSee :func:`torch.sign`\n"]
+    #[pyo3(text_signature = None)]
+    fn sign(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "sign")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.sign().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nsqrt() -> Tensor\n\nSee :func:`torch.sqrt`\n"]
     #[pyo3(text_signature = None)]
     fn sqrt(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2359,6 +2376,7 @@ fn dispatch_tensorbase_mode(
                     | "floor"
                     | "reciprocal"
                     | "sigmoid"
+                    | "sign"
                     | "sin"
                     | "sqrt"
                     | "square"

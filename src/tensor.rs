@@ -2589,6 +2589,19 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Sin, apply_sin_vjp)
     }
 
+    /// Computes the sign of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn sign(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "sign" });
+        }
+        self.unary_map(sign_value)
+    }
+
     /// Computes the base-e exponential of every element.
     ///
     /// # Errors
@@ -4835,6 +4848,16 @@ fn relu_value(value: f32) -> f32 {
     }
 }
 
+fn sign_value(value: f32) -> f32 {
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    if magnitude == 0 || magnitude > f32::INFINITY.to_bits() {
+        0.0
+    } else {
+        f32::from_bits((bits & F32_SIGN_MASK) | 1.0_f32.to_bits())
+    }
+}
+
 fn round_value(value: f32, operation: fn(f32) -> f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
 
@@ -5942,6 +5965,7 @@ mod tests {
             (tensor.exp().unwrap(), shared.exp().unwrap()),
             (tensor.floor().unwrap(), shared.floor().unwrap()),
             (tensor.ceil().unwrap(), shared.ceil().unwrap()),
+            (tensor.sign().unwrap(), shared.sign().unwrap()),
             (tensor.trunc().unwrap(), shared.trunc().unwrap()),
             (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
@@ -6312,6 +6336,10 @@ mod tests {
         );
         assert_eq!(
             tensor.ceil(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.sign(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
