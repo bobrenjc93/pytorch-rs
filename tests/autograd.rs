@@ -113,7 +113,7 @@ fn abs_rejects_recording_before_planning_and_honors_no_grad() {
                 1.25_f32.to_bits(),
                 1.75_f32.to_bits(),
                 0.0_f32.to_bits(),
-                0x7fc1_2345,
+                0x7f81_2345,
             ]
         );
         assert_eq!(extreme.abs(), Err(TensorError::StrideCalculationOverflow));

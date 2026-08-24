@@ -1,3 +1,4 @@
+import ctypes
 import inspect
 import sys
 import types
@@ -34,8 +35,6 @@ SPECIAL_INPUT_BITS = np.asarray(
         0xFF7F_FFFF,
         0x7F80_0000,
         0xFF80_0000,
-        0x7F81_2345,
-        0xFF81_2345,
         0x7FC1_2345,
         0xFFC5_4321,
     ),
@@ -59,12 +58,27 @@ SPECIAL_OUTPUT_BITS = np.asarray(
         0x7F80_0000,
         0x7F80_0000,
         0x7FC1_2345,
-        0x7FC1_2345,
-        0x7FC1_2345,
         0x7FC5_4321,
     ),
     dtype=np.uint32,
 )
+
+RAW_NAN_INPUT_BITS = np.asarray(
+    (0x7F81_2345, 0xFF81_2345, 0x7FC1_2345, 0xFFC5_4321),
+    dtype=np.uint32,
+)
+
+RAW_NAN_OUTPUT_BITS = np.asarray(
+    (0x7F81_2345, 0x7F81_2345, 0x7FC1_2345, 0x7FC5_4321),
+    dtype=np.uint32,
+)
+
+
+def raw_storage_bits(tensor):
+    pointer = ctypes.cast(tensor.data_ptr(), ctypes.POINTER(ctypes.c_uint32))
+    return np.asarray(
+        [pointer[index] for index in range(tensor.numel())], dtype=np.uint32
+    )
 
 
 def make_cases(module):
@@ -151,6 +165,15 @@ class TensorAbsTests(unittest.TestCase):
             )
             with self.subTest(case=case, values=True):
                 np.testing.assert_array_equal(self.tensor_bits(output), expected_bits)
+
+    def test_signaling_and_quiet_nans_clear_only_the_sign_bit(self):
+        source = torch.tensor(memoryview(RAW_NAN_INPUT_BITS.view(np.float32)))
+        np.testing.assert_array_equal(raw_storage_bits(source), RAW_NAN_INPUT_BITS)
+
+        output = source.abs()
+        np.testing.assert_array_equal(raw_storage_bits(output), RAW_NAN_OUTPUT_BITS)
+        self.assertFalse(output.is_set_to(source))
+        self.assertNotEqual(output.data_ptr(), source.data_ptr())
 
     def test_active_autograd_is_rejected_before_output_planning(self):
         message = r"^abs\(\): autograd recording is not supported$"

@@ -1041,8 +1041,8 @@ fn abs_matches_pytorch_float32_ieee_bits() {
         0x7f7f_ffff,
         0x7f80_0000,
         0x7f80_0000,
-        0x7fc1_2345,
-        0x7fc1_2345,
+        0x7f81_2345,
+        0x7f81_2345,
         0x7fc1_2345,
         0x7fc5_4321,
     ];

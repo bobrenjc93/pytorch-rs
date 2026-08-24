@@ -4867,16 +4867,7 @@ fn trunc_value(value: f32) -> f32 {
 }
 
 fn abs_value(value: f32) -> f32 {
-    const QUIET_NAN_MASK: u32 = 0x0040_0000;
-
-    let magnitude = value.to_bits() & !F32_SIGN_MASK;
-    if magnitude > f32::INFINITY.to_bits() {
-        // PyTorch clears every NaN sign while quieting signaling NaNs and
-        // retaining the remaining payload bits.
-        f32::from_bits(magnitude | QUIET_NAN_MASK)
-    } else {
-        f32::from_bits(magnitude)
-    }
+    f32::from_bits(value.to_bits() & !F32_SIGN_MASK)
 }
 
 fn sigmoid_value(value: f32) -> f32 {

@@ -9,9 +9,21 @@ import numpy as np
 import torch_rs as torch
 
 if __package__:
-    from .test_abs import SPECIAL_OUTPUT_BITS, make_cases
+    from .test_abs import (
+        RAW_NAN_INPUT_BITS,
+        RAW_NAN_OUTPUT_BITS,
+        SPECIAL_OUTPUT_BITS,
+        make_cases,
+        raw_storage_bits,
+    )
 else:
-    from test_abs import SPECIAL_OUTPUT_BITS, make_cases
+    from test_abs import (
+        RAW_NAN_INPUT_BITS,
+        RAW_NAN_OUTPUT_BITS,
+        SPECIAL_OUTPUT_BITS,
+        make_cases,
+        raw_storage_bits,
+    )
 
 try:
     import torch as reference_torch
@@ -74,6 +86,38 @@ class TensorAbsReferenceTests(unittest.TestCase):
                     self.tensor_values(expected).reshape(-1).view(np.uint32),
                     SPECIAL_OUTPUT_BITS,
                 )
+
+    def test_raw_nan_bits_use_noncanonicalizing_reference_storage(self):
+        actual_source = torch.tensor(
+            memoryview(RAW_NAN_INPUT_BITS.view(np.float32))
+        )
+        actual_output = actual_source.abs()
+        actual_bits = raw_storage_bits(actual_output)
+        np.testing.assert_array_equal(
+            raw_storage_bits(actual_source), RAW_NAN_INPUT_BITS
+        )
+        np.testing.assert_array_equal(actual_bits, RAW_NAN_OUTPUT_BITS)
+
+        # torch.tensor converts through scalar values and quiets signaling
+        # NaNs before the operation. Use sharing constructors for the PyTorch
+        # inputs so both kernels receive identical raw storage.
+        for constructor in ("from_numpy", "frombuffer"):
+            storage_bits = RAW_NAN_INPUT_BITS.copy()
+            if constructor == "from_numpy":
+                source = reference_torch.from_numpy(storage_bits.view(np.float32))
+            else:
+                source = reference_torch.frombuffer(
+                    memoryview(storage_bits), dtype=reference_torch.float32
+                )
+
+            with self.subTest(constructor=constructor, input=True):
+                np.testing.assert_array_equal(
+                    raw_storage_bits(source), RAW_NAN_INPUT_BITS
+                )
+            with self.subTest(constructor=constructor, output=True):
+                expected_bits = raw_storage_bits(source.abs())
+                np.testing.assert_array_equal(expected_bits, RAW_NAN_OUTPUT_BITS)
+                np.testing.assert_array_equal(actual_bits, expected_bits)
 
     @staticmethod
     def error(action):
