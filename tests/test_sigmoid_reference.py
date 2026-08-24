@@ -1,3 +1,4 @@
+import ctypes
 import inspect
 import json
 import subprocess
@@ -34,7 +35,7 @@ class TensorSigmoidReferenceTests(unittest.TestCase):
             return np.asarray(tensor, dtype=np.float32)
         return tensor.detach().cpu().numpy()
 
-    def assert_tensor_matches(self, actual, expected, *, case):
+    def assert_tensor_matches(self, actual, expected, *, case, exact_bits=False):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(tuple(actual.shape), tuple(expected.shape))
             self.assertEqual(actual.stride(), expected.stride())
@@ -51,6 +52,11 @@ class TensorSigmoidReferenceTests(unittest.TestCase):
                 atol=np.nextafter(np.float32(0), np.float32(1)),
                 equal_nan=True,
             )
+            if exact_bits:
+                np.testing.assert_array_equal(
+                    self.tensor_values(actual).reshape(-1).view(np.uint32),
+                    self.tensor_values(expected).reshape(-1).view(np.uint32),
+                )
 
     @staticmethod
     def make_cases(module):
@@ -167,6 +173,155 @@ class TensorSigmoidReferenceTests(unittest.TestCase):
                     atol=smallest_subnormal,
                     equal_nan=True,
                 )
+
+    def test_finite_owned_scalar_autograd_bits_match_pytorch_2_13(self):
+        cases = (
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x3F00_0000,
+            0xBF00_0000,
+            0x4185_1591,
+            0x4185_1592,
+            0xC2B1_7217,
+            0xC2B1_7218,
+        )
+
+        for input_bits in cases:
+            value = np.asarray(input_bits, dtype=np.uint32).view(np.float32).item()
+            actual_leaf = torch.tensor(value, requires_grad=True)
+            expected_leaf = reference_torch.tensor(
+                value, dtype=reference_torch.float32, requires_grad=True
+            )
+            actual_output = actual_leaf.sigmoid()
+            expected_output = expected_leaf.sigmoid()
+
+            actual_output.backward()
+            expected_output.backward()
+            self.assert_tensor_matches(
+                actual_output,
+                expected_output,
+                case=(f"0x{input_bits:08x}", "forward"),
+                exact_bits=True,
+            )
+            self.assert_tensor_matches(
+                actual_leaf.grad,
+                expected_leaf.grad,
+                case=(f"0x{input_bits:08x}", "gradient"),
+                exact_bits=True,
+            )
+
+    def test_scalar_composition_accumulation_and_freed_graph_match_pytorch_2_13(self):
+        snapshots = []
+        for module in (torch, reference_torch):
+            composed = module.tensor(
+                0.5, dtype=module.float32, requires_grad=True
+            )
+            composed.sigmoid().sin().backward()
+            composed_gradient = self.tensor_values(composed.grad).copy()
+
+            accumulated = module.tensor(
+                -0.5, dtype=module.float32, requires_grad=True
+            )
+            accumulated.sigmoid().backward()
+            first = self.tensor_values(accumulated.grad).copy()
+            accumulated.sigmoid().backward()
+            second = self.tensor_values(accumulated.grad).copy()
+
+            freed = module.tensor(
+                0.25, dtype=module.float32, requires_grad=True
+            )
+            loss = freed.sigmoid()
+            loss.backward()
+            repeated_backward = self.error(loss.backward)
+            snapshots.append(
+                (composed_gradient, first, second, repeated_backward)
+            )
+
+        for index in range(3):
+            np.testing.assert_allclose(
+                snapshots[0][index],
+                snapshots[1][index],
+                rtol=2.0e-6,
+                atol=0.0,
+            )
+        self.assertEqual(snapshots[0][3], snapshots[1][3])
+
+    def test_scalar_backward_uses_the_saved_output_across_rounding_modes(self):
+        try:
+            runtime = ctypes.CDLL(None)
+            fegetround = runtime.fegetround
+            fesetround = runtime.fesetround
+        except (AttributeError, OSError):
+            self.skipTest("the platform C runtime does not expose fenv controls")
+        fegetround.argtypes = []
+        fegetround.restype = ctypes.c_int
+        fesetround.argtypes = [ctypes.c_int]
+        fesetround.restype = ctypes.c_int
+
+        original_rounding = fegetround()
+        input_value = np.asarray(0x40E6_E0D6, dtype=np.uint32).view(np.float32).item()
+        try:
+            if fesetround(0) != 0 or fegetround() != 0:
+                self.skipTest("the platform does not expose round-to-nearest as zero")
+
+            actual_leaf = torch.tensor(input_value, requires_grad=True)
+            expected_leaf = reference_torch.tensor(
+                input_value,
+                dtype=reference_torch.float32,
+                requires_grad=True,
+            )
+            actual_output = actual_leaf.sigmoid()
+            expected_output = expected_leaf.sigmoid()
+            saved_bits = self.tensor_values(actual_output).view(np.uint32).item()
+
+            alternate_rounding = None
+            for candidate in (0x400, 0x80_0000):
+                if fesetround(candidate) != 0 or fegetround() != candidate:
+                    continue
+                actual_probe = torch.tensor(input_value).sigmoid()
+                expected_probe = reference_torch.tensor(
+                    input_value, dtype=reference_torch.float32
+                ).sigmoid()
+                actual_probe_bits = self.tensor_values(actual_probe).view(np.uint32).item()
+                expected_probe_bits = (
+                    self.tensor_values(expected_probe).view(np.uint32).item()
+                )
+                if actual_probe_bits == expected_probe_bits != saved_bits:
+                    alternate_rounding = candidate
+                    break
+            if alternate_rounding is None:
+                self.skipTest("native sigmoid is not sensitive to available fenv modes")
+
+            actual_output.backward()
+            expected_output.backward()
+        finally:
+            self.assertEqual(fesetround(original_rounding), 0)
+
+        self.assert_tensor_matches(
+            actual_output,
+            expected_output,
+            case="saved output forward",
+            exact_bits=True,
+        )
+        self.assert_tensor_matches(
+            actual_leaf.grad,
+            expected_leaf.grad,
+            case="saved output gradient",
+            exact_bits=True,
+        )
+
+    def test_sigmoid_backward_node_identity_matches_pytorch_2_13(self):
+        actual = torch.tensor(0.5, requires_grad=True).sigmoid()
+        expected = reference_torch.tensor(
+            0.5, dtype=reference_torch.float32, requires_grad=True
+        ).sigmoid()
+        self.assertEqual(type(expected.grad_fn).__name__, "SigmoidBackward0")
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(actual),
+            f", grad_fn=<{type(expected.grad_fn).__name__}>",
+        )
 
     @staticmethod
     def error(action):
@@ -326,7 +481,50 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
-    def test_inference_only_autograd_boundary_is_explicit(self):
+    def test_scalar_autograd_modes_and_unsupported_boundaries_remain_explicit(self):
+        actual_scalar = torch.tensor(0.5, requires_grad=True)
+        expected_scalar = reference_torch.tensor(
+            0.5, dtype=reference_torch.float32, requires_grad=True
+        )
+        with torch.no_grad():
+            actual_no_grad_scalar = actual_scalar.sigmoid()
+        with reference_torch.no_grad():
+            expected_no_grad_scalar = expected_scalar.sigmoid()
+        self.assert_tensor_matches(
+            actual_no_grad_scalar,
+            expected_no_grad_scalar,
+            case="scalar no_grad",
+            exact_bits=True,
+        )
+        self.assert_tensor_matches(
+            actual_scalar.detach().sigmoid(),
+            expected_scalar.detach().sigmoid(),
+            case="scalar detached",
+            exact_bits=True,
+        )
+
+        higher_order = torch.tensor(0.25, requires_grad=True)
+        loss = higher_order.sigmoid()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        loss.backward()
+        self.assertIsNotNone(higher_order.grad)
+
+        message = r"^sigmoid\(\): autograd recording is not supported$"
+        for bits in (0x7F80_0000, 0xFF80_0000, 0x7FC1_2345, 0xFFC5_4321):
+            value = np.asarray(bits, dtype=np.uint32).view(np.float32).item()
+            actual = torch.tensor(value, requires_grad=True)
+            with self.subTest(nonfinite=f"0x{bits:08x}"):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    actual.sigmoid()
+            self.assertIsNone(actual.grad)
+            actual.sum().backward()
+            self.assertEqual(actual.grad.item(), 1.0)
+
         actual_leaf = torch.tensor(
             np.linspace(-3.75, 3.75, 24, dtype=np.float32)
             .reshape(2, 3, 4)
@@ -341,11 +539,23 @@ print(json.dumps({
         actual_input = actual_leaf.transpose(0, 2)[1]
         expected_input = expected_leaf.transpose(0, 2)[1]
 
-        with self.assertRaisesRegex(
-            RuntimeError, r"^sigmoid\(\): autograd recording is not supported$"
-        ):
+        with self.assertRaisesRegex(RuntimeError, message):
             actual_input.sigmoid()
         self.assertTrue(expected_input.sigmoid().requires_grad)
+
+        actual_view_base = torch.tensor([0.5], requires_grad=True)
+        actual_view = actual_view_base[0]
+        with self.assertRaisesRegex(RuntimeError, message):
+            actual_view.sigmoid()
+        actual_view.backward()
+        self.assertEqual(actual_view_base.grad.tolist(), [1.0])
+
+        actual_nonleaf_base = torch.tensor(0.5, requires_grad=True)
+        actual_nonleaf = actual_nonleaf_base.sin()
+        with self.assertRaisesRegex(RuntimeError, message):
+            actual_nonleaf.sigmoid()
+        actual_nonleaf.backward()
+        self.assertIsNotNone(actual_nonleaf_base.grad)
 
         with torch.no_grad():
             actual_no_grad = actual_input.sigmoid()
@@ -367,6 +577,22 @@ print(json.dumps({
         self.assertTrue(hasattr(reference_torch.Tensor, "sigmoid_"))
         self.assertFalse(hasattr(torch, "sigmoid_"))
         self.assertNotIn("sigmoid_", torch.__all__)
+
+        actual = torch.tensor(0.5, requires_grad=True)
+        expected = reference_torch.tensor(
+            0.5, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_before = self.tensor_values(actual).copy()
+        expected_before = self.tensor_values(expected).copy()
+        with self.assertRaises(AttributeError):
+            actual.sigmoid_()
+        with self.assertRaises(RuntimeError):
+            expected.sigmoid_()
+        np.testing.assert_array_equal(self.tensor_values(actual), actual_before)
+        np.testing.assert_array_equal(self.tensor_values(expected), expected_before)
+        self.assertIsNone(actual.grad)
+        actual.sigmoid().backward()
+        self.assertIsNotNone(actual.grad)
 
 
 if __name__ == "__main__":

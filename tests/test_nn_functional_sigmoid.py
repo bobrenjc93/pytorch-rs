@@ -181,40 +181,38 @@ class FunctionalSigmoidTests(unittest.TestCase):
         self.assertEqual(args, (source,))
         self.assertIsNone(kwargs)
 
-    def test_existing_autograd_boundaries_are_preserved(self):
+    def test_scalar_autograd_and_existing_unsupported_boundaries_are_preserved(self):
         scalar = torch.tensor(0.5, requires_grad=True)
+        scalar_output = functional.sigmoid(input=scalar)
+        self.assertTrue(scalar_output.requires_grad)
+        self.assertFalse(scalar_output.is_leaf)
+        scalar_output.backward()
+        self.assertEqual(self.tensor_bits(scalar.grad).item(), 0x3E70_A4D0)
+
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
         )
-        sources = (scalar, leaf.transpose(0, 1)[1])
+        source = leaf.transpose(0, 1)[1]
+        for call in (source.sigmoid, lambda: functional.sigmoid(source)):
+            with self.subTest(call=call):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^sigmoid\(\): autograd recording is not supported$",
+                ):
+                    call()
 
-        for case, source in enumerate(sources):
-            calls = (
-                source.sigmoid,
-                lambda source=source: functional.sigmoid(source),
-            )
-            for call in calls:
-                with self.subTest(case=case, call=call):
-                    with self.assertRaisesRegex(
-                        RuntimeError,
-                        r"^sigmoid\(\): autograd recording is not supported$",
-                    ):
-                        call()
+        with torch.no_grad():
+            actual = functional.sigmoid(source)
+            expected = source.sigmoid()
+        self.assert_tensor_matches(actual, expected, source, case="no_grad")
 
-            with torch.no_grad():
-                actual = functional.sigmoid(source)
-                expected = source.sigmoid()
-            self.assert_tensor_matches(
-                actual, expected, source, case=f"no_grad_{case}"
-            )
-
-            detached = source.detach()
-            self.assert_tensor_matches(
-                functional.sigmoid(detached),
-                detached.sigmoid(),
-                detached,
-                case=f"detached_{case}",
-            )
+        detached = source.detach()
+        self.assert_tensor_matches(
+            functional.sigmoid(detached),
+            detached.sigmoid(),
+            detached,
+            case="detached",
+        )
 
     def test_argument_receiver_and_scope_errors(self):
         source = torch.tensor([0.5])
