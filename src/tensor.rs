@@ -2569,6 +2569,19 @@ impl Tensor {
         self.finish_saved_output_unary_vjp(output, AutogradNode::Exp, apply_exp_vjp)
     }
 
+    /// Rounds every element down to the nearest integer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn floor(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "floor" });
+        }
+        self.unary_map(floor_value)
+    }
+
     /// Computes the hyperbolic tangent of every element.
     ///
     /// # Errors
@@ -4706,6 +4719,18 @@ fn relu_value(value: f32) -> f32 {
     }
 }
 
+fn floor_value(value: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let bits = value.to_bits();
+    if bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
+        // PyTorch quiets signaling NaNs while retaining their sign and payload.
+        f32::from_bits(bits | QUIET_NAN_MASK)
+    } else {
+        value.floor()
+    }
+}
+
 fn sqrt_value(value: f32) -> f32 {
     // PyTorch canonicalizes domain errors to a positive quiet NaN while
     // preserving signed zero and the payload and sign of NaN inputs.
@@ -5764,6 +5789,7 @@ mod tests {
             (tensor.relu().unwrap(), shared.relu().unwrap()),
             (tensor.sin().unwrap(), shared.sin().unwrap()),
             (tensor.exp().unwrap(), shared.exp().unwrap()),
+            (tensor.floor().unwrap(), shared.floor().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
             (
@@ -6124,6 +6150,10 @@ mod tests {
 
         assert_eq!(
             tensor.exp(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.floor(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
