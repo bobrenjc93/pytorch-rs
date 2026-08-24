@@ -1582,6 +1582,14 @@ pub(crate) fn floor_variable_function(
     unary_out_variable_function(UnaryOutOperation::FLOOR, py, args, kwargs)
 }
 
+pub(crate) fn ceil_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::CEIL, py, args, kwargs)
+}
+
 pub(crate) fn neg_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2020,6 +2028,15 @@ impl UnaryOutOperation {
         out_unsupported_error: "floor(): the 'out' argument is not supported",
         autograd_unsupported_error: None,
         apply: CoreTensor::floor,
+    };
+
+    const CEIL: Self = Self {
+        name: "ceil",
+        qualified_name: "torch.ceil",
+        dispatch_allocation_error: "unable to allocate ceil dispatch operands",
+        out_unsupported_error: "ceil(): the 'out' argument is not supported",
+        autograd_unsupported_error: None,
+        apply: CoreTensor::ceil,
     };
 
     const RECIPROCAL: Self = Self {
