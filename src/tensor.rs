@@ -2340,21 +2340,30 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, subtract_value)
+        self.zip_map(other, |left, right| left - right)
     }
 
-    /// Subtracts while retaining the left operand's payload for paired NaNs.
+    /// Subtracts for the CPU L1 loss kernel's target-specific NaN semantics.
     ///
-    /// The fused CPU MSE kernel has this payload precedence, unlike standalone
-    /// subtraction, which selects the right operand's payload.
+    /// X86 computes the sign-reversed difference so native arithmetic selects
+    /// the target's NaN payload; the following absolute-value pass makes finite
+    /// results equivalent. Other targets use ordinary subtraction, including
+    /// `AArch64`'s native left-payload and signaling-NaN ordering.
     ///
     /// # Errors
     ///
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
-    pub(crate) fn sub_with_left_nan_precedence(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, subtract_with_left_nan_precedence)
+    pub(crate) fn sub_for_l1_loss(&self, other: &Self) -> Result<Self, TensorError> {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            self.zip_map(other, subtract_for_l1_loss_x86)
+        }
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+        {
+            self.sub(other)
+        }
     }
 
     /// Multiplies tensors element by element with trailing-dimension broadcasting.
@@ -4757,29 +4766,12 @@ fn absolute_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() & !F32_SIGN_MASK)
 }
 
-fn subtract_value(left: f32, right: f32) -> f32 {
-    let left_bits = left.to_bits();
-    let right_bits = right.to_bits();
-    if left_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits()
-        && right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits()
-    {
-        f32::from_bits(right_bits | 0x0040_0000)
-    } else {
-        left - right
-    }
-}
-
-#[cfg(any(feature = "python-bindings", test))]
-fn subtract_with_left_nan_precedence(left: f32, right: f32) -> f32 {
-    let left_bits = left.to_bits();
-    let right_bits = right.to_bits();
-    if left_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits()
-        && right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits()
-    {
-        f32::from_bits(left_bits | 0x0040_0000)
-    } else {
-        left - right
-    }
+#[cfg(all(
+    any(feature = "python-bindings", test),
+    any(target_arch = "x86", target_arch = "x86_64")
+))]
+fn subtract_for_l1_loss_x86(left: f32, right: f32) -> f32 {
+    right - left
 }
 
 fn relu_value(value: f32) -> f32 {
@@ -5127,27 +5119,22 @@ mod tests {
     }
 
     #[test]
-    fn subtraction_nan_payload_precedence_matches_standalone_and_mse_kernels() {
-        let left_bits = [0x7fc1_2345, 0xffc5_4321, 0x7f81_2345, 0xff81_2345];
-        let right_bits = [0xffc5_4321, 0x7fc1_2345, 0xff81_2346, 0x7f81_2346];
-        let left =
-            Tensor::from_vec(left_bits.map(f32::from_bits).to_vec(), [left_bits.len()]).unwrap();
-        let right =
-            Tensor::from_vec(right_bits.map(f32::from_bits).to_vec(), [right_bits.len()]).unwrap();
+    fn l1_subtraction_nan_payload_precedence_is_target_specific() {
+        let left = Tensor::from_vec(vec![f32::from_bits(0x7fc1_1111)], [1]).unwrap();
+        let right = Tensor::from_vec(vec![f32::from_bits(0xffc2_2222)], [1]).unwrap();
+        let output = left
+            .sub_for_l1_loss(&right)
+            .and_then(|difference| difference.absolute())
+            .unwrap();
 
-        assert!(
-            left.sub(&right)
-                .unwrap()
-                .logical_values()
-                .map(f32::to_bits)
-                .eq([0xffc5_4321, 0x7fc1_2345, 0xffc1_2346, 0x7fc1_2346,])
-        );
-        assert!(
-            left.sub_with_left_nan_precedence(&right)
-                .unwrap()
-                .logical_values()
-                .map(f32::to_bits)
-                .eq([0x7fc1_2345, 0xffc5_4321, 0x7fc1_2345, 0xffc1_2345])
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        assert_eq!(output.item().unwrap().to_bits(), 0x7fc2_2222);
+        #[cfg(target_arch = "aarch64")]
+        assert_eq!(output.item().unwrap().to_bits(), 0x7fc1_1111);
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+        assert_eq!(
+            output.item().unwrap().to_bits(),
+            (f32::from_bits(0x7fc1_1111) - f32::from_bits(0xffc2_2222)).to_bits() & !F32_SIGN_MASK
         );
     }
 

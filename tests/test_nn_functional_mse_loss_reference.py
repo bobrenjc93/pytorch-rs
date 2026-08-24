@@ -1,4 +1,5 @@
 import inspect
+import platform
 import unittest
 
 import numpy as np
@@ -328,6 +329,70 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             reduction="none",
         )
         self.assert_matches(actual, expected, case="float32 edges")
+
+    def test_paired_nan_payloads_follow_the_target_cpu(self):
+        input_bits = np.asarray(
+            (
+                0x7FC1_1111,
+                0xFFC2_2222,
+                0x7F81_1111,
+                0xFF82_2222,
+                0x7FC3_3333,
+                0xFF84_4444,
+            ),
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            (
+                0xFFC2_2222,
+                0x7FC1_1111,
+                0xFF82_2222,
+                0x7F81_1111,
+                0xFF85_5555,
+                0x7FC6_6666,
+            ),
+            dtype=np.uint32,
+        )
+        actual_input = self.tensor(
+            torch, memoryview(input_bits.view(np.float32))
+        ).reshape((2, 3))
+        actual_target = self.tensor(
+            torch, memoryview(target_bits.view(np.float32))
+        ).reshape((2, 3))
+        expected_input = self.tensor(
+            reference_torch, memoryview(input_bits.view(np.float32))
+        ).reshape((2, 3))
+        expected_target = self.tensor(
+            reference_torch, memoryview(target_bits.view(np.float32))
+        ).reshape((2, 3))
+
+        for case, left, right, reference_left, reference_right in (
+            (
+                "contiguous",
+                actual_input,
+                actual_target,
+                expected_input,
+                expected_target,
+            ),
+            (
+                "noncontiguous",
+                actual_input.transpose(0, 1),
+                actual_target.transpose(0, 1),
+                expected_input.transpose(0, 1),
+                expected_target.transpose(0, 1),
+            ),
+        ):
+            actual = functional.mse_loss(left, right, reduction="none")
+            expected = reference_functional.mse_loss(
+                reference_left,
+                reference_right,
+                reduction="none",
+            )
+            self.assert_matches(
+                actual,
+                expected,
+                case=(platform.machine(), case),
+            )
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (

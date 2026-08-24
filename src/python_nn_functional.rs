@@ -450,7 +450,7 @@ fn _nn_functional_l1_loss(
 
     let output = input
         .inner()
-        .sub(target.inner())
+        .sub_for_l1_loss(target.inner())
         .and_then(|difference| difference.absolute())
         .map_err(|error| tensor_error(&error))?;
     PyTensor::new(output).into_py_any(py)
@@ -518,7 +518,7 @@ fn _nn_functional_mse_loss(
 
     let output = input
         .inner()
-        .sub_with_left_nan_precedence(target.inner())
+        .sub(target.inner())
         .and_then(|difference| difference.square_preserving_strides())
         .map_err(|error| tensor_error(&error))?;
     PyTensor::new(output).into_py_any(py)

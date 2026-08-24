@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import platform
 import re
 import types
 import unittest
@@ -318,7 +319,17 @@ class FunctionalL1LossTests(unittest.TestCase):
         )
         input = torch.tensor(memoryview(input_bits.view(np.float32)))
         target = torch.tensor(memoryview(target_bits.view(np.float32)))
-        difference = input - target
+        is_x86 = platform.machine().lower() in {
+            "amd64",
+            "i386",
+            "i686",
+            "x86",
+            "x86_64",
+        }
+        if is_x86:
+            difference = target - input
+        else:
+            difference = input - target
 
         actual = functional.l1_loss(input, target, reduction="none")
         np.testing.assert_array_equal(
