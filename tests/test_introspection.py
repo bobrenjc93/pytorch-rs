@@ -26,6 +26,12 @@ Example::
 
 """
 
+NUMEL_DOC = """
+numel() -> int
+
+See :func:`torch.numel`
+"""
+
 
 class TensorIntrospectionTests(unittest.TestCase):
     def assert_introspection(self, tensor, *, rank, elements):
@@ -119,12 +125,21 @@ class TensorIntrospectionTests(unittest.TestCase):
                 assert_no_argument_signature(self, descriptor, "(self, /)")
                 assert_no_argument_signature(self, bound, "()")
                 self.assertEqual(descriptor(tensor), expected)
-                if name == "element_size":
-                    self.assertEqual(descriptor.__doc__, ELEMENT_SIZE_DOC)
-                    self.assertEqual(bound.__doc__, ELEMENT_SIZE_DOC)
+                if name in ("numel", "element_size"):
+                    expected_doc = (
+                        NUMEL_DOC if name == "numel" else ELEMENT_SIZE_DOC
+                    )
+                    self.assertEqual(descriptor.__doc__, expected_doc)
+                    self.assertEqual(bound.__doc__, expected_doc)
                     self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
                     self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
-                    self.assertEqual(bound(), 4)
+                    self.assertEqual(descriptor.__qualname__, f"TensorBase.{name}")
+                    self.assertEqual(
+                        repr(descriptor),
+                        f"<method '{name}' of 'torch._C.TensorBase' objects>",
+                    )
+                    self.assertIs(getattr(torch.Tensor, name), descriptor)
+                    self.assertEqual(bound(), expected)
 
         self.assertIs(type(torch.numel), types.BuiltinFunctionType)
         self.assertIsNone(torch.numel.__text_signature__)
@@ -221,6 +236,118 @@ class TensorIntrospectionTests(unittest.TestCase):
         for call in (lambda: descriptor(), lambda: descriptor(1)):
             with self.assertRaises(TypeError):
                 call()
+
+    def test_numel_torch_function_modes_dispatch_and_restore_the_stack(self):
+        tensor = torch.zeros((2, 3)).transpose(0, 1)
+        descriptor = inspect.getattr_static(torch.Tensor, "numel")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        len(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return self.result
+
+        recording = RecordingMode(marker)
+        with recording:
+            intercepted = tensor.numel()
+        self.assertIs(intercepted, marker)
+        self.assertEqual(len(recording.calls), 1)
+        function, dispatch_types, args, kwargs, stack_depth = recording.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertEqual(dispatch_types, (torch.Tensor,))
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], tensor)
+        self.assertIsNone(kwargs)
+        self.assertEqual(stack_depth, 0)
+
+        forwarding_events = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_events.append(
+                    (
+                        self.label,
+                        len(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = tensor.numel()
+        self.assertEqual(forwarding_events, [("upper", 1), ("lower", 0)])
+        self.assertIs(type(forwarded), int)
+        self.assertEqual(forwarded, 6)
+
+        old_recursion_limit = sys.getrecursionlimit()
+        declining = RecordingMode(NotImplemented)
+        lower = RecordingMode(marker)
+        try:
+            sys.setrecursionlimit(80)
+            with lower:
+                with self.assertRaisesRegex(
+                    RecursionError, r"^maximum recursion depth exceeded$"
+                ):
+                    with declining:
+                        tensor.numel()
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [lower]
+                )
+        finally:
+            sys.setrecursionlimit(old_recursion_limit)
+        self.assertGreater(len(declining.calls), 1)
+        self.assertEqual(lower.calls, [])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.error = ValueError("numel mode failed")
+                self.stack_depth = None
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.stack_depth = len(
+                    torch.overrides._get_current_function_mode_stack()
+                )
+                raise self.error
+
+        raising = RaisingMode()
+        forwarding_events.clear()
+        with ForwardingMode("lower") as lower_mode:
+            with self.assertRaises(ValueError) as raised:
+                with raising:
+                    tensor.numel()
+            self.assertIs(raised.exception, raising.error)
+            self.assertEqual(raising.stack_depth, 1)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [lower_mode]
+            )
+            self.assertEqual(tensor.numel(), 6)
+        self.assertEqual(forwarding_events, [("lower", 0)])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        invalid = RecordingMode(marker)
+        with self.assertRaisesRegex(
+            TypeError, r"^TensorBase\.numel\(\) takes no arguments \(1 given\)$"
+        ):
+            with invalid:
+                tensor.numel(1)
+        self.assertEqual(invalid.calls, [])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
 
     def test_top_level_numel_binding_errors_match_pytorch(self):
         tensor = torch.zeros((2, 3))

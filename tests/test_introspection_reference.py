@@ -1,4 +1,6 @@
 import inspect
+import json
+import subprocess
 import sys
 import types
 import unittest
@@ -162,7 +164,7 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                 for bound in (getattr(actual, name), getattr(expected, name)):
                     assert_no_argument_signature(self, bound, "()")
                 self.assertEqual(actual_descriptor(actual), expected_descriptor(expected))
-                if name == "element_size":
+                if name in ("numel", "element_size"):
                     self.assertEqual(
                         actual_descriptor.__doc__, expected_descriptor.__doc__
                     )
@@ -180,7 +182,7 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
                     self.assertEqual(
                         getattr(actual, name)(), getattr(expected, name)()
                     )
-                else:
+                if name != "element_size":
                     self.assert_error_matches(
                         lambda name=name: getattr(actual, name)(1),
                         lambda name=name: getattr(expected, name)(1),
@@ -249,6 +251,169 @@ class TensorIntrospectionReferenceTests(unittest.TestCase):
             inspect.signature(torch.numel)
         with self.assertRaises(ValueError):
             inspect.signature(reference_torch.numel)
+
+    @staticmethod
+    def numel_mode_dispatch_observation(module_name):
+        source = r'''
+import importlib
+import inspect
+import json
+import sys
+
+module = importlib.import_module(MODULE)
+tensor = module.zeros((2, 3), dtype=module.float32).transpose(0, 1)
+descriptor = inspect.getattr_static(module.Tensor, "numel")
+marker = object()
+
+class RecordingMode(module.overrides.TorchFunctionMode):
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls.append(
+            (
+                func,
+                types,
+                args,
+                kwargs,
+                len(module.overrides._get_current_function_mode_stack()),
+            )
+        )
+        return self.result
+
+recording = RecordingMode(marker)
+with recording:
+    intercepted = tensor.numel()
+function, dispatch_types, args, kwargs, handler_stack_depth = recording.calls[0]
+
+forwarding_events = []
+class ForwardingMode(module.overrides.TorchFunctionMode):
+    def __init__(self, label, events):
+        self.label = label
+        self.events = events
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.events.append(
+            [
+                self.label,
+                len(module.overrides._get_current_function_mode_stack()),
+            ]
+        )
+        return func(*args, **(kwargs or {}))
+
+with ForwardingMode("lower", forwarding_events):
+    with ForwardingMode("upper", forwarding_events):
+        forwarded = tensor.numel()
+
+old_recursion_limit = sys.getrecursionlimit()
+declining = RecordingMode(NotImplemented)
+lower = RecordingMode(marker)
+try:
+    sys.setrecursionlimit(80)
+    with lower:
+        try:
+            with declining:
+                tensor.numel()
+        except Exception as error:
+            declining_error = [type(error).__name__, str(error)]
+            declining_stack_inside_lower = len(
+                module.overrides._get_current_function_mode_stack()
+            )
+        else:
+            declining_error = None
+            declining_stack_inside_lower = None
+finally:
+    sys.setrecursionlimit(old_recursion_limit)
+
+class RaisingMode(module.overrides.TorchFunctionMode):
+    def __init__(self):
+        self.calls = 0
+        self.handler_stack_depth = None
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls += 1
+        self.handler_stack_depth = len(
+            module.overrides._get_current_function_mode_stack()
+        )
+        raise ValueError("numel mode failed")
+
+recovery_events = []
+raising = RaisingMode()
+with ForwardingMode("lower", recovery_events):
+    try:
+        with raising:
+            tensor.numel()
+    except Exception as error:
+        raising_error = [type(error).__name__, str(error)]
+        raising_stack_inside_lower = len(
+            module.overrides._get_current_function_mode_stack()
+        )
+    else:
+        raising_error = None
+        raising_stack_inside_lower = None
+    recovered = tensor.numel()
+
+invalid = RecordingMode(marker)
+try:
+    with invalid:
+        tensor.numel(1)
+except Exception as error:
+    invalid_error = [type(error).__name__, str(error)]
+else:
+    invalid_error = None
+
+print(json.dumps({
+    "descriptor_type": type(descriptor).__name__,
+    "descriptor_repr": repr(descriptor),
+    "descriptor_name": descriptor.__name__,
+    "descriptor_qualname": descriptor.__qualname__,
+    "descriptor_doc": descriptor.__doc__,
+    "descriptor_owner_name": descriptor.__objclass__.__name__,
+    "descriptor_owner_module": descriptor.__objclass__.__module__,
+    "descriptor_identity": module.Tensor.numel is descriptor,
+    "intercepted": intercepted is marker,
+    "call_count": len(recording.calls),
+    "function_type": type(function).__name__,
+    "function_name": function.__name__,
+    "function_qualname": function.__qualname__,
+    "function_is_descriptor": function is descriptor,
+    "types": dispatch_types == (module.Tensor,),
+    "args": len(args) == 1 and args[0] is tensor,
+    "kwargs_is_none": kwargs is None,
+    "handler_stack_depth": handler_stack_depth,
+    "forwarding_events": forwarding_events,
+    "forwarded": forwarded,
+    "forwarded_type": type(forwarded).__name__,
+    "declining_error": declining_error,
+    "declining_calls": len(declining.calls),
+    "declining_handler_depths": sorted({call[4] for call in declining.calls}),
+    "declining_stack_inside_lower": declining_stack_inside_lower,
+    "lower_skipped": len(lower.calls) == 0,
+    "raising_error": raising_error,
+    "raising_calls": raising.calls,
+    "raising_handler_stack_depth": raising.handler_stack_depth,
+    "raising_stack_inside_lower": raising_stack_inside_lower,
+    "recovery_events": recovery_events,
+    "recovered": recovered,
+    "invalid_error": invalid_error,
+    "invalid_calls": len(invalid.calls),
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}, sort_keys=True))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_numel_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.numel_mode_dispatch_observation("torch_rs"),
+            self.numel_mode_dispatch_observation("torch"),
+        )
 
     def test_nbytes_assignment_behavior_matches_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")

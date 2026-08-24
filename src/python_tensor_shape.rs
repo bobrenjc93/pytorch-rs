@@ -52,6 +52,19 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nnumel() -> int\n\nSee :func:`torch.numel`\n"]
+    #[pyo3(text_signature = None)]
+    fn numel(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "numel")? {
+            return Ok(result);
+        }
+
+        tensor.try_borrow()?.inner().numel().into_py_any(slf.py())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nsize(dim=None) -> torch.Size or int\n\nReturns the size of the :attr:`self` tensor. If ``dim`` is not specified,\nthe returned value is a :class:`torch.Size`, a subclass of :class:`tuple`.\nIf ``dim`` is specified, returns an int holding the size of that dimension.\n\nArgs:\n  dim (int, optional): The dimension for which to retrieve the size.\n\nExample::\n\n    >>> t = torch.empty(3, 4, 5)\n    >>> t.size()\n    torch.Size([3, 4, 5])\n    >>> t.size(dim=1)\n    4\n\n"]
     #[pyo3(signature = (*args, **kwargs), text_signature = None)]
     fn size(
@@ -104,12 +117,6 @@ impl PyTensor {
     /// Alias for [`Tensor.numel()`](https://pytorch.org/docs/stable/generated/torch.Tensor.numel.html).
     #[pyo3(text_signature = None)]
     fn nelement(&self) -> usize {
-        self.inner().numel()
-    }
-
-    /// Returns the total number of elements in the tensor.
-    #[pyo3(text_signature = None)]
-    fn numel(&self) -> usize {
         self.inner().numel()
     }
 }
