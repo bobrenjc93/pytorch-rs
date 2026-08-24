@@ -788,6 +788,31 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nround(decimals=0) -> Tensor\n\nSee :func:`torch.round`\n"]
+    #[pyo3(text_signature = None)]
+    fn round(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        let args = PyTuple::empty(slf.py());
+        if let Some(result) = dispatch_tensorbase_method_mode(
+            slf.py(),
+            tensor,
+            "round",
+            "torch.Tensor.round",
+            &args,
+            None,
+        )? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.round().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nsigmoid() -> Tensor\n\nSee :func:`torch.sigmoid`\n"]
     #[pyo3(text_signature = None)]
     fn sigmoid(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {

@@ -1005,6 +1005,157 @@ fn trunc_preserves_unary_layouts_and_materializes_fresh_storage() {
 }
 
 #[test]
+fn round_matches_pytorch_float32_ties_to_even_and_ieee_bits() {
+    let input_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0001,
+        0x8000_0001,
+        0x007f_ffff,
+        0x807f_ffff,
+        0x0080_0000,
+        0x8080_0000,
+        0x3eff_ffff,
+        0x3f00_0000,
+        0x3f00_0001,
+        0x3fbf_ffff,
+        0x3fc0_0000,
+        0x3fc0_0001,
+        0x4020_0000,
+        0x4060_0000,
+        0x4090_0000,
+        0x40b0_0000,
+        0xbeff_ffff,
+        0xbf00_0000,
+        0xbf00_0001,
+        0xbfbf_ffff,
+        0xbfc0_0000,
+        0xbfc0_0001,
+        0xc020_0000,
+        0xc060_0000,
+        0xc090_0000,
+        0xc0b0_0000,
+        0x4a7f_fffe,
+        0xca7f_fffe,
+        0x4aff_ffff,
+        0xcaff_ffff,
+        0x7f7f_ffff,
+        0xff7f_ffff,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7f81_2345,
+        0xff81_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let expected_bits = [
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0000,
+        0x8000_0000,
+        0x0000_0000,
+        0x0000_0000,
+        0x3f80_0000,
+        0x3f80_0000,
+        0x4000_0000,
+        0x4000_0000,
+        0x4000_0000,
+        0x4080_0000,
+        0x4080_0000,
+        0x40c0_0000,
+        0x8000_0000,
+        0x8000_0000,
+        0xbf80_0000,
+        0xbf80_0000,
+        0xc000_0000,
+        0xc000_0000,
+        0xc000_0000,
+        0xc080_0000,
+        0xc080_0000,
+        0xc0c0_0000,
+        0x4a80_0000,
+        0xca80_0000,
+        0x4b00_0000,
+        0xcb00_0000,
+        0x7f7f_ffff,
+        0xff7f_ffff,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc1_2345,
+        0xffc1_2345,
+        0x7fc1_2345,
+        0xffc5_4321,
+    ];
+    let input =
+        Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()]).unwrap();
+    let output = input.round().unwrap();
+
+    assert_eq!(
+        output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        expected_bits
+    );
+    assert!(!output.shares_storage_with(&input));
+}
+
+#[test]
+fn round_preserves_unary_layouts_and_materializes_fresh_storage() {
+    let base = Tensor::from_vec(
+        (0_u8..24)
+            .map(|value| f32::from(value) / 4.0 - 3.0)
+            .collect(),
+        [2, 3, 4],
+    )
+    .unwrap();
+    let strided = base.transpose(0, 2).unwrap();
+    let offset = strided.index_integer(1).unwrap();
+    let channels_last = Tensor::from_vec(
+        (0_u8..120)
+            .map(|value| f32::from(value) / 4.0 - 15.0)
+            .collect(),
+        [2, 3, 4, 5],
+    )
+    .unwrap()
+    .try_contiguous(MemoryFormat::ChannelsLast)
+    .unwrap();
+    let channels_last_3d = Tensor::from_vec(
+        (0_u16..720)
+            .map(|value| f32::from(value) / 4.0 - 90.0)
+            .collect(),
+        [2, 3, 4, 5, 6],
+    )
+    .unwrap()
+    .try_contiguous(MemoryFormat::ChannelsLast3d)
+    .unwrap();
+    let cases: [(Tensor, Vec<usize>); 8] = [
+        (Tensor::from_vec(vec![-0.0], []).unwrap(), Vec::new()),
+        (Tensor::zeros([0, 1]).unwrap(), vec![1, 1]),
+        (Tensor::zeros([0, 1, 2]).unwrap(), vec![2, 2, 1]),
+        (Tensor::zeros([1, 0, 1]).unwrap(), vec![1, 1, 1]),
+        (offset, vec![1, 3]),
+        (strided, vec![1, 4, 12]),
+        (channels_last, vec![60, 1, 15, 3]),
+        (channels_last_3d, vec![360, 1, 90, 18, 3]),
+    ];
+
+    for (input, expected_strides) in cases {
+        let output = input.round().unwrap();
+        assert_eq!(output.shape(), input.shape());
+        assert_eq!(output.stride(), expected_strides);
+        assert_eq!(output.storage_offset(), 0);
+        assert_eq!(output.dtype(), input.dtype());
+        assert_eq!(output.device(), input.device());
+        assert!(!output.shares_storage_with(&input));
+    }
+}
+
+#[test]
 fn sigmoid_matches_pytorch_float32_ieee_bits() {
     let input_bits = [
         0x0000_0000,

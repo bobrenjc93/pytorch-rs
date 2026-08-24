@@ -2635,6 +2635,19 @@ impl Tensor {
         self.unary_map(trunc_value)
     }
 
+    /// Rounds every element to the nearest integer, with halfway values rounded to even.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn round(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "round" });
+        }
+        self.unary_map(round_ties_even_value)
+    }
+
     /// Applies the logistic sigmoid function element by element.
     ///
     /// # Errors
@@ -4859,6 +4872,10 @@ fn trunc_value(value: f32) -> f32 {
     round_value(value, f32::trunc)
 }
 
+fn round_ties_even_value(value: f32) -> f32 {
+    round_value(value, f32::round_ties_even)
+}
+
 fn sigmoid_value(value: f32) -> f32 {
     1.0 / (1.0 + (-value).exp())
 }
@@ -5943,6 +5960,7 @@ mod tests {
             (tensor.floor().unwrap(), shared.floor().unwrap()),
             (tensor.ceil().unwrap(), shared.ceil().unwrap()),
             (tensor.trunc().unwrap(), shared.trunc().unwrap()),
+            (tensor.round().unwrap(), shared.round().unwrap()),
             (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
@@ -6316,6 +6334,10 @@ mod tests {
         );
         assert_eq!(
             tensor.trunc(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.round(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
