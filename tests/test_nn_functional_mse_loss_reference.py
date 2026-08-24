@@ -426,6 +426,37 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     expected_target_before,
                 )
 
+    def test_sum_order_sensitive_accumulation_matches_pytorch_2_13(self):
+        actual_input = self.tensor(torch, [4096.0] + [1.0] * 1000)
+        actual_target = torch.zeros((1001,), dtype=torch.float32)
+        expected_input = self.tensor(
+            reference_torch,
+            [4096.0] + [1.0] * 1000,
+        )
+        expected_target = reference_torch.zeros(
+            (1001,),
+            dtype=reference_torch.float32,
+        )
+
+        actual = functional.mse_loss(
+            actual_input,
+            actual_target,
+            reduction="sum",
+        )
+        expected = reference_functional.mse_loss(
+            expected_input,
+            expected_target,
+            reduction="sum",
+        )
+
+        self.assertNotEqual(actual.item(), 16_777_216.0)
+        np.testing.assert_allclose(
+            actual.item(),
+            expected.item(),
+            rtol=1.3e-6,
+            atol=1.0e-5,
+        )
+
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
         actual_input = self.tensor(
             torch,

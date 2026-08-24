@@ -1702,6 +1702,18 @@ fn reductions_handle_ordinary_and_empty_tensors() {
             .to_bits(),
         0.0_f32.to_bits()
     );
+
+    let mut order_sensitive_values = vec![1.0; 1_001];
+    order_sensitive_values[0] = 16_777_216.0;
+    assert_eq!(
+        Tensor::from_vec(order_sensitive_values, [1_001])
+            .unwrap()
+            .sum()
+            .item()
+            .unwrap()
+            .to_bits(),
+        16_778_196.0_f32.to_bits()
+    );
 }
 
 #[test]

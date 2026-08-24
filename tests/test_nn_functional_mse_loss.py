@@ -327,6 +327,15 @@ class FunctionalMseLossTests(unittest.TestCase):
                         self.tensor_state(target)[-1], target_state[-1]
                     )
 
+    def test_sum_preserves_small_terms_after_a_large_squared_error(self):
+        input = torch.tensor([4096.0] + [1.0] * 1000)
+        target = torch.zeros((1001,))
+
+        actual = functional.mse_loss(input, target, reduction="sum")
+
+        self.assertEqual(actual.item(), 16_778_196.0)
+        self.assertNotEqual(actual.item(), 16_777_216.0)
+
     def test_mixed_layout_singleton_keeps_binary_tensoriterator_stride(self):
         input = torch.tensor(
             np.arange(6, dtype=np.float32).reshape(2, 1, 3).tolist()

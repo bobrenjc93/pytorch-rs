@@ -17,6 +17,14 @@ const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
+const SUM_LANES: usize = 8;
+const SUM_ROWS: usize = 4;
+const SUM_BLOCK_ELEMENTS: usize = SUM_LANES * SUM_ROWS;
+const SUM_CASCADE_BLOCKS: usize = 16;
+const SUM_CHUNK_ELEMENTS: usize = SUM_BLOCK_ELEMENTS * SUM_CASCADE_BLOCKS;
+const SUM_CASCADE_LEVELS: usize = usize::BITS as usize / 4;
+
+type SumAccumulator = [[f32; SUM_LANES]; SUM_ROWS];
 
 static BACKWARD_TRAVERSAL: Mutex<()> = Mutex::new(());
 
@@ -278,6 +286,79 @@ impl Iterator for LogicalValues<'_> {
 }
 
 impl ExactSizeIterator for LogicalValues<'_> {}
+
+fn add_sum_accumulator(destination: &mut SumAccumulator, source: &SumAccumulator) {
+    for (destination_row, source_row) in destination.iter_mut().zip(source) {
+        for (destination_value, source_value) in destination_row.iter_mut().zip(source_row) {
+            *destination_value += source_value;
+        }
+    }
+}
+
+fn accumulate_sum_block(values: &mut impl Iterator<Item = f32>, accumulator: &mut SumAccumulator) {
+    for row in accumulator {
+        for value in row {
+            *value += values
+                .next()
+                .expect("a complete sum block must contain every requested value");
+        }
+    }
+}
+
+fn cascading_sum(mut values: impl ExactSizeIterator<Item = f32>) -> f32 {
+    // PyTorch's CPU float reduction uses several independent lanes and folds
+    // bounded chunks through a cascade. Mirroring that shape prevents early
+    // large values from absorbing every later contribution while retaining
+    // float32 overflow and non-finite behavior.
+    let chunk_total = values.len() / SUM_CHUNK_ELEMENTS;
+    let mut levels = [[[0.0_f32; SUM_LANES]; SUM_ROWS]; SUM_CASCADE_LEVELS];
+    for chunk_index in 0..chunk_total {
+        let mut carry = [[0.0_f32; SUM_LANES]; SUM_ROWS];
+        for _ in 0..SUM_CASCADE_BLOCKS {
+            accumulate_sum_block(&mut values, &mut carry);
+        }
+
+        let mut carry_position = chunk_index + 1;
+        for level in &mut levels {
+            add_sum_accumulator(level, &carry);
+            if !carry_position.is_multiple_of(SUM_CASCADE_BLOCKS) {
+                break;
+            }
+            carry = *level;
+            *level = [[0.0_f32; SUM_LANES]; SUM_ROWS];
+            carry_position /= SUM_CASCADE_BLOCKS;
+        }
+    }
+
+    let mut accumulator = [[0.0_f32; SUM_LANES]; SUM_ROWS];
+    while values.len() >= SUM_BLOCK_ELEMENTS {
+        accumulate_sum_block(&mut values, &mut accumulator);
+    }
+    while values.len() >= SUM_LANES {
+        for lane in &mut accumulator[0] {
+            *lane += values
+                .next()
+                .expect("a complete sum lane must contain every requested value");
+        }
+    }
+    let tail = values.fold(0.0_f32, |sum, value| sum + value);
+    for level in &levels {
+        add_sum_accumulator(&mut accumulator, level);
+    }
+
+    let mut lane_sums = [0.0_f32; SUM_LANES];
+    for (lane, sum) in lane_sums.iter_mut().enumerate() {
+        *sum = accumulator[0][lane] + accumulator[1][lane];
+        *sum += accumulator[2][lane];
+        *sum += accumulator[3][lane];
+    }
+    let mut sum = lane_sums[0] + tail;
+    for value in &lane_sums[1..] {
+        sum += value;
+    }
+    sum
+}
+
 impl FusedIterator for LogicalValues<'_> {}
 
 impl Clone for Tensor {
@@ -2637,11 +2718,12 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
+        let sum = self.dense_physical_slice().map_or_else(
+            || cascading_sum(self.logical_values()),
+            |values| cascading_sum(values.iter().copied()),
+        );
         let mut output = Self::from_owned_parts(
-            vec![
-                self.logical_values()
-                    .fold(0.0_f32, |sum, value| sum + value),
-            ],
+            vec![sum],
             Vec::new(),
             Vec::new(),
             self.dtype(),
