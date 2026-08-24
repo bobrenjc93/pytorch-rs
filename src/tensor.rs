@@ -2381,6 +2381,29 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Power, apply_square_vjp)
     }
 
+    /// Squares a materialized dense tensor while retaining its exact strides.
+    ///
+    /// This supports composed operators whose preceding binary `TensorIterator`
+    /// layout remains observable in the final output. Standalone square keeps
+    /// using its normal unary layout canonicalization.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn square_preserving_strides(&self) -> Result<Self, TensorError> {
+        debug_assert_eq!(self.offset, 0);
+        debug_assert!(self.elements == 0 || self.is_non_overlapping_and_dense());
+        let strides = try_clone_result_shape(&self.strides, self.elements)?;
+        let mut output = self.square()?;
+        // For a dense materialized input, unary planning can only alter the
+        // strides of singleton or zero-sized axes. Restoring those strides
+        // therefore leaves every stored element at the same physical offset.
+        debug_assert_eq!(output.offset, 0);
+        output.strides = strides;
+        Ok(output)
+    }
+
     /// Divides tensors element by element using IEEE 754 true division and
     /// trailing-dimension broadcasting.
     ///
@@ -4909,6 +4932,32 @@ mod tests {
                 .map(f32::to_bits)
                 .eq(expected)
         );
+    }
+
+    #[test]
+    fn square_can_preserve_a_binary_output_singleton_stride() {
+        let input = Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [2, 1, 3]).unwrap();
+        let target = Tensor::from_vec(vec![-1.0, 0.0, 1.0, 2.0, 3.0, 4.0], [3, 1, 2])
+            .unwrap()
+            .permute_axes([2, 1, 0])
+            .unwrap();
+        let difference = input.sub(&target).unwrap();
+
+        assert_eq!(input.stride(), &[3, 3, 1]);
+        assert_eq!(target.stride(), &[1, 2, 2]);
+        assert_eq!(difference.stride(), &[3, 6, 1]);
+
+        let ordinary = difference.square().unwrap();
+        let preserved = difference.square_preserving_strides().unwrap();
+        assert_eq!(ordinary.stride(), &[3, 3, 1]);
+        assert_eq!(preserved.stride(), &[3, 6, 1]);
+        assert!(
+            ordinary
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(preserved.logical_values().map(f32::to_bits))
+        );
+        assert_ne!(preserved.data_ptr(), difference.data_ptr());
     }
 
     #[test]

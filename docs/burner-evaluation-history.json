@@ -5745,6 +5745,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:820",
+      "recordedAt": "2026-08-24T10:22:12.333Z",
+      "label": "PR #820",
+      "kind": "leaf",
+      "prNumber": 820,
+      "title": "Add inference-only reduction-none functional.mse_loss",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 88.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 71.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
