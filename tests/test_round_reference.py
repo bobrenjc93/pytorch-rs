@@ -1,3 +1,4 @@
+import ctypes
 import inspect
 import json
 import subprocess
@@ -85,6 +86,74 @@ class TensorRoundReferenceTests(unittest.TestCase):
         self.assert_tensor_matches(
             actual_input.round(), expected_input.round(), case="seeded raw bits"
         )
+
+    def test_round_is_independent_of_ambient_floating_point_rounding_mode(self):
+        try:
+            runtime = ctypes.CDLL(None)
+            fegetround = runtime.fegetround
+            fesetround = runtime.fesetround
+            nearbyintf = runtime.nearbyintf
+        except (AttributeError, OSError):
+            self.skipTest("the platform C runtime does not expose fenv controls")
+        fegetround.argtypes = []
+        fegetround.restype = ctypes.c_int
+        fesetround.argtypes = [ctypes.c_int]
+        fesetround.restype = ctypes.c_int
+        nearbyintf.argtypes = [ctypes.c_float]
+        nearbyintf.restype = ctypes.c_float
+
+        input_bits = np.asarray(
+            [0xC020_0000, 0xC013_3333, 0x3F33_3333, 0x3FC0_0000],
+            dtype=np.uint32,
+        )
+        expected_bits = np.asarray(
+            [0xC000_0000, 0xC000_0000, 0x3F80_0000, 0x4000_0000],
+            dtype=np.uint32,
+        )
+        actual_input = torch.tensor(memoryview(input_bits.view(np.float32)))
+        reference_input = reference_torch.tensor(
+            memoryview(input_bits.view(np.float32))
+        )
+        negative_probe = ctypes.c_float(-2.3)
+        positive_probe = ctypes.c_float(0.7)
+        original_rounding = fegetround()
+
+        try:
+            if fesetround(0) != 0 or fegetround() != 0:
+                self.skipTest("the platform does not expose round-to-nearest as zero")
+            actual_nearest = actual_input.round()
+            reference_nearest = reference_input.round()
+
+            downward_rounding = None
+            for candidate in (0x400, 0x80_0000):
+                if fesetround(candidate) != 0 or fegetround() != candidate:
+                    continue
+                if (
+                    nearbyintf(negative_probe) == -3.0
+                    and nearbyintf(positive_probe) == 0.0
+                ):
+                    downward_rounding = candidate
+                    break
+            if downward_rounding is None:
+                self.skipTest("the platform does not expose a downward rounding mode")
+
+            actual_downward = actual_input.round()
+            self.assertEqual(fegetround(), downward_rounding)
+            reference_downward = reference_input.round()
+            self.assertEqual(fegetround(), downward_rounding)
+        finally:
+            self.assertEqual(fesetround(original_rounding), 0)
+
+        for case, actual, expected in (
+            ("nearest", actual_nearest, reference_nearest),
+            ("downward", actual_downward, reference_downward),
+            ("actual modes", actual_downward, actual_nearest),
+            ("reference modes", reference_downward, reference_nearest),
+        ):
+            self.assert_tensor_matches(actual, expected, case=case)
+            np.testing.assert_array_equal(
+                self.tensor_values(actual).view(np.uint32), expected_bits
+            )
 
     def test_detached_and_no_grad_results_match_pytorch_2_13(self):
         values = (

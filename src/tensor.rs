@@ -4866,7 +4866,48 @@ fn floor_value(value: f32) -> f32 {
 }
 
 fn round_ties_even_value(value: f32) -> f32 {
-    round_value(value, f32::round_ties_even)
+    round_value(value, round_ties_even_finite_value)
+}
+
+fn round_ties_even_finite_value(value: f32) -> f32 {
+    const HALF_BITS: u32 = 0x3f00_0000;
+    const ONE_BITS: u32 = 0x3f80_0000;
+    const FIRST_ALWAYS_INTEGRAL_BITS: u32 = 0x4b00_0000;
+
+    let bits = value.to_bits();
+    let sign = bits & F32_SIGN_MASK;
+    let magnitude = bits & !F32_SIGN_MASK;
+
+    if magnitude <= HALF_BITS {
+        return f32::from_bits(sign);
+    }
+    if magnitude < ONE_BITS {
+        return f32::from_bits(sign | ONE_BITS);
+    }
+    if magnitude >= FIRST_ALWAYS_INTEGRAL_BITS {
+        return value;
+    }
+
+    // Every value in [1, 2^23) has an unbiased exponent in [0, 22]. Clear
+    // the encoded fractional positions, then compare the discarded bits with
+    // exactly one half of the integer quantum. Constructing the result bits
+    // directly keeps ties-to-even independent of the ambient floating-point
+    // rounding mode.
+    let exponent = ((magnitude >> 23) & 0xff) - 127;
+    let fractional_bits = 23 - exponent;
+    let integer_quantum = 1_u32 << fractional_bits;
+    let fractional_mask = integer_quantum - 1;
+    let truncated = magnitude & !fractional_mask;
+    let remainder = magnitude & fractional_mask;
+    let halfway = integer_quantum >> 1;
+    let round_up =
+        remainder > halfway || (remainder == halfway && truncated & integer_quantum != 0);
+    let rounded = if round_up {
+        truncated + integer_quantum
+    } else {
+        truncated
+    };
+    f32::from_bits(sign | rounded)
 }
 
 fn ceil_value(value: f32) -> f32 {
