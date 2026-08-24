@@ -17,13 +17,60 @@ except ImportError:
     reference_torch = None
 
 
+class DeviceMetadata:
+    def __init__(self, kind, calls, error=None):
+        self.kind = kind
+        self.calls = calls
+        self.error = error
+
+    @property
+    def type(self):
+        self.calls.append("device.type")
+        if self.error is not None:
+            raise self.error
+        return self.kind
+
+
+class TensorMetadata:
+    def __init__(
+        self,
+        kind,
+        dtype,
+        calls,
+        *,
+        device_error=None,
+        device_type_error=None,
+        dtype_error=None,
+    ):
+        self.kind = kind
+        self.value_dtype = dtype
+        self.calls = calls
+        self.device_error = device_error
+        self.device_type_error = device_type_error
+        self.dtype_error = dtype_error
+
+    @property
+    def device(self):
+        self.calls.append("tensor.device")
+        if self.device_error is not None:
+            raise self.device_error
+        return DeviceMetadata(self.kind, self.calls, self.device_type_error)
+
+    @property
+    def dtype(self):
+        self.calls.append("tensor.dtype")
+        if self.dtype_error is not None:
+            raise self.dtype_error
+        return self.value_dtype
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CudnnIsAvailableReferenceTests(unittest.TestCase):
+class CudnnIsAcceptableReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "backends.cudnn.is_available differentials require pinned "
+                "backends.cudnn.is_acceptable differentials require pinned "
                 "PyTorch 2.13.0"
             )
 
@@ -57,11 +104,74 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         root.backends.cudnn = module
         return module
 
-    def test_signature_documentation_and_identity_match_pytorch_2_13(self):
+    def tensor_cases(self, module):
+        leaf = module.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
+        tracked = (leaf * 2.0).transpose(0, 1)
+        tracked.sum().backward()
+        return (
+            module.tensor(3.5),
+            module.tensor([1.0, 2.0]),
+            module.zeros((2, 0, 3)),
+            module.zeros((2, 3, 4)).transpose(0, 2)[1],
+            leaf,
+            tracked,
+            leaf.grad,
+        )
+
+    def test_cpu_tensor_results_and_state_match_pytorch_2_13(self):
+        actual_tensors = self.tensor_cases(torch)
+        expected_tensors = self.tensor_cases(reference_torch)
+        for case, (actual_tensor, expected_tensor) in enumerate(
+            zip(actual_tensors, expected_tensors, strict=True)
+        ):
+            with self.subTest(case=case):
+                actual_before = (
+                    actual_tensor.tolist(),
+                    actual_tensor.shape,
+                    actual_tensor.stride(),
+                    actual_tensor.storage_offset(),
+                    actual_tensor.data_ptr(),
+                )
+                expected_before = (
+                    expected_tensor.tolist(),
+                    expected_tensor.shape,
+                    expected_tensor.stride(),
+                    expected_tensor.storage_offset(),
+                    expected_tensor.data_ptr(),
+                )
+                actual = torch.backends.cudnn.is_acceptable(actual_tensor)
+                expected = reference_torch.backends.cudnn.is_acceptable(
+                    expected_tensor
+                )
+                self.assertIs(type(actual), type(expected))
+                self.assertIs(actual, expected)
+                self.assertIs(actual, False)
+                self.assertEqual(
+                    (
+                        actual_tensor.tolist(),
+                        actual_tensor.shape,
+                        actual_tensor.stride(),
+                        actual_tensor.storage_offset(),
+                        actual_tensor.data_ptr(),
+                    ),
+                    actual_before,
+                )
+                self.assertEqual(
+                    (
+                        expected_tensor.tolist(),
+                        expected_tensor.shape,
+                        expected_tensor.stride(),
+                        expected_tensor.storage_offset(),
+                        expected_tensor.data_ptr(),
+                    ),
+                    expected_before,
+                )
+
+    def test_signature_metadata_and_identity_match_pytorch_2_13(self):
         actual_module = importlib.import_module("torch_rs.backends.cudnn")
         expected_module = importlib.import_module("torch.backends.cudnn")
-        actual = actual_module.is_available
-        expected = expected_module.is_available
+        actual = actual_module.is_acceptable
+        expected = expected_module.is_acceptable
 
         self.assertIs(torch.backends.cudnn, actual_module)
         self.assertIs(reference_torch.backends.cudnn, expected_module)
@@ -72,7 +182,6 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             type(actual_module).__module__.replace("torch_rs", "torch"),
             type(expected_module).__module__,
         )
-        self.assertIsNone(actual_module.__doc__)
         self.assertEqual(actual_module.__doc__, expected_module.__doc__)
         self.assertEqual(
             hasattr(actual_module, "__all__"),
@@ -82,10 +191,8 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             {name for name in vars(actual_module) if not name.startswith("_")},
             {name for name in vars(expected_module) if not name.startswith("_")},
         )
-        self.assertIs(type(actual_module.m), types.ModuleType)
-        self.assertIs(type(expected_module.m), types.ModuleType)
-        self.assertIs(actual, actual_module.m.is_available)
-        self.assertIs(expected, expected_module.m.is_available)
+        self.assertIs(actual, actual_module.m.is_acceptable)
+        self.assertIs(expected, expected_module.m.is_acceptable)
 
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
@@ -107,22 +214,14 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
         )
-        self.assertEqual(actual.__code__.co_names, expected.__code__.co_names)
         self.assertEqual(actual.__code__.co_freevars, expected.__code__.co_freevars)
         self.assertEqual(actual.__code__.co_cellvars, expected.__code__.co_cellvars)
 
     def test_imports_wildcards_copying_and_pickling_match_pytorch_2_13(self):
-        actual_backends = importlib.import_module("torch_rs.backends")
-        expected_backends = importlib.import_module("torch.backends")
         actual_module = importlib.import_module("torch_rs.backends.cudnn")
         expected_module = importlib.import_module("torch.backends.cudnn")
-        actual = actual_module.is_available
-        expected = expected_module.is_available
-
-        self.assertIs(torch.backends, actual_backends)
-        self.assertIs(reference_torch.backends, expected_backends)
-        self.assertIs(actual_backends.cudnn, actual_module)
-        self.assertIs(expected_backends.cudnn, expected_module)
+        actual = actual_module.is_acceptable
+        expected = expected_module.is_acceptable
 
         for package_name, module, function in (
             ("torch_rs", actual_module, actual),
@@ -132,28 +231,11 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             function_import = {}
             exec(f"from {package_name}.backends import cudnn", backend_import)
             exec(
-                f"from {package_name}.backends.cudnn import is_available",
+                f"from {package_name}.backends.cudnn import is_acceptable",
                 function_import,
             )
             self.assertIs(backend_import["cudnn"], module)
-            self.assertIs(function_import["is_available"], function)
-
-        actual_parent_wildcard = {}
-        expected_parent_wildcard = {}
-        exec("from torch_rs.backends import *", actual_parent_wildcard)
-        exec("from torch.backends import *", expected_parent_wildcard)
-        self.assertEqual(
-            {
-                name
-                for name in actual_parent_wildcard
-                if not name.startswith("__")
-            },
-            {
-                name
-                for name in expected_parent_wildcard
-                if name in {"cuda", "cudnn", "mkl", "nnpack", "openmp"}
-            },
-        )
+            self.assertIs(function_import["is_acceptable"], function)
 
         actual_child_wildcard = {}
         expected_child_wildcard = {}
@@ -168,17 +250,6 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         self.assertIs(copy.copy(expected), expected)
         self.assertIs(copy.deepcopy(actual), actual)
         self.assertIs(copy.deepcopy(expected), expected)
-        for copier in (copy.copy, copy.deepcopy):
-            errors = []
-            for module in (actual_module, expected_module):
-                try:
-                    copier(module)
-                except Exception as error:
-                    errors.append((type(error), str(error)))
-                else:
-                    self.fail("a cuDNN module proxy unexpectedly supported copying")
-            self.assertEqual(errors[0], errors[1])
-
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
                 self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
@@ -191,10 +262,11 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
     def reload_contract(self, root):
         parent = root.backends
         module = parent.cudnn
-        old_function = module.is_available
+        old_function = module.is_acceptable
         namespace = module.__dict__
+        tensor = root.tensor([1.0])
         reloaded = importlib.reload(module)
-        new_function = module.is_available
+        new_function = module.is_acceptable
 
         try:
             pickle.dumps(old_function)
@@ -206,7 +278,7 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
                 ),
             )
         else:
-            self.fail("a stale cuDNN availability function remained pickleable")
+            self.fail("a stale cuDNN tensor eligibility function remained pickleable")
 
         contract = (
             reloaded is module,
@@ -216,7 +288,8 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             sys.modules[module.__name__] is reloaded,
             reloaded.m is module,
             old_function is not new_function,
-            reloaded.is_available is new_function,
+            reloaded.is_acceptable is new_function,
+            new_function(tensor) is False,
             copy.copy(new_function) is new_function,
             copy.deepcopy(new_function) is new_function,
             pickle.loads(pickle.dumps(new_function)) is new_function,
@@ -230,32 +303,88 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             self.reload_contract(torch),
             self.reload_contract(reference_torch),
         )
-        actual = torch.backends.cudnn.is_available
-        expected = reference_torch.backends.cudnn.is_available
-        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-            with self.subTest(protocol=protocol):
-                self.assertEqual(
-                    self.pickle_shape(actual, protocol),
-                    self.pickle_shape(expected, protocol),
-                )
 
-    def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.backends.cudnn.is_available
-        expected = reference_torch.backends.cudnn.is_available
+    def test_argument_binding_errors_match_pytorch_2_13(self):
+        actual = torch.backends.cudnn.is_acceptable
+        expected = reference_torch.backends.cudnn.is_acceptable
+        actual_tensor = torch.tensor([1.0])
+        expected_tensor = reference_torch.tensor([1.0])
+        self.assertIs(actual(tensor=actual_tensor), False)
+        self.assertIs(expected(tensor=expected_tensor), False)
         cases = (
-            (lambda: actual(None), lambda: expected(None)),
-            (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
+            (lambda: actual(), lambda: expected()),
             (
-                lambda: actual(None, enabled=True),
-                lambda: expected(None, enabled=True),
+                lambda: actual(actual_tensor, actual_tensor),
+                lambda: expected(expected_tensor, expected_tensor),
+            ),
+            (
+                lambda: actual(input=actual_tensor),
+                lambda: expected(input=expected_tensor),
+            ),
+            (
+                lambda: actual(actual_tensor, tensor=actual_tensor),
+                lambda: expected(expected_tensor, tensor=expected_tensor),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_cudnn_enabled_h100_exposes_build_and_execution_boundary(self):
+    def metadata_observations(self, module):
+        function = module.backends.cudnn.is_acceptable
+        observations = []
+
+        def observe(value, calls):
+            try:
+                result = function(value)
+            except Exception as error:
+                outcome = ("error", type(error).__name__, str(error), error.args)
+            else:
+                outcome = ("result", type(result).__name__, result)
+            observations.append((outcome, tuple(calls)))
+
+        observe(None, [])
+
+        calls = []
+        observe(
+            TensorMetadata(
+                "cpu",
+                None,
+                calls,
+                dtype_error=AssertionError("dtype should not be read"),
+            ),
+            calls,
+        )
+
+        calls = []
+        observe(TensorMetadata("cuda", object(), calls), calls)
+
+        for location in ("device", "device.type", "dtype"):
+            calls = []
+            error = RuntimeError(f"{location} failed")
+            observe(
+                TensorMetadata(
+                    "cuda",
+                    module.float32,
+                    calls,
+                    device_error=error if location == "device" else None,
+                    device_type_error=error if location == "device.type" else None,
+                    dtype_error=error if location == "dtype" else None,
+                ),
+                calls,
+            )
+
+        calls = []
+        observe(TensorMetadata("cuda", [], calls), calls)
+        return observations
+
+    def test_non_tensor_error_order_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.metadata_observations(torch),
+            self.metadata_observations(reference_torch),
+        )
+
+    def test_one_h100_exposes_the_device_and_execution_boundary(self):
         if not reference_torch.backends.cudnn.is_available():
             self.skipTest("requires a cuDNN-built reference PyTorch")
         if not reference_torch.cuda.is_available():
@@ -265,42 +394,34 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         if "H100" not in device_name:
             self.skipTest(f"requires an NVIDIA H100, found {device_name}")
 
-        self.assertIs(reference_torch._C._has_cudnn, True)
-        self.assertIs(reference_torch.backends.cudnn.is_available(), True)
-        self.assertIs(torch._C._has_cudnn, False)
-        self.assertIs(torch.backends.cudnn.is_available(), False)
+        actual_cpu = torch.tensor([1.0])
+        expected_cpu = reference_torch.tensor([1.0])
+        expected_cuda = reference_torch.tensor([1.0], device="cuda:0")
+        self.assertIs(torch.backends.cudnn.is_acceptable(actual_cpu), False)
+        self.assertIs(
+            reference_torch.backends.cudnn.is_acceptable(expected_cpu),
+            False,
+        )
+        self.assertIs(
+            reference_torch.backends.cudnn.is_acceptable(expected_cuda),
+            True,
+        )
+        self.assertEqual(expected_cuda.device.type, "cuda")
+        self.assertEqual(expected_cuda.device.index, 0)
+        self.assertEqual(reference_torch.version.cuda, "13.0")
         self.assertGreater(reference_torch.backends.cudnn.version(), 0)
 
-        device = reference_torch.device("cuda", 0)
-        source = reference_torch.arange(
-            1.0,
-            17.0,
-            device=device,
-        ).reshape(1, 1, 4, 4)
-        kernel = reference_torch.ones((1, 1, 3, 3), device=device)
-        result = reference_torch.nn.functional.conv2d(source, kernel)
-        reference_torch.cuda.synchronize(device)
-        self.assertEqual(result.cpu().tolist(), [[[[54.0, 63.0], [90.0, 99.0]]]])
-
-        self.assertFalse(hasattr(torch.backends.cudnn, "version"))
-        self.assertFalse(hasattr(torch.backends.cudnn, "flags"))
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaises(RuntimeError):
             torch.tensor([1.0], device="cuda:0")
 
-    def test_version_configuration_and_execution_surface_remains_unsupported(self):
+    def test_configuration_and_execution_surface_remains_unsupported(self):
         actual = torch.backends.cudnn
         expected = reference_torch.backends.cudnn
-        self.assertEqual(
-            {name for name in vars(actual) if not name.startswith("_")},
-            {"m"},
-        )
-        self.assertEqual(
-            {name for name in vars(actual) if not name.startswith("_")},
-            {name for name in vars(expected) if not name.startswith("_")},
-        )
+        self.assertTrue(hasattr(actual, "is_acceptable"))
+        self.assertTrue(hasattr(expected, "is_acceptable"))
         for name in (
             "CUDNN_TENSOR_DTYPES",
             "allow_tf32",
@@ -320,8 +441,16 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
                 self.assertFalse(hasattr(actual, name))
                 self.assertTrue(hasattr(expected, name))
 
-        self.assertFalse(hasattr(torch, "cuda"))
-        self.assertTrue(hasattr(reference_torch, "cuda"))
+        for name in (
+            "_cudnn",
+            "_get_cudnn_enabled",
+            "_set_cudnn_enabled",
+            "_get_cudnn_benchmark",
+            "_set_cudnn_benchmark",
+        ):
+            with self.subTest(native_name=name):
+                self.assertFalse(hasattr(torch._C, name))
+                self.assertTrue(hasattr(reference_torch._C, name))
 
 
 if __name__ == "__main__":

@@ -217,7 +217,6 @@ class CudnnIsAvailableTests(unittest.TestCase):
             "enabled",
             "flags",
             "fp32_precision",
-            "is_acceptable",
             "rnn",
             "set_flags",
             "version",
