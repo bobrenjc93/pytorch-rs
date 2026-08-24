@@ -1557,6 +1557,14 @@ pub(crate) fn exp_variable_function(
     unary_out_variable_function(UnaryOutOperation::EXP, py, args, kwargs)
 }
 
+pub(crate) fn floor_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::FLOOR, py, args, kwargs)
+}
+
 pub(crate) fn neg_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -1986,6 +1994,15 @@ impl UnaryOutOperation {
         out_unsupported_error: "exp(): the 'out' argument is not supported",
         autograd_unsupported_error: None,
         apply: CoreTensor::exp,
+    };
+
+    const FLOOR: Self = Self {
+        name: "floor",
+        qualified_name: "torch.floor",
+        dispatch_allocation_error: "unable to allocate floor dispatch operands",
+        out_unsupported_error: "floor(): the 'out' argument is not supported",
+        autograd_unsupported_error: None,
+        apply: CoreTensor::floor,
     };
 
     const RECIPROCAL: Self = Self {
