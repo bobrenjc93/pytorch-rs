@@ -3704,35 +3704,77 @@ fn transform_backward(
                 return Ok(gradient);
             }
 
+            if is_batched_trailing_axis_transpose(dimensions) {
+                let rank = input.shape.len();
+                debug_assert_eq!(dimensions.len(), rank);
+                debug_assert_eq!(&output_shape[..rank - 2], &input.shape[..rank - 2]);
+                debug_assert_eq!(
+                    output_shape[rank - 2..],
+                    [input.shape[rank - 1], input.shape[rank - 2]]
+                );
+                return batched_trailing_axis_transpose_backward(input, upstream);
+            }
+
             let mut gradient = filled_storage(input.elements, 0.0)?;
             if upstream.is_empty() {
                 return Ok(gradient);
             }
             let input_strides = contiguous_strides(&input.shape, input.elements)?;
-            let mut coordinates = try_result_vector(output_shape.len(), input.elements)?;
-            coordinates.resize(output_shape.len(), 0_usize);
             for (output_index, &value) in upstream.iter().enumerate() {
                 let mut remaining = output_index;
+                let mut input_index = 0_usize;
                 for axis in (0..output_shape.len()).rev() {
-                    coordinates[axis] = remaining % output_shape[axis];
+                    let coordinate = remaining % output_shape[axis];
                     remaining /= output_shape[axis];
+                    let input_axis = dimensions[axis];
+                    let contribution = coordinate
+                        .checked_mul(input_strides[input_axis])
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
+                    input_index = input_index
+                        .checked_add(contribution)
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
                 }
-                let input_index = dimensions.iter().enumerate().try_fold(
-                    0_usize,
-                    |input_index, (output_axis, &input_axis)| {
-                        let contribution = coordinates[output_axis]
-                            .checked_mul(input_strides[input_axis])
-                            .ok_or(TensorError::IndexCalculationOverflow)?;
-                        input_index
-                            .checked_add(contribution)
-                            .ok_or(TensorError::IndexCalculationOverflow)
-                    },
-                )?;
                 gradient[input_index] = value;
             }
             Ok(gradient)
         }
     }
+}
+
+fn is_batched_trailing_axis_transpose(dimensions: &[usize]) -> bool {
+    let rank = dimensions.len();
+    rank >= 3
+        && dimensions[rank - 2..] == [rank - 1, rank - 2]
+        && dimensions[..rank - 2].iter().copied().eq(0..rank - 2)
+}
+
+fn batched_trailing_axis_transpose_backward(
+    input: &SavedTensor,
+    upstream: &[f32],
+) -> Result<Vec<f32>, TensorError> {
+    let rank = input.shape.len();
+    debug_assert!(rank >= 3);
+    debug_assert_eq!(upstream.len(), input.elements);
+    let rows = input.shape[rank - 2];
+    let columns = input.shape[rank - 1];
+    let mut gradient = try_result_vector(input.elements, input.elements)?;
+    if upstream.is_empty() {
+        return Ok(gradient);
+    }
+
+    let matrix_elements = rows
+        .checked_mul(columns)
+        .ok_or(TensorError::IndexCalculationOverflow)?;
+    // Fixed batch axes make every matrix one contiguous upstream chunk.
+    for matrix in upstream.chunks_exact(matrix_elements) {
+        for row in 0..rows {
+            for column in 0..columns {
+                gradient.push(matrix[column * rows + row]);
+            }
+        }
+    }
+    debug_assert_eq!(gradient.len(), input.elements);
+    Ok(gradient)
 }
 
 fn add_gradient(
@@ -5284,6 +5326,28 @@ mod tests {
             Some("PowBackward0")
         );
         assert_eq!(source.sqrt().unwrap().grad_fn_name(), Some("SqrtBackward0"));
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn batched_trailing_transposes_preserve_operation_specific_python_names() {
+        let source = Tensor::zeros([2, 3, 5]).unwrap().with_requires_grad(true);
+
+        assert_eq!(
+            source.transpose(-2, -1).unwrap().grad_fn_name(),
+            Some("TransposeBackward0")
+        );
+        assert_eq!(
+            source.matrix_transpose().unwrap().grad_fn_name(),
+            Some("TransposeBackward0")
+        );
+        assert_eq!(
+            source.permute_axes([0, 2, 1]).unwrap().grad_fn_name(),
+            Some("PermuteBackward0")
+        );
+
+        let matrix = Tensor::zeros([3, 5]).unwrap().with_requires_grad(true);
+        assert_eq!(matrix.t().unwrap().grad_fn_name(), Some("TBackward0"));
     }
 
     fn binary_outputs(left: &Tensor, right: &Tensor) -> [Tensor; 4] {
