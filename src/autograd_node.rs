@@ -5,6 +5,7 @@
 pub(crate) enum AutogradNode {
     Add,
     Alias,
+    Ceil,
     Clone,
     Exp,
     Floor,
@@ -39,6 +40,7 @@ impl AutogradNode {
         match self {
             Self::Add => "AddBackward0",
             Self::Alias => "AliasBackward0",
+            Self::Ceil => "CeilBackward0",
             Self::Clone => "CloneBackward0",
             Self::Exp => "ExpBackward0",
             Self::Floor => "FloorBackward0",

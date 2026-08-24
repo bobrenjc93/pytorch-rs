@@ -2613,13 +2613,10 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn ceil(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported { operation: "ceil" });
-        }
-        self.unary_map(ceil_value)
+        let output = self.unary_map(ceil_value)?;
+        self.finish_zero_vjp(output, AutogradNode::Ceil)
     }
 
     /// Rounds every element toward zero to the nearest integer.
@@ -5257,6 +5254,7 @@ mod tests {
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
         assert_eq!(source.exp().unwrap().grad_fn_name(), Some("ExpBackward0"));
+        assert_eq!(source.ceil().unwrap().grad_fn_name(), Some("CeilBackward0"));
         assert_eq!(
             source.floor().unwrap().grad_fn_name(),
             Some("FloorBackward0")
@@ -6353,37 +6351,48 @@ mod tests {
 
     #[test]
     fn zero_vjp_edges_do_not_retain_input_or_output_values() {
-        let leaf = Tensor::ones([16_384]).unwrap().with_requires_grad(true);
-        let leaf_storage = Arc::downgrade(&leaf.storage);
-        let output = leaf.floor().unwrap();
-        let output_storage = Arc::downgrade(&output.storage);
-        let loss = output.sum();
+        for (name, operation) in [
+            (
+                "ceil",
+                Tensor::ceil as fn(&Tensor) -> Result<Tensor, TensorError>,
+            ),
+            (
+                "floor",
+                Tensor::floor as fn(&Tensor) -> Result<Tensor, TensorError>,
+            ),
+        ] {
+            let leaf = Tensor::ones([16_384]).unwrap().with_requires_grad(true);
+            let leaf_storage = Arc::downgrade(&leaf.storage);
+            let output = operation(&leaf).unwrap();
+            let output_storage = Arc::downgrade(&output.storage);
+            let loss = output.sum();
 
-        let metadata = output.autograd.as_deref().unwrap();
-        let AutogradKind::NonLeaf { grad_fn } = &metadata.kind else {
-            panic!("tracked floor output must be a non-leaf");
-        };
-        let grad_fn = grad_fn
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(GradFn::ZeroVjp(node)) = grad_fn.as_ref() else {
-            panic!("tracked floor output must use a zero-VJP node");
-        };
-        assert!(node.input.storage.is_none());
-        drop(grad_fn);
+            let metadata = output.autograd.as_deref().unwrap();
+            let AutogradKind::NonLeaf { grad_fn } = &metadata.kind else {
+                panic!("tracked {name} output must be a non-leaf");
+            };
+            let grad_fn = grad_fn
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(GradFn::ZeroVjp(node)) = grad_fn.as_ref() else {
+                panic!("tracked {name} output must use a zero-VJP node");
+            };
+            assert!(node.input.storage.is_none());
+            drop(grad_fn);
 
-        drop(output);
-        drop(leaf);
-        assert!(
-            leaf_storage.upgrade().is_none(),
-            "zero-VJP edges must not retain input values"
-        );
-        assert!(
-            output_storage.upgrade().is_none(),
-            "zero-VJP edges must not retain output values"
-        );
-        loss.backward().unwrap();
-        loss.backward().unwrap();
+            drop(output);
+            drop(leaf);
+            assert!(
+                leaf_storage.upgrade().is_none(),
+                "zero-VJP edges must not retain input values"
+            );
+            assert!(
+                output_storage.upgrade().is_none(),
+                "zero-VJP edges must not retain output values"
+            );
+            loss.backward().unwrap();
+            loss.backward().unwrap();
+        }
     }
 
     #[test]
