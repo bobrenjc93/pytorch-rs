@@ -21,7 +21,10 @@ FUNCTION_DOC = """Returns True if the global deterministic flag is turned on. Re
 class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
     def test_default_false_is_exact_and_preserves_grad_mode(self):
         function = torch.are_deterministic_algorithms_enabled
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(
+            function.__code__.co_names,
+            ("_C", "_get_deterministic_algorithms"),
+        )
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -159,15 +162,11 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_deterministic_setters_remain_unsupported(self):
-        unsupported = (
-            "use_deterministic_algorithms",
-            "set_deterministic_debug_mode",
-        )
-        for name in unsupported:
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(torch, name))
-                self.assertNotIn(name, torch.__all__)
+    def test_use_deterministic_algorithms_is_supported_but_debug_setter_is_not(self):
+        self.assertTrue(hasattr(torch, "use_deterministic_algorithms"))
+        self.assertEqual(torch.__all__.count("use_deterministic_algorithms"), 1)
+        self.assertFalse(hasattr(torch, "set_deterministic_debug_mode"))
+        self.assertNotIn("set_deterministic_debug_mode", torch.__all__)
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""

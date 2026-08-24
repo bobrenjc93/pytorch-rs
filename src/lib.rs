@@ -6,6 +6,8 @@
 //! benchmark integrity, and existing performance remain merge gates.
 
 mod autograd_node;
+#[cfg(all(feature = "python-bindings", not(doc)))]
+mod deterministic_algorithms;
 mod device;
 mod dtype;
 mod grad_mode;
@@ -19,6 +21,8 @@ mod python;
 mod python_argument_schema;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_cpython_compat;
+#[cfg(all(feature = "python-bindings", not(doc)))]
+mod python_deterministic_algorithms;
 #[cfg(all(feature = "python-bindings", not(doc)))]
 mod python_device;
 #[cfg(all(feature = "python-bindings", not(doc)))]
