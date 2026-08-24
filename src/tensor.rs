@@ -2623,13 +2623,10 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn trunc(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported { operation: "trunc" });
-        }
-        self.unary_map(trunc_value)
+        let output = self.unary_map(trunc_value)?;
+        self.finish_zero_vjp(output, AutogradNode::Trunc)
     }
 
     /// Applies the logistic sigmoid function element by element.
@@ -5260,6 +5257,10 @@ mod tests {
             Some("FloorBackward0")
         );
         assert_eq!(
+            source.trunc().unwrap().grad_fn_name(),
+            Some("TruncBackward0")
+        );
+        assert_eq!(
             source.sigmoid(),
             Err(TensorError::AutogradRecordingUnsupported {
                 operation: "sigmoid"
@@ -6357,6 +6358,7 @@ mod tests {
                 Tensor::ceil as fn(&Tensor) -> Result<Tensor, TensorError>,
             ),
             ("floor", Tensor::floor),
+            ("trunc", Tensor::trunc),
         ] {
             let leaf = Tensor::ones([16_384]).unwrap().with_requires_grad(true);
             let leaf_storage = Arc::downgrade(&leaf.storage);
