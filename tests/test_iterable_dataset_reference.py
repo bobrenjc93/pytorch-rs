@@ -214,6 +214,7 @@ class IterableDatasetReferenceTests(unittest.TestCase):
             "StackDataset",
             "Subset",
             "TensorDataset",
+            "default_collate",
             "get_worker_info",
         }
 
@@ -237,7 +238,6 @@ class IterableDatasetReferenceTests(unittest.TestCase):
         for unsupported in (
             "DataLoader",
             "RandomSampler",
-            "default_collate",
         ):
             with self.subTest(unsupported=unsupported):
                 self.assertFalse(hasattr(actual_data, unsupported))
