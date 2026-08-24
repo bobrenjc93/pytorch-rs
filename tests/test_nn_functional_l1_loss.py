@@ -11,6 +11,10 @@ import torch_rs.nn.functional as functional
 
 class FunctionalL1LossTests(unittest.TestCase):
     @staticmethod
+    def float32_from_bits(bits):
+        return np.array([bits], dtype=np.uint32).view(np.float32)[0].item()
+
+    @staticmethod
     def tensor_bits(tensor):
         return np.asarray(tensor).reshape(-1).view(np.uint32)
 
@@ -285,6 +289,27 @@ class FunctionalL1LossTests(unittest.TestCase):
             difference,
             case="float32 edges",
             expected_stride=(1,),
+        )
+
+    def test_paired_nan_uses_the_target_payload_before_absolute_value(self):
+        input_bits = [0x7FC1_1111, 0xFFC2_2222]
+        target_bits = [0xFFC2_2222, 0x7FC1_1111]
+        input = torch.tensor(
+            [self.float32_from_bits(bits) for bits in input_bits]
+        )
+        target = torch.tensor(
+            [self.float32_from_bits(bits) for bits in target_bits]
+        )
+
+        np.testing.assert_array_equal(self.tensor_bits(input), input_bits)
+        np.testing.assert_array_equal(self.tensor_bits(target), target_bits)
+        difference = input - target
+        np.testing.assert_array_equal(self.tensor_bits(difference), target_bits)
+
+        actual = functional.l1_loss(input, target, reduction="none")
+        np.testing.assert_array_equal(
+            self.tensor_bits(actual),
+            [0x7FC2_2222, 0x7FC1_1111],
         )
 
     def test_requires_grad_operands_are_rejected_before_work_and_work_under_no_grad(self):

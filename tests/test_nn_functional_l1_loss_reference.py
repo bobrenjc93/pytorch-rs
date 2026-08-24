@@ -26,6 +26,10 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
     def tensor(module, values):
         return module.tensor(values, dtype=module.float32)
 
+    @staticmethod
+    def float32_from_bits(bits):
+        return np.array([bits], dtype=np.uint32).view(np.float32)[0].item()
+
     def make_cases(self, module):
         offset_input_base = self.tensor(
             module,
@@ -289,6 +293,39 @@ class FunctionalL1LossReferenceTests(unittest.TestCase):
             reduction="none",
         )
         self.assert_matches(actual, expected, case="float32 edges")
+
+    def test_paired_nan_payload_selection_matches_pytorch_2_13(self):
+        input_bits = [0x7FC1_1111, 0xFFC2_2222]
+        target_bits = [0xFFC2_2222, 0x7FC1_1111]
+        input_values = [self.float32_from_bits(bits) for bits in input_bits]
+        target_values = [self.float32_from_bits(bits) for bits in target_bits]
+        actual_input = self.tensor(torch, input_values)
+        actual_target = self.tensor(torch, target_values)
+        expected_input = self.tensor(reference_torch, input_values)
+        expected_target = self.tensor(reference_torch, target_values)
+
+        np.testing.assert_array_equal(
+            np.asarray(actual_input).view(np.uint32), input_bits
+        )
+        np.testing.assert_array_equal(
+            np.asarray(actual_target).view(np.uint32), target_bits
+        )
+        actual = functional.l1_loss(
+            actual_input,
+            actual_target,
+            reduction="none",
+        )
+        expected = reference_functional.l1_loss(
+            expected_input,
+            expected_target,
+            reduction="none",
+        )
+
+        self.assert_matches(actual, expected, case="paired NaN payloads")
+        np.testing.assert_array_equal(
+            np.asarray(actual).view(np.uint32),
+            [0x7FC2_2222, 0x7FC1_1111],
+        )
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
