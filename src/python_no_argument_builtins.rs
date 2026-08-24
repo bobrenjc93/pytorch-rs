@@ -3,14 +3,14 @@
 use std::{cell::Cell, ffi::CStr};
 
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::PyTypeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyAny, PyBool, PyCFunction, PyDict, PyModule, PyTuple};
+use pyo3::types::{PyAny, PyBool, PyBytes, PyCFunction, PyDict, PyModule, PyString, PyTuple};
 
 use crate::{
     DType, is_grad_enabled as core_is_grad_enabled,
-    python::python_type_name,
+    python::{python_type_name, pytorch_ordered_keyword_entries},
     python_dtype::{PyDType, dtype_object},
 };
 
@@ -78,6 +78,184 @@ fn is_multithreading_enabled(
     // Expose PyTorch's supported default without adding its setter or a
     // parallel backward scheduler to the native engine.
     Ok(true)
+}
+
+const DEVICE_TYPES: &str = "cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone";
+
+fn autocast_invalid_combination(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let mut arguments = Vec::new();
+    for value in args {
+        arguments.push(python_type_name(&value)?);
+    }
+    if let Some(kwargs) = kwargs {
+        for (name, value) in pytorch_ordered_keyword_entries(kwargs)? {
+            arguments.push(format!("{name}={}", python_type_name(&value)?));
+        }
+    }
+
+    let mut summary = arguments.join(", ");
+    if args.is_empty() && !arguments.is_empty() {
+        summary.push_str(", ");
+    }
+    Ok(PyTypeError::new_err(format!(
+        "is_autocast_enabled() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (str device_type)\n * ()\n"
+    )))
+}
+
+fn autocast_device_runtime_error(
+    py: Python<'_>,
+    prefix: &[u8],
+    specification: &[u8],
+    suffix: &[u8],
+) -> PyResult<PyErr> {
+    let mut message = Vec::with_capacity(prefix.len() + specification.len() + suffix.len());
+    message.extend_from_slice(prefix);
+    message.extend_from_slice(specification);
+    message.extend_from_slice(suffix);
+    if let Some(nul) = message.iter().position(|byte| *byte == 0) {
+        message.truncate(nul);
+    }
+    let message = PyString::from_bytes(py, &message)?;
+    let exception = py.get_type::<PyRuntimeError>().call1((message,))?;
+    Ok(PyErr::from_value(exception))
+}
+
+fn validate_autocast_device_type(py: Python<'_>, specification: &[u8]) -> PyResult<()> {
+    if specification.is_empty() {
+        return Err(PyRuntimeError::new_err("Device string must not be empty"));
+    }
+
+    let colon = specification.iter().position(|byte| *byte == b':');
+    let (device_type, index) = colon.map_or((specification, None), |position| {
+        (
+            &specification[..position],
+            Some(&specification[position + 1..]),
+        )
+    });
+    let valid_type = !device_type.is_empty()
+        && device_type
+            .iter()
+            .all(|byte| byte.is_ascii_alphabetic() || *byte == b'_');
+    let valid_index = index.is_none_or(|index| {
+        !index.is_empty()
+            && index.iter().all(u8::is_ascii_digit)
+            && (index.len() == 1 || !index.starts_with(b"0"))
+    });
+    if !valid_type || !valid_index {
+        return Err(autocast_device_runtime_error(
+            py,
+            b"Invalid device string: '",
+            specification,
+            b"'",
+        )?);
+    }
+
+    if let Some(index) = index
+        && std::str::from_utf8(index)
+            .ok()
+            .and_then(|index| index.parse::<i32>().ok())
+            .is_none()
+    {
+        let mut prefix = Vec::from(&b"Could not parse device index '"[..]);
+        prefix.extend_from_slice(index);
+        prefix.extend_from_slice(b"' in device string '");
+        return Err(autocast_device_runtime_error(
+            py,
+            &prefix,
+            specification,
+            b"'",
+        )?);
+    }
+
+    if matches!(device_type, b"cpu" | b"cuda") {
+        return Ok(());
+    }
+
+    let known_type = matches!(
+        device_type,
+        b"ipu"
+            | b"xpu"
+            | b"mkldnn"
+            | b"opengl"
+            | b"opencl"
+            | b"ideep"
+            | b"hip"
+            | b"ve"
+            | b"fpga"
+            | b"maia"
+            | b"xla"
+            | b"lazy"
+            | b"vulkan"
+            | b"mps"
+            | b"meta"
+            | b"hpu"
+            | b"mtia"
+            | b"privateuseone"
+    );
+    if !known_type {
+        return Err(autocast_device_runtime_error(
+            py,
+            format!("Expected one of {DEVICE_TYPES} device type at start of device string: ")
+                .as_bytes(),
+            device_type,
+            b"",
+        )?);
+    }
+
+    Err(autocast_device_runtime_error(
+        py,
+        b"is_autocast_enabled(): device '",
+        specification,
+        b"' is not supported; only 'cpu' and 'cuda' are implemented",
+    )?)
+}
+
+fn parse_autocast_device_type(value: &Bound<'_, PyAny>, position: Option<usize>) -> PyResult<()> {
+    if let Ok(value) = value.cast::<PyString>() {
+        return validate_autocast_device_type(value.py(), value.to_str()?.as_bytes());
+    }
+    if let Ok(value) = value.cast::<PyBytes>() {
+        return validate_autocast_device_type(value.py(), value.as_bytes());
+    }
+
+    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    let type_name = python_type_name(value)?;
+    Err(PyTypeError::new_err(format!(
+        "is_autocast_enabled(): argument 'device_type'{position} must be str, not {type_name}"
+    )))
+}
+
+fn is_autocast_enabled(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<bool> {
+    let keyword_count = kwargs.map_or(0, pyo3::types::PyDictMethods::len);
+    let device_type = match (args.len(), keyword_count) {
+        (0, 0) => None,
+        (0, 1) => {
+            let kwargs = kwargs.expect("one keyword argument has a dictionary");
+            let Some(device_type) = kwargs.get_item("device_type")? else {
+                return Err(PyTypeError::new_err(
+                    "is_autocast_enabled() missing 1 required positional arguments: \"device_type\"",
+                ));
+            };
+            Some((device_type, None))
+        }
+        (1, 0) => Some((args.get_item(0)?, Some(1))),
+        _ => return Err(autocast_invalid_combination(args, kwargs)?),
+    };
+
+    if let Some((device_type, position)) = device_type {
+        parse_autocast_device_type(&device_type, position)?;
+    }
+
+    // The native engine does not implement mixed-precision execution. Both
+    // CPU and CUDA autocast therefore remain in PyTorch's exact default state,
+    // without consulting accelerator discovery or initializing a runtime.
+    Ok(false)
 }
 
 fn is_autocast_cache_enabled(
@@ -374,6 +552,23 @@ unsafe fn is_multithreading_enabled_callback(
     unsafe_code,
     reason = "the callback is entered through PyO3's panic-safe C trampoline"
 )]
+unsafe fn is_autocast_enabled_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    is_autocast_enabled(&args, kwargs.as_ref())?
+        .into_py_any(py)
+        .map(Py::into_ptr)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
 unsafe fn is_autocast_cache_enabled_callback(
     py: Python<'_>,
     _module: *mut ffi::PyObject,
@@ -519,7 +714,7 @@ unsafe fn get_num_interop_threads_callback(
         .map(Py::into_ptr)
 }
 
-fn add_autocast_cache_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+fn add_autocast_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     let (is_autocast_cache_enabled_doc, clear_autocast_cache_doc, set_autocast_cache_enabled_doc) =
         if py.version_info() >= (3, 13) {
@@ -531,6 +726,16 @@ fn add_autocast_cache_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
         } else {
             (c"", c"", c"")
         };
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            is_autocast_enabled_callback
+        ),
+        c"is_autocast_enabled",
+        c"",
+        Some(module),
+    )?)?;
     module.add_function(PyCFunction::new_with_keywords(
         py,
         pyo3::impl_::trampoline::get_trampoline_function!(
@@ -692,7 +897,7 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
         is_inference_mode_enabled_doc,
         Some(module),
     )?)?;
-    add_autocast_cache_builtins(module)?;
+    add_autocast_builtins(module)?;
     add_multithreading_builtin(module, is_multithreading_enabled_doc)?;
     add_view_replay_builtin(module, is_view_replay_enabled_doc)?;
     add_anomaly_builtins(
