@@ -2582,6 +2582,21 @@ impl Tensor {
         self.unary_map(floor_value)
     }
 
+    /// Applies the logistic sigmoid function element by element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn sigmoid(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported {
+                operation: "sigmoid",
+            });
+        }
+        self.unary_map(sigmoid_value)
+    }
+
     /// Computes the hyperbolic tangent of every element.
     ///
     /// # Errors
@@ -4731,6 +4746,10 @@ fn floor_value(value: f32) -> f32 {
     }
 }
 
+fn sigmoid_value(value: f32) -> f32 {
+    1.0 / (1.0 + (-value).exp())
+}
+
 fn sqrt_value(value: f32) -> f32 {
     // PyTorch canonicalizes domain errors to a positive quiet NaN while
     // preserving signed zero and the payload and sign of NaN inputs.
@@ -5790,6 +5809,7 @@ mod tests {
             (tensor.sin().unwrap(), shared.sin().unwrap()),
             (tensor.exp().unwrap(), shared.exp().unwrap()),
             (tensor.floor().unwrap(), shared.floor().unwrap()),
+            (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
             (
@@ -6154,6 +6174,10 @@ mod tests {
         );
         assert_eq!(
             tensor.floor(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.sigmoid(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
