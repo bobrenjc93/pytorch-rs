@@ -5953,6 +5953,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:870",
+      "recordedAt": "2026-08-24T23:38:20.907Z",
+      "label": "PR #870",
+      "kind": "leaf",
+      "prNumber": 870,
+      "title": "Widen sigmoid autograd to finite owned rank-1 tensors",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 90.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 72.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }

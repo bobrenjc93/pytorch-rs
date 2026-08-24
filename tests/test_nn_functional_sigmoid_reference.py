@@ -288,12 +288,56 @@ class FunctionalSigmoidReferenceTests(unittest.TestCase):
         expected_leaf = reference_torch.tensor(
             [0.5, -1.0], dtype=reference_torch.float32, requires_grad=True
         )
+        actual_weights = torch.tensor([2.0, -3.0])
+        expected_weights = reference_torch.tensor(
+            [2.0, -3.0], dtype=reference_torch.float32
+        )
+        actual_output = functional.sigmoid(actual_leaf)
+        expected_output = reference_functional.sigmoid(expected_leaf)
+        self.assert_tensor_matches(
+            actual_output, expected_output, case="rank-one forward"
+        )
+        (actual_output * actual_weights).sum().backward()
+        (expected_output * expected_weights).sum().backward()
+        self.assert_tensor_matches(
+            actual_leaf.grad, expected_leaf.grad, case="rank-one gradient"
+        )
+
+        actual_empty = torch.tensor([], requires_grad=True)
+        expected_empty = reference_torch.tensor(
+            [], dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_empty_output = functional.sigmoid(actual_empty)
+        expected_empty_output = reference_functional.sigmoid(expected_empty)
+        self.assert_tensor_matches(
+            actual_empty_output, expected_empty_output, case="empty forward"
+        )
+        actual_empty_output.sum().backward()
+        expected_empty_output.sum().backward()
+        self.assert_tensor_matches(
+            actual_empty.grad, expected_empty.grad, case="empty gradient"
+        )
+
+        actual_matrix = torch.tensor([[0.5, -1.0]], requires_grad=True)
         with self.assertRaisesRegex(
             RuntimeError,
             r"^sigmoid\(\): autograd recording is not supported$",
         ):
-            functional.sigmoid(actual_leaf)
-        self.assertTrue(reference_functional.sigmoid(expected_leaf).requires_grad)
+            functional.sigmoid(actual_matrix)
+        self.assertIsNone(actual_matrix.grad)
+        actual_matrix.sum().backward()
+        self.assertEqual(actual_matrix.grad.tolist(), [[1.0, 1.0]])
+
+        actual_view_base = torch.tensor([[0.5, -1.0]], requires_grad=True)
+        actual_view = actual_view_base[0]
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^sigmoid\(\): autograd recording is not supported$",
+        ):
+            functional.sigmoid(actual_view)
+        self.assertIsNone(actual_view_base.grad)
+        actual_view.sum().backward()
+        self.assertEqual(actual_view_base.grad.tolist(), [[1.0, 1.0]])
 
         with torch.no_grad():
             actual_no_grad = functional.sigmoid(actual_leaf)
