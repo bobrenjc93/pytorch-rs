@@ -76,45 +76,161 @@ fn reciprocal_rejects_recording_before_planning_and_honors_no_grad() {
 }
 
 #[test]
-fn tanh_rejects_recording_before_planning_and_honors_no_grad() {
-    let leaf = Tensor::from_vec(vec![-2.0, -0.0, 1.0, 4.0], [2, 2])
+fn tanh_differentiates_finite_owned_scalars_at_signed_zero_and_saturation() {
+    // input, forward result, unit-upstream gradient
+    const CASES: [(u32, u32, u32); 10] = [
+        (0x0000_0000, 0x0000_0000, 0x3f80_0000),
+        (0x8000_0000, 0x8000_0000, 0x3f80_0000),
+        (0x0000_0001, 0x0000_0001, 0x3f80_0000),
+        (0x8000_0001, 0x8000_0001, 0x3f80_0000),
+        (0x3f00_0000, 0x3eec_9a9f, 0x3f49_54a3),
+        (0xbf00_0000, 0xbeec_9a9f, 0x3f49_54a3),
+        (0x4110_2c66, 0x3f7f_ffff, 0x3400_0000),
+        (0xc110_2c66, 0xbf7f_ffff, 0x3400_0000),
+        (0x4110_2c67, 0x3f80_0000, 0x0000_0000),
+        (0xc110_2c67, 0xbf80_0000, 0x0000_0000),
+    ];
+
+    for (input_bits, output_bits, gradient_bits) in CASES {
+        let leaf = Tensor::from_vec(vec![f32::from_bits(input_bits)], [])
+            .unwrap()
+            .with_requires_grad(true);
+        let output = leaf.tanh().unwrap();
+
+        assert!(output.requires_grad());
+        assert!(!output.is_leaf());
+        assert!(output.shape().is_empty());
+        assert!(output.stride().is_empty());
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.shares_storage_with(&leaf));
+        assert_eq!(output.item().unwrap().to_bits(), output_bits);
+
+        output.backward().unwrap();
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+            gradient_bits
+        );
+        assert_eq!(output.backward(), Err(TensorError::BackwardGraphFreed));
+    }
+}
+
+#[test]
+fn tanh_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
+    let composed = Tensor::from_vec(vec![0.5], [])
         .unwrap()
         .with_requires_grad(true);
+    composed.tanh().unwrap().sin().unwrap().backward().unwrap();
+    let tanh = 0.5_f32.tanh();
     assert_eq!(
-        leaf.tanh(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
+        composed.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        (tanh.cos() * (-tanh).mul_add(tanh, 1.0)).to_bits()
     );
+
+    let accumulated = Tensor::from_vec(vec![-0.5], [])
+        .unwrap()
+        .with_requires_grad(true);
+    accumulated.tanh().unwrap().backward().unwrap();
+    let first = accumulated.grad().unwrap().unwrap().item().unwrap();
+    accumulated.tanh().unwrap().backward().unwrap();
+    assert_eq!(
+        accumulated
+            .grad()
+            .unwrap()
+            .unwrap()
+            .item()
+            .unwrap()
+            .to_bits(),
+        (first * 2.0).to_bits()
+    );
+
+    {
+        let _guard = no_grad();
+        let output = accumulated.tanh().unwrap();
+        assert!(!output.requires_grad());
+        assert!(output.is_leaf());
+        assert!(!output.shares_storage_with(&accumulated));
+    }
+    assert!(accumulated.tanh().unwrap().requires_grad());
+
+    let detached = accumulated.detach().unwrap().tanh().unwrap();
+    assert!(!detached.requires_grad());
+    assert!(detached.is_leaf());
+    assert!(!detached.shares_storage_with(&accumulated));
+}
+
+#[test]
+fn tanh_rejects_unsupported_tracked_inputs_before_graph_or_layout_mutation() {
+    let unsupported = TensorError::AutogradRecordingUnsupported { operation: "tanh" };
+
+    for bits in [
+        f32::INFINITY.to_bits(),
+        f32::NEG_INFINITY.to_bits(),
+        0x7f81_2345,
+        0xffc5_4321,
+    ] {
+        let leaf = Tensor::from_vec(vec![f32::from_bits(bits)], [])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(leaf.tanh(), Err(unsupported.clone()));
+        assert!(leaf.grad().unwrap().is_none());
+        leaf.sum().backward().unwrap();
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+            1.0_f32.to_bits()
+        );
+    }
+
+    let non_scalar = Tensor::from_vec(vec![0.5], [1])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(non_scalar.tanh(), Err(unsupported.clone()));
+    assert!(non_scalar.grad().unwrap().is_none());
+
+    let view_base = Tensor::from_vec(vec![0.5], [1])
+        .unwrap()
+        .with_requires_grad(true);
+    let scalar_view = view_base.index([0]).unwrap();
+    assert!(scalar_view.requires_grad());
+    assert!(!scalar_view.is_leaf());
+    assert_eq!(scalar_view.tanh(), Err(unsupported.clone()));
+    scalar_view.backward().unwrap();
+    assert_eq!(values(&view_base.grad().unwrap().unwrap()), [1.0]);
+
+    let nonleaf_base = Tensor::from_vec(vec![0.5], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let nonleaf = nonleaf_base.sin().unwrap();
+    assert_eq!(nonleaf.tanh(), Err(unsupported.clone()));
+    nonleaf.backward().unwrap();
+    assert_eq!(
+        nonleaf_base
+            .grad()
+            .unwrap()
+            .unwrap()
+            .item()
+            .unwrap()
+            .to_bits(),
+        0.5_f32.cos().to_bits()
+    );
+
+    let no_grad_view = {
+        let _guard = no_grad();
+        non_scalar.index([0]).unwrap()
+    };
+    assert!(no_grad_view.requires_grad());
+    assert!(no_grad_view.is_leaf());
+    assert_eq!(no_grad_view.tanh(), Err(unsupported.clone()));
 
     let extreme = Tensor::zeros([0])
         .unwrap()
         .reshape([0, i64::MAX, 3])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(
-        extreme.tanh(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
-    );
-
+    assert_eq!(extreme.tanh(), Err(unsupported));
     {
         let _guard = no_grad();
-        let output = leaf.transpose(0, 1).unwrap().tanh().unwrap();
-        assert_eq!(output.shape(), [2, 2]);
-        assert_eq!(output.stride(), [1, 2]);
-        assert_eq!(output.storage_offset(), 0);
-        assert!(!output.requires_grad());
-        assert!(output.is_leaf());
-        assert!(!output.shares_storage_with(&leaf));
-        assert_eq!(
-            output.logical_values().nth(2).unwrap().to_bits(),
-            0x8000_0000
-        );
         assert_eq!(extreme.tanh(), Err(TensorError::StrideCalculationOverflow));
     }
-
-    let detached = leaf.detach().unwrap().tanh().unwrap();
-    assert!(!detached.requires_grad());
-    assert!(detached.is_leaf());
-    assert!(!detached.shares_storage_with(&leaf));
 }
 
 #[test]

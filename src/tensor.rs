@@ -991,6 +991,28 @@ impl Tensor {
         self.requires_grad() && is_grad_enabled()
     }
 
+    fn is_finite_owned_scalar_leaf(&self) -> bool {
+        // Factory-created scalar leaves span their complete one-element
+        // allocation. Recorded views are non-leaves, while views created
+        // under no_grad carry view_requires_grad without leaf metadata.
+        if !self.shape.is_empty()
+            || self.offset != 0
+            || self.elements != 1
+            || self.storage.len() != 1
+            || self.dtype() != DType::Float32
+            || self.device() != Device::Cpu
+            || self.view_requires_grad
+        {
+            return false;
+        }
+
+        let Some(metadata) = self.autograd.as_deref() else {
+            return false;
+        };
+        matches!(&metadata.kind, AutogradKind::Leaf { .. })
+            && self.value_at_linear_index(0).is_finite()
+    }
+
     fn record_transform(
         &self,
         output: &mut Self,
@@ -2528,13 +2550,15 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when gradient recording is enabled for an input other
+    /// than a finite, owned, rank-zero CPU float32 leaf, or when result
+    /// metadata or storage allocation fails.
     pub fn tanh(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
+        if self.records_grad() && !self.is_finite_owned_scalar_leaf() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" });
         }
-        self.unary_map(tanh_value)
+        let output = self.unary_map(tanh_value)?;
+        self.finish_saved_output_unary_vjp(output, AutogradNode::Tanh, apply_tanh_vjp)
     }
 
     /// Computes the nonnegative square root of every element.
@@ -3407,6 +3431,22 @@ fn apply_exp_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
                 exp_backward_value(output.value_at_linear_index(index), value)
             }),
         );
+    }
+}
+
+fn apply_tanh_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // Scalar tanh autograd always saves one contiguous output today. Keep the
+    // generic saved-output iteration shape so widening support does not need a
+    // different graph representation.
+    if let Some(saved_values) = output.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| tanh_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            tanh_backward_value(output.value_at_linear_index(index), value)
+        }));
     }
 }
 
@@ -4659,6 +4699,7 @@ fn sqrt_value(value: f32) -> f32 {
 
 fn tanh_value(value: f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
+    const SATURATION_MAGNITUDE_BITS: u32 = 0x4110_2c67;
 
     let bits = value.to_bits();
     let magnitude = bits & !F32_SIGN_MASK;
@@ -4668,6 +4709,10 @@ fn tanh_value(value: f32) -> f32 {
     } else if magnitude > f32::INFINITY.to_bits() {
         // Quiet signaling NaNs while retaining their sign and payload.
         f32::from_bits(bits | QUIET_NAN_MASK)
+    } else if magnitude >= SATURATION_MAGNITUDE_BITS {
+        // PyTorch's float32 CPU kernel rounds every finite value from this
+        // boundary outward to exactly +/-1.0.
+        f32::from_bits((bits & F32_SIGN_MASK) | 1.0_f32.to_bits())
     } else {
         value.tanh()
     }
@@ -4681,6 +4726,11 @@ fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
 #[inline]
 fn exp_backward_value(output: f32, upstream: f32) -> f32 {
     upstream * output
+}
+
+#[inline]
+fn tanh_backward_value(output: f32, upstream: f32) -> f32 {
+    upstream * (-output).mul_add(output, 1.0)
 }
 
 #[inline]
@@ -4988,7 +5038,7 @@ mod tests {
 
     #[cfg(feature = "python-bindings")]
     #[test]
-    fn saved_input_unary_nodes_preserve_operation_specific_python_names() {
+    fn saved_unary_nodes_preserve_operation_specific_python_names() {
         let source = Tensor::from_vec(vec![-1.0, 0.5], [2])
             .unwrap()
             .with_requires_grad(true);
@@ -4996,6 +5046,14 @@ mod tests {
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
         assert_eq!(source.exp().unwrap().grad_fn_name(), Some("ExpBackward0"));
+        assert_eq!(
+            source.tanh(),
+            Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
+        );
+        let scalar = Tensor::from_vec(vec![0.5], [])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(scalar.tanh().unwrap().grad_fn_name(), Some("TanhBackward0"));
         assert_eq!(
             source.square().unwrap().grad_fn_name(),
             Some("PowBackward0")

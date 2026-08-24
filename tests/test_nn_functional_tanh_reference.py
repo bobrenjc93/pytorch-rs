@@ -229,6 +229,25 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
         )
 
     def test_supported_and_unsupported_boundaries_are_explicit(self):
+        actual_scalar = torch.tensor(0.5, requires_grad=True)
+        expected_scalar = reference_torch.tensor(
+            0.5, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_scalar_output = functional.tanh(actual_scalar)
+        expected_scalar_output = reference_functional.tanh(expected_scalar)
+        actual_scalar_output.backward()
+        expected_scalar_output.backward()
+        self.assert_tensor_matches(
+            actual_scalar_output,
+            expected_scalar_output,
+            case="scalar forward",
+        )
+        self.assert_tensor_matches(
+            actual_scalar.grad,
+            expected_scalar.grad,
+            case="scalar gradient",
+        )
+
         actual_leaf = torch.tensor([0.5, -1.0], requires_grad=True)
         with self.assertRaisesRegex(
             RuntimeError,
