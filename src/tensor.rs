@@ -2599,15 +2599,17 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when gradient recording is enabled for an input other
+    /// than a finite, owned, rank-zero CPU float32 leaf, or when result
+    /// metadata or storage allocation fails.
     pub fn sigmoid(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
+        if self.records_grad() && !self.is_finite_owned_scalar_leaf() {
             return Err(TensorError::AutogradRecordingUnsupported {
                 operation: "sigmoid",
             });
         }
-        self.unary_map(sigmoid_value)
+        let output = self.unary_map(sigmoid_value)?;
+        self.finish_saved_output_unary_vjp(output, AutogradNode::Sigmoid, apply_sigmoid_vjp)
     }
 
     /// Computes the hyperbolic tangent of every element.
@@ -3495,6 +3497,22 @@ fn apply_exp_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
                 exp_backward_value(output.value_at_linear_index(index), value)
             }),
         );
+    }
+}
+
+fn apply_sigmoid_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // Scalar sigmoid autograd always saves one contiguous output today. Keep
+    // the generic saved-output iteration shape so widening support does not
+    // need a different graph representation.
+    if let Some(saved_values) = output.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| sigmoid_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            sigmoid_backward_value(output.value_at_linear_index(index), value)
+        }));
     }
 }
 
@@ -4821,6 +4839,11 @@ fn exp_backward_value(output: f32, upstream: f32) -> f32 {
 }
 
 #[inline]
+fn sigmoid_backward_value(output: f32, upstream: f32) -> f32 {
+    upstream * (1.0 - output) * output
+}
+
+#[inline]
 fn tanh_backward_value(output: f32, upstream: f32) -> f32 {
     upstream * (-output).mul_add(output, 1.0)
 }
@@ -5165,12 +5188,22 @@ mod tests {
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
         assert_eq!(source.exp().unwrap().grad_fn_name(), Some("ExpBackward0"));
         assert_eq!(
+            source.sigmoid(),
+            Err(TensorError::AutogradRecordingUnsupported {
+                operation: "sigmoid"
+            })
+        );
+        assert_eq!(
             source.tanh(),
             Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
         );
         let scalar = Tensor::from_vec(vec![0.5], [])
             .unwrap()
             .with_requires_grad(true);
+        assert_eq!(
+            scalar.sigmoid().unwrap().grad_fn_name(),
+            Some("SigmoidBackward0")
+        );
         assert_eq!(scalar.tanh().unwrap().grad_fn_name(), Some("TanhBackward0"));
         assert_eq!(
             source.square().unwrap().grad_fn_name(),

@@ -269,37 +269,43 @@ class FunctionalSigmoidReferenceTests(unittest.TestCase):
         expected_scalar = reference_torch.tensor(
             0.5, dtype=reference_torch.float32, requires_grad=True
         )
+        actual_scalar_output = functional.sigmoid(actual_scalar)
+        expected_scalar_output = reference_functional.sigmoid(expected_scalar)
+        actual_scalar_output.backward()
+        expected_scalar_output.backward()
+        self.assert_tensor_matches(
+            actual_scalar_output,
+            expected_scalar_output,
+            case="scalar forward",
+        )
+        self.assert_tensor_matches(
+            actual_scalar.grad,
+            expected_scalar.grad,
+            case="scalar gradient",
+        )
+
         actual_leaf = torch.tensor([0.5, -1.0], requires_grad=True)
         expected_leaf = reference_torch.tensor(
             [0.5, -1.0], dtype=reference_torch.float32, requires_grad=True
         )
-
-        for case, (actual_input, expected_input) in enumerate(
-            ((actual_scalar, expected_scalar), (actual_leaf, expected_leaf))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^sigmoid\(\): autograd recording is not supported$",
         ):
-            with self.subTest(case=case, mode="autograd"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^sigmoid\(\): autograd recording is not supported$",
-                ):
-                    functional.sigmoid(actual_input)
-                self.assertTrue(
-                    reference_functional.sigmoid(expected_input).requires_grad
-                )
+            functional.sigmoid(actual_leaf)
+        self.assertTrue(reference_functional.sigmoid(expected_leaf).requires_grad)
 
-            with torch.no_grad():
-                actual_no_grad = functional.sigmoid(actual_input)
-            with reference_torch.no_grad():
-                expected_no_grad = reference_functional.sigmoid(expected_input)
-            self.assert_tensor_matches(
-                actual_no_grad, expected_no_grad, case=f"no_grad_{case}"
-            )
+        with torch.no_grad():
+            actual_no_grad = functional.sigmoid(actual_leaf)
+        with reference_torch.no_grad():
+            expected_no_grad = reference_functional.sigmoid(expected_leaf)
+        self.assert_tensor_matches(actual_no_grad, expected_no_grad, case="no_grad")
 
-            actual_detached = functional.sigmoid(actual_input.detach())
-            expected_detached = reference_functional.sigmoid(expected_input.detach())
-            self.assert_tensor_matches(
-                actual_detached, expected_detached, case=f"detached_{case}"
-            )
+        actual_detached = functional.sigmoid(actual_leaf.detach())
+        expected_detached = reference_functional.sigmoid(expected_leaf.detach())
+        self.assert_tensor_matches(
+            actual_detached, expected_detached, case="detached"
+        )
 
         self.assertFalse(hasattr(torch, "sigmoid"))
         self.assertTrue(hasattr(reference_torch, "sigmoid"))
