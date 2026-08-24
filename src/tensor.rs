@@ -2632,6 +2632,20 @@ impl Tensor {
         self.unary_map(trunc_value)
     }
 
+    /// Returns the sign of every element, mapping NaNs and signed zeros to
+    /// positive zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn sign(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "sign" });
+        }
+        self.unary_map(sign_value)
+    }
+
     /// Applies the logistic sigmoid function element by element.
     ///
     /// # Errors
@@ -4856,6 +4870,18 @@ fn trunc_value(value: f32) -> f32 {
     round_value(value, f32::trunc)
 }
 
+fn sign_value(value: f32) -> f32 {
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    if magnitude == 0 || magnitude > f32::INFINITY.to_bits() {
+        0.0
+    } else if bits & F32_SIGN_MASK == 0 {
+        1.0
+    } else {
+        -1.0
+    }
+}
+
 fn sigmoid_value(value: f32) -> f32 {
     1.0 / (1.0 + (-value).exp())
 }
@@ -5941,6 +5967,7 @@ mod tests {
             (tensor.floor().unwrap(), shared.floor().unwrap()),
             (tensor.ceil().unwrap(), shared.ceil().unwrap()),
             (tensor.trunc().unwrap(), shared.trunc().unwrap()),
+            (tensor.sign().unwrap(), shared.sign().unwrap()),
             (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
@@ -6314,6 +6341,10 @@ mod tests {
         );
         assert_eq!(
             tensor.trunc(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.sign(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
