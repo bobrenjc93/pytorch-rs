@@ -136,6 +136,29 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             input, target, None, None, "none", None
         )
 
+    @staticmethod
+    def call_mean(module_functional, input, target, form):
+        if form == "default":
+            return module_functional.mse_loss(input, target)
+        if form == "reduction keyword":
+            return module_functional.mse_loss(input, target, reduction="mean")
+        if form == "all keywords":
+            return module_functional.mse_loss(
+                input=input,
+                target=target,
+                size_average=None,
+                reduce=None,
+                reduction="mean",
+                weight=None,
+            )
+        if form == "five positional":
+            return module_functional.mse_loss(
+                input, target, None, None, "mean"
+            )
+        return module_functional.mse_loss(
+            input, target, None, None, "mean", None
+        )
+
     def assert_matches(self, actual, expected, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, tuple(expected.shape))
@@ -157,6 +180,25 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             np.testing.assert_array_equal(
                 np.asarray(actual).reshape(-1).view(np.uint32),
                 expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
+            )
+
+    def assert_mean_matches(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, tuple(expected.shape))
+            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertEqual(actual.is_leaf, expected.is_leaf)
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+        with self.subTest(case=case, values=True):
+            np.testing.assert_allclose(
+                actual.item(),
+                expected.item(),
+                rtol=1.3e-6,
+                atol=1.0e-5,
+                equal_nan=True,
             )
 
     def test_name_signature_defaults_and_annotations_match_pytorch_2_13(self):
@@ -254,6 +296,115 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
                 )
+
+    def test_default_and_explicit_mean_layouts_storage_and_nonmutation_match(self):
+        actual_cases = self.make_cases(torch)
+        expected_cases = self.make_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            actual_input_before = np.asarray(actual_input).copy()
+            actual_target_before = np.asarray(actual_target).copy()
+            expected_input_before = expected_input.clone()
+            expected_target_before = expected_target.clone()
+            for form in (
+                "default",
+                "reduction keyword",
+                "all keywords",
+                "five positional",
+                "six positional",
+            ):
+                actual = self.call_mean(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    form,
+                )
+                expected = self.call_mean(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    form,
+                )
+                self.assert_mean_matches(actual, expected, case=(case, form))
+
+                actual_repeat = self.call_mean(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    form,
+                )
+                expected_repeat = self.call_mean(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    form,
+                )
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input), actual_input_before
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target), actual_target_before
+                )
+                self.assertTrue(
+                    reference_torch.equal(expected_input, expected_input_before)
+                )
+                self.assertTrue(
+                    reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_mean_scalar_empty_and_extreme_bits_match_pytorch_2_13(self):
+        cases = (
+            ("scalar", -0.0, 2.5),
+            ("underflow", [1.0e-23], [0.0]),
+            ("square overflow", [np.finfo(np.float32).max], [0.0]),
+            ("reduction overflow", [1.0e19] * 4, [0.0] * 4),
+            ("infinite difference", [float("inf")], [-float("inf")]),
+            ("indeterminate difference", [float("inf")], [float("inf")]),
+            ("nan input", [float("nan")], [0.0]),
+        )
+        for case, input_values, target_values in cases:
+            with self.subTest(case=case):
+                actual = functional.mse_loss(
+                    self.tensor(torch, input_values),
+                    self.tensor(torch, target_values),
+                )
+                expected = reference_functional.mse_loss(
+                    self.tensor(reference_torch, input_values),
+                    self.tensor(reference_torch, target_values),
+                )
+                if np.isnan(expected.item()):
+                    self.assertTrue(np.isnan(actual.item()))
+                else:
+                    np.testing.assert_array_equal(
+                        np.asarray(actual).view(np.uint32),
+                        expected.detach().cpu().numpy().view(np.uint32),
+                    )
+
+        actual_empty = functional.mse_loss(
+            torch.zeros((2, 0, 3)),
+            torch.ones((2, 0, 3)),
+        )
+        expected_empty = reference_functional.mse_loss(
+            reference_torch.zeros((2, 0, 3)),
+            reference_torch.ones((2, 0, 3)),
+        )
+        self.assertTrue(np.isnan(actual_empty.item()))
+        self.assertTrue(np.isnan(expected_empty.item()))
 
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
         actual_input = self.tensor(
@@ -369,6 +520,19 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 actual,
                 expected,
                 case=(input_requires_grad, target_requires_grad),
+            )
+
+            with torch.no_grad():
+                actual_mean = functional.mse_loss(actual_input, actual_target)
+            with reference_torch.no_grad():
+                expected_mean = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                )
+            self.assert_mean_matches(
+                actual_mean,
+                expected_mean,
+                case=(input_requires_grad, target_requires_grad, "mean"),
             )
 
 

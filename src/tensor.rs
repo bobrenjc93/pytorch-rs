@@ -2404,6 +2404,34 @@ impl Tensor {
         Ok(output)
     }
 
+    /// Computes the mean squared error by reducing paired logical values.
+    ///
+    /// This fused inference helper avoids materializing either the elementwise
+    /// difference or its square. The operands must have identical shapes.
+    #[cfg(any(feature = "python-bindings", test))]
+    #[must_use]
+    pub(crate) fn mean_squared_error(&self, other: &Self) -> Self {
+        debug_assert_eq!(self.shape, other.shape);
+        let squared_error_sum = self.logical_values().zip(other.logical_values()).fold(
+            0.0_f32,
+            |sum, (input, target)| {
+                let difference = input - target;
+                let squared_difference = difference * difference;
+                sum + squared_difference
+            },
+        );
+        #[allow(clippy::cast_precision_loss)]
+        let element_count = self.elements as f32;
+        let mean = squared_error_sum / element_count;
+        Self::from_owned_parts(
+            vec![mean],
+            Vec::new(),
+            Vec::new(),
+            self.dtype(),
+            self.device(),
+        )
+    }
+
     /// Divides tensors element by element using IEEE 754 true division and
     /// trailing-dimension broadcasting.
     ///
@@ -4958,6 +4986,44 @@ mod tests {
                 .eq(preserved.logical_values().map(f32::to_bits))
         );
         assert_ne!(preserved.data_ptr(), difference.data_ptr());
+    }
+
+    #[test]
+    fn mean_squared_error_reduces_offset_strided_pairs_to_a_scalar() {
+        let input = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [2, 2, 3])
+            .unwrap()
+            .index_integer(1)
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let target = Tensor::from_vec((-1_i8..11).map(f32::from).collect(), [2, 2, 3])
+            .unwrap()
+            .index_integer(1)
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+
+        assert_eq!(input.shape(), &[3, 2]);
+        assert_eq!(input.stride(), &[1, 3]);
+        assert_ne!(input.storage_offset(), 0);
+        let output = input.mean_squared_error(&target);
+        assert!(output.shape().is_empty());
+        assert!(output.stride().is_empty());
+        assert_eq!(output.storage_offset(), 0);
+        assert_eq!(output.item().unwrap().to_bits(), 1.0_f32.to_bits());
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        let empty_mean = empty.mean_squared_error(&empty);
+        assert!(empty_mean.item().unwrap().is_nan());
+
+        let extreme = Tensor::from_vec(vec![1.0e19; 4], [4]).unwrap();
+        assert!(
+            extreme
+                .mean_squared_error(&Tensor::zeros([4]).unwrap())
+                .item()
+                .unwrap()
+                .is_infinite()
+        );
     }
 
     #[test]

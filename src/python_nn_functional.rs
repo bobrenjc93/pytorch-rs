@@ -396,14 +396,13 @@ fn _nn_functional_mse_loss(
             "torch_rs.nn.functional.mse_loss only supports size_average=None and reduce=None",
         ));
     }
-    let supports_reduction = reduction
+    let reduction = reduction
         .cast::<PyString>()
         .ok()
-        .and_then(|reduction| reduction.to_str().ok())
-        .is_some_and(|reduction| reduction == "none");
-    if !supports_reduction {
+        .and_then(|reduction| reduction.to_str().ok());
+    if !matches!(reduction, Some("none" | "mean")) {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.mse_loss only supports reduction='none'",
+            "torch_rs.nn.functional.mse_loss only supports reduction='none' or reduction='mean'",
         ));
     }
     if !weight.is_none() {
@@ -436,11 +435,15 @@ fn _nn_functional_mse_loss(
         ));
     }
 
-    let output = input
-        .inner()
-        .sub(target.inner())
-        .and_then(|difference| difference.square_preserving_strides())
-        .map_err(|error| tensor_error(&error))?;
+    let output = if reduction == Some("mean") {
+        input.inner().mean_squared_error(target.inner())
+    } else {
+        input
+            .inner()
+            .sub(target.inner())
+            .and_then(|difference| difference.square_preserving_strides())
+            .map_err(|error| tensor_error(&error))?
+    };
     PyTensor::new(output).into_py_any(py)
 }
 
