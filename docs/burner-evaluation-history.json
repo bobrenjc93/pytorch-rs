@@ -5649,6 +5649,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.2
       }
+    },
+    {
+      "key": "pr:799",
+      "recordedAt": "2026-08-24T04:53:31.711Z",
+      "label": "PR #799",
+      "kind": "leaf",
+      "prNumber": 799,
+      "title": "Add default-form float torch.arange",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 88,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 70.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.2
+      }
     }
   ]
 }
