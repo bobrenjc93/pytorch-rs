@@ -132,10 +132,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
                 )
                 self.assertIs(module.is_available(), expected)
 
-        for module_name in (
-            "torch_rs.backends.lapack",
-            "torch_rs.backends.mkldnn",
-        ):
+        for module_name in ("torch_rs.backends.lapack",):
             with self.subTest(module=module_name):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
