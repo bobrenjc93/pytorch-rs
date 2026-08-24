@@ -60,6 +60,15 @@ struct SavedInputUnaryNode {
 }
 
 #[derive(Clone)]
+struct SavedOutputUnaryNode {
+    input: SavedTensor,
+    output: SavedTensor,
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    identity: AutogradNode,
+    vjp: UnaryVjpKernel,
+}
+
+#[derive(Clone)]
 enum GradFn {
     Multiply {
         left: SavedTensor,
@@ -77,6 +86,7 @@ enum GradFn {
         node: AutogradNode,
     },
     SavedInputUnary(SavedInputUnaryNode),
+    SavedOutputUnary(SavedOutputUnaryNode),
     Sum {
         input: SavedTensor,
     },
@@ -126,6 +136,7 @@ impl GradFn {
             | Self::Transform { input, .. }
             | Self::Unbind { input, .. } => input.take_parent(pending),
             Self::SavedInputUnary(node) => node.input.take_parent(pending),
+            Self::SavedOutputUnary(node) => node.input.take_parent(pending),
         }
     }
 
@@ -148,6 +159,11 @@ impl GradFn {
                     return Err(TensorError::BackwardGraphFreed);
                 }
             }
+            Self::SavedOutputUnary(node) => {
+                if node.output.storage.is_none() {
+                    return Err(TensorError::BackwardGraphFreed);
+                }
+            }
             Self::Negate { .. }
             | Self::Sum { .. }
             | Self::Transform { .. }
@@ -165,6 +181,7 @@ impl GradFn {
             }
             Self::MultiplyScalar { scalar, .. } => *scalar = None,
             Self::SavedInputUnary(node) => node.input.storage = None,
+            Self::SavedOutputUnary(node) => node.output.storage = None,
             Self::Negate { .. }
             | Self::Sum { .. }
             | Self::Transform { .. }
@@ -764,6 +781,7 @@ impl Tensor {
             GradFn::Multiply { .. } | GradFn::MultiplyScalar { .. } => AutogradNode::Multiply,
             GradFn::Negate { node, .. } | GradFn::Transform { node, .. } => *node,
             GradFn::SavedInputUnary(node) => node.identity,
+            GradFn::SavedOutputUnary(node) => node.identity,
             GradFn::Sum { .. } => AutogradNode::Sum,
             GradFn::Unbind { .. } => AutogradNode::Unbind,
         };
@@ -1048,6 +1066,29 @@ impl Tensor {
                 kind: AutogradKind::NonLeaf {
                     grad_fn: Mutex::new(Some(GradFn::SavedInputUnary(SavedInputUnaryNode {
                         input: SavedTensor::try_from_tensor(self, true)?,
+                        identity,
+                        vjp,
+                    }))),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    fn finish_saved_output_unary_vjp(
+        &self,
+        mut output: Self,
+        identity: AutogradNode,
+        vjp: UnaryVjpKernel,
+    ) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            let input = SavedTensor::try_from_tensor(self, false)?;
+            let saved_output = SavedTensor::try_from_tensor(&output, true)?;
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::SavedOutputUnary(SavedOutputUnaryNode {
+                        input,
+                        output: saved_output,
                         identity,
                         vjp,
                     }))),
@@ -2480,7 +2521,7 @@ impl Tensor {
     /// Returns an error when result metadata or storage allocation fails.
     pub fn exp(&self) -> Result<Self, TensorError> {
         let output = self.unary_map(f32::exp)?;
-        self.finish_saved_input_unary_vjp(output, AutogradNode::Exp, apply_exp_vjp)
+        self.finish_saved_output_unary_vjp(output, AutogradNode::Exp, apply_exp_vjp)
     }
 
     /// Computes the hyperbolic tangent of every element.
@@ -3132,6 +3173,9 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         GradFn::SavedInputUnary(node) => {
                             push_saved_parent(&mut stack, &node.input);
                         }
+                        GradFn::SavedOutputUnary(node) => {
+                            push_saved_parent(&mut stack, &node.input);
+                        }
                     }
                 }
             }
@@ -3175,6 +3219,7 @@ fn apply_grad_fn(
             }
         }
         GradFn::SavedInputUnary(node) => apply_saved_input_unary(node, upstream, gradients)?,
+        GradFn::SavedOutputUnary(node) => apply_saved_output_unary(node, upstream, gradients)?,
         GradFn::Multiply {
             left,
             right,
@@ -3305,6 +3350,23 @@ fn apply_saved_input_unary(
     Ok(())
 }
 
+fn apply_saved_output_unary(
+    node: &SavedOutputUnaryNode,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    let input = &node.input;
+    let Some(meta) = &input.autograd else {
+        return Ok(());
+    };
+    debug_assert_eq!(input.elements, node.output.elements);
+    debug_assert_eq!(input.elements, upstream.len());
+    let mut gradient = try_result_vector(input.elements, input.elements)?;
+    (node.vjp)(&node.output, upstream, &mut gradient);
+    add_gradient(gradients, meta, input.output_nr, gradient);
+    Ok(())
+}
+
 fn apply_relu_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
     // Borrow one exact saved range for row-contiguous layouts, including
     // nonzero-offset views, instead of resolving layout and storage per value.
@@ -3331,10 +3393,10 @@ fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
     );
 }
 
-fn apply_exp_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+fn apply_exp_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
     // Borrow one exact saved range for row-contiguous layouts, including
     // nonzero-offset views, instead of resolving layout and storage per value.
-    if let Some(saved_values) = input.contiguous_slice() {
+    if let Some(saved_values) = output.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
         gradient.extend(saved_values.iter().zip(upstream).map(
             |(&saved_value, &upstream_value)| exp_backward_value(saved_value, upstream_value),
@@ -3342,7 +3404,7 @@ fn apply_exp_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
     } else {
         gradient.extend(
             upstream.iter().enumerate().map(|(index, &value)| {
-                exp_backward_value(input.value_at_linear_index(index), value)
+                exp_backward_value(output.value_at_linear_index(index), value)
             }),
         );
     }
@@ -4617,8 +4679,8 @@ fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
 }
 
 #[inline]
-fn exp_backward_value(input: f32, upstream: f32) -> f32 {
-    upstream * input.exp()
+fn exp_backward_value(output: f32, upstream: f32) -> f32 {
+    upstream * output
 }
 
 #[inline]

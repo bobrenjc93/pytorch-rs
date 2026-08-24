@@ -1,3 +1,4 @@
+import ctypes
 import inspect
 import json
 import pickle
@@ -542,6 +543,68 @@ print(json.dumps({
             case="special gradient",
             exact_non_nan_bits=True,
         )
+
+    def test_backward_uses_saved_forward_result_across_rounding_mode_changes(self):
+        try:
+            runtime = ctypes.CDLL(None)
+            fegetround = runtime.fegetround
+            fesetround = runtime.fesetround
+        except (AttributeError, OSError):
+            self.skipTest("the platform C runtime does not expose fenv controls")
+        fegetround.argtypes = []
+        fegetround.restype = ctypes.c_int
+        fesetround.argtypes = [ctypes.c_int]
+        fesetround.restype = ctypes.c_int
+
+        original_rounding = fegetround()
+        input_bits = np.asarray([0xC29F_F7CF], dtype=np.uint32)
+
+        try:
+            if fesetround(0) != 0 or fegetround() != 0:
+                self.skipTest("the platform does not expose round-to-nearest as zero")
+
+            downward_rounding = None
+            for candidate in (0x400, 0x80_0000):
+                if fesetround(candidate) != 0 or fegetround() != candidate:
+                    continue
+                probe = torch.tensor(memoryview(input_bits.view(np.float32))).exp()
+                probe_bits = np.asarray(probe, dtype=np.float32).view(np.uint32).item()
+                if probe_bits == 0x05C3_051D:
+                    downward_rounding = candidate
+                    break
+            if downward_rounding is None:
+                self.skipTest("native exp is not sensitive to available fenv modes")
+
+            self.assertEqual(fesetround(0), 0)
+            actual_leaf = torch.tensor(
+                memoryview(input_bits.view(np.float32)), requires_grad=True
+            )
+            expected_leaf = reference_torch.tensor(
+                input_bits.view(np.float32), requires_grad=True
+            )
+            actual_output = actual_leaf.exp()
+            expected_output = expected_leaf.exp()
+
+            self.assertEqual(fesetround(downward_rounding), 0)
+            actual_output.backward()
+            expected_output.backward()
+        finally:
+            self.assertEqual(fesetround(original_rounding), 0)
+
+        actual_output_bits = (
+            np.asarray(actual_output, dtype=np.float32).view(np.uint32).item()
+        )
+        expected_output_bits = expected_output.detach().numpy().view(np.uint32).item()
+        actual_gradient_bits = (
+            np.asarray(actual_leaf.grad, dtype=np.float32).view(np.uint32).item()
+        )
+        expected_gradient_bits = (
+            expected_leaf.grad.detach().numpy().view(np.uint32).item()
+        )
+        self.assertEqual(actual_output_bits, 0x05C3_051E)
+        self.assertEqual(actual_output_bits, expected_output_bits)
+        self.assertEqual(actual_gradient_bits, actual_output_bits)
+        self.assertEqual(actual_gradient_bits, expected_gradient_bits)
 
     def test_exp_backward_node_identity_matches_pytorch_2_13(self):
         errors = []
