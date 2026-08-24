@@ -415,6 +415,74 @@ print(json.dumps({
             self.numel_mode_dispatch_observation("torch"),
         )
 
+    @staticmethod
+    def legacy_numel_tight_headroom_observation(module_name):
+        source = r'''
+import importlib
+import json
+import sys
+
+module = importlib.import_module(MODULE)
+tensor = module.tensor([1.0], dtype=module.float32)
+marker = object()
+sys.setrecursionlimit(80)
+
+class StatefulMode(module.overrides.TorchFunctionMode):
+    def __init__(self):
+        self.calls = 0
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls += 1
+        if self.calls == 1:
+            return NotImplemented
+        return marker
+
+def call_from_wrappers(remaining):
+    if remaining:
+        return call_from_wrappers(remaining - 1)
+    return tensor.numel()
+
+mode = StatefulMode()
+try:
+    with mode:
+        wrapper_depth = 72
+        result = call_from_wrappers(wrapper_depth)
+except Exception as error:
+    outcome = ["error", type(error).__name__, str(error)]
+else:
+    outcome = ["result", result is marker]
+
+print(json.dumps({
+    "wrapper_depth": wrapper_depth,
+    "calls": mode.calls,
+    "outcome": outcome,
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    @unittest.skipUnless(
+        sys.version_info < (3, 12),
+        "legacy CPython mode recursion accounting only applies before 3.12",
+    )
+    def test_legacy_numel_tight_headroom_matches_pytorch_2_13(self):
+        actual = self.legacy_numel_tight_headroom_observation("torch_rs")
+        expected = self.legacy_numel_tight_headroom_observation("torch")
+        self.assertEqual(actual, expected)
+        self.assertEqual(actual["wrapper_depth"], 72)
+        self.assertEqual(actual["calls"], 1)
+        self.assertEqual(actual["outcome"][:2], ["error", "RecursionError"])
+        self.assertRegex(
+            actual["outcome"][2], r"^maximum recursion depth exceeded"
+        )
+        self.assertEqual(actual["stack_depth"], 0)
+
     def test_nbytes_assignment_behavior_matches_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         errors = []

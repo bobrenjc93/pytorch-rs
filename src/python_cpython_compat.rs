@@ -96,7 +96,7 @@ fn tensorbase_legacy_redispatch_depth() -> usize {
     unsafe_code,
     reason = "CPython 3.10 and 3.11 TensorBase parity requires probing legacy recursive dispatch boundaries"
 )]
-pub(crate) fn probe_tensorbase_legacy_redispatch(py: Python<'_>) -> PyResult<()> {
+pub(crate) fn probe_tensorbase_legacy_redispatch(py: Python<'_>, is_numel: bool) -> PyResult<()> {
     // The Python helper retains the recursive fallback frame, while the native
     // PyTorch path also crosses alternating subclass and callable recursion
     // checks before retrying the descriptor. Probe those checks only after the
@@ -122,11 +122,16 @@ pub(crate) fn probe_tensorbase_legacy_redispatch(py: Python<'_>) -> PyResult<()>
         } else {
             c" while calling a Python object"
         },
+        // On Python 3.11, TensorBase.numel's initial fallback crosses one
+        // additional callable recursion boundary before retrying the method.
+        c" while calling a Python object",
     ];
     let contexts: &[&CStr] = if py.version_info() < (3, 11) {
         &python_310_contexts
-    } else {
+    } else if is_numel && redispatch_depth == 0 {
         &python_311_contexts
+    } else {
+        &python_311_contexts[..5]
     };
     let mut entered = 0;
     for context in contexts {

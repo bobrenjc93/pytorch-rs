@@ -301,7 +301,13 @@ class TensorIntrospectionTests(unittest.TestCase):
             sys.setrecursionlimit(80)
             with lower:
                 with self.assertRaisesRegex(
-                    RecursionError, r"^maximum recursion depth exceeded$"
+                    RecursionError,
+                    (
+                        r"^maximum recursion depth exceeded"
+                        r"(?: in __subclasscheck__| while calling a Python object)$"
+                        if sys.version_info < (3, 12)
+                        else r"^maximum recursion depth exceeded$"
+                    ),
                 ):
                     with declining:
                         tensor.numel()

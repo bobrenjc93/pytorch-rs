@@ -2248,11 +2248,20 @@ fn dispatch_tensorbase_mode(
         && matches!(
             target,
             TensorBaseModeTarget::Method(
-                "const_data_ptr" | "exp" | "reciprocal" | "sin" | "sqrt" | "square" | "tanh"
+                "const_data_ptr"
+                    | "exp"
+                    | "numel"
+                    | "reciprocal"
+                    | "sin"
+                    | "sqrt"
+                    | "square"
+                    | "tanh"
             )
         );
+    let legacy_numel_method =
+        legacy_no_argument_method && matches!(target, TensorBaseModeTarget::Method("numel"));
     if legacy_no_argument_method {
-        cpython_compat::probe_tensorbase_legacy_redispatch(py)?;
+        cpython_compat::probe_tensorbase_legacy_redispatch(py, legacy_numel_method)?;
     }
 
     // TensorBase's fallback retries the descriptor after restoring the active
