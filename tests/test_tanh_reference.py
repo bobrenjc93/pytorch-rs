@@ -714,7 +714,7 @@ print(json.dumps({
 
         self.assertTrue(hasattr(torch, "tanh"))
         self.assertTrue(hasattr(reference_torch, "tanh"))
-        self.assertFalse(hasattr(torch.nn.functional, "tanh"))
+        self.assertTrue(hasattr(torch.nn.functional, "tanh"))
         self.assertTrue(hasattr(reference_torch.nn.functional, "tanh"))
         self.assertFalse(hasattr(torch.Tensor, "tanh_"))
         self.assertTrue(hasattr(reference_torch.Tensor, "tanh_"))
