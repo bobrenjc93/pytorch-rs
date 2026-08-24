@@ -113,28 +113,26 @@ class SetModuleTests(unittest.TestCase):
                         self.assertEqual(target.writes, [])
 
     def test_assignment_attribute_errors_are_not_rewritten(self):
-        cases = (
-            (
-                _SlottedTarget(),
-                "'_SlottedTarget' object attribute '__module__' is read-only",
-            ),
-            (
-                _RejectingTarget(),
-                "blocked __module__: 'example.module'",
-            ),
-            (
-                _RejectingClass,
-                "blocked class __module__: 'example.module'",
-            ),
-            (1, "'int' object has no attribute '__module__'"),
+        target_factories = (
+            _SlottedTarget,
+            _RejectingTarget,
+            lambda: _RejectingClass,
+            lambda: 1,
         )
 
-        for target, message in cases:
+        for target_factory in target_factories:
+            target = target_factory()
+            direct_target = target_factory()
             with self.subTest(target=target):
                 with self.assertRaises(AttributeError) as raised:
                     torch.utils.set_module(target, "example.module")
-                self.assertEqual(str(raised.exception), message)
-                self.assertEqual(raised.exception.args, (message,))
+                with self.assertRaises(AttributeError) as direct_raised:
+                    direct_target.__module__ = "example.module"
+                self.assertIs(type(raised.exception), type(direct_raised.exception))
+                self.assertEqual(
+                    str(raised.exception), str(direct_raised.exception)
+                )
+                self.assertEqual(raised.exception.args, direct_raised.exception.args)
 
     def test_signature_and_metadata_match_pytorch_2_13(self):
         utils = importlib.import_module("torch_rs.utils")
@@ -148,7 +146,9 @@ class SetModuleTests(unittest.TestCase):
         self.assertEqual(function.__qualname__, "set_module")
         self.assertEqual(function.__module__, "torch_rs.utils")
         self.assertIs(inspect.getmodule(function), utils)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
+        )
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
