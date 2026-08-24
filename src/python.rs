@@ -1560,6 +1560,14 @@ pub(crate) fn square_variable_function(
     unary_out_variable_function(UnaryOutOperation::SQUARE, py, args, kwargs)
 }
 
+pub(crate) fn tanh_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::TANH, py, args, kwargs)
+}
+
 fn unary_out_variable_function(
     operation: UnaryOutOperation,
     py: Python<'_>,
@@ -1977,6 +1985,15 @@ impl UnaryOutOperation {
         out_unsupported_error: "square(): the 'out' argument is not supported",
         autograd_unsupported_error: None,
         apply: CoreTensor::square,
+    };
+
+    const TANH: Self = Self {
+        name: "tanh",
+        qualified_name: "torch.tanh",
+        dispatch_allocation_error: "unable to allocate tanh dispatch operands",
+        out_unsupported_error: "tanh(): the 'out' argument is not supported",
+        autograd_unsupported_error: None,
+        apply: CoreTensor::tanh,
     };
 }
 

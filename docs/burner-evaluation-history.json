@@ -5697,6 +5697,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:810",
+      "recordedAt": "2026-08-24T08:01:44.367Z",
+      "label": "PR #810",
+      "kind": "leaf",
+      "prNumber": 810,
+      "title": "Expose top-level torch.tanh through the unary-out bridge",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 88.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 71.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }

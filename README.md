@@ -24,6 +24,8 @@ scaled = torch.multiply(input=2.0, other=x)
 assert scaled.tolist() == [[-2.0, 4.0], [6.0, -8.0]]
 exponential = torch.exp(input=x)
 assert exponential.shape == x.shape
+hyperbolic = torch.tanh(input=x)
+assert hyperbolic.shape == x.shape
 functional_result = torch.nn.functional.relu(x + y)
 assert functional_result.tolist() == result.tolist()
 assert torch.nn.functional.dropout(x, training=False) is x
@@ -168,6 +170,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `Tensor.ravel()` and top-level `torch.ravel()` share the native view-or-copy path: row-contiguous inputs alias storage through a new one-dimensional wrapper, while other layouts are materialized.
 
 `Tensor.exp()` and `torch.exp()` share the native float32 CPU kernel and record `ExpBackward0` when eager gradient recording is active. Top-level calls accept `out=None`; concrete output tensors remain explicitly unsupported.
+
+`Tensor.tanh()` and `torch.tanh()` share the native layout-preserving float32 CPU kernel. Both remain inference-only: active eager gradient recording is rejected, while detached tensors and calls under `torch.no_grad()` are supported. Top-level calls accept PyTorch's legacy input aliases and `out=None`; concrete output tensors remain explicitly unsupported.
 
 `torch.can_cast` and `torch.promote_types` accept the existing `torch.float32`/`torch.float` singleton aliases in positional or canonical keyword forms. Casting between the supported aliases returns `True`, while promotion returns the same canonical singleton. No additional dtype, casting pair, or promotion pair is exposed.
 
