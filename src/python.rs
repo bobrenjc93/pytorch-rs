@@ -1582,6 +1582,14 @@ pub(crate) fn floor_variable_function(
     unary_out_variable_function(UnaryOutOperation::FLOOR, py, args, kwargs)
 }
 
+pub(crate) fn sigmoid_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::SIGMOID, py, args, kwargs)
+}
+
 pub(crate) fn neg_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2020,6 +2028,15 @@ impl UnaryOutOperation {
         out_unsupported_error: "floor(): the 'out' argument is not supported",
         autograd_unsupported_error: None,
         apply: CoreTensor::floor,
+    };
+
+    const SIGMOID: Self = Self {
+        name: "sigmoid",
+        qualified_name: "torch.sigmoid",
+        dispatch_allocation_error: "unable to allocate sigmoid dispatch operands",
+        out_unsupported_error: "sigmoid(): the 'out' argument is not supported",
+        autograd_unsupported_error: None,
+        apply: CoreTensor::sigmoid,
     };
 
     const RECIPROCAL: Self = Self {

@@ -301,7 +301,7 @@ class FunctionalSigmoidReferenceTests(unittest.TestCase):
                 actual_detached, expected_detached, case=f"detached_{case}"
             )
 
-        self.assertFalse(hasattr(torch, "sigmoid"))
+        self.assertTrue(hasattr(torch, "sigmoid"))
         self.assertTrue(hasattr(reference_torch, "sigmoid"))
         self.assertTrue(hasattr(torch.nn.functional, "sigmoid"))
         self.assertTrue(hasattr(reference_torch.nn.functional, "sigmoid"))
