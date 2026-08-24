@@ -10,7 +10,7 @@ use pyo3::types::{PyAny, PyBool, PyBytes, PyCFunction, PyDict, PyModule, PyStrin
 
 use crate::{
     DType, is_grad_enabled as core_is_grad_enabled,
-    python::{python_type_name, pytorch_ordered_keyword_entries},
+    python::{legacy_dict_get_item_string, python_type_name, pytorch_ordered_keyword_entries},
     python_dtype::{PyDType, dtype_object},
 };
 
@@ -80,43 +80,119 @@ fn is_multithreading_enabled(
     Ok(true)
 }
 
-const DEVICE_TYPES: &str = "cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone";
+const AUTOCAST_INVALID_COMBINATION_PREFIX: &str =
+    "is_autocast_enabled() received an invalid combination of arguments - got (";
+const AUTOCAST_INVALID_COMBINATION_SUFFIX: &str =
+    "), but expected one of:\n * (str device_type)\n * ()\n";
+const DEVICE_TYPE_ERROR_PREFIX: &[u8] = b"Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone device type at start of device string: ";
+
+struct AutocastAllocationFallback<'py> {
+    py: Python<'py>,
+    error: PyErr,
+}
+
+impl<'py> AutocastAllocationFallback<'py> {
+    fn new(py: Python<'py>) -> Self {
+        let error = PyRuntimeError::new_err("std::bad_alloc");
+        error.value(py);
+        Self { py, error }
+    }
+
+    fn error(&self) -> PyErr {
+        self.error.clone_ref(self.py)
+    }
+}
+
+fn try_push_autocast_message(
+    message: &mut String,
+    value: &str,
+    allocation: &AutocastAllocationFallback<'_>,
+) -> PyResult<bool> {
+    let (value, truncated) = value
+        .find('\0')
+        .map_or((value, false), |nul| (&value[..nul], true));
+    message
+        .try_reserve(value.len())
+        .map_err(|_| allocation.error())?;
+    message.push_str(value);
+    Ok(truncated)
+}
 
 fn autocast_invalid_combination(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyErr> {
-    let mut arguments = Vec::new();
+    let allocation = AutocastAllocationFallback::new(args.py());
+    let keyword_arguments =
+        kwargs.map_or_else(|| Ok(Vec::new()), pytorch_ordered_keyword_entries)?;
+    let mut message = String::new();
+    try_push_autocast_message(
+        &mut message,
+        AUTOCAST_INVALID_COMBINATION_PREFIX,
+        &allocation,
+    )?;
+    let mut has_argument = false;
     for value in args {
-        arguments.push(python_type_name(&value)?);
+        if has_argument {
+            try_push_autocast_message(&mut message, ", ", &allocation)?;
+        }
+        let type_name = python_type_name(&value)?;
+        if try_push_autocast_message(&mut message, &type_name, &allocation)? {
+            return Ok(PyTypeError::new_err(message));
+        }
+        has_argument = true;
     }
-    if let Some(kwargs) = kwargs {
-        for (name, value) in pytorch_ordered_keyword_entries(kwargs)? {
-            arguments.push(format!("{name}={}", python_type_name(&value)?));
+    for (name, value) in &keyword_arguments {
+        if has_argument {
+            try_push_autocast_message(&mut message, ", ", &allocation)?;
+        }
+        if try_push_autocast_message(&mut message, name, &allocation)? {
+            return Ok(PyTypeError::new_err(message));
+        }
+        try_push_autocast_message(&mut message, "=", &allocation)?;
+        let type_name = python_type_name(value)?;
+        if try_push_autocast_message(&mut message, &type_name, &allocation)? {
+            return Ok(PyTypeError::new_err(message));
+        }
+        has_argument = true;
+    }
+    if args.is_empty() && has_argument {
+        try_push_autocast_message(&mut message, ", ", &allocation)?;
+    }
+    try_push_autocast_message(
+        &mut message,
+        AUTOCAST_INVALID_COMBINATION_SUFFIX,
+        &allocation,
+    )?;
+    Ok(PyTypeError::new_err(message))
+}
+
+fn autocast_device_runtime_error(py: Python<'_>, parts: &[&[u8]]) -> PyResult<PyErr> {
+    let allocation = AutocastAllocationFallback::new(py);
+    let mut capacity = 0_usize;
+    for part in parts {
+        let length = part
+            .iter()
+            .position(|byte| *byte == 0)
+            .unwrap_or(part.len());
+        capacity = capacity
+            .checked_add(length)
+            .ok_or_else(|| allocation.error())?;
+        if length != part.len() {
+            break;
         }
     }
 
-    let mut summary = arguments.join(", ");
-    if args.is_empty() && !arguments.is_empty() {
-        summary.push_str(", ");
-    }
-    Ok(PyTypeError::new_err(format!(
-        "is_autocast_enabled() received an invalid combination of arguments - got ({summary}), but expected one of:\n * (str device_type)\n * ()\n"
-    )))
-}
-
-fn autocast_device_runtime_error(
-    py: Python<'_>,
-    prefix: &[u8],
-    specification: &[u8],
-    suffix: &[u8],
-) -> PyResult<PyErr> {
-    let mut message = Vec::with_capacity(prefix.len() + specification.len() + suffix.len());
-    message.extend_from_slice(prefix);
-    message.extend_from_slice(specification);
-    message.extend_from_slice(suffix);
-    if let Some(nul) = message.iter().position(|byte| *byte == 0) {
-        message.truncate(nul);
+    let mut message = Vec::new();
+    message
+        .try_reserve_exact(capacity)
+        .map_err(|_| allocation.error())?;
+    for part in parts {
+        if let Some(nul) = part.iter().position(|byte| *byte == 0) {
+            message.extend_from_slice(&part[..nul]);
+            break;
+        }
+        message.extend_from_slice(part);
     }
     let message = PyString::from_bytes(py, &message)?;
     let exception = py.get_type::<PyRuntimeError>().call1((message,))?;
@@ -147,9 +223,7 @@ fn validate_autocast_device_type(py: Python<'_>, specification: &[u8]) -> PyResu
     if !valid_type || !valid_index {
         return Err(autocast_device_runtime_error(
             py,
-            b"Invalid device string: '",
-            specification,
-            b"'",
+            &[b"Invalid device string: '", specification, b"'"],
         )?);
     }
 
@@ -159,14 +233,15 @@ fn validate_autocast_device_type(py: Python<'_>, specification: &[u8]) -> PyResu
             .and_then(|index| index.parse::<i32>().ok())
             .is_none()
     {
-        let mut prefix = Vec::from(&b"Could not parse device index '"[..]);
-        prefix.extend_from_slice(index);
-        prefix.extend_from_slice(b"' in device string '");
         return Err(autocast_device_runtime_error(
             py,
-            &prefix,
-            specification,
-            b"'",
+            &[
+                b"Could not parse device index '",
+                index,
+                b"' in device string '",
+                specification,
+                b"'",
+            ],
         )?);
     }
 
@@ -198,34 +273,45 @@ fn validate_autocast_device_type(py: Python<'_>, specification: &[u8]) -> PyResu
     if !known_type {
         return Err(autocast_device_runtime_error(
             py,
-            format!("Expected one of {DEVICE_TYPES} device type at start of device string: ")
-                .as_bytes(),
-            device_type,
-            b"",
+            &[DEVICE_TYPE_ERROR_PREFIX, device_type],
         )?);
     }
 
     Err(autocast_device_runtime_error(
         py,
-        b"is_autocast_enabled(): device '",
-        specification,
-        b"' is not supported; only 'cpu' and 'cuda' are implemented",
+        &[
+            b"is_autocast_enabled(): device '",
+            specification,
+            b"' is not supported; only 'cpu' and 'cuda' are implemented",
+        ],
     )?)
 }
 
-fn parse_autocast_device_type(value: &Bound<'_, PyAny>, position: Option<usize>) -> PyResult<()> {
+fn parse_autocast_device_type(value: &Bound<'_, PyAny>, positional: bool) -> PyResult<()> {
     if let Ok(value) = value.cast::<PyString>() {
-        return validate_autocast_device_type(value.py(), value.to_str()?.as_bytes());
+        let specification = value
+            .to_str()
+            .map_err(|_| PyRuntimeError::new_err("error unpacking string as utf-8"))?;
+        return validate_autocast_device_type(value.py(), specification.as_bytes());
     }
     if let Ok(value) = value.cast::<PyBytes>() {
         return validate_autocast_device_type(value.py(), value.as_bytes());
     }
 
-    let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
+    let allocation = AutocastAllocationFallback::new(value.py());
     let type_name = python_type_name(value)?;
-    Err(PyTypeError::new_err(format!(
-        "is_autocast_enabled(): argument 'device_type'{position} must be str, not {type_name}"
-    )))
+    let mut message = String::new();
+    try_push_autocast_message(
+        &mut message,
+        "is_autocast_enabled(): argument 'device_type'",
+        &allocation,
+    )?;
+    if positional {
+        try_push_autocast_message(&mut message, " (position 1)", &allocation)?;
+    }
+    try_push_autocast_message(&mut message, " must be str, not ", &allocation)?;
+    try_push_autocast_message(&mut message, &type_name, &allocation)?;
+    Err(PyTypeError::new_err(message))
 }
 
 fn is_autocast_enabled(
@@ -237,19 +323,19 @@ fn is_autocast_enabled(
         (0, 0) => None,
         (0, 1) => {
             let kwargs = kwargs.expect("one keyword argument has a dictionary");
-            let Some(device_type) = kwargs.get_item("device_type")? else {
+            let Some(device_type) = legacy_dict_get_item_string(kwargs, c"device_type") else {
                 return Err(PyTypeError::new_err(
                     "is_autocast_enabled() missing 1 required positional arguments: \"device_type\"",
                 ));
             };
-            Some((device_type, None))
+            Some((device_type, false))
         }
-        (1, 0) => Some((args.get_item(0)?, Some(1))),
+        (1, 0) => Some((args.get_item(0)?, true)),
         _ => return Err(autocast_invalid_combination(args, kwargs)?),
     };
 
-    if let Some((device_type, position)) = device_type {
-        parse_autocast_device_type(&device_type, position)?;
+    if let Some((device_type, positional)) = device_type {
+        parse_autocast_device_type(&device_type, positional)?;
     }
 
     // The native engine does not implement mixed-precision execution. Both

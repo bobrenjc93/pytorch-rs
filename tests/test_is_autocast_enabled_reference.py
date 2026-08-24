@@ -179,6 +179,13 @@ for arguments in ((), ("cpu",), ("cpu:0",), ("cuda",), ("cuda:0",)):
     def test_supported_binding_and_device_errors_match_pytorch_2_13(self):
         actual = torch.is_autocast_enabled
         expected = reference_torch.is_autocast_enabled
+
+        class HostileKeyword(str):
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                raise RuntimeError("keyword equality trap")
+
         paired_values = (
             (None, None),
             (1, 1),
@@ -215,6 +222,18 @@ for arguments in ((), ("cpu",), ("cpu:0",), ("cuda",), ("cuda:0",)):
                 lambda function: function("cpu", enabled=True),
                 lambda function: function("cpu", enabled=True),
             ),
+            (
+                lambda function: function(
+                    **{HostileKeyword("device_type"): "cpu"}
+                ),
+                lambda function: function(
+                    **{HostileKeyword("device_type"): "cpu"}
+                ),
+            ),
+            (
+                lambda function: function("cpu", **{"bad\0tail": 1}),
+                lambda function: function("cpu", **{"bad\0tail": 1}),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
@@ -233,12 +252,18 @@ for arguments in ((), ("cpu",), ("cpu:0",), ("cuda",), ("cuda:0",)):
             "cuda:",
             "cuda:abc",
             "cuda:2147483648",
+            "\ud800",
         )
         for value in invalid_strings:
-            with self.subTest(value=value):
+            with self.subTest(value=value, binding="positional"):
                 self.assert_error_matches(
                     lambda: actual(value),
                     lambda: expected(value),
+                )
+            with self.subTest(value=value, binding="keyword"):
+                self.assert_error_matches(
+                    lambda: actual(device_type=value),
+                    lambda: expected(device_type=value),
                 )
 
     def test_only_the_query_and_existing_cache_controls_are_supported(self):

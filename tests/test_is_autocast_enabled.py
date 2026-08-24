@@ -6,6 +6,7 @@ import os
 import pickle
 import subprocess
 import sys
+import textwrap
 import threading
 import types
 import unittest
@@ -184,6 +185,13 @@ class IsAutocastEnabledTests(unittest.TestCase):
 
     def test_binding_errors_match_pytorch_2_13(self):
         function = torch.is_autocast_enabled
+
+        class HostileKeyword(str):
+            __hash__ = str.__hash__
+
+            def __eq__(self, other):
+                raise RuntimeError("keyword equality trap")
+
         cases = (
             (
                 lambda: function(None),
@@ -231,6 +239,12 @@ class IsAutocastEnabledTests(unittest.TestCase):
                 "arguments - got (str, enabled=bool)"
                 + INVALID_COMBINATION_SUFFIX,
             ),
+            (
+                lambda: function(
+                    **{HostileKeyword("device_type"): "cpu"}
+                ),
+                'is_autocast_enabled() missing 1 required positional arguments: "device_type"',
+            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
@@ -238,6 +252,15 @@ class IsAutocastEnabledTests(unittest.TestCase):
                     call()
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
+
+        message = (
+            "is_autocast_enabled() received an invalid combination of "
+            "arguments - got (str, bad"
+        )
+        with self.assertRaises(TypeError) as raised:
+            function("cpu", **{"bad\0tail": 1})
+        self.assertEqual(str(raised.exception), message)
+        self.assertEqual(raised.exception.args, (message,))
 
     def test_cpu_cuda_device_string_errors_match_pytorch_2_13(self):
         function = torch.is_autocast_enabled
@@ -281,6 +304,74 @@ class IsAutocastEnabledTests(unittest.TestCase):
             function("xpu")
         self.assertEqual(str(raised.exception), message)
         self.assertEqual(raised.exception.args, (message,))
+
+        for call in (
+            lambda: function("\ud800"),
+            lambda: function(device_type="\ud800"),
+        ):
+            with self.subTest(value="surrogate"):
+                with self.assertRaises(RuntimeError) as raised:
+                    call()
+                self.assertEqual(
+                    str(raised.exception), "error unpacking string as utf-8"
+                )
+                self.assertEqual(
+                    raised.exception.args,
+                    ("error unpacking string as utf-8",),
+                )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_diagnostics_raise_bad_alloc_instead_of_aborting(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+            import sys
+
+            import torch_rs as torch
+
+            if sys.argv[1] == "arguments":
+                payload = (None,) * 500_000
+                call = lambda: torch.is_autocast_enabled(*payload)
+            elif sys.argv[1] == "device":
+                payload = "z" * (16 * 1024 * 1024)
+                call = lambda: torch.is_autocast_enabled(payload)
+            else:
+                raise AssertionError(sys.argv[1])
+
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 4 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            try:
+                call()
+            except RuntimeError as error:
+                assert str(error) == "std::bad_alloc", repr(error)
+            else:
+                raise AssertionError("the constrained call unexpectedly succeeded")
+            """
+        )
+        for case in ("arguments", "device"):
+            with self.subTest(case=case):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, case],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=60,
+                )
+                if completed.returncode == 77:
+                    self.skipTest("process hard address-space limit is too low")
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+                )
 
     def test_contexts_setters_and_dtype_controls_remain_unsupported(self):
         self.assertIs(torch.is_autocast_enabled, torch._C.is_autocast_enabled)
