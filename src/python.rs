@@ -1291,6 +1291,10 @@ impl PyTensor {
     pub(crate) const fn grad_cache(&self) -> &PyOnceLock<Py<PyTensor>> {
         &self.grad_cache
     }
+
+    pub(crate) fn clear_grad_cache(&mut self) {
+        let _ = self.grad_cache.take();
+    }
 }
 
 pub(crate) fn get_device_variable_function(

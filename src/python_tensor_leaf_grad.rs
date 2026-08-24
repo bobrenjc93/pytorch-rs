@@ -1,9 +1,12 @@
 //! Python leaf-gradient descriptors for native tensors.
 
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::{
+    exceptions::{PyAttributeError, PyNotImplementedError, PyRuntimeError, PyTypeError},
+    prelude::*,
+};
 
 use crate::{
-    python::{PyTensor, PyTensorBase, dispatch_tensorbase_getset_mode},
+    python::{PyTensor, PyTensorBase, dispatch_tensorbase_getset_mode, python_type_name},
     python_dtype::dtype_object,
     python_tensor_errors::tensor_error,
 };
@@ -47,6 +50,9 @@ impl PyTensor {
         self.inner().is_leaf()
     }
 
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nThis attribute is ``None`` by default and becomes a Tensor the first time a call to\n:func:`backward` computes gradients for ``self``.\nThe attribute will then contain the gradients computed and future calls to\n:func:`backward` will accumulate (add) gradients into it.\n"]
     #[getter]
     fn grad(&self, py: Python<'_>) -> PyResult<Option<Py<Self>>> {
         if let Some(gradient) = self.grad_cache().get(py) {
@@ -63,5 +69,34 @@ impl PyTensor {
             .grad_cache()
             .get_or_try_init(py, || Py::new(py, Self::new(inner)))?;
         Ok(Some(gradient.clone_ref(py)))
+    }
+
+    #[setter]
+    fn set_grad(&mut self, value: &Bound<'_, PyAny>) -> PyResult<()> {
+        if !value.is_none() {
+            if value.cast::<Self>().is_ok() {
+                return Err(PyNotImplementedError::new_err(
+                    "torch_rs only supports assigning None to Tensor.grad",
+                ));
+            }
+            let type_name = python_type_name(value)?;
+            return Err(PyTypeError::new_err(format!(
+                "assigned grad expected to be a Tensor or None but got grad of type {type_name}"
+            )));
+        }
+        if !self.inner().clear_leaf_grad() {
+            return Err(PyRuntimeError::new_err(
+                "grad can only be cleared on leaf tensors",
+            ));
+        }
+        self.clear_grad_cache();
+        Ok(())
+    }
+
+    #[deleter]
+    fn delete_grad(_slf: &Bound<'_, Self>) -> PyResult<()> {
+        Err(PyAttributeError::new_err(
+            "Tensor.grad cannot be deleted; assign None to clear it",
+        ))
     }
 }

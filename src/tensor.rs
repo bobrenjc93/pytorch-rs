@@ -918,6 +918,27 @@ impl Tensor {
         }))
     }
 
+    /// Clears the accumulated gradient storage for a leaf tensor.
+    ///
+    /// Returns `false` without mutation for non-leaf tensors. Leaves without
+    /// autograd metadata, including ordinary tensors and views created while
+    /// gradient recording is disabled, have no accumulator and are accepted
+    /// as no-ops.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn clear_leaf_grad(&self) -> bool {
+        let Some(meta) = &self.autograd else {
+            return true;
+        };
+        let AutogradKind::Leaf { grad, .. } = &meta.kind else {
+            return false;
+        };
+        let mut grad = grad
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *grad = None;
+        true
+    }
+
     /// Creates a metadata-only alias which shares storage but has no graph
     /// history and never requires gradients.
     ///
@@ -6026,6 +6047,71 @@ mod tests {
         assert_eq!(live_gradient.try_to_vec().unwrap(), [2.0, 2.0]);
         saved_loss.backward().unwrap();
         assert_eq!(weights.grad().unwrap().unwrap().as_slice(), [1.0, 1.0]);
+    }
+
+    #[test]
+    fn clearing_leaf_grad_replaces_storage_without_consuming_reusable_graphs() {
+        let leaves = [
+            Tensor::ones([]).unwrap().with_requires_grad(true),
+            Tensor::zeros([0]).unwrap().with_requires_grad(true),
+            Tensor::ones([2, 3]).unwrap().with_requires_grad(true),
+        ];
+
+        for leaf in leaves {
+            assert!(leaf.clear_leaf_grad());
+            assert!(leaf.live_grad().unwrap().is_none());
+
+            let loss = leaf.sum();
+            loss.backward().unwrap();
+            let first = leaf.live_grad().unwrap().unwrap();
+            assert!(
+                first
+                    .logical_values()
+                    .all(|value| value.to_bits() == 1.0_f32.to_bits())
+            );
+
+            assert!(leaf.clear_leaf_grad());
+            assert!(leaf.live_grad().unwrap().is_none());
+            loss.backward().unwrap();
+            let fresh = leaf.live_grad().unwrap().unwrap();
+            assert!(!fresh.shares_storage_with(&first));
+            assert!(
+                first
+                    .logical_values()
+                    .all(|value| value.to_bits() == 1.0_f32.to_bits())
+            );
+            assert!(
+                fresh
+                    .logical_values()
+                    .all(|value| value.to_bits() == 1.0_f32.to_bits())
+            );
+
+            loss.backward().unwrap();
+            let accumulated = leaf.live_grad().unwrap().unwrap();
+            assert!(accumulated.shares_storage_with(&fresh));
+            assert!(
+                accumulated
+                    .logical_values()
+                    .all(|value| value.to_bits() == 2.0_f32.to_bits())
+            );
+            assert!(
+                first
+                    .logical_values()
+                    .all(|value| value.to_bits() == 1.0_f32.to_bits())
+            );
+        }
+    }
+
+    #[test]
+    fn clearing_grad_rejects_non_leaves_without_consuming_their_graph() {
+        let leaf = Tensor::from_vec(vec![2.0, 3.0], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let non_leaf = leaf.negate().unwrap();
+
+        assert!(!non_leaf.clear_leaf_grad());
+        non_leaf.sum().backward().unwrap();
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [-1.0, -1.0]);
     }
 
     #[test]
