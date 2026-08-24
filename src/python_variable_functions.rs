@@ -24,13 +24,14 @@ use crate::python::{
     negative_variable_function, permute_variable_function, positive_variable_function,
     promote_types_variable_function, ravel_variable_function, reciprocal_variable_function,
     resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sin_variable_function, sqrt_variable_function,
-    square_variable_function, tanh_variable_function, unbind_variable_function,
+    select_variable_function, sigmoid_variable_function, sin_variable_function,
+    sqrt_variable_function, square_variable_function, tanh_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 34] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 35] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -46,6 +47,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 34] = [
     "negative",
     "exp",
     "floor",
+    "sigmoid",
     "sin",
     "sqrt",
     "square",
@@ -250,6 +252,12 @@ Example::
     tensor([-0.8166,  1.5308, -0.2530, -0.2091])
     >>> torch.floor(a)
     tensor([-1.,  1., -1., -1.])
+";
+
+const SIGMOID_DOC: &std::ffi::CStr = c"
+sigmoid(input, *, out=None) -> Tensor
+
+Alias for :func:`torch.special.expit`.
 ";
 
 const SIN_DOC: &std::ffi::CStr = cr"
@@ -684,6 +692,7 @@ variable_function_callback!(neg_callback, neg_variable_function);
 variable_function_callback!(negative_callback, negative_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
 variable_function_callback!(floor_callback, floor_variable_function);
+variable_function_callback!(sigmoid_callback, sigmoid_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
@@ -746,6 +755,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"negative", negative_callback, NEGATIVE_DOC),
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
         variable_function_method!(c"floor", floor_callback, FLOOR_DOC),
+        variable_function_method!(c"sigmoid", sigmoid_callback, SIGMOID_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
