@@ -5793,6 +5793,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:827",
+      "recordedAt": "2026-08-24T13:12:40.792Z",
+      "label": "PR #827",
+      "kind": "leaf",
+      "prNumber": 827,
+      "title": "Add inference-only Tensor.sigmoid",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 88.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 71.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
