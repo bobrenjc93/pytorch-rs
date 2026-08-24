@@ -713,6 +713,37 @@ fn hyperbolic_tangent_matches_pytorch_float32_values_and_ieee_special_cases() {
 
     assert!(output.logical_values().map(f32::to_bits).eq(expected_bits));
     assert!(!output.shares_storage_with(&input));
+
+    for sign in [0, 0x8000_0000] {
+        let boundary_bits = (0x4110_2c67..=0x4110_2cb3)
+            .map(|magnitude| magnitude | sign)
+            .collect::<Vec<_>>();
+        let boundary = Tensor::from_vec(
+            boundary_bits.iter().copied().map(f32::from_bits).collect(),
+            [boundary_bits.len()],
+        )
+        .unwrap()
+        .tanh()
+        .unwrap();
+        let expected = sign | 1.0_f32.to_bits();
+        assert!(
+            boundary
+                .logical_values()
+                .all(|value| value.to_bits() == expected)
+        );
+    }
+
+    let inner_boundary =
+        Tensor::from_vec([0x4110_2c66, 0xc110_2c66].map(f32::from_bits).to_vec(), [2])
+            .unwrap()
+            .tanh()
+            .unwrap();
+    assert!(
+        inner_boundary
+            .logical_values()
+            .map(f32::to_bits)
+            .eq([0x3f7f_ffff, 0xbf7f_ffff])
+    );
 }
 
 #[test]

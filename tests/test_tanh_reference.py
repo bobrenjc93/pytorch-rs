@@ -219,6 +219,54 @@ class TensorTanhReferenceTests(unittest.TestCase):
                 case=(case, shape),
             )
 
+    def test_saturation_boundary_bits_and_zero_gradients_match_pytorch_2_13(self):
+        positive = np.arange(0x4110_2C66, 0x4110_2CB5, dtype=np.uint32)
+        input_bits = np.concatenate((positive, positive | np.uint32(0x8000_0000)))
+        tensors = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                memoryview(input_bits.view(np.float32)), requires_grad=True
+            )
+            output = leaf.tanh()
+            output.sum().backward()
+            tensors.append((output, leaf.grad))
+
+        self.assert_tensor_matches(
+            tensors[0][0],
+            tensors[1][0],
+            case="saturation boundary forward",
+            exact_bits=True,
+        )
+        self.assert_tensor_matches(
+            tensors[0][1],
+            tensors[1][1],
+            case="saturation boundary gradient",
+            exact_bits=True,
+        )
+
+        expected_output_bits = np.concatenate(
+            (
+                np.asarray([0x3F7F_FFFF], dtype=np.uint32),
+                np.full(78, 0x3F80_0000, dtype=np.uint32),
+                np.asarray([0xBF7F_FFFF], dtype=np.uint32),
+                np.full(78, 0xBF80_0000, dtype=np.uint32),
+            )
+        )
+        expected_gradient_bits = np.concatenate(
+            (
+                np.asarray([0x3400_0000], dtype=np.uint32),
+                np.zeros(78, dtype=np.uint32),
+                np.asarray([0x3400_0000], dtype=np.uint32),
+                np.zeros(78, dtype=np.uint32),
+            )
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(tensors[1][0]).view(np.uint32), expected_output_bits
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(tensors[1][1]).view(np.uint32), expected_gradient_bits
+        )
+
     @staticmethod
     def error(action):
         try:
@@ -476,6 +524,38 @@ print(json.dumps({
             tensors[0][1], tensors[1][1], case="special gradient", exact_bits=True
         )
 
+    def test_vector_sized_paired_nan_gradients_match_pytorch_2_13_bits(self):
+        elements = 32
+        output_nan_bits = 0x7FC1_2345
+        upstream_nan_bits = 0x7FC0_1234
+        input_bits = np.full(elements, output_nan_bits, dtype=np.uint32)
+        weight_bits = np.full(elements, upstream_nan_bits, dtype=np.uint32)
+        gradients = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                memoryview(input_bits.view(np.float32)), requires_grad=True
+            )
+            weights = module.tensor(memoryview(weight_bits.view(np.float32)))
+            (leaf.tanh() * weights).sum().backward()
+            gradients.append(leaf.grad)
+
+        self.assert_tensor_matches(
+            gradients[0],
+            gradients[1],
+            case="vector-sized paired NaNs",
+            exact_bits=True,
+        )
+        if reference_torch.backends.cpu.get_cpu_capability() == "AVX512":
+            expected_bits = np.concatenate(
+                (
+                    np.full(16, output_nan_bits, dtype=np.uint32),
+                    np.full(16, upstream_nan_bits, dtype=np.uint32),
+                )
+            )
+            np.testing.assert_array_equal(
+                self.tensor_values(gradients[1]).view(np.uint32), expected_bits
+            )
+
     def test_backward_uses_saved_forward_result_across_rounding_mode_changes(self):
         try:
             runtime = ctypes.CDLL(None)
@@ -489,7 +569,7 @@ print(json.dumps({
         fesetround.restype = ctypes.c_int
 
         original_rounding = fegetround()
-        input_bits = np.asarray([0x411C_49E2], dtype=np.uint32)
+        input_bits = np.asarray([0xC015_F5AC], dtype=np.uint32)
 
         try:
             if fesetround(0) != 0 or fegetround() != 0:
@@ -501,7 +581,7 @@ print(json.dumps({
                     continue
                 probe = torch.tensor(memoryview(input_bits.view(np.float32))).tanh()
                 probe_bits = np.asarray(probe, dtype=np.float32).view(np.uint32).item()
-                if probe_bits == 0x3F7F_FFFF:
+                if probe_bits == 0xBF7B_5263:
                     downward_rounding = candidate
                     break
             if downward_rounding is None:
@@ -533,9 +613,9 @@ print(json.dumps({
         expected_gradient_bits = (
             expected_leaf.grad.detach().numpy().view(np.uint32).item()
         )
-        self.assertEqual(actual_output_bits, 0x3F80_0000)
+        self.assertEqual(actual_output_bits, 0xBF7B_5264)
         self.assertEqual(actual_output_bits, expected_output_bits)
-        self.assertEqual(actual_gradient_bits, 0x8000_0000)
+        self.assertEqual(actual_gradient_bits, 0x3D14_5556)
         self.assertEqual(actual_gradient_bits, expected_gradient_bits)
 
     def test_tanh_backward_node_identity_matches_pytorch_2_13(self):

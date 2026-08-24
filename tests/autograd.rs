@@ -242,6 +242,47 @@ fn tanh_vjp_matches_pytorch_fused_rounding_subnormal_and_nonfinite_bits() {
 }
 
 #[test]
+fn tanh_vjp_matches_pytorch_vectorized_paired_nan_payloads() {
+    const ELEMENTS: usize = 32;
+    const OUTPUT_NAN_BITS: u32 = 0x7fc1_2345;
+    const UPSTREAM_NAN_BITS: u32 = 0x7fc0_1234;
+
+    let leaf = Tensor::from_vec(vec![f32::from_bits(OUTPUT_NAN_BITS); ELEMENTS], [ELEMENTS])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(
+        vec![f32::from_bits(UPSTREAM_NAN_BITS); ELEMENTS],
+        [ELEMENTS],
+    )
+    .unwrap();
+    leaf.tanh()
+        .unwrap()
+        .mul(&weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+
+    let vector_width = pytorch_tanh_vector_width_for_test();
+    let paired_width = vector_width * 2;
+    let paired_elements = if paired_width == 0 {
+        0
+    } else {
+        ELEMENTS / paired_width * paired_width
+    };
+    for (index, gradient) in leaf.grad().unwrap().unwrap().logical_values().enumerate() {
+        let expected =
+            if paired_width != 0 && index < paired_elements && index % paired_width >= vector_width
+            {
+                UPSTREAM_NAN_BITS
+            } else {
+                OUTPUT_NAN_BITS
+            };
+        assert_eq!(gradient.to_bits(), expected, "gradient lane {index}");
+    }
+}
+
+#[test]
 fn tanh_composes_accumulates_and_obeys_detach_and_no_grad() {
     let accumulated = Tensor::from_vec(vec![-1.0, 0.0, 1.0, 4.0], [2, 2])
         .unwrap()
@@ -304,6 +345,22 @@ fn tanh_composes_accumulates_and_obeys_detach_and_no_grad() {
 fn tanh_gradient(input: f32, upstream: f32) -> f32 {
     let output = input.tanh();
     upstream * (-output).mul_add(output, 1.0)
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+fn pytorch_tanh_vector_width_for_test() -> usize {
+    if std::arch::is_x86_feature_detected!("avx512f") {
+        16
+    } else if std::arch::is_x86_feature_detected!("avx2") {
+        8
+    } else {
+        0
+    }
+}
+
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+const fn pytorch_tanh_vector_width_for_test() -> usize {
+    0
 }
 
 #[test]

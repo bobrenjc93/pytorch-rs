@@ -3412,12 +3412,24 @@ fn apply_tanh_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32
     // nonzero-offset views, instead of resolving layout and storage per value.
     if let Some(saved_values) = output.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
-        gradient.extend(saved_values.iter().zip(upstream).map(
-            |(&saved_value, &upstream_value)| tanh_backward_value(saved_value, upstream_value),
+        let vector_width = pytorch_tanh_backward_vector_width();
+        let paired_width = vector_width * 2;
+        let paired_elements = if paired_width == 0 {
+            0
+        } else {
+            saved_values.len() / paired_width * paired_width
+        };
+        gradient.extend(saved_values.iter().zip(upstream).enumerate().map(
+            |(index, (&saved_value, &upstream_value))| {
+                let prefer_upstream_nan = paired_width != 0
+                    && index < paired_elements
+                    && index % paired_width >= vector_width;
+                tanh_backward_value(saved_value, upstream_value, prefer_upstream_nan)
+            },
         ));
     } else {
         gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
-            tanh_backward_value(output.value_at_linear_index(index), value)
+            tanh_backward_value(output.value_at_linear_index(index), value, false)
         }));
     }
 }
@@ -4671,6 +4683,7 @@ fn sqrt_value(value: f32) -> f32 {
 
 fn tanh_value(value: f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
+    const SATURATION_MAGNITUDE_BITS: u32 = 0x4110_2c67;
 
     let bits = value.to_bits();
     let magnitude = bits & !F32_SIGN_MASK;
@@ -4680,6 +4693,11 @@ fn tanh_value(value: f32) -> f32 {
     } else if magnitude > f32::INFINITY.to_bits() {
         // Quiet signaling NaNs while retaining their sign and payload.
         f32::from_bits(bits | QUIET_NAN_MASK)
+    } else if magnitude >= SATURATION_MAGNITUDE_BITS {
+        // PyTorch's float32 CPU kernel rounds every finite value from this
+        // boundary outward to exactly +/-1.0. libc tanhf reaches the same
+        // saturation 77 representable inputs later on this platform.
+        f32::from_bits((bits & F32_SIGN_MASK) | 1.0_f32.to_bits())
     } else {
         value.tanh()
     }
@@ -4696,11 +4714,46 @@ fn exp_backward_value(output: f32, upstream: f32) -> f32 {
 }
 
 #[inline]
-fn tanh_backward_value(output: f32, upstream: f32) -> f32 {
-    // Match PyTorch's fused tanh backward kernel. Besides matching ordinary
-    // rounding, placing the negated output first preserves its NaN sign and
-    // payload through the fused multiply-add.
+fn tanh_backward_value(output: f32, upstream: f32, prefer_upstream_nan: bool) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let output_bits = output.to_bits();
+    let upstream_bits = upstream.to_bits();
+    let output_is_nan = output_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits();
+    let upstream_is_nan = upstream_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits();
+    if output_is_nan {
+        let selected = if upstream_is_nan && prefer_upstream_nan {
+            upstream_bits
+        } else {
+            output_bits
+        };
+        return f32::from_bits(selected | QUIET_NAN_MASK);
+    }
+    if upstream_is_nan {
+        return f32::from_bits(upstream_bits | QUIET_NAN_MASK);
+    }
+
+    // Match PyTorch's fused tanh backward kernel for finite values.
     upstream * (-output).mul_add(output, 1.0)
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+fn pytorch_tanh_backward_vector_width() -> usize {
+    // PyTorch's x86 TensorIterator kernel evaluates two vectors per loop.
+    // Its generated AVX2/AVX-512 multiply instructions select different NaN
+    // operands in the second vector, which makes payload bits observable.
+    if std::arch::is_x86_feature_detected!("avx512f") {
+        16
+    } else if std::arch::is_x86_feature_detected!("avx2") {
+        8
+    } else {
+        0
+    }
+}
+
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+const fn pytorch_tanh_backward_vector_width() -> usize {
+    0
 }
 
 #[inline]
