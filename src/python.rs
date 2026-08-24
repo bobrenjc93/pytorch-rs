@@ -755,17 +755,39 @@ impl PyTensorBase {
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
     #[doc = "\nround(decimals=0) -> Tensor\n\nSee :func:`torch.round`\n"]
-    #[pyo3(text_signature = None)]
-    fn round(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+    // Keep the variadic descriptor shape used by PyTorch even though only the
+    // empty call is supported. A METH_NOARGS descriptor gains a synthesized
+    // `($self, /)` signature on CPython 3.13+, unlike PyTorch's native method.
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn round(
+        slf: &Bound<'_, Self>,
+        args: &Bound<'_, PyTuple>,
+        kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Py<PyAny>> {
+        if !args.is_empty() {
+            return Err(PyTypeError::new_err(format!(
+                "round() takes 0 positional arguments but {} {} given",
+                args.len(),
+                if args.len() == 1 { "was" } else { "were" }
+            )));
+        }
+        if let Some(kwargs) = kwargs
+            && let Some((key, _)) = kwargs.iter().next()
+        {
+            let key = key.extract::<String>()?;
+            return Err(PyTypeError::new_err(format!(
+                "round() got an unexpected keyword argument '{key}'"
+            )));
+        }
+
         let tensor = slf.as_any().cast::<PyTensor>()?;
-        let args = PyTuple::empty(slf.py());
         if let Some(result) = dispatch_tensorbase_method_mode(
             slf.py(),
             tensor,
             "round",
             "torch.Tensor.round",
-            &args,
-            None,
+            args,
+            kwargs,
         )? {
             return Ok(result);
         }

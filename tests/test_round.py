@@ -7,12 +7,6 @@ import unittest
 import numpy as np
 import torch_rs as torch
 
-if __package__:
-    from .signature_utils import assert_no_argument_signature
-else:
-    from signature_utils import assert_no_argument_signature
-
-
 ROUND_DOC = """
 round(decimals=0) -> Tensor
 
@@ -252,45 +246,45 @@ class TensorRoundTests(unittest.TestCase):
         self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
         self.assertFalse(hasattr(descriptor, "__module__"))
         self.assertIsNone(bound.__module__)
-        assert_no_argument_signature(self, descriptor, "(self, /)")
-        assert_no_argument_signature(self, bound, "()")
+        self.assertIsNone(descriptor.__text_signature__)
+        self.assertIsNone(bound.__text_signature__)
+        with self.assertRaises(ValueError):
+            inspect.signature(descriptor)
+        with self.assertRaises(ValueError):
+            inspect.signature(bound)
 
         cases = (
             (
                 lambda: tensor.round(0),
-                "TensorBase.round() takes no arguments (1 given)",
+                "round() takes 0 positional arguments but 1 was given",
             ),
             (
                 lambda: bound(0),
-                "Tensor.round() takes no arguments (1 given)",
+                "round() takes 0 positional arguments but 1 was given",
             ),
             (
                 lambda: descriptor(tensor, 0),
-                "TensorBase.round() takes no arguments (1 given)",
+                "round() takes 0 positional arguments but 1 was given",
+            ),
+            (
+                lambda: tensor.round(0, 1),
+                "round() takes 0 positional arguments but 2 were given",
             ),
             (
                 lambda: tensor.round(decimals=0),
-                (
-                    "Tensor.round() takes no keyword arguments"
-                    if sys.version_info < (3, 11)
-                    else "TensorBase.round() takes no keyword arguments"
-                ),
+                "round() got an unexpected keyword argument 'decimals'",
             ),
             (
                 lambda: bound(decimals=0),
-                "Tensor.round() takes no keyword arguments",
+                "round() got an unexpected keyword argument 'decimals'",
             ),
             (
                 lambda: descriptor(tensor, decimals=0),
-                "TensorBase.round() takes no keyword arguments",
+                "round() got an unexpected keyword argument 'decimals'",
             ),
             (
                 lambda: tensor.round(out=None),
-                (
-                    "Tensor.round() takes no keyword arguments"
-                    if sys.version_info < (3, 11)
-                    else "TensorBase.round() takes no keyword arguments"
-                ),
+                "round() got an unexpected keyword argument 'out'",
             ),
             (
                 lambda: descriptor(),
