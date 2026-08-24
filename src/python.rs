@@ -771,6 +771,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\ntrunc() -> Tensor\n\nSee :func:`torch.trunc`\n"]
+    #[pyo3(text_signature = None)]
+    fn trunc(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "trunc")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.trunc().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nsigmoid() -> Tensor\n\nSee :func:`torch.sigmoid`\n"]
     #[pyo3(text_signature = None)]
     fn sigmoid(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2329,6 +2346,7 @@ fn dispatch_tensorbase_mode(
                     | "sqrt"
                     | "square"
                     | "tanh"
+                    | "trunc"
             )
         );
     if legacy_no_argument_method {
