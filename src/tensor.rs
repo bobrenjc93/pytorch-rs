@@ -2479,7 +2479,8 @@ impl Tensor {
     ///
     /// Returns an error when result metadata or storage allocation fails.
     pub fn exp(&self) -> Result<Self, TensorError> {
-        self.unary_map(f32::exp)
+        let output = self.unary_map(f32::exp)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Exp, apply_exp_vjp)
     }
 
     /// Computes the hyperbolic tangent of every element.
@@ -3328,6 +3329,23 @@ fn apply_sin_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>)
             .enumerate()
             .map(|(index, value)| value * input.value_at_linear_index(index).cos()),
     );
+}
+
+fn apply_exp_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // Borrow one exact saved range for row-contiguous layouts, including
+    // nonzero-offset views, instead of resolving layout and storage per value.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| exp_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(
+            upstream.iter().enumerate().map(|(index, &value)| {
+                exp_backward_value(input.value_at_linear_index(index), value)
+            }),
+        );
+    }
 }
 
 #[cfg(any(feature = "python-bindings", test))]
@@ -4599,6 +4617,11 @@ fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
 }
 
 #[inline]
+fn exp_backward_value(input: f32, upstream: f32) -> f32 {
+    upstream * input.exp()
+}
+
+#[inline]
 #[cfg(any(feature = "python-bindings", test))]
 fn square_backward_value(input: f32, upstream: f32) -> f32 {
     (2.0 * input) * upstream
@@ -4910,6 +4933,7 @@ mod tests {
 
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
+        assert_eq!(source.exp().unwrap().grad_fn_name(), Some("ExpBackward0"));
         assert_eq!(
             source.square().unwrap().grad_fn_name(),
             Some("PowBackward0")

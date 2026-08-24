@@ -59,6 +59,39 @@ class TopLevelExpTests(unittest.TestCase):
             ("alias and out none", lambda: torch.exp(x=source, out=None)),
         )
 
+    @staticmethod
+    def make_autograd_case(case):
+        if case == "scalar":
+            leaf = torch.tensor(1.5, requires_grad=True)
+            return leaf, leaf, None
+        if case == "empty":
+            leaf = torch.zeros((2, 0, 3), requires_grad=True)
+            return leaf, leaf.transpose(0, 2)[1], None
+
+        leaf = torch.tensor(
+            np.linspace(-3.0, 3.0, 24, dtype=np.float32)
+            .reshape(2, 3, 4)
+            .tolist(),
+            requires_grad=True,
+        )
+        if case == "offset":
+            source = leaf[1]
+            weights = torch.tensor(
+                np.linspace(-2.0, 2.0, 12, dtype=np.float32)
+                .reshape(3, 4)
+                .tolist()
+            )
+            return leaf, source, weights
+        if case == "strided":
+            source = leaf.transpose(0, 2)
+            weights = torch.tensor(
+                np.linspace(-2.0, 2.0, 24, dtype=np.float32)
+                .reshape(4, 3, 2)
+                .tolist()
+            )
+            return leaf, source, weights
+        raise AssertionError(f"unknown autograd case: {case}")
+
     def test_supported_calls_reuse_tensor_exp_values_and_layouts(self):
         base = torch.tensor(
             np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
@@ -105,39 +138,96 @@ class TopLevelExpTests(unittest.TestCase):
                 ):
                     call()
 
-    def test_no_grad_is_supported_but_recording_remains_explicitly_unsupported(self):
-        leaf = torch.tensor(
-            [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]], requires_grad=True
+    def test_autograd_scalar_empty_offset_and_strided_reuse_tensor_exp_vjp(self):
+        forms = (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
         )
-        source = leaf.transpose(0, 1)[1]
+        for case in ("scalar", "empty", "offset", "strided"):
+            for form in forms:
+                function_leaf, function_source, function_weights = (
+                    self.make_autograd_case(case)
+                )
+                method_leaf, method_source, method_weights = self.make_autograd_case(
+                    case
+                )
+                output = dict(self.supported_calls(function_source))[form]()
+                method_output = method_source.exp()
 
-        # Tensor.exp retains its existing behavior; only the new top-level
-        # wrapper guards the missing autograd edge.
-        method_output = source.exp()
-        self.assertFalse(method_output.requires_grad)
-        self.assertTrue(method_output.is_leaf)
-
-        for form, call in self.supported_calls(source):
-            with self.subTest(form=form, mode="recording"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^exp\(\): autograd recording is not supported$",
-                ):
-                    call()
-            with self.subTest(form=form, mode="no_grad"):
-                with torch.no_grad():
-                    output = call()
                 self.assert_matches_method(
-                    output, method_output, case=(form, "no_grad")
+                    output, method_output, case=(case, form, "output")
+                )
+                if function_weights is None:
+                    function_loss = output if case == "scalar" else output.sum()
+                    method_loss = (
+                        method_output if case == "scalar" else method_output.sum()
+                    )
+                else:
+                    function_loss = (output * function_weights).sum()
+                    method_loss = (method_output * method_weights).sum()
+                function_loss.backward()
+                method_loss.backward()
+                self.assert_matches_method(
+                    function_leaf.grad,
+                    method_leaf.grad,
+                    case=(case, form, "gradient"),
                 )
 
-        detached = source.detach()
+    def test_accumulation_graph_freeing_no_grad_and_detach_reuse_method_path(self):
+        values = [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]]
+        weights = [[1.0, -2.0], [3.0, -4.0], [5.0, -6.0]]
+        function_leaf = torch.tensor(values, requires_grad=True)
+        method_leaf = torch.tensor(values, requires_grad=True)
+        function_source = function_leaf.transpose(0, 1)
+        method_source = method_leaf.transpose(0, 1)
+
+        function_loss = (
+            torch.exp(function_source, out=None) * torch.tensor(weights)
+        ).sum()
+        method_loss = (method_source.exp() * torch.tensor(weights)).sum()
+        function_loss.backward()
+        method_loss.backward()
+        self.assert_matches_method(
+            function_leaf.grad, method_leaf.grad, case="first gradient"
+        )
+
+        torch.exp(input=function_source).sum().backward()
+        method_source.exp().sum().backward()
+        self.assert_matches_method(
+            function_leaf.grad, method_leaf.grad, case="accumulated gradient"
+        )
+
+        with self.assertRaises(RuntimeError) as function_raised:
+            function_loss.backward()
+        with self.assertRaises(RuntimeError) as method_raised:
+            method_loss.backward()
+        self.assertEqual(str(function_raised.exception), str(method_raised.exception))
+
+        no_grad_function_leaf = torch.tensor(values, requires_grad=True)
+        no_grad_method_leaf = torch.tensor(values, requires_grad=True)
+        with torch.no_grad():
+            function_output = torch.exp(
+                no_grad_function_leaf.transpose(0, 1), out=None
+            )
+            method_output = no_grad_method_leaf.transpose(0, 1).exp()
+        self.assert_matches_method(
+            function_output, method_output, case="no_grad output"
+        )
+        self.assertIsNone(no_grad_function_leaf.grad)
+        self.assertTrue(torch.exp(no_grad_function_leaf).requires_grad)
+
+        detached = no_grad_function_leaf.detach().transpose(0, 1)
         self.assert_matches_method(
             torch.exp(detached), detached.exp(), case="detached input"
         )
 
     def test_concrete_out_tensor_is_rejected_without_mutation(self):
-        source = torch.tensor([0.0, 1.0])
+        source = torch.tensor([0.0, 1.0], requires_grad=True)
         destination = torch.tensor([17.0, 19.0])
         for form, call in (
             ("positional", lambda: torch.exp(source, out=destination)),

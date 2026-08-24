@@ -95,6 +95,44 @@ class TopLevelExpReferenceTests(unittest.TestCase):
             return module.exp(x=tensor, out=None)
         return module.exp(**{form: tensor})
 
+    @staticmethod
+    def make_autograd_case(module, case):
+        if case == "scalar":
+            leaf = module.tensor(1.5, dtype=module.float32, requires_grad=True)
+            return leaf, leaf, None
+        if case == "empty":
+            leaf = module.zeros(
+                (2, 0, 3), dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf.transpose(0, 2)[1], None
+
+        values = np.linspace(-3.0, 3.0, 24, dtype=np.float32).reshape(2, 3, 4)
+        leaf = module.tensor(
+            values.tolist(), dtype=module.float32, requires_grad=True
+        )
+        if case == "contiguous":
+            weights = module.tensor(values.tolist(), dtype=module.float32)
+            return leaf, leaf, weights
+        if case == "offset":
+            source = leaf[1]
+            weights = module.tensor(
+                np.linspace(-2.0, 2.0, 12, dtype=np.float32)
+                .reshape(3, 4)
+                .tolist(),
+                dtype=module.float32,
+            )
+            return leaf, source, weights
+        if case == "strided":
+            source = leaf.transpose(0, 2)
+            weights = module.tensor(
+                np.linspace(-2.0, 2.0, 24, dtype=np.float32)
+                .reshape(4, 3, 2)
+                .tolist(),
+                dtype=module.float32,
+            )
+            return leaf, source, weights
+        raise AssertionError(f"unknown torch.exp autograd case: {case}")
+
     def test_scalar_empty_offset_strided_and_edge_results_match_pytorch_2_13(self):
         actual_cases = self.make_cases(torch)
         expected_cases = self.make_cases(reference_torch)
@@ -112,7 +150,95 @@ class TopLevelExpReferenceTests(unittest.TestCase):
                     case=(case, form),
                 )
 
-    def test_requires_grad_inputs_match_inside_no_grad(self):
+    def test_scalar_empty_contiguous_offset_and_strided_autograd_match_pytorch_2_13(
+        self,
+    ):
+        forms = (
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
+        )
+        for case in ("scalar", "empty", "contiguous", "offset", "strided"):
+            for form in forms:
+                actual_leaf, actual_input, actual_weights = self.make_autograd_case(
+                    torch, case
+                )
+                expected_leaf, expected_input, expected_weights = (
+                    self.make_autograd_case(reference_torch, case)
+                )
+                actual_output = self.call_exp(torch, actual_input, form)
+                expected_output = self.call_exp(
+                    reference_torch, expected_input, form
+                )
+                self.assert_matches(
+                    actual_output,
+                    expected_output,
+                    case=(case, form, "forward"),
+                )
+
+                if actual_weights is None:
+                    actual_loss = (
+                        actual_output if case == "scalar" else actual_output.sum()
+                    )
+                    expected_loss = (
+                        expected_output if case == "scalar" else expected_output.sum()
+                    )
+                else:
+                    actual_loss = (actual_output * actual_weights).sum()
+                    expected_loss = (expected_output * expected_weights).sum()
+                actual_loss.backward()
+                expected_loss.backward()
+                self.assert_matches(
+                    actual_leaf.grad,
+                    expected_leaf.grad,
+                    case=(case, form, "gradient"),
+                )
+
+    def test_composition_accumulation_repeated_backward_and_no_grad_match(self):
+        snapshots = []
+        for module in (torch, reference_torch):
+            composed = module.tensor(
+                [-1.0, 0.5, 2.0], dtype=module.float32, requires_grad=True
+            )
+            module.exp(composed.sin(), out=None).sum().backward()
+            composed_gradient = np.asarray(composed.grad, dtype=np.float32).copy()
+
+            accumulated = module.tensor(
+                [-1.0, 0.0, 1.0, 4.0],
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            module.exp(accumulated, out=None).sum().backward()
+            first = np.asarray(accumulated.grad, dtype=np.float32).copy()
+            module.exp(input=accumulated).sum().backward()
+            second = np.asarray(accumulated.grad, dtype=np.float32).copy()
+
+            freed = module.tensor(
+                [-1.0, 0.0, 1.0], dtype=module.float32, requires_grad=True
+            )
+            loss = module.exp(freed, out=None).sum()
+            loss.backward()
+            try:
+                loss.backward()
+            except Exception as error:
+                repeated_backward = type(error).__name__, str(error)
+            else:
+                self.fail("torch.exp graph unexpectedly supported repeated backward")
+            snapshots.append((composed_gradient, first, second, repeated_backward))
+
+        for index in range(3):
+            np.testing.assert_allclose(
+                snapshots[0][index],
+                snapshots[1][index],
+                rtol=2.0e-6,
+                atol=np.nextafter(np.float32(0), np.float32(1)),
+            )
+        self.assertEqual(snapshots[0][3], snapshots[1][3])
+
         actual_leaf = torch.tensor(
             [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]], requires_grad=True
         )
@@ -121,13 +247,13 @@ class TopLevelExpReferenceTests(unittest.TestCase):
         )
         actual_input = actual_leaf.transpose(0, 1)[1]
         expected_input = expected_leaf.transpose(0, 1)[1]
-
-        for form in ("positional", "input", "x", "a", "x1", "out none"):
-            with torch.no_grad():
-                actual = self.call_exp(torch, actual_input, form)
-            with reference_torch.no_grad():
-                expected = self.call_exp(reference_torch, expected_input, form)
-            self.assert_matches(actual, expected, case=form)
+        with torch.no_grad():
+            actual = torch.exp(actual_input, out=None)
+        with reference_torch.no_grad():
+            expected = reference_torch.exp(expected_input, out=None)
+        self.assert_matches(actual, expected, case="no_grad")
+        self.assertIsNone(actual_leaf.grad)
+        self.assertTrue(torch.exp(actual_leaf, out=None).requires_grad)
 
     def callable_contract(self, module):
         function = module.exp
