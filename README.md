@@ -52,6 +52,7 @@ assert torch.backends.openmp.is_available() is False
 assert torch.backends.mkl.is_available() is False
 assert torch.backends.nnpack.is_available() is False
 assert torch.backends.cuda.is_built() is False
+assert torch.backends.cudnn.is_available() is False
 assert torch.autograd.is_multithreading_enabled() is True
 assert torch.compiler.is_compiling() is False
 assert torch.compiler.is_dynamo_compiling() is False
@@ -178,7 +179,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.set_warn_always(b)` and `torch.is_warn_always_enabled()` expose PyTorch's process-global native warning policy. The default once-only mode consumes each native warning site's marker on its first attempted emission, always mode emits from native warn-once sites on every call without consuming unused markers, and returning to once-only mode preserves markers consumed earlier. The state is shared across threads and package reloads, while ordinary Python `warnings.warn` sites retain Python's standard filtering behavior.
 
-`torch.has_openmp`, `torch.has_mkl`, and `torch.has_lapack` are native build-capability flags. `torch.backends.openmp.is_available()` and `torch.backends.mkl.is_available()` expose the first two flags through PyTorch's canonical backend namespaces, while `torch.backends.nnpack.is_available()` exposes an invariant native build probe. `torch.backends.cuda.is_built()` reports the private native `_has_cuda` build flag. All four queries return the exact `False` singleton because the current Cargo build links none of those external runtimes; importing or calling them performs no host probe and does not import PyTorch. CUDA tensors, transfers, streams, events, kernels, and runtime availability queries remain unsupported, as do OpenMP, MKL, and NNPACK configuration, verbosity, and execution, LAPACK backend namespaces, and every other `torch.backends` API.
+`torch.has_openmp`, `torch.has_mkl`, and `torch.has_lapack` are native build-capability flags. `torch.backends.openmp.is_available()` and `torch.backends.mkl.is_available()` expose the first two flags through PyTorch's canonical backend namespaces, while `torch.backends.nnpack.is_available()` exposes an invariant native build probe. `torch.backends.cuda.is_built()` and `torch.backends.cudnn.is_available()` report the private native `_has_cuda` and `_has_cudnn` build flags. All five backend queries return the exact `False` singleton because the current Cargo build links none of those external runtimes; importing or calling them performs no host probe and does not import PyTorch. CUDA tensors, transfers, streams, events, kernels, and runtime availability queries remain unsupported, as do cuDNN version, configuration, and execution, OpenMP, MKL, and NNPACK configuration, verbosity, and execution, LAPACK backend namespaces, and every other `torch.backends` API.
 
 `torch.autograd.is_multithreading_enabled()` reports PyTorch's default enabled state as the exact `True` singleton without changing thread-local gradient mode or importing PyTorch. Autograd multithreading mutation and a parallel backward scheduler remain unsupported.
 
