@@ -1,5 +1,6 @@
 import inspect
 import math
+import platform
 import pickle
 import re
 import struct
@@ -117,6 +118,26 @@ class ArangeTests(unittest.TestCase):
             for form, call in self.two_bound_calls(start, end):
                 with self.subTest(start=start, end=end, form=form):
                     self.assert_default_tensor(call(), expected)
+
+    def test_vector_rounding_uses_the_host_architecture_width(self):
+        start = -math.nextafter(1.0, 0.0)
+        machine = platform.machine().lower()
+        second = 0.0 if machine == "aarch64" or machine.startswith("arm") else 2.0**-53
+        expected = [-1.0, second, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+
+        for form, call in self.two_bound_calls(start, 7.0):
+            with self.subTest(form=form):
+                self.assert_default_tensor(call(), expected)
+
+    def test_single_worker_range_is_not_repartitioned_at_parallel_grain_size(self):
+        self.assertEqual(torch.get_num_threads(), 1)
+        result = torch.arange(16_777_216.5, 16_809_985.5)
+        values = result.tolist()
+
+        self.assertEqual(tuple(result.shape), (32_769,))
+        self.assertEqual(result.stride(), (1,))
+        self.assertEqual(len(values), 32_769)
+        self.assertEqual(values[16_385], 16_793_600.0)
 
     def test_default_equivalent_metadata_is_accepted(self):
         option_cases = (

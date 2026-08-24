@@ -14,6 +14,26 @@ use crate::tensor_error::TensorError;
 const F32_SIGN_MASK: u32 = 0x8000_0000;
 #[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
+#[cfg(all(
+    feature = "python-bindings",
+    any(target_arch = "arm", target_arch = "aarch64")
+))]
+const FLOAT32_ARANGE_VECTOR_LANES: usize = 4;
+#[cfg(all(
+    feature = "python-bindings",
+    any(target_arch = "x86", target_arch = "x86_64")
+))]
+const FLOAT32_ARANGE_VECTOR_LANES: usize = 8;
+#[cfg(all(
+    feature = "python-bindings",
+    not(any(
+        target_arch = "arm",
+        target_arch = "aarch64",
+        target_arch = "x86",
+        target_arch = "x86_64"
+    ))
+))]
+const FLOAT32_ARANGE_VECTOR_LANES: usize = 1;
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
 const CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS: usize = 4 * 1024;
@@ -387,30 +407,8 @@ impl Tensor {
     /// exceeds the platform capacity.
     #[cfg(feature = "python-bindings")]
     pub(crate) fn arange_float32(start: f64, elements: usize) -> Result<Self, TensorError> {
-        // PyTorch 2.13's x86 CPU kernel emits pairs of eight-wide float
-        // vectors before its scalar tail. Each vector rounds its base to f32,
-        // while the tail evaluates start + index in f64 before conversion.
-        // Preserve both rounding paths so boundary values match bit-for-bit.
-        const VECTOR_LANES: usize = 8;
-        const VECTOR_BATCH: usize = 2 * VECTOR_LANES;
-
-        validate_storage_capacity(elements)?;
-
-        let mut data = try_result_vector(elements, elements)?;
-        let vectorized_elements = elements - elements % VECTOR_BATCH;
-        for block_start in (0..vectorized_elements).step_by(VECTOR_LANES) {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-            let base = (start + block_start as f64) as f32;
-            data.push(base);
-            for lane in 1..VECTOR_LANES {
-                #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-                data.push((f64::from(base) + lane as f64) as f32);
-            }
-        }
-        for index in vectorized_elements..elements {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-            data.push((start + index as f64) as f32);
-        }
+        let data =
+            arange_float32_values_with_vector_lanes(start, elements, FLOAT32_ARANGE_VECTOR_LANES)?;
 
         let mut shape = try_result_vector(1, elements)?;
         shape.push(elements);
@@ -4419,6 +4417,39 @@ fn try_result_vector<T>(capacity: usize, elements: usize) -> Result<Vec<T>, Tens
     Ok(values)
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn arange_float32_values_with_vector_lanes(
+    start: f64,
+    elements: usize,
+    vector_lanes: usize,
+) -> Result<Vec<f32>, TensorError> {
+    // PyTorch 2.13 vectorizes two SIMD vectors at a time within each
+    // parallel_for shard. The native engine reports one intra-op worker, so
+    // the whole range is one shard. ARM uses four f32 lanes and x86 uses eight;
+    // unsupported architectures use a scalar-equivalent one-lane fallback.
+    debug_assert!(vector_lanes > 0);
+    let vector_batch = 2 * vector_lanes;
+
+    validate_storage_capacity(elements)?;
+
+    let mut data = try_result_vector(elements, elements)?;
+    let vectorized_elements = elements - elements % vector_batch;
+    for block_start in (0..vectorized_elements).step_by(vector_lanes) {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+        let base = (start + block_start as f64) as f32;
+        data.push(base);
+        for lane in 1..vector_lanes {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+            data.push((f64::from(base) + lane as f64) as f32);
+        }
+    }
+    for index in vectorized_elements..elements {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+        data.push((start + index as f64) as f32);
+    }
+    Ok(data)
+}
+
 fn try_clone_result_shape(shape: &[usize], elements: usize) -> Result<Vec<usize>, TensorError> {
     let mut cloned = try_result_vector(shape.len(), elements)?;
     cloned.extend_from_slice(shape);
@@ -4754,8 +4785,8 @@ mod tests {
 
     use super::{
         CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device,
-        F32_SIGN_MASK, SavedTensor, Tensor, TensorError, materialize_contiguous_trailing_broadcast,
-        sqrt_value, try_result_vector,
+        F32_SIGN_MASK, SavedTensor, Tensor, TensorError, arange_float32_values_with_vector_lanes,
+        materialize_contiguous_trailing_broadcast, sqrt_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -4773,6 +4804,23 @@ mod tests {
             view_requires_grad: false,
             autograd: None,
         }
+    }
+
+    #[test]
+    fn float32_arange_rounding_tracks_arm_and_x86_vector_widths() {
+        let start = -f64::from_bits(1.0_f64.to_bits() - 1);
+        let arm_values = arange_float32_values_with_vector_lanes(start, 8, 4).unwrap();
+        let x86_values = arange_float32_values_with_vector_lanes(start, 8, 8).unwrap();
+
+        assert_eq!(arm_values[1].to_bits(), 0.0_f32.to_bits());
+        assert_eq!(x86_values[1].to_bits(), 0x2500_0000);
+    }
+
+    #[test]
+    fn float32_arange_uses_one_full_single_worker_shard() {
+        let values = arange_float32_values_with_vector_lanes(16_777_216.5, 32_769, 8).unwrap();
+
+        assert_eq!(values[16_385].to_bits(), 16_793_600.0_f32.to_bits());
     }
 
     #[test]

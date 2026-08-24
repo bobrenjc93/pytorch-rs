@@ -20,6 +20,13 @@ class ArangeReferenceTests(unittest.TestCase):
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError("arange differentials require pinned PyTorch 2.13.0")
+        original_reference_threads = reference_torch.get_num_threads()
+        cls.addClassCleanup(
+            reference_torch.set_num_threads, original_reference_threads
+        )
+        reference_torch.set_num_threads(torch.get_num_threads())
+        if reference_torch.get_num_threads() != 1:
+            raise AssertionError("arange differentials require one reference CPU worker")
 
     def tensor_contract(self, module, tensor):
         return {
@@ -110,6 +117,29 @@ class ArangeReferenceTests(unittest.TestCase):
                         self.tensor_contract(torch, actual_call()),
                         self.tensor_contract(reference_torch, expected_call()),
                     )
+
+    def test_architecture_vector_boundary_matches_single_worker_pytorch_2_13(self):
+        start = -math.nextafter(1.0, 0.0)
+        actual = torch.arange(start, 7.0)
+        expected = reference_torch.arange(start, 7.0)
+
+        self.assertEqual(torch.get_num_threads(), 1)
+        self.assertEqual(reference_torch.get_num_threads(), 1)
+        self.assertEqual(
+            self.tensor_contract(torch, actual),
+            self.tensor_contract(reference_torch, expected),
+        )
+
+    def test_large_range_matches_single_worker_pytorch_across_grain_boundary(self):
+        actual = torch.arange(16_777_216.5, 16_809_985.5)
+        expected = reference_torch.arange(16_777_216.5, 16_809_985.5)
+
+        self.assertEqual(torch.get_num_threads(), 1)
+        self.assertEqual(reference_torch.get_num_threads(), 1)
+        self.assertEqual(
+            self.tensor_contract(torch, actual),
+            self.tensor_contract(reference_torch, expected),
+        )
 
     def test_default_equivalent_options_match_pytorch_2_13(self):
         option_factories = (
