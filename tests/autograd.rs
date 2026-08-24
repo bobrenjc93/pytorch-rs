@@ -8,6 +8,47 @@ fn values(tensor: &Tensor) -> Vec<f32> {
     tensor.try_to_vec().unwrap()
 }
 
+const SIGMOID_AUTOGRAD_INPUT_BITS: [u32; 8] = [
+    0x0000_0000,
+    0x8000_0000,
+    0x3f00_0000,
+    0xbf00_0000,
+    0x4185_1591,
+    0x4185_1592,
+    0xc2b1_7217,
+    0xc2b1_7218,
+];
+const SIGMOID_AUTOGRAD_OUTPUT_BITS: [u32; 8] = [
+    0x3f00_0000,
+    0x3f00_0000,
+    0x3f1f_597f,
+    0x3ec1_4d03,
+    0x3f7f_fffe,
+    0x3f80_0000,
+    0x0020_0010,
+    0x0000_0000,
+];
+const SIGMOID_AUTOGRAD_GRADIENT_BITS: [u32; 8] = [
+    0x3e80_0000,
+    0xbf00_0000,
+    0x3df0_a4d0,
+    0xbd70_a4d0,
+    0x34bf_fffe,
+    0x8000_0000,
+    0x00a0_0050,
+    0x8000_0000,
+];
+const SIGMOID_AUTOGRAD_ACCUMULATED_GRADIENT_BITS: [u32; 8] = [
+    0x3f00_0000,
+    0xbf80_0000,
+    0x3e70_a4d0,
+    0xbdf0_a4d0,
+    0x353f_fffe,
+    0x8000_0000,
+    0x0120_0050,
+    0x8000_0000,
+];
+
 #[test]
 fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
     let x = Tensor::from_vec(vec![-2.0, 0.5, 3.0], [3])
@@ -526,6 +567,90 @@ fn sigmoid_differentiates_finite_owned_scalars_at_signed_zero_and_saturation() {
 }
 
 #[test]
+fn sigmoid_differentiates_owned_vectors_with_weighting_accumulation_and_graph_freeing() {
+    let input = SIGMOID_AUTOGRAD_INPUT_BITS.map(f32::from_bits).to_vec();
+    let weights = Tensor::from_vec(vec![1.0, -2.0, 0.5, -0.25, 3.0, -4.0, 5.0, -6.0], [8]).unwrap();
+    let leaf = Tensor::from_vec(input.clone(), [8])
+        .unwrap()
+        .with_requires_grad(true);
+    let output = leaf.sigmoid().unwrap();
+
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
+    assert_eq!(output.shape(), [8]);
+    assert_eq!(output.stride(), [1]);
+    assert_eq!(output.storage_offset(), 0);
+    assert!(!output.shares_storage_with(&leaf));
+    assert_eq!(
+        output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        SIGMOID_AUTOGRAD_OUTPUT_BITS
+    );
+
+    let loss = output.mul(&weights).unwrap().sum();
+    loss.backward().unwrap();
+    let gradient_bits = leaf
+        .grad()
+        .unwrap()
+        .unwrap()
+        .logical_values()
+        .map(f32::to_bits)
+        .collect::<Vec<_>>();
+    assert_eq!(gradient_bits, SIGMOID_AUTOGRAD_GRADIENT_BITS);
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+    assert_eq!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        SIGMOID_AUTOGRAD_GRADIENT_BITS
+    );
+
+    let accumulated = Tensor::from_vec(input, [8])
+        .unwrap()
+        .with_requires_grad(true);
+    for _ in 0..2 {
+        accumulated
+            .sigmoid()
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+    }
+    assert_eq!(
+        accumulated
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        SIGMOID_AUTOGRAD_ACCUMULATED_GRADIENT_BITS
+    );
+
+    let empty = Tensor::zeros([0]).unwrap().with_requires_grad(true);
+    let empty_output = empty.sigmoid().unwrap();
+    assert!(empty_output.requires_grad());
+    assert!(!empty_output.is_leaf());
+    assert_eq!(empty_output.shape(), [0]);
+    assert_eq!(empty_output.stride(), [1]);
+    assert!(!empty_output.shares_storage_with(&empty));
+    let empty_loss = empty_output.sum();
+    empty_loss.backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [0]);
+    assert_eq!(empty_gradient.stride(), [1]);
+    assert!(values(&empty_gradient).is_empty());
+    assert_eq!(empty_loss.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
 fn sigmoid_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
     let composed = Tensor::from_vec(vec![0.5], [])
         .unwrap()
@@ -576,7 +701,7 @@ fn sigmoid_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
 }
 
 #[test]
-fn sigmoid_rejects_unsupported_tracked_inputs_before_graph_or_layout_mutation() {
+fn sigmoid_rejects_nonfinite_and_high_rank_owned_leaves_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported {
         operation: "sigmoid",
     };
@@ -587,7 +712,8 @@ fn sigmoid_rejects_unsupported_tracked_inputs_before_graph_or_layout_mutation() 
         0x7f81_2345,
         0xffc5_4321,
     ] {
-        let leaf = Tensor::from_vec(vec![f32::from_bits(bits)], [])
+        let value = f32::from_bits(bits);
+        let leaf = Tensor::from_vec(vec![value], [])
             .unwrap()
             .with_requires_grad(true);
         assert_eq!(leaf.sigmoid(), Err(unsupported.clone()));
@@ -597,13 +723,44 @@ fn sigmoid_rejects_unsupported_tracked_inputs_before_graph_or_layout_mutation() 
             leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
             1.0_f32.to_bits()
         );
+
+        let vector = Tensor::from_vec(vec![0.5, value], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(vector.sigmoid(), Err(unsupported.clone()));
+        assert!(vector.grad().unwrap().is_none());
+        vector.sum().backward().unwrap();
+        assert_eq!(values(&vector.grad().unwrap().unwrap()), [1.0, 1.0]);
     }
 
-    let non_scalar = Tensor::from_vec(vec![0.5], [1])
+    let matrix = Tensor::from_vec(vec![0.5, -1.0], [1, 2])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(non_scalar.sigmoid(), Err(unsupported.clone()));
-    assert!(non_scalar.grad().unwrap().is_none());
+    assert_eq!(matrix.sigmoid(), Err(unsupported.clone()));
+    assert!(matrix.grad().unwrap().is_none());
+    matrix.sum().backward().unwrap();
+    assert_eq!(values(&matrix.grad().unwrap().unwrap()), [1.0, 1.0]);
+
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(extreme.sigmoid(), Err(unsupported));
+    {
+        let _guard = no_grad();
+        assert_eq!(
+            extreme.sigmoid(),
+            Err(TensorError::StrideCalculationOverflow)
+        );
+    }
+}
+
+#[test]
+fn sigmoid_rejects_tracked_views_and_nonleaves_before_graph_mutation() {
+    let unsupported = TensorError::AutogradRecordingUnsupported {
+        operation: "sigmoid",
+    };
 
     let view_base = Tensor::from_vec(vec![0.5], [1])
         .unwrap()
@@ -614,6 +771,20 @@ fn sigmoid_rejects_unsupported_tracked_inputs_before_graph_or_layout_mutation() 
     assert_eq!(scalar_view.sigmoid(), Err(unsupported.clone()));
     scalar_view.backward().unwrap();
     assert_eq!(values(&view_base.grad().unwrap().unwrap()), [1.0]);
+
+    let vector_view_base = Tensor::from_vec(vec![0.5, -1.0, 2.0, -3.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let vector_view = vector_view_base.index([0]).unwrap();
+    assert!(vector_view.requires_grad());
+    assert!(!vector_view.is_leaf());
+    assert_eq!(vector_view.shape(), [2]);
+    assert_eq!(vector_view.sigmoid(), Err(unsupported.clone()));
+    vector_view.sum().backward().unwrap();
+    assert_eq!(
+        values(&vector_view_base.grad().unwrap().unwrap()),
+        [1.0, 1.0, 0.0, 0.0]
+    );
 
     let nonleaf_base = Tensor::from_vec(vec![0.5], [])
         .unwrap()
@@ -634,25 +805,22 @@ fn sigmoid_rejects_unsupported_tracked_inputs_before_graph_or_layout_mutation() 
 
     let no_grad_view = {
         let _guard = no_grad();
-        non_scalar.index([0]).unwrap()
+        vector_view_base.index([0]).unwrap()
     };
     assert!(no_grad_view.requires_grad());
     assert!(no_grad_view.is_leaf());
+    assert_eq!(no_grad_view.shape(), [2]);
     assert_eq!(no_grad_view.sigmoid(), Err(unsupported.clone()));
 
-    let extreme = Tensor::zeros([0])
-        .unwrap()
-        .reshape([0, i64::MAX, 3])
-        .unwrap()
-        .with_requires_grad(true);
-    assert_eq!(extreme.sigmoid(), Err(unsupported));
-    {
+    let empty_view_base = Tensor::zeros([1, 0]).unwrap().with_requires_grad(true);
+    let empty_view = {
         let _guard = no_grad();
-        assert_eq!(
-            extreme.sigmoid(),
-            Err(TensorError::StrideCalculationOverflow)
-        );
-    }
+        empty_view_base.index([0]).unwrap()
+    };
+    assert!(empty_view.requires_grad());
+    assert!(empty_view.is_leaf());
+    assert_eq!(empty_view.shape(), [0]);
+    assert_eq!(empty_view.sigmoid(), Err(unsupported));
 }
 
 #[test]
