@@ -27,6 +27,28 @@ class GetDeterministicDebugModeReferenceTests(unittest.TestCase):
                 "PyTorch 2.13.0"
             )
 
+    def setUp(self):
+        self.original_actual = (
+            torch.are_deterministic_algorithms_enabled(),
+            torch.is_deterministic_algorithms_warn_only_enabled(),
+        )
+        self.original_expected = (
+            reference_torch.are_deterministic_algorithms_enabled(),
+            reference_torch.is_deterministic_algorithms_warn_only_enabled(),
+        )
+        torch.use_deterministic_algorithms(False)
+        reference_torch.use_deterministic_algorithms(False)
+
+    def tearDown(self):
+        torch.use_deterministic_algorithms(
+            self.original_actual[0],
+            warn_only=self.original_actual[1],
+        )
+        reference_torch.use_deterministic_algorithms(
+            self.original_expected[0],
+            warn_only=self.original_expected[1],
+        )
+
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
             actual_call()
@@ -105,54 +127,29 @@ class GetDeterministicDebugModeReferenceTests(unittest.TestCase):
         return shape
 
     def test_supported_default_threaded_and_grad_states_match_pytorch_2_13(self):
-        original_mode = reference_torch.get_deterministic_debug_mode()
-        try:
-            reference_torch.set_deterministic_debug_mode(0)
-            self.assertEqual(
-                self.supported_state_outcome(torch),
-                self.supported_state_outcome(reference_torch),
-            )
-        finally:
-            reference_torch.set_deterministic_debug_mode(original_mode)
-
-        actual = torch.get_deterministic_debug_mode()
-        self.assertIs(type(actual), int)
-        self.assertEqual(actual, 0)
         self.assertEqual(
-            reference_torch.get_deterministic_debug_mode(),
-            original_mode,
+            self.supported_state_outcome(torch),
+            self.supported_state_outcome(reference_torch),
         )
 
-    def test_reference_only_mode_transitions_bound_unsupported_values(self):
+    def test_mode_transitions_match_pytorch_2_13(self):
         actual = torch.get_deterministic_debug_mode
         expected = reference_torch.get_deterministic_debug_mode
-        original_mode = expected()
-
-        try:
-            actual_states = []
-            expected_states = []
-            expected_flag_states = []
-            for mode in (0, 1, 2, 0):
-                reference_torch.set_deterministic_debug_mode(mode)
-                actual_states.append(actual())
-                expected_states.append(expected())
-                expected_flag_states.append(
-                    (
-                        reference_torch.are_deterministic_algorithms_enabled(),
-                        reference_torch.is_deterministic_algorithms_warn_only_enabled(),
-                    )
+        for enabled, warn_only in (
+            (False, False),
+            (False, True),
+            (True, True),
+            (True, False),
+            (False, False),
+        ):
+            with self.subTest(enabled=enabled, warn_only=warn_only):
+                torch.use_deterministic_algorithms(enabled, warn_only=warn_only)
+                reference_torch.use_deterministic_algorithms(
+                    enabled,
+                    warn_only=warn_only,
                 )
-        finally:
-            reference_torch.set_deterministic_debug_mode(original_mode)
-
-        self.assertEqual(actual_states, [0, 0, 0, 0])
-        self.assertEqual(expected_states, [0, 1, 2, 0])
-        self.assertEqual(
-            expected_flag_states,
-            [(False, False), (True, True), (True, False), (False, False)],
-        )
-        for state in (*actual_states, *expected_states):
-            self.assertIs(type(state), int)
+                self.assertEqual(actual(), expected())
+                self.assertIs(type(actual()), int)
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_module = importlib.import_module("torch_rs")
@@ -227,16 +224,15 @@ class GetDeterministicDebugModeReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_deterministic_setters_remain_deliberately_unsupported(self):
-        for name in (
-            "use_deterministic_algorithms",
-            "set_deterministic_debug_mode",
-        ):
-            with self.subTest(name=name):
-                self.assertTrue(hasattr(reference_torch, name))
-                self.assertEqual(reference_torch.__all__.count(name), 1)
-                self.assertFalse(hasattr(torch, name))
-                self.assertNotIn(name, torch.__all__)
+    def test_configuration_surface_matches_supported_scope(self):
+        self.assertTrue(hasattr(torch, "use_deterministic_algorithms"))
+        self.assertEqual(
+            torch.__all__.count("use_deterministic_algorithms"),
+            reference_torch.__all__.count("use_deterministic_algorithms"),
+        )
+        self.assertTrue(hasattr(reference_torch, "set_deterministic_debug_mode"))
+        self.assertFalse(hasattr(torch, "set_deterministic_debug_mode"))
+        self.assertNotIn("set_deterministic_debug_mode", torch.__all__)
 
 
 if __name__ == "__main__":

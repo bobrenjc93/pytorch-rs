@@ -19,9 +19,25 @@ FUNCTION_DOC = """Returns True if the global deterministic flag is turned on. Re
 
 
 class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
+    def setUp(self):
+        self.original_enabled = torch.are_deterministic_algorithms_enabled()
+        self.original_warn_only = (
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        )
+        torch.use_deterministic_algorithms(False)
+
+    def tearDown(self):
+        torch.use_deterministic_algorithms(
+            self.original_enabled,
+            warn_only=self.original_warn_only,
+        )
+
     def test_default_false_is_exact_and_preserves_grad_mode(self):
         function = torch.are_deterministic_algorithms_enabled
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(
+            function.__code__.co_names,
+            ("_C", "_get_deterministic_algorithms"),
+        )
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -159,15 +175,21 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_deterministic_setters_remain_unsupported(self):
-        unsupported = (
-            "use_deterministic_algorithms",
-            "set_deterministic_debug_mode",
+    def test_deterministic_configuration_surface(self):
+        self.assertTrue(hasattr(torch, "use_deterministic_algorithms"))
+        self.assertEqual(torch.__all__.count("use_deterministic_algorithms"), 1)
+        self.assertFalse(hasattr(torch, "set_deterministic_debug_mode"))
+        self.assertNotIn("set_deterministic_debug_mode", torch.__all__)
+        names = (
+            "_set_deterministic_algorithms",
+            "_get_deterministic_algorithms",
+            "_get_deterministic_algorithms_warn_only",
         )
-        for name in unsupported:
+        for name in names:
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch, name))
-                self.assertNotIn(name, torch.__all__)
+                self.assertTrue(hasattr(torch._C, name))
+                self.assertNotIn(name, torch._C.__all__)
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""
@@ -183,6 +205,9 @@ sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
 assert torch.are_deterministic_algorithms_enabled() is False
+assert torch.use_deterministic_algorithms(True) is None
+assert torch.are_deterministic_algorithms_enabled() is True
+assert torch.use_deterministic_algorithms(False) is None
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

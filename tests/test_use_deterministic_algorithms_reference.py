@@ -1,10 +1,8 @@
-import contextlib
 import copy
 import importlib
 import inspect
 import pickle
 import pickletools
-import threading
 import types
 import typing
 import unittest
@@ -18,13 +16,13 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
+class UseDeterministicAlgorithmsReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "are_deterministic_algorithms_enabled differentials require "
-                "pinned PyTorch 2.13.0"
+                "use_deterministic_algorithms differentials require pinned "
+                "PyTorch 2.13.0"
             )
 
     def setUp(self):
@@ -58,49 +56,18 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
-    def supported_state_outcome(self, module):
-        function = module.are_deterministic_algorithms_enabled
+    def state(self, module):
+        return (
+            module.are_deterministic_algorithms_enabled(),
+            module.is_deterministic_algorithms_warn_only_enabled(),
+            module.get_deterministic_debug_mode(),
+        )
 
-        def query_outcome():
-            before = module.is_grad_enabled()
-            result = function()
-            after = module.is_grad_enabled()
-            return before, result is False, after
-
-        states = [query_outcome()]
-        with module.no_grad():
-            states.append(query_outcome())
-            with module.no_grad():
-                states.append(query_outcome())
-            states.append(query_outcome())
-        states.append(query_outcome())
-
-        worker_count = 8
-        barrier = threading.Barrier(worker_count)
-        worker_states = [None] * worker_count
-        errors = []
-
-        def worker(index):
-            try:
-                context = module.no_grad() if index % 2 else contextlib.nullcontext()
-                with context:
-                    barrier.wait(timeout=10)
-                    worker_states[index] = query_outcome()
-            except BaseException as error:
-                errors.append((type(error).__name__, str(error)))
-
-        threads = [
-            threading.Thread(target=worker, args=(index,))
-            for index in range(worker_count)
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=10)
-
-        self.assertFalse(any(thread.is_alive() for thread in threads))
-        self.assertEqual(errors, [])
-        return states, worker_states
+    def operation_outcome(self, module):
+        leaf = module.tensor([1.0, -2.0, 3.0], requires_grad=True)
+        output = ((leaf + 2.0) * leaf).sum()
+        output.backward()
+        return output.item(), leaf.grad.tolist()
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -114,15 +81,11 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_supported_default_threaded_and_grad_states_match_pytorch_2_13(self):
-        self.assertEqual(
-            self.supported_state_outcome(torch),
-            self.supported_state_outcome(reference_torch),
-        )
+    def test_state_transitions_and_supported_operations_match_pytorch_2_13(self):
+        actual_baseline = self.operation_outcome(torch)
+        expected_baseline = self.operation_outcome(reference_torch)
+        self.assertEqual(actual_baseline, expected_baseline)
 
-    def test_mutable_states_match_pytorch_2_13(self):
-        actual = torch.are_deterministic_algorithms_enabled
-        expected = reference_torch.are_deterministic_algorithms_enabled
         for enabled, warn_only in (
             (False, False),
             (False, True),
@@ -131,19 +94,27 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
             (False, False),
         ):
             with self.subTest(enabled=enabled, warn_only=warn_only):
-                torch.use_deterministic_algorithms(enabled, warn_only=warn_only)
-                reference_torch.use_deterministic_algorithms(
+                actual_result = torch.use_deterministic_algorithms(
                     enabled,
                     warn_only=warn_only,
                 )
-                self.assertIs(actual(), expected())
-                self.assertIs(type(actual()), bool)
+                expected_result = reference_torch.use_deterministic_algorithms(
+                    enabled,
+                    warn_only=warn_only,
+                )
+                self.assertIs(actual_result, expected_result)
+                self.assertEqual(self.state(torch), self.state(reference_torch))
+                self.assertEqual(self.operation_outcome(torch), actual_baseline)
+                self.assertEqual(
+                    self.operation_outcome(reference_torch),
+                    expected_baseline,
+                )
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_module = importlib.import_module("torch_rs")
         expected_module = importlib.import_module("torch")
-        actual = actual_module.are_deterministic_algorithms_enabled
-        expected = expected_module.are_deterministic_algorithms_enabled
+        actual = actual_module.use_deterministic_algorithms
+        expected = expected_module.use_deterministic_algorithms
 
         self.assertIs(torch, actual_module)
         self.assertIs(reference_torch, expected_module)
@@ -173,17 +144,17 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
         )
 
     def test_exports_copy_and_pickle_match_pytorch_2_13(self):
-        actual = torch.are_deterministic_algorithms_enabled
-        expected = reference_torch.are_deterministic_algorithms_enabled
+        actual = torch.use_deterministic_algorithms
+        expected = reference_torch.use_deterministic_algorithms
 
         self.assertEqual(
-            torch.__all__.count("are_deterministic_algorithms_enabled"),
-            reference_torch.__all__.count("are_deterministic_algorithms_enabled"),
+            torch.__all__.count("use_deterministic_algorithms"),
+            reference_torch.__all__.count("use_deterministic_algorithms"),
         )
         for module, function in ((torch, actual), (reference_torch, expected)):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["are_deterministic_algorithms_enabled"], function)
+            self.assertIs(namespace["use_deterministic_algorithms"], function)
             self.assertIs(copy.copy(function), function)
             self.assertIs(copy.deepcopy(function), function)
 
@@ -196,31 +167,41 @@ class AreDeterministicAlgorithmsEnabledReferenceTests(unittest.TestCase):
                     self.pickle_shape(expected, protocol),
                 )
 
-    def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.are_deterministic_algorithms_enabled
-        expected = reference_torch.are_deterministic_algorithms_enabled
+    def test_binding_and_strict_bool_errors_match_pytorch_2_13(self):
+        actual = torch.use_deterministic_algorithms
+        expected = reference_torch.use_deterministic_algorithms
         cases = (
-            (lambda: actual(None), lambda: expected(None)),
-            (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
+            (lambda: actual(), lambda: expected()),
+            (lambda: actual(True, False), lambda: expected(True, False)),
             (
-                lambda: actual(None, enabled=True),
-                lambda: expected(None, enabled=True),
+                lambda: actual(True, unknown=False),
+                lambda: expected(True, unknown=False),
+            ),
+            (lambda: actual(None), lambda: expected(None)),
+            (lambda: actual(1), lambda: expected(1)),
+            (lambda: actual("true"), lambda: expected("true")),
+            (
+                lambda: actual(True, warn_only=None),
+                lambda: expected(True, warn_only=None),
+            ),
+            (
+                lambda: actual(True, warn_only=0),
+                lambda: expected(True, warn_only=0),
+            ),
+            (
+                lambda: actual(True, warn_only="false"),
+                lambda: expected(True, warn_only="false"),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
+                self.assertEqual(self.state(torch), (False, False, 0))
+                self.assertEqual(self.state(reference_torch), (False, False, 0))
 
-    def test_configuration_surface_matches_supported_scope(self):
-        self.assertTrue(hasattr(torch, "use_deterministic_algorithms"))
-        self.assertEqual(
-            torch.__all__.count("use_deterministic_algorithms"),
-            reference_torch.__all__.count("use_deterministic_algorithms"),
-        )
-        self.assertTrue(hasattr(reference_torch, "set_deterministic_debug_mode"))
-        self.assertFalse(hasattr(torch, "set_deterministic_debug_mode"))
-        self.assertNotIn("set_deterministic_debug_mode", torch.__all__)
+        self.assertIs(actual(mode=True, warn_only=True), None)
+        self.assertIs(expected(mode=True, warn_only=True), None)
+        self.assertEqual(self.state(torch), self.state(reference_torch))
 
 
 if __name__ == "__main__":

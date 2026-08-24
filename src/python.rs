@@ -18,6 +18,7 @@ use pyo3::types::{
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, is_grad_enabled,
     python_cpython_compat as cpython_compat,
+    python_deterministic_algorithms::add_deterministic_algorithms_builtins,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
     python_finfo::finfo_type_object,
@@ -11273,6 +11274,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDType>()?;
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
     add_default_dtype_validator(module)?;
+    add_deterministic_algorithms_builtins(module)?;
     add_warn_always_builtins(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
