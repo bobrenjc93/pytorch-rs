@@ -1,4 +1,7 @@
+import copy
 import inspect
+import pickle
+import re
 import sys
 import types
 import unittest
@@ -16,6 +19,33 @@ CEIL_DOC = """
 ceil() -> Tensor
 
 See :func:`torch.ceil`
+"""
+
+TOP_LEVEL_CEIL_DOC = """
+ceil(input, *, out=None) -> Tensor
+
+Returns a new tensor with the ceil of the elements of :attr:`input`,
+the smallest integer greater than or equal to each element.
+
+For integer inputs, follows the array-api convention of returning a
+copy of the input tensor.
+
+.. math::
+    \\text{out}_{i} = \\left\\lceil \\text{input}_{i} \\right\\rceil
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.randn(4)
+    >>> a
+    tensor([-0.6341, -1.4208, -1.0900,  0.5826])
+    >>> torch.ceil(a)
+    tensor([-0., -1., -1.,  1.])
 """
 
 
@@ -130,6 +160,18 @@ class TensorCeilTests(unittest.TestCase):
         return np.asarray(tensor, dtype=np.float32).reshape(-1).view(np.uint32)
 
     @staticmethod
+    def top_level_calls(source):
+        return (
+            ("positional", lambda: torch.ceil(source)),
+            ("input", lambda: torch.ceil(input=source)),
+            ("x", lambda: torch.ceil(x=source)),
+            ("a", lambda: torch.ceil(a=source)),
+            ("x1", lambda: torch.ceil(x1=source)),
+            ("out none", lambda: torch.ceil(source, out=None)),
+            ("alias and out none", lambda: torch.ceil(x=source, out=None)),
+        )
+
+    @staticmethod
     def make_tracked_cases():
         scalar = torch.tensor(-1.25, requires_grad=True)
         empty = torch.zeros((2, 0, 3), requires_grad=True).transpose(0, 2)[1]
@@ -165,6 +207,27 @@ class TensorCeilTests(unittest.TestCase):
                 expected_bits = np.ceil(values).astype(np.float32).view(np.uint32)
             with self.subTest(case=case, values=True):
                 np.testing.assert_array_equal(actual_bits, expected_bits)
+
+    def test_top_level_calls_reuse_tensor_ceil_bits_layouts_and_storage(self):
+        for case, source, expected_stride in make_cases(torch):
+            expected = source.ceil()
+            for form, call in self.top_level_calls(source):
+                actual = call()
+                with self.subTest(case=case, form=form, metadata=True):
+                    self.assertEqual(actual.shape, source.shape)
+                    self.assertEqual(actual.stride(), expected_stride)
+                    self.assertEqual(actual.storage_offset(), 0)
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                    self.assertIs(actual.dtype, torch.float32)
+                    self.assertEqual(actual.device, torch.device("cpu"))
+                    self.assertFalse(actual.is_set_to(source))
+                    if source.numel():
+                        self.assertNotEqual(actual.data_ptr(), source.data_ptr())
+                with self.subTest(case=case, form=form, values=True):
+                    np.testing.assert_array_equal(
+                        self.tensor_bits(actual), self.tensor_bits(expected)
+                    )
 
     def test_active_autograd_is_rejected_before_output_planning(self):
         message = r"^ceil\(\): autograd recording is not supported$"
@@ -341,10 +404,270 @@ class TensorCeilTests(unittest.TestCase):
                 plain.ceil(1)
         self.assertEqual(invalid.calls, [])
 
-    def test_top_level_and_inplace_forms_remain_unsupported(self):
+    def test_top_level_autograd_rejection_and_no_grad_reuse_method_path(self):
+        message = r"^ceil\(\): autograd recording is not supported$"
+        for case, source in enumerate(self.make_tracked_cases()):
+            detached = source.detach()
+            expected = detached.ceil()
+            for form, call in self.top_level_calls(source):
+                with self.subTest(case=case, form=form, mode="recording"):
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        call()
+                with self.subTest(case=case, form=form, mode="no_grad"):
+                    with torch.no_grad():
+                        actual = call()
+                    self.assertEqual(actual.shape, expected.shape)
+                    self.assertEqual(actual.stride(), expected.stride())
+                    self.assertEqual(
+                        actual.storage_offset(), expected.storage_offset()
+                    )
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                    self.assertFalse(actual.is_set_to(source))
+                    np.testing.assert_array_equal(
+                        self.tensor_bits(actual), self.tensor_bits(expected)
+                    )
+
+        extreme = torch.zeros((0,), requires_grad=True).reshape(
+            (0, sys.maxsize, 3)
+        )
+        with self.assertRaisesRegex(RuntimeError, message):
+            torch.ceil(extreme)
+        with torch.no_grad():
+            with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+                torch.ceil(extreme)
+
+    def test_top_level_concrete_out_is_rejected_without_mutation(self):
+        source = torch.tensor([1.25, -1.25], requires_grad=True)
+        destination = torch.tensor([17.0, 19.0])
+        destination_pointer = destination.data_ptr()
+        expected_bits = self.tensor_bits(destination).copy()
+        for form, call in (
+            ("positional", lambda: torch.ceil(source, out=destination)),
+            ("keyword", lambda: torch.ceil(input=source, out=destination)),
+            ("alias", lambda: torch.ceil(x=source, out=destination)),
+        ):
+            with self.subTest(form=form):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^ceil\(\): the 'out' argument is not supported$",
+                ):
+                    call()
+                self.assertEqual(destination.data_ptr(), destination_pointer)
+                np.testing.assert_array_equal(
+                    self.tensor_bits(destination), expected_bits
+                )
+                self.assertIsNone(source.grad)
+
+    def test_top_level_modes_and_overrides_observe_original_call(self):
+        tensor = torch.tensor([1.25], requires_grad=True)
+        destination = torch.tensor([0.0])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        mode = RecordingMode()
+        with mode:
+            self.assertIs(torch.ceil(input=tensor, out=destination), marker)
+        self.assertEqual(
+            mode.calls,
+            [(torch.ceil, (), (), {"input": tensor, "out": destination})],
+        )
+
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        self.assertIs(torch.ceil(Override()), marker)
+        self.assertIs(torch.ceil(torch.tensor([1.25]), out=Override()), marker)
+        self.assertEqual(len(override_calls), 2)
+        for function, dispatch_types, _, _ in override_calls:
+            self.assertIs(function, torch.ceil)
+            self.assertEqual(dispatch_types, (Override,))
+
+        subclass_order = []
+
+        class BaseOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                subclass_order.append("base")
+                return marker
+
+        class DerivedOverride(BaseOverride):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                subclass_order.append("derived")
+                return marker
+
+        self.assertIs(torch.ceil(BaseOverride(), out=DerivedOverride()), marker)
+        self.assertEqual(subclass_order, ["derived"])
+
+        forwarding_order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        plain = tensor.detach()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = torch.ceil(input=plain, out=None)
+        self.assertEqual(forwarding_order, ["upper", "lower"])
+        self.assertEqual(forwarded.tolist(), [2.0])
+
+        events = []
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append("mode")
+                return NotImplemented
+
+        class FallbackOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append("override")
+                return marker
+
+        with DecliningMode():
+            self.assertIs(torch.ceil(FallbackOverride()), marker)
+        self.assertEqual(events, ["mode", "override"])
+
+        invalid = RecordingMode()
+        with self.assertRaises(TypeError):
+            with invalid:
+                torch.ceil(tensor, tensor)
+        self.assertEqual(invalid.calls, [])
+
+    def test_top_level_builtin_metadata_exports_copying_and_pickling(self):
+        function = torch.ceil
+        self.assertIs(function, torch._C.ceil)
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "ceil")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.ceil")
+        self.assertEqual(function.__module__, "torch")
+        self.assertEqual(function.__doc__, TOP_LEVEL_CEIL_DOC)
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function), r"^<built-in method ceil of type object at 0x[0-9a-f]+>$"
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.ceil, function)
+        for action in (
+            lambda: setattr(owner, "ceil", None),
+            lambda: delattr(owner, "ceil"),
+        ):
+            with self.assertRaises(TypeError):
+                action()
+            self.assertIs(owner.ceil, function)
+
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)), function
+                )
+
+        self.assertEqual(torch.__all__.count("ceil"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["ceil"], function)
+
+    def test_top_level_binding_and_type_error_precedence(self):
         tensor = torch.tensor([1.25])
-        self.assertFalse(hasattr(torch, "ceil"))
-        self.assertNotIn("ceil", torch.__all__)
+        cases = (
+            (
+                lambda: torch.ceil(),
+                'ceil() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.ceil(tensor, tensor),
+                "ceil() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.ceil(tensor, input=tensor),
+                "ceil() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.ceil(out=tensor),
+                'ceil() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.ceil(extra=tensor),
+                'ceil() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.ceil(1, extra=True),
+                "ceil(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.ceil(input=[]),
+                "ceil(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.ceil(tensor, out=[]),
+                "ceil(): argument 'out' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.ceil(tensor, extra=True, out=[]),
+                "ceil(): argument 'out' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.ceil(tensor, extra=True),
+                "ceil() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.ceil(input=tensor, a=tensor),
+                "ceil() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.ceil(a=tensor, x=tensor, out=None),
+                "ceil() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.ceil(x=tensor, a=tensor, out=None),
+                "ceil() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.ceil(np.zeros((2, 3), dtype=np.float32)),
+                (
+                    "ceil(): argument 'input' (position 1) must be Tensor, "
+                    "not numpy.ndarray"
+                ),
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+
+    def test_inplace_forms_remain_unsupported(self):
+        tensor = torch.tensor([1.25])
+        self.assertTrue(hasattr(torch, "ceil"))
         self.assertFalse(hasattr(torch.Tensor, "ceil_"))
         self.assertFalse(hasattr(tensor, "ceil_"))
         self.assertFalse(hasattr(torch, "ceil_"))
