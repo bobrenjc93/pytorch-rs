@@ -248,9 +248,9 @@ fn _nn_functional_linear(
     let input = input.try_borrow()?;
     let weight = weight.try_borrow()?;
     let input_rank = input.inner().shape().len();
-    if !matches!(input_rank, 1..=3) || weight.inner().shape().len() != 2 {
+    if !matches!(input_rank, 1..=4) || weight.inner().shape().len() != 2 {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports rank-1, rank-2, or rank-3 input and rank-2 weight tensors",
+            "torch_rs.nn.functional.linear only supports rank-1, rank-2, rank-3, or rank-4 input and rank-2 weight tensors",
         ));
     }
     if is_grad_enabled() && (input.inner().requires_grad() || weight.inner().requires_grad()) {
@@ -270,34 +270,44 @@ fn _nn_functional_linear(
             .and_then(|input| input.matmul(&transposed_weight))
             .and_then(|output| output.squeeze_dim(0)),
         2 => input.inner().matmul(&transposed_weight),
-        3 => {
+        3 | 4 => {
             let input_shape = input.inner().shape();
+            let input_stride = input.inner().stride();
             let weight_shape = weight.inner().shape();
-            // PyTorch's rank-3 by rank-2 matmul folds the leading dimensions
-            // when they are stride-compatible, the input is empty, or the
-            // matrix operand requires gradients. Otherwise its batched path
-            // reports this layout-dependent inner-dimension error.
+            // PyTorch's higher-rank by rank-2 matmul folds the leading
+            // dimensions when they are stride-compatible, the input is empty,
+            // or the matrix operand requires gradients. Otherwise its batched
+            // path reports this layout-dependent inner-dimension error.
             let folds_to_matrix = weight.inner().requires_grad()
                 || input.inner().numel() == 0
-                || input.inner().stride()[1].checked_mul(input_shape[1])
-                    == Some(input.inner().stride()[0]);
-            if !folds_to_matrix && input_shape[2] != weight_shape[1] {
+                || (0..(input_rank - 2)).all(|dimension| {
+                    input_stride[dimension + 1].checked_mul(input_shape[dimension + 1])
+                        == Some(input_stride[dimension])
+                });
+            let input_inner_dimension = input_shape[input_rank - 1];
+            if !folds_to_matrix && input_inner_dimension != weight_shape[1] {
+                let batch_size = input_shape[..input_rank - 2]
+                    .iter()
+                    .try_fold(1_usize, |size, dimension| size.checked_mul(*dimension))
+                    .ok_or_else(|| tensor_error(&TensorError::StrideCalculationOverflow))?;
                 return Err(PyRuntimeError::new_err(format!(
                     "Expected size for first two dimensions of batch2 tensor to be: [{}, {}] but got: [{}, {}].",
-                    input_shape[0], input_shape[2], input_shape[0], weight_shape[1]
+                    batch_size, input_inner_dimension, batch_size, weight_shape[1]
                 )));
             }
-            let output_shape = [
-                i64::try_from(input_shape[0])
-                    .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
-                i64::try_from(input_shape[1])
-                    .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
-                i64::try_from(weight_shape[0])
-                    .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?,
-            ];
+            let output_shape = input_shape[..input_rank - 1]
+                .iter()
+                .chain(&weight_shape[..1])
+                .map(|dimension| {
+                    i64::try_from(*dimension)
+                        .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            let flatten_end = i64::try_from(input_rank - 2)
+                .map_err(|_| tensor_error(&TensorError::StrideCalculationOverflow))?;
             input
                 .inner()
-                .flatten(0, 1)
+                .flatten(0, flatten_end)
                 .and_then(|input| input.matmul(&transposed_weight))
                 .and_then(|output| output.reshape(output_shape))
         }

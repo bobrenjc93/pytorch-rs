@@ -14,14 +14,15 @@ from ..torch_rs import _nn_functional_dropout, _nn_functional_linear
 _LINEAR_DOC = r"""
 linear(input, weight, bias=None) -> Tensor
 
-Applies the bias-free rank-1, rank-2, or rank-3 transformation
+Applies the bias-free rank-1, rank-2, rank-3, or rank-4 transformation
 :math:`\mathrm{output} = \mathrm{input} \, \mathrm{weight}^{T}`.
 
 The current native implementation requires exact ``torch_rs.Tensor`` operands
 with CPU ``float32`` storage and shape ``(in_features,)``,
-``(rows, in_features)``, or ``(batch, sequence, in_features)`` for ``input``
-and ``(out_features, in_features)`` for ``weight``. ``bias`` must be ``None``.
-It returns a fresh, independent row-major tensor with the corresponding final
+``(rows, in_features)``, ``(batch, sequence, in_features)``, or
+``(outer, batch, sequence, in_features)`` for ``input`` and
+``(out_features, in_features)`` for ``weight``. ``bias`` must be ``None``. It
+returns a fresh, independent row-major tensor with the corresponding final
 dimension replaced by ``out_features``.
 
 Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
