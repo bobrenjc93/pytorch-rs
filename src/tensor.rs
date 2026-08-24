@@ -2629,6 +2629,19 @@ impl Tensor {
         self.finish_zero_vjp(output, AutogradNode::Trunc)
     }
 
+    /// Computes the absolute value of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn abs(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "abs" });
+        }
+        self.unary_map(abs_value)
+    }
+
     /// Applies the logistic sigmoid function element by element.
     ///
     /// # Errors
@@ -4853,6 +4866,19 @@ fn trunc_value(value: f32) -> f32 {
     round_value(value, f32::trunc)
 }
 
+fn abs_value(value: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let magnitude = value.to_bits() & !F32_SIGN_MASK;
+    if magnitude > f32::INFINITY.to_bits() {
+        // PyTorch clears every NaN sign while quieting signaling NaNs and
+        // retaining the remaining payload bits.
+        f32::from_bits(magnitude | QUIET_NAN_MASK)
+    } else {
+        f32::from_bits(magnitude)
+    }
+}
+
 fn sigmoid_value(value: f32) -> f32 {
     1.0 / (1.0 + (-value).exp())
 }
@@ -5942,6 +5968,7 @@ mod tests {
             (tensor.floor().unwrap(), shared.floor().unwrap()),
             (tensor.ceil().unwrap(), shared.ceil().unwrap()),
             (tensor.trunc().unwrap(), shared.trunc().unwrap()),
+            (tensor.abs().unwrap(), shared.abs().unwrap()),
             (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
             (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
@@ -6315,6 +6342,10 @@ mod tests {
         );
         assert_eq!(
             tensor.trunc(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.abs(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
