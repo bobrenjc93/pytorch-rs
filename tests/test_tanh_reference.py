@@ -162,6 +162,44 @@ class TensorTanhReferenceTests(unittest.TestCase):
                 self.assertNotEqual(actual.data_ptr(), actual_input.data_ptr())
                 self.assertNotEqual(expected.data_ptr(), expected_input.data_ptr())
 
+    def test_near_zero_normal_values_match_pytorch_bits(self):
+        values = np.asarray(
+            (
+                1.0e-7,
+                -1.0e-7,
+                3.0e-7,
+                -3.0e-7,
+                1.0e-6,
+                -1.0e-6,
+                1.0e-5,
+                -1.0e-5,
+                1.0e-4,
+                -1.0e-4,
+                2.0e-4,
+                -2.0e-4,
+                5.0e-4,
+                -5.0e-4,
+                1.0e-3,
+                -1.0e-3,
+                2.0e-3,
+                -2.0e-3,
+                5.0e-3,
+                -5.0e-3,
+                1.0e-2,
+                -1.0e-2,
+            ),
+            dtype=np.float32,
+        )
+        actual = torch.tensor(memoryview(values)).tanh()
+        expected = reference_torch.tensor(
+            values.copy(), dtype=reference_torch.float32
+        ).tanh()
+
+        np.testing.assert_array_equal(
+            self.tensor_values(actual).view(np.uint32),
+            self.tensor_values(expected).view(np.uint32),
+        )
+
     def test_top_level_values_layouts_and_storage_match_pytorch_2_13(self):
         actual_cases = self.make_cases(torch)
         expected_cases = self.make_cases(reference_torch)
