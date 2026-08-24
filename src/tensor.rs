@@ -362,20 +362,37 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
-    /// Creates the default float32 CPU range `0, 1, ..., elements - 1`.
+    /// Creates a float32 CPU range `start, start + 1, ..., start + elements - 1`.
     ///
     /// # Errors
     ///
     /// Returns an error when the one-dimensional shape or storage allocation
     /// exceeds the platform capacity.
     #[cfg(feature = "python-bindings")]
-    pub(crate) fn arange_float32(elements: usize) -> Result<Self, TensorError> {
+    pub(crate) fn arange_float32(start: f64, elements: usize) -> Result<Self, TensorError> {
+        // PyTorch 2.13's x86 CPU kernel emits pairs of eight-wide float
+        // vectors before its scalar tail. Each vector rounds its base to f32,
+        // while the tail evaluates start + index in f64 before conversion.
+        // Preserve both rounding paths so boundary values match bit-for-bit.
+        const VECTOR_LANES: usize = 8;
+        const VECTOR_BATCH: usize = 2 * VECTOR_LANES;
+
         validate_storage_capacity(elements)?;
 
         let mut data = try_result_vector(elements, elements)?;
-        for index in 0..elements {
-            #[allow(clippy::cast_precision_loss)]
-            data.push(index as f32);
+        let vectorized_elements = elements - elements % VECTOR_BATCH;
+        for block_start in (0..vectorized_elements).step_by(VECTOR_LANES) {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+            let base = (start + block_start as f64) as f32;
+            data.push(base);
+            for lane in 1..VECTOR_LANES {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+                data.push((f64::from(base) + lane as f64) as f32);
+            }
+        }
+        for index in vectorized_elements..elements {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+            data.push((start + index as f64) as f32);
         }
 
         let mut shape = try_result_vector(1, elements)?;

@@ -2,6 +2,7 @@ import inspect
 import math
 import pickle
 import re
+import struct
 import types
 import unittest
 
@@ -27,6 +28,9 @@ class ArangeReferenceTests(unittest.TestCase):
             "storage_offset": tensor.storage_offset(),
             "numel": tensor.numel(),
             "values": tensor.tolist(),
+            "value_bits": tuple(
+                struct.pack("=f", value) for value in tensor.tolist()
+            ),
             "dtype": str(tensor.dtype),
             "dtype_identity": tensor.dtype is module.float32,
             "device": str(tensor.device),
@@ -42,6 +46,17 @@ class ArangeReferenceTests(unittest.TestCase):
             expected_call()
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
+
+    def two_bound_calls(self, module, start, end):
+        return (
+            ("positional", lambda: module.arange(start, end)),
+            ("keyword", lambda: module.arange(start=start, end=end)),
+            (
+                "keyword-reversed",
+                lambda: module.arange(**{"end": end, "start": start}),
+            ),
+            ("mixed", lambda: module.arange(start, end=end)),
+        )
 
     def test_values_shapes_and_default_metadata_match_pytorch_2_13(self):
         endpoints = (
@@ -69,6 +84,33 @@ class ArangeReferenceTests(unittest.TestCase):
                         self.tensor_contract(reference_torch, expected),
                     )
 
+    def test_two_bound_values_shapes_and_rounding_match_pytorch_2_13(self):
+        cases = (
+            (-2.5, 2.5),
+            (-0.25, 2.25),
+            (0.25, 3.25),
+            (-math.nextafter(0.0, 1.0), 2.0),
+            (-math.nextafter(0.0, 1.0), 16.0),
+            (math.nextafter(1.0, 0.0), 3.0),
+            (math.nextafter(1.0, 2.0), 3.0),
+            (1.0, math.nextafter(3.0, 0.0)),
+            (1.0, math.nextafter(3.0, math.inf)),
+            (16_777_216.5, 16_777_220.5),
+            (-16_777_220.5, -16_777_216.5),
+            (16_777_216.5, 16_777_232.5),
+        )
+        for start, end in cases:
+            actual_calls = self.two_bound_calls(torch, start, end)
+            expected_calls = self.two_bound_calls(reference_torch, start, end)
+            for (form, actual_call), (_, expected_call) in zip(
+                actual_calls, expected_calls, strict=True
+            ):
+                with self.subTest(start=start, end=end, form=form):
+                    self.assertEqual(
+                        self.tensor_contract(torch, actual_call()),
+                        self.tensor_contract(reference_torch, expected_call()),
+                    )
+
     def test_default_equivalent_options_match_pytorch_2_13(self):
         option_factories = (
             lambda module: {},
@@ -89,13 +131,40 @@ class ArangeReferenceTests(unittest.TestCase):
         for option_factory in option_factories:
             actual_options = option_factory(torch)
             expected_options = option_factory(reference_torch)
-            with self.subTest(options=actual_options):
-                actual = torch.arange(2.5, **actual_options)
-                expected = reference_torch.arange(2.5, **expected_options)
-                self.assertEqual(
-                    self.tensor_contract(torch, actual),
-                    self.tensor_contract(reference_torch, expected),
-                )
+            calls = (
+                (
+                    "one-bound",
+                    lambda: torch.arange(2.5, **actual_options),
+                    lambda: reference_torch.arange(2.5, **expected_options),
+                ),
+                (
+                    "positional",
+                    lambda: torch.arange(-0.5, 2.5, **actual_options),
+                    lambda: reference_torch.arange(-0.5, 2.5, **expected_options),
+                ),
+                (
+                    "keyword",
+                    lambda: torch.arange(
+                        start=-0.5, end=2.5, **actual_options
+                    ),
+                    lambda: reference_torch.arange(
+                        start=-0.5, end=2.5, **expected_options
+                    ),
+                ),
+                (
+                    "mixed",
+                    lambda: torch.arange(-0.5, end=2.5, **actual_options),
+                    lambda: reference_torch.arange(
+                        -0.5, end=2.5, **expected_options
+                    ),
+                ),
+            )
+            for form, actual_call, expected_call in calls:
+                with self.subTest(options=actual_options, form=form):
+                    self.assertEqual(
+                        self.tensor_contract(torch, actual_call()),
+                        self.tensor_contract(reference_torch, expected_call()),
+                    )
 
     def test_fresh_storage_matches_pytorch_2_13(self):
         actual_first = torch.arange(8.5)
@@ -118,6 +187,28 @@ class ArangeReferenceTests(unittest.TestCase):
         self.assertEqual(
             actual_empty_first.is_set_to(actual_empty_second),
             expected_empty_first.is_set_to(expected_empty_second),
+        )
+
+        actual_bounded_first = torch.arange(-2.5, 3.0)
+        actual_bounded_second = torch.arange(start=-2.5, end=3.0)
+        expected_bounded_first = reference_torch.arange(-2.5, 3.0)
+        expected_bounded_second = reference_torch.arange(start=-2.5, end=3.0)
+        self.assertEqual(
+            actual_bounded_first.data_ptr() != actual_bounded_second.data_ptr(),
+            expected_bounded_first.data_ptr() != expected_bounded_second.data_ptr(),
+        )
+        self.assertEqual(
+            actual_bounded_first.is_set_to(actual_bounded_second),
+            expected_bounded_first.is_set_to(expected_bounded_second),
+        )
+
+        actual_bounded_empty_first = torch.arange(2.5, 2.5)
+        actual_bounded_empty_second = torch.arange(2.5, end=2.5)
+        expected_bounded_empty_first = reference_torch.arange(2.5, 2.5)
+        expected_bounded_empty_second = reference_torch.arange(2.5, end=2.5)
+        self.assertEqual(
+            actual_bounded_empty_first.is_set_to(actual_bounded_empty_second),
+            expected_bounded_empty_first.is_set_to(expected_bounded_empty_second),
         )
 
     def test_negative_and_nonfinite_errors_match_pytorch_2_13(self):
@@ -144,6 +235,38 @@ class ArangeReferenceTests(unittest.TestCase):
                             lambda end=end: reference_torch.arange(end=end),
                         )
 
+    def test_two_bound_equal_reversed_and_nonfinite_ranges_match_pytorch_2_13(self):
+        equal_bounds = ((0.0, -0.0), (-2.5, -2.5), (1.0e100, 1.0e100))
+        for start, end in equal_bounds:
+            actual_calls = self.two_bound_calls(torch, start, end)
+            expected_calls = self.two_bound_calls(reference_torch, start, end)
+            for (form, actual_call), (_, expected_call) in zip(
+                actual_calls, expected_calls, strict=True
+            ):
+                with self.subTest(start=start, end=end, form=form):
+                    self.assertEqual(
+                        self.tensor_contract(torch, actual_call()),
+                        self.tensor_contract(reference_torch, expected_call()),
+                    )
+
+        error_bounds = (
+            (0.25, -0.25),
+            (-2.5, -3.0),
+            (1.0e100, -1.0e100),
+            (float("nan"), 3.0),
+            (float("-nan"), -2.5),
+            (-0.25, float("inf")),
+            (1.0e6, float("-inf")),
+        )
+        for start, end in error_bounds:
+            actual_calls = self.two_bound_calls(torch, start, end)
+            expected_calls = self.two_bound_calls(reference_torch, start, end)
+            for (form, actual_call), (_, expected_call) in zip(
+                actual_calls, expected_calls, strict=True
+            ):
+                with self.subTest(start=start, end=end, form=form):
+                    self.assert_error_matches(actual_call, expected_call)
+
     def test_oversized_endpoint_errors_match_pytorch_2_13(self):
         endpoints = (
             math.nextafter(float(2**63), 0.0),
@@ -157,6 +280,22 @@ class ArangeReferenceTests(unittest.TestCase):
                     lambda end=end: torch.arange(end),
                     lambda end=end: reference_torch.arange(end),
                 )
+
+    def test_oversized_two_bound_errors_match_pytorch_2_13(self):
+        bounds = (
+            (-math.nextafter(float(2**63), 0.0), 0.0),
+            (-float(2**63), 0.0),
+            (-math.nextafter(float(2**63), math.inf), 0.0),
+            (-1.0e308, 1.0e308),
+        )
+        for start, end in bounds:
+            actual_calls = self.two_bound_calls(torch, start, end)
+            expected_calls = self.two_bound_calls(reference_torch, start, end)
+            for (form, actual_call), (_, expected_call) in zip(
+                actual_calls, expected_calls, strict=True
+            ):
+                with self.subTest(start=start, end=end, form=form):
+                    self.assert_error_matches(actual_call, expected_call)
 
     def mode_dispatch_observation(self, module):
         function = module.arange
@@ -182,8 +321,10 @@ class ArangeReferenceTests(unittest.TestCase):
         for call in (
             lambda: function(2.5),
             lambda: function(end=2.5),
+            lambda: function(-0.5, 2.5),
+            lambda: function(start=-0.5, end=2.5),
+            lambda: function(-0.5, end=2.5),
             lambda: function(3),
-            lambda: function(0.0, 3.0),
         ):
             mode = RecordingMode()
             with mode:
@@ -226,7 +367,7 @@ class ArangeReferenceTests(unittest.TestCase):
         upper = ForwardingMode("upper")
         with lower:
             with upper:
-                forwarded = function(end=2.5)
+                forwarded = function(-0.5, end=2.5)
                 nested_restored = (
                     module.overrides._get_current_function_mode_stack()
                     == [lower, upper]
