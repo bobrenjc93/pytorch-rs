@@ -2609,6 +2609,20 @@ impl Tensor {
         self.finish_zero_vjp(output, AutogradNode::Floor)
     }
 
+    /// Rounds every element to the nearest integer, with halfway cases rounded
+    /// to the nearest even integer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn round(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "round" });
+        }
+        self.unary_map(round_ties_even_value)
+    }
+
     /// Rounds every element up to the nearest integer.
     ///
     /// # Errors
@@ -4851,6 +4865,10 @@ fn floor_value(value: f32) -> f32 {
     round_value(value, f32::floor)
 }
 
+fn round_ties_even_value(value: f32) -> f32 {
+    round_value(value, f32::round_ties_even)
+}
+
 fn ceil_value(value: f32) -> f32 {
     round_value(value, f32::ceil)
 }
@@ -5941,6 +5959,7 @@ mod tests {
             (tensor.sin().unwrap(), shared.sin().unwrap()),
             (tensor.exp().unwrap(), shared.exp().unwrap()),
             (tensor.floor().unwrap(), shared.floor().unwrap()),
+            (tensor.round().unwrap(), shared.round().unwrap()),
             (tensor.ceil().unwrap(), shared.ceil().unwrap()),
             (tensor.trunc().unwrap(), shared.trunc().unwrap()),
             (tensor.sigmoid().unwrap(), shared.sigmoid().unwrap()),
@@ -6308,6 +6327,10 @@ mod tests {
         );
         assert_eq!(
             tensor.floor(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.round(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
