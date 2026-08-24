@@ -5905,6 +5905,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:857",
+      "recordedAt": "2026-08-24T20:13:25.639Z",
+      "label": "PR #857",
+      "kind": "leaf",
+      "prNumber": 857,
+      "title": "Expose top-level torch.trunc through the unary-out bridge",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 89.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 72.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
