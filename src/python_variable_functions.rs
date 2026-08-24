@@ -17,20 +17,20 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 use crate::python::{
     adjoint_variable_function, arange_variable_function, atleast_1d_variable_function,
     atleast_2d_variable_function, atleast_3d_variable_function, can_cast_variable_function,
-    detach_variable_function, exp_variable_function, get_device_variable_function,
-    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
-    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
-    multiply_variable_function, neg_variable_function, negative_variable_function,
-    permute_variable_function, positive_variable_function, promote_types_variable_function,
-    ravel_variable_function, reciprocal_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
-    sin_variable_function, sqrt_variable_function, square_variable_function,
-    tanh_variable_function, unbind_variable_function,
+    detach_variable_function, exp_variable_function, floor_variable_function,
+    get_device_variable_function, is_conj_variable_function, is_inference_variable_function,
+    matmul_variable_function, moveaxis_variable_function, movedim_variable_function,
+    mul_variable_function, multiply_variable_function, neg_variable_function,
+    negative_variable_function, permute_variable_function, positive_variable_function,
+    promote_types_variable_function, ravel_variable_function, reciprocal_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, scalar_tensor_variable_function,
+    select_variable_function, sin_variable_function, sqrt_variable_function,
+    square_variable_function, tanh_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 33] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 34] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -45,6 +45,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 33] = [
     "neg",
     "negative",
     "exp",
+    "floor",
     "sin",
     "sqrt",
     "square",
@@ -222,6 +223,33 @@ Example::
 
     >>> torch.exp(torch.tensor([0, math.log(2.)]))
     tensor([ 1.,  2.])
+";
+
+const FLOOR_DOC: &std::ffi::CStr = cr"
+floor(input, *, out=None) -> Tensor
+
+Returns a new tensor with the floor of the elements of :attr:`input`,
+the largest integer less than or equal to each element.
+
+For integer inputs, follows the array-api convention of returning a
+copy of the input tensor.
+
+.. math::
+    \text{out}_{i} = \left\lfloor \text{input}_{i} \right\rfloor
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.randn(4)
+    >>> a
+    tensor([-0.8166,  1.5308, -0.2530, -0.2091])
+    >>> torch.floor(a)
+    tensor([-1.,  1., -1., -1.])
 ";
 
 const SIN_DOC: &std::ffi::CStr = cr"
@@ -655,6 +683,7 @@ variable_function_callback!(reciprocal_callback, reciprocal_variable_function);
 variable_function_callback!(neg_callback, neg_variable_function);
 variable_function_callback!(negative_callback, negative_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
+variable_function_callback!(floor_callback, floor_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
@@ -716,6 +745,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"neg", neg_callback, NEG_DOC),
         variable_function_method!(c"negative", negative_callback, NEGATIVE_DOC),
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
+        variable_function_method!(c"floor", floor_callback, FLOOR_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
