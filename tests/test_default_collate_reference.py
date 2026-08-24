@@ -29,6 +29,46 @@ class Blob(bytes):
     pass
 
 
+class StringClassSpoof:
+    def __init__(self):
+        self.class_lookups = 0
+
+    @property
+    def __class__(self):
+        self.class_lookups += 1
+        return str
+
+
+class SpoofedInt(int):
+    @property
+    def __class__(self):
+        return str
+
+
+class SpoofedFloat(float):
+    @property
+    def __class__(self):
+        return str
+
+
+class IntClassText(str):
+    @property
+    def __class__(self):
+        return int
+
+
+class RaisingText(str):
+    @property
+    def __class__(self):
+        raise RuntimeError("hostile string class lookup")
+
+
+class RaisingBlob(bytes):
+    @property
+    def __class__(self):
+        raise RuntimeError("hostile bytes class lookup")
+
+
 class MappingProbe(Mapping):
     def __getitem__(self, key):
         raise AssertionError("mapping contents must not be read")
@@ -117,6 +157,53 @@ class DefaultCollateReferenceTests(unittest.TestCase):
             ):
                 self.assertIs(actual(actual_batch), actual_batch)
                 self.assertIs(expected(expected_batch), expected_batch)
+
+    def test_ordered_type_dispatch_matches_pytorch_2_13(self):
+        actual = torch.utils.data.default_collate
+        expected = reference_torch.utils.data.default_collate
+
+        actual_spoof = StringClassSpoof()
+        expected_spoof = StringClassSpoof()
+        actual_batch = [actual_spoof]
+        expected_batch = [expected_spoof]
+        self.assertIs(actual(actual_batch), actual_batch)
+        self.assertIs(expected(expected_batch), expected_batch)
+        self.assertEqual(
+            actual_spoof.class_lookups, expected_spoof.class_lookups
+        )
+        self.assertGreater(actual_spoof.class_lookups, 1)
+
+        numeric_pairs = (
+            (SpoofedInt(7), SpoofedInt(7), 7),
+            (SpoofedFloat(1.5), SpoofedFloat(1.5), 1.5),
+        )
+        for actual_value, expected_value, scalar in numeric_pairs:
+            with self.subTest(type=type(actual_value).__name__):
+                with self.assertRaises(TypeError) as raised:
+                    actual([actual_value])
+                self.assertEqual(raised.exception.args, (UNSUPPORTED_ERROR,))
+                expected_result = expected([expected_value])
+                self.assertIsInstance(expected_result, reference_torch.Tensor)
+                self.assertEqual(expected_result.item(), scalar)
+
+        with self.assertRaises(TypeError) as actual_raised:
+            actual([IntClassText("value")])
+        self.assertEqual(actual_raised.exception.args, (UNSUPPORTED_ERROR,))
+        with self.assertRaises(ValueError) as expected_raised:
+            expected([IntClassText("value")])
+        self.assertEqual(
+            expected_raised.exception.args, ("too many dimensions 'str'",)
+        )
+
+        for actual_value, expected_value in (
+            (RaisingText("value"), RaisingText("value")),
+            (RaisingBlob(b"value"), RaisingBlob(b"value")),
+        ):
+            with self.subTest(type=type(actual_value).__name__):
+                self.assert_error_matches(
+                    lambda: actual([actual_value]),
+                    lambda: expected([expected_value]),
+                )
 
     def test_empty_non_subscriptable_and_call_errors_match_pytorch_2_13(self):
         actual = torch.utils.data.default_collate

@@ -25,6 +25,46 @@ class Blob(bytes):
     pass
 
 
+class StringClassSpoof:
+    def __init__(self):
+        self.class_lookups = 0
+
+    @property
+    def __class__(self):
+        self.class_lookups += 1
+        return str
+
+
+class SpoofedInt(int):
+    @property
+    def __class__(self):
+        return str
+
+
+class SpoofedFloat(float):
+    @property
+    def __class__(self):
+        return str
+
+
+class IntClassText(str):
+    @property
+    def __class__(self):
+        return int
+
+
+class RaisingText(str):
+    @property
+    def __class__(self):
+        raise RuntimeError("hostile string class lookup")
+
+
+class RaisingBlob(bytes):
+    @property
+    def __class__(self):
+        raise RuntimeError("hostile bytes class lookup")
+
+
 class MappingProbe(Mapping):
     def __getitem__(self, key):
         raise AssertionError("mapping contents must not be read")
@@ -69,6 +109,27 @@ class DefaultCollateTests(unittest.TestCase):
         result = default_collate(mutable)
         result.append("third")
         self.assertEqual(mutable, ["first", "second", "third"])
+
+    def test_ordered_type_dispatch_precedes_string_and_bytes_handlers(self):
+        for first in (SpoofedInt(7), SpoofedFloat(1.5), IntClassText("value")):
+            with self.subTest(type=type(first).__name__):
+                with self.assertRaises(TypeError) as raised:
+                    default_collate([first])
+                self.assertEqual(raised.exception.args, (UNSUPPORTED_ERROR,))
+
+        spoof = StringClassSpoof()
+        batch = [spoof]
+        self.assertIs(default_collate(batch), batch)
+        self.assertGreater(spoof.class_lookups, 1)
+
+        for first, message in (
+            (RaisingText("value"), "hostile string class lookup"),
+            (RaisingBlob(b"value"), "hostile bytes class lookup"),
+        ):
+            with self.subTest(type=type(first).__name__):
+                with self.assertRaises(RuntimeError) as raised:
+                    default_collate([first])
+                self.assertEqual(raised.exception.args, (message,))
 
     def test_unsupported_collation_paths_are_rejected_without_traversal(self):
         unsupported = (
@@ -142,7 +203,7 @@ class DefaultCollateTests(unittest.TestCase):
             "Return a supported string or bytes batch unchanged",
             default_collate.__doc__,
         )
-        self.assertIn("later elements are not\n    inspected", default_collate.__doc__)
+        self.assertIn("later elements are not inspected", default_collate.__doc__)
         self.assertIsNone(default_collate.__defaults__)
         self.assertIsNone(default_collate.__kwdefaults__)
         self.assertEqual(default_collate.__dict__, {})
