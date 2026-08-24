@@ -176,7 +176,14 @@ class FunctionalTanhTests(unittest.TestCase):
         self.assertEqual(args, (source,))
         self.assertIsNone(kwargs)
 
-    def test_existing_autograd_behavior_is_preserved(self):
+    def test_scalar_autograd_and_existing_unsupported_boundaries_are_preserved(self):
+        scalar = torch.tensor(0.5, requires_grad=True)
+        scalar_output = functional.tanh(input=scalar)
+        self.assertTrue(scalar_output.requires_grad)
+        self.assertFalse(scalar_output.is_leaf)
+        scalar_output.backward()
+        self.assertEqual(self.tensor_bits(scalar.grad).item(), 0x3F49_54A3)
+
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
         )
