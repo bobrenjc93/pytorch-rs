@@ -281,7 +281,7 @@ class FunctionalLinearTests(unittest.TestCase):
             for form, call in calls:
                 self.assert_matches_composition(call(), expected, case=(case, form))
 
-    def test_rank_one_bias_reuses_vector_composition_and_same_shape_add(self):
+    def test_rank_one_bias_values_layouts_and_storage(self):
         for case, input, weight, bias in self.vector_cases():
             expected = self.linear_composition(input, weight) + bias
             calls = (
@@ -315,6 +315,26 @@ class FunctionalLinearTests(unittest.TestCase):
                     self.assertFalse(actual.is_set_to(bias))
                     if actual.numel() != 0:
                         self.assertNotEqual(actual.data_ptr(), repeat.data_ptr())
+
+    def test_rank_one_bias_seeds_signed_zero_accumulators(self):
+        cases = (
+            ("negative zero product", [0.0], [[-0.0]], 0x80000000),
+            ("negative zero input", [-0.0], [[1.0]], 0x80000000),
+            ("positive zero product", [0.0], [[1.0]], 0x00000000),
+            ("opposite zero signs", [-0.0], [[-1.0]], 0x00000000),
+            ("zero features", [], [[]], 0x80000000),
+        )
+        for case, input_values, weight_values, expected_bits in cases:
+            output = functional.linear(
+                torch.tensor(input_values),
+                torch.tensor(weight_values),
+                torch.tensor([-0.0]),
+            )
+            with self.subTest(case=case):
+                self.assertEqual(
+                    np.asarray(output).reshape(-1).view(np.uint32).item(),
+                    expected_bits,
+                )
 
     def test_rank_three_layouts_reuse_flatten_transpose_matmul_and_reshape(self):
         for case, input, weight in self.rank_three_cases():

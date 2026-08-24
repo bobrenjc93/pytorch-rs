@@ -243,6 +243,20 @@ fn linear_vector_bias_size_error(out_features: usize, bias_features: usize) -> P
     ))
 }
 
+fn validate_linear_bias(input_rank: usize, bias: Option<&PyTensor>) -> PyResult<()> {
+    if bias.is_some() && input_rank != 1 {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.linear only supports bias for rank-1 input",
+        ));
+    }
+    if bias.is_some_and(|bias| bias.inner().shape().len() != 1) {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.linear only supports a rank-1 bias tensor",
+        ));
+    }
+    Ok(())
+}
+
 #[pyfunction]
 fn _nn_functional_linear(
     py: Python<'_>,
@@ -270,18 +284,7 @@ fn _nn_functional_linear(
             "torch_rs.nn.functional.linear only supports rank-1, rank-2, or rank-3 input and rank-2 weight tensors",
         ));
     }
-    if bias.is_some() && input_rank != 1 {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports bias for rank-1 input",
-        ));
-    }
-    if let Some(bias) = &bias
-        && bias.inner().shape().len() != 1
-    {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports a rank-1 bias tensor",
-        ));
-    }
+    validate_linear_bias(input_rank, bias.as_deref())?;
     if is_grad_enabled()
         && (input.inner().requires_grad()
             || weight.inner().requires_grad()
@@ -302,7 +305,12 @@ fn _nn_functional_linear(
         1 => input
             .inner()
             .unsqueeze_front()
-            .and_then(|input| input.matmul(&transposed_weight))
+            .and_then(|input| {
+                bias.as_ref().map_or_else(
+                    || input.matmul(&transposed_weight),
+                    |bias| input.matmul_with_row_bias(&transposed_weight, bias.inner()),
+                )
+            })
             .and_then(|output| output.squeeze_dim(0)),
         2 => input.inner().matmul(&transposed_weight),
         3 => {
@@ -337,19 +345,21 @@ fn _nn_functional_linear(
                 .and_then(|output| output.reshape(output_shape))
         }
         _ => unreachable!("linear input rank was validated above"),
-    }
-    .map_err(|error| tensor_error(&error))?;
-    let output = if let Some(bias) = bias {
-        let out_features = weight.inner().shape()[0];
-        let bias_features = bias.inner().shape()[0];
-        if bias_features != out_features {
-            return Err(linear_vector_bias_size_error(out_features, bias_features));
+    };
+    let output = match output {
+        Ok(output) => output,
+        Err(TensorError::ShapeMismatch { .. }) if bias.is_some() => {
+            let bias_features = bias
+                .as_ref()
+                .expect("only biased linear can report a bias shape mismatch")
+                .inner()
+                .shape()[0];
+            return Err(linear_vector_bias_size_error(
+                weight.inner().shape()[0],
+                bias_features,
+            ));
         }
-        output
-            .add(bias.inner())
-            .map_err(|error| tensor_error(&error))?
-    } else {
-        output
+        Err(error) => return Err(tensor_error(&error)),
     };
     PyTensor::new(output).into_py_any(py)
 }

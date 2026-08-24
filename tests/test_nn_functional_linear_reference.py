@@ -381,6 +381,38 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                         self.assertFalse(actual.is_set_to(actual_operand))
                         self.assertFalse(expected.is_set_to(expected_operand))
 
+    def test_vector_bias_signed_zero_bits_match(self):
+        cases = (
+            ("negative zero product", [0.0], [[-0.0]]),
+            ("negative zero input", [-0.0], [[1.0]]),
+            ("positive zero product", [0.0], [[1.0]]),
+            ("opposite zero signs", [-0.0], [[-1.0]]),
+            ("zero features", [], [[]]),
+        )
+        for case, input_values, weight_values in cases:
+            actual = functional.linear(
+                torch.tensor(input_values),
+                torch.tensor(weight_values),
+                torch.tensor([-0.0]),
+            )
+            expected = reference_functional.linear(
+                reference_torch.tensor(
+                    input_values,
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.tensor(
+                    weight_values,
+                    dtype=reference_torch.float32,
+                ),
+                reference_torch.tensor([-0.0], dtype=reference_torch.float32),
+            )
+            self.assert_matches(actual, expected, case=case)
+            with self.subTest(case=case, sign_bits=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual).reshape(-1).view(np.uint32),
+                    expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
+                )
+
     def test_vector_layouts_values_metadata_and_storage_match(self):
         actual_cases = self.make_vector_cases(torch)
         expected_cases = self.make_vector_cases(reference_torch)
