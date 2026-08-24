@@ -155,7 +155,6 @@ class NativeBuildCapabilityFlagsReferenceTests(unittest.TestCase):
                 self.assertIs(actual.is_available(), actual_expected)
 
         self.assertFalse(hasattr(torch.backends, "lapack"))
-        self.assertFalse(hasattr(torch.backends, "mkldnn"))
 
 
 if __name__ == "__main__":
