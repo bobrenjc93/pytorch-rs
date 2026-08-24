@@ -4243,9 +4243,18 @@ fn tensor(
 }
 
 #[pyfunction]
-fn _backward_leaf_roots(first: &PyTensor, second: &PyTensor) -> PyResult<()> {
-    CoreTensor::backward_leaf_roots(first.inner(), second.inner())
-        .map_err(|error| tensor_error(&error))
+#[pyo3(signature = (first, second, third=None))]
+fn _backward_leaf_roots(
+    first: &PyTensor,
+    second: &PyTensor,
+    third: Option<&PyTensor>,
+) -> PyResult<()> {
+    let result = if let Some(third) = third {
+        CoreTensor::backward_leaf_roots(&[first.inner(), second.inner(), third.inner()])
+    } else {
+        CoreTensor::backward_leaf_roots(&[first.inner(), second.inner()])
+    };
+    result.map_err(|error| tensor_error(&error))
 }
 
 fn scalar_tensor_impl(
