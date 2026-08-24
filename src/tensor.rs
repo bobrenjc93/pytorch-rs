@@ -2506,6 +2506,18 @@ impl Tensor {
     /// Returns an error unless both tensors are matrices with compatible inner
     /// dimensions.
     pub fn matmul(&self, other: &Self) -> Result<Self, TensorError> {
+        self.matmul_impl(other, false)
+    }
+
+    /// Multiplies two matrices with fused multiply-add accumulation.
+    ///
+    /// Callers use this only when matching an external matrix kernel whose
+    /// fused arithmetic affects finite-overflow and non-finite results.
+    pub(crate) fn matmul_with_fused_accumulation(&self, other: &Self) -> Result<Self, TensorError> {
+        self.matmul_impl(other, true)
+    }
+
+    fn matmul_impl(&self, other: &Self, fused_accumulation: bool) -> Result<Self, TensorError> {
         if self.shape.len() != 2 || other.shape.len() != 2 {
             return Err(TensorError::MatmulRequiresMatrices {
                 left: self.shape.clone(),
@@ -2526,7 +2538,9 @@ impl Tensor {
         output_shape.push(columns);
         let (output_elements, output_strides) = validated_layout(&output_shape)?;
         let mut output = filled_storage(output_elements, 0.0)?;
-        if let (Some(left_data), Some(right_data)) =
+        if fused_accumulation {
+            accumulate_fused_matmul(self, other, &mut output, rows, inner, columns)?;
+        } else if let (Some(left_data), Some(right_data)) =
             (self.contiguous_slice(), other.contiguous_slice())
         {
             accumulate_contiguous_matmul(left_data, right_data, &mut output, rows, inner, columns);
@@ -3961,6 +3975,37 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
+fn accumulate_fused_matmul(
+    left: &Tensor,
+    right: &Tensor,
+    output: &mut [f32],
+    rows: usize,
+    inner: usize,
+    columns: usize,
+) -> Result<(), TensorError> {
+    if output.is_empty() || inner == 0 {
+        return Ok(());
+    }
+    for (row, output_row) in output.chunks_exact_mut(columns).enumerate().take(rows) {
+        for depth in 0..inner {
+            let left_offset = checked_matrix_offset(left, row, depth)?;
+            let left_value = left
+                .storage
+                .value(left_offset)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            for (column, output_value) in output_row.iter_mut().enumerate() {
+                let right_offset = checked_matrix_offset(right, depth, column)?;
+                let right_value = right
+                    .storage
+                    .value(right_offset)
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
+                *output_value = left_value.mul_add(right_value, *output_value);
+            }
+        }
+    }
+    Ok(())
+}
+
 // Isolate contiguous code generation from the unchanged strided dispatch.
 #[inline(never)]
 fn accumulate_contiguous_matmul(
@@ -4901,6 +4946,49 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    #[test]
+    fn fused_matmul_accumulation_preserves_overflow_classification() {
+        let maximum = f32::MAX;
+        let left = Tensor::from_vec(vec![maximum; 8], [4, 2]).unwrap();
+        let mut right_values = vec![0.0; 32];
+        right_values[0] = maximum;
+        right_values[16] = -maximum;
+        let right = Tensor::from_vec(right_values, [2, 16]).unwrap();
+
+        let ordinary = left.matmul(&right).unwrap();
+        assert!(
+            ordinary
+                .as_slice()
+                .chunks_exact(16)
+                .all(|row| row[0].is_nan())
+        );
+
+        let fused = left.matmul_with_fused_accumulation(&right).unwrap();
+        for row in fused.as_slice().chunks_exact(16) {
+            assert_eq!(row[0].to_bits(), f32::INFINITY.to_bits());
+            assert!(row[1..].iter().all(|value| value.to_bits() == 0));
+        }
+
+        let non_finite_left = Tensor::from_vec(
+            vec![
+                f32::INFINITY,
+                maximum,
+                maximum,
+                maximum,
+                maximum,
+                maximum,
+                maximum,
+                maximum,
+            ],
+            [4, 2],
+        )
+        .unwrap();
+        let non_finite = non_finite_left
+            .matmul_with_fused_accumulation(&right)
+            .unwrap();
+        assert_eq!(non_finite.as_slice()[0].to_bits(), f32::INFINITY.to_bits());
     }
 
     #[test]

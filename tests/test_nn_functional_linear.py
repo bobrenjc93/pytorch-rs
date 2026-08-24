@@ -315,6 +315,28 @@ class FunctionalLinearTests(unittest.TestCase):
             for form, call in calls:
                 self.assert_matches_matmul(call(), expected, case=(case, form))
 
+    def test_rank_four_finite_overflow_matches_pytorch_kernel_classification(self):
+        maximum = np.finfo(np.float32).max
+        weight_values = np.zeros((16, 2), dtype=np.float32)
+        weight_values[0] = (maximum, -maximum)
+        weight = torch.tensor(weight_values.tolist())
+
+        folded_input = torch.tensor(
+            np.full((1, 1, 4, 2), maximum, dtype=np.float32).tolist()
+        )
+        folded_values = np.asarray(functional.linear(folded_input, weight))
+        self.assertTrue(np.isposinf(folded_values[..., 0]).all())
+        self.assertFalse(np.isnan(folded_values).any())
+        np.testing.assert_array_equal(folded_values[..., 1:], 0.0)
+
+        batched_input = torch.tensor(
+            np.full((2, 2, 1, 2), maximum, dtype=np.float32).tolist()
+        ).transpose(0, 1)
+        batched_values = np.asarray(functional.linear(batched_input, weight))
+        self.assertTrue(np.isnan(batched_values[..., 0]).all())
+        self.assertFalse(np.isinf(batched_values[..., 1:]).any())
+        np.testing.assert_array_equal(batched_values[..., 1:], 0.0)
+
     def test_every_call_returns_fresh_storage_including_empty_outputs(self):
         cases = tuple(
             (f"matrix {case}", input, weight)

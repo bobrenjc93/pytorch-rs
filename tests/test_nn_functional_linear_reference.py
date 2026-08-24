@@ -458,6 +458,61 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                     self.assertFalse(actual.is_set_to(actual_weight))
                     self.assertFalse(expected.is_set_to(expected_weight))
 
+    def test_rank_four_finite_overflow_classification_matches_pytorch_2_13(self):
+        maximum = np.finfo(np.float32).max
+        weight_values = np.zeros((16, 2), dtype=np.float32)
+        weight_values[0] = (maximum, -maximum)
+        actual_weight = torch.tensor(weight_values.tolist())
+        expected_weight = reference_torch.tensor(
+            weight_values,
+            dtype=reference_torch.float32,
+        )
+        input_cases = (
+            (
+                "folded matrix",
+                torch.tensor(
+                    np.full((1, 1, 4, 2), maximum, dtype=np.float32).tolist()
+                ),
+                reference_torch.full(
+                    (1, 1, 4, 2),
+                    float(maximum),
+                    dtype=reference_torch.float32,
+                ),
+            ),
+            (
+                "batched matrix",
+                torch.tensor(
+                    np.full((2, 2, 1, 2), maximum, dtype=np.float32).tolist()
+                ).transpose(0, 1),
+                reference_torch.full(
+                    (2, 2, 1, 2),
+                    float(maximum),
+                    dtype=reference_torch.float32,
+                ).transpose(0, 1),
+            ),
+        )
+
+        actual_classifications = {}
+        for case, actual_input, expected_input in input_cases:
+            actual = functional.linear(actual_input, actual_weight)
+            expected = reference_functional.linear(expected_input, expected_weight)
+            self.assert_matches(actual, expected, case=case)
+
+            actual_values = np.asarray(actual)
+            actual_classifications[case] = actual_values
+            expected_values = expected.detach().cpu().numpy()
+            for classification in (np.isnan, np.isposinf, np.isneginf):
+                with self.subTest(case=case, classification=classification.__name__):
+                    np.testing.assert_array_equal(
+                        classification(actual_values),
+                        classification(expected_values),
+                    )
+
+        self.assertTrue(
+            np.isposinf(actual_classifications["folded matrix"][..., 0]).all()
+        )
+        self.assertTrue(np.isnan(actual_classifications["batched matrix"][..., 0]).all())
+
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, weight_requires_grad in (
             (True, False),
