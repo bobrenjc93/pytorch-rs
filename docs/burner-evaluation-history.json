@@ -5937,6 +5937,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:867",
+      "recordedAt": "2026-08-24T22:31:42.629Z",
+      "label": "PR #867",
+      "kind": "leaf",
+      "prNumber": 867,
+      "title": "Differentiate Tensor.trunc with the zero-VJP node",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 90,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 72.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }

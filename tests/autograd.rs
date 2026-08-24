@@ -350,13 +350,39 @@ fn ceil_zero_vjp_ignores_upstream_values_composes_and_accumulates() {
 }
 
 #[test]
-fn trunc_rejects_recording_before_planning_and_honors_no_grad() {
+fn trunc_records_reusable_zero_vjp_for_views_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-1.25, -0.0, 1.75, 4.5], [2, 2])
         .unwrap()
         .with_requires_grad(true);
+    let output = leaf.transpose(0, 1).unwrap().trunc().unwrap();
+    assert_eq!(output.shape(), [2, 2]);
+    assert_eq!(output.stride(), [1, 2]);
+    assert_eq!(output.storage_offset(), 0);
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
+    assert!(!output.shares_storage_with(&leaf));
     assert_eq!(
-        leaf.trunc(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "trunc" })
+        output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        [
+            (-1.0_f32).to_bits(),
+            1.0_f32.to_bits(),
+            (-0.0_f32).to_bits(),
+            4.0_f32.to_bits(),
+        ]
+    );
+
+    let loss = output.sum();
+    loss.backward().unwrap();
+    loss.backward().unwrap();
+    assert!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .all(|gradient| gradient.to_bits() == 0.0_f32.to_bits())
     );
 
     let extreme = Tensor::zeros([0])
@@ -364,10 +390,7 @@ fn trunc_rejects_recording_before_planning_and_honors_no_grad() {
         .reshape([0, i64::MAX, 3])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(
-        extreme.trunc(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "trunc" })
-    );
+    assert_eq!(extreme.trunc(), Err(TensorError::StrideCalculationOverflow));
 
     {
         let _guard = no_grad();
@@ -397,6 +420,70 @@ fn trunc_rejects_recording_before_planning_and_honors_no_grad() {
     assert!(!detached.requires_grad());
     assert!(detached.is_leaf());
     assert!(!detached.shares_storage_with(&leaf));
+}
+
+#[test]
+fn trunc_zero_vjp_ignores_upstream_values_composes_and_accumulates() {
+    let special =
+        Tensor::from_vec(vec![f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.0], [4]).unwrap();
+    let leaf = Tensor::from_vec(vec![-1.25, -0.0, 1.75, 4.5], [4])
+        .unwrap()
+        .with_requires_grad(true);
+    leaf.trunc()
+        .unwrap()
+        .mul(&special)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .all(|gradient| gradient.to_bits() == 0.0_f32.to_bits())
+    );
+
+    let accumulated = Tensor::from_vec(vec![-2.0, 0.0, 3.0], [3])
+        .unwrap()
+        .with_requires_grad(true);
+    accumulated
+        .mul_scalar(3.0)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    accumulated.trunc().unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&accumulated.grad().unwrap().unwrap()),
+        [3.0, 3.0, 3.0]
+    );
+
+    let composed = Tensor::from_vec(vec![-0.5, 0.5], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let composed_loss = composed.sin().unwrap().trunc().unwrap().sum();
+    composed_loss.backward().unwrap();
+    assert_eq!(values(&composed.grad().unwrap().unwrap()), [0.0, 0.0]);
+    assert_eq!(
+        composed_loss.backward(),
+        Err(TensorError::BackwardGraphFreed)
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    empty
+        .transpose(0, 2)
+        .unwrap()
+        .index([1])
+        .unwrap()
+        .trunc()
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert!(values(&empty_gradient).is_empty());
 }
 
 #[test]
