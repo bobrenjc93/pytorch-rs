@@ -75,6 +75,16 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         empty_target = module.ones(
             (2, 0, 3), dtype=module.float32
         ).transpose(0, 2)
+        mixed_singleton_input = self.tensor(
+            module,
+            np.arange(6, dtype=np.float32).reshape(2, 1, 3).tolist(),
+        )
+        mixed_singleton_target = self.tensor(
+            module,
+            np.linspace(-1.0, 1.0, 6, dtype=np.float32)
+            .reshape(3, 1, 2)
+            .tolist(),
+        ).permute(2, 1, 0)
         same = self.tensor(module, [[1.0, -2.0], [3.0, -4.0]])
 
         return (
@@ -97,6 +107,11 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 offset_strided_target,
             ),
             ("channels last", channels_last_input, channels_last_target),
+            (
+                "mixed singleton strides",
+                mixed_singleton_input,
+                mixed_singleton_target,
+            ),
             ("same operand", same, same),
         )
 
@@ -239,6 +254,43 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
                 )
+
+    def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
+        actual_input = self.tensor(
+            torch,
+            np.arange(6, dtype=np.float32).reshape(2, 1, 3).tolist(),
+        )
+        actual_target = self.tensor(
+            torch,
+            np.linspace(-1.0, 1.0, 6, dtype=np.float32)
+            .reshape(3, 1, 2)
+            .tolist(),
+        ).permute(2, 1, 0)
+        expected_input = self.tensor(
+            reference_torch,
+            np.arange(6, dtype=np.float32).reshape(2, 1, 3).tolist(),
+        )
+        expected_target = self.tensor(
+            reference_torch,
+            np.linspace(-1.0, 1.0, 6, dtype=np.float32)
+            .reshape(3, 1, 2)
+            .tolist(),
+        ).permute(2, 1, 0)
+
+        self.assertEqual(actual_input.stride(), (3, 3, 1))
+        self.assertEqual(actual_target.stride(), (1, 2, 2))
+        actual = functional.mse_loss(
+            actual_input,
+            actual_target,
+            reduction="none",
+        )
+        expected = reference_functional.mse_loss(
+            expected_input,
+            expected_target,
+            reduction="none",
+        )
+        self.assertEqual(expected.stride(), (3, 6, 1))
+        self.assert_matches(actual, expected, case="mixed singleton strides")
 
     def test_float32_edge_bits_match_pytorch_2_13(self):
         input_values = [

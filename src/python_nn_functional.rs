@@ -439,7 +439,7 @@ fn _nn_functional_mse_loss(
     let output = input
         .inner()
         .sub(target.inner())
-        .and_then(|difference| difference.square())
+        .and_then(|difference| difference.square_preserving_strides())
         .map_err(|error| tensor_error(&error))?;
     PyTensor::new(output).into_py_any(py)
 }
