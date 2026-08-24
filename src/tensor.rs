@@ -4760,7 +4760,7 @@ fn relu_value(value: f32) -> f32 {
     }
 }
 
-fn floor_value(value: f32) -> f32 {
+fn round_value(value: f32, operation: fn(f32) -> f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
 
     let bits = value.to_bits();
@@ -4768,32 +4768,20 @@ fn floor_value(value: f32) -> f32 {
         // PyTorch quiets signaling NaNs while retaining their sign and payload.
         f32::from_bits(bits | QUIET_NAN_MASK)
     } else {
-        value.floor()
+        operation(value)
     }
+}
+
+fn floor_value(value: f32) -> f32 {
+    round_value(value, f32::floor)
 }
 
 fn ceil_value(value: f32) -> f32 {
-    const QUIET_NAN_MASK: u32 = 0x0040_0000;
-
-    let bits = value.to_bits();
-    if bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
-        // PyTorch quiets signaling NaNs while retaining their sign and payload.
-        f32::from_bits(bits | QUIET_NAN_MASK)
-    } else {
-        value.ceil()
-    }
+    round_value(value, f32::ceil)
 }
 
 fn trunc_value(value: f32) -> f32 {
-    const QUIET_NAN_MASK: u32 = 0x0040_0000;
-
-    let bits = value.to_bits();
-    if bits & !F32_SIGN_MASK > f32::INFINITY.to_bits() {
-        // PyTorch quiets signaling NaNs while retaining their sign and payload.
-        f32::from_bits(bits | QUIET_NAN_MASK)
-    } else {
-        value.trunc()
-    }
+    round_value(value, f32::trunc)
 }
 
 fn sigmoid_value(value: f32) -> f32 {
