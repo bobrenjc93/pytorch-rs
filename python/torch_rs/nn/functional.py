@@ -178,6 +178,31 @@ def tanh(input):
     return input.tanh()
 
 
+def _tanhshrink_impl(input):
+    if (
+        isinstance(input, Tensor)
+        and torch.is_grad_enabled()
+        and input.requires_grad
+    ):
+        raise RuntimeError("tanhshrink(): autograd recording is not supported")
+    return input - input.tanh()
+
+
+def tanhshrink(input):
+    r"""tanhshrink(input) -> Tensor
+
+    Applies element-wise, :math:`\text{Tanhshrink}(x) = x - \text{Tanh}(x)`
+
+    See :class:`~torch.nn.Tanhshrink` for more details.
+    """
+    return _dispatch_unary_torch_function(
+        tanhshrink,
+        _tanhshrink_impl,
+        input,
+        {},
+    )
+
+
 def linear(input: Tensor, weight: Tensor, bias: Tensor | None = None) -> Tensor:
     return _nn_functional_linear(input, weight, bias)
 
