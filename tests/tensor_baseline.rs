@@ -1488,6 +1488,50 @@ fn subtraction_matches_pytorch_non_finite_and_signed_zero_semantics() {
 }
 
 #[test]
+fn subtraction_selects_and_quiets_the_right_operand_for_paired_nans() {
+    let left = Tensor::from_vec(
+        [
+            0x7fc1_1111,
+            0xffc2_2222,
+            0x7f81_1111,
+            0xff82_2222,
+            0x7fc3_3333,
+            0x3f80_0000,
+        ]
+        .map(f32::from_bits)
+        .to_vec(),
+        [6],
+    )
+    .unwrap();
+    let right = Tensor::from_vec(
+        [
+            0xffc2_2222,
+            0x7fc1_1111,
+            0xff82_2222,
+            0x7f81_1111,
+            0x3f80_0000,
+            0xff83_3333,
+        ]
+        .map(f32::from_bits)
+        .to_vec(),
+        [6],
+    )
+    .unwrap();
+
+    let output = left.sub(&right).unwrap();
+    let expected = [
+        0xffc2_2222,
+        0x7fc1_1111,
+        0xffc2_2222,
+        0x7fc1_1111,
+        0x7fc3_3333,
+        0xffc3_3333,
+    ];
+
+    assert!(output.logical_values().map(f32::to_bits).eq(expected));
+}
+
+#[test]
 fn division_matches_pytorch_zero_non_finite_and_signed_zero_semantics() {
     let left = Tensor::from_vec(
         vec![

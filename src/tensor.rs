@@ -2340,7 +2340,7 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, |left, right| left - right)
+        self.zip_map(other, subtract_value)
     }
 
     /// Multiplies tensors element by element with trailing-dimension broadcasting.
@@ -2368,6 +2368,16 @@ impl Tensor {
             }));
         }
         Ok(output)
+    }
+
+    /// Computes the absolute value of every element using unary output layout planning.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn absolute(&self) -> Result<Self, TensorError> {
+        self.unary_map(f32::abs)
     }
 
     /// Squares every element through the shared-operand multiplication kernel.
@@ -4724,6 +4734,20 @@ fn negate_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
 }
 
+fn subtract_value(left: f32, right: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    if left.is_nan() && right.is_nan() {
+        // PyTorch's CPU subtraction selects the right operand's NaN payload
+        // and quiets signaling NaNs when both operands are NaNs. Spell this
+        // out so LLVM's scalar or vector instruction selection cannot reverse
+        // that observable payload precedence.
+        f32::from_bits(right.to_bits() | QUIET_NAN_MASK)
+    } else {
+        left - right
+    }
+}
+
 fn relu_value(value: f32) -> f32 {
     // Only exact zeros bypass the established max path, so FTZ/DAZ cannot
     // classify a subnormal as zero and NaN behavior remains unchanged.
@@ -5002,6 +5026,36 @@ mod tests {
                 .eq(preserved.logical_values().map(f32::to_bits))
         );
         assert_ne!(preserved.data_ptr(), difference.data_ptr());
+    }
+
+    #[test]
+    fn absolute_preserves_dense_strides_and_clears_float32_sign_bits() {
+        let bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let input = Tensor::from_vec(bits.map(f32::from_bits).to_vec(), [2, 4])
+            .unwrap()
+            .permute_axes([1, 0])
+            .unwrap();
+        let expected = input
+            .logical_values()
+            .map(|value| value.to_bits() & !F32_SIGN_MASK)
+            .collect::<Vec<_>>();
+
+        let output = input.absolute().unwrap();
+
+        assert_eq!(output.shape(), input.shape());
+        assert_eq!(output.stride(), input.stride());
+        assert_eq!(output.storage_offset(), 0);
+        assert!(output.logical_values().map(f32::to_bits).eq(expected));
+        assert_ne!(output.data_ptr(), input.data_ptr());
     }
 
     #[test]
