@@ -5,8 +5,17 @@ import types as _types
 import torch_rs as torch
 
 
+_CUDNN_TENSOR_DTYPES = {torch.float32}
+
+
 def is_available():
     r"""Return a bool indicating if CUDNN is currently available."""
+    return torch._C._has_cudnn
+
+
+def is_acceptable(tensor):
+    if tensor.device.type != "cuda" or tensor.dtype not in _CUDNN_TENSOR_DTYPES:
+        return False
     return torch._C._has_cudnn
 
 
