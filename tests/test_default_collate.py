@@ -2,9 +2,11 @@ import copy
 import importlib
 import inspect
 import pickle
+import sys
 import types
 import unittest
 from collections.abc import Mapping, Sequence
+from unittest import mock
 
 import torch_rs as torch
 
@@ -130,6 +132,28 @@ class DefaultCollateTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError) as raised:
                     default_collate([first])
                 self.assertEqual(raised.exception.args, (message,))
+
+    def test_partial_numpy_import_state_does_not_break_text_batches(self):
+        partial_modules = (
+            types.ModuleType("numpy"),
+            types.ModuleType("numpy"),
+            types.ModuleType("numpy"),
+        )
+        partial_modules[1].ndarray = type("ndarray", (), {})
+        partial_modules[2].bool_ = type("bool_", (), {})
+        partial_modules[2].number = type("number", (), {})
+
+        for partial_numpy in partial_modules:
+            with self.subTest(attributes=tuple(vars(partial_numpy))):
+                with mock.patch.dict(sys.modules, {"numpy": partial_numpy}):
+                    batches = (
+                        ["value"],
+                        (b"value",),
+                        [Text("value")],
+                        (Blob(b"value"),),
+                    )
+                    for batch in batches:
+                        self.assertIs(default_collate(batch), batch)
 
     def test_unsupported_collation_paths_are_rejected_without_traversal(self):
         unsupported = (

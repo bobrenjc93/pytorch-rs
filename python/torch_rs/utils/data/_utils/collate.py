@@ -19,6 +19,15 @@ def _collate_str_fn(batch, *, collate_fn_map=None):
     return batch
 
 
+_exact_collate_fn_map = {
+    _Tensor: _unsupported_collate_fn,
+    float: _unsupported_collate_fn,
+    int: _unsupported_collate_fn,
+    str: _collate_str_fn,
+    bytes: _collate_str_fn,
+}
+
+
 def _get_default_collate_fn_map():
     collate_fn_map = {_Tensor: _unsupported_collate_fn}
 
@@ -27,10 +36,20 @@ def _get_default_collate_fn_map():
     # has loaded NumPy, so reuse that module when present.
     numpy = _sys.modules.get("numpy")
     if numpy is not None:
-        collate_fn_map[numpy.ndarray] = _unsupported_collate_fn
-        collate_fn_map[
-            (numpy.bool_, numpy.number, numpy.object_)
-        ] = _unsupported_collate_fn
+        try:
+            numpy_namespace = vars(numpy)
+        except TypeError:
+            numpy_namespace = {}
+
+        numpy_array_type = numpy_namespace.get("ndarray")
+        if isinstance(numpy_array_type, type):
+            collate_fn_map[numpy_array_type] = _unsupported_collate_fn
+
+        numpy_scalar_types = tuple(
+            numpy_namespace.get(name) for name in ("bool_", "number", "object_")
+        )
+        if all(isinstance(numpy_type, type) for numpy_type in numpy_scalar_types):
+            collate_fn_map[numpy_scalar_types] = _unsupported_collate_fn
 
     collate_fn_map[float] = _unsupported_collate_fn
     collate_fn_map[int] = _unsupported_collate_fn
@@ -69,10 +88,13 @@ def default_collate(batch):
     """
     elem = batch[0]
     elem_type = type(elem)
-    collate_fn_map = _get_default_collate_fn_map()
 
-    if elem_type in collate_fn_map:
-        return collate_fn_map[elem_type](batch, collate_fn_map=collate_fn_map)
+    if elem_type in _exact_collate_fn_map:
+        return _exact_collate_fn_map[elem_type](
+            batch, collate_fn_map=_exact_collate_fn_map
+        )
+
+    collate_fn_map = _get_default_collate_fn_map()
 
     for collate_type, collate_fn in collate_fn_map.items():
         if isinstance(elem, collate_type):
