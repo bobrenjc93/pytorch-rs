@@ -2528,13 +2528,10 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn tanh(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" });
-        }
-        self.unary_map(tanh_value)
+        let output = self.unary_map(tanh_value)?;
+        self.finish_saved_output_unary_vjp(output, AutogradNode::Tanh, apply_tanh_vjp)
     }
 
     /// Computes the nonnegative square root of every element.
@@ -3407,6 +3404,21 @@ fn apply_exp_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
                 exp_backward_value(output.value_at_linear_index(index), value)
             }),
         );
+    }
+}
+
+fn apply_tanh_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // Borrow one exact saved range for row-contiguous layouts, including
+    // nonzero-offset views, instead of resolving layout and storage per value.
+    if let Some(saved_values) = output.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| tanh_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(upstream.iter().enumerate().map(|(index, &value)| {
+            tanh_backward_value(output.value_at_linear_index(index), value)
+        }));
     }
 }
 
@@ -4684,6 +4696,14 @@ fn exp_backward_value(output: f32, upstream: f32) -> f32 {
 }
 
 #[inline]
+fn tanh_backward_value(output: f32, upstream: f32) -> f32 {
+    // Match PyTorch's fused tanh backward kernel. Besides matching ordinary
+    // rounding, placing the negated output first preserves its NaN sign and
+    // payload through the fused multiply-add.
+    upstream * (-output).mul_add(output, 1.0)
+}
+
+#[inline]
 #[cfg(any(feature = "python-bindings", test))]
 fn square_backward_value(input: f32, upstream: f32) -> f32 {
     (2.0 * input) * upstream
@@ -4988,7 +5008,7 @@ mod tests {
 
     #[cfg(feature = "python-bindings")]
     #[test]
-    fn saved_input_unary_nodes_preserve_operation_specific_python_names() {
+    fn saved_unary_nodes_preserve_operation_specific_python_names() {
         let source = Tensor::from_vec(vec![-1.0, 0.5], [2])
             .unwrap()
             .with_requires_grad(true);
@@ -4996,6 +5016,7 @@ mod tests {
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
         assert_eq!(source.exp().unwrap().grad_fn_name(), Some("ExpBackward0"));
+        assert_eq!(source.tanh().unwrap().grad_fn_name(), Some("TanhBackward0"));
         assert_eq!(
             source.square().unwrap().grad_fn_name(),
             Some("PowBackward0")

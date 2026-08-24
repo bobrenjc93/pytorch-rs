@@ -76,45 +76,234 @@ fn reciprocal_rejects_recording_before_planning_and_honors_no_grad() {
 }
 
 #[test]
-fn tanh_rejects_recording_before_planning_and_honors_no_grad() {
-    let leaf = Tensor::from_vec(vec![-2.0, -0.0, 1.0, 4.0], [2, 2])
+fn tanh_preserves_scalar_empty_offset_and_strided_autograd_history() {
+    let scalar = Tensor::from_vec(vec![1.0], [])
         .unwrap()
         .with_requires_grad(true);
+    let scalar_output = scalar.tanh().unwrap();
+    assert!(scalar_output.requires_grad());
+    assert!(!scalar_output.is_leaf());
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert_eq!(scalar_output.storage_offset(), 0);
+    scalar_output.backward().unwrap();
+    let scalar_value = 1.0_f32.tanh();
     assert_eq!(
-        leaf.tanh(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        (-scalar_value).mul_add(scalar_value, 1.0).to_bits()
+    );
+    assert_eq!(
+        scalar_output.backward(),
+        Err(TensorError::BackwardGraphFreed)
     );
 
-    let extreme = Tensor::zeros([0])
-        .unwrap()
-        .reshape([0, i64::MAX, 3])
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_output = empty.tanh().unwrap();
+    assert!(empty_output.requires_grad());
+    assert!(!empty_output.is_leaf());
+    assert_eq!(empty_output.shape(), [2, 0, 3]);
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    assert_eq!(empty_output.storage_offset(), 0);
+    assert_eq!(empty_output.dtype(), empty.dtype());
+    assert_eq!(empty_output.device(), empty.device());
+    empty_output.sum().backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert_eq!(empty_gradient.stride(), [3, 3, 1]);
+    assert!(values(&empty_gradient).is_empty());
+
+    let offset_leaf = Tensor::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0], [2, 3])
         .unwrap()
         .with_requires_grad(true);
+    let offset = offset_leaf.index([1]).unwrap();
+    let offset_weights = Tensor::from_vec(vec![1.0, 2.0, 3.0], [3]).unwrap();
+    let offset_output = offset.tanh().unwrap();
+    assert!(offset_output.requires_grad());
+    assert!(!offset_output.is_leaf());
+    assert_eq!(offset.storage_offset(), 3);
+    assert_eq!(offset_output.shape(), [3]);
+    assert_eq!(offset_output.stride(), [1]);
+    assert_eq!(offset_output.storage_offset(), 0);
+    assert!(!offset_output.shares_storage_with(&offset));
+    offset_output
+        .mul(&offset_weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
     assert_eq!(
-        extreme.tanh(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
+        values(&offset_leaf.grad().unwrap().unwrap()),
+        [
+            0.0,
+            0.0,
+            0.0,
+            tanh_gradient(1.0, 1.0),
+            tanh_gradient(2.0, 2.0),
+            tanh_gradient(3.0, 3.0),
+        ]
     );
 
+    let strided_leaf = Tensor::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let strided = strided_leaf.transpose(0, 1).unwrap();
+    let strided_weights = Tensor::from_vec(vec![1.0, -2.0, 3.0, -4.0, 5.0, -6.0], [3, 2]).unwrap();
+    let strided_output = strided.tanh().unwrap();
+    assert!(strided_output.requires_grad());
+    assert!(!strided_output.is_leaf());
+    assert_eq!(strided_output.shape(), [3, 2]);
+    assert_eq!(strided_output.stride(), [1, 3]);
+    assert_eq!(strided_output.storage_offset(), 0);
+    assert!(!strided_output.shares_storage_with(&strided));
+    strided_output
+        .mul(&strided_weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        values(&strided_leaf.grad().unwrap().unwrap()),
+        [
+            tanh_gradient(-2.0, 1.0),
+            tanh_gradient(-1.0, 3.0),
+            tanh_gradient(0.0, 5.0),
+            tanh_gradient(1.0, -2.0),
+            tanh_gradient(2.0, -4.0),
+            tanh_gradient(3.0, -6.0),
+        ]
+    );
+}
+
+#[test]
+fn tanh_vjp_matches_pytorch_fused_rounding_subnormal_and_nonfinite_bits() {
+    // input, upstream, forward result, gradient
+    const CASES: [(u32, u32, u32, u32); 20] = [
+        (0x0000_0000, 0x3f80_0000, 0x0000_0000, 0x3f80_0000),
+        (0x8000_0000, 0xbf80_0000, 0x8000_0000, 0xbf80_0000),
+        (0x0000_0001, 0x0000_0001, 0x0000_0001, 0x0000_0001),
+        (0x8000_0001, 0x8000_0001, 0x8000_0001, 0x8000_0001),
+        (0x0080_0000, 0x0080_0000, 0x0080_0000, 0x0080_0000),
+        (0x8080_0000, 0x8080_0000, 0x8080_0000, 0x8080_0000),
+        (0x3eaa_aaab, 0x3f00_0000, 0x3ea4_9d52, 0x3ee5_8984),
+        (0xbeaa_aaab, 0xbf00_0000, 0xbea4_9d52, 0xbee5_8984),
+        (0x3f80_0000, 0x4000_0000, 0x3f42_f7d6, 0x3f57_06df),
+        (0xbf80_0000, 0xc000_0000, 0xbf42_f7d6, 0xbf57_06df),
+        (0x4000_0000, 0x7f80_0000, 0x3f76_ca83, 0x7f80_0000),
+        (0xc000_0000, 0xff80_0000, 0xbf76_ca83, 0xff80_0000),
+        (0x4120_0000, 0x3f80_0000, 0x3f80_0000, 0x0000_0000),
+        (0xc120_0000, 0xbf80_0000, 0xbf80_0000, 0x8000_0000),
+        (0x7f80_0000, 0x0000_0000, 0x3f80_0000, 0x0000_0000),
+        (0xff80_0000, 0x8000_0000, 0xbf80_0000, 0x8000_0000),
+        (0x7f81_2345, 0x3f80_0000, 0x7fc1_2345, 0x7fc1_2345),
+        (0xff81_2345, 0xbf80_0000, 0xffc1_2345, 0xffc1_2345),
+        (0x7fc1_2345, 0x7fc0_1234, 0x7fc1_2345, 0x7fc1_2345),
+        (0xffc5_4321, 0xffc0_5678, 0xffc5_4321, 0xffc5_4321),
+    ];
+    let leaf = Tensor::from_vec(
+        CASES
+            .iter()
+            .map(|&(input, _, _, _)| f32::from_bits(input))
+            .collect(),
+        [CASES.len()],
+    )
+    .unwrap()
+    .with_requires_grad(true);
+    let weights = Tensor::from_vec(
+        CASES
+            .iter()
+            .map(|&(_, upstream, _, _)| f32::from_bits(upstream))
+            .collect(),
+        [CASES.len()],
+    )
+    .unwrap();
+    let output = leaf.tanh().unwrap();
+    for (actual, (_, _, expected_bits, _)) in output.logical_values().zip(CASES) {
+        let expected = f32::from_bits(expected_bits);
+        if expected.is_nan() {
+            assert!(actual.is_nan());
+        } else {
+            assert_eq!(actual.to_bits(), expected_bits);
+        }
+    }
+
+    let loss = output.mul(&weights).unwrap().sum();
+    loss.backward().unwrap();
+    for (actual, (_, _, _, expected_bits)) in
+        leaf.grad().unwrap().unwrap().logical_values().zip(CASES)
+    {
+        let expected = f32::from_bits(expected_bits);
+        if expected.is_nan() {
+            assert!(actual.is_nan());
+        } else {
+            assert_eq!(actual.to_bits(), expected_bits);
+        }
+    }
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
+fn tanh_composes_accumulates_and_obeys_detach_and_no_grad() {
+    let accumulated = Tensor::from_vec(vec![-1.0, 0.0, 1.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    accumulated.tanh().unwrap().sum().backward().unwrap();
+    accumulated.tanh().unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&accumulated.grad().unwrap().unwrap()),
+        [
+            tanh_gradient(-1.0, 2.0),
+            2.0,
+            tanh_gradient(1.0, 2.0),
+            tanh_gradient(4.0, 2.0),
+        ]
+    );
+
+    let composed = Tensor::from_vec(vec![-1.0, 0.5, 2.0], [3])
+        .unwrap()
+        .with_requires_grad(true);
+    composed
+        .sin()
+        .unwrap()
+        .tanh()
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        values(&composed.grad().unwrap().unwrap()),
+        [-1.0_f32, 0.5, 2.0].map(|value| { tanh_gradient(value.sin(), 1.0) * value.cos() })
+    );
+
+    assert!(
+        !accumulated
+            .detach()
+            .unwrap()
+            .tanh()
+            .unwrap()
+            .requires_grad()
+    );
     {
         let _guard = no_grad();
-        let output = leaf.transpose(0, 1).unwrap().tanh().unwrap();
+        let output = accumulated.transpose(0, 1).unwrap().tanh().unwrap();
         assert_eq!(output.shape(), [2, 2]);
         assert_eq!(output.stride(), [1, 2]);
         assert_eq!(output.storage_offset(), 0);
         assert!(!output.requires_grad());
         assert!(output.is_leaf());
-        assert!(!output.shares_storage_with(&leaf));
-        assert_eq!(
-            output.logical_values().nth(2).unwrap().to_bits(),
-            0x8000_0000
-        );
+        assert!(!output.shares_storage_with(&accumulated));
+        let extreme = Tensor::zeros([0])
+            .unwrap()
+            .reshape([0, i64::MAX, 3])
+            .unwrap()
+            .with_requires_grad(true);
         assert_eq!(extreme.tanh(), Err(TensorError::StrideCalculationOverflow));
     }
+    assert!(accumulated.tanh().unwrap().requires_grad());
+}
 
-    let detached = leaf.detach().unwrap().tanh().unwrap();
-    assert!(!detached.requires_grad());
-    assert!(detached.is_leaf());
-    assert!(!detached.shares_storage_with(&leaf));
+fn tanh_gradient(input: f32, upstream: f32) -> f32 {
+    let output = input.tanh();
+    upstream * (-output).mul_add(output, 1.0)
 }
 
 #[test]

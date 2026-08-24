@@ -1,3 +1,4 @@
+import ctypes
 import inspect
 import json
 import subprocess
@@ -126,6 +127,44 @@ class TensorTanhReferenceTests(unittest.TestCase):
                 module.tensor(memoryview(special_bits.view(np.float32))),
             ),
         )
+
+    @staticmethod
+    def autograd_case(module, case):
+        if case == "scalar":
+            leaf = module.tensor(1.0, dtype=module.float32, requires_grad=True)
+            return leaf, leaf, None
+        if case == "empty":
+            leaf = module.zeros(
+                (2, 0, 3), dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf, None
+
+        values = np.linspace(-3.0, 3.0, 24, dtype=np.float32).reshape(2, 3, 4)
+        leaf = module.tensor(
+            values.tolist(), dtype=module.float32, requires_grad=True
+        )
+        if case == "contiguous":
+            weights = module.tensor(values.tolist(), dtype=module.float32)
+            return leaf, leaf, weights
+        if case == "offset":
+            source = leaf[1]
+            weights = module.tensor(
+                np.linspace(-2.0, 2.0, 12, dtype=np.float32)
+                .reshape(3, 4)
+                .tolist(),
+                dtype=module.float32,
+            )
+            return leaf, source, weights
+        if case == "strided":
+            source = leaf.transpose(0, 2)
+            weights = module.tensor(
+                np.linspace(-2.0, 2.0, 24, dtype=np.float32)
+                .reshape(4, 3, 2)
+                .tolist(),
+                dtype=module.float32,
+            )
+            return leaf, source, weights
+        raise AssertionError(f"unknown Tensor.tanh autograd case: {case}")
 
     def test_values_layouts_offsets_empty_tensors_and_storage_match_pytorch(self):
         actual_cases = self.make_cases(torch)
@@ -337,29 +376,245 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
-    def test_inference_only_and_unsupported_boundaries_remain_explicit(self):
-        actual_leaf = torch.tensor([0.5, -1.0], requires_grad=True)
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^tanh\(\): autograd recording is not supported$",
-        ):
-            actual_leaf.tanh()
+    def test_autograd_scalar_empty_contiguous_offset_and_strided_match_pytorch_2_13(
+        self,
+    ):
+        for case in ("scalar", "empty", "contiguous", "offset", "strided"):
+            actual_leaf, actual_input, actual_weights = self.autograd_case(torch, case)
+            expected_leaf, expected_input, expected_weights = self.autograd_case(
+                reference_torch, case
+            )
+            actual_output = actual_input.tanh()
+            expected_output = expected_input.tanh()
+            self.assert_tensor_matches(
+                actual_output, expected_output, case=(case, "forward")
+            )
+            self.assertFalse(actual_output.is_set_to(actual_input))
+            self.assertFalse(expected_output.is_set_to(expected_input))
 
-        expected_leaf = reference_torch.tensor(
-            [0.5, -1.0], dtype=reference_torch.float32, requires_grad=True
+            if actual_weights is None:
+                actual_loss = actual_output if case == "scalar" else actual_output.sum()
+                expected_loss = (
+                    expected_output if case == "scalar" else expected_output.sum()
+                )
+            else:
+                actual_loss = (actual_output * actual_weights).sum()
+                expected_loss = (expected_output * expected_weights).sum()
+            actual_loss.backward()
+            expected_loss.backward()
+            self.assert_tensor_matches(
+                actual_leaf.grad,
+                expected_leaf.grad,
+                case=(case, "gradient"),
+            )
+
+    def test_autograd_special_values_match_pytorch_2_13_bits(self):
+        input_bits = np.asarray(
+            (
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x0080_0000,
+                0x8080_0000,
+                0x3EAA_AAAB,
+                0xBEAA_AAAB,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x4000_0000,
+                0xC000_0000,
+                0x4120_0000,
+                0xC120_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7F81_2345,
+                0xFF81_2345,
+                0x7FC1_2345,
+                0xFFC5_4321,
+            ),
+            dtype=np.uint32,
         )
-        self.assertTrue(expected_leaf.tanh().requires_grad)
+        weight_bits = np.asarray(
+            (
+                0x3F80_0000,
+                0xBF80_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F00_0000,
+                0xBF00_0000,
+                0x4000_0000,
+                0xC000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x0000_0000,
+                0x8000_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7FC0_1234,
+                0xFFC0_5678,
+            ),
+            dtype=np.uint32,
+        )
+        tensors = []
+        for module in (torch, reference_torch):
+            leaf = module.tensor(
+                memoryview(input_bits.view(np.float32)), requires_grad=True
+            )
+            weights = module.tensor(memoryview(weight_bits.view(np.float32)))
+            output = leaf.tanh()
+            (output * weights).sum().backward()
+            tensors.append((output, leaf.grad))
 
+        self.assert_tensor_matches(
+            tensors[0][0], tensors[1][0], case="special forward", exact_bits=True
+        )
+        self.assert_tensor_matches(
+            tensors[0][1], tensors[1][1], case="special gradient", exact_bits=True
+        )
+
+    def test_backward_uses_saved_forward_result_across_rounding_mode_changes(self):
+        try:
+            runtime = ctypes.CDLL(None)
+            fegetround = runtime.fegetround
+            fesetround = runtime.fesetround
+        except (AttributeError, OSError):
+            self.skipTest("the platform C runtime does not expose fenv controls")
+        fegetround.argtypes = []
+        fegetround.restype = ctypes.c_int
+        fesetround.argtypes = [ctypes.c_int]
+        fesetround.restype = ctypes.c_int
+
+        original_rounding = fegetround()
+        input_bits = np.asarray([0x411C_49E2], dtype=np.uint32)
+
+        try:
+            if fesetround(0) != 0 or fegetround() != 0:
+                self.skipTest("the platform does not expose round-to-nearest as zero")
+
+            downward_rounding = None
+            for candidate in (0x400, 0x80_0000):
+                if fesetround(candidate) != 0 or fegetround() != candidate:
+                    continue
+                probe = torch.tensor(memoryview(input_bits.view(np.float32))).tanh()
+                probe_bits = np.asarray(probe, dtype=np.float32).view(np.uint32).item()
+                if probe_bits == 0x3F7F_FFFF:
+                    downward_rounding = candidate
+                    break
+            if downward_rounding is None:
+                self.skipTest("native tanh is not sensitive to available fenv modes")
+
+            self.assertEqual(fesetround(0), 0)
+            actual_leaf = torch.tensor(
+                memoryview(input_bits.view(np.float32)), requires_grad=True
+            )
+            expected_leaf = reference_torch.tensor(
+                input_bits.view(np.float32), requires_grad=True
+            )
+            actual_output = actual_leaf.tanh()
+            expected_output = expected_leaf.tanh()
+
+            self.assertEqual(fesetround(downward_rounding), 0)
+            actual_output.backward()
+            expected_output.backward()
+        finally:
+            self.assertEqual(fesetround(original_rounding), 0)
+
+        actual_output_bits = (
+            np.asarray(actual_output, dtype=np.float32).view(np.uint32).item()
+        )
+        expected_output_bits = expected_output.detach().numpy().view(np.uint32).item()
+        actual_gradient_bits = (
+            np.asarray(actual_leaf.grad, dtype=np.float32).view(np.uint32).item()
+        )
+        expected_gradient_bits = (
+            expected_leaf.grad.detach().numpy().view(np.uint32).item()
+        )
+        self.assertEqual(actual_output_bits, 0x3F80_0000)
+        self.assertEqual(actual_output_bits, expected_output_bits)
+        self.assertEqual(actual_gradient_bits, 0x8000_0000)
+        self.assertEqual(actual_gradient_bits, expected_gradient_bits)
+
+    def test_tanh_backward_node_identity_matches_pytorch_2_13(self):
+        errors = []
+        for module in (torch, reference_torch):
+            probability = module.tensor(
+                [-1.0], dtype=module.float32, requires_grad=True
+            ).tanh()
+            try:
+                module.nn.functional.dropout(
+                    module.tensor([1.0], dtype=module.float32),
+                    p=probability,
+                    training=False,
+                )
+            except Exception as error:
+                errors.append((type(error).__name__, str(error)))
+            else:
+                self.fail("dropout unexpectedly accepted a tanh probability")
+
+        self.assertEqual(errors[0], errors[1])
+        self.assertIn("grad_fn=<TanhBackward0>", errors[0][1])
+
+    def test_composition_accumulation_repeated_backward_and_no_grad_match(self):
+        snapshots = []
+        for module in (torch, reference_torch):
+            composed = module.tensor(
+                [-1.0, 0.5, 2.0], dtype=module.float32, requires_grad=True
+            )
+            composed.sin().tanh().sum().backward()
+            composed_gradient = np.asarray(composed.grad, dtype=np.float32).copy()
+
+            accumulated = module.tensor(
+                [-1.0, 0.0, 1.0, 4.0],
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            accumulated.tanh().sum().backward()
+            first = np.asarray(accumulated.grad, dtype=np.float32).copy()
+            accumulated.tanh().sum().backward()
+            second = np.asarray(accumulated.grad, dtype=np.float32).copy()
+
+            freed = module.tensor(
+                [-1.0, 0.0, 1.0], dtype=module.float32, requires_grad=True
+            )
+            loss = freed.tanh().sum()
+            loss.backward()
+            repeated_backward = self.error(loss.backward)
+            snapshots.append((composed_gradient, first, second, repeated_backward))
+
+        for index in range(3):
+            np.testing.assert_allclose(
+                snapshots[0][index],
+                snapshots[1][index],
+                rtol=2.0e-6,
+                atol=np.nextafter(np.float32(0), np.float32(1)),
+            )
+        self.assertEqual(snapshots[0][3], snapshots[1][3])
+
+        actual_leaf = torch.tensor(
+            [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]], requires_grad=True
+        )
+        expected_leaf = reference_torch.tensor(
+            [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]], requires_grad=True
+        )
         with torch.no_grad():
-            actual_no_grad = actual_leaf.tanh()
+            actual = actual_leaf.transpose(0, 1)[1].tanh()
         with reference_torch.no_grad():
-            expected_no_grad = expected_leaf.tanh()
-        self.assert_tensor_matches(actual_no_grad, expected_no_grad, case="no_grad")
+            expected = expected_leaf.transpose(0, 1)[1].tanh()
+        self.assert_tensor_matches(actual, expected, case="no_grad")
+        self.assertIsNone(actual_leaf.grad)
+        self.assertTrue(actual_leaf.tanh().requires_grad)
 
-        actual_detached = actual_leaf.detach().tanh()
-        expected_detached = expected_leaf.detach().tanh()
-        self.assert_tensor_matches(actual_detached, expected_detached, case="detached")
+        self.assert_tensor_matches(
+            actual_leaf.detach().tanh(),
+            expected_leaf.detach().tanh(),
+            case="detached input",
+        )
 
+    def test_unsupported_functional_and_inplace_boundaries_remain_explicit(self):
         self.assertFalse(hasattr(torch, "tanh"))
         self.assertTrue(hasattr(reference_torch, "tanh"))
         self.assertFalse(hasattr(torch.nn.functional, "tanh"))
@@ -370,4 +625,3 @@ print(json.dumps({
 
 if __name__ == "__main__":
     unittest.main()
-

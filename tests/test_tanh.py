@@ -137,25 +137,55 @@ class TensorTanhTests(unittest.TestCase):
                     atol=np.nextafter(np.float32(0), np.float32(1)),
                 )
 
-    def test_active_autograd_is_rejected_and_detached_and_no_grad_inputs_work(self):
+    def test_autograd_name_lifecycle_accumulation_detach_and_no_grad(self):
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
         )
         source = leaf.transpose(0, 1)[1]
+        output = source.tanh()
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        self.assertEqual(output.shape, source.shape)
+        self.assertEqual(output.stride(), (1,))
+        self.assertEqual(output.storage_offset(), 0)
+        self.assertFalse(output.is_set_to(source))
 
+        weights = torch.tensor([2.0, -3.0])
+        (output * weights).sum().backward()
+        expected = np.zeros((2, 3), dtype=np.float32)
+        source_values = np.asarray(source.detach(), dtype=np.float32)
+        expected[:, 1] = np.asarray(weights) * (1.0 - np.tanh(source_values) ** 2)
+        np.testing.assert_allclose(
+            np.asarray(leaf.grad),
+            expected,
+            rtol=3.0e-5,
+            atol=np.nextafter(np.float32(0), np.float32(1)),
+        )
+
+        probability = torch.tensor([-1.0], requires_grad=True).tanh()
+        with self.assertRaisesRegex(ValueError, r"grad_fn=<TanhBackward0>"):
+            torch.nn.functional.dropout(
+                torch.tensor([1.0]), p=probability, training=False
+            )
+
+        freed = torch.tensor([-1.0, 0.5, 2.0], requires_grad=True)
+        loss = freed.tanh().sum()
+        loss.backward()
         with self.assertRaisesRegex(
-            RuntimeError,
-            r"^tanh\(\): autograd recording is not supported$",
+            RuntimeError, "backward through the graph a second time"
         ):
-            source.tanh()
+            loss.backward()
+
+        accumulated = torch.tensor([-1.0, 0.5, 2.0], requires_grad=True)
+        accumulated.tanh().sum().backward()
+        first = np.asarray(accumulated.grad).copy()
+        accumulated.tanh().sum().backward()
+        np.testing.assert_array_equal(np.asarray(accumulated.grad), first * 2.0)
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^tanh\(\): autograd recording is not supported$",
-        ):
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             extreme.tanh()
 
         with torch.no_grad():
@@ -289,31 +319,35 @@ class TensorTanhTests(unittest.TestCase):
                 order.append(self.label)
                 return func(*args, **(kwargs or {}))
 
-        plain = torch.tensor([0.5])
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
-                forwarded = plain.tanh()
+                forwarded = tensor.tanh()
         self.assertEqual(order, ["upper", "lower"])
         np.testing.assert_allclose(forwarded.tolist(), [0.46211717], rtol=1.0e-6)
-
-        order.clear()
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^tanh\(\): autograd recording is not supported$",
-        ):
-            with ForwardingMode("lower"):
-                with ForwardingMode("upper"):
-                    tensor.tanh()
-        self.assertEqual(order, ["upper", "lower"])
+        forwarded.backward()
+        expected_gradient = 1.0 - np.tanh(np.float32(0.5)) ** 2
+        np.testing.assert_allclose(
+            np.asarray(tensor.grad), [expected_gradient], rtol=2.0e-6
+        )
 
         invalid_mode = RecordingMode()
         with self.assertRaises(TypeError):
             with invalid_mode:
-                plain.tanh(1)
+                tensor.tanh(1)
         self.assertEqual(invalid_mode.calls, [])
 
     def test_top_level_functional_and_inplace_forms_remain_unsupported(self):
         tensor = torch.tensor([0.5])
+        tracked = torch.tensor([0.5], requires_grad=True)
+        loss = tracked.tanh().sum()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.autograd\.backward does not support create_graph=True$",
+        ):
+            torch.autograd.backward(loss, create_graph=True)
+        self.assertIsNone(tracked.grad)
+        loss.backward()
+
         self.assertFalse(hasattr(torch, "tanh"))
         self.assertNotIn("tanh", torch.__all__)
         self.assertFalse(hasattr(torch.nn.functional, "tanh"))
@@ -327,4 +361,3 @@ class TensorTanhTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
