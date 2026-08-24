@@ -76,6 +76,48 @@ fn reciprocal_rejects_recording_before_planning_and_honors_no_grad() {
 }
 
 #[test]
+fn tanh_rejects_recording_before_planning_and_honors_no_grad() {
+    let leaf = Tensor::from_vec(vec![-2.0, -0.0, 1.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(
+        leaf.tanh(),
+        Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
+    );
+
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(
+        extreme.tanh(),
+        Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
+    );
+
+    {
+        let _guard = no_grad();
+        let output = leaf.transpose(0, 1).unwrap().tanh().unwrap();
+        assert_eq!(output.shape(), [2, 2]);
+        assert_eq!(output.stride(), [1, 2]);
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.requires_grad());
+        assert!(output.is_leaf());
+        assert!(!output.shares_storage_with(&leaf));
+        assert_eq!(
+            output.logical_values().nth(2).unwrap().to_bits(),
+            0x8000_0000
+        );
+        assert_eq!(extreme.tanh(), Err(TensorError::StrideCalculationOverflow));
+    }
+
+    let detached = leaf.detach().unwrap().tanh().unwrap();
+    assert!(!detached.requires_grad());
+    assert!(detached.is_leaf());
+    assert!(!detached.shares_storage_with(&leaf));
+}
+
+#[test]
 fn leaf_gradient_snapshots_preserve_the_contiguous_slice_contract() {
     let leaf = Tensor::from_vec(vec![2.0, 3.0], [2])
         .unwrap()
