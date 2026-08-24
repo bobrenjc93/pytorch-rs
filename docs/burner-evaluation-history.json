@@ -5617,6 +5617,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96
       }
+    },
+    {
+      "key": "pr:792",
+      "recordedAt": "2026-08-24T03:00:27.347Z",
+      "label": "PR #792",
+      "kind": "leaf",
+      "prNumber": 792,
+      "title": "Add bias to vector functional.linear only",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 87.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 70.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96
+      }
     }
   ]
 }

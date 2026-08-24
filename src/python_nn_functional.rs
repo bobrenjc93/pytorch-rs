@@ -14,6 +14,8 @@ use crate::{
 
 const LINEAR_EXACT_TENSORS_ERROR: &str =
     "linear() only supports exact native Tensor input and weight operands";
+const LINEAR_EXACT_BIAS_ERROR: &str =
+    "linear() only supports an exact native Tensor bias or bias=None";
 
 const DROPOUT_METADATA: [DropoutMetadata; 6] = [
     DropoutMetadata {
@@ -225,6 +227,36 @@ fn exact_linear_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, Py
         .clone())
 }
 
+fn exact_linear_bias<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
+    if !value.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(LINEAR_EXACT_BIAS_ERROR));
+    }
+    Ok(value
+        .cast::<PyTensor>()
+        .expect("an exact PyTensor instance must downcast")
+        .clone())
+}
+
+fn linear_vector_bias_size_error(out_features: usize, bias_features: usize) -> PyErr {
+    PyRuntimeError::new_err(format!(
+        "The expanded size of the tensor ({out_features}) must match the existing size ({bias_features}) at non-singleton dimension 1.  Target sizes: [1, {out_features}].  Tensor sizes: [{bias_features}]"
+    ))
+}
+
+fn validate_linear_bias(input_rank: usize, bias: Option<&PyTensor>) -> PyResult<()> {
+    if bias.is_some() && input_rank != 1 {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.linear only supports bias for rank-1 input",
+        ));
+    }
+    if bias.is_some_and(|bias| bias.inner().shape().len() != 1) {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.linear only supports a rank-1 bias tensor",
+        ));
+    }
+    Ok(())
+}
+
 #[pyfunction]
 fn _nn_functional_linear(
     py: Python<'_>,
@@ -237,23 +269,29 @@ fn _nn_functional_linear(
             "linear() does not support an active TorchFunctionMode",
         ));
     }
-    if !bias.is_none() {
-        return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports bias=None",
-        ));
-    }
 
     let input = exact_linear_tensor(input)?;
     let weight = exact_linear_tensor(weight)?;
+    let bias = (!bias.is_none())
+        .then(|| exact_linear_bias(bias))
+        .transpose()?;
     let input = input.try_borrow()?;
     let weight = weight.try_borrow()?;
+    let bias = bias.as_ref().map(Bound::try_borrow).transpose()?;
     let input_rank = input.inner().shape().len();
     if !matches!(input_rank, 1..=3) || weight.inner().shape().len() != 2 {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.linear only supports rank-1, rank-2, or rank-3 input and rank-2 weight tensors",
         ));
     }
-    if is_grad_enabled() && (input.inner().requires_grad() || weight.inner().requires_grad()) {
+    validate_linear_bias(input_rank, bias.as_deref())?;
+    if is_grad_enabled()
+        && (input.inner().requires_grad()
+            || weight.inner().requires_grad()
+            || bias
+                .as_ref()
+                .is_some_and(|bias| bias.inner().requires_grad()))
+    {
         return Err(PyRuntimeError::new_err(
             "linear(): autograd recording is not supported",
         ));
@@ -267,7 +305,12 @@ fn _nn_functional_linear(
         1 => input
             .inner()
             .unsqueeze_front()
-            .and_then(|input| input.matmul(&transposed_weight))
+            .and_then(|input| {
+                bias.as_ref().map_or_else(
+                    || input.matmul(&transposed_weight),
+                    |bias| input.matmul_with_row_bias(&transposed_weight, bias.inner()),
+                )
+            })
             .and_then(|output| output.squeeze_dim(0)),
         2 => input.inner().matmul(&transposed_weight),
         3 => {
@@ -302,8 +345,22 @@ fn _nn_functional_linear(
                 .and_then(|output| output.reshape(output_shape))
         }
         _ => unreachable!("linear input rank was validated above"),
-    }
-    .map_err(|error| tensor_error(&error))?;
+    };
+    let output = match output {
+        Ok(output) => output,
+        Err(TensorError::ShapeMismatch { .. }) if bias.is_some() => {
+            let bias_features = bias
+                .as_ref()
+                .expect("only biased linear can report a bias shape mismatch")
+                .inner()
+                .shape()[0];
+            return Err(linear_vector_bias_size_error(
+                weight.inner().shape()[0],
+                bias_features,
+            ));
+        }
+        Err(error) => return Err(tensor_error(&error)),
+    };
     PyTensor::new(output).into_py_any(py)
 }
 
