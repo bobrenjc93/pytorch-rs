@@ -120,6 +120,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
         for backend, flag in (
             ("openmp", "has_openmp"),
             ("mkl", "has_mkl"),
+            ("mkldnn", "_has_mkldnn"),
             ("nnpack", None),
         ):
             with self.subTest(backend=backend):
@@ -132,10 +133,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
                 )
                 self.assertIs(module.is_available(), expected)
 
-        for module_name in (
-            "torch_rs.backends.lapack",
-            "torch_rs.backends.mkldnn",
-        ):
+        for module_name in ("torch_rs.backends.lapack",):
             with self.subTest(module=module_name):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)

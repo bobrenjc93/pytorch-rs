@@ -151,7 +151,14 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             {
                 name
                 for name in expected_parent_wildcard
-                if name in {"cuda", "cudnn", "mkl", "nnpack", "openmp"}
+                if name in {
+                    "cuda",
+                    "cudnn",
+                    "mkl",
+                    "mkldnn",
+                    "nnpack",
+                    "openmp",
+                }
             },
         )
 
