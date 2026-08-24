@@ -165,6 +165,19 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             )
         raise AssertionError(f"unknown form: {form}")
 
+    @staticmethod
+    def run_arbitrary_root_backward(module, roots, form):
+        gradients = [None] * len(roots)
+        if form == "omitted":
+            return module.autograd.backward(roots)
+        if form == "explicit None":
+            return module.autograd.backward(roots, grad_tensors=None)
+        if form == "tuple grad_tensors":
+            return module.autograd.backward(roots, tuple(gradients))
+        if form == "list grad_tensors":
+            return module.autograd.backward(roots, grad_tensors=gradients)
+        raise AssertionError(f"unknown form: {form}")
+
     def two_leaf_outcome(self, module, root_sequence_type, form):
         scalar_leaf = module.tensor(2.0, requires_grad=True)
         strided_leaf = module.tensor([[3.0]], requires_grad=True)
@@ -352,6 +365,35 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             np.asarray(distinct.grad).copy(),
         )
         second_result = self.run_four_root_backward(module, roots, form)
+        second_gradients = (
+            np.asarray(duplicate.grad).copy(),
+            np.asarray(distinct.grad).copy(),
+        )
+        return (
+            first_result,
+            second_result,
+            duplicate.grad is existing_gradient,
+            first_gradients,
+            second_gradients,
+        )
+
+    def arbitrary_length_outcome(
+        self, module, root_count, root_sequence_type, form
+    ):
+        duplicate = module.tensor([1.0], requires_grad=True)
+        distinct = module.tensor([[2.0]], requires_grad=True)
+        (duplicate * 16_777_216.0).backward()
+        existing_gradient = duplicate.grad
+        roots = [duplicate] * root_count
+        roots[root_count // 2] = distinct
+        roots = root_sequence_type(roots)
+
+        first_result = self.run_arbitrary_root_backward(module, roots, form)
+        first_gradients = (
+            np.asarray(duplicate.grad).copy(),
+            np.asarray(distinct.grad).copy(),
+        )
+        second_result = self.run_arbitrary_root_backward(module, roots, form)
         second_gradients = (
             np.asarray(duplicate.grad).copy(),
             np.asarray(distinct.grad).copy(),
@@ -610,6 +652,45 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                             np.testing.assert_array_equal(
                                 actual_gradient, expected_gradient
                             )
+
+    def test_arbitrary_length_leaf_roots_match_pytorch_2_13(self):
+        forms = (
+            "omitted",
+            "explicit None",
+            "tuple grad_tensors",
+            "list grad_tensors",
+        )
+        for root_count in (5, 8, 32):
+            for root_sequence_type in (tuple, list):
+                for form in forms:
+                    with self.subTest(
+                        root_count=root_count,
+                        root_sequence_type=root_sequence_type,
+                        form=form,
+                    ):
+                        actual = self.arbitrary_length_outcome(
+                            torch, root_count, root_sequence_type, form
+                        )
+                        expected = self.arbitrary_length_outcome(
+                            reference_torch,
+                            root_count,
+                            root_sequence_type,
+                            form,
+                        )
+                        self.assertIsNone(actual[0])
+                        self.assertIsNone(actual[1])
+                        self.assertIsNone(expected[0])
+                        self.assertIsNone(expected[1])
+                        self.assertEqual(actual[2], expected[2])
+                        for actual_gradients, expected_gradients in zip(
+                            actual[3:], expected[3:]
+                        ):
+                            for actual_gradient, expected_gradient in zip(
+                                actual_gradients, expected_gradients
+                            ):
+                                np.testing.assert_array_equal(
+                                    actual_gradient, expected_gradient
+                                )
 
     def test_three_roots_with_duplicates_match_pytorch_2_13(self):
         forms = (

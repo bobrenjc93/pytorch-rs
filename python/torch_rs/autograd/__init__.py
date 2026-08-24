@@ -39,8 +39,14 @@ def _require_supported_leaf_roots(roots):
             root_count = "two roots when both"
         elif len(roots) == 3:
             root_count = "three roots when all three"
-        else:
+        elif len(roots) == 4:
             root_count = "four roots when all four"
+        else:
+            raise NotImplementedError(
+                "torch_rs.autograd.backward only supports "
+                "multiple roots when every root is a one-element native leaf "
+                "Tensor requiring gradients"
+            )
         raise NotImplementedError(
             "torch_rs.autograd.backward only supports "
             f"{root_count} "
@@ -52,20 +58,15 @@ def _normalize_roots(tensors):
     if type(tensors) is _Tensor:
         return (tensors,)
     if type(tensors) is tuple or type(tensors) is list:
-        if len(tensors) == 0:
-            return ()
-        if len(tensors) == 1 and type(tensors[0]) is _Tensor:
-            return (tensors[0],)
-        if len(tensors) in (2, 3, 4) and all(
-            type(root) is _Tensor for root in tensors
-        ):
+        if all(type(root) is _Tensor for root in tensors):
             roots = tuple(tensors)
-            _require_supported_leaf_roots(roots)
+            if len(roots) >= 2:
+                _require_supported_leaf_roots(roots)
             return roots
     raise TypeError(
         "torch_rs.autograd.backward only supports an exact native Tensor, "
-        "directly or in an exact tuple or list containing at most four exact "
-        "native Tensors"
+        "directly or in an exact tuple or list containing only exact native "
+        "Tensors"
     )
 
 
@@ -165,7 +166,7 @@ def backward(
         )
 
     if len(roots) >= 2:
-        _backward_leaf_roots(*roots)
+        _backward_leaf_roots(roots)
     elif roots:
         roots[0].backward()
 
