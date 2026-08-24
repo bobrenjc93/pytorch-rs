@@ -5777,6 +5777,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:824",
+      "recordedAt": "2026-08-24T12:15:15.781Z",
+      "label": "PR #824",
+      "kind": "leaf",
+      "prNumber": 824,
+      "title": "Add inference-only Tensor.floor",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 88.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 71.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
