@@ -460,40 +460,31 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
 
     def test_rank_four_finite_overflow_classification_matches_pytorch_2_13(self):
         maximum = np.finfo(np.float32).max
-        weight_values = np.zeros((16, 2), dtype=np.float32)
-        weight_values[0] = (maximum, -maximum)
-        actual_weight = torch.tensor(weight_values.tolist())
-        expected_weight = reference_torch.tensor(
-            weight_values,
-            dtype=reference_torch.float32,
-        )
-        input_cases = (
-            (
-                "folded matrix",
-                torch.tensor(
-                    np.full((1, 1, 4, 2), maximum, dtype=np.float32).tolist()
-                ),
-                reference_torch.full(
-                    (1, 1, 4, 2),
-                    float(maximum),
-                    dtype=reference_torch.float32,
-                ),
-            ),
-            (
-                "batched matrix",
-                torch.tensor(
-                    np.full((2, 2, 1, 2), maximum, dtype=np.float32).tolist()
-                ).transpose(0, 1),
-                reference_torch.full(
-                    (2, 2, 1, 2),
-                    float(maximum),
-                    dtype=reference_torch.float32,
-                ).transpose(0, 1),
-            ),
+        case_metadata = (
+            ("complete tiles", (1, 1, 4, 2), 16, False),
+            ("column remainder", (1, 1, 4, 2), 12, False),
+            ("row remainder", (1, 1, 5, 2), 16, False),
+            ("batched matrix", (2, 2, 1, 2), 16, True),
         )
 
         actual_classifications = {}
-        for case, actual_input, expected_input in input_cases:
+        for case, shape, out_features, transpose in case_metadata:
+            input_values = np.full(shape, maximum, dtype=np.float32)
+            weight_values = np.zeros((out_features, 2), dtype=np.float32)
+            weight_values[0] = (maximum, -maximum)
+            actual_input = torch.tensor(input_values.tolist())
+            expected_input = reference_torch.tensor(
+                input_values,
+                dtype=reference_torch.float32,
+            )
+            if transpose:
+                actual_input = actual_input.transpose(0, 1)
+                expected_input = expected_input.transpose(0, 1)
+            actual_weight = torch.tensor(weight_values.tolist())
+            expected_weight = reference_torch.tensor(
+                weight_values,
+                dtype=reference_torch.float32,
+            )
             actual = functional.linear(actual_input, actual_weight)
             expected = reference_functional.linear(expected_input, expected_weight)
             self.assert_matches(actual, expected, case=case)
@@ -509,9 +500,33 @@ class FunctionalLinearReferenceTests(unittest.TestCase):
                     )
 
         self.assertTrue(
-            np.isposinf(actual_classifications["folded matrix"][..., 0]).all()
+            np.isposinf(actual_classifications["complete tiles"][..., 0]).all()
+        )
+        self.assertTrue(
+            np.isposinf(actual_classifications["column remainder"][..., 0]).all()
+        )
+        self.assertTrue(
+            np.isposinf(actual_classifications["row remainder"][..., 0]).all()
         )
         self.assertTrue(np.isnan(actual_classifications["batched matrix"][..., 0]).all())
+
+    def test_rank_four_negative_zero_bits_match_pytorch_2_13(self):
+        actual = functional.linear(
+            torch.zeros((1, 1, 4, 1)),
+            torch.tensor([[-1.0]] * 16),
+        )
+        expected = reference_functional.linear(
+            reference_torch.zeros((1, 1, 4, 1), dtype=reference_torch.float32),
+            -reference_torch.ones((16, 1), dtype=reference_torch.float32),
+        )
+        self.assert_matches(actual, expected, case="negative zero")
+        np.testing.assert_array_equal(
+            np.asarray(actual).view(np.uint32),
+            expected.numpy().view(np.uint32),
+        )
+        self.assertTrue(
+            (np.asarray(actual).view(np.uint32) == np.uint32(0x80000000)).all()
+        )
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, weight_requires_grad in (

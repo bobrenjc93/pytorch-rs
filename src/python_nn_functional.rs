@@ -14,8 +14,8 @@ use crate::{
 
 const LINEAR_EXACT_TENSORS_ERROR: &str =
     "linear() only supports exact native Tensor input and weight operands";
-const LINEAR_FUSED_MATMUL_ROW_BLOCK: usize = 4;
-const LINEAR_FUSED_MATMUL_COLUMN_BLOCK: usize = 16;
+const LINEAR_FUSED_MATMUL_MIN_ROWS: usize = 4;
+const LINEAR_FUSED_MATMUL_MIN_COLUMNS: usize = 12;
 
 const DROPOUT_METADATA: [DropoutMetadata; 6] = [
     DropoutMetadata {
@@ -311,16 +311,13 @@ fn _nn_functional_linear(
                 .inner()
                 .flatten(0, flatten_end)
                 .and_then(|input| {
-                    // PyTorch 2.13's folded CPU GEMM evaluates complete 4x16
-                    // output tiles with fused accumulation. Restrict this path
-                    // to complete tiles because its remainder kernels have
-                    // distinct non-finite behavior.
+                    // PyTorch 2.13 selects its fused CPU GEMM path at four
+                    // folded rows and twelve output columns, including row and
+                    // column remainders.
                     if input_rank == 4
                         && folds_to_matrix
-                        && input.shape()[0] >= LINEAR_FUSED_MATMUL_ROW_BLOCK
-                        && input.shape()[0].is_multiple_of(LINEAR_FUSED_MATMUL_ROW_BLOCK)
-                        && weight_shape[0] >= LINEAR_FUSED_MATMUL_COLUMN_BLOCK
-                        && weight_shape[0].is_multiple_of(LINEAR_FUSED_MATMUL_COLUMN_BLOCK)
+                        && input.shape()[0] >= LINEAR_FUSED_MATMUL_MIN_ROWS
+                        && weight_shape[0] >= LINEAR_FUSED_MATMUL_MIN_COLUMNS
                     {
                         input.matmul_with_fused_accumulation(&transposed_weight)
                     } else {

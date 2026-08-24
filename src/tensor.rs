@@ -2509,10 +2509,14 @@ impl Tensor {
         self.matmul_impl(other, false)
     }
 
-    /// Multiplies two matrices with fused multiply-add accumulation.
+    /// Multiplies two matrices and recomputes special results with fused
+    /// multiply-add accumulation.
     ///
-    /// Callers use this only when matching an external matrix kernel whose
-    /// fused arithmetic affects finite-overflow and non-finite results.
+    /// The ordinary borrowed-storage kernels remain the primary path.
+    /// Indeterminate outputs and single-product zeros are retried to match an
+    /// external fused matrix kernel's overflow classification and signed-zero
+    /// behavior without penalizing ordinary matrix products.
+    #[cfg(feature = "python-bindings")]
     pub(crate) fn matmul_with_fused_accumulation(&self, other: &Self) -> Result<Self, TensorError> {
         self.matmul_impl(other, true)
     }
@@ -2538,9 +2542,7 @@ impl Tensor {
         output_shape.push(columns);
         let (output_elements, output_strides) = validated_layout(&output_shape)?;
         let mut output = filled_storage(output_elements, 0.0)?;
-        if fused_accumulation {
-            accumulate_fused_matmul(self, other, &mut output, rows, inner, columns)?;
-        } else if let (Some(left_data), Some(right_data)) =
+        if let (Some(left_data), Some(right_data)) =
             (self.contiguous_slice(), other.contiguous_slice())
         {
             accumulate_contiguous_matmul(left_data, right_data, &mut output, rows, inner, columns);
@@ -2591,6 +2593,9 @@ impl Tensor {
                     }
                 }
             }
+        }
+        if fused_accumulation {
+            recover_fused_matmul_special_values(self, other, &mut output, rows, inner, columns)?;
         }
         Ok(Self::from_owned_parts(
             output,
@@ -3975,7 +3980,7 @@ fn checked_matrix_offset(tensor: &Tensor, row: usize, column: usize) -> Result<u
         .ok_or(TensorError::IndexCalculationOverflow)
 }
 
-fn accumulate_fused_matmul(
+fn recover_fused_matmul_special_values(
     left: &Tensor,
     right: &Tensor,
     output: &mut [f32],
@@ -3986,21 +3991,38 @@ fn accumulate_fused_matmul(
     if output.is_empty() || inner == 0 {
         return Ok(());
     }
+
     for (row, output_row) in output.chunks_exact_mut(columns).enumerate().take(rows) {
-        for depth in 0..inner {
-            let left_offset = checked_matrix_offset(left, row, depth)?;
+        for (column, output_value) in output_row.iter_mut().enumerate() {
+            if !output_value.is_nan() && (inner != 1 || *output_value != 0.0) {
+                continue;
+            }
+
+            let left_offset = checked_matrix_offset(left, row, 0)?;
+            let right_offset = checked_matrix_offset(right, 0, column)?;
             let left_value = left
                 .storage
                 .value(left_offset)
                 .ok_or(TensorError::IndexCalculationOverflow)?;
-            for (column, output_value) in output_row.iter_mut().enumerate() {
+            let right_value = right
+                .storage
+                .value(right_offset)
+                .ok_or(TensorError::IndexCalculationOverflow)?;
+            let mut fused_value = left_value * right_value;
+            for depth in 1..inner {
+                let left_offset = checked_matrix_offset(left, row, depth)?;
                 let right_offset = checked_matrix_offset(right, depth, column)?;
+                let left_value = left
+                    .storage
+                    .value(left_offset)
+                    .ok_or(TensorError::IndexCalculationOverflow)?;
                 let right_value = right
                     .storage
                     .value(right_offset)
                     .ok_or(TensorError::IndexCalculationOverflow)?;
-                *output_value = left_value.mul_add(right_value, *output_value);
+                fused_value = left_value.mul_add(right_value, fused_value);
             }
+            *output_value = fused_value;
         }
     }
     Ok(())
@@ -4948,6 +4970,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "python-bindings")]
     #[test]
     fn fused_matmul_accumulation_preserves_overflow_classification() {
         let maximum = f32::MAX;
@@ -4989,6 +5012,16 @@ mod tests {
             .matmul_with_fused_accumulation(&right)
             .unwrap();
         assert_eq!(non_finite.as_slice()[0].to_bits(), f32::INFINITY.to_bits());
+
+        let zero = Tensor::zeros([4, 1]).unwrap();
+        let negative = Tensor::from_vec(vec![-1.0; 16], [1, 16]).unwrap();
+        let signed_zero = zero.matmul_with_fused_accumulation(&negative).unwrap();
+        assert!(
+            signed_zero
+                .as_slice()
+                .iter()
+                .all(|value| value.to_bits() == (-0.0_f32).to_bits())
+        );
     }
 
     #[test]

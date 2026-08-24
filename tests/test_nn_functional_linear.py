@@ -317,18 +317,24 @@ class FunctionalLinearTests(unittest.TestCase):
 
     def test_rank_four_finite_overflow_matches_pytorch_kernel_classification(self):
         maximum = np.finfo(np.float32).max
+        for case, shape, out_features in (
+            ("complete tiles", (1, 1, 4, 2), 16),
+            ("column remainder", (1, 1, 4, 2), 12),
+            ("row remainder", (1, 1, 5, 2), 16),
+        ):
+            weight_values = np.zeros((out_features, 2), dtype=np.float32)
+            weight_values[0] = (maximum, -maximum)
+            input = torch.tensor(np.full(shape, maximum, dtype=np.float32).tolist())
+            weight = torch.tensor(weight_values.tolist())
+            values = np.asarray(functional.linear(input, weight))
+            with self.subTest(case=case):
+                self.assertTrue(np.isposinf(values[..., 0]).all())
+                self.assertFalse(np.isnan(values).any())
+                np.testing.assert_array_equal(values[..., 1:], 0.0)
+
         weight_values = np.zeros((16, 2), dtype=np.float32)
         weight_values[0] = (maximum, -maximum)
         weight = torch.tensor(weight_values.tolist())
-
-        folded_input = torch.tensor(
-            np.full((1, 1, 4, 2), maximum, dtype=np.float32).tolist()
-        )
-        folded_values = np.asarray(functional.linear(folded_input, weight))
-        self.assertTrue(np.isposinf(folded_values[..., 0]).all())
-        self.assertFalse(np.isnan(folded_values).any())
-        np.testing.assert_array_equal(folded_values[..., 1:], 0.0)
-
         batched_input = torch.tensor(
             np.full((2, 2, 1, 2), maximum, dtype=np.float32).tolist()
         ).transpose(0, 1)
@@ -336,6 +342,14 @@ class FunctionalLinearTests(unittest.TestCase):
         self.assertTrue(np.isnan(batched_values[..., 0]).all())
         self.assertFalse(np.isinf(batched_values[..., 1:]).any())
         np.testing.assert_array_equal(batched_values[..., 1:], 0.0)
+
+    def test_rank_four_fused_accumulation_preserves_negative_zero(self):
+        output = functional.linear(
+            torch.zeros((1, 1, 4, 1)),
+            torch.tensor([[-1.0]] * 16),
+        )
+        expected_bits = np.full(output.shape, 0x80000000, dtype=np.uint32)
+        np.testing.assert_array_equal(np.asarray(output).view(np.uint32), expected_bits)
 
     def test_every_call_returns_fresh_storage_including_empty_outputs(self):
         cases = tuple(
