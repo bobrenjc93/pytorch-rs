@@ -2,6 +2,7 @@ import inspect
 import math
 import pickle
 import re
+import struct
 import types
 import unittest
 
@@ -20,6 +21,10 @@ class ArangeTests(unittest.TestCase):
         self.assertEqual(tensor.storage_offset(), 0)
         self.assertEqual(tensor.numel(), len(values))
         self.assertEqual(tensor.tolist(), values)
+        self.assertEqual(
+            tuple(struct.pack("=f", value) for value in tensor.tolist()),
+            tuple(struct.pack("=f", value) for value in values),
+        )
         self.assertIs(tensor.dtype, torch.float32)
         self.assertEqual(tensor.device, torch.device("cpu"))
         self.assertIs(tensor.layout, torch.strided)
@@ -29,6 +34,17 @@ class ArangeTests(unittest.TestCase):
     def assert_error(self, call, error_type, message):
         with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
             call()
+
+    def two_bound_calls(self, start, end):
+        return (
+            ("positional", lambda: torch.arange(start, end)),
+            ("keyword", lambda: torch.arange(start=start, end=end)),
+            (
+                "keyword-reversed",
+                lambda: torch.arange(**{"end": end, "start": start}),
+            ),
+            ("mixed", lambda: torch.arange(start, end=end)),
+        )
 
     def test_exact_float_endpoint_supports_positional_and_keyword_forms(self):
         cases = (
@@ -47,6 +63,59 @@ class ArangeTests(unittest.TestCase):
                 ("keyword", lambda end=end: torch.arange(end=end)),
             ):
                 with self.subTest(end=end, form=form):
+                    self.assert_default_tensor(call(), expected)
+
+    def test_two_bound_exact_floats_support_all_argument_forms_and_rounding(self):
+        cases = (
+            (-2.5, 2.5, [-2.5, -1.5, -0.5, 0.5, 1.5]),
+            (-0.25, 2.25, [-0.25, 0.75, 1.75]),
+            (0.25, 3.25, [0.25, 1.25, 2.25]),
+            (-math.nextafter(0.0, 1.0), 2.0, [-0.0, 1.0]),
+            (
+                -math.nextafter(0.0, 1.0),
+                16.0,
+                [-0.0, *[float(index) for index in range(1, 16)]],
+            ),
+            (math.nextafter(1.0, 0.0), 3.0, [1.0, 2.0]),
+            (math.nextafter(1.0, 2.0), 3.0, [1.0, 2.0]),
+            (1.0, math.nextafter(3.0, 0.0), [1.0, 2.0]),
+            (1.0, math.nextafter(3.0, math.inf), [1.0, 2.0, 3.0]),
+            (
+                16_777_216.5,
+                16_777_220.5,
+                [16_777_216.0, 16_777_218.0, 16_777_218.0, 16_777_220.0],
+            ),
+            (
+                -16_777_220.5,
+                -16_777_216.5,
+                [-16_777_220.0, -16_777_220.0, -16_777_218.0, -16_777_218.0],
+            ),
+            (
+                16_777_216.5,
+                16_777_232.5,
+                [
+                    16_777_216.0,
+                    16_777_216.0,
+                    16_777_218.0,
+                    16_777_220.0,
+                    16_777_220.0,
+                    16_777_220.0,
+                    16_777_222.0,
+                    16_777_224.0,
+                    16_777_224.0,
+                    16_777_224.0,
+                    16_777_226.0,
+                    16_777_228.0,
+                    16_777_228.0,
+                    16_777_228.0,
+                    16_777_230.0,
+                    16_777_232.0,
+                ],
+            ),
+        )
+        for start, end, expected in cases:
+            for form, call in self.two_bound_calls(start, end):
+                with self.subTest(start=start, end=end, form=form):
                     self.assert_default_tensor(call(), expected)
 
     def test_default_equivalent_metadata_is_accepted(self):
@@ -76,11 +145,23 @@ class ArangeTests(unittest.TestCase):
             },
         )
         for options in option_cases:
-            with self.subTest(options=options):
-                self.assert_default_tensor(
-                    torch.arange(end=2.5, **options),
-                    [0.0, 1.0, 2.0],
-                )
+            calls = (
+                ("one-bound", lambda: torch.arange(end=2.5, **options)),
+                ("positional", lambda: torch.arange(-0.5, 2.5, **options)),
+                (
+                    "keyword",
+                    lambda: torch.arange(start=-0.5, end=2.5, **options),
+                ),
+                ("mixed", lambda: torch.arange(-0.5, end=2.5, **options)),
+            )
+            for form, call in calls:
+                with self.subTest(options=options, form=form):
+                    expected = (
+                        [0.0, 1.0, 2.0]
+                        if form == "one-bound"
+                        else [-0.5, 0.5, 1.5]
+                    )
+                    self.assert_default_tensor(call(), expected)
 
     def test_each_result_owns_fresh_storage(self):
         first = torch.arange(8.5)
@@ -95,6 +176,17 @@ class ArangeTests(unittest.TestCase):
         self.assertEqual(empty_first.data_ptr(), 0)
         self.assertEqual(empty_second.data_ptr(), 0)
         self.assertFalse(empty_first.is_set_to(empty_second))
+
+        bounded_first = torch.arange(-2.5, 3.0)
+        bounded_second = torch.arange(start=-2.5, end=3.0)
+        self.assertNotEqual(bounded_first.data_ptr(), bounded_second.data_ptr())
+        self.assertFalse(bounded_first.is_set_to(bounded_second))
+
+        bounded_empty_first = torch.arange(2.5, 2.5)
+        bounded_empty_second = torch.arange(2.5, end=2.5)
+        self.assertEqual(bounded_empty_first.data_ptr(), 0)
+        self.assertEqual(bounded_empty_second.data_ptr(), 0)
+        self.assertFalse(bounded_empty_first.is_set_to(bounded_empty_second))
 
     def test_negative_and_nonfinite_endpoints_match_pytorch_errors(self):
         for end in (-math.nextafter(0.0, 1.0), -0.25, -1.0):
@@ -122,6 +214,32 @@ class ArangeTests(unittest.TestCase):
                     f"unsupported range: 0 -> {rendered}",
                 )
 
+    def test_two_bound_equal_reversed_and_nonfinite_ranges_match_pytorch(self):
+        for start, end in ((0.0, -0.0), (-2.5, -2.5), (1.0e100, 1.0e100)):
+            for form, call in self.two_bound_calls(start, end):
+                with self.subTest(start=start, end=end, form=form):
+                    self.assert_default_tensor(call(), [])
+
+        for start, end in ((0.25, -0.25), (-2.5, -3.0), (1.0e100, -1.0e100)):
+            for form, call in self.two_bound_calls(start, end):
+                with self.subTest(start=start, end=end, form=form):
+                    self.assert_error(
+                        call,
+                        RuntimeError,
+                        "upper bound and lower bound inconsistent with step sign",
+                    )
+
+        cases = (
+            (float("nan"), 3.0, "unsupported range: nan -> 3"),
+            (float("-nan"), -2.5, "unsupported range: -nan -> -2.5"),
+            (-0.25, float("inf"), "unsupported range: -0.25 -> inf"),
+            (1.0e6, float("-inf"), "unsupported range: 1e+06 -> -inf"),
+        )
+        for start, end, message in cases:
+            for form, call in self.two_bound_calls(start, end):
+                with self.subTest(start=start, end=end, form=form):
+                    self.assert_error(call, RuntimeError, message)
+
     def test_oversized_endpoints_fail_before_allocation(self):
         cases = (
             (
@@ -141,24 +259,67 @@ class ArangeTests(unittest.TestCase):
                     lambda end=end: torch.arange(end), RuntimeError, message
                 )
 
-    def test_int_overloads_outputs_and_nondefault_options_remain_unsupported(self):
+    def test_oversized_two_bound_ranges_fail_before_allocation(self):
+        cases = (
+            (
+                -math.nextafter(float(2**63), 0.0),
+                0.0,
+                "Storage size calculation overflowed with sizes=[9223372036854774784]",
+            ),
+            (
+                -float(2**63),
+                0.0,
+                "IntArrayRef contains an int that cannot be represented as a SymInt: -9223372036854775808",
+            ),
+            (
+                -math.nextafter(float(2**63), math.inf),
+                0.0,
+                "invalid size, possible overflow?",
+            ),
+            (-1.0e308, 1.0e308, "invalid size, possible overflow?"),
+        )
+        for start, end, message in cases:
+            for form, call in self.two_bound_calls(start, end):
+                with self.subTest(start=start, end=end, form=form):
+                    self.assert_error(call, RuntimeError, message)
+
+    def test_integer_bounds_steps_outputs_and_nondefault_options_remain_unsupported(self):
+        for call in (lambda: torch.arange(), lambda: torch.arange(end=None)):
+            with self.subTest(call=call):
+                self.assert_error(
+                    call,
+                    TypeError,
+                    "arange() missing required argument 'end'",
+                )
+
         for endpoint in (3, True, FloatSubclass(3.0), np.float64(3.0)):
             with self.subTest(endpoint=endpoint):
                 with self.assertRaises(TypeError):
                     torch.arange(endpoint)
 
+        bounds = (
+            lambda: torch.arange(0, 3.0),
+            lambda: torch.arange(0.0, 3),
+            lambda: torch.arange(start=0, end=3.0),
+            lambda: torch.arange(0.0, end=np.float64(3.0)),
+            lambda: torch.arange(FloatSubclass(0.0), 3.0),
+        )
+        for call in bounds:
+            with self.subTest(call=call):
+                with self.assertRaises(TypeError):
+                    call()
+
         overloads = (
-            lambda: torch.arange(0.0, 3.0),
             lambda: torch.arange(0.0, 3.0, 1.0),
-            lambda: torch.arange(2.5, end=3.0),
-            lambda: torch.arange(start=0.0, end=3.0),
+            lambda: torch.arange(0.0, 3.0, step=1.0),
+            lambda: torch.arange(start=0.0, end=3.0, step=1.0),
             lambda: torch.arange(3.0, step=1.0),
         )
         for call in overloads:
             with self.subTest(call=call):
                 with self.assertRaisesRegex(
                     TypeError,
-                    r"^arange\(\): start and step overloads are not supported",
+                    r"^arange\(\): explicit steps and malformed overloads are not supported",
                 ):
                     call()
 
@@ -176,6 +337,11 @@ class ArangeTests(unittest.TestCase):
             lambda: torch.arange(2.5, device="cuda"),
             lambda: torch.arange(2.5, pin_memory=True),
             lambda: torch.arange(2.5, requires_grad=True),
+            lambda: torch.arange(0.0, 2.5, dtype=object()),
+            lambda: torch.arange(0.0, 2.5, layout=object()),
+            lambda: torch.arange(0.0, 2.5, device="cuda"),
+            lambda: torch.arange(0.0, 2.5, pin_memory=True),
+            lambda: torch.arange(0.0, 2.5, requires_grad=True),
         )
         for call in unsupported_options:
             with self.subTest(call=call):
@@ -204,8 +370,18 @@ class ArangeTests(unittest.TestCase):
         cases = (
             (lambda: torch.arange(2.5), (2.5,), None),
             (lambda: torch.arange(end=2.5), (), {"end": 2.5}),
+            (lambda: torch.arange(-0.5, 2.5), (-0.5, 2.5), None),
+            (
+                lambda: torch.arange(start=-0.5, end=2.5),
+                (),
+                {"start": -0.5, "end": 2.5},
+            ),
+            (
+                lambda: torch.arange(-0.5, end=2.5),
+                (-0.5,),
+                {"end": 2.5},
+            ),
             (lambda: torch.arange(3), (3,), None),
-            (lambda: torch.arange(0.0, 3.0), (0.0, 3.0), None),
         )
         for call, expected_args, expected_kwargs in cases:
             mode = RecordingMode()
@@ -251,21 +427,21 @@ class ArangeTests(unittest.TestCase):
         upper = ForwardingMode("upper")
         with lower:
             with upper:
-                result = torch.arange(end=2.5)
+                result = torch.arange(-0.5, end=2.5)
                 self.assertEqual(
                     torch.overrides._get_current_function_mode_stack(), [lower, upper]
                 )
             self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
         self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
-        self.assert_default_tensor(result, [0.0, 1.0, 2.0])
+        self.assert_default_tensor(result, [-0.5, 0.5, 1.5])
         self.assertEqual(
             [
                 (label, stack, function is torch.arange, types, args, kwargs)
                 for label, stack, function, types, args, kwargs in events
             ],
             [
-                ("upper", ("lower",), True, (), (), {"end": 2.5}),
-                ("lower", (), True, (), (), {"end": 2.5}),
+                ("upper", ("lower",), True, (), (-0.5,), {"end": 2.5}),
+                ("lower", (), True, (), (-0.5,), {"end": 2.5}),
             ],
         )
 
