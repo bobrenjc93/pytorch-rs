@@ -26,12 +26,12 @@ use crate::python::{
     reciprocal_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
     scalar_tensor_variable_function, select_variable_function, sin_variable_function,
     sqrt_variable_function, square_variable_function, tanh_variable_function,
-    unbind_variable_function,
+    trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 35] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 36] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -48,6 +48,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 35] = [
     "exp",
     "floor",
     "ceil",
+    "trunc",
     "sin",
     "sqrt",
     "square",
@@ -279,6 +280,30 @@ Example::
     tensor([-0.6341, -1.4208, -1.0900,  0.5826])
     >>> torch.ceil(a)
     tensor([-0., -1., -1.,  1.])
+";
+
+const TRUNC_DOC: &std::ffi::CStr = cr"
+trunc(input, *, out=None) -> Tensor
+
+Returns a new tensor with the truncated integer values of
+the elements of :attr:`input`.
+
+For integer inputs, follows the array-api convention of returning a
+copy of the input tensor.
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> a = torch.randn(4)
+    >>> a
+    tensor([ 3.4742,  0.5466, -0.8008, -0.9079])
+    >>> torch.trunc(a)
+    tensor([ 3.,  0., -0., -0.])
 ";
 
 const SIN_DOC: &std::ffi::CStr = cr"
@@ -714,6 +739,7 @@ variable_function_callback!(negative_callback, negative_variable_function);
 variable_function_callback!(exp_callback, exp_variable_function);
 variable_function_callback!(floor_callback, floor_variable_function);
 variable_function_callback!(ceil_callback, ceil_variable_function);
+variable_function_callback!(trunc_callback, trunc_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
@@ -777,6 +803,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"exp", exp_callback, EXP_DOC),
         variable_function_method!(c"floor", floor_callback, FLOOR_DOC),
         variable_function_method!(c"ceil", ceil_callback, CEIL_DOC),
+        variable_function_method!(c"trunc", trunc_callback, TRUNC_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
