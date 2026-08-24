@@ -116,5 +116,6 @@ def synchronize(device: _device | str | int | None = None, /) -> None:
     if device is not None:
         raise RuntimeError("Accelerator expected")
     accelerator, _, _ = _discover_accelerator()
-    if accelerator is not None:
-        raise RuntimeError("Accelerator synchronization is not implemented")
+    if accelerator is None:
+        raise RuntimeError("Cannot access accelerator device when none is available.")
+    raise RuntimeError("Accelerator synchronization is not implemented")

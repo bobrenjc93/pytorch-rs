@@ -19,6 +19,8 @@ MODULE_DOC = """
 This package introduces support for the current :ref:`accelerator<accelerators>` in python.
 """
 
+NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
+
 FUNCTION_DOCS = {
     "current_accelerator": """Return the device of the accelerator available at compilation time.
     If no accelerator were available at compilation time, returns None.
@@ -97,6 +99,12 @@ FUNCTION_DOCS = {
 
 
 class AcceleratorTests(unittest.TestCase):
+    def assert_no_accelerator_error(self, call):
+        with self.assertRaises(RuntimeError) as raised:
+            call()
+        self.assertEqual(str(raised.exception), NO_ACCELERATOR_ERROR)
+        self.assertEqual(raised.exception.args, (NO_ACCELERATOR_ERROR,))
+
     def test_cpu_only_results_come_from_one_probe_without_hardware_discovery(self):
         accelerator = torch.accelerator
         discovery = accelerator._discover_accelerator
@@ -123,8 +131,8 @@ class AcceleratorTests(unittest.TestCase):
             count = accelerator.device_count()
             self.assertIs(type(count), int)
             self.assertEqual(count, 0)
-            self.assertIs(accelerator.synchronize(), None)
-            self.assertIs(accelerator.synchronize(None), None)
+            self.assert_no_accelerator_error(accelerator.synchronize)
+            self.assert_no_accelerator_error(lambda: accelerator.synchronize(None))
 
         self.assertEqual(shared_discovery.call_count, 6)
         self.assertEqual(shared_discovery.call_args_list, [mock.call()] * 6)
@@ -160,8 +168,10 @@ class AcceleratorTests(unittest.TestCase):
                         self.assertIs(accelerator.current_accelerator(), None)
                         self.assertIs(accelerator.is_available(), False)
                         self.assertEqual(accelerator.device_count(), 0)
-                        self.assertIs(accelerator.synchronize(), None)
-                        self.assertIs(accelerator.synchronize(None), None)
+                        self.assert_no_accelerator_error(accelerator.synchronize)
+                        self.assert_no_accelerator_error(
+                            lambda: accelerator.synchronize(None)
+                        )
 
     def test_synchronize_rejects_explicit_devices_without_discovery_or_inspection(self):
         accelerator = torch.accelerator
@@ -373,8 +383,8 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(accelerator.current_accelerator(), None)
         self.assertIs(accelerator.is_available(), False)
         self.assertEqual(accelerator.device_count(), 0)
-        self.assertIs(accelerator.synchronize(), None)
-        self.assertIs(accelerator.synchronize(None), None)
+        self.assert_no_accelerator_error(accelerator.synchronize)
+        self.assert_no_accelerator_error(lambda: accelerator.synchronize(None))
 
         for name, old_function in old_functions.items():
             with self.subTest(name=name):
@@ -453,6 +463,13 @@ class AcceleratorTests(unittest.TestCase):
         results = [None] * worker_count
         errors = []
 
+        def synchronize_outcome(*args):
+            try:
+                torch.accelerator.synchronize(*args)
+            except RuntimeError as error:
+                return type(error), str(error), error.args
+            raise AssertionError("synchronize unexpectedly succeeded")
+
         def worker(index):
             try:
                 context = torch.no_grad() if index % 2 else contextlib.nullcontext()
@@ -464,8 +481,8 @@ class AcceleratorTests(unittest.TestCase):
                         torch.accelerator.current_accelerator(True),
                         torch.accelerator.is_available(),
                         torch.accelerator.device_count(),
-                        torch.accelerator.synchronize(),
-                        torch.accelerator.synchronize(None),
+                        synchronize_outcome(),
+                        synchronize_outcome(None),
                         torch.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -492,8 +509,16 @@ class AcceleratorTests(unittest.TestCase):
                     None,
                     False,
                     0,
-                    None,
-                    None,
+                    (
+                        RuntimeError,
+                        NO_ACCELERATOR_ERROR,
+                        (NO_ACCELERATOR_ERROR,),
+                    ),
+                    (
+                        RuntimeError,
+                        NO_ACCELERATOR_ERROR,
+                        (NO_ACCELERATOR_ERROR,),
+                    ),
                     expected_grad_state,
                 ),
             )
@@ -577,8 +602,14 @@ assert torch.accelerator.current_accelerator(check_available=True) is None
 assert torch.accelerator.is_available() is False
 count = torch.accelerator.device_count()
 assert type(count) is int and count == 0
-assert torch.accelerator.synchronize() is None
-assert torch.accelerator.synchronize(None) is None
+for args in ((), (None,)):
+    try:
+        torch.accelerator.synchronize(*args)
+    except RuntimeError as error:
+        assert str(error) == "Cannot access accelerator device when none is available."
+        assert error.args == ("Cannot access accelerator device when none is available.",)
+    else:
+        raise AssertionError("synchronize unexpectedly succeeded")
 assert set(sys.modules) == modules_before_calls
 assert not hasattr(torch, "cuda")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)

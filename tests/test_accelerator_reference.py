@@ -26,6 +26,8 @@ SUPPORTED = {
     "synchronize",
 }
 
+NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
+
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class AcceleratorReferenceTests(unittest.TestCase):
@@ -44,6 +46,12 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
+
+    def assert_no_accelerator_error(self, call):
+        with self.assertRaises(RuntimeError) as raised:
+            call()
+        self.assertEqual(str(raised.exception), NO_ACCELERATOR_ERROR)
+        self.assertEqual(raised.exception.args, (NO_ACCELERATOR_ERROR,))
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -175,8 +183,10 @@ class AcceleratorReferenceTests(unittest.TestCase):
         count = torch.accelerator.device_count()
         self.assertIs(type(count), int)
         self.assertEqual(count, 0)
-        self.assertIs(torch.accelerator.synchronize(), None)
-        self.assertIs(torch.accelerator.synchronize(None), None)
+        self.assert_no_accelerator_error(torch.accelerator.synchronize)
+        self.assert_no_accelerator_error(
+            lambda: torch.accelerator.synchronize(None)
+        )
 
         if not reference_torch.cuda.is_available():
             self.skipTest("requires a CUDA-visible reference PyTorch build")
@@ -214,10 +224,26 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(torch.accelerator.current_accelerator(), None)
         self.assertIs(torch.accelerator.is_available(), False)
         self.assertEqual(torch.accelerator.device_count(), 0)
-        self.assertIs(torch.accelerator.synchronize(), None)
-        self.assertIs(torch.accelerator.synchronize(None), None)
+        self.assert_no_accelerator_error(torch.accelerator.synchronize)
+        self.assert_no_accelerator_error(
+            lambda: torch.accelerator.synchronize(None)
+        )
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertNotIn("torch_rs.cuda", sys.modules)
+
+    def test_synchronize_errors_match_cpu_only_pytorch_2_13(self):
+        expected = reference_torch.accelerator
+        if expected.current_accelerator() is not None:
+            self.skipTest("requires a CPU-only reference PyTorch build")
+
+        self.assertIs(expected.is_available(), False)
+        self.assertEqual(expected.device_count(), 0)
+        for args in ((), (None,)):
+            with self.subTest(args=args):
+                self.assert_error_matches(
+                    lambda args=args: torch.accelerator.synchronize(*args),
+                    lambda args=args: expected.synchronize(*args),
+                )
 
     def threaded_outcome(self, module):
         accelerator = module.accelerator
