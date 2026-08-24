@@ -182,6 +182,140 @@ class ArangeTests(unittest.TestCase):
                 with self.assertRaises((TypeError, RuntimeError)):
                     call()
 
+    def test_torch_function_mode_intercepts_raw_calls_before_native_validation(self):
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                        tuple(torch.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return marker
+
+        cases = (
+            (lambda: torch.arange(2.5), (2.5,), None),
+            (lambda: torch.arange(end=2.5), (), {"end": 2.5}),
+            (lambda: torch.arange(3), (3,), None),
+            (lambda: torch.arange(0.0, 3.0), (0.0, 3.0), None),
+        )
+        for call, expected_args, expected_kwargs in cases:
+            mode = RecordingMode()
+            with self.subTest(args=expected_args, kwargs=expected_kwargs):
+                with mode:
+                    self.assertIs(call(), marker)
+                    self.assertEqual(
+                        torch.overrides._get_current_function_mode_stack(), [mode]
+                    )
+                self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+                self.assertEqual(len(mode.calls), 1)
+                function, dispatch_types, args, kwargs, handler_stack = mode.calls[0]
+                self.assertIs(function, torch.arange)
+                self.assertEqual(dispatch_types, ())
+                self.assertEqual(args, expected_args)
+                self.assertEqual(kwargs, expected_kwargs)
+                self.assertEqual(handler_stack, ())
+
+    def test_torch_function_mode_forwards_nested_calls_and_restores_the_stack(self):
+        events = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append(
+                    (
+                        self.label,
+                        tuple(
+                            mode.label
+                            for mode in torch.overrides._get_current_function_mode_stack()
+                        ),
+                        func,
+                        types,
+                        args,
+                        kwargs,
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                result = torch.arange(end=2.5)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [lower, upper]
+                )
+            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+        self.assert_default_tensor(result, [0.0, 1.0, 2.0])
+        self.assertEqual(
+            [
+                (label, stack, function is torch.arange, types, args, kwargs)
+                for label, stack, function, types, args, kwargs in events
+            ],
+            [
+                ("upper", ("lower",), True, (), (), {"end": 2.5}),
+                ("lower", (), True, (), (), {"end": 2.5}),
+            ],
+        )
+
+        expected = ValueError("handler failed")
+
+        class RaisingMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                raise expected
+
+        raising = RaisingMode()
+        with lower:
+            with raising:
+                with self.assertRaises(ValueError) as raised:
+                    torch.arange(2.5)
+                self.assertIs(raised.exception, expected)
+                self.assertEqual(
+                    torch.overrides._get_current_function_mode_stack(), [lower, raising]
+                )
+            self.assertEqual(torch.overrides._get_current_function_mode_stack(), [lower])
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        forwarding = ForwardingMode("native-error")
+        with forwarding:
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "^upper bound and lower bound inconsistent with step sign$",
+            ):
+                torch.arange(-1.0)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [forwarding]
+            )
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        declining = DecliningMode()
+        with declining:
+            with self.assertRaisesRegex(
+                TypeError,
+                r"^Multiple dispatch failed for 'torch\.arange'; all "
+                r"__torch_function__ handlers returned NotImplemented:",
+            ):
+                torch.arange(2.5)
+            self.assertEqual(
+                torch.overrides._get_current_function_mode_stack(), [declining]
+            )
+        self.assertEqual(torch.overrides._get_current_function_mode_stack(), [])
+
     def test_callable_metadata_exports_and_pickling_match_generated_builtins(self):
         function = torch.arange
         owner = function.__reduce__()[1][0]

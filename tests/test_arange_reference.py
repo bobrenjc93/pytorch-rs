@@ -158,6 +158,168 @@ class ArangeReferenceTests(unittest.TestCase):
                     lambda end=end: reference_torch.arange(end),
                 )
 
+    def mode_dispatch_observation(self, module):
+        function = module.arange
+        marker = object()
+        intercepted = []
+
+        class RecordingMode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append(
+                    (
+                        func is function,
+                        types,
+                        args,
+                        kwargs,
+                        len(module.overrides._get_current_function_mode_stack()),
+                    )
+                )
+                return marker
+
+        for call in (
+            lambda: function(2.5),
+            lambda: function(end=2.5),
+            lambda: function(3),
+            lambda: function(0.0, 3.0),
+        ):
+            mode = RecordingMode()
+            with mode:
+                result = call()
+                restored_inside = (
+                    module.overrides._get_current_function_mode_stack() == [mode]
+                )
+            intercepted.append(
+                (
+                    result is marker,
+                    mode.calls,
+                    restored_inside,
+                    module.overrides._get_current_function_mode_stack() == [],
+                )
+            )
+
+        forwarding_events = []
+
+        class ForwardingMode(module.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_events.append(
+                    (
+                        self.label,
+                        tuple(
+                            mode.label
+                            for mode in module.overrides._get_current_function_mode_stack()
+                        ),
+                        func is function,
+                        types,
+                        args,
+                        kwargs,
+                    )
+                )
+                return func(*args, **(kwargs or {}))
+
+        lower = ForwardingMode("lower")
+        upper = ForwardingMode("upper")
+        with lower:
+            with upper:
+                forwarded = function(end=2.5)
+                nested_restored = (
+                    module.overrides._get_current_function_mode_stack()
+                    == [lower, upper]
+                )
+            lower_restored = (
+                module.overrides._get_current_function_mode_stack() == [lower]
+            )
+        stack_empty = module.overrides._get_current_function_mode_stack() == []
+
+        expected_error = ValueError("handler failed")
+
+        class RaisingMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                raise expected_error
+
+        raising = RaisingMode()
+        with lower:
+            with raising:
+                try:
+                    function(2.5)
+                except Exception as error:
+                    handler_error = (
+                        type(error).__name__,
+                        str(error),
+                        error.args,
+                        error is expected_error,
+                    )
+                else:
+                    handler_error = None
+                handler_error_restored = (
+                    module.overrides._get_current_function_mode_stack()
+                    == [lower, raising]
+                )
+            handler_lower_restored = (
+                module.overrides._get_current_function_mode_stack() == [lower]
+            )
+
+        native_error_mode = ForwardingMode("native-error")
+        with native_error_mode:
+            try:
+                function(-1.0)
+            except Exception as error:
+                native_error = (type(error).__name__, str(error), error.args)
+            else:
+                native_error = None
+            native_error_restored = (
+                module.overrides._get_current_function_mode_stack()
+                == [native_error_mode]
+            )
+
+        class DecliningMode(module.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        declining = DecliningMode()
+        with declining:
+            try:
+                function(2.5)
+            except Exception as error:
+                declining_error = (
+                    type(error).__name__,
+                    re.sub(r"0x[0-9a-f]+", "0x...", str(error)),
+                    error.args[1:] if len(error.args) > 1 else (),
+                )
+            else:
+                declining_error = None
+            declining_restored = (
+                module.overrides._get_current_function_mode_stack() == [declining]
+            )
+
+        return (
+            intercepted,
+            forwarding_events,
+            self.tensor_contract(module, forwarded),
+            nested_restored,
+            lower_restored,
+            stack_empty,
+            handler_error,
+            handler_error_restored,
+            handler_lower_restored,
+            native_error,
+            native_error_restored,
+            declining_error,
+            declining_restored,
+            module.overrides._get_current_function_mode_stack() == [],
+        )
+
+    def test_torch_function_mode_dispatch_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.mode_dispatch_observation(torch),
+            self.mode_dispatch_observation(reference_torch),
+        )
+
     def callable_contract(self, module):
         function = module.arange
         owner = function.__reduce__()[1][0]
