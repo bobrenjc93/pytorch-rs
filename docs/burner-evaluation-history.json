@@ -5857,6 +5857,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:843",
+      "recordedAt": "2026-08-24T16:46:39.383Z",
+      "label": "PR #843",
+      "kind": "leaf",
+      "prNumber": 843,
+      "title": "Expose top-level torch.ceil through the unary-out bridge",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 89.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 72.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
