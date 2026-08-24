@@ -1,7 +1,7 @@
 //! Python exception translation for native tensor errors.
 
 use pyo3::PyErr;
-use pyo3::exceptions::{PyIndexError, PyRuntimeError};
+use pyo3::exceptions::{PyIndexError, PyMemoryError, PyRuntimeError};
 
 use crate::TensorError;
 
@@ -41,6 +41,9 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::DoesNotRequireGrad
         | TensorError::DoesNotRequireGradAt { .. }
         | TensorError::BackwardGraphFreed => PyRuntimeError::new_err(error.to_string()),
+        TensorError::BackwardRootAllocationFailed { .. } => {
+            PyMemoryError::new_err(error.to_string())
+        }
         TensorError::InvalidScalarIndex
         | TensorError::SliceCannotApplyToScalar
         | TensorError::TooManyIndices { .. }

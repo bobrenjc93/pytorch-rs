@@ -4344,13 +4344,32 @@ fn tensor(
 }
 
 #[pyfunction]
-fn _backward_leaf_roots(roots: &Bound<'_, PyTuple>) -> PyResult<()> {
-    let roots = roots
-        .iter()
-        .map(|root| root.extract::<PyRef<'_, PyTensor>>().map_err(PyErr::from))
-        .collect::<PyResult<Vec<_>>>()?;
-    let roots = roots.iter().map(|root| root.inner()).collect::<Vec<_>>();
-    CoreTensor::backward_leaf_roots(&roots).map_err(|error| tensor_error(&error))
+fn _backward_leaf_roots(py: Python<'_>, roots: &Bound<'_, PyTuple>) -> PyResult<()> {
+    // Materialize the exception while memory is still available so every
+    // root-count-proportional reservation can fail without invoking Rust's
+    // aborting allocation handler.
+    let allocation_error = PyMemoryError::new_err("unable to allocate autograd backward roots");
+    allocation_error.value(py);
+    let mut root_guards = Vec::new();
+    root_guards
+        .try_reserve_exact(roots.len())
+        .map_err(|_| allocation_error.clone_ref(py))?;
+    for root in roots.iter() {
+        root_guards.push(root.extract::<PyRef<'_, PyTensor>>().map_err(PyErr::from)?);
+    }
+
+    let mut native_roots = Vec::new();
+    native_roots
+        .try_reserve_exact(root_guards.len())
+        .map_err(|_| allocation_error.clone_ref(py))?;
+    native_roots.extend(root_guards.iter().map(|root| root.inner()));
+    CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| {
+        if matches!(error, TensorError::BackwardRootAllocationFailed { .. }) {
+            allocation_error.clone_ref(py)
+        } else {
+            tensor_error(&error)
+        }
+    })
 }
 
 fn scalar_tensor_impl(

@@ -6,6 +6,7 @@ import pickle
 import re
 import subprocess
 import sys
+import textwrap
 import types
 import typing
 import unittest
@@ -1884,6 +1885,59 @@ class AutogradBackwardTests(unittest.TestCase):
         self.assertIsNone(leaf.grad)
         loss.backward()
         self.assertEqual(leaf.grad.item(), 4.0)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_large_root_allocation_failure_raises_memory_error_before_mutation(
+        self,
+    ):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+
+            import torch_rs as torch
+
+            leaf = torch.tensor([1.0], requires_grad=True)
+            leaf.backward()
+            existing_gradient = leaf.grad
+            roots = (leaf,) * 1_000_000
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            limit = current_virtual_size + 8 * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                os._exit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            try:
+                torch.autograd.backward(roots)
+            except MemoryError:
+                if leaf.grad is not existing_gradient:
+                    os._exit(2)
+                if leaf.grad.item() != 1.0:
+                    os._exit(2)
+                os._exit(0)
+            except BaseException:
+                os._exit(3)
+            else:
+                os._exit(4)
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=60,
+        )
+        if completed.returncode == 77:
+            self.skipTest("process hard address-space limit is too low")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
+        )
 
     def test_importing_and_calling_does_not_import_pytorch(self):
         script = r"""

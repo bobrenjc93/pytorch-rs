@@ -107,6 +107,9 @@ pub enum TensorError {
     DoesNotRequireGradAt {
         index: usize,
     },
+    BackwardRootAllocationFailed {
+        roots: usize,
+    },
     BackwardGraphFreed,
 }
 
@@ -204,6 +207,7 @@ impl Display for TensorError {
             | Self::AutogradRecordingUnsupported { .. }
             | Self::DoesNotRequireGrad
             | Self::DoesNotRequireGradAt { .. }
+            | Self::BackwardRootAllocationFailed { .. }
             | Self::BackwardGraphFreed) => format_autograd_error(formatter, error),
         }
     }
@@ -387,6 +391,9 @@ fn format_autograd_error(formatter: &mut Formatter<'_>, error: &TensorError) -> 
             formatter,
             "element {index} of tensors does not require grad and does not have a grad_fn"
         ),
+        TensorError::BackwardRootAllocationFailed { roots } => {
+            write!(formatter, "failed to allocate backward state for {roots} roots")
+        }
         TensorError::BackwardGraphFreed => formatter.write_str(
             "Trying to backward through the graph a second time (or directly access saved tensors after they have already been freed). Saved intermediate values of the graph are freed when you call .backward() or autograd.grad(). Specify retain_graph=True if you need to backward through the graph a second time or if you need to access saved tensors after calling backward.",
         ),

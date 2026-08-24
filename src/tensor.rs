@@ -29,11 +29,19 @@ enum AutogradKind {
         shape: Vec<usize>,
         dtype: DType,
         device: Device,
-        grad: Mutex<Option<Arc<Storage>>>,
+        grad: Mutex<LeafGradient>,
     },
     NonLeaf {
         grad_fn: Mutex<Option<GradFn>>,
     },
+}
+
+enum LeafGradient {
+    // Keep the first contribution owned until a Python-visible live gradient
+    // needs shared storage. This lets backward commit without allocating.
+    Uninitialized,
+    Pending(Vec<f32>),
+    Shared(Arc<Storage>),
 }
 
 #[derive(Clone)]
@@ -834,7 +842,7 @@ impl Tensor {
                     shape: self.shape.clone(),
                     dtype: self.dtype(),
                     device: self.device(),
-                    grad: Mutex::new(None),
+                    grad: Mutex::new(LeafGradient::Uninitialized),
                 },
             }));
             self.output_nr = 0;
@@ -855,25 +863,34 @@ impl Tensor {
         let Some(meta) = &self.autograd else {
             return Ok(None);
         };
-        let AutogradKind::Leaf { shape, grad, .. } = &meta.kind else {
+        let AutogradKind::Leaf {
+            shape,
+            dtype,
+            device,
+            grad,
+        } = &meta.kind
+        else {
             return Ok(None);
         };
         let grad = grad
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(storage) = grad.as_ref() else {
-            return Ok(None);
+        let elements = match &*grad {
+            LeafGradient::Uninitialized => return Ok(None),
+            LeafGradient::Pending(values) => values.len(),
+            LeafGradient::Shared(storage) => storage.len(),
         };
-        let elements = storage.len();
         let shape = try_clone_result_shape(shape, elements)?;
         let strides = contiguous_strides(&shape, elements)?;
-        let values = storage.try_copy_values(|values| copied_storage(values, elements))?;
+        let values = match &*grad {
+            LeafGradient::Uninitialized => unreachable!("gradient presence was checked"),
+            LeafGradient::Pending(values) => copied_storage(values, elements)?,
+            LeafGradient::Shared(storage) => {
+                storage.try_copy_values(|values| copied_storage(values, elements))?
+            }
+        };
         Ok(Some(Self::from_owned_parts(
-            values,
-            shape,
-            strides,
-            storage.dtype(),
-            storage.device(),
+            values, shape, strides, *dtype, *device,
         )))
     }
 
@@ -882,20 +899,36 @@ impl Tensor {
         let Some(meta) = &self.autograd else {
             return Ok(None);
         };
-        let AutogradKind::Leaf { shape, grad, .. } = &meta.kind else {
+        let AutogradKind::Leaf {
+            shape,
+            dtype,
+            device,
+            grad,
+        } = &meta.kind
+        else {
             return Ok(None);
         };
-        let grad = grad
+        let mut grad = grad
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let Some(storage) = grad.as_ref() else {
-            return Ok(None);
+        let storage = match &mut *grad {
+            LeafGradient::Uninitialized => return Ok(None),
+            LeafGradient::Pending(values) => {
+                let storage = Arc::new(Storage::from_shared_gradient(
+                    std::mem::take(values),
+                    *dtype,
+                    *device,
+                ));
+                *grad = LeafGradient::Shared(Arc::clone(&storage));
+                storage
+            }
+            LeafGradient::Shared(storage) => Arc::clone(storage),
         };
         let elements = storage.len();
         let shape = try_clone_result_shape(shape, elements)?;
         let strides = contiguous_strides(&shape, elements)?;
         Ok(Some(Self {
-            storage: Arc::clone(storage),
+            storage,
             shape,
             strides,
             offset: 0,
@@ -948,13 +981,12 @@ impl Tensor {
 
     #[cfg(any(feature = "python-bindings", test))]
     pub(crate) fn backward_leaf_roots(leaf_roots: &[&Self]) -> Result<(), TensorError> {
-        // Keep root validation and gradient commits in one transaction. In
-        // particular, views created under no_grad can report requires_grad and
-        // leaf status without owning a gradient accumulator.
+        // Validate roots and stage every fallible allocation before committing
+        // gradients. In particular, views created under no_grad can report
+        // requires_grad and leaf status without owning a gradient accumulator.
         let _backward_traversal = BACKWARD_TRAVERSAL
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut roots = Vec::with_capacity(leaf_roots.len());
         for (index, root) in leaf_roots.iter().copied().enumerate() {
             let meta = root.implicit_backward_root().map_err(|error| {
                 if matches!(error, TensorError::DoesNotRequireGrad) {
@@ -966,22 +998,37 @@ impl Tensor {
             if !matches!(&meta.kind, AutogradKind::Leaf { .. }) {
                 return Err(TensorError::DoesNotRequireGradAt { index });
             }
-            roots.push((Arc::clone(meta), root.output_nr));
         }
 
-        let mut gradients = HashMap::new();
-        let mut unique_roots = Vec::with_capacity(leaf_roots.len());
-        for (meta, output_nr) in roots {
-            let key = gradient_key(&meta, output_nr);
-            if !gradients.contains_key(&key) {
-                unique_roots.push((Arc::clone(&meta), output_nr));
+        let mut gradients: HashMap<GradientKey, (Arc<AutogradMeta>, Vec<f32>)> = HashMap::new();
+        for root in leaf_roots.iter().copied() {
+            let meta = root
+                .autograd
+                .as_ref()
+                .expect("every leaf root was validated before aggregation");
+            let output_nr = root.output_nr;
+            let key = gradient_key(meta, output_nr);
+            if let Some((_, gradient)) = gradients.get_mut(&key) {
+                gradient[0] += 1.0;
+                continue;
             }
-            add_gradient(&mut gradients, &meta, output_nr, vec![1.0]);
+
+            gradients
+                .try_reserve(1)
+                .map_err(|_| TensorError::BackwardRootAllocationFailed {
+                    roots: leaf_roots.len(),
+                })?;
+            let mut gradient = Vec::new();
+            gradient.try_reserve_exact(1).map_err(|_| {
+                TensorError::BackwardRootAllocationFailed {
+                    roots: leaf_roots.len(),
+                }
+            })?;
+            gradient.push(1.0);
+            gradients.insert(key, (Arc::clone(meta), gradient));
         }
-        for (meta, output_nr) in unique_roots {
-            let gradient = gradients
-                .remove(&gradient_key(&meta, output_nr))
-                .expect("every unique leaf root must have an aggregated gradient");
+
+        for (_, (meta, gradient)) in gradients {
             accumulate_leaf_gradient(&meta, gradient);
         }
         Ok(())
@@ -3637,26 +3684,21 @@ fn add_gradient(
 }
 
 fn accumulate_leaf_gradient(meta: &AutogradMeta, contribution: Vec<f32>) {
-    let AutogradKind::Leaf {
-        dtype,
-        device,
-        grad,
-        ..
-    } = &meta.kind
-    else {
+    let AutogradKind::Leaf { grad, .. } = &meta.kind else {
         unreachable!("only leaf nodes are queued for gradient accumulation");
     };
     let mut grad = grad
         .lock()
         .expect("leaf gradient mutex must not be poisoned");
-    if let Some(storage) = grad.as_ref() {
-        storage.accumulate_shared_gradient(contribution);
-    } else {
-        *grad = Some(Arc::new(Storage::from_shared_gradient(
-            contribution,
-            *dtype,
-            *device,
-        )));
+    match &mut *grad {
+        LeafGradient::Uninitialized => *grad = LeafGradient::Pending(contribution),
+        LeafGradient::Pending(existing) => {
+            debug_assert_eq!(existing.len(), contribution.len());
+            for (value, contribution) in existing.iter_mut().zip(contribution) {
+                *value += contribution;
+            }
+        }
+        LeafGradient::Shared(storage) => storage.accumulate_shared_gradient(contribution),
     }
 }
 
