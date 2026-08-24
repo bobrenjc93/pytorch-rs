@@ -28,6 +28,9 @@ hyperbolic = torch.tanh(input=x)
 assert hyperbolic.shape == x.shape
 functional_hyperbolic = torch.nn.functional.tanh(x)
 assert functional_hyperbolic.tolist() == hyperbolic.tolist()
+logistic = x.sigmoid()
+functional_logistic = torch.nn.functional.sigmoid(x)
+assert functional_logistic.tolist() == logistic.tolist()
 functional_result = torch.nn.functional.relu(x + y)
 assert functional_result.tolist() == result.tolist()
 squared_error = torch.nn.functional.mse_loss(x, y, reduction="none")
@@ -177,7 +180,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `Tensor.floor()` and top-level `torch.floor(input, *, out=None)` share the native unary-layout path for CPU float32 tensors, preserving PyTorch-compatible values, output strides, and fresh storage. Detached tensors and calls under `torch.no_grad()` are supported; active autograd recording is rejected before output planning. Top-level calls accept `out=None`; concrete output tensors and in-place `Tensor.floor_()` remain unsupported.
 
-`Tensor.sigmoid()` uses the same inference-only unary-layout and `TorchFunctionMode` paths for CPU float32 tensors, including empty, offset, noncontiguous, and channel-last inputs. Detached tensors and tracked tensors under `torch.no_grad()` produce fresh layout-preserving storage; active autograd recording is rejected before output planning. Top-level `torch.sigmoid`, `torch.nn.functional.sigmoid`, and in-place `Tensor.sigmoid_()` remain unsupported.
+`Tensor.sigmoid()` uses the same inference-only unary-layout and `TorchFunctionMode` paths for CPU float32 tensors, including empty, offset, noncontiguous, and channel-last inputs. `torch.nn.functional.sigmoid(input)` delegates directly to `input.sigmoid()`, preserving receiver overrides, layout, fresh-storage behavior, mode dispatch, and the method's autograd boundary. Detached tensors and tracked tensors under `torch.no_grad()` produce fresh layout-preserving storage; active autograd recording is rejected before output planning. Top-level `torch.sigmoid`, `nn.Sigmoid`, and in-place sigmoid remain unsupported.
 
 `Tensor.tanh()`, `torch.tanh()`, and `torch.nn.functional.tanh(input)` share the native layout-preserving float32 CPU kernel. The functional form delegates directly to `input.tanh()`, so receiver overrides and `TensorBase.tanh` mode dispatch are preserved. Finite constructor-owned rank-0 CPU float32 leaves support first-order eager autograd through a saved-output `TanhBackward0` node; tracked non-scalars, views, non-leaf inputs, and non-finite scalars remain explicitly unsupported. Detached tensors and calls under `torch.no_grad()` retain the broader inference path. Top-level calls accept PyTorch's legacy input aliases and `out=None`; concrete output tensors, higher-order gradients, `nn.Tanh`, and in-place tanh remain explicitly unsupported.
 

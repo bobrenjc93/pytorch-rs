@@ -362,11 +362,11 @@ class TensorSigmoidTests(unittest.TestCase):
                 plain.sigmoid(1)
         self.assertEqual(invalid.calls, [])
 
-    def test_top_level_functional_and_inplace_forms_remain_unsupported(self):
+    def test_top_level_and_inplace_forms_remain_unsupported(self):
         tensor = torch.tensor([1.25])
         self.assertFalse(hasattr(torch, "sigmoid"))
         self.assertNotIn("sigmoid", torch.__all__)
-        self.assertFalse(hasattr(torch.nn.functional, "sigmoid"))
+        self.assertTrue(hasattr(torch.nn.functional, "sigmoid"))
         self.assertFalse(hasattr(torch.Tensor, "sigmoid_"))
         self.assertFalse(hasattr(tensor, "sigmoid_"))
         self.assertFalse(hasattr(torch, "sigmoid_"))

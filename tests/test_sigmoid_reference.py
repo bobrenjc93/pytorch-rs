@@ -357,11 +357,11 @@ print(json.dumps({
         expected_detached = expected_input.detach().sigmoid()
         self.assert_tensor_matches(actual_detached, expected_detached, case="detached")
 
-    def test_top_level_functional_and_inplace_boundaries_remain_unsupported(self):
+    def test_top_level_and_inplace_boundaries_remain_unsupported(self):
         self.assertFalse(hasattr(torch, "sigmoid"))
         self.assertTrue(hasattr(reference_torch, "sigmoid"))
         self.assertNotIn("sigmoid", torch.__all__)
-        self.assertFalse(hasattr(torch.nn.functional, "sigmoid"))
+        self.assertTrue(hasattr(torch.nn.functional, "sigmoid"))
         self.assertTrue(hasattr(reference_torch.nn.functional, "sigmoid"))
         self.assertFalse(hasattr(torch.Tensor, "sigmoid_"))
         self.assertTrue(hasattr(reference_torch.Tensor, "sigmoid_"))
