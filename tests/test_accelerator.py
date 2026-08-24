@@ -20,6 +20,12 @@ This package introduces support for the current :ref:`accelerator<accelerators>`
 """
 
 NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
+ACCELERATOR_EXPECTED_ERROR = "Accelerator expected"
+DEVICE_TYPE_ERROR = (
+    "Expected one of cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, "
+    "ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone "
+    "device type at start of device string: "
+)
 
 FUNCTION_DOCS = {
     "current_accelerator": """Return the device of the accelerator available at compilation time.
@@ -173,7 +179,7 @@ class AcceleratorTests(unittest.TestCase):
                             lambda: accelerator.synchronize(None)
                         )
 
-    def test_synchronize_rejects_explicit_devices_without_discovery_or_inspection(self):
+    def test_synchronize_normalizes_explicit_devices_before_discovery_errors(self):
         accelerator = torch.accelerator
 
         class ExplodingDevice:
@@ -189,27 +195,110 @@ class AcceleratorTests(unittest.TestCase):
             def __bool__(self):
                 raise AssertionError("device truthiness was inspected")
 
-        devices = (
+        class ExplodingIndex(int):
+            def __index__(self):
+                raise AssertionError("integer index protocol was invoked")
+
+            def __int__(self):
+                raise AssertionError("integer conversion was invoked")
+
+            def __lt__(self, other):
+                raise AssertionError("integer ordering was inspected")
+
+            def __le__(self, other):
+                raise AssertionError("integer ordering was inspected")
+
+            def __gt__(self, other):
+                raise AssertionError("integer ordering was inspected")
+
+            def __ge__(self, other):
+                raise AssertionError("integer ordering was inspected")
+
+        class ExplodingString(str):
+            def __str__(self):
+                raise AssertionError("string conversion was invoked")
+
+        no_accelerator_devices = (
             0,
             -1,
             True,
-            "cpu",
-            "cuda:0",
-            torch.device("cpu"),
+            False,
+            0.0,
+            b"cuda",
             torch.tensor([1.0], requires_grad=True),
+            ExplodingIndex(3),
             ExplodingDevice(),
+        )
+        with mock.patch.object(
+            accelerator,
+            "_discover_accelerator",
+            wraps=accelerator._discover_accelerator,
+        ) as discovery:
+            for case, device in enumerate(no_accelerator_devices):
+                with self.subTest(case=case):
+                    self.assert_no_accelerator_error(
+                        lambda device=device: accelerator.synchronize(device)
+                    )
+        self.assertEqual(discovery.call_args_list, [mock.call()] * 9)
+
+        descriptors = (
+            "cpu",
+            "cpu:0",
+            "cuda",
+            "cuda:0",
+            "mps",
+            ExplodingString("cuda:0"),
+            torch.device("cpu"),
+        )
+        with mock.patch.object(
+            accelerator,
+            "_discover_accelerator",
+            wraps=accelerator._discover_accelerator,
+        ) as discovery:
+            for case, device in enumerate(descriptors):
+                with self.subTest(descriptor_case=case):
+                    with self.assertRaises(RuntimeError) as raised:
+                        accelerator.synchronize(device)
+                    self.assertEqual(
+                        str(raised.exception), ACCELERATOR_EXPECTED_ERROR
+                    )
+                    self.assertEqual(
+                        raised.exception.args, (ACCELERATOR_EXPECTED_ERROR,)
+                    )
+        self.assertEqual(discovery.call_args_list, [mock.call()] * 7)
+
+        malformed_strings = (
+            ("", "Device string must not be empty"),
+            ("cuda:", "Invalid device string: 'cuda:'"),
+            ("cuda:abc", "Invalid device string: 'cuda:abc'"),
+            ("cpu:-1", "Invalid device string: 'cpu:-1'"),
+            ("CUDA", f"{DEVICE_TYPE_ERROR}CUDA"),
         )
         with mock.patch.object(
             accelerator,
             "_discover_accelerator",
             side_effect=AssertionError("accelerator discovery was attempted"),
         ) as discovery:
-            for case, device in enumerate(devices):
-                with self.subTest(case=case):
+            for device, message in malformed_strings:
+                with self.subTest(device=device):
                     with self.assertRaises(RuntimeError) as raised:
                         accelerator.synchronize(device)
-                    self.assertEqual(str(raised.exception), "Accelerator expected")
-                    self.assertEqual(raised.exception.args, ("Accelerator expected",))
+                    self.assertEqual(str(raised.exception), message)
+                    self.assertEqual(raised.exception.args, (message,))
+
+            for device in (-129, 128):
+                with self.subTest(device=device):
+                    message = (
+                        "_accelerator_synchronizeDevice(): incompatible function "
+                        "arguments. The following argument types are supported:\n"
+                        "    1. (arg0: typing.SupportsInt | typing.SupportsIndex) "
+                        "-> None\n\n"
+                        f"Invoked with: {device}"
+                    )
+                    with self.assertRaises(TypeError) as raised:
+                        accelerator.synchronize(device)
+                    self.assertEqual(str(raised.exception), message)
+                    self.assertEqual(raised.exception.args, (message,))
         discovery.assert_not_called()
 
         with mock.patch.object(
@@ -219,9 +308,26 @@ class AcceleratorTests(unittest.TestCase):
         ) as discovery:
             with self.assertRaises(RuntimeError) as raised:
                 accelerator.synchronize()
-        discovery.assert_called_once_with()
+            self.assertEqual(
+                str(raised.exception),
+                "Accelerator synchronization is not implemented",
+            )
+            with self.assertRaises(RuntimeError) as raised:
+                accelerator.synchronize("cpu:0")
+            self.assertEqual(
+                str(raised.exception),
+                "Accelerator synchronization is not implemented",
+            )
+            with self.assertRaises(ValueError) as raised:
+                accelerator.synchronize("cuda:0")
+            self.assertEqual(
+                str(raised.exception),
+                "cuda doesn't match the current accelerator cpu.",
+            )
+        self.assertEqual(discovery.call_args_list, [mock.call()] * 3)
         self.assertEqual(
-            str(raised.exception), "Accelerator synchronization is not implemented"
+            raised.exception.args,
+            ("cuda doesn't match the current accelerator cpu.",),
         )
 
     def test_signature_annotations_documentation_and_module_identity(self):

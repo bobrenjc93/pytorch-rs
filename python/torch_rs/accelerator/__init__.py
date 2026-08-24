@@ -5,6 +5,16 @@ This package introduces support for the current :ref:`accelerator<accelerators>`
 from .. import device as _device
 
 
+_DEVICE_TYPE_NAMES = (
+    "cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, ideep, hip, "
+    "ve, fpga, maia, xla, lazy, vulkan, mps, meta, hpu, mtia, privateuseone"
+)
+_DEVICE_TYPES = frozenset(_DEVICE_TYPE_NAMES.split(", "))
+_DEVICE_TYPE_ERROR = (
+    f"Expected one of {_DEVICE_TYPE_NAMES} device type at start of device string: "
+)
+
+
 __all__ = [
     "current_accelerator",
     "device_count",
@@ -20,6 +30,29 @@ def _discover_accelerator() -> tuple[_device | None, bool, int]:
     # future accelerator backend can replace this result without scattering
     # hardware probes through the API.
     return None, False, 0
+
+
+def _normalize_synchronize_device_type(device: object) -> str | None:
+    """Validate descriptor forms before accelerator synchronization."""
+    if isinstance(device, str):
+        specification = str.__str__(device)
+        try:
+            parsed_device = _device(specification)
+        except RuntimeError as error:
+            unsupported = (
+                f"device(): device '{specification}' is not supported; "
+                "only 'cpu' is implemented"
+            )
+            if str(error) != unsupported:
+                raise
+            device_type = str.partition(specification, ":")[0]
+            if device_type not in _DEVICE_TYPES:
+                raise RuntimeError(f"{_DEVICE_TYPE_ERROR}{specification}") from None
+            return device_type
+        return parsed_device.type
+    if isinstance(device, _device):
+        return device.type
+    return None
 
 
 def device_count() -> int:
@@ -113,9 +146,24 @@ def synchronize(device: _device | str | int | None = None, /) -> None:
         >>> torch.accelerator.synchronize()
         >>> elapsed_time_ms = start_event.elapsed_time(end_event)
     """
-    if device is not None:
-        raise RuntimeError("Accelerator expected")
+    device_type = _normalize_synchronize_device_type(device)
+    if isinstance(device, int):
+        device_index = int.__index__(device)
+        if not -128 <= device_index <= 127:
+            raise TypeError(
+                "_accelerator_synchronizeDevice(): incompatible function arguments. "
+                "The following argument types are supported:\n"
+                "    1. (arg0: typing.SupportsInt | typing.SupportsIndex) -> None\n\n"
+                f"Invoked with: {device!r}"
+            )
     accelerator, _, _ = _discover_accelerator()
+    if device_type is not None:
+        if accelerator is None:
+            raise RuntimeError("Accelerator expected")
+        if accelerator.type != device_type:
+            raise ValueError(
+                f"{device_type} doesn't match the current accelerator {accelerator}."
+            )
     if accelerator is None:
         raise RuntimeError("Cannot access accelerator device when none is available.")
     raise RuntimeError("Accelerator synchronization is not implemented")

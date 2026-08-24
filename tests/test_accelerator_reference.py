@@ -236,14 +236,121 @@ class AcceleratorReferenceTests(unittest.TestCase):
         if expected.current_accelerator() is not None:
             self.skipTest("requires a CPU-only reference PyTorch build")
 
+        class ExplodingDevice:
+            def __repr__(self):
+                raise AssertionError("device repr was inspected")
+
+            def __str__(self):
+                raise AssertionError("device string was inspected")
+
+            def __index__(self):
+                raise AssertionError("device index was inspected")
+
+            def __bool__(self):
+                raise AssertionError("device truthiness was inspected")
+
+        class ExplodingIndex(int):
+            def __index__(self):
+                raise AssertionError("integer index protocol was invoked")
+
+            def __int__(self):
+                raise AssertionError("integer conversion was invoked")
+
+            def __lt__(self, other):
+                raise AssertionError("integer ordering was inspected")
+
+            def __le__(self, other):
+                raise AssertionError("integer ordering was inspected")
+
+            def __gt__(self, other):
+                raise AssertionError("integer ordering was inspected")
+
+            def __ge__(self, other):
+                raise AssertionError("integer ordering was inspected")
+
+        class ExplodingString(str):
+            def __str__(self):
+                raise AssertionError("string conversion was invoked")
+
         self.assertIs(expected.is_available(), False)
         self.assertEqual(expected.device_count(), 0)
-        for args in ((), (None,)):
-            with self.subTest(args=args):
+        cuda_initialized = reference_torch.cuda.is_initialized()
+        calls = (
+            ("omitted", lambda module: module.accelerator.synchronize()),
+            ("none", lambda module: module.accelerator.synchronize(None)),
+            ("zero", lambda module: module.accelerator.synchronize(0)),
+            ("negative_one", lambda module: module.accelerator.synchronize(-1)),
+            ("min_index", lambda module: module.accelerator.synchronize(-128)),
+            ("max_index", lambda module: module.accelerator.synchronize(127)),
+            ("true", lambda module: module.accelerator.synchronize(True)),
+            ("false", lambda module: module.accelerator.synchronize(False)),
+            ("float", lambda module: module.accelerator.synchronize(0.0)),
+            ("bytes", lambda module: module.accelerator.synchronize(b"cuda")),
+            (
+                "tensor",
+                lambda module: module.accelerator.synchronize(module.tensor([1.0])),
+            ),
+            (
+                "int_subclass",
+                lambda module: module.accelerator.synchronize(ExplodingIndex(3)),
+            ),
+            (
+                "arbitrary_object",
+                lambda module: module.accelerator.synchronize(ExplodingDevice()),
+            ),
+            ("cpu_string", lambda module: module.accelerator.synchronize("cpu")),
+            (
+                "indexed_cpu_string",
+                lambda module: module.accelerator.synchronize("cpu:0"),
+            ),
+            ("cuda_string", lambda module: module.accelerator.synchronize("cuda")),
+            (
+                "indexed_cuda_string",
+                lambda module: module.accelerator.synchronize("cuda:0"),
+            ),
+            (
+                "string_subclass",
+                lambda module: module.accelerator.synchronize(
+                    ExplodingString("cuda:0")
+                ),
+            ),
+            (
+                "device_descriptor",
+                lambda module: module.accelerator.synchronize(module.device("cpu")),
+            ),
+            ("empty_string", lambda module: module.accelerator.synchronize("")),
+            (
+                "missing_index",
+                lambda module: module.accelerator.synchronize("cuda:"),
+            ),
+            (
+                "invalid_index",
+                lambda module: module.accelerator.synchronize("cuda:abc"),
+            ),
+            (
+                "negative_string_index",
+                lambda module: module.accelerator.synchronize("cpu:-1"),
+            ),
+            (
+                "unknown_device_type",
+                lambda module: module.accelerator.synchronize("CUDA"),
+            ),
+            (
+                "below_device_index_range",
+                lambda module: module.accelerator.synchronize(-129),
+            ),
+            (
+                "above_device_index_range",
+                lambda module: module.accelerator.synchronize(128),
+            ),
+        )
+        for name, call in calls:
+            with self.subTest(name=name):
                 self.assert_error_matches(
-                    lambda args=args: torch.accelerator.synchronize(*args),
-                    lambda args=args: expected.synchronize(*args),
+                    lambda call=call: call(torch),
+                    lambda call=call: call(reference_torch),
                 )
+        self.assertEqual(reference_torch.cuda.is_initialized(), cuda_initialized)
 
     def threaded_outcome(self, module):
         accelerator = module.accelerator
