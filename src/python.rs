@@ -1615,6 +1615,14 @@ pub(crate) fn trunc_variable_function(
     unary_out_variable_function(UnaryOutOperation::TRUNC, py, args, kwargs)
 }
 
+pub(crate) fn fix_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::FIX, py, args, kwargs)
+}
+
 pub(crate) fn neg_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2070,6 +2078,15 @@ impl UnaryOutOperation {
         dispatch_allocation_error: "unable to allocate trunc dispatch operands",
         out_unsupported_error: "trunc(): the 'out' argument is not supported",
         autograd_unsupported_error: None,
+        apply: CoreTensor::trunc,
+    };
+
+    const FIX: Self = Self {
+        name: "fix",
+        qualified_name: "torch.fix",
+        dispatch_allocation_error: "unable to allocate fix dispatch operands",
+        out_unsupported_error: "fix(): the 'out' argument is not supported",
+        autograd_unsupported_error: Some("fix(): autograd recording is not supported"),
         apply: CoreTensor::trunc,
     };
 
