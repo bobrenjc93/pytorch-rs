@@ -2454,6 +2454,19 @@ impl Tensor {
         self.unary_map(f32::exp)
     }
 
+    /// Computes the hyperbolic tangent of every element.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn tanh(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" });
+        }
+        self.unary_map(tanh_value)
+    }
+
     /// Computes the nonnegative square root of every element.
     ///
     /// # Errors
@@ -4536,6 +4549,22 @@ fn sqrt_value(value: f32) -> f32 {
     }
 }
 
+fn tanh_value(value: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    if magnitude <= f32::MIN_POSITIVE.to_bits() {
+        // PyTorch preserves signed zero and every subnormal input exactly.
+        value
+    } else if magnitude > f32::INFINITY.to_bits() {
+        // Quiet signaling NaNs while retaining their sign and payload.
+        f32::from_bits(bits | QUIET_NAN_MASK)
+    } else {
+        value.tanh()
+    }
+}
+
 #[inline]
 fn sqrt_backward_value(input: f32, upstream: f32) -> f32 {
     upstream / (2.0 * sqrt_value(input))
@@ -5514,6 +5543,7 @@ mod tests {
             (tensor.relu().unwrap(), shared.relu().unwrap()),
             (tensor.sin().unwrap(), shared.sin().unwrap()),
             (tensor.exp().unwrap(), shared.exp().unwrap()),
+            (tensor.tanh().unwrap(), shared.tanh().unwrap()),
             (tensor.sqrt().unwrap(), shared.sqrt().unwrap()),
             (
                 tensor.add_scalar(1.25).unwrap(),
@@ -5821,6 +5851,10 @@ mod tests {
         );
         assert_eq!(
             tensor.reciprocal(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.tanh(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
