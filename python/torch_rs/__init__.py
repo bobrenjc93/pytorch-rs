@@ -158,16 +158,25 @@ def set_float32_matmul_precision(precision: str) -> None:
         precision(str): can be set to "highest" (default), "high", or "medium" (see above).
 
     """
-    if _builtins.isinstance(precision, _builtins.str):
+    precision_type = _builtins.type(precision)
+    precision_kind = None
+    for precision_base in _builtins.type.__getattribute__(precision_type, "__mro__"):
+        if precision_base is _builtins.str:
+            precision_kind = _builtins.str
+            break
+        if precision_base is _builtins.bytes:
+            precision_kind = _builtins.bytes
+            break
+
+    if precision_kind is _builtins.str:
         try:
             _builtins.str.encode(precision, "utf-8")
         except UnicodeEncodeError:
             raise RuntimeError("error unpacking string as utf-8") from None
         value = _builtins.str.__str__(precision)
-    elif _builtins.isinstance(precision, _builtins.bytes):
+    elif precision_kind is _builtins.bytes:
         value = _builtins.bytes.decode(precision, "utf-8")
     else:
-        precision_type = _builtins.type(precision)
         if precision_type is Tensor:
             type_name = "Tensor"
         elif precision_type is dtype:

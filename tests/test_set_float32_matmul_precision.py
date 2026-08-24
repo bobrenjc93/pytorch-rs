@@ -8,6 +8,7 @@ import sys
 import types
 import typing
 import unittest
+from unittest.mock import Mock
 
 import torch_rs as torch
 
@@ -116,6 +117,41 @@ class SetFloat32MatmulPrecisionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "^error unpacking string as utf-8$"):
             torch.set_float32_matmul_precision("\ud800")
         self.assertEqual(torch.get_float32_matmul_precision(), "highest")
+
+    def test_spoofed_or_raising_class_is_not_dispatched(self):
+        class_reads = []
+
+        class SpoofedPrecision:
+            @property
+            def __class__(self):
+                class_reads.append("spoofed")
+                return str
+
+        class RaisingPrecision:
+            @property
+            def __class__(self):
+                class_reads.append("raising")
+                raise AssertionError("the setter must not read __class__")
+
+        values = (
+            (Mock(spec=str), "Mock"),
+            (Mock(spec=bytes), "Mock"),
+            (SpoofedPrecision(), "SpoofedPrecision"),
+            (RaisingPrecision(), "RaisingPrecision"),
+        )
+        for value, type_name in values:
+            with self.subTest(type_name=type_name):
+                message = (
+                    "set_float32_matmul_precision expects a str, but got "
+                    f"{type_name}"
+                )
+                with self.assertRaises(RuntimeError) as raised:
+                    torch.set_float32_matmul_precision(value)
+                self.assertEqual(str(raised.exception), message)
+                self.assertEqual(raised.exception.args, (message,))
+                self.assertEqual(torch.get_float32_matmul_precision(), "highest")
+
+        self.assertEqual(class_reads, [])
 
     def test_callable_metadata_matches_pytorch_2_13(self):
         package = importlib.import_module("torch_rs")

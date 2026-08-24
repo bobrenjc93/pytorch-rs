@@ -6,6 +6,7 @@ import pickletools
 import types
 import typing
 import unittest
+from unittest.mock import Mock
 
 import torch_rs as torch
 
@@ -75,10 +76,29 @@ class SetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
         )
 
     def test_highest_noop_and_bytes_compatibility_match_pytorch_2_13(self):
+        class StringPrecision(str):
+            def __eq__(self, other):
+                raise AssertionError("string equality must not be dispatched")
+
+            def __str__(self):
+                raise AssertionError("string conversion must not be dispatched")
+
+            def encode(self, *args, **kwargs):
+                raise AssertionError("string encoding must not be dispatched")
+
+        class BytesPrecision(bytes):
+            def __eq__(self, other):
+                raise AssertionError("bytes equality must not be dispatched")
+
+            def decode(self, *args, **kwargs):
+                raise AssertionError("bytes decoding must not be dispatched")
+
         for precision, keyword in (
             ("highest", False),
             ("highest", True),
             (b"highest", False),
+            (StringPrecision("highest"), False),
+            (BytesPrecision(b"highest"), False),
         ):
             with self.subTest(precision=precision, keyword=keyword):
                 self.assertEqual(
@@ -223,6 +243,42 @@ class SetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
                 self.assertEqual(
                     reference_torch.get_float32_matmul_precision(), "highest"
                 )
+
+    def test_spoofed_or_raising_class_errors_match_pytorch_2_13(self):
+        class_reads = []
+
+        class SpoofedPrecision:
+            @property
+            def __class__(self):
+                class_reads.append("spoofed")
+                return str
+
+        class RaisingPrecision:
+            @property
+            def __class__(self):
+                class_reads.append("raising")
+                raise AssertionError("the setter must not read __class__")
+
+        values = (
+            Mock(spec=str),
+            Mock(spec=bytes),
+            SpoofedPrecision(),
+            RaisingPrecision(),
+        )
+        for case, value in enumerate(values):
+            with self.subTest(case=case, type_name=type(value).__name__):
+                self.assert_error_matches(
+                    lambda value=value: torch.set_float32_matmul_precision(value),
+                    lambda value=value: reference_torch.set_float32_matmul_precision(
+                        value
+                    ),
+                )
+                self.assertEqual(torch.get_float32_matmul_precision(), "highest")
+                self.assertEqual(
+                    reference_torch.get_float32_matmul_precision(), "highest"
+                )
+
+        self.assertEqual(class_reads, [])
 
     def test_reduced_precision_modes_remain_an_explicit_difference(self):
         for precision in ("high", "medium", b"high", b"medium"):
