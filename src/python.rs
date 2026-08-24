@@ -4469,9 +4469,9 @@ fn arange_impl(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyTensor> {
-    let elements = parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
+    let (elements, requires_grad) = parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
     CoreTensor::arange_float32(elements)
-        .map(PyTensor::new)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| scalar_creation_error(&error, Some(elements)))
 }
 
@@ -4978,7 +4978,7 @@ fn bind_arange_arguments<'py>(
     Ok(arguments)
 }
 
-fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<usize> {
+fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize, bool)> {
     let ArangeCallArguments {
         end,
         unsupported_overload,
@@ -5034,13 +5034,8 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<usize>
             "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
         ));
     }
-    if requires_grad {
-        return Err(PyRuntimeError::new_err(
-            "arange(): requires_grad=True is not supported",
-        ));
-    }
-
-    arange_element_count(end.value.extract::<f64>()?)
+    let elements = arange_element_count(end.value.extract::<f64>()?)?;
+    Ok((elements, requires_grad))
 }
 
 fn arange_element_count(end: f64) -> PyResult<usize> {
