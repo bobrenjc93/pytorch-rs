@@ -202,6 +202,65 @@ class AutogradBackwardTests(unittest.TestCase):
                     self.assertEqual(scalar_leaf.grad.item(), 1.0)
                     self.assertEqual(strided_leaf.grad.tolist(), [[1.0]])
 
+    def test_three_leaf_roots_return_none_and_accumulate_unit_gradients(self):
+        calls = (
+            ("positional", lambda roots: torch.autograd.backward(roots)),
+            (
+                "keyword",
+                lambda roots: torch.autograd.backward(tensors=roots),
+            ),
+            (
+                "explicit defaults",
+                lambda roots: torch.autograd.backward(
+                    roots,
+                    grad_tensors=None,
+                    retain_graph=None,
+                    create_graph=False,
+                    grad_variables=None,
+                    inputs=None,
+                ),
+            ),
+            (
+                "positional defaults",
+                lambda roots: torch.autograd.backward(
+                    roots, None, False, False, None, None
+                ),
+            ),
+            (
+                "integer false",
+                lambda roots: torch.autograd.backward(roots, None, 0, 0),
+            ),
+            (
+                "tuple grad_tensors",
+                lambda roots: torch.autograd.backward(
+                    roots, (None, None, None)
+                ),
+            ),
+            (
+                "list grad_tensors",
+                lambda roots: torch.autograd.backward(
+                    roots, grad_tensors=[None, None, None]
+                ),
+            ),
+        )
+
+        for root_sequence_type in (tuple, list):
+            for label, call in calls:
+                with self.subTest(
+                    root_sequence_type=root_sequence_type, form=label
+                ):
+                    scalar_leaf = torch.tensor(2.0, requires_grad=True)
+                    vector_leaf = torch.tensor([3.0], requires_grad=True)
+                    matrix_leaf = torch.tensor([[4.0]], requires_grad=True)
+                    roots = root_sequence_type(
+                        (scalar_leaf, vector_leaf, matrix_leaf)
+                    )
+
+                    self.assertIsNone(call(roots))
+                    self.assertEqual(scalar_leaf.grad.item(), 1.0)
+                    self.assertEqual(vector_leaf.grad.tolist(), [1.0])
+                    self.assertEqual(matrix_leaf.grad.tolist(), [[1.0]])
+
     def test_duplicate_two_leaf_roots_are_repeatable_and_accumulate_twice(self):
         for root_sequence_type in (tuple, list):
             for grad_sequence_type in (None, tuple, list):
@@ -255,6 +314,47 @@ class AutogradBackwardTests(unittest.TestCase):
                     self.assertIs(leaf.grad, existing_gradient)
                     self.assertEqual(leaf.grad.tolist(), [16_777_218.0])
 
+    def test_three_roots_aggregate_duplicates_before_existing_gradients(self):
+        for root_sequence_type in (tuple, list):
+            for grad_sequence_type in (None, tuple, list):
+                with self.subTest(
+                    root_sequence_type=root_sequence_type,
+                    grad_sequence_type=grad_sequence_type,
+                ):
+                    duplicate = torch.tensor([1.0], requires_grad=True)
+                    distinct = torch.tensor([[2.0]], requires_grad=True)
+                    (duplicate * 16_777_216.0).backward()
+                    existing_gradient = duplicate.grad
+                    roots = root_sequence_type(
+                        (duplicate, distinct, duplicate)
+                    )
+                    grad_tensors = (
+                        None
+                        if grad_sequence_type is None
+                        else grad_sequence_type((None, None, None))
+                    )
+
+                    self.assertIsNone(
+                        torch.autograd.backward(
+                            roots, grad_tensors=grad_tensors
+                        )
+                    )
+                    self.assertIs(duplicate.grad, existing_gradient)
+                    self.assertEqual(
+                        duplicate.grad.tolist(), [16_777_218.0]
+                    )
+                    self.assertEqual(distinct.grad.tolist(), [[1.0]])
+
+                    self.assertIsNone(
+                        torch.autograd.backward(
+                            roots, grad_tensors=grad_tensors
+                        )
+                    )
+                    self.assertEqual(
+                        duplicate.grad.tolist(), [16_777_220.0]
+                    )
+                    self.assertEqual(distinct.grad.tolist(), [[2.0]])
+
     def test_no_grad_view_second_root_is_rejected_before_first_mutates(self):
         for root_sequence_type in (tuple, list):
             for grad_sequence_type in (None, tuple, list):
@@ -294,6 +394,46 @@ class AutogradBackwardTests(unittest.TestCase):
                     first.backward()
                     source.sum().backward()
                     self.assertEqual(first.grad.item(), 1.0)
+                    self.assertEqual(source.grad.tolist(), [[1.0, 1.0]])
+
+    def test_no_grad_view_third_root_is_rejected_before_any_root_mutates(self):
+        for root_sequence_type in (tuple, list):
+            for grad_sequence_type in (None, tuple, list):
+                with self.subTest(
+                    root_sequence_type=root_sequence_type,
+                    grad_sequence_type=grad_sequence_type,
+                ):
+                    first = torch.tensor(3.0, requires_grad=True)
+                    second = torch.tensor([4.0], requires_grad=True)
+                    source = torch.tensor(
+                        [[1.0, 2.0]], requires_grad=True
+                    )
+                    with torch.no_grad():
+                        invalid = source.transpose(0, 1)[1]
+                    grad_tensors = (
+                        None
+                        if grad_sequence_type is None
+                        else grad_sequence_type((None, None, None))
+                    )
+
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "element 2 of tensors does not require grad",
+                    ):
+                        torch.autograd.backward(
+                            root_sequence_type((first, second, invalid)),
+                            grad_tensors=grad_tensors,
+                        )
+                    self.assertIsNone(first.grad)
+                    self.assertIsNone(second.grad)
+                    self.assertIsNone(invalid.grad)
+                    self.assertIsNone(source.grad)
+
+                    first.backward()
+                    second.backward()
+                    source.sum().backward()
+                    self.assertEqual(first.grad.item(), 1.0)
+                    self.assertEqual(second.grad.tolist(), [1.0])
                     self.assertEqual(source.grad.tolist(), [[1.0, 1.0]])
 
     def test_graph_reuse_freeing_and_accumulation_follow_tensor_backward(self):
@@ -425,7 +565,7 @@ class AutogradBackwardTests(unittest.TestCase):
     def test_unsupported_forms_fail_before_gradients_or_graph_state_change(self):
         root_error = (
             "torch_rs.autograd.backward only supports an exact native Tensor, "
-            "directly or in an exact tuple or list containing at most two "
+            "directly or in an exact tuple or list containing at most three "
             "exact native Tensors"
         )
         two_root_error = (
@@ -446,19 +586,19 @@ class AutogradBackwardTests(unittest.TestCase):
                 lambda leaf, loss: torch.autograd.backward([loss, loss]),
             ),
             (
-                "three tuple roots",
+                "four tuple roots",
                 TypeError,
                 root_error,
                 lambda leaf, loss: torch.autograd.backward(
-                    (loss, loss, loss)
+                    (loss, loss, loss, loss)
                 ),
             ),
             (
-                "three list roots",
+                "four list roots",
                 TypeError,
                 root_error,
                 lambda leaf, loss: torch.autograd.backward(
-                    [loss, loss, loss]
+                    [loss, loss, loss, loss]
                 ),
             ),
             (
@@ -616,6 +756,65 @@ class AutogradBackwardTests(unittest.TestCase):
                         valid.backward()
                         self.assertEqual(valid.grad.tolist(), [1.0])
 
+    def test_three_root_eligibility_is_prevalidated_for_every_root(self):
+        message = (
+            "torch_rs.autograd.backward only supports three roots when all "
+            "three are one-element native leaf Tensors requiring gradients"
+        )
+
+        for root_sequence_type in (tuple, list):
+            for invalid_position in range(3):
+                for invalid_kind in (
+                    "non-leaf",
+                    "does not require grad",
+                    "multiple elements",
+                ):
+                    with self.subTest(
+                        root_sequence_type=root_sequence_type,
+                        invalid_position=invalid_position,
+                        invalid_kind=invalid_kind,
+                    ):
+                        valid = [
+                            torch.tensor([2.0], requires_grad=True),
+                            torch.tensor([3.0], requires_grad=True),
+                        ]
+                        source = None
+                        if invalid_kind == "non-leaf":
+                            source = torch.tensor(4.0, requires_grad=True)
+                            invalid = source * source
+                        elif invalid_kind == "does not require grad":
+                            invalid = torch.tensor(4.0)
+                        else:
+                            invalid = torch.tensor(
+                                [4.0, 5.0], requires_grad=True
+                            )
+
+                        roots = valid.copy()
+                        roots.insert(invalid_position, invalid)
+                        with self.assertRaisesRegex(
+                            NotImplementedError, f"^{re.escape(message)}$"
+                        ):
+                            torch.autograd.backward(
+                                root_sequence_type(roots)
+                            )
+
+                        self.assertTrue(
+                            all(root.grad is None for root in valid)
+                        )
+                        if invalid_kind == "non-leaf":
+                            self.assertIsNone(source.grad)
+                            invalid.backward()
+                            self.assertEqual(source.grad.item(), 8.0)
+                        elif invalid_kind == "multiple elements":
+                            self.assertIsNone(invalid.grad)
+                            invalid.sum().backward()
+                            self.assertEqual(
+                                invalid.grad.tolist(), [1.0, 1.0]
+                            )
+                        for root in valid:
+                            root.backward()
+                            self.assertEqual(root.grad.tolist(), [1.0])
+
     def test_non_default_grad_tensors_forms_are_rejected_before_backward(self):
         grad_tensors = (
             ("tensor", lambda: torch.tensor(1.0)),
@@ -692,6 +891,65 @@ class AutogradBackwardTests(unittest.TestCase):
                     torch.autograd.backward(roots, (None, None))
                     self.assertEqual(first.grad.item(), 1.0)
                     self.assertEqual(second.grad.tolist(), [1.0])
+
+    def test_three_leaf_roots_reject_nonmatching_or_concrete_gradients(self):
+        grad_tensors = (
+            ("tensor", lambda: torch.tensor(1.0)),
+            ("empty tuple", tuple),
+            ("empty list", list),
+            ("singleton tuple", lambda: (None,)),
+            ("pair list", lambda: [None, None]),
+            ("first concrete", lambda: (torch.tensor(1.0), None, None)),
+            ("second concrete", lambda: [None, torch.tensor(1.0), None]),
+            ("third concrete", lambda: (None, None, torch.tensor(1.0))),
+            ("four tuple", lambda: (None, None, None, None)),
+            ("four list", lambda: [None, None, None, None]),
+            (
+                "custom sequence",
+                lambda: CustomSequence((None, None, None)),
+            ),
+            (
+                "tuple subclass",
+                lambda: TupleSubclass((None, None, None)),
+            ),
+            (
+                "list subclass",
+                lambda: ListSubclass([None, None, None]),
+            ),
+        )
+        message = (
+            "torch_rs.autograd.backward does not support explicit gradients"
+        )
+
+        for root_sequence_type in (tuple, list):
+            for label, make_grad_tensors in grad_tensors:
+                with self.subTest(
+                    root_sequence_type=root_sequence_type,
+                    grad_tensors=label,
+                ):
+                    roots = [
+                        torch.tensor(2.0, requires_grad=True),
+                        torch.tensor([3.0], requires_grad=True),
+                        torch.tensor([[4.0]], requires_grad=True),
+                    ]
+                    with self.assertRaisesRegex(
+                        NotImplementedError, f"^{re.escape(message)}$"
+                    ):
+                        torch.autograd.backward(
+                            root_sequence_type(roots),
+                            grad_tensors=make_grad_tensors(),
+                        )
+                    self.assertTrue(
+                        all(root.grad is None for root in roots)
+                    )
+
+                    torch.autograd.backward(
+                        root_sequence_type(roots),
+                        (None, None, None),
+                    )
+                    self.assertEqual(roots[0].grad.item(), 1.0)
+                    self.assertEqual(roots[1].grad.tolist(), [1.0])
+                    self.assertEqual(roots[2].grad.tolist(), [[1.0]])
 
     def test_empty_roots_reject_non_default_grad_tensors(self):
         grad_tensors = (
@@ -934,12 +1192,16 @@ class AutogradBackwardTests(unittest.TestCase):
     def test_root_and_gradient_validation_precede_graph_options(self):
         root_error = (
             "torch_rs.autograd.backward only supports an exact native Tensor, "
-            "directly or in an exact tuple or list containing at most two "
+            "directly or in an exact tuple or list containing at most three "
             "exact native Tensors"
         )
         two_root_error = (
             "torch_rs.autograd.backward only supports two roots when both "
             "are one-element native leaf Tensors requiring gradients"
+        )
+        three_root_error = (
+            "torch_rs.autograd.backward only supports three roots when all "
+            "three are one-element native leaf Tensors requiring gradients"
         )
         gradient_error = (
             "torch_rs.autograd.backward does not support explicit gradients"
@@ -955,9 +1217,17 @@ class AutogradBackwardTests(unittest.TestCase):
                 grad_tensors=(torch.tensor(1.0),),
                 retain_graph=True,
             )
-        with self.assertRaisesRegex(TypeError, f"^{re.escape(root_error)}$"):
+        with self.assertRaisesRegex(
+            NotImplementedError, f"^{re.escape(three_root_error)}$"
+        ):
             torch.autograd.backward(
                 (loss, loss, loss),
+                grad_tensors=(torch.tensor(1.0),),
+                retain_graph=True,
+            )
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(root_error)}$"):
+            torch.autograd.backward(
+                (loss, loss, loss, loss),
                 grad_tensors=(torch.tensor(1.0),),
                 retain_graph=True,
             )
@@ -1113,6 +1383,14 @@ assert pair_strided.grad.tolist() == [[1.0]]
 duplicate = torch.tensor([9.0], requires_grad=True)
 assert backward([duplicate, duplicate]) is None
 assert duplicate.grad.tolist() == [2.0]
+triple_duplicate = torch.tensor([10.0], requires_grad=True)
+triple_distinct = torch.tensor([[11.0]], requires_grad=True)
+assert backward(
+    (triple_duplicate, triple_distinct, triple_duplicate),
+    [None, None, None],
+) is None
+assert triple_duplicate.grad.tolist() == [2.0]
+assert triple_distinct.grad.tolist() == [[1.0]]
 assert not hasattr(torch.autograd, "grad")
 assert not hasattr(torch, "backward")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
