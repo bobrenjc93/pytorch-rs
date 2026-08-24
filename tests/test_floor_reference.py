@@ -135,6 +135,51 @@ class TensorFloorReferenceTests(unittest.TestCase):
             return module.floor(x=tensor, out=None)
         return module.floor(**{form: tensor})
 
+    @staticmethod
+    def make_autograd_case(module, case):
+        if case == "scalar":
+            leaf = module.tensor(
+                -1.25, dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf
+        if case == "empty":
+            leaf = module.zeros(
+                (2, 0, 3), dtype=module.float32, requires_grad=True
+            )
+            return leaf, leaf.transpose(0, 2)[1]
+        if case == "channels last":
+            leaf = module.tensor(
+                np.linspace(-15.0, 15.0, 120, dtype=np.float32)
+                .reshape(2, 3, 4, 5)
+                .tolist(),
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            return leaf, leaf.contiguous(memory_format=module.channels_last)
+        if case == "channels last 3d":
+            leaf = module.tensor(
+                np.linspace(-90.0, 90.0, 720, dtype=np.float32)
+                .reshape(2, 3, 4, 5, 6)
+                .tolist(),
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            return leaf, leaf.contiguous(memory_format=module.channels_last_3d)
+
+        leaf = module.tensor(
+            np.linspace(-3.75, 3.75, 24, dtype=np.float32)
+            .reshape(2, 3, 4)
+            .tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        strided = leaf.transpose(0, 2)
+        if case == "offset":
+            return leaf, strided[1]
+        if case == "strided":
+            return leaf, strided
+        raise AssertionError(f"unknown floor autograd case: {case}")
+
     def test_values_layouts_offsets_empty_tensors_and_storage_match_pytorch(self):
         actual_cases = self.make_cases(torch)
         expected_cases = self.make_cases(reference_torch)
@@ -654,7 +699,151 @@ print(json.dumps({
             with self.subTest(case=case):
                 self.assertEqual(self.error(actual_call), self.error(expected_call))
 
-    def test_inference_only_autograd_boundary_is_explicit(self):
+    def test_autograd_scalar_empty_offset_and_strided_match_pytorch_2_13(self):
+        forms = (
+            "method",
+            "positional",
+            "input",
+            "x",
+            "a",
+            "x1",
+            "out none",
+            "alias and out none",
+        )
+        for case in (
+            "scalar",
+            "empty",
+            "offset",
+            "strided",
+            "channels last",
+            "channels last 3d",
+        ):
+            for form in forms:
+                actual_leaf, actual_input = self.make_autograd_case(torch, case)
+                expected_leaf, expected_input = self.make_autograd_case(
+                    reference_torch, case
+                )
+                if form == "method":
+                    actual_output = actual_input.floor()
+                    expected_output = expected_input.floor()
+                else:
+                    actual_output = self.call_top_level_floor(
+                        torch, actual_input, form
+                    )
+                    expected_output = self.call_top_level_floor(
+                        reference_torch, expected_input, form
+                    )
+
+                self.assert_tensor_matches(
+                    actual_output,
+                    expected_output,
+                    case=(case, form, "output"),
+                )
+                self.assertEqual(
+                    type(expected_output.grad_fn).__name__, "FloorBackward0"
+                )
+                self.assertEqual(
+                    torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                        actual_output
+                    ),
+                    ", grad_fn=<FloorBackward0>",
+                )
+
+                actual_loss = (
+                    actual_output if case == "scalar" else actual_output.sum()
+                )
+                expected_loss = (
+                    expected_output if case == "scalar" else expected_output.sum()
+                )
+                actual_loss.backward()
+                expected_loss.backward()
+                self.assert_tensor_matches(
+                    actual_leaf.grad,
+                    expected_leaf.grad,
+                    case=(case, form, "first gradient"),
+                )
+                actual_loss.backward()
+                expected_loss.backward()
+                self.assert_tensor_matches(
+                    actual_leaf.grad,
+                    expected_leaf.grad,
+                    case=(case, form, "repeated gradient"),
+                )
+
+        actual_extreme = torch.zeros((0,), requires_grad=True).reshape(
+            (0, sys.maxsize, 3)
+        )
+        expected_extreme = reference_torch.zeros(
+            (0,), dtype=reference_torch.float32, requires_grad=True
+        ).reshape((0, sys.maxsize, 3))
+        for actual_call, expected_call in (
+            (actual_extreme.floor, expected_extreme.floor),
+            (
+                lambda: torch.floor(actual_extreme, out=None),
+                lambda: reference_torch.floor(expected_extreme, out=None),
+            ),
+        ):
+            self.assertEqual(self.error(actual_call), self.error(expected_call))
+
+    def test_zero_vjp_special_upstreams_accumulation_and_composition_match(self):
+        snapshots = []
+        for module in (torch, reference_torch):
+            special = module.tensor(
+                [float("nan"), float("inf"), -float("inf"), -0.0],
+                dtype=module.float32,
+            )
+            leaf = module.tensor(
+                [-1.25, -0.0, 1.75, 4.5],
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            (module.floor(leaf, out=None) * special).sum().backward()
+            special_gradient = (
+                self.tensor_values(leaf.grad)
+                .reshape(-1)
+                .view(np.uint32)
+                .copy()
+            )
+
+            accumulated = module.tensor(
+                [-2.0, 0.0, 3.0],
+                dtype=module.float32,
+                requires_grad=True,
+            )
+            (accumulated * 3.0).sum().backward()
+            before_zero = self.tensor_values(accumulated.grad).copy()
+            reusable_loss = accumulated.floor().sum()
+            reusable_loss.backward()
+            after_zero = self.tensor_values(accumulated.grad).copy()
+            reusable_loss.backward()
+            after_repeated_zero = self.tensor_values(accumulated.grad).copy()
+
+            composed = module.tensor(
+                [-0.5, 0.5], dtype=module.float32, requires_grad=True
+            )
+            composed_loss = composed.sin().floor().sum()
+            composed_loss.backward()
+            composed_gradient = self.tensor_values(composed.grad).copy()
+            repeated_composed = self.error(composed_loss.backward)
+            snapshots.append(
+                (
+                    special_gradient,
+                    before_zero,
+                    after_zero,
+                    after_repeated_zero,
+                    composed_gradient,
+                    repeated_composed,
+                )
+            )
+
+        for index in range(5):
+            np.testing.assert_array_equal(snapshots[0][index], snapshots[1][index])
+        self.assertEqual(snapshots[0][5], snapshots[1][5])
+        np.testing.assert_array_equal(
+            snapshots[0][0], np.zeros((4,), dtype=np.uint32)
+        )
+
+    def test_requires_grad_inputs_match_inside_no_grad_and_detached(self):
         actual_leaf = torch.tensor(
             np.linspace(-3.75, 3.75, 24, dtype=np.float32)
             .reshape(2, 3, 4)
@@ -668,18 +857,6 @@ print(json.dumps({
         )
         actual_input = actual_leaf.transpose(0, 2)[1]
         expected_input = expected_leaf.transpose(0, 2)[1]
-
-        for call in (
-            actual_input.floor,
-            lambda: torch.floor(actual_input),
-            lambda: torch.floor(actual_input, out=None),
-        ):
-            with self.assertRaisesRegex(
-                RuntimeError, r"^floor\(\): autograd recording is not supported$"
-            ):
-                call()
-        self.assertTrue(expected_input.floor().requires_grad)
-        self.assertTrue(reference_torch.floor(expected_input).requires_grad)
 
         with torch.no_grad():
             actual_no_grad = actual_input.floor()

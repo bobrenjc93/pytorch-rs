@@ -69,6 +69,13 @@ struct SavedOutputUnaryNode {
 }
 
 #[derive(Clone)]
+struct ZeroVjpNode {
+    input: SavedTensor,
+    #[cfg_attr(not(feature = "python-bindings"), allow(dead_code))]
+    identity: AutogradNode,
+}
+
+#[derive(Clone)]
 enum GradFn {
     Multiply {
         left: SavedTensor,
@@ -87,6 +94,7 @@ enum GradFn {
     },
     SavedInputUnary(SavedInputUnaryNode),
     SavedOutputUnary(SavedOutputUnaryNode),
+    ZeroVjp(ZeroVjpNode),
     Sum {
         input: SavedTensor,
     },
@@ -137,6 +145,7 @@ impl GradFn {
             | Self::Unbind { input, .. } => input.take_parent(pending),
             Self::SavedInputUnary(node) => node.input.take_parent(pending),
             Self::SavedOutputUnary(node) => node.input.take_parent(pending),
+            Self::ZeroVjp(node) => node.input.take_parent(pending),
         }
     }
 
@@ -165,6 +174,7 @@ impl GradFn {
                 }
             }
             Self::Negate { .. }
+            | Self::ZeroVjp(_)
             | Self::Sum { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
@@ -183,6 +193,7 @@ impl GradFn {
             Self::SavedInputUnary(node) => node.input.storage = None,
             Self::SavedOutputUnary(node) => node.output.storage = None,
             Self::Negate { .. }
+            | Self::ZeroVjp(_)
             | Self::Sum { .. }
             | Self::Transform { .. }
             | Self::Unbind { .. } => {}
@@ -782,6 +793,7 @@ impl Tensor {
             GradFn::Negate { node, .. } | GradFn::Transform { node, .. } => *node,
             GradFn::SavedInputUnary(node) => node.identity,
             GradFn::SavedOutputUnary(node) => node.identity,
+            GradFn::ZeroVjp(node) => node.identity,
             GradFn::Sum { .. } => AutogradNode::Sum,
             GradFn::Unbind { .. } => AutogradNode::Unbind,
         };
@@ -1113,6 +1125,24 @@ impl Tensor {
                         output: saved_output,
                         identity,
                         vjp,
+                    }))),
+                },
+            }));
+        }
+        Ok(output)
+    }
+
+    fn finish_zero_vjp(
+        &self,
+        mut output: Self,
+        identity: AutogradNode,
+    ) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(GradFn::ZeroVjp(ZeroVjpNode {
+                        input: SavedTensor::try_from_tensor(self, false)?,
+                        identity,
                     }))),
                 },
             }));
@@ -2573,13 +2603,10 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when result metadata or storage allocation fails.
     pub fn floor(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
-            return Err(TensorError::AutogradRecordingUnsupported { operation: "floor" });
-        }
-        self.unary_map(floor_value)
+        let output = self.unary_map(floor_value)?;
+        self.finish_zero_vjp(output, AutogradNode::Floor)
     }
 
     /// Rounds every element up to the nearest integer.
@@ -3279,6 +3306,9 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                         GradFn::SavedOutputUnary(node) => {
                             push_saved_parent(&mut stack, &node.input);
                         }
+                        GradFn::ZeroVjp(node) => {
+                            push_saved_parent(&mut stack, &node.input);
+                        }
                     }
                 }
             }
@@ -3299,12 +3329,7 @@ fn apply_grad_fn(
     gradients: &mut Gradients,
 ) -> Result<(), TensorError> {
     match grad_fn {
-        GradFn::Sum { input } => {
-            if let Some(meta) = &input.autograd {
-                let gradient = filled_storage(input.elements, upstream[0])?;
-                add_gradient(gradients, meta, input.output_nr, gradient);
-            }
-        }
+        GradFn::Sum { input } => apply_sum_grad_fn(input, upstream, gradients)?,
         GradFn::MultiplyScalar { input, scalar } => {
             if let Some(meta) = &input.autograd {
                 let scalar = scalar.ok_or(TensorError::BackwardGraphFreed)?;
@@ -3323,6 +3348,7 @@ fn apply_grad_fn(
         }
         GradFn::SavedInputUnary(node) => apply_saved_input_unary(node, upstream, gradients)?,
         GradFn::SavedOutputUnary(node) => apply_saved_output_unary(node, upstream, gradients)?,
+        GradFn::ZeroVjp(node) => apply_zero_vjp(node, upstream, gradients)?,
         GradFn::Multiply {
             left,
             right,
@@ -3401,6 +3427,18 @@ fn apply_grad_fn(
     Ok(())
 }
 
+fn apply_sum_grad_fn(
+    input: &SavedTensor,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    if let Some(meta) = &input.autograd {
+        let gradient = filled_storage(input.elements, upstream[0])?;
+        add_gradient(gradients, meta, input.output_nr, gradient);
+    }
+    Ok(())
+}
+
 fn apply_unbind_grad_fn(
     node: &Arc<AutogradMeta>,
     input: &SavedTensor,
@@ -3467,6 +3505,25 @@ fn apply_saved_output_unary(
     let mut gradient = try_result_vector(input.elements, input.elements)?;
     (node.vjp)(&node.output, upstream, &mut gradient);
     add_gradient(gradients, meta, input.output_nr, gradient);
+    Ok(())
+}
+
+fn apply_zero_vjp(
+    node: &ZeroVjpNode,
+    upstream: &[f32],
+    gradients: &mut Gradients,
+) -> Result<(), TensorError> {
+    let input = &node.input;
+    let Some(meta) = &input.autograd else {
+        return Ok(());
+    };
+    debug_assert_eq!(input.elements, upstream.len());
+    add_gradient(
+        gradients,
+        meta,
+        input.output_nr,
+        filled_storage(input.elements, 0.0)?,
+    );
     Ok(())
 }
 
@@ -4914,9 +4971,9 @@ mod tests {
     use crate::storage::Storage;
 
     use super::{
-        CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType, Device,
-        F32_SIGN_MASK, SavedTensor, Tensor, TensorError, materialize_contiguous_trailing_broadcast,
-        sqrt_value, try_result_vector,
+        AutogradKind, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType,
+        Device, F32_SIGN_MASK, GradFn, SavedTensor, Tensor, TensorError,
+        materialize_contiguous_trailing_broadcast, sqrt_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -5200,6 +5257,10 @@ mod tests {
         assert_eq!(source.relu().unwrap().grad_fn_name(), Some("ReluBackward0"));
         assert_eq!(source.sin().unwrap().grad_fn_name(), Some("SinBackward0"));
         assert_eq!(source.exp().unwrap().grad_fn_name(), Some("ExpBackward0"));
+        assert_eq!(
+            source.floor().unwrap().grad_fn_name(),
+            Some("FloorBackward0")
+        );
         assert_eq!(
             source.sigmoid(),
             Err(TensorError::AutogradRecordingUnsupported {
@@ -6288,6 +6349,41 @@ mod tests {
             );
         }
         assert!(output.requires_grad());
+    }
+
+    #[test]
+    fn zero_vjp_edges_do_not_retain_input_or_output_values() {
+        let leaf = Tensor::ones([16_384]).unwrap().with_requires_grad(true);
+        let leaf_storage = Arc::downgrade(&leaf.storage);
+        let output = leaf.floor().unwrap();
+        let output_storage = Arc::downgrade(&output.storage);
+        let loss = output.sum();
+
+        let metadata = output.autograd.as_deref().unwrap();
+        let AutogradKind::NonLeaf { grad_fn } = &metadata.kind else {
+            panic!("tracked floor output must be a non-leaf");
+        };
+        let grad_fn = grad_fn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(GradFn::ZeroVjp(node)) = grad_fn.as_ref() else {
+            panic!("tracked floor output must use a zero-VJP node");
+        };
+        assert!(node.input.storage.is_none());
+        drop(grad_fn);
+
+        drop(output);
+        drop(leaf);
+        assert!(
+            leaf_storage.upgrade().is_none(),
+            "zero-VJP edges must not retain input values"
+        );
+        assert!(
+            output_storage.upgrade().is_none(),
+            "zero-VJP edges must not retain output values"
+        );
+        loss.backward().unwrap();
+        loss.backward().unwrap();
     }
 
     #[test]
