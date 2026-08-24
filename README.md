@@ -175,7 +175,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `Tensor.exp()` and `torch.exp()` share the native float32 CPU kernel and record `ExpBackward0` when eager gradient recording is active. Top-level calls accept `out=None`; concrete output tensors remain explicitly unsupported.
 
-`Tensor.floor()` uses the shared native unary-layout path for CPU float32 tensors, preserving PyTorch-compatible values, output strides, and fresh storage. Detached tensors and calls under `torch.no_grad()` are supported; active autograd recording is rejected before output planning. Top-level `torch.floor` and in-place `Tensor.floor_()` remain unsupported.
+`Tensor.ceil()` and `Tensor.floor()` use the shared native unary-layout path for CPU float32 tensors, preserving PyTorch-compatible values, output strides, and fresh storage. Detached tensors and calls under `torch.no_grad()` are supported; active autograd recording is rejected before output planning. Top-level `torch.ceil`/`torch.floor` and in-place `Tensor.ceil_()`/`Tensor.floor_()` remain unsupported.
 
 `Tensor.sigmoid()` uses the same inference-only unary-layout and `TorchFunctionMode` paths for CPU float32 tensors, including empty, offset, noncontiguous, and channel-last inputs. Detached tensors and tracked tensors under `torch.no_grad()` produce fresh layout-preserving storage; active autograd recording is rejected before output planning. Top-level `torch.sigmoid`, `torch.nn.functional.sigmoid`, and in-place `Tensor.sigmoid_()` remain unsupported.
 
