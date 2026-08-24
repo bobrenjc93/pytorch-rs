@@ -5889,6 +5889,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:854",
+      "recordedAt": "2026-08-24T19:20:27.078Z",
+      "label": "PR #854",
+      "kind": "leaf",
+      "prNumber": 854,
+      "title": "Differentiate floor with a zero-gradient autograd node",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 89.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 72.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }

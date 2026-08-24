@@ -213,7 +213,8 @@ class TensorFloorTests(unittest.TestCase):
     @staticmethod
     def make_tracked_cases():
         scalar = torch.tensor(-1.25, requires_grad=True)
-        empty = torch.zeros((2, 0, 3), requires_grad=True).transpose(0, 2)[1]
+        empty_leaf = torch.zeros((2, 0, 3), requires_grad=True)
+        empty = empty_leaf.transpose(0, 2)[1]
         leaf = torch.tensor(
             np.linspace(-3.75, 3.75, 24, dtype=np.float32)
             .reshape(2, 3, 4)
@@ -221,26 +222,107 @@ class TensorFloorTests(unittest.TestCase):
             requires_grad=True,
         )
         strided = leaf.transpose(0, 2)
-        return scalar, empty, strided[1], strided
+        channels_last_leaf = torch.tensor(
+            np.linspace(-15.0, 15.0, 120, dtype=np.float32)
+            .reshape(2, 3, 4, 5)
+            .tolist(),
+            requires_grad=True,
+        )
+        channels_last = channels_last_leaf.contiguous(
+            memory_format=torch.channels_last
+        )
+        channels_last_3d_leaf = torch.tensor(
+            np.linspace(-90.0, 90.0, 720, dtype=np.float32)
+            .reshape(2, 3, 4, 5, 6)
+            .tolist(),
+            requires_grad=True,
+        )
+        channels_last_3d = channels_last_3d_leaf.contiguous(
+            memory_format=torch.channels_last_3d
+        )
+        return (
+            (scalar, scalar),
+            (empty_leaf, empty),
+            (leaf, strided[1]),
+            (leaf, strided),
+            (channels_last_leaf, channels_last),
+            (channels_last_3d_leaf, channels_last_3d),
+        )
 
-    def test_active_autograd_is_rejected_before_planning(self):
-        message = r"^floor\(\): autograd recording is not supported$"
-        for case, source in enumerate(self.make_tracked_cases()):
+    def test_active_autograd_records_reusable_floor_backward_zero_vjp(self):
+        for case, (leaf, source) in enumerate(self.make_tracked_cases()):
             with self.subTest(case=case):
-                with self.assertRaisesRegex(RuntimeError, message):
-                    source.floor()
+                expected = source.detach().floor()
+                output = source.floor()
+                self.assertEqual(output.shape, expected.shape)
+                self.assertEqual(output.stride(), expected.stride())
+                self.assertEqual(output.storage_offset(), 0)
+                self.assertTrue(output.requires_grad)
+                self.assertFalse(output.is_leaf)
+                self.assertFalse(output.is_set_to(source))
+                np.testing.assert_array_equal(
+                    self.tensor_bits(output), self.tensor_bits(expected)
+                )
+                self.assertEqual(
+                    torch._C._nn_functional_dropout_tensor_autograd_suffix(output),
+                    ", grad_fn=<FloorBackward0>",
+                )
+
+                loss = output if output.numel() == 1 else output.sum()
+                loss.backward()
+                loss.backward()
+                gradient_bits = self.tensor_bits(leaf.grad)
+                np.testing.assert_array_equal(
+                    gradient_bits, np.zeros(gradient_bits.shape, dtype=np.uint32)
+                )
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
-        with self.assertRaisesRegex(RuntimeError, message):
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             extreme.floor()
         with torch.no_grad():
             with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
                 extreme.floor()
 
+    def test_zero_vjp_ignores_upstream_values_composes_and_accumulates(self):
+        leaf = torch.tensor([-1.25, -0.0, 1.75, 4.5], requires_grad=True)
+        weights = torch.tensor([float("nan"), float("inf"), -float("inf"), -0.0])
+        (leaf.floor() * weights).sum().backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(leaf.grad), np.zeros((4,), dtype=np.uint32)
+        )
+
+        accumulated = torch.tensor([-2.0, 0.0, 3.0], requires_grad=True)
+        (accumulated * 3.0).sum().backward()
+        first = self.tensor_bits(accumulated.grad).copy()
+        accumulated.floor().sum().backward()
+        np.testing.assert_array_equal(self.tensor_bits(accumulated.grad), first)
+
+        composed = torch.tensor([-0.5, 0.5], requires_grad=True)
+        loss = composed.sin().floor().sum()
+        loss.backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(composed.grad), np.zeros((2,), dtype=np.uint32)
+        )
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            loss.backward()
+
+        higher_order = torch.tensor(0.25, requires_grad=True)
+        higher_order_loss = higher_order.floor()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        higher_order_loss.backward()
+        self.assertEqual(higher_order.grad.item(), 0.0)
+
     def test_detached_and_no_grad_inputs_use_the_inference_path(self):
-        for case, source in enumerate(self.make_tracked_cases()):
+        for case, (_, source) in enumerate(self.make_tracked_cases()):
             detached = source.detach()
             expected = detached.floor()
             with torch.no_grad():
@@ -369,13 +451,18 @@ class TensorFloorTests(unittest.TestCase):
         self.assertEqual(forwarded.tolist(), [1.0])
 
         order.clear()
-        with self.assertRaisesRegex(
-            RuntimeError, r"^floor\(\): autograd recording is not supported$"
-        ):
-            with ForwardingMode("lower"):
-                with ForwardingMode("upper"):
-                    tracked.floor()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                tracked_forwarded = tracked.floor()
         self.assertEqual(order, ["upper", "lower"])
+        self.assertTrue(tracked_forwarded.requires_grad)
+        self.assertFalse(tracked_forwarded.is_leaf)
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                tracked_forwarded
+            ),
+            ", grad_fn=<FloorBackward0>",
+        )
 
         old_recursion_limit = sys.getrecursionlimit()
         declining = RecordingMode(NotImplemented)
@@ -398,15 +485,28 @@ class TensorFloorTests(unittest.TestCase):
                 plain.floor(1)
         self.assertEqual(invalid.calls, [])
 
-    def test_top_level_autograd_rejection_and_no_grad_reuse_method_path(self):
-        message = r"^floor\(\): autograd recording is not supported$"
-        for case, source in enumerate(self.make_tracked_cases()):
+    def test_top_level_autograd_and_no_grad_reuse_method_path(self):
+        for case, (_, source) in enumerate(self.make_tracked_cases()):
             detached = source.detach()
             expected = detached.floor()
             for form, call in self.top_level_calls(source):
                 with self.subTest(case=case, form=form, mode="recording"):
-                    with self.assertRaisesRegex(RuntimeError, message):
-                        call()
+                    actual = call()
+                    self.assertEqual(actual.shape, expected.shape)
+                    self.assertEqual(actual.stride(), expected.stride())
+                    self.assertEqual(actual.storage_offset(), 0)
+                    self.assertTrue(actual.requires_grad)
+                    self.assertFalse(actual.is_leaf)
+                    self.assertFalse(actual.is_set_to(source))
+                    np.testing.assert_array_equal(
+                        self.tensor_bits(actual), self.tensor_bits(expected)
+                    )
+                    self.assertEqual(
+                        torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                            actual
+                        ),
+                        ", grad_fn=<FloorBackward0>",
+                    )
                 with self.subTest(case=case, form=form, mode="no_grad"):
                     with torch.no_grad():
                         actual = call()
@@ -425,7 +525,7 @@ class TensorFloorTests(unittest.TestCase):
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
-        with self.assertRaisesRegex(RuntimeError, message):
+        with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
             torch.floor(extreme)
         with torch.no_grad():
             with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
@@ -523,6 +623,18 @@ class TensorFloorTests(unittest.TestCase):
                 forwarded = torch.floor(input=plain, out=None)
         self.assertEqual(forwarding_order, ["upper", "lower"])
         self.assertEqual(forwarded.tolist(), [1.0])
+
+        forwarding_order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                tracked_forwarded = torch.floor(input=tensor, out=None)
+        self.assertEqual(forwarding_order, ["upper", "lower"])
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                tracked_forwarded
+            ),
+            ", grad_fn=<FloorBackward0>",
+        )
 
         events = []
 
