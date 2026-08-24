@@ -410,6 +410,44 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             atol=1.0e-5,
         )
 
+    def test_sum_short_tail_near_overflow_matches_pytorch_2_13(self):
+        input_bits = np.asarray(
+            [
+                0x5F18_CEDB,
+                0x5E34_FFF9,
+                0x5E09_7E2C,
+                0x5EB4_3001,
+                0x5EF8_B0BC,
+                0x5EF8_0429,
+            ],
+            dtype=np.uint32,
+        )
+        values = input_bits.view(np.float32).tolist()
+        actual_input = self.tensor(torch, values)
+        actual_target = torch.zeros((6,), dtype=torch.float32)
+        expected_input = self.tensor(reference_torch, values)
+        expected_target = reference_torch.zeros(
+            (6,), dtype=reference_torch.float32
+        )
+
+        actual_none = functional.mse_loss(
+            actual_input, actual_target, reduction="none"
+        )
+        expected_none = reference_functional.mse_loss(
+            expected_input, expected_target, reduction="none"
+        )
+        self.assert_matches(actual_none, expected_none, case="short tail none")
+
+        actual_sum = functional.mse_loss(
+            actual_input, actual_target, reduction="sum"
+        )
+        expected_sum = reference_functional.mse_loss(
+            expected_input, expected_target, reduction="sum"
+        )
+        self.assert_matches(actual_sum, expected_sum, case="short tail sum")
+        self.assertEqual(self.tensor_bits(actual_sum).item(), 0x7F7F_FFFF)
+        self.assertEqual(self.tensor_bits(expected_sum).item(), 0x7F7F_FFFF)
+
     def test_float32_edge_bits_match_pytorch_2_13(self):
         input_values = [
             -0.0,

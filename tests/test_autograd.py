@@ -114,6 +114,33 @@ class AutogradApiTests(unittest.TestCase):
         self.assertIs(retained_grad, x.grad)
         np.testing.assert_array_equal(np.asarray(retained_grad), [-8.0, 2.0, 12.0])
 
+    def test_dense_gradient_view_sum_matches_layout_identical_clone(self):
+        weights = torch.tensor(
+            [
+                [-1.0, -1.0e38, 1.0, 2.0e38, 3.0e38],
+                [2.0e38, -1.0, 3.0e38, -3.0e38, -1.0e38],
+            ]
+        )
+        leaf = torch.ones((2, 5), requires_grad=True)
+        (leaf * weights).sum().backward()
+
+        view = leaf.grad.T
+        cloned = view.clone()
+        self.assertEqual(view.shape, cloned.shape)
+        self.assertEqual(view.stride(), cloned.stride())
+        np.testing.assert_array_equal(
+            np.asarray(view).view(np.uint32),
+            np.asarray(cloned).view(np.uint32),
+        )
+        self.assertEqual(
+            np.asarray(view.sum()).reshape(-1).view(np.uint32).item(),
+            0xFF80_0000,
+        )
+        self.assertEqual(
+            np.asarray(cloned.sum()).reshape(-1).view(np.uint32).item(),
+            0xFF80_0000,
+        )
+
     def test_real_scalar_addition_retains_gradient_history(self):
         values = torch.tensor([[1.0, 2.0], [3.0, 4.0]], requires_grad=True)
         forward = values + 2.0
@@ -1475,6 +1502,48 @@ class AutogradReferenceTests(unittest.TestCase):
         self.assertEqual(outcomes[0][:2], outcomes[1][:2])
         np.testing.assert_array_equal(outcomes[0][2], outcomes[1][2])
         np.testing.assert_array_equal(outcomes[0][3], outcomes[1][3])
+
+    def test_dense_gradient_view_sum_matches_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            weights = module.tensor(
+                [
+                    [-1.0, -1.0e38, 1.0, 2.0e38, 3.0e38],
+                    [2.0e38, -1.0, 3.0e38, -3.0e38, -1.0e38],
+                ],
+                dtype=module.float32,
+            )
+            leaf = module.ones(
+                (2, 5), dtype=module.float32, requires_grad=True
+            )
+            (leaf * weights).sum().backward()
+
+            view = leaf.grad.T
+            cloned = view.clone()
+            outcomes.append(
+                (
+                    tuple(view.shape),
+                    view.stride(),
+                    tuple(cloned.shape),
+                    cloned.stride(),
+                    np.asarray(view).reshape(-1).view(np.uint32).copy(),
+                    np.asarray(cloned).reshape(-1).view(np.uint32).copy(),
+                    np.asarray(view.sum())
+                    .reshape(-1)
+                    .view(np.uint32)
+                    .item(),
+                    np.asarray(cloned.sum())
+                    .reshape(-1)
+                    .view(np.uint32)
+                    .item(),
+                )
+            )
+
+        self.assertEqual(outcomes[0][:4], outcomes[1][:4])
+        np.testing.assert_array_equal(outcomes[0][4], outcomes[1][4])
+        np.testing.assert_array_equal(outcomes[0][5], outcomes[1][5])
+        self.assertEqual(outcomes[0][6:], outcomes[1][6:])
+        self.assertEqual(outcomes[0][6:], (0xFF80_0000, 0xFF80_0000))
 
     def test_real_scalar_addition_gradients_match_pytorch_2_13(self):
         outcomes = []

@@ -305,6 +305,30 @@ fn accumulate_sum_block(values: &mut impl Iterator<Item = f32>, accumulator: &mu
     }
 }
 
+fn sum_short_tail(mut values: impl ExactSizeIterator<Item = f32>) -> f32 {
+    // PyTorch's scalar row reducer uses four partial sums. Complete groups
+    // feed one value into each partial, then any remainder accumulates into
+    // the first partial before the four are folded from left to right.
+    debug_assert!(values.len() < SUM_LANES);
+    let group_count = values.len() / SUM_ROWS;
+    let mut partial_sums = [0.0_f32; SUM_ROWS];
+    for _ in 0..group_count {
+        for partial_sum in &mut partial_sums {
+            *partial_sum += values
+                .next()
+                .expect("a complete short sum group must contain four values");
+        }
+    }
+    for value in values {
+        partial_sums[0] += value;
+    }
+    let mut sum = partial_sums[0];
+    for partial_sum in &partial_sums[1..] {
+        sum += partial_sum;
+    }
+    sum
+}
+
 fn cascading_sum(mut values: impl ExactSizeIterator<Item = f32>) -> f32 {
     // PyTorch's CPU float reduction uses several independent lanes and folds
     // bounded chunks through a cascade. Mirroring that shape prevents early
@@ -341,7 +365,7 @@ fn cascading_sum(mut values: impl ExactSizeIterator<Item = f32>) -> f32 {
                 .expect("a complete sum lane must contain every requested value");
         }
     }
-    let tail = values.fold(0.0_f32, |sum, value| sum + value);
+    let tail = sum_short_tail(values);
     for level in &levels {
         add_sum_accumulator(&mut accumulator, level);
     }
@@ -2002,6 +2026,18 @@ impl Tensor {
         values.get(self.offset..end)
     }
 
+    fn dense_physical_sum(&self) -> Option<f32> {
+        if !self.is_non_overlapping_and_dense() {
+            return None;
+        }
+        let end = self.offset.checked_add(self.elements)?;
+        self.storage.with_values(|values| {
+            values
+                .get(self.offset..end)
+                .map(|values| cascading_sum(values.iter().copied()))
+        })
+    }
+
     fn value_at_linear_index(&self, index: usize) -> f32 {
         if let Some(values) = self.contiguous_slice() {
             return values[index];
@@ -2733,10 +2769,9 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        let sum = self.dense_physical_slice().map_or_else(
-            || cascading_sum(self.logical_values()),
-            |values| cascading_sum(values.iter().copied()),
-        );
+        let sum = self
+            .dense_physical_sum()
+            .unwrap_or_else(|| cascading_sum(self.logical_values()));
         let mut output = Self::from_owned_parts(
             vec![sum],
             Vec::new(),
@@ -6010,6 +6045,29 @@ mod tests {
                     .eq(expected.logical_values().map(f32::to_bits))
             );
         }
+    }
+
+    #[test]
+    fn dense_sum_uses_physical_order_for_owned_and_shared_gradient_storage() {
+        let tensor = Tensor::from_vec(
+            vec![
+                -1.0, -1.0e38, 1.0, 2.0e38, 3.0e38, 2.0e38, -1.0, 3.0e38, -3.0e38, -1.0e38,
+            ],
+            [2, 5],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+        let shared = shared_gradient_copy(&tensor);
+
+        assert_eq!(
+            tensor.sum().item().unwrap().to_bits(),
+            f32::NEG_INFINITY.to_bits()
+        );
+        assert_eq!(
+            shared.sum().item().unwrap().to_bits(),
+            f32::NEG_INFINITY.to_bits()
+        );
     }
 
     #[test]

@@ -169,6 +169,12 @@ impl Storage {
         }
     }
 
+    pub(crate) fn with_values<R>(&self, read: impl FnOnce(&[f32]) -> R) -> R {
+        match &self.payload {
+            StoragePayload::CpuFloat32(data) => data.with_values(read),
+        }
+    }
+
     pub(crate) fn try_copy_values<E>(
         &self,
         copy: impl FnOnce(&[f32]) -> Result<Vec<f32>, E>,
@@ -280,6 +286,7 @@ mod tests {
         assert_eq!(storage.data_ptr(), pointer);
         assert_eq!(storage.owned_values(), None);
         assert_eq!(storage.copy_range(0, 2), [1.0, -2.0]);
+        assert_eq!(storage.with_values(<[f32]>::to_vec), [1.0, -2.0, 3.5]);
 
         storage.accumulate_shared_gradient(vec![2.0, 4.0, -1.5]);
 
@@ -353,6 +360,7 @@ mod tests {
         assert_eq!(storage.data_ptr(), pointer.cast());
         assert_eq!(storage.value(1), Some(2.0));
         assert_eq!(storage.copy_range(1, 3), [2.0, 3.0]);
+        assert_eq!(storage.with_values(<[f32]>::to_vec), [1.0, 2.0, 3.0]);
         assert_eq!(
             storage
                 .try_copy_values(|values| Ok::<_, Infallible>(values.to_vec()))

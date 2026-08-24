@@ -332,6 +332,32 @@ class FunctionalMseLossTests(unittest.TestCase):
         self.assertEqual(actual.item(), 16_778_196.0)
         self.assertNotEqual(actual.item(), 16_777_216.0)
 
+    def test_sum_short_tail_avoids_spurious_overflow(self):
+        input_bits = np.asarray(
+            [
+                0x5F18_CEDB,
+                0x5E34_FFF9,
+                0x5E09_7E2C,
+                0x5EB4_3001,
+                0x5EF8_B0BC,
+                0x5EF8_0429,
+            ],
+            dtype=np.uint32,
+        )
+        input = torch.tensor(input_bits.view(np.float32).tolist())
+        target = torch.zeros((6,))
+
+        unreduced = functional.mse_loss(input, target, reduction="none")
+        expected_unreduced = (input - target).square()
+        np.testing.assert_array_equal(
+            self.tensor_bits(unreduced),
+            self.tensor_bits(expected_unreduced),
+        )
+
+        reduced = functional.mse_loss(input, target, reduction="sum")
+        self.assertTrue(np.isfinite(reduced.item()))
+        self.assertEqual(self.tensor_bits(reduced).item(), 0x7F7F_FFFF)
+
     def test_every_call_returns_fresh_independent_storage(self):
         for case, input, target in self.layout_cases():
             for reduction in ("none", "sum"):

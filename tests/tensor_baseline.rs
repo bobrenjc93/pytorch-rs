@@ -1835,6 +1835,34 @@ fn reductions_handle_ordinary_and_empty_tensors() {
             .to_bits(),
         16_778_196.0_f32.to_bits()
     );
+
+    let near_overflow_inputs = [
+        0x5f18_cedb,
+        0x5e34_fff9,
+        0x5e09_7e2c,
+        0x5eb4_3001,
+        0x5ef8_b0bc,
+        0x5ef8_0429,
+    ]
+    .map(f32::from_bits);
+    let near_overflow_inputs = Tensor::from_vec(near_overflow_inputs.to_vec(), [6]).unwrap();
+    let squares = near_overflow_inputs.mul(&near_overflow_inputs).unwrap();
+    assert_eq!(
+        squares
+            .as_slice()
+            .iter()
+            .map(|value| value.to_bits())
+            .collect::<Vec<_>>(),
+        [
+            0x7eb6_6c96,
+            0x7cff_f1ec,
+            0x7c93_b093,
+            0x7dfd_a715,
+            0x7e71_96e6,
+            0x7e70_4810,
+        ]
+    );
+    assert_eq!(squares.sum().item().unwrap().to_bits(), f32::MAX.to_bits());
 }
 
 #[test]
