@@ -77,32 +77,36 @@ class TensorExpTests(unittest.TestCase):
             self.assertFalse(expected.is_set_to(source))
             self.assertFalse(actual.is_set_to(expected))
 
-    def test_detached_autograd_boundary_and_no_grad_are_unchanged(self):
-        leaf = torch.tensor(
-            [[-2.0, 0.0, 1.0], [2.0, 4.0, 6.0]], requires_grad=True
-        )
-        source = leaf.transpose(0, 1)[1]
+    def test_autograd_name_lifecycle_accumulation_and_no_grad(self):
+        probability = torch.tensor([1.0], requires_grad=True).exp()
+        with self.assertRaisesRegex(ValueError, r"grad_fn=<ExpBackward0>"):
+            torch.nn.functional.dropout(
+                torch.tensor([1.0]), p=probability, training=False
+            )
 
-        output = source.exp()
-        self.assertFalse(output.requires_grad)
-        self.assertTrue(output.is_leaf)
-        self.assertFalse(output.is_set_to(source))
-
+        freed = torch.tensor([-1.0, 0.5, 2.0], requires_grad=True)
+        loss = freed.exp().sum()
+        loss.backward()
         with self.assertRaisesRegex(
-            RuntimeError,
-            r"^exp\(\): autograd recording is not supported$",
+            RuntimeError, "backward through the graph a second time"
         ):
-            torch.exp(source)
+            loss.backward()
 
+        accumulated = torch.tensor([-1.0, 0.5, 2.0], requires_grad=True)
+        accumulated.exp().sum().backward()
+        first = np.asarray(accumulated.grad).copy()
+        accumulated.exp().sum().backward()
+        np.testing.assert_array_equal(np.asarray(accumulated.grad), first * 2.0)
+
+        tracked = torch.tensor([-1.0, 0.5, 2.0], requires_grad=True)
         with torch.no_grad():
-            method_output = source.exp()
-            function_output = torch.exp(source)
-        self.assert_tensor_bits_match(method_output, output, case="method no_grad")
-        self.assert_tensor_bits_match(
-            function_output, output, case="top-level no_grad"
-        )
+            untracked = tracked.exp()
+        self.assertFalse(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
+        self.assertFalse(untracked.is_set_to(tracked))
+        self.assertTrue(tracked.exp().requires_grad)
 
-        detached = source.detach()
+        detached = tracked.detach()
         self.assert_tensor_bits_match(
             detached.exp(), torch.exp(detached), case="detached input"
         )
@@ -285,9 +289,13 @@ check_reducers()
             with ForwardingMode("upper"):
                 forwarded = tensor.exp()
         self.assertEqual(order, ["upper", "lower"])
-        self.assertFalse(forwarded.requires_grad)
-        self.assertTrue(forwarded.is_leaf)
-        self.assertEqual(forwarded.tolist(), tensor.detach().exp().tolist())
+        forwarded.sum().backward()
+        np.testing.assert_allclose(
+            np.asarray(tensor.grad),
+            np.exp(np.asarray([0.5], dtype=np.float32)),
+            rtol=2.0e-6,
+            atol=0.0,
+        )
 
         class RaisingMode(torch.overrides.TorchFunctionMode):
             def __torch_function__(self, func, types, args=(), kwargs=None):

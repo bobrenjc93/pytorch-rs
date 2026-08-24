@@ -1939,7 +1939,7 @@ impl UnaryOutOperation {
         qualified_name: "torch.exp",
         dispatch_allocation_error: "unable to allocate exp dispatch operands",
         out_unsupported_error: "exp(): the 'out' argument is not supported",
-        autograd_unsupported_error: Some("exp(): autograd recording is not supported"),
+        autograd_unsupported_error: None,
         apply: CoreTensor::exp,
     };
 

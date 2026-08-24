@@ -634,6 +634,217 @@ fn sine_obeys_detach_no_grad_and_freed_graph_boundaries() {
 }
 
 #[test]
+fn exponential_preserves_scalar_empty_offset_and_strided_autograd_history() {
+    let scalar = Tensor::from_vec(vec![1.5], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let scalar_output = scalar.exp().unwrap();
+    assert!(scalar_output.requires_grad());
+    assert!(!scalar_output.is_leaf());
+    assert!(scalar_output.shape().is_empty());
+    assert!(scalar_output.stride().is_empty());
+    assert_eq!(scalar_output.storage_offset(), 0);
+    scalar_output.backward().unwrap();
+    assert_eq!(
+        scalar.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        1.5_f32.exp().to_bits()
+    );
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let empty_output = empty.exp().unwrap();
+    assert!(empty_output.requires_grad());
+    assert!(!empty_output.is_leaf());
+    assert_eq!(empty_output.shape(), [2, 0, 3]);
+    assert_eq!(empty_output.stride(), [3, 3, 1]);
+    assert_eq!(empty_output.storage_offset(), 0);
+    assert_eq!(empty_output.dtype(), empty.dtype());
+    assert_eq!(empty_output.device(), empty.device());
+    empty_output.sum().backward().unwrap();
+    let empty_gradient = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_gradient.shape(), [2, 0, 3]);
+    assert_eq!(empty_gradient.stride(), [3, 3, 1]);
+    assert!(values(&empty_gradient).is_empty());
+
+    let offset_leaf = Tensor::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let offset = offset_leaf.index([1]).unwrap();
+    let offset_weights = Tensor::from_vec(vec![1.0, 2.0, 3.0], [3]).unwrap();
+    let offset_output = offset.exp().unwrap();
+    assert!(offset_output.requires_grad());
+    assert!(!offset_output.is_leaf());
+    assert_eq!(offset.storage_offset(), 3);
+    assert_eq!(offset_output.shape(), [3]);
+    assert_eq!(offset_output.stride(), [1]);
+    assert_eq!(offset_output.storage_offset(), 0);
+    assert!(!offset_output.shares_storage_with(&offset));
+    offset_output
+        .mul(&offset_weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        values(&offset_leaf.grad().unwrap().unwrap()),
+        [
+            0.0,
+            0.0,
+            0.0,
+            1.0_f32.exp(),
+            2.0 * 2.0_f32.exp(),
+            3.0 * 3.0_f32.exp(),
+        ]
+    );
+
+    let strided_leaf = Tensor::from_vec(vec![-2.0, -1.0, 0.0, 1.0, 2.0, 3.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let strided = strided_leaf.transpose(0, 1).unwrap();
+    let strided_weights = Tensor::from_vec(vec![1.0, -2.0, 3.0, -4.0, 5.0, -6.0], [3, 2]).unwrap();
+    let strided_output = strided.exp().unwrap();
+    assert!(strided_output.requires_grad());
+    assert!(!strided_output.is_leaf());
+    assert_eq!(strided_output.shape(), [3, 2]);
+    assert_eq!(strided_output.stride(), [1, 3]);
+    assert_eq!(strided_output.storage_offset(), 0);
+    assert!(!strided_output.shares_storage_with(&strided));
+    strided_output
+        .mul(&strided_weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        values(&strided_leaf.grad().unwrap().unwrap()),
+        [
+            (-2.0_f32).exp(),
+            3.0 * (-1.0_f32).exp(),
+            5.0,
+            -2.0 * 1.0_f32.exp(),
+            -4.0 * 2.0_f32.exp(),
+            -6.0 * 3.0_f32.exp(),
+        ]
+    );
+}
+
+#[test]
+fn exponential_vjp_matches_pytorch_overflow_subnormal_and_nonfinite_bits() {
+    // input, upstream, forward result, gradient
+    const CASES: [(u32, u32, u32, u32); 20] = [
+        (0xff80_0000, 0x7f80_0000, 0x0000_0000, 0xffc0_0000),
+        (0xc2d0_0000, 0xbf80_0000, 0x0000_0000, 0x8000_0000),
+        (0xc2cf_0000, 0x3f00_0000, 0x0000_0001, 0x0000_0000),
+        (0xc2ce_0000, 0xbf00_0000, 0x0000_0001, 0x8000_0000),
+        (0xc2c8_0000, 0x0000_0001, 0x0000_001b, 0x0000_0000),
+        (0xc2b0_0000, 0xff80_0000, 0x0041_edc4, 0xff80_0000),
+        (0xbf80_0000, 0x0000_0000, 0x3ebc_5ab2, 0x0000_0000),
+        (0x8000_0000, 0x8000_0000, 0x3f80_0000, 0x8000_0000),
+        (0x0000_0000, 0x3f80_0000, 0x3f80_0000, 0x3f80_0000),
+        (0x3f80_0000, 0xbf80_0000, 0x402d_f854, 0xc02d_f854),
+        (0x4120_0000, 0x0000_0001, 0x46ac_14ee, 0x0000_560a),
+        (0x42a0_0000, 0x3e80_0000, 0x792a_bbce, 0x782a_bbce),
+        (0x42b0_0000, 0x4000_0000, 0x7ef8_82b7, 0x7f78_82b7),
+        (0x42b1_8000, 0xbf80_0000, 0x7f80_0000, 0xff80_0000),
+        (0x42b2_0000, 0x3f80_0000, 0x7f80_0000, 0x7f80_0000),
+        (0x7f80_0000, 0x0000_0000, 0x7f80_0000, 0xffc0_0000),
+        (0x7f81_2345, 0x3f80_0000, 0x7fc1_2345, 0x7fc1_2345),
+        (0xff81_2345, 0xbf80_0000, 0xffc1_2345, 0xffc1_2345),
+        (0x7fc1_2345, 0x7fc0_1234, 0x7fc1_2345, 0x7fc0_1234),
+        (0xffc5_4321, 0xffc0_5678, 0xffc5_4321, 0xffc0_5678),
+    ];
+    let leaf = Tensor::from_vec(
+        CASES
+            .iter()
+            .map(|&(input, _, _, _)| f32::from_bits(input))
+            .collect(),
+        [CASES.len()],
+    )
+    .unwrap()
+    .with_requires_grad(true);
+    let weights = Tensor::from_vec(
+        CASES
+            .iter()
+            .map(|&(_, upstream, _, _)| f32::from_bits(upstream))
+            .collect(),
+        [CASES.len()],
+    )
+    .unwrap();
+    let output = leaf.exp().unwrap();
+    for (actual, (_, _, expected_bits, _)) in output.logical_values().zip(CASES) {
+        let expected = f32::from_bits(expected_bits);
+        if expected.is_nan() {
+            assert!(actual.is_nan());
+        } else {
+            assert_eq!(actual.to_bits(), expected_bits);
+        }
+    }
+    let loss = output.mul(&weights).unwrap().sum();
+
+    loss.backward().unwrap();
+    for (actual, (_, _, _, expected_bits)) in
+        leaf.grad().unwrap().unwrap().logical_values().zip(CASES)
+    {
+        let expected = f32::from_bits(expected_bits);
+        if expected.is_nan() {
+            assert!(actual.is_nan());
+        } else {
+            assert_eq!(actual.to_bits(), expected_bits);
+        }
+    }
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+}
+
+#[test]
+fn exponential_composes_accumulates_and_obeys_detach_and_no_grad() {
+    let accumulated = Tensor::from_vec(vec![-1.0, 0.0, 1.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    accumulated.exp().unwrap().sum().backward().unwrap();
+    accumulated.exp().unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&accumulated.grad().unwrap().unwrap()),
+        [
+            (-1.0_f32).exp() * 2.0,
+            2.0,
+            1.0_f32.exp() * 2.0,
+            4.0_f32.exp() * 2.0,
+        ]
+    );
+
+    let composed = Tensor::from_vec(vec![-1.0, 0.5, 2.0], [3])
+        .unwrap()
+        .with_requires_grad(true);
+    composed
+        .sin()
+        .unwrap()
+        .exp()
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        values(&composed.grad().unwrap().unwrap()),
+        [
+            (-1.0_f32).sin().exp() * (-1.0_f32).cos(),
+            0.5_f32.sin().exp() * 0.5_f32.cos(),
+            2.0_f32.sin().exp() * 2.0_f32.cos(),
+        ]
+    );
+
+    assert!(!accumulated.detach().unwrap().exp().unwrap().requires_grad());
+    {
+        let _guard = no_grad();
+        let output = accumulated.transpose(0, 1).unwrap().exp().unwrap();
+        assert!(!output.requires_grad());
+        assert!(output.is_leaf());
+        assert_eq!(output.shape(), [2, 2]);
+        assert_eq!(output.stride(), [1, 2]);
+        assert_eq!(output.storage_offset(), 0);
+    }
+    assert!(accumulated.exp().unwrap().requires_grad());
+}
+
+#[test]
 fn sqrt_preserves_scalar_empty_offset_and_strided_autograd_history() {
     let scalar = Tensor::from_vec(vec![4.0], [])
         .unwrap()
