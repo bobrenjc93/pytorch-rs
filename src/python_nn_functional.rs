@@ -16,6 +16,8 @@ const LINEAR_EXACT_TENSORS_ERROR: &str =
     "linear() only supports exact native Tensor input and weight operands";
 const LINEAR_EXACT_BIAS_ERROR: &str =
     "linear() only supports an exact native Tensor bias or bias=None";
+const L1_LOSS_EXACT_TENSORS_ERROR: &str =
+    "l1_loss() only supports exact native Tensor input and target operands";
 const MSE_LOSS_EXACT_TENSORS_ERROR: &str =
     "mse_loss() only supports exact native Tensor input and target operands";
 
@@ -239,6 +241,16 @@ fn exact_linear_bias<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTe
         .clone())
 }
 
+fn exact_l1_loss_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
+    if !value.is_exact_instance_of::<PyTensor>() {
+        return Err(PyTypeError::new_err(L1_LOSS_EXACT_TENSORS_ERROR));
+    }
+    Ok(value
+        .cast::<PyTensor>()
+        .expect("an exact PyTensor instance must downcast")
+        .clone())
+}
+
 fn exact_mse_loss_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
     if !value.is_exact_instance_of::<PyTensor>() {
         return Err(PyTypeError::new_err(MSE_LOSS_EXACT_TENSORS_ERROR));
@@ -377,6 +389,74 @@ fn _nn_functional_linear(
 }
 
 #[pyfunction]
+fn _nn_functional_l1_loss(
+    py: Python<'_>,
+    input: &Bound<'_, PyAny>,
+    target: &Bound<'_, PyAny>,
+    size_average: &Bound<'_, PyAny>,
+    reduce: &Bound<'_, PyAny>,
+    reduction: &Bound<'_, PyAny>,
+    weight: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    if !python_torch_function_mode::is_empty() {
+        return Err(PyTypeError::new_err(
+            "l1_loss() does not support an active TorchFunctionMode",
+        ));
+    }
+    if !size_average.is_none() || !reduce.is_none() {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.l1_loss only supports size_average=None and reduce=None",
+        ));
+    }
+    let supports_reduction = reduction
+        .cast::<PyString>()
+        .ok()
+        .and_then(|reduction| reduction.to_str().ok())
+        .is_some_and(|reduction| reduction == "none");
+    if !supports_reduction {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.l1_loss only supports reduction='none'",
+        ));
+    }
+    if !weight.is_none() {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.l1_loss only supports weight=None",
+        ));
+    }
+
+    let input = exact_l1_loss_tensor(input)?;
+    let target = exact_l1_loss_tensor(target)?;
+    let input = input.try_borrow()?;
+    let target = target.try_borrow()?;
+    if input.inner().dtype() != DType::Float32
+        || target.inner().dtype() != DType::Float32
+        || input.inner().device() != Device::Cpu
+        || target.inner().device() != Device::Cpu
+    {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.l1_loss only supports CPU float32 tensors",
+        ));
+    }
+    if input.inner().shape() != target.inner().shape() {
+        return Err(PyNotImplementedError::new_err(
+            "torch_rs.nn.functional.l1_loss does not support broadcasting",
+        ));
+    }
+    if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {
+        return Err(PyRuntimeError::new_err(
+            "l1_loss(): autograd recording is not supported",
+        ));
+    }
+
+    let output = input
+        .inner()
+        .sub(target.inner())
+        .and_then(|difference| difference.absolute())
+        .map_err(|error| tensor_error(&error))?;
+    PyTensor::new(output).into_py_any(py)
+}
+
+#[pyfunction]
 fn _nn_functional_mse_loss(
     py: Python<'_>,
     input: &Bound<'_, PyAny>,
@@ -438,7 +518,7 @@ fn _nn_functional_mse_loss(
 
     let output = input
         .inner()
-        .sub(target.inner())
+        .sub_with_left_nan_precedence(target.inner())
         .and_then(|difference| difference.square_preserving_strides())
         .map_err(|error| tensor_error(&error))?;
     PyTensor::new(output).into_py_any(py)
@@ -449,6 +529,7 @@ pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResul
         wrap_pyfunction!(_nn_functional_dropout, module)?,
         wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?,
         wrap_pyfunction!(_nn_functional_linear, module)?,
+        wrap_pyfunction!(_nn_functional_l1_loss, module)?,
         wrap_pyfunction!(_nn_functional_mse_loss, module)?,
     ] {
         let name = function.getattr("__name__")?;

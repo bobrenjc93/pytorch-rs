@@ -2340,7 +2340,21 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, |left, right| left - right)
+        self.zip_map(other, subtract_value)
+    }
+
+    /// Subtracts while retaining the left operand's payload for paired NaNs.
+    ///
+    /// The fused CPU MSE kernel has this payload precedence, unlike standalone
+    /// subtraction, which selects the right operand's payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shapes are not broadcastable or when result
+    /// shape calculation or allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn sub_with_left_nan_precedence(&self, other: &Self) -> Result<Self, TensorError> {
+        self.zip_map(other, subtract_with_left_nan_precedence)
     }
 
     /// Multiplies tensors element by element with trailing-dimension broadcasting.
@@ -2402,6 +2416,20 @@ impl Tensor {
         debug_assert_eq!(output.offset, 0);
         output.strides = strides;
         Ok(output)
+    }
+
+    /// Computes the absolute value of every element through unary layout planning.
+    ///
+    /// This is kept internal for composed inference-only operators. It retains
+    /// dense noncontiguous layouts while applying the same singleton- and
+    /// empty-axis stride canonicalization as `PyTorch`'s unary `TensorIterator`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn absolute(&self) -> Result<Self, TensorError> {
+        self.unary_map(absolute_value)
     }
 
     /// Divides tensors element by element using IEEE 754 true division and
@@ -4724,6 +4752,36 @@ fn negate_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn absolute_value(value: f32) -> f32 {
+    f32::from_bits(value.to_bits() & !F32_SIGN_MASK)
+}
+
+fn subtract_value(left: f32, right: f32) -> f32 {
+    let left_bits = left.to_bits();
+    let right_bits = right.to_bits();
+    if left_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits()
+        && right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits()
+    {
+        f32::from_bits(right_bits | 0x0040_0000)
+    } else {
+        left - right
+    }
+}
+
+#[cfg(any(feature = "python-bindings", test))]
+fn subtract_with_left_nan_precedence(left: f32, right: f32) -> f32 {
+    let left_bits = left.to_bits();
+    let right_bits = right.to_bits();
+    if left_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits()
+        && right_bits & !F32_SIGN_MASK > f32::INFINITY.to_bits()
+    {
+        f32::from_bits(left_bits | 0x0040_0000)
+    } else {
+        left - right
+    }
+}
+
 fn relu_value(value: f32) -> f32 {
     // Only exact zeros bypass the established max path, so FTZ/DAZ cannot
     // classify a subnormal as zero and NaN behavior remains unchanged.
@@ -5002,6 +5060,95 @@ mod tests {
                 .eq(preserved.logical_values().map(f32::to_bits))
         );
         assert_ne!(preserved.data_ptr(), difference.data_ptr());
+    }
+
+    #[test]
+    fn absolute_preserves_bits_and_uses_unary_output_strides() {
+        let input_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xff81_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let expected_bits = [
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0001,
+            0x0000_0001,
+            0x7f80_0000,
+            0x7f80_0000,
+            0x7f81_2345,
+            0x7f81_2345,
+            0x7fc1_2345,
+            0x7fc5_4321,
+        ];
+        let input =
+            Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()]).unwrap();
+        let output = input.absolute().unwrap();
+
+        assert_eq!(output.shape(), input.shape());
+        assert_eq!(output.stride(), input.stride());
+        assert_eq!(output.storage_offset(), 0);
+        assert!(output.logical_values().map(f32::to_bits).eq(expected_bits));
+        assert!(!output.shares_storage_with(&input));
+
+        let strided = Tensor::from_vec(
+            input_bits.map(f32::from_bits).to_vec(),
+            [2, input_bits.len() / 2],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+        let strided_output = strided.absolute().unwrap();
+        assert_eq!(strided_output.shape(), strided.shape());
+        assert_eq!(strided_output.stride(), strided.stride());
+        assert!(
+            strided_output.logical_values().map(f32::to_bits).eq(strided
+                .logical_values()
+                .map(|value| value.to_bits() & !F32_SIGN_MASK))
+        );
+        assert!(!strided_output.shares_storage_with(&strided));
+
+        let singleton_input =
+            Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [2, 1, 3]).unwrap();
+        let singleton_target = Tensor::from_vec(vec![-1.0, 0.0, 1.0, 2.0, 3.0, 4.0], [3, 1, 2])
+            .unwrap()
+            .permute_axes([2, 1, 0])
+            .unwrap();
+        let difference = singleton_input.sub(&singleton_target).unwrap();
+        assert_eq!(difference.stride(), &[3, 6, 1]);
+        assert_eq!(difference.absolute().unwrap().stride(), &[3, 3, 1]);
+    }
+
+    #[test]
+    fn subtraction_nan_payload_precedence_matches_standalone_and_mse_kernels() {
+        let left_bits = [0x7fc1_2345, 0xffc5_4321, 0x7f81_2345, 0xff81_2345];
+        let right_bits = [0xffc5_4321, 0x7fc1_2345, 0xff81_2346, 0x7f81_2346];
+        let left =
+            Tensor::from_vec(left_bits.map(f32::from_bits).to_vec(), [left_bits.len()]).unwrap();
+        let right =
+            Tensor::from_vec(right_bits.map(f32::from_bits).to_vec(), [right_bits.len()]).unwrap();
+
+        assert!(
+            left.sub(&right)
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([0xffc5_4321, 0x7fc1_2345, 0xffc1_2346, 0x7fc1_2346,])
+        );
+        assert!(
+            left.sub_with_left_nan_precedence(&right)
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq([0x7fc1_2345, 0xffc5_4321, 0x7fc1_2345, 0xffc1_2345])
+        );
     }
 
     #[test]
