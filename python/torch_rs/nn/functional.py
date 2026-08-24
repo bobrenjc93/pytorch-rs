@@ -178,6 +178,16 @@ def tanh(input):
     return input.tanh()
 
 
+def sigmoid(input):
+    r"""sigmoid(input) -> Tensor
+
+    Applies the element-wise function :math:`\text{Sigmoid}(x) = \frac{1}{1 + \exp(-x)}`
+
+    See :class:`~torch.nn.Sigmoid` for more details.
+    """
+    return input.sigmoid()
+
+
 def linear(input: Tensor, weight: Tensor, bias: Tensor | None = None) -> Tensor:
     return _nn_functional_linear(input, weight, bias)
 

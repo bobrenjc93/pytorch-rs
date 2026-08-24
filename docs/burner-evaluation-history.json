@@ -5841,6 +5841,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:841",
+      "recordedAt": "2026-08-24T15:53:26.431Z",
+      "label": "PR #841",
+      "kind": "composite",
+      "prNumber": 841,
+      "title": "YOLO generation 94: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 89.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 72,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
