@@ -179,9 +179,9 @@ class GetFloat32MatmulPrecisionTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_reduced_precision_setter_remains_unsupported(self):
-        self.assertFalse(hasattr(torch, "set_float32_matmul_precision"))
-        self.assertNotIn("set_float32_matmul_precision", torch.__all__)
+    def test_highest_only_setter_is_exposed_at_the_python_layer(self):
+        self.assertTrue(hasattr(torch, "set_float32_matmul_precision"))
+        self.assertEqual(torch.__all__.count("set_float32_matmul_precision"), 1)
         self.assertFalse(hasattr(torch._C, "_set_float32_matmul_precision"))
 
     def test_importing_and_calling_does_not_import_pytorch(self):
@@ -198,7 +198,10 @@ sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
 assert torch.get_float32_matmul_precision() == "highest"
-assert not hasattr(torch, "set_float32_matmul_precision")
+assert torch.set_float32_matmul_precision("highest") is None
+assert torch.get_float32_matmul_precision() == "highest"
+assert "set_float32_matmul_precision" in torch.__all__
+assert not hasattr(torch._C, "_set_float32_matmul_precision")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
