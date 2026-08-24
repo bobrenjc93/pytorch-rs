@@ -1003,14 +1003,13 @@ impl Tensor {
         self.requires_grad() && is_grad_enabled()
     }
 
-    fn is_finite_owned_scalar_leaf(&self) -> bool {
-        // Factory-created scalar leaves span their complete one-element
-        // allocation. Recorded views are non-leaves, while views created
-        // under no_grad carry view_requires_grad without leaf metadata.
-        if !self.shape.is_empty()
+    fn is_finite_owned_leaf_with_max_rank(&self, max_rank: usize) -> bool {
+        // Factory-created leaves span their complete allocation. Recorded
+        // views are non-leaves, while views created under no_grad carry
+        // view_requires_grad without leaf metadata.
+        if self.shape.len() > max_rank
             || self.offset != 0
-            || self.elements != 1
-            || self.storage.len() != 1
+            || self.storage.len() != self.elements
             || self.dtype() != DType::Float32
             || self.device() != Device::Cpu
             || self.view_requires_grad
@@ -1022,7 +1021,15 @@ impl Tensor {
             return false;
         };
         matches!(&metadata.kind, AutogradKind::Leaf { .. })
-            && self.value_at_linear_index(0).is_finite()
+            && self.logical_values().all(f32::is_finite)
+    }
+
+    fn is_finite_owned_scalar_leaf(&self) -> bool {
+        self.is_finite_owned_leaf_with_max_rank(0)
+    }
+
+    fn is_finite_owned_scalar_or_vector_leaf(&self) -> bool {
+        self.is_finite_owned_leaf_with_max_rank(1)
     }
 
     fn record_transform(
@@ -2634,10 +2641,10 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when gradient recording is enabled for an input other
-    /// than a finite, owned, rank-zero CPU float32 leaf, or when result
-    /// metadata or storage allocation fails.
+    /// than a finite, owned, rank-zero or rank-one CPU float32 leaf, or when
+    /// result metadata or storage allocation fails.
     pub fn sigmoid(&self) -> Result<Self, TensorError> {
-        if self.records_grad() && !self.is_finite_owned_scalar_leaf() {
+        if self.records_grad() && !self.is_finite_owned_scalar_or_vector_leaf() {
             return Err(TensorError::AutogradRecordingUnsupported {
                 operation: "sigmoid",
             });
@@ -3565,9 +3572,9 @@ fn apply_exp_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
 }
 
 fn apply_sigmoid_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
-    // Scalar sigmoid autograd always saves one contiguous output today. Keep
-    // the generic saved-output iteration shape so widening support does not
-    // need a different graph representation.
+    // Supported sigmoid leaves save contiguous scalar or vector outputs. Keep
+    // the generic fallback because the saved-output node itself is
+    // layout-agnostic.
     if let Some(saved_values) = output.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
         gradient.extend(saved_values.iter().zip(upstream).map(
@@ -5261,10 +5268,8 @@ mod tests {
             Some("TruncBackward0")
         );
         assert_eq!(
-            source.sigmoid(),
-            Err(TensorError::AutogradRecordingUnsupported {
-                operation: "sigmoid"
-            })
+            source.sigmoid().unwrap().grad_fn_name(),
+            Some("SigmoidBackward0")
         );
         assert_eq!(
             source.tanh(),
