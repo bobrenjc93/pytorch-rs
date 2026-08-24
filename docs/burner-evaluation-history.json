@@ -5681,6 +5681,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.2
       }
+    },
+    {
+      "key": "pr:808",
+      "recordedAt": "2026-08-24T06:54:32.183Z",
+      "label": "PR #808",
+      "kind": "leaf",
+      "prNumber": 808,
+      "title": "Differentiate native exp in eager autograd",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 88.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 71,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
