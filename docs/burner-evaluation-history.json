@@ -5665,6 +5665,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.2
       }
+    },
+    {
+      "key": "pr:802",
+      "recordedAt": "2026-08-24T05:57:32.702Z",
+      "label": "PR #802",
+      "kind": "leaf",
+      "prNumber": 802,
+      "title": "Add inference-only Tensor.tanh",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 88.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 70.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.2
+      }
     }
   ]
 }
