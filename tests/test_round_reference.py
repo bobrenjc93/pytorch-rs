@@ -1,3 +1,4 @@
+import ctypes
 import inspect
 import json
 import subprocess
@@ -113,6 +114,53 @@ class TensorRoundReferenceTests(unittest.TestCase):
             self.assert_tensor_matches(
                 actual_input.round(), expected_input.round(), case=(case, shape)
             )
+
+    def test_ties_to_even_are_independent_of_the_ambient_rounding_mode(self):
+        try:
+            runtime = ctypes.CDLL(None)
+            fegetround = runtime.fegetround
+            fesetround = runtime.fesetround
+        except (AttributeError, OSError):
+            self.skipTest("the platform C runtime does not expose fenv controls")
+        fegetround.argtypes = []
+        fegetround.restype = ctypes.c_int
+        fesetround.argtypes = [ctypes.c_int]
+        fesetround.restype = ctypes.c_int
+
+        input_bits = np.asarray(
+            [0xC020_0000, 0xBF00_0000, 0x3F00_0000, 0x3FC0_0000, 0x4020_0000],
+            dtype=np.uint32,
+        )
+        expected_bits = np.asarray(
+            [0xC000_0000, 0x8000_0000, 0x0000_0000, 0x4000_0000, 0x4000_0000],
+            dtype=np.uint32,
+        )
+        original_rounding = fegetround()
+
+        try:
+            alternate_rounding = None
+            for candidate in (0x400, 0x80_0000):
+                if fesetround(candidate) == 0 and fegetround() == candidate:
+                    alternate_rounding = candidate
+                    break
+            if alternate_rounding is None:
+                self.skipTest("the platform does not expose a downward rounding mode")
+
+            actual = torch.tensor(memoryview(input_bits.view(np.float32))).round()
+            self.assertEqual(fegetround(), alternate_rounding)
+            expected = reference_torch.tensor(
+                input_bits.view(np.float32), dtype=reference_torch.float32
+            ).round()
+            self.assertEqual(fegetround(), alternate_rounding)
+        finally:
+            self.assertEqual(fesetround(original_rounding), 0)
+
+        np.testing.assert_array_equal(
+            self.tensor_values(actual).view(np.uint32), expected_bits
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(expected).view(np.uint32), expected_bits
+        )
 
     def callable_metadata(self, module):
         tensor = module.tensor([1.5], dtype=module.float32)

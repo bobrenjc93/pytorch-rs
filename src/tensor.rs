@@ -4873,7 +4873,48 @@ fn trunc_value(value: f32) -> f32 {
 }
 
 fn round_ties_even_value(value: f32) -> f32 {
-    round_value(value, f32::round_ties_even)
+    round_value(value, round_finite_ties_even)
+}
+
+fn round_finite_ties_even(value: f32) -> f32 {
+    const EXPONENT_SHIFT: u32 = 23;
+    const HALF_EXPONENT: u32 = 126;
+    const FIRST_INTEGRAL_EXPONENT: u32 = 150;
+
+    let bits = value.to_bits();
+    let sign = bits & F32_SIGN_MASK;
+    let magnitude = bits & !F32_SIGN_MASK;
+    let exponent = magnitude >> EXPONENT_SHIFT;
+
+    // Work entirely on the IEEE 754 representation so the result cannot
+    // inherit the thread-local floating-point environment's rounding mode.
+    if exponent < HALF_EXPONENT {
+        return f32::from_bits(sign);
+    }
+    if exponent == HALF_EXPONENT {
+        return if magnitude == 0.5_f32.to_bits() {
+            f32::from_bits(sign)
+        } else {
+            f32::from_bits(sign | 1.0_f32.to_bits())
+        };
+    }
+    if exponent >= FIRST_INTEGRAL_EXPONENT {
+        return value;
+    }
+
+    let fractional_bits = FIRST_INTEGRAL_EXPONENT - exponent;
+    let integer_unit = 1_u32 << fractional_bits;
+    let fraction_mask = integer_unit - 1;
+    let truncated = magnitude & !fraction_mask;
+    let fraction = magnitude & fraction_mask;
+    let halfway = integer_unit >> 1;
+    let truncated_is_odd = (truncated >> fractional_bits) & 1 != 0;
+    let rounded = if fraction > halfway || (fraction == halfway && truncated_is_odd) {
+        truncated + integer_unit
+    } else {
+        truncated
+    };
+    f32::from_bits(sign | rounded)
 }
 
 fn sigmoid_value(value: f32) -> f32 {
