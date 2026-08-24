@@ -406,6 +406,32 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         self.assertTrue(np.isnan(actual_empty.item()))
         self.assertTrue(np.isnan(expected_empty.item()))
 
+    def test_mean_large_adversarial_reductions_match_pytorch_2_13(self):
+        for case, element_count, input_value in (
+            ("large repeated square", 5_000, 1_000.0),
+            ("beyond serial float32 integer precision", 20_000_000, 1.0),
+        ):
+            with self.subTest(case=case):
+                actual = functional.mse_loss(
+                    torch.full((element_count,), input_value),
+                    torch.zeros((element_count,)),
+                )
+                expected = reference_functional.mse_loss(
+                    reference_torch.full(
+                        (element_count,),
+                        input_value,
+                        dtype=reference_torch.float32,
+                    ),
+                    reference_torch.zeros(
+                        (element_count,),
+                        dtype=reference_torch.float32,
+                    ),
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual).view(np.uint32),
+                    expected.detach().cpu().numpy().view(np.uint32),
+                )
+
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
         actual_input = self.tensor(
             torch,

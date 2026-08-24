@@ -2412,14 +2412,33 @@ impl Tensor {
     #[must_use]
     pub(crate) fn mean_squared_error(&self, other: &Self) -> Self {
         debug_assert_eq!(self.shape, other.shape);
-        let squared_error_sum = self.logical_values().zip(other.logical_values()).fold(
-            0.0_f32,
-            |sum, (input, target)| {
+        // Merge adjacent power-of-two runs like binary carries. Keeping the
+        // partial sums similar in magnitude prevents a long flat reduction
+        // from dropping representable contributions, while retaining f32
+        // arithmetic and its overflow behavior.
+        let mut partial_sums = [0.0_f32; usize::BITS as usize];
+        let mut value_count = 0_usize;
+        for (input, target) in self.logical_values().zip(other.logical_values()) {
+            let mut squared_difference = {
                 let difference = input - target;
-                let squared_difference = difference * difference;
-                sum + squared_difference
-            },
-        );
+                difference * difference
+            };
+            let mut occupied_levels = value_count;
+            let mut level = 0;
+            while occupied_levels & 1 != 0 {
+                squared_difference += partial_sums[level];
+                occupied_levels >>= 1;
+                level += 1;
+            }
+            partial_sums[level] = squared_difference;
+            value_count += 1;
+        }
+        let squared_error_sum = partial_sums
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|(level, _)| value_count & (1_usize << level) != 0)
+            .fold(0.0_f32, |sum, (_, partial_sum)| sum + partial_sum);
         #[allow(clippy::cast_precision_loss)]
         let element_count = self.elements as f32;
         let mean = squared_error_sum / element_count;
@@ -5023,6 +5042,13 @@ mod tests {
                 .item()
                 .unwrap()
                 .is_infinite()
+        );
+
+        let repeated = Tensor::full([5_000], 1_000.0).unwrap();
+        let repeated_mean = repeated.mean_squared_error(&Tensor::zeros([5_000]).unwrap());
+        assert_eq!(
+            repeated_mean.item().unwrap().to_bits(),
+            1_000_000.0_f32.to_bits()
         );
     }
 
