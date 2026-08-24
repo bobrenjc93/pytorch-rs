@@ -901,15 +901,15 @@ impl Tensor {
     }
 
     #[cfg(any(feature = "python-bindings", test))]
-    pub(crate) fn backward_leaf_roots(first: &Self, second: &Self) -> Result<(), TensorError> {
+    pub(crate) fn backward_leaf_roots(roots: &[&Self]) -> Result<(), TensorError> {
         // Keep root validation and gradient commits in one transaction. In
         // particular, views created under no_grad can report requires_grad and
         // leaf status without owning a gradient accumulator.
         let _backward_traversal = BACKWARD_TRAVERSAL
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut roots = Vec::with_capacity(2);
-        for (index, root) in [first, second].into_iter().enumerate() {
+        let mut validated_roots = Vec::with_capacity(roots.len());
+        for (index, root) in roots.iter().copied().enumerate() {
             let meta = root.implicit_backward_root().map_err(|error| {
                 if matches!(error, TensorError::DoesNotRequireGrad) {
                     TensorError::DoesNotRequireGradAt { index }
@@ -920,12 +920,12 @@ impl Tensor {
             if !matches!(&meta.kind, AutogradKind::Leaf { .. }) {
                 return Err(TensorError::DoesNotRequireGradAt { index });
             }
-            roots.push((Arc::clone(meta), root.output_nr));
+            validated_roots.push((Arc::clone(meta), root.output_nr));
         }
 
         let mut gradients = HashMap::new();
-        let mut unique_roots = Vec::with_capacity(2);
-        for (meta, output_nr) in roots {
+        let mut unique_roots = Vec::with_capacity(validated_roots.len());
+        for (meta, output_nr) in validated_roots {
             let key = gradient_key(&meta, output_nr);
             if !gradients.contains_key(&key) {
                 unique_roots.push((Arc::clone(&meta), output_nr));
@@ -5610,9 +5610,21 @@ mod tests {
             .with_requires_grad(true);
         leaf.mul_scalar(16_777_216.0).unwrap().backward().unwrap();
 
-        Tensor::backward_leaf_roots(&leaf, &leaf).unwrap();
+        Tensor::backward_leaf_roots(&[&leaf, &leaf]).unwrap();
 
         assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [16_777_218.0]);
+    }
+
+    #[test]
+    fn three_leaf_root_batch_aggregates_duplicate_seeds_before_existing_gradient() {
+        let leaf = Tensor::from_vec(vec![1.0], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        leaf.mul_scalar(16_777_216.0).unwrap().backward().unwrap();
+
+        Tensor::backward_leaf_roots(&[&leaf, &leaf, &leaf]).unwrap();
+
+        assert_eq!(leaf.grad().unwrap().unwrap().as_slice(), [16_777_220.0]);
     }
 
     #[test]
@@ -5634,7 +5646,7 @@ mod tests {
         assert!(view.is_leaf());
 
         assert_eq!(
-            Tensor::backward_leaf_roots(&first, &view),
+            Tensor::backward_leaf_roots(&[&first, &view]),
             Err(TensorError::DoesNotRequireGradAt { index: 1 })
         );
         assert!(first.grad().unwrap().is_none());
@@ -5643,6 +5655,32 @@ mod tests {
 
         first.backward().unwrap();
         assert_eq!(first.grad().unwrap().unwrap().as_slice(), [1.0]);
+    }
+
+    #[test]
+    fn three_leaf_root_batch_rejects_final_no_grad_view_before_committing() {
+        let first = Tensor::from_vec(vec![3.0], [])
+            .unwrap()
+            .with_requires_grad(true);
+        let second = Tensor::from_vec(vec![4.0], [1])
+            .unwrap()
+            .with_requires_grad(true);
+        let source = Tensor::from_vec(vec![1.0, 2.0], [1, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = {
+            let _guard = crate::no_grad();
+            source.transpose(0, 1).unwrap().index([1]).unwrap()
+        };
+
+        assert_eq!(
+            Tensor::backward_leaf_roots(&[&first, &second, &view]),
+            Err(TensorError::DoesNotRequireGradAt { index: 2 })
+        );
+        assert!(first.grad().unwrap().is_none());
+        assert!(second.grad().unwrap().is_none());
+        assert!(source.grad().unwrap().is_none());
+        assert!(view.grad().unwrap().is_none());
     }
 
     #[test]
