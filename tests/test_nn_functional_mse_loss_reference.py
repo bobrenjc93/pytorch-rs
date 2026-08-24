@@ -115,6 +115,54 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def make_sum_cases(self, module):
+        offset_input = self.tensor(
+            module,
+            [[99.0, 99.0, 99.0, 99.0], [1.0, -2.0, 3.0, -4.0]],
+        )[1]
+        offset_target = self.tensor(
+            module,
+            [[0.0, 1.0, 0.0, 1.0], [99.0, 99.0, 99.0, 99.0]],
+        )[0]
+        noncontiguous_input = self.tensor(
+            module,
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+        ).transpose(0, 1)
+        noncontiguous_target = self.tensor(
+            module,
+            [[0.0, 1.0, 0.0], [1.0, 0.0, 1.0]],
+        ).transpose(0, 1)
+
+        return (
+            (
+                "scalar",
+                self.tensor(module, -0.0),
+                self.tensor(module, 2.5),
+            ),
+            (
+                "empty",
+                module.zeros((3, 0, 2), dtype=module.float32),
+                module.ones((3, 0, 2), dtype=module.float32),
+            ),
+            ("offset", offset_input, offset_target),
+            ("noncontiguous", noncontiguous_input, noncontiguous_target),
+            (
+                "nan",
+                self.tensor(module, [1.0, float("nan"), 3.0]),
+                self.tensor(module, [0.0, 0.0, 0.0]),
+            ),
+            (
+                "square overflow",
+                self.tensor(module, [np.finfo(np.float32).max]),
+                self.tensor(module, [0.0]),
+            ),
+            (
+                "reduction overflow",
+                self.tensor(module, [1.0e19, 1.0e19, 1.0e19, 1.0e19]),
+                self.tensor(module, [0.0, 0.0, 0.0, 0.0]),
+            ),
+        )
+
     @staticmethod
     def call(module_functional, input, target, form):
         if form == "reduction keyword":
@@ -134,6 +182,27 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             )
         return module_functional.mse_loss(
             input, target, None, None, "none", None
+        )
+
+    @staticmethod
+    def call_sum(module_functional, input, target, form):
+        if form == "reduction keyword":
+            return module_functional.mse_loss(input, target, reduction="sum")
+        if form == "all keywords":
+            return module_functional.mse_loss(
+                input=input,
+                target=target,
+                size_average=None,
+                reduce=None,
+                reduction="sum",
+                weight=None,
+            )
+        if form == "five positional":
+            return module_functional.mse_loss(
+                input, target, None, None, "sum"
+            )
+        return module_functional.mse_loss(
+            input, target, None, None, "sum", None
         )
 
     def assert_matches(self, actual, expected, *, case):
@@ -158,6 +227,25 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 np.asarray(actual).reshape(-1).view(np.uint32),
                 expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
             )
+
+    def assert_sum_matches(self, actual, expected, *, case):
+        with self.subTest(case=case, metadata=True):
+            self.assertEqual(actual.shape, tuple(expected.shape))
+            self.assertEqual(actual.stride(), expected.stride())
+            self.assertEqual(actual.storage_offset(), expected.storage_offset())
+            self.assertEqual(actual.is_contiguous(), expected.is_contiguous())
+            self.assertEqual(actual.requires_grad, expected.requires_grad)
+            self.assertEqual(actual.is_leaf, expected.is_leaf)
+            self.assertIs(actual.dtype, torch.float32)
+            self.assertEqual(actual.device, torch.device("cpu"))
+        with self.subTest(case=case, value=True):
+            if np.isnan(expected.item()):
+                self.assertTrue(np.isnan(actual.item()))
+            else:
+                np.testing.assert_array_equal(
+                    np.asarray(actual).view(np.uint32),
+                    expected.detach().cpu().numpy().view(np.uint32),
+                )
 
     def test_name_signature_defaults_and_annotations_match_pytorch_2_13(self):
         self.assertEqual(
@@ -253,6 +341,89 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 )
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_sum_scalar_layout_edges_storage_and_nonmutation_match(self):
+        actual_cases = self.make_sum_cases(torch)
+        expected_cases = self.make_sum_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            actual_input_before = np.asarray(actual_input).copy()
+            actual_target_before = np.asarray(actual_target).copy()
+            expected_input_before = (
+                expected_input.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            expected_target_before = (
+                expected_target.detach().cpu().numpy().reshape(-1).view(np.uint32).copy()
+            )
+            for form in (
+                "reduction keyword",
+                "all keywords",
+                "five positional",
+                "six positional",
+            ):
+                actual = self.call_sum(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    form,
+                )
+                expected = self.call_sum(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    form,
+                )
+                self.assert_sum_matches(actual, expected, case=(case, form))
+
+                actual_repeat = self.call_sum(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    form,
+                )
+                expected_repeat = self.call_sum(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    form,
+                )
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input), actual_input_before
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target), actual_target_before
+                )
+                np.testing.assert_array_equal(
+                    expected_input.detach()
+                    .cpu()
+                    .numpy()
+                    .reshape(-1)
+                    .view(np.uint32),
+                    expected_input_before,
+                )
+                np.testing.assert_array_equal(
+                    expected_target.detach()
+                    .cpu()
+                    .numpy()
+                    .reshape(-1)
+                    .view(np.uint32),
+                    expected_target_before,
                 )
 
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
@@ -369,6 +540,24 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 actual,
                 expected,
                 case=(input_requires_grad, target_requires_grad),
+            )
+
+            with torch.no_grad():
+                actual_sum = functional.mse_loss(
+                    actual_input,
+                    actual_target,
+                    reduction="sum",
+                )
+            with reference_torch.no_grad():
+                expected_sum = reference_functional.mse_loss(
+                    expected_input,
+                    expected_target,
+                    reduction="sum",
+                )
+            self.assert_sum_matches(
+                actual_sum,
+                expected_sum,
+                case=(input_requires_grad, target_requires_grad, "sum"),
             )
 
 

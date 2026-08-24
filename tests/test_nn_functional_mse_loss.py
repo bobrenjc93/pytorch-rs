@@ -123,6 +123,43 @@ class FunctionalMseLossTests(unittest.TestCase):
         )
 
     @staticmethod
+    def sum_cases():
+        offset_input = torch.tensor(
+            [[99.0, 99.0, 99.0, 99.0], [1.0, -2.0, 3.0, -4.0]]
+        )[1]
+        offset_target = torch.tensor(
+            [[0.0, 1.0, 0.0, 1.0], [99.0, 99.0, 99.0, 99.0]]
+        )[0]
+        noncontiguous_input = torch.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        ).transpose(0, 1)
+        noncontiguous_target = torch.tensor(
+            [[0.0, 1.0, 0.0], [1.0, 0.0, 1.0]]
+        ).transpose(0, 1)
+
+        return (
+            ("scalar", torch.tensor(-0.0), torch.tensor(2.5)),
+            ("empty", torch.zeros((3, 0, 2)), torch.ones((3, 0, 2))),
+            ("offset", offset_input, offset_target),
+            ("noncontiguous", noncontiguous_input, noncontiguous_target),
+            (
+                "nan",
+                torch.tensor([1.0, float("nan"), 3.0]),
+                torch.tensor([0.0, 0.0, 0.0]),
+            ),
+            (
+                "square overflow",
+                torch.tensor([np.finfo(np.float32).max]),
+                torch.zeros((1,)),
+            ),
+            (
+                "reduction overflow",
+                torch.tensor([1.0e19, 1.0e19, 1.0e19, 1.0e19]),
+                torch.zeros((4,)),
+            ),
+        )
+
+    @staticmethod
     def call(input, target, form):
         if form == "reduction keyword":
             return functional.mse_loss(input, target, reduction="none")
@@ -138,6 +175,23 @@ class FunctionalMseLossTests(unittest.TestCase):
         if form == "five positional":
             return functional.mse_loss(input, target, None, None, "none")
         return functional.mse_loss(input, target, None, None, "none", None)
+
+    @staticmethod
+    def call_sum(input, target, form):
+        if form == "reduction keyword":
+            return functional.mse_loss(input, target, reduction="sum")
+        if form == "all keywords":
+            return functional.mse_loss(
+                input=input,
+                target=target,
+                size_average=None,
+                reduce=None,
+                reduction="sum",
+                weight=None,
+            )
+        if form == "five positional":
+            return functional.mse_loss(input, target, None, None, "sum")
+        return functional.mse_loss(input, target, None, None, "sum", None)
 
     def test_import_signature_documentation_and_exports(self):
         imported = importlib.import_module("torch_rs.nn.functional")
@@ -163,12 +217,16 @@ class FunctionalMseLossTests(unittest.TestCase):
             "exact, same-shaped",
             "CPU ``float32`` storage",
             "``reduction='none'``",
+            "``reduction='sum'``",
             "``size_average=None``",
             "``reduce=None``",
             "``weight=None``",
-            "native subtraction and square kernels",
+            "native subtraction and stride-preserving square kernels",
+            "native full reduction",
+            "fresh scalar tensor",
             "fresh, independent tensor",
             "Broadcasting",
+            "mean reduction",
             "Tensor subclasses",
             "active ``TorchFunctionMode`` contexts",
             "active autograd recording",
@@ -224,6 +282,41 @@ class FunctionalMseLossTests(unittest.TestCase):
                     self.assertEqual(
                         self.tensor_state(input)[:-1], input_state[:-1]
                     )
+                    self.assertEqual(
+                        self.tensor_state(target)[:-1], target_state[:-1]
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_state(input)[-1], input_state[-1]
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_state(target)[-1], target_state[-1]
+                    )
+
+    def test_sum_composes_subtraction_square_and_full_reduction(self):
+        for case, input, target in self.sum_cases():
+            expected = (input - target).square().sum()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+            for form in (
+                "reduction keyword",
+                "all keywords",
+                "five positional",
+                "six positional",
+            ):
+                actual = self.call_sum(input, target, form)
+                self.assert_matches_composition(
+                    actual,
+                    expected,
+                    case=(case, form),
+                )
+                with self.subTest(case=(case, form), storage=True):
+                    repeated = self.call_sum(input, target, form)
+                    self.assertFalse(actual.is_set_to(repeated))
+                    self.assertFalse(actual.is_set_to(input))
+                    self.assertFalse(actual.is_set_to(target))
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+                with self.subTest(case=(case, form), nonmutation=True):
+                    self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
                     self.assertEqual(
                         self.tensor_state(target)[:-1], target_state[:-1]
                     )
@@ -314,24 +407,39 @@ class FunctionalMseLossTests(unittest.TestCase):
                 input_requires_grad=input_requires_grad,
                 target_requires_grad=target_requires_grad,
             ):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^mse_loss\(\): autograd recording is not supported$",
-                ):
-                    functional.mse_loss(input, target, reduction="none")
+                for reduction in ("none", "sum"):
+                    with self.subTest(reduction=reduction):
+                        with self.assertRaisesRegex(
+                            RuntimeError,
+                            r"^mse_loss\(\): autograd recording is not supported$",
+                        ):
+                            functional.mse_loss(input, target, reduction=reduction)
 
                 with torch.no_grad():
                     actual = functional.mse_loss(input, target, reduction="none")
                     difference = input - target
                     expected = difference.square()
+                    actual_sum = functional.mse_loss(
+                        input,
+                        target,
+                        reduction="sum",
+                    )
+                    expected_sum = expected.sum()
                 self.assert_matches_composition(
                     actual,
                     expected,
                     case="no_grad",
                     expected_stride=difference.stride(),
                 )
+                self.assert_matches_composition(
+                    actual_sum,
+                    expected_sum,
+                    case="no_grad sum",
+                )
                 self.assertFalse(actual.requires_grad)
                 self.assertTrue(actual.is_leaf)
+                self.assertFalse(actual_sum.requires_grad)
+                self.assertTrue(actual_sum.is_leaf)
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
 
@@ -340,9 +448,10 @@ class FunctionalMseLossTests(unittest.TestCase):
         target = torch.zeros((2, 3))
 
         reduction_error = (
-            "torch_rs.nn.functional.mse_loss only supports reduction='none'"
+            "torch_rs.nn.functional.mse_loss only supports reduction='none' "
+            "or reduction='sum'"
         )
-        for reduction in ("mean", "sum", "batchmean", None, 1, object()):
+        for reduction in ("mean", "batchmean", None, 1, object()):
             with self.subTest(reduction=reduction):
                 with self.assertRaisesRegex(
                     NotImplementedError,
@@ -354,54 +463,60 @@ class FunctionalMseLossTests(unittest.TestCase):
             "torch_rs.nn.functional.mse_loss only supports "
             "size_average=None and reduce=None"
         )
-        for legacy_arguments in (
-            {"size_average": False},
-            {"size_average": True},
-            {"reduce": False},
-            {"reduce": True},
-            {"size_average": False, "reduce": False},
-        ):
-            with self.subTest(legacy_arguments=legacy_arguments):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    f"^{re.escape(legacy_error)}$",
+        for reduction in ("none", "sum"):
+            for legacy_arguments in (
+                {"size_average": False},
+                {"size_average": True},
+                {"reduce": False},
+                {"reduce": True},
+                {"size_average": False, "reduce": False},
+            ):
+                with self.subTest(
+                    reduction=reduction,
+                    legacy_arguments=legacy_arguments,
                 ):
-                    functional.mse_loss(
-                        input,
-                        target,
-                        reduction="none",
-                        **legacy_arguments,
-                    )
+                    with self.assertRaisesRegex(
+                        NotImplementedError,
+                        f"^{re.escape(legacy_error)}$",
+                    ):
+                        functional.mse_loss(
+                            input,
+                            target,
+                            reduction=reduction,
+                            **legacy_arguments,
+                        )
 
         weight_error = "torch_rs.nn.functional.mse_loss only supports weight=None"
-        for weight in (torch.ones((2, 3)), 1.0, [1.0, 1.0]):
-            with self.subTest(weight=type(weight)):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    f"^{re.escape(weight_error)}$",
-                ):
-                    functional.mse_loss(
-                        input,
-                        target,
-                        reduction="none",
-                        weight=weight,
-                    )
+        for reduction in ("none", "sum"):
+            for weight in (torch.ones((2, 3)), 1.0, [1.0, 1.0]):
+                with self.subTest(reduction=reduction, weight=type(weight)):
+                    with self.assertRaisesRegex(
+                        NotImplementedError,
+                        f"^{re.escape(weight_error)}$",
+                    ):
+                        functional.mse_loss(
+                            input,
+                            target,
+                            reduction=reduction,
+                            weight=weight,
+                        )
 
         broadcast_error = (
             "torch_rs.nn.functional.mse_loss does not support broadcasting"
         )
-        for other in (
-            torch.zeros((3,)),
-            torch.zeros((2, 1)),
-            torch.zeros(()),
-            torch.zeros((2, 2)),
-        ):
-            with self.subTest(target_shape=other.shape):
-                with self.assertRaisesRegex(
-                    NotImplementedError,
-                    f"^{re.escape(broadcast_error)}$",
-                ):
-                    functional.mse_loss(input, other, reduction="none")
+        for reduction in ("none", "sum"):
+            for other in (
+                torch.zeros((3,)),
+                torch.zeros((2, 1)),
+                torch.zeros(()),
+                torch.zeros((2, 2)),
+            ):
+                with self.subTest(reduction=reduction, target_shape=other.shape):
+                    with self.assertRaisesRegex(
+                        NotImplementedError,
+                        f"^{re.escape(broadcast_error)}$",
+                    ):
+                        functional.mse_loss(input, other, reduction=reduction)
 
         class Override:
             calls = 0
@@ -414,26 +529,34 @@ class FunctionalMseLossTests(unittest.TestCase):
         exact_tensor_error = (
             "mse_loss() only supports exact native Tensor input and target operands"
         )
-        for actual_input, actual_target in (
-            (Override(), target),
-            (input, Override()),
-            (1.0, target),
-            (input, [0.0]),
-        ):
-            with self.subTest(
-                input_type=type(actual_input),
-                target_type=type(actual_target),
+        for reduction in ("none", "sum"):
+            for actual_input, actual_target in (
+                (Override(), target),
+                (input, Override()),
+                (1.0, target),
+                (input, [0.0]),
             ):
-                with self.assertRaisesRegex(
-                    TypeError,
-                    f"^{re.escape(exact_tensor_error)}$",
+                with self.subTest(
+                    reduction=reduction,
+                    input_type=type(actual_input),
+                    target_type=type(actual_target),
                 ):
-                    functional.mse_loss(
-                        actual_input,
-                        actual_target,
-                        reduction="none",
-                    )
+                    with self.assertRaisesRegex(
+                        TypeError,
+                        f"^{re.escape(exact_tensor_error)}$",
+                    ):
+                        functional.mse_loss(
+                            actual_input,
+                            actual_target,
+                            reduction=reduction,
+                        )
         self.assertEqual(Override.calls, 0)
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            f"^{re.escape(reduction_error)}$",
+        ):
+            functional.mse_loss(object(), object(), reduction="mean")
 
     def test_active_torch_function_mode_is_rejected_without_dispatch(self):
         class RecordingMode(torch.overrides.TorchFunctionMode):
@@ -453,7 +576,7 @@ class FunctionalMseLossTests(unittest.TestCase):
                 functional.mse_loss(
                     torch.ones((2, 3), requires_grad=True),
                     torch.zeros((3,)),
-                    reduction="mean",
+                    reduction="sum",
                     weight=object(),
                 )
         self.assertEqual(mode.calls, 0)

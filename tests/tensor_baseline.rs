@@ -1689,7 +1689,19 @@ fn reductions_handle_ordinary_and_empty_tensors() {
         .item()
         .unwrap();
     assert!((sum - 6.0).abs() < f32::EPSILON);
-    assert!(Tensor::zeros([0]).unwrap().sum().item().unwrap().abs() < f32::EPSILON);
+    assert_eq!(
+        Tensor::zeros([0]).unwrap().sum().item().unwrap().to_bits(),
+        0.0_f32.to_bits()
+    );
+    assert_eq!(
+        Tensor::from_vec(vec![-0.0], [1])
+            .unwrap()
+            .sum()
+            .item()
+            .unwrap()
+            .to_bits(),
+        0.0_f32.to_bits()
+    );
 }
 
 #[test]
