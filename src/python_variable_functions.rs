@@ -15,23 +15,25 @@ use pyo3::types::{PyDict, PyModule, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    adjoint_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
-    atleast_3d_variable_function, can_cast_variable_function, detach_variable_function,
-    exp_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    neg_variable_function, negative_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    reciprocal_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, unbind_variable_function,
+    adjoint_variable_function, arange_variable_function, atleast_1d_variable_function,
+    atleast_2d_variable_function, atleast_3d_variable_function, can_cast_variable_function,
+    detach_variable_function, exp_variable_function, get_device_variable_function,
+    is_conj_variable_function, is_inference_variable_function, matmul_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, neg_variable_function, negative_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, reciprocal_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function,
+    unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 31] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 32] = [
     "get_device",
     "scalar_tensor",
+    "arange",
     "atleast_1d",
     "atleast_2d",
     "atleast_3d",
@@ -85,6 +87,58 @@ Example::
             [1.-1.j, 3.-3.j]])
     >>> (A.adjoint() == A.mH).all()
     tensor(True)
+";
+
+const ARANGE_DOC: &std::ffi::CStr = cr"
+arange(start=0, end, step=1, *, out=None, dtype=None, layout=torch.strided, device=None, requires_grad=False) -> Tensor
+
+Returns a 1-D tensor of size :math:`\left\lceil \frac{\text{end} - \text{start}}{\text{step}} \right\rceil`
+with values from the interval ``[start, end)`` taken with common difference
+:attr:`step` beginning from `start`.
+
+Note: When using floating-point dtypes (especially reduced precision types like ``bfloat16``),
+the results may be affected by floating-point rounding behavior. Some values in the sequence
+might not be exactly representable in certain floating-point formats, which can lead to
+repeated values or unexpected rounding. For precise sequences, it is recommended to use
+integer dtypes instead of floating-point dtypes.
+
+Note that non-integer :attr:`step` is subject to floating point rounding errors when
+comparing against :attr:`end`; to avoid inconsistency, we advise subtracting a small epsilon from :attr:`end`
+in such cases.
+
+.. math::
+    \text{out}_{{i+1}} = \text{out}_{i} + \text{step}
+
+Args:
+    start (Number, optional): the starting value for the set of points. Default: ``0``.
+    end (Number): the ending value for the set of points
+    step (Number, optional): the gap between each pair of adjacent points. Default: ``1``.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+    dtype (:class:`torch.dtype`, optional): the desired data type of returned tensor.
+        Default: if ``None``, uses a global default (see :func:`torch.set_default_dtype`). If `dtype` is not given, infer the data type from the other input
+        arguments. If any of `start`, `end`, or `stop` are floating-point, the
+        `dtype` is inferred to be the default dtype, see
+        :meth:`~torch.get_default_dtype`. Otherwise, the `dtype` is inferred to
+        be `torch.int64`.
+    layout (:class:`torch.layout`, optional): the desired layout of returned Tensor.
+        Default: ``torch.strided``.
+    device (:class:`torch.device`, optional): the desired device of returned tensor.
+        Default: if ``None``, uses the current device for the default tensor type
+        (see :func:`torch.set_default_device`). :attr:`device` will be the CPU
+        for CPU tensor types and the current CUDA device for CUDA tensor types.
+    requires_grad (bool, optional): If autograd should record operations on the
+        returned tensor. Default: ``False``.
+
+Example::
+
+    >>> torch.arange(5)
+    tensor([ 0,  1,  2,  3,  4])
+    >>> torch.arange(1, 4)
+    tensor([ 1,  2,  3])
+    >>> torch.arange(1, 2.5, 0.5)
+    tensor([ 1.0000,  1.5000,  2.0000])
 ";
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
@@ -564,6 +618,7 @@ macro_rules! variable_function_callback {
 
 variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
+variable_function_callback!(arange_callback, arange_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
 variable_function_callback!(atleast_2d_callback, atleast_2d_variable_function);
 variable_function_callback!(atleast_3d_callback, atleast_3d_variable_function);
@@ -623,6 +678,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
     let methods = Box::leak(Box::new([
         variable_function_method!(c"get_device", get_device_callback, c""),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
+        variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),

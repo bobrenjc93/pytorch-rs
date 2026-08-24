@@ -1229,6 +1229,16 @@ pub(crate) fn scalar_tensor_variable_function(
         .unbind())
 }
 
+pub(crate) fn arange_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    Ok(Bound::new(py, arange_impl(args, kwargs)?)?
+        .into_any()
+        .unbind())
+}
+
 fn dispatch_empty_atleast_input(
     py: Python<'_>,
     name: &str,
@@ -3458,6 +3468,18 @@ struct ScalarTensorCallArguments<'py> {
     keyword_error: Option<PyErr>,
 }
 
+struct ArangeCallArguments<'py> {
+    end: Option<ParsedCallArgument<'py>>,
+    unsupported_overload: bool,
+    out: Option<Bound<'py, PyAny>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    pin_memory: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    keyword_error: Option<PyErr>,
+}
+
 struct CreationCallArguments<'py> {
     size: Option<Bound<'py, PyAny>>,
     size_origin: Option<CreationSizeOrigin>,
@@ -4265,6 +4287,16 @@ fn scalar_tensor_impl(
         .map_err(|error| tensor_error(&error))
 }
 
+fn arange_impl(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyTensor> {
+    let elements = parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
+    CoreTensor::arange_float32(elements)
+        .map(PyTensor::new)
+        .map_err(|error| scalar_creation_error(&error, Some(elements)))
+}
+
 fn parse_requires_grad(function: &str, requires_grad: &Bound<'_, PyAny>) -> PyResult<bool> {
     if requires_grad.is_exact_instance_of::<PyBool>() {
         return requires_grad.is_truthy();
@@ -4703,6 +4735,184 @@ fn optional_call_argument(value: Bound<'_, PyAny>) -> Option<Bound<'_, PyAny>> {
     if value.is_none() { None } else { Some(value) }
 }
 
+fn bind_arange_arguments<'py>(
+    positional: &Bound<'py, PyTuple>,
+    keywords: Option<&Bound<'py, PyDict>>,
+) -> PyResult<ArangeCallArguments<'py>> {
+    if positional.len() > 1 {
+        return Err(arange_overload_unsupported());
+    }
+
+    let mut arguments = ArangeCallArguments {
+        end: if positional.is_empty() {
+            None
+        } else {
+            Some(ParsedCallArgument {
+                value: positional.get_item(0)?,
+                position: Some(1),
+            })
+        },
+        unsupported_overload: false,
+        out: None,
+        dtype: None,
+        layout: None,
+        device: None,
+        pin_memory: None,
+        requires_grad: None,
+        keyword_error: None,
+    };
+    let Some(keywords) = keywords else {
+        return Ok(arguments);
+    };
+
+    for (key, value) in keywords {
+        let key = key.extract::<String>()?;
+        match key.as_str() {
+            "end" => {
+                if arguments.end.is_some() {
+                    // A positional value combined with `end=` selects
+                    // PyTorch's two-bound overload rather than duplicating the
+                    // one-bound argument. That overload remains unsupported.
+                    arguments.unsupported_overload = true;
+                } else {
+                    arguments.end = optional_call_argument(value).map(|value| ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "start" | "step" => arguments.unsupported_overload = true,
+            "out" => arguments.out = optional_call_argument(value),
+            "dtype" => arguments.dtype = optional_call_argument(value),
+            "layout" => arguments.layout = optional_call_argument(value),
+            "device" => arguments.device = optional_call_argument(value),
+            "pin_memory" => arguments.pin_memory = optional_call_argument(value),
+            "requires_grad" => arguments.requires_grad = optional_call_argument(value),
+            _ => {
+                arguments.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "arange() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<usize> {
+    let ArangeCallArguments {
+        end,
+        unsupported_overload,
+        out,
+        dtype,
+        layout,
+        device,
+        pin_memory,
+        requires_grad,
+        keyword_error,
+    } = arguments;
+
+    if unsupported_overload {
+        return Err(arange_overload_unsupported());
+    }
+    let Some(end) = end else {
+        return Err(PyTypeError::new_err(
+            "arange() missing required argument 'end'",
+        ));
+    };
+    if !end.value.is_exact_instance_of::<PyFloat>() {
+        let position = end
+            .position
+            .map_or_else(String::new, |position| format!(" (position {position})"));
+        let actual = python_type_name(&end.value)?;
+        return Err(PyTypeError::new_err(format!(
+            "arange(): argument 'end'{position} must be an exact Python float, not {actual}"
+        )));
+    }
+
+    let dtype = parse_dtype("arange", dtype.as_ref())?;
+    parse_factory_layout("arange", layout.as_ref())?;
+    validate_device_argument_type("arange", device.as_ref())?;
+    let pin_memory = parse_factory_bool("arange", "pin_memory", pin_memory.as_ref())?;
+    let requires_grad = parse_factory_requires_grad("arange", requires_grad.as_ref())?;
+    if let Some(error) = keyword_error {
+        return Err(error);
+    }
+    let device = parse_device("arange", device.as_ref())?;
+
+    if out.is_some() {
+        return Err(PyRuntimeError::new_err(
+            "arange(): the 'out' argument is not supported",
+        ));
+    }
+    if dtype != DType::Float32 || device != Device::Cpu {
+        return Err(PyRuntimeError::new_err(
+            "arange(): only the default float32 CPU metadata is supported",
+        ));
+    }
+    if pin_memory {
+        return Err(PyRuntimeError::new_err(
+            "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+        ));
+    }
+    if requires_grad {
+        return Err(PyRuntimeError::new_err(
+            "arange(): requires_grad=True is not supported",
+        ));
+    }
+
+    arange_element_count(end.value.extract::<f64>()?)
+}
+
+fn arange_element_count(end: f64) -> PyResult<usize> {
+    if !end.is_finite() {
+        let value = if end.is_nan() {
+            if end.is_sign_negative() {
+                "-nan"
+            } else {
+                "nan"
+            }
+        } else if end.is_sign_negative() {
+            "-inf"
+        } else {
+            "inf"
+        };
+        return Err(PyRuntimeError::new_err(format!(
+            "unsupported range: 0 -> {value}"
+        )));
+    }
+    if end < 0.0 {
+        return Err(PyRuntimeError::new_err(
+            "upper bound and lower bound inconsistent with step sign",
+        ));
+    }
+
+    let elements = end.ceil();
+    let i64_exclusive_upper_bound: f64 = 9_223_372_036_854_775_808.0;
+    if elements.to_bits() == i64_exclusive_upper_bound.to_bits() {
+        return Err(PyRuntimeError::new_err(
+            "IntArrayRef contains an int that cannot be represented as a SymInt: -9223372036854775808",
+        ));
+    }
+    if elements > i64_exclusive_upper_bound {
+        return Err(PyRuntimeError::new_err("invalid size, possible overflow?"));
+    }
+    #[cfg(target_pointer_width = "32")]
+    if elements > f64::from(u32::MAX) {
+        return Err(PyRuntimeError::new_err("invalid size, possible overflow?"));
+    }
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Ok(elements as usize)
+}
+
+fn arange_overload_unsupported() -> PyErr {
+    PyTypeError::new_err(
+        "arange(): start and step overloads are not supported; pass one exact Python float endpoint",
+    )
+}
+
 fn bind_scalar_tensor_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
@@ -4886,6 +5096,10 @@ fn parse_numpy_scalar_tensor_value(value: &Bound<'_, PyAny>) -> PyResult<ParsedF
 }
 
 fn parse_scalar_tensor_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+    parse_factory_layout("scalar_tensor", layout)
+}
+
+fn parse_factory_layout(function: &str, layout: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
     let Some(layout) = layout else {
         return Ok(());
     };
@@ -4894,7 +5108,7 @@ fn parse_scalar_tensor_layout(layout: Option<&Bound<'_, PyAny>>) -> PyResult<()>
     }
     let actual = python_type_name(layout)?;
     Err(PyTypeError::new_err(format!(
-        "scalar_tensor(): argument 'layout' must be torch.layout, not {actual}"
+        "{function}(): argument 'layout' must be torch.layout, not {actual}"
     )))
 }
 
@@ -4986,6 +5200,14 @@ fn parse_scalar_tensor_device(device: Option<&Bound<'_, PyAny>>) -> PyResult<Dev
 }
 
 fn parse_scalar_tensor_bool(argument: &str, value: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    parse_factory_bool("scalar_tensor", argument, value)
+}
+
+fn parse_factory_bool(
+    function: &str,
+    argument: &str,
+    value: Option<&Bound<'_, PyAny>>,
+) -> PyResult<bool> {
     let Some(value) = value else {
         return Ok(false);
     };
@@ -4994,7 +5216,7 @@ fn parse_scalar_tensor_bool(argument: &str, value: Option<&Bound<'_, PyAny>>) ->
     }
     let actual = python_type_name(value)?;
     Err(PyTypeError::new_err(format!(
-        "scalar_tensor(): argument '{argument}' must be bool, not {actual}"
+        "{function}(): argument '{argument}' must be bool, not {actual}"
     )))
 }
 

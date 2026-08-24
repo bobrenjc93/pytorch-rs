@@ -362,6 +362,34 @@ impl Tensor {
         Ok(Self::from_owned_parts(data, shape, strides, dtype, device))
     }
 
+    /// Creates the default float32 CPU range `0, 1, ..., elements - 1`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the one-dimensional shape or storage allocation
+    /// exceeds the platform capacity.
+    #[cfg(feature = "python-bindings")]
+    pub(crate) fn arange_float32(elements: usize) -> Result<Self, TensorError> {
+        validate_storage_capacity(elements)?;
+
+        let mut data = try_result_vector(elements, elements)?;
+        for index in 0..elements {
+            #[allow(clippy::cast_precision_loss)]
+            data.push(index as f32);
+        }
+
+        let mut shape = try_result_vector(1, elements)?;
+        shape.push(elements);
+        let (_, strides) = validated_layout(&shape)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            DType::Float32,
+            Device::Cpu,
+        ))
+    }
+
     /// Creates a two-dimensional tensor with ones on the main diagonal and
     /// zeros elsewhere.
     ///
