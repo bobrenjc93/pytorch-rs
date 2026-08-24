@@ -26,6 +26,10 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
     def tensor(module, values):
         return module.tensor(values, dtype=module.float32)
 
+    @staticmethod
+    def tensor_bits(tensor):
+        return np.asarray(tensor).reshape(-1).view(np.uint32)
+
     def make_cases(self, module):
         offset_input_base = self.tensor(
             module,
@@ -115,25 +119,53 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def sum_cases(self, module):
+        selected_layouts = {
+            name: (input, target)
+            for name, input, target in self.make_cases(module)
+            if name in {"scalar", "empty", "offset", "matching noncontiguous"}
+        }
+        return (
+            ("scalar", *selected_layouts["scalar"]),
+            ("empty", *selected_layouts["empty"]),
+            ("offset", *selected_layouts["offset"]),
+            ("noncontiguous", *selected_layouts["matching noncontiguous"]),
+            (
+                "nan",
+                self.tensor(module, [1.0, float("nan"), 3.0]),
+                module.zeros((3,), dtype=module.float32),
+            ),
+            (
+                "square overflow",
+                self.tensor(module, [np.finfo(np.float32).max]),
+                module.zeros((1,), dtype=module.float32),
+            ),
+            (
+                "reduction overflow",
+                self.tensor(module, [1.0e19, 1.0e19, 1.0e19, 1.0e19]),
+                module.zeros((4,), dtype=module.float32),
+            ),
+        )
+
     @staticmethod
-    def call(module_functional, input, target, form):
+    def call(module_functional, input, target, form, reduction="none"):
         if form == "reduction keyword":
-            return module_functional.mse_loss(input, target, reduction="none")
+            return module_functional.mse_loss(input, target, reduction=reduction)
         if form == "legacy none keywords":
             return module_functional.mse_loss(
                 input=input,
                 target=target,
                 size_average=None,
                 reduce=None,
-                reduction="none",
+                reduction=reduction,
                 weight=None,
             )
         if form == "five positional":
             return module_functional.mse_loss(
-                input, target, None, None, "none"
+                input, target, None, None, reduction
             )
         return module_functional.mse_loss(
-            input, target, None, None, "none", None
+            input, target, None, None, reduction, None
         )
 
     def assert_matches(self, actual, expected, *, case):
@@ -292,6 +324,92 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         self.assertEqual(expected.stride(), (3, 6, 1))
         self.assert_matches(actual, expected, case="mixed singleton strides")
 
+    def test_sum_scalar_results_and_nonmutation_match_pytorch_2_13(self):
+        actual_cases = self.sum_cases(torch)
+        expected_cases = self.sum_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            actual_input_before = self.tensor_bits(actual_input).copy()
+            actual_target_before = self.tensor_bits(actual_target).copy()
+            expected_input_before = self.tensor_bits(expected_input).copy()
+            expected_target_before = self.tensor_bits(expected_target).copy()
+            for form in (
+                "reduction keyword",
+                "legacy none keywords",
+                "five positional",
+                "six positional",
+            ):
+                actual = self.call(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    form,
+                    reduction="sum",
+                )
+                expected = self.call(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    form,
+                    reduction="sum",
+                )
+                self.assert_matches(actual, expected, case=(case, form))
+                with self.subTest(case=(case, form), scalar=True):
+                    self.assertEqual(actual.shape, torch.Size([]))
+                    self.assertEqual(actual.stride(), ())
+                    self.assertEqual(actual.storage_offset(), 0)
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    self.tensor_bits(actual_input), actual_input_before
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_bits(actual_target), actual_target_before
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_bits(expected_input), expected_input_before
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_bits(expected_target), expected_target_before
+                )
+
+    def test_sum_order_sensitive_accumulation_matches_pytorch_2_13(self):
+        actual_input = self.tensor(torch, [4096.0] + [1.0] * 1000)
+        actual_target = torch.zeros((1001,), dtype=torch.float32)
+        expected_input = self.tensor(
+            reference_torch,
+            [4096.0] + [1.0] * 1000,
+        )
+        expected_target = reference_torch.zeros(
+            (1001,),
+            dtype=reference_torch.float32,
+        )
+
+        actual = functional.mse_loss(
+            actual_input,
+            actual_target,
+            reduction="sum",
+        )
+        expected = reference_functional.mse_loss(
+            expected_input,
+            expected_target,
+            reduction="sum",
+        )
+
+        self.assertNotEqual(actual.item(), 16_777_216.0)
+        np.testing.assert_allclose(
+            actual.item(),
+            expected.item(),
+            rtol=1.3e-6,
+            atol=1.0e-5,
+        )
+
     def test_float32_edge_bits_match_pytorch_2_13(self):
         input_values = [
             -0.0,
@@ -353,23 +471,28 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 dtype=reference_torch.float32,
                 requires_grad=target_requires_grad,
             )
-            with torch.no_grad():
-                actual = functional.mse_loss(
-                    actual_input,
-                    actual_target,
-                    reduction="none",
+            for reduction in ("none", "sum"):
+                with torch.no_grad():
+                    actual = functional.mse_loss(
+                        actual_input,
+                        actual_target,
+                        reduction=reduction,
+                    )
+                with reference_torch.no_grad():
+                    expected = reference_functional.mse_loss(
+                        expected_input,
+                        expected_target,
+                        reduction=reduction,
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(
+                        input_requires_grad,
+                        target_requires_grad,
+                        reduction,
+                    ),
                 )
-            with reference_torch.no_grad():
-                expected = reference_functional.mse_loss(
-                    expected_input,
-                    expected_target,
-                    reduction="none",
-                )
-            self.assert_matches(
-                actual,
-                expected,
-                case=(input_requires_grad, target_requires_grad),
-            )
 
 
 if __name__ == "__main__":
