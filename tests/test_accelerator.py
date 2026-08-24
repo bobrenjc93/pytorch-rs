@@ -71,6 +71,28 @@ FUNCTION_DOCS = {
         On CUDA, this API will NOT poison fork if NVML discovery succeeds.
         Otherwise, it will. For more details, see :ref:`multiprocessing-poison-fork-note`.
     """,
+    "synchronize": """Wait for all kernels in all streams on the given device to complete.
+
+    Args:
+        device (:class:`torch.device`, str, int, optional): device for which to synchronize. It must match
+            the current :ref:`accelerator<accelerators>` device type. If not given,
+            use :func:`torch.accelerator.current_device_index` by default.
+
+    .. note:: This function is a no-op if the current :ref:`accelerator<accelerators>` is not initialized.
+
+    Example::
+
+        >>> # xdoctest: +REQUIRES(env:TORCH_DOCTEST_CUDA)
+        >>> assert torch.accelerator.is_available() "No available accelerators detected."
+        >>> start_event = torch.Event(enable_timing=True)
+        >>> end_event = torch.Event(enable_timing=True)
+        >>> start_event.record()
+        >>> tensor = torch.randn(100, device=torch.accelerator.current_accelerator())
+        >>> sum = torch.sum(tensor)
+        >>> end_event.record()
+        >>> torch.accelerator.synchronize()
+        >>> elapsed_time_ms = start_event.elapsed_time(end_event)
+    """,
 }
 
 
@@ -101,9 +123,11 @@ class AcceleratorTests(unittest.TestCase):
             count = accelerator.device_count()
             self.assertIs(type(count), int)
             self.assertEqual(count, 0)
+            self.assertIs(accelerator.synchronize(), None)
+            self.assertIs(accelerator.synchronize(None), None)
 
-        self.assertEqual(shared_discovery.call_count, 4)
-        self.assertEqual(shared_discovery.call_args_list, [mock.call()] * 4)
+        self.assertEqual(shared_discovery.call_count, 6)
+        self.assertEqual(shared_discovery.call_args_list, [mock.call()] * 6)
         for function in (
             accelerator.current_accelerator,
             accelerator.is_available,
@@ -136,6 +160,59 @@ class AcceleratorTests(unittest.TestCase):
                         self.assertIs(accelerator.current_accelerator(), None)
                         self.assertIs(accelerator.is_available(), False)
                         self.assertEqual(accelerator.device_count(), 0)
+                        self.assertIs(accelerator.synchronize(), None)
+                        self.assertIs(accelerator.synchronize(None), None)
+
+    def test_synchronize_rejects_explicit_devices_without_discovery_or_inspection(self):
+        accelerator = torch.accelerator
+
+        class ExplodingDevice:
+            def __repr__(self):
+                raise AssertionError("device repr was inspected")
+
+            def __str__(self):
+                raise AssertionError("device string was inspected")
+
+            def __index__(self):
+                raise AssertionError("device index was inspected")
+
+            def __bool__(self):
+                raise AssertionError("device truthiness was inspected")
+
+        devices = (
+            0,
+            -1,
+            True,
+            "cpu",
+            "cuda:0",
+            torch.device("cpu"),
+            torch.tensor([1.0], requires_grad=True),
+            ExplodingDevice(),
+        )
+        with mock.patch.object(
+            accelerator,
+            "_discover_accelerator",
+            side_effect=AssertionError("accelerator discovery was attempted"),
+        ) as discovery:
+            for case, device in enumerate(devices):
+                with self.subTest(case=case):
+                    with self.assertRaises(RuntimeError) as raised:
+                        accelerator.synchronize(device)
+                    self.assertEqual(str(raised.exception), "Accelerator expected")
+                    self.assertEqual(raised.exception.args, ("Accelerator expected",))
+        discovery.assert_not_called()
+
+        with mock.patch.object(
+            accelerator,
+            "_discover_accelerator",
+            return_value=(torch.device("cpu"), True, 1),
+        ) as discovery:
+            with self.assertRaises(RuntimeError) as raised:
+                accelerator.synchronize()
+        discovery.assert_called_once_with()
+        self.assertEqual(
+            str(raised.exception), "Accelerator synchronization is not implemented"
+        )
 
     def test_signature_annotations_documentation_and_module_identity(self):
         accelerator = importlib.import_module("torch_rs.accelerator")
@@ -153,6 +230,17 @@ class AcceleratorTests(unittest.TestCase):
             ),
             "is_available": inspect.Signature(return_annotation=bool),
             "device_count": inspect.Signature(return_annotation=int),
+            "synchronize": inspect.Signature(
+                parameters=(
+                    inspect.Parameter(
+                        "device",
+                        inspect.Parameter.POSITIONAL_ONLY,
+                        default=None,
+                        annotation=torch.device | str | int | None,
+                    ),
+                ),
+                return_annotation=None,
+            ),
         }
         expected_annotations = {
             "current_accelerator": {
@@ -161,12 +249,25 @@ class AcceleratorTests(unittest.TestCase):
             },
             "is_available": {"return": bool},
             "device_count": {"return": int},
+            "synchronize": {
+                "device": torch.device | str | int | None,
+                "return": None,
+            },
         }
+        expected_type_hints = {
+            name: dict(annotations) for name, annotations in expected_annotations.items()
+        }
+        expected_type_hints["synchronize"]["return"] = type(None)
 
         self.assertIs(torch.accelerator, accelerator)
         self.assertIs(sys.modules["torch_rs.accelerator"], accelerator)
         self.assertEqual(accelerator.__doc__, MODULE_DOC)
-        for name in ("current_accelerator", "device_count", "is_available"):
+        for name in (
+            "current_accelerator",
+            "device_count",
+            "is_available",
+            "synchronize",
+        ):
             with self.subTest(name=name):
                 function = getattr(accelerator, name)
                 self.assertIs(type(function), types.FunctionType)
@@ -175,7 +276,7 @@ class AcceleratorTests(unittest.TestCase):
                     inspect.get_annotations(function), expected_annotations[name]
                 )
                 self.assertEqual(
-                    typing.get_type_hints(function), expected_annotations[name]
+                    typing.get_type_hints(function), expected_type_hints[name]
                 )
                 self.assertEqual(function.__name__, name)
                 self.assertEqual(function.__qualname__, name)
@@ -185,10 +286,13 @@ class AcceleratorTests(unittest.TestCase):
                     inspect.cleandoc(function.__doc__),
                     inspect.cleandoc(FUNCTION_DOCS[name]),
                 )
-                self.assertEqual(
-                    function.__defaults__,
-                    (False,) if name == "current_accelerator" else None,
-                )
+                expected_defaults = {
+                    "current_accelerator": (False,),
+                    "device_count": None,
+                    "is_available": None,
+                    "synchronize": (None,),
+                }
+                self.assertEqual(function.__defaults__, expected_defaults[name])
                 self.assertIsNone(function.__kwdefaults__)
                 self.assertEqual(function.__dict__, {})
                 self.assertFalse(hasattr(function, "__text_signature__"))
@@ -199,11 +303,12 @@ class AcceleratorTests(unittest.TestCase):
             "current_accelerator",
             "device_count",
             "is_available",
+            "synchronize",
         }
 
         self.assertEqual(
             accelerator.__all__,
-            ["current_accelerator", "device_count", "is_available"],
+            ["current_accelerator", "device_count", "is_available", "synchronize"],
         )
         self.assertEqual(
             {name for name in vars(accelerator) if not name.startswith("_")},
@@ -215,7 +320,7 @@ class AcceleratorTests(unittest.TestCase):
         wildcard_import = {}
         exec("from torch_rs import accelerator", package_import)
         exec(
-            "from torch_rs.accelerator import current_accelerator, device_count, is_available",
+            "from torch_rs.accelerator import current_accelerator, device_count, is_available, synchronize",
             direct_import,
         )
         exec("from torch_rs.accelerator import *", wildcard_import)
@@ -249,7 +354,12 @@ class AcceleratorTests(unittest.TestCase):
         old_discovery = accelerator._discover_accelerator
         old_functions = {
             name: getattr(accelerator, name)
-            for name in ("current_accelerator", "device_count", "is_available")
+            for name in (
+                "current_accelerator",
+                "device_count",
+                "is_available",
+                "synchronize",
+            )
         }
 
         reloaded = importlib.reload(accelerator)
@@ -263,6 +373,8 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(accelerator.current_accelerator(), None)
         self.assertIs(accelerator.is_available(), False)
         self.assertEqual(accelerator.device_count(), 0)
+        self.assertIs(accelerator.synchronize(), None)
+        self.assertIs(accelerator.synchronize(None), None)
 
         for name, old_function in old_functions.items():
             with self.subTest(name=name):
@@ -315,6 +427,18 @@ class AcceleratorTests(unittest.TestCase):
                 lambda: accelerator.device_count(device=True),
                 "device_count() got an unexpected keyword argument 'device'",
             ),
+            (
+                lambda: accelerator.synchronize(device=None),
+                "synchronize() got some positional-only arguments passed as keyword arguments: 'device'",
+            ),
+            (
+                lambda: accelerator.synchronize(None, None),
+                "synchronize() takes from 0 to 1 positional arguments but 2 were given",
+            ),
+            (
+                lambda: accelerator.synchronize(unexpected=True),
+                "synchronize() got an unexpected keyword argument 'unexpected'",
+            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
@@ -340,6 +464,8 @@ class AcceleratorTests(unittest.TestCase):
                         torch.accelerator.current_accelerator(True),
                         torch.accelerator.is_available(),
                         torch.accelerator.device_count(),
+                        torch.accelerator.synchronize(),
+                        torch.accelerator.synchronize(None),
                         torch.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -366,6 +492,8 @@ class AcceleratorTests(unittest.TestCase):
                     None,
                     False,
                     0,
+                    None,
+                    None,
                     expected_grad_state,
                 ),
             )
@@ -394,7 +522,6 @@ class AcceleratorTests(unittest.TestCase):
             "set_device_idx",
             "set_device_index",
             "set_stream",
-            "synchronize",
         }
         for name in unsupported:
             with self.subTest(name=name):
@@ -410,6 +537,8 @@ class AcceleratorTests(unittest.TestCase):
                     importlib.import_module(module_name)
 
         self.assertFalse(hasattr(torch, "cuda"))
+        self.assertFalse(hasattr(torch, "Event"))
+        self.assertFalse(hasattr(torch, "Stream"))
         with self.assertRaises(ModuleNotFoundError):
             importlib.import_module("torch_rs.cuda")
         for specification in ("cuda", "cuda:0"):
@@ -448,6 +577,8 @@ assert torch.accelerator.current_accelerator(check_available=True) is None
 assert torch.accelerator.is_available() is False
 count = torch.accelerator.device_count()
 assert type(count) is int and count == 0
+assert torch.accelerator.synchronize() is None
+assert torch.accelerator.synchronize(None) is None
 assert set(sys.modules) == modules_before_calls
 assert not hasattr(torch, "cuda")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)

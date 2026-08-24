@@ -9,14 +9,16 @@ __all__ = [
     "current_accelerator",
     "device_count",
     "is_available",
+    "synchronize",
 ]
 
 
 def _discover_accelerator() -> tuple[_device | None, bool, int]:
     """Return the native backend's accelerator, availability, and device count."""
-    # The native Device enum currently contains only CPU. Keep the three public
-    # discovery queries on one boundary so a future accelerator backend can
-    # replace this result without scattering hardware probes through the API.
+    # The native Device enum currently contains only CPU. Keep the public
+    # discovery queries and no-device synchronization on one boundary so a
+    # future accelerator backend can replace this result without scattering
+    # hardware probes through the API.
     return None, False, 0
 
 
@@ -86,3 +88,33 @@ def current_accelerator(check_available: bool = False) -> _device | None:
     if accelerator is not None and ((not check_available) or available):
         return accelerator
     return None
+
+
+def synchronize(device: _device | str | int | None = None, /) -> None:
+    r"""Wait for all kernels in all streams on the given device to complete.
+
+    Args:
+        device (:class:`torch.device`, str, int, optional): device for which to synchronize. It must match
+            the current :ref:`accelerator<accelerators>` device type. If not given,
+            use :func:`torch.accelerator.current_device_index` by default.
+
+    .. note:: This function is a no-op if the current :ref:`accelerator<accelerators>` is not initialized.
+
+    Example::
+
+        >>> # xdoctest: +REQUIRES(env:TORCH_DOCTEST_CUDA)
+        >>> assert torch.accelerator.is_available() "No available accelerators detected."
+        >>> start_event = torch.Event(enable_timing=True)
+        >>> end_event = torch.Event(enable_timing=True)
+        >>> start_event.record()
+        >>> tensor = torch.randn(100, device=torch.accelerator.current_accelerator())
+        >>> sum = torch.sum(tensor)
+        >>> end_event.record()
+        >>> torch.accelerator.synchronize()
+        >>> elapsed_time_ms = start_event.elapsed_time(end_event)
+    """
+    if device is not None:
+        raise RuntimeError("Accelerator expected")
+    accelerator, _, _ = _discover_accelerator()
+    if accelerator is not None:
+        raise RuntimeError("Accelerator synchronization is not implemented")

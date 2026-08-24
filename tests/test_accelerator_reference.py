@@ -23,6 +23,7 @@ SUPPORTED = {
     "current_accelerator",
     "device_count",
     "is_available",
+    "synchronize",
 }
 
 
@@ -69,7 +70,12 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(sys.modules["torch.accelerator"], expected_module)
         self.assertEqual(actual_module.__doc__, expected_module.__doc__)
 
-        for name in ("current_accelerator", "device_count", "is_available"):
+        for name in (
+            "current_accelerator",
+            "device_count",
+            "is_available",
+            "synchronize",
+        ):
             with self.subTest(name=name):
                 actual = getattr(actual_module, name)
                 expected = getattr(expected_module, name)
@@ -169,6 +175,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
         count = torch.accelerator.device_count()
         self.assertIs(type(count), int)
         self.assertEqual(count, 0)
+        self.assertIs(torch.accelerator.synchronize(), None)
+        self.assertIs(torch.accelerator.synchronize(None), None)
 
         if not reference_torch.cuda.is_available():
             self.skipTest("requires a CUDA-visible reference PyTorch build")
@@ -184,15 +192,30 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(reference_torch.accelerator.is_available(), True)
         self.assertGreaterEqual(reference_torch.accelerator.device_count(), 1)
 
-        probe = reference_torch.ones(
-            1, device=reference_torch.device("cuda", 0)
-        )
-        self.assertEqual(probe.item(), 1.0)
-        reference_torch.cuda.synchronize(0)
+        cuda_device = reference_torch.device("cuda", 0)
+        stream = reference_torch.cuda.Stream(device=cuda_device)
+        completion = reference_torch.cuda.Event()
+        with reference_torch.cuda.stream(stream):
+            probe = reference_torch.arange(4096, device=cuda_device)
+            result = probe.square()
+            completion.record()
+        self.assertIs(reference_torch.accelerator.synchronize(), None)
+        self.assertTrue(completion.query())
+        self.assertEqual(result[-1].item(), 4095**2)
+
+        completion = reference_torch.cuda.Event()
+        with reference_torch.cuda.stream(stream):
+            result = result + 1
+            completion.record()
+        self.assertIs(reference_torch.accelerator.synchronize(None), None)
+        self.assertTrue(completion.query())
+        self.assertEqual(result[-1].item(), 4095**2 + 1)
 
         self.assertIs(torch.accelerator.current_accelerator(), None)
         self.assertIs(torch.accelerator.is_available(), False)
         self.assertEqual(torch.accelerator.device_count(), 0)
+        self.assertIs(torch.accelerator.synchronize(), None)
+        self.assertIs(torch.accelerator.synchronize(None), None)
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertNotIn("torch_rs.cuda", sys.modules)
 
@@ -366,6 +389,18 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 lambda: actual.device_count(device=True),
                 lambda: expected.device_count(device=True),
             ),
+            (
+                lambda: actual.synchronize(device=None),
+                lambda: expected.synchronize(device=None),
+            ),
+            (
+                lambda: actual.synchronize(None, None),
+                lambda: expected.synchronize(None, None),
+            ),
+            (
+                lambda: actual.synchronize(unexpected=True),
+                lambda: expected.synchronize(unexpected=True),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
@@ -386,7 +421,6 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 "memory_stats",
                 "set_device_index",
                 "set_stream",
-                "synchronize",
             }.issubset(unsupported)
         )
         for name in unsupported | {"graphs", "memory"}:
@@ -402,6 +436,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
                     importlib.import_module(module_name)
 
         self.assertFalse(hasattr(torch, "cuda"))
+        self.assertFalse(hasattr(torch, "Event"))
+        self.assertFalse(hasattr(torch, "Stream"))
         self.assertTrue(hasattr(reference_torch, "cuda"))
         for specification in ("cuda", "cuda:0"):
             with self.subTest(specification=specification):
