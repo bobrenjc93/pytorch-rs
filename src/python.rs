@@ -771,6 +771,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\ntrunc() -> Tensor\n\nSee :func:`torch.trunc`\n"]
+    #[pyo3(text_signature = None)]
+    fn trunc(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "trunc")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.trunc().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nsigmoid() -> Tensor\n\nSee :func:`torch.sigmoid`\n"]
     #[pyo3(text_signature = None)]
     fn sigmoid(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2346,6 +2363,7 @@ fn dispatch_tensorbase_mode(
                     | "sqrt"
                     | "square"
                     | "tanh"
+                    | "trunc"
             )
         );
     if legacy_no_argument_method {
@@ -4451,9 +4469,9 @@ fn arange_impl(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<PyTensor> {
-    let elements = parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
+    let (elements, requires_grad) = parse_arange_arguments(bind_arange_arguments(args, kwargs)?)?;
     CoreTensor::arange_float32(elements)
-        .map(PyTensor::new)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| scalar_creation_error(&error, Some(elements)))
 }
 
@@ -4960,7 +4978,7 @@ fn bind_arange_arguments<'py>(
     Ok(arguments)
 }
 
-fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<usize> {
+fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize, bool)> {
     let ArangeCallArguments {
         end,
         unsupported_overload,
@@ -5016,13 +5034,8 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<usize>
             "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
         ));
     }
-    if requires_grad {
-        return Err(PyRuntimeError::new_err(
-            "arange(): requires_grad=True is not supported",
-        ));
-    }
-
-    arange_element_count(end.value.extract::<f64>()?)
+    let elements = arange_element_count(end.value.extract::<f64>()?)?;
+    Ok((elements, requires_grad))
 }
 
 fn arange_element_count(end: f64) -> PyResult<usize> {

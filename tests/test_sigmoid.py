@@ -95,6 +95,10 @@ class TensorSigmoidTests(unittest.TestCase):
     def tensor_values(tensor):
         return np.asarray(tensor, dtype=np.float32)
 
+    @classmethod
+    def tensor_bits(cls, tensor):
+        return cls.tensor_values(tensor).reshape(-1).view(np.uint32)
+
     def assert_result(self, actual, source, expected_stride, *, case):
         with self.subTest(case=case, metadata=True):
             self.assertEqual(actual.shape, source.shape)
@@ -186,12 +190,126 @@ class TensorSigmoidTests(unittest.TestCase):
         strided = leaf.transpose(0, 2)
         return scalar, empty, strided[1], strided
 
-    def test_active_autograd_is_rejected_before_planning(self):
+    def test_finite_owned_scalar_autograd_matches_signed_zero_and_saturation(self):
+        cases = (
+            (0x0000_0000, 0x3F00_0000, 0x3E80_0000),
+            (0x8000_0000, 0x3F00_0000, 0x3E80_0000),
+            (0x0000_0001, 0x3F00_0000, 0x3E80_0000),
+            (0x8000_0001, 0x3F00_0000, 0x3E80_0000),
+            (0x3F00_0000, 0x3F1F_597F, 0x3E70_A4D0),
+            (0xBF00_0000, 0x3EC1_4D03, 0x3E70_A4D0),
+            (0x4185_1591, 0x3F7F_FFFE, 0x33FF_FFFE),
+            (0x4185_1592, 0x3F80_0000, 0x0000_0000),
+            (0xC2B1_7217, 0x0020_0010, 0x0020_0010),
+            (0xC2B1_7218, 0x0000_0000, 0x0000_0000),
+        )
+        for input_bits, output_bits, gradient_bits in cases:
+            with self.subTest(input_bits=f"0x{input_bits:08x}"):
+                value = np.asarray(input_bits, dtype=np.uint32).view(np.float32).item()
+                leaf = torch.tensor(value, requires_grad=True)
+                output = leaf.sigmoid()
+
+                self.assertTrue(output.requires_grad)
+                self.assertFalse(output.is_leaf)
+                self.assertEqual(output.shape, ())
+                self.assertEqual(output.stride(), ())
+                self.assertEqual(output.storage_offset(), 0)
+                self.assertFalse(output.is_set_to(leaf))
+                self.assertEqual(self.tensor_bits(output).item(), output_bits)
+
+                output.backward()
+                self.assertEqual(self.tensor_bits(leaf.grad).item(), gradient_bits)
+                with self.assertRaisesRegex(
+                    RuntimeError, "backward through the graph a second time"
+                ):
+                    output.backward()
+
+        output = torch.tensor(0.5, requires_grad=True).sigmoid()
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(output),
+            ", grad_fn=<SigmoidBackward0>",
+        )
+
+    def test_scalar_autograd_composes_accumulates_and_obeys_grad_mode(self):
+        composed = torch.tensor(0.5, requires_grad=True)
+        composed.sigmoid().sin().backward()
+        sigmoid = np.float32(1.0) / (
+            np.float32(1.0) + np.exp(np.float32(-0.5), dtype=np.float32)
+        )
+        expected = np.cos(sigmoid) * (np.float32(1.0) - sigmoid) * sigmoid
+        np.testing.assert_allclose(
+            np.asarray(composed.grad), expected, rtol=2.0e-6, atol=0.0
+        )
+
+        accumulated = torch.tensor(-0.5, requires_grad=True)
+        accumulated.sigmoid().backward()
+        first = np.asarray(accumulated.grad).copy()
+        accumulated.sigmoid().backward()
+        np.testing.assert_array_equal(np.asarray(accumulated.grad), first * 2.0)
+
+        higher_order = torch.tensor(0.25, requires_grad=True)
+        loss = higher_order.sigmoid()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        loss.backward()
+        self.assertIsNotNone(higher_order.grad)
+
+        tracked = torch.tensor(-0.5, requires_grad=True)
+        with torch.no_grad():
+            no_grad_output = tracked.sigmoid()
+        self.assert_result(no_grad_output, tracked, (), case="scalar no_grad")
+        self.assertTrue(tracked.sigmoid().requires_grad)
+
+        detached = tracked.detach()
+        detached_output = detached.sigmoid()
+        self.assert_result(detached_output, detached, (), case="scalar detached")
+        np.testing.assert_array_equal(
+            self.tensor_bits(no_grad_output), self.tensor_bits(detached_output)
+        )
+
+    def test_unsupported_tracked_inputs_fail_before_existing_graphs_or_layouts_change(self):
         message = r"^sigmoid\(\): autograd recording is not supported$"
-        for case, source in enumerate(self.make_tracked_cases()):
-            with self.subTest(case=case):
+
+        for bits in (0x7F80_0000, 0xFF80_0000, 0x7FC1_2345, 0xFFC5_4321):
+            with self.subTest(nonfinite=f"0x{bits:08x}"):
+                value = np.asarray(bits, dtype=np.uint32).view(np.float32).item()
+                leaf = torch.tensor(value, requires_grad=True)
                 with self.assertRaisesRegex(RuntimeError, message):
-                    source.sigmoid()
+                    leaf.sigmoid()
+                self.assertIsNone(leaf.grad)
+                leaf.sum().backward()
+                self.assertEqual(leaf.grad.item(), 1.0)
+
+        non_scalar = torch.tensor([0.5], requires_grad=True)
+        with self.assertRaisesRegex(RuntimeError, message):
+            non_scalar.sigmoid()
+        self.assertIsNone(non_scalar.grad)
+
+        view_base = torch.tensor([0.5], requires_grad=True)
+        scalar_view = view_base[0]
+        self.assertFalse(scalar_view.is_leaf)
+        with self.assertRaisesRegex(RuntimeError, message):
+            scalar_view.sigmoid()
+        scalar_view.backward()
+        self.assertEqual(view_base.grad.tolist(), [1.0])
+
+        nonleaf_base = torch.tensor(0.5, requires_grad=True)
+        nonleaf = nonleaf_base.sin()
+        with self.assertRaisesRegex(RuntimeError, message):
+            nonleaf.sigmoid()
+        nonleaf.backward()
+        np.testing.assert_allclose(nonleaf_base.grad.item(), np.cos(np.float32(0.5)))
+
+        with torch.no_grad():
+            no_grad_view = non_scalar[0]
+        self.assertTrue(no_grad_view.requires_grad)
+        self.assertTrue(no_grad_view.is_leaf)
+        with self.assertRaisesRegex(RuntimeError, message):
+            no_grad_view.sigmoid()
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
@@ -362,7 +480,7 @@ class TensorSigmoidTests(unittest.TestCase):
                 plain.sigmoid(1)
         self.assertEqual(invalid.calls, [])
 
-    def test_top_level_and_inplace_forms_remain_unsupported(self):
+    def test_top_level_and_inplace_forms_remain_unsupported_without_mutation(self):
         tensor = torch.tensor([1.25])
         self.assertFalse(hasattr(torch, "sigmoid"))
         self.assertNotIn("sigmoid", torch.__all__)
@@ -373,6 +491,15 @@ class TensorSigmoidTests(unittest.TestCase):
         self.assertNotIn("sigmoid_", torch.__all__)
         with self.assertRaises(TypeError):
             tensor.sigmoid(out=None)
+
+        tracked = torch.tensor(0.5, requires_grad=True)
+        before = self.tensor_bits(tracked).copy()
+        with self.assertRaises(AttributeError):
+            tracked.sigmoid_()
+        np.testing.assert_array_equal(self.tensor_bits(tracked), before)
+        self.assertIsNone(tracked.grad)
+        tracked.sigmoid().backward()
+        self.assertEqual(self.tensor_bits(tracked.grad).item(), 0x3E70_A4D0)
 
 
 if __name__ == "__main__":

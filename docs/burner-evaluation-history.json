@@ -5873,6 +5873,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:852",
+      "recordedAt": "2026-08-24T18:21:05.117Z",
+      "label": "PR #852",
+      "kind": "composite",
+      "prNumber": 852,
+      "title": "YOLO generation 97: 3 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 89.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 72.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }

@@ -14,7 +14,7 @@ class FloatSubclass(float):
 
 
 class ArangeTests(unittest.TestCase):
-    def assert_default_tensor(self, tensor, values):
+    def assert_default_tensor(self, tensor, values, *, requires_grad=False):
         self.assertEqual(tuple(tensor.shape), (len(values),))
         self.assertEqual(tensor.stride(), (1,))
         self.assertEqual(tensor.storage_offset(), 0)
@@ -23,8 +23,9 @@ class ArangeTests(unittest.TestCase):
         self.assertIs(tensor.dtype, torch.float32)
         self.assertEqual(tensor.device, torch.device("cpu"))
         self.assertIs(tensor.layout, torch.strided)
-        self.assertFalse(tensor.requires_grad)
+        self.assertIs(tensor.requires_grad, requires_grad)
         self.assertTrue(tensor.is_leaf)
+        self.assertIsNone(tensor.grad)
 
     def assert_error(self, call, error_type, message):
         with self.assertRaisesRegex(error_type, f"^{re.escape(message)}$"):
@@ -82,19 +83,47 @@ class ArangeTests(unittest.TestCase):
                     [0.0, 1.0, 2.0],
                 )
 
-    def test_each_result_owns_fresh_storage(self):
-        first = torch.arange(8.5)
-        second = torch.arange(8.5)
-        self.assertNotEqual(first.data_ptr(), 0)
-        self.assertNotEqual(second.data_ptr(), 0)
-        self.assertNotEqual(first.data_ptr(), second.data_ptr())
-        self.assertFalse(first.is_set_to(second))
+    def test_requires_grad_creates_leaves_inside_and_outside_no_grad(self):
+        ordinary = torch.arange(4.0, requires_grad=True)
+        with torch.no_grad():
+            no_grad = torch.arange(end=4.0, requires_grad=True)
 
-        empty_first = torch.arange(0.0)
-        empty_second = torch.arange(-0.0)
-        self.assertEqual(empty_first.data_ptr(), 0)
-        self.assertEqual(empty_second.data_ptr(), 0)
-        self.assertFalse(empty_first.is_set_to(empty_second))
+        weights = torch.tensor([1.0, 2.0, 3.0, 4.0])
+        for context, leaf in (("ordinary", ordinary), ("no_grad", no_grad)):
+            with self.subTest(context=context):
+                self.assert_default_tensor(
+                    leaf,
+                    [0.0, 1.0, 2.0, 3.0],
+                    requires_grad=True,
+                )
+                for expected in (
+                    [1.0, 2.0, 3.0, 4.0],
+                    [2.0, 4.0, 6.0, 8.0],
+                ):
+                    (leaf * weights).sum().backward()
+                    self.assertEqual(leaf.grad.tolist(), expected)
+
+        for end in (0.0, -0.0):
+            with self.subTest(end=end):
+                with torch.no_grad():
+                    empty = torch.arange(end, requires_grad=True)
+                self.assert_default_tensor(empty, [], requires_grad=True)
+
+    def test_each_result_owns_fresh_storage(self):
+        for requires_grad in (False, True):
+            with self.subTest(requires_grad=requires_grad):
+                first = torch.arange(8.5, requires_grad=requires_grad)
+                second = torch.arange(8.5, requires_grad=requires_grad)
+                self.assertNotEqual(first.data_ptr(), 0)
+                self.assertNotEqual(second.data_ptr(), 0)
+                self.assertNotEqual(first.data_ptr(), second.data_ptr())
+                self.assertFalse(first.is_set_to(second))
+
+                empty_first = torch.arange(0.0, requires_grad=requires_grad)
+                empty_second = torch.arange(-0.0, requires_grad=requires_grad)
+                self.assertEqual(empty_first.data_ptr(), 0)
+                self.assertEqual(empty_second.data_ptr(), 0)
+                self.assertFalse(empty_first.is_set_to(empty_second))
 
     def test_negative_and_nonfinite_endpoints_match_pytorch_errors(self):
         for end in (-math.nextafter(0.0, 1.0), -0.25, -1.0):
@@ -175,12 +204,50 @@ class ArangeTests(unittest.TestCase):
             lambda: torch.arange(2.5, layout=object()),
             lambda: torch.arange(2.5, device="cuda"),
             lambda: torch.arange(2.5, pin_memory=True),
-            lambda: torch.arange(2.5, requires_grad=True),
         )
         for call in unsupported_options:
             with self.subTest(call=call):
                 with self.assertRaises((TypeError, RuntimeError)):
                     call()
+
+    def test_requires_grad_true_preserves_existing_error_precedence(self):
+        destination = torch.full((3,), 9.0)
+        cases = (
+            (
+                lambda: torch.arange(3, requires_grad=True),
+                TypeError,
+                "arange(): argument 'end' (position 1) must be an exact Python float, not int",
+            ),
+            (
+                lambda: torch.arange(0.0, 3.0, requires_grad=True),
+                TypeError,
+                "arange(): start and step overloads are not supported; pass one exact Python float endpoint",
+            ),
+            (
+                lambda: torch.arange(2.5, out=destination, requires_grad=True),
+                RuntimeError,
+                "arange(): the 'out' argument is not supported",
+            ),
+            (
+                lambda: torch.arange(2.5, device="cuda", requires_grad=True),
+                RuntimeError,
+                "arange(): device 'cuda' is not supported; only 'cpu' is implemented",
+            ),
+            (
+                lambda: torch.arange(2.5, pin_memory=True, requires_grad=True),
+                RuntimeError,
+                "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
+            ),
+            (
+                lambda: torch.arange(-1.0, requires_grad=True),
+                RuntimeError,
+                "upper bound and lower bound inconsistent with step sign",
+            ),
+        )
+        for call, error_type, message in cases:
+            with self.subTest(message=message):
+                self.assert_error(call, error_type, message)
+        self.assertEqual(destination.tolist(), [9.0, 9.0, 9.0])
 
     def test_torch_function_mode_intercepts_raw_calls_before_native_validation(self):
         marker = object()

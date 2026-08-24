@@ -33,6 +33,7 @@ class ArangeReferenceTests(unittest.TestCase):
             "layout": str(tensor.layout),
             "requires_grad": tensor.requires_grad,
             "is_leaf": tensor.is_leaf,
+            "grad_is_none": tensor.grad is None,
         }
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -97,28 +98,67 @@ class ArangeReferenceTests(unittest.TestCase):
                     self.tensor_contract(reference_torch, expected),
                 )
 
-    def test_fresh_storage_matches_pytorch_2_13(self):
-        actual_first = torch.arange(8.5)
-        actual_second = torch.arange(8.5)
-        expected_first = reference_torch.arange(8.5)
-        expected_second = reference_torch.arange(8.5)
-        self.assertEqual(
-            actual_first.data_ptr() != actual_second.data_ptr(),
-            expected_first.data_ptr() != expected_second.data_ptr(),
-        )
-        self.assertEqual(
-            actual_first.is_set_to(actual_second),
-            expected_first.is_set_to(expected_second),
-        )
+    def test_requires_grad_leaves_and_accumulation_match_pytorch_2_13(self):
+        outcomes = []
+        for module in (torch, reference_torch):
+            ordinary = module.arange(4.0, requires_grad=True)
+            with module.no_grad():
+                no_grad = module.arange(end=4.0, requires_grad=True)
+                empty = module.arange(-0.0, requires_grad=True)
 
-        actual_empty_first = torch.arange(0.0)
-        actual_empty_second = torch.arange(-0.0)
-        expected_empty_first = reference_torch.arange(0.0)
-        expected_empty_second = reference_torch.arange(-0.0)
-        self.assertEqual(
-            actual_empty_first.is_set_to(actual_empty_second),
-            expected_empty_first.is_set_to(expected_empty_second),
-        )
+            module_outcomes = []
+            weights = module.tensor(
+                [1.0, 2.0, 3.0, 4.0], dtype=module.float32
+            )
+            for leaf in (ordinary, no_grad):
+                gradients = []
+                for _ in range(2):
+                    (leaf * weights).sum().backward()
+                    gradients.append(leaf.grad.tolist())
+                module_outcomes.append(
+                    (self.tensor_contract(module, leaf), gradients)
+                )
+            module_outcomes.append(self.tensor_contract(module, empty))
+            outcomes.append(module_outcomes)
+
+        self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_fresh_storage_matches_pytorch_2_13(self):
+        for requires_grad in (False, True):
+            with self.subTest(requires_grad=requires_grad):
+                actual_first = torch.arange(8.5, requires_grad=requires_grad)
+                actual_second = torch.arange(8.5, requires_grad=requires_grad)
+                expected_first = reference_torch.arange(
+                    8.5, requires_grad=requires_grad
+                )
+                expected_second = reference_torch.arange(
+                    8.5, requires_grad=requires_grad
+                )
+                self.assertEqual(
+                    actual_first.data_ptr() != actual_second.data_ptr(),
+                    expected_first.data_ptr() != expected_second.data_ptr(),
+                )
+                self.assertEqual(
+                    actual_first.is_set_to(actual_second),
+                    expected_first.is_set_to(expected_second),
+                )
+
+                actual_empty_first = torch.arange(
+                    0.0, requires_grad=requires_grad
+                )
+                actual_empty_second = torch.arange(
+                    -0.0, requires_grad=requires_grad
+                )
+                expected_empty_first = reference_torch.arange(
+                    0.0, requires_grad=requires_grad
+                )
+                expected_empty_second = reference_torch.arange(
+                    -0.0, requires_grad=requires_grad
+                )
+                self.assertEqual(
+                    actual_empty_first.is_set_to(actual_empty_second),
+                    expected_empty_first.is_set_to(expected_empty_second),
+                )
 
     def test_negative_and_nonfinite_errors_match_pytorch_2_13(self):
         endpoints = (
