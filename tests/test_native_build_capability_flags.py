@@ -132,13 +132,12 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
                 )
                 self.assertIs(module.is_available(), expected)
 
-        for module_name in (
-            "torch_rs.backends.lapack",
-            "torch_rs.backends.mkldnn",
-        ):
-            with self.subTest(module=module_name):
-                with self.assertRaises(ModuleNotFoundError):
-                    importlib.import_module(module_name)
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("torch_rs.backends.lapack")
+
+        mkldnn = importlib.import_module("torch_rs.backends.mkldnn")
+        self.assertIs(backends.mkldnn, mkldnn)
+        self.assertIs(mkldnn.is_available(), torch._C._has_mkldnn)
 
     def test_import_does_not_probe_external_runtimes_or_import_pytorch(self):
         script = r'''

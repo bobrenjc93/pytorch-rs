@@ -48,9 +48,10 @@ static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
 // tensor runtime to infer capabilities.
-const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 5] = [
+const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 6] = [
     ("_has_cudnn", false),
     ("_has_cuda", false),
+    ("_has_mkldnn", false),
     ("has_openmp", false),
     ("has_mkl", false),
     ("has_lapack", false),
@@ -10854,7 +10855,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // the extension's generated export list also prevents the package wildcard
     // import from copying them onto the public torch_rs module.
     let exports = module.getattr("__all__")?;
-    for name in ["_has_cudnn", "_has_cuda"] {
+    for name in ["_has_cudnn", "_has_cuda", "_has_mkldnn"] {
         exports.call_method1("remove", (name,))?;
     }
     module.add("Size", size_type_object(py)?.clone_ref(py))?;
