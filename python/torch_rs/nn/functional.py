@@ -44,9 +44,9 @@ Measures the element-wise mean squared error between ``input`` and ``target``.
 
 The current native implementation requires exact, same-shaped
 ``torch_rs.Tensor`` operands with CPU ``float32`` storage, ``reduction='none'``,
-``size_average=None``, ``reduce=None``, and ``weight=None``. It composes the
-native subtraction and square kernels and returns a fresh, independent tensor
-with PyTorch-compatible values, shape, and strides.
+``size_average=None``, ``reduce=None``, and ``weight=None``. It fuses subtraction
+and squaring into one native elementwise pass and returns a fresh, independent
+tensor with PyTorch-compatible values, shape, and strides.
 
 Broadcasting, reduced outputs, weights, Tensor subclasses, active
 ``TorchFunctionMode`` contexts, and active autograd recording are not

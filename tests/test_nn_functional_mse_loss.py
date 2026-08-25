@@ -166,7 +166,7 @@ class FunctionalMseLossTests(unittest.TestCase):
             "``size_average=None``",
             "``reduce=None``",
             "``weight=None``",
-            "native subtraction and square kernels",
+            "one native elementwise pass",
             "fresh, independent tensor",
             "Broadcasting",
             "Tensor subclasses",
@@ -201,7 +201,7 @@ class FunctionalMseLossTests(unittest.TestCase):
         exec("from torch_rs.nn.functional import *", wildcard)
         self.assertIs(wildcard["mse_loss"], mse_loss)
 
-    def test_supported_forms_compose_subtraction_and_square(self):
+    def test_supported_forms_match_subtraction_and_square_composition(self):
         for case, input, target in self.layout_cases():
             difference = input - target
             expected = difference.square()
@@ -273,21 +273,50 @@ class FunctionalMseLossTests(unittest.TestCase):
 
     def test_float32_edge_values_match_kernel_composition_bits(self):
         input = torch.tensor(
-            [
-                -0.0,
-                0.0,
-                1.0e-20,
-                -1.0e-20,
-                1.0,
-                -1.0,
-                1.0e10,
-                -1.0e10,
-                np.finfo(np.float32).max,
-                -np.finfo(np.float32).max,
-            ]
+            np.asarray(
+                [
+                    0x00000000,
+                    0x80000000,
+                    0x00000001,
+                    0x80000001,
+                    0x7F800000,
+                    0xFF800000,
+                    0x7FC12345,
+                    0xFFC54321,
+                    0x7F812345,
+                    0xFF854321,
+                    0x7F7FFFFF,
+                    0xFF7FFFFF,
+                    0x3F800000,
+                    0xBF800000,
+                    0x501502F9,
+                    0xD01502F9,
+                ],
+                dtype=np.uint32,
+            ).view(np.float32)
         )
         target = torch.tensor(
-            [0.0, -0.0, 0.0, 0.0, -1.0, 1.0, -1.0e10, 1.0e10, 0.0, 0.0]
+            np.asarray(
+                [
+                    0x80000000,
+                    0x00000000,
+                    0x80000001,
+                    0x00000001,
+                    0xFF800000,
+                    0x7F800000,
+                    0xFFC6789A,
+                    0x7FC2ABCD,
+                    0xFF86789A,
+                    0x7F82ABCD,
+                    0x00000000,
+                    0x80000000,
+                    0xBF800000,
+                    0x3F800000,
+                    0xD01502F9,
+                    0x501502F9,
+                ],
+                dtype=np.uint32,
+            ).view(np.float32)
         )
         actual = functional.mse_loss(input, target, reduction="none")
         expected = (input - target).square()
