@@ -837,6 +837,134 @@ fn sigmoid_differentiates_owned_matrices_with_weighting_accumulation_and_graph_f
 }
 
 #[test]
+fn sigmoid_differentiates_owned_rank_three_tensors_with_weighting_and_composition() {
+    let input = SIGMOID_AUTOGRAD_INPUT_BITS.map(f32::from_bits).to_vec();
+    let weights =
+        Tensor::from_vec(vec![1.0, -2.0, 0.5, -0.25, 3.0, -4.0, 5.0, -6.0], [1, 2, 4]).unwrap();
+    let leaf = Tensor::from_vec(input.clone(), [1, 2, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let output = leaf.sigmoid().unwrap();
+
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
+    assert_eq!(output.shape(), [1, 2, 4]);
+    assert_eq!(output.stride(), [8, 4, 1]);
+    assert_eq!(output.storage_offset(), 0);
+    assert_eq!(output.dtype(), leaf.dtype());
+    assert_eq!(output.device(), leaf.device());
+    assert!(!output.shares_storage_with(&leaf));
+    assert_eq!(
+        output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        SIGMOID_AUTOGRAD_OUTPUT_BITS
+    );
+
+    let loss = output.mul(&weights).unwrap().sum();
+    loss.backward().unwrap();
+    let gradient = leaf.grad().unwrap().unwrap();
+    assert_eq!(gradient.shape(), [1, 2, 4]);
+    assert_eq!(gradient.stride(), [8, 4, 1]);
+    assert_eq!(gradient.storage_offset(), 0);
+    assert_eq!(
+        gradient
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        SIGMOID_AUTOGRAD_GRADIENT_BITS
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+    assert_eq!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        SIGMOID_AUTOGRAD_GRADIENT_BITS
+    );
+
+    let accumulated = Tensor::from_vec(input.clone(), [1, 2, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    for _ in 0..2 {
+        accumulated
+            .sigmoid()
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+    }
+    assert_eq!(
+        accumulated
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        SIGMOID_AUTOGRAD_ACCUMULATED_GRADIENT_BITS
+    );
+
+    let composed = Tensor::from_vec(input, [1, 2, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let composed_loss = composed.sigmoid().unwrap().sin().unwrap().sum();
+    composed_loss.backward().unwrap();
+    let expected_composed_gradient = SIGMOID_AUTOGRAD_OUTPUT_BITS.map(|bits| {
+        let sigmoid = f32::from_bits(bits);
+        sigmoid.cos() * (1.0 - sigmoid) * sigmoid
+    });
+    assert_eq!(
+        composed
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        expected_composed_gradient
+            .into_iter()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        composed_loss.backward(),
+        Err(TensorError::BackwardGraphFreed)
+    );
+}
+
+#[test]
+fn sigmoid_differentiates_owned_empty_rank_three_shapes() {
+    for (shape, expected_stride) in [
+        ([0, 1, 2], [2, 2, 1]),
+        ([1, 0, 2], [2, 2, 1]),
+        ([1, 2, 0], [2, 1, 1]),
+    ] {
+        let empty = Tensor::zeros(shape).unwrap().with_requires_grad(true);
+        let empty_output = empty.sigmoid().unwrap();
+        assert!(empty_output.requires_grad());
+        assert!(!empty_output.is_leaf());
+        assert_eq!(empty_output.shape(), shape);
+        assert_eq!(empty_output.stride(), expected_stride);
+        assert_eq!(empty_output.storage_offset(), 0);
+        assert!(!empty_output.shares_storage_with(&empty));
+
+        let empty_loss = empty_output.sum();
+        empty_loss.backward().unwrap();
+        let empty_gradient = empty.grad().unwrap().unwrap();
+        assert_eq!(empty_gradient.shape(), shape);
+        assert_eq!(empty_gradient.stride(), expected_stride);
+        assert!(values(&empty_gradient).is_empty());
+        assert_eq!(empty_loss.backward(), Err(TensorError::BackwardGraphFreed));
+    }
+}
+
+#[test]
 fn sigmoid_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
     let composed = Tensor::from_vec(vec![0.5], [])
         .unwrap()
@@ -887,7 +1015,7 @@ fn sigmoid_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
 }
 
 #[test]
-fn sigmoid_rejects_nonfinite_and_rank_three_owned_leaves_before_graph_mutation() {
+fn sigmoid_rejects_nonfinite_and_rank_four_owned_leaves_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported {
         operation: "sigmoid",
     };
@@ -925,19 +1053,27 @@ fn sigmoid_rejects_nonfinite_and_rank_three_owned_leaves_before_graph_mutation()
         assert!(matrix.grad().unwrap().is_none());
         matrix.sum().backward().unwrap();
         assert_eq!(values(&matrix.grad().unwrap().unwrap()), [1.0, 1.0]);
+
+        let rank_three = Tensor::from_vec(vec![0.5, value], [1, 1, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(rank_three.sigmoid(), Err(unsupported.clone()));
+        assert!(rank_three.grad().unwrap().is_none());
+        rank_three.sum().backward().unwrap();
+        assert_eq!(values(&rank_three.grad().unwrap().unwrap()), [1.0, 1.0]);
     }
 
-    let rank_three = Tensor::from_vec(vec![0.5, -1.0], [1, 1, 2])
+    let rank_four = Tensor::from_vec(vec![0.5, -1.0], [1, 1, 1, 2])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(rank_three.sigmoid(), Err(unsupported.clone()));
-    assert!(rank_three.grad().unwrap().is_none());
-    rank_three.sum().backward().unwrap();
-    assert_eq!(values(&rank_three.grad().unwrap().unwrap()), [1.0, 1.0]);
+    assert_eq!(rank_four.sigmoid(), Err(unsupported.clone()));
+    assert!(rank_four.grad().unwrap().is_none());
+    rank_four.sum().backward().unwrap();
+    assert_eq!(values(&rank_four.grad().unwrap().unwrap()), [1.0, 1.0]);
 
     let extreme = Tensor::zeros([0])
         .unwrap()
-        .reshape([0, i64::MAX, 3])
+        .reshape([0, i64::MAX, 3, 1])
         .unwrap()
         .with_requires_grad(true);
     assert_eq!(extreme.sigmoid(), Err(unsupported));
@@ -1047,6 +1183,47 @@ fn sigmoid_rejects_tracked_views_and_nonleaves_before_graph_mutation() {
     assert!(empty_view.is_leaf());
     assert_eq!(empty_view.shape(), [0]);
     assert_eq!(empty_view.sigmoid(), Err(unsupported));
+}
+
+#[test]
+fn sigmoid_rejects_rank_three_views_and_nonleaves_before_graph_mutation() {
+    let unsupported = TensorError::AutogradRecordingUnsupported {
+        operation: "sigmoid",
+    };
+
+    let view_base = Tensor::from_vec(
+        vec![0.5, -1.0, 2.0, -3.0, 4.0, -5.0, 6.0, -7.0],
+        [2, 1, 2, 2],
+    )
+    .unwrap()
+    .with_requires_grad(true);
+    let view = view_base.index([0]).unwrap();
+    assert!(view.requires_grad());
+    assert!(!view.is_leaf());
+    assert_eq!(view.shape(), [1, 2, 2]);
+    assert_eq!(view.sigmoid(), Err(unsupported.clone()));
+    view.sum().backward().unwrap();
+    assert_eq!(
+        values(&view_base.grad().unwrap().unwrap()),
+        [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    );
+
+    let nonleaf_base = Tensor::from_vec(vec![0.5, -0.5], [1, 1, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let nonleaf = nonleaf_base.sin().unwrap();
+    assert_eq!(nonleaf.sigmoid(), Err(unsupported));
+    nonleaf.sum().backward().unwrap();
+    assert_eq!(
+        nonleaf_base
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        [0.5_f32.cos().to_bits(), (-0.5_f32).cos().to_bits()]
+    );
 }
 
 #[test]
