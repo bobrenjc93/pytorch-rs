@@ -737,6 +737,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nabsolute() -> Tensor\n\nAlias for :func:`abs`\n"]
+    #[pyo3(text_signature = None)]
+    fn absolute(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "absolute")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.abs().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\nexp() -> Tensor\n\nSee :func:`torch.exp`\n"]
     #[pyo3(text_signature = None)]
     fn exp(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
@@ -2409,6 +2426,7 @@ fn dispatch_tensorbase_mode(
             target,
             TensorBaseModeTarget::Method(
                 "abs"
+                    | "absolute"
                     | "ceil"
                     | "const_data_ptr"
                     | "exp"
@@ -11300,6 +11318,11 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();
     let tensor_base = py.get_type::<PyTensorBase>();
+    // PyTorch installs Tensor.__abs__ as the TensorBase.abs descriptor itself.
+    // Assigning the descriptor preserves its metadata and dispatch identity while
+    // activating Python's unary absolute-value numeric slot.
+    let abs_descriptor = tensor_base.getattr("abs")?;
+    tensor_type.setattr("__abs__", abs_descriptor)?;
     // PyTorch installs Tensor.__pos__ as the TensorBase.positive descriptor
     // itself. Besides preserving its public metadata and call diagnostics,
     // assigning the descriptor activates the unary-positive numeric slot.
