@@ -5072,7 +5072,21 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
             "arange() missing required argument 'end'",
         ));
     };
-    if !end.value.is_exact_instance_of::<PyFloat>() {
+    // Preserve endpoint-type precedence over TensorOptions validation. An
+    // exact integer joins the existing path only when a supported dtype object
+    // was supplied explicitly; omitted and explicit-None dtypes stay rejected.
+    let exact_integer_with_float32_dtype = if end.value.is_exact_instance_of::<PyInt>() {
+        if let Some(dtype) = dtype.as_ref()
+            && let Ok(dtype) = dtype.cast::<PyDType>()
+        {
+            dtype.try_borrow()?.inner() == DType::Float32
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+    if !end.value.is_exact_instance_of::<PyFloat>() && !exact_integer_with_float32_dtype {
         let position = end
             .position
             .map_or_else(String::new, |position| format!(" (position {position})"));
@@ -5107,8 +5121,25 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
             "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
         ));
     }
-    let elements = arange_element_count(end.value.extract::<f64>()?)?;
+    let elements = if exact_integer_with_float32_dtype {
+        arange_integer_element_count(&end.value)?
+    } else {
+        arange_element_count(end.value.extract::<f64>()?)?
+    };
     Ok((elements, requires_grad))
+}
+
+fn arange_integer_element_count(end: &Bound<'_, PyAny>) -> PyResult<usize> {
+    let end = if let Ok(end) = end.extract::<i64>() {
+        #[allow(clippy::cast_precision_loss)]
+        let end = end as f64;
+        end
+    } else {
+        #[allow(clippy::cast_precision_loss)]
+        let end = end.extract::<u64>()? as f64;
+        end
+    };
+    arange_element_count(end)
 }
 
 fn arange_element_count(end: f64) -> PyResult<usize> {
