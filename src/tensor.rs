@@ -1028,6 +1028,10 @@ impl Tensor {
         self.is_finite_owned_leaf_with_max_rank(1)
     }
 
+    fn is_finite_owned_scalar_vector_or_matrix_leaf(&self) -> bool {
+        self.is_finite_owned_leaf_with_max_rank(2)
+    }
+
     fn record_transform(
         &self,
         output: &mut Self,
@@ -2651,10 +2655,10 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when gradient recording is enabled for an input other
-    /// than a finite, owned, rank-zero or rank-one CPU float32 leaf, or when
-    /// result metadata or storage allocation fails.
+    /// than a finite, owned, rank-zero, rank-one, or rank-two CPU float32 leaf,
+    /// or when result metadata or storage allocation fails.
     pub fn sigmoid(&self) -> Result<Self, TensorError> {
-        if self.records_grad() && !self.is_finite_owned_scalar_or_vector_leaf() {
+        if self.records_grad() && !self.is_finite_owned_scalar_vector_or_matrix_leaf() {
             return Err(TensorError::AutogradRecordingUnsupported {
                 operation: "sigmoid",
             });
