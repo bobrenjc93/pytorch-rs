@@ -19,6 +19,7 @@ if __package__:
         AUTOGRAD_INPUT_BITS,
         AUTOGRAD_OUTPUT_BITS,
         AUTOGRAD_WEIGHTS,
+        scalar_nonleaf_parent_cases,
     )
 else:
     from test_tanh import (
@@ -27,6 +28,7 @@ else:
         AUTOGRAD_INPUT_BITS,
         AUTOGRAD_OUTPUT_BITS,
         AUTOGRAD_WEIGHTS,
+        scalar_nonleaf_parent_cases,
     )
 
 try:
@@ -289,6 +291,111 @@ class TensorTanhReferenceTests(unittest.TestCase):
                     case=(f"0x{input_bits:08x}", form, "gradient"),
                     exact_bits=True,
                 )
+
+    def test_owned_scalar_nonleaf_autograd_matches_pytorch_2_13_across_parent_nodes(
+        self,
+    ):
+        actual_cases = scalar_nonleaf_parent_cases(torch)
+        expected_cases = scalar_nonleaf_parent_cases(reference_torch)
+        for (case, make_actual_parent), (
+            expected_case,
+            make_expected_parent,
+        ) in zip(actual_cases, expected_cases, strict=True):
+            self.assertEqual(case, expected_case)
+            for form in ("method", "top level out none", "functional"):
+                with self.subTest(parent=case, form=form):
+                    actual_leaf = torch.tensor(1.75, requires_grad=True)
+                    expected_leaf = reference_torch.tensor(
+                        1.75,
+                        dtype=reference_torch.float32,
+                        requires_grad=True,
+                    )
+                    actual_parent = make_actual_parent(actual_leaf)
+                    expected_parent = make_expected_parent(expected_leaf)
+                    self.assert_tensor_matches(
+                        actual_parent,
+                        expected_parent,
+                        case=(case, form, "parent"),
+                        exact_bits=True,
+                    )
+                    self.assertFalse(actual_parent.is_set_to(actual_leaf))
+                    self.assertFalse(expected_parent.is_set_to(expected_leaf))
+
+                    if form == "method":
+                        actual_output = actual_parent.tanh()
+                        expected_output = expected_parent.tanh()
+                    elif form == "top level out none":
+                        actual_output = torch.tanh(actual_parent, out=None)
+                        expected_output = reference_torch.tanh(
+                            expected_parent, out=None
+                        )
+                    else:
+                        actual_output = torch.nn.functional.tanh(actual_parent)
+                        expected_output = reference_torch.nn.functional.tanh(
+                            expected_parent
+                        )
+                    self.assert_tensor_matches(
+                        actual_output,
+                        expected_output,
+                        case=(case, form, "tanh"),
+                        exact_bits=True,
+                    )
+                    self.assertEqual(
+                        torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                            actual_output
+                        ),
+                        f", grad_fn=<{type(expected_output.grad_fn).__name__}>",
+                    )
+
+                    actual_output.backward()
+                    expected_output.backward()
+                    self.assert_tensor_matches(
+                        actual_leaf.grad,
+                        expected_leaf.grad,
+                        case=(case, form, "composed gradient"),
+                        exact_bits=True,
+                    )
+                    actual_gradient = self.tensor_values(actual_leaf.grad).copy()
+                    expected_gradient = self.tensor_values(expected_leaf.grad).copy()
+                    self.assertEqual(
+                        self.error(actual_output.backward),
+                        self.error(expected_output.backward),
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_values(actual_leaf.grad), actual_gradient
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_values(expected_leaf.grad), expected_gradient
+                    )
+
+                    actual_accumulated = torch.tensor(1.75, requires_grad=True)
+                    expected_accumulated = reference_torch.tensor(
+                        1.75,
+                        dtype=reference_torch.float32,
+                        requires_grad=True,
+                    )
+                    for _ in range(2):
+                        actual_parent = make_actual_parent(actual_accumulated)
+                        expected_parent = make_expected_parent(expected_accumulated)
+                        if form == "method":
+                            actual_parent.tanh().backward()
+                            expected_parent.tanh().backward()
+                        elif form == "top level out none":
+                            torch.tanh(actual_parent, out=None).backward()
+                            reference_torch.tanh(
+                                expected_parent, out=None
+                            ).backward()
+                        else:
+                            torch.nn.functional.tanh(actual_parent).backward()
+                            reference_torch.nn.functional.tanh(
+                                expected_parent
+                            ).backward()
+                    self.assert_tensor_matches(
+                        actual_accumulated.grad,
+                        expected_accumulated.grad,
+                        case=(case, form, "accumulated gradient"),
+                        exact_bits=True,
+                    )
 
     def test_rank_one_weighted_autograd_empty_and_graph_lifetime_match_pytorch_2_13(
         self,
@@ -1309,6 +1416,19 @@ print(json.dumps({
             actual.sum().backward()
             self.assertEqual(actual.grad.item(), 1.0)
 
+            actual_nonleaf_base = torch.tensor(0.5, requires_grad=True)
+            actual_nonleaf = actual_nonleaf_base + value
+            for call in (
+                actual_nonleaf.tanh,
+                lambda: torch.tanh(actual_nonleaf, out=None),
+                lambda: torch.nn.functional.tanh(actual_nonleaf),
+            ):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    call()
+            self.assertIsNone(actual_nonleaf_base.grad)
+            actual_nonleaf.backward()
+            self.assertEqual(actual_nonleaf_base.grad.item(), 1.0)
+
             actual_vector = torch.tensor([0.5, value], requires_grad=True)
             for call in (
                 actual_vector.tanh,
@@ -1363,6 +1483,7 @@ print(json.dumps({
             actual_rank_four.tanh,
             lambda: torch.tanh(actual_rank_four),
             lambda: torch.tanh(actual_rank_four, out=None),
+            lambda: torch.nn.functional.tanh(actual_rank_four),
         ):
             with self.assertRaisesRegex(RuntimeError, message):
                 call()
@@ -1381,7 +1502,11 @@ print(json.dumps({
 
         actual_view_base = torch.tensor([0.5], requires_grad=True)
         actual_view = actual_view_base[0]
-        for call in (actual_view.tanh, lambda: torch.tanh(actual_view, out=None)):
+        for call in (
+            actual_view.tanh,
+            lambda: torch.tanh(actual_view, out=None),
+            lambda: torch.nn.functional.tanh(actual_view),
+        ):
             with self.assertRaisesRegex(RuntimeError, message):
                 call()
         actual_view.backward()
@@ -1440,6 +1565,20 @@ print(json.dumps({
             actual_rank_three_view_base.grad.tolist(),
             [[[[1.0, 1.0]]], [[[0.0, 0.0]]]],
         )
+
+        actual_vector_nonleaf_base = torch.tensor(
+            [0.5, -0.5], requires_grad=True
+        )
+        actual_vector_nonleaf = actual_vector_nonleaf_base.sin()
+        for call in (
+            actual_vector_nonleaf.tanh,
+            lambda: torch.tanh(actual_vector_nonleaf, out=None),
+            lambda: torch.nn.functional.tanh(actual_vector_nonleaf),
+        ):
+            with self.assertRaisesRegex(RuntimeError, message):
+                call()
+        actual_vector_nonleaf.sum().backward()
+        self.assertIsNotNone(actual_vector_nonleaf_base.grad)
 
         actual_nonleaf_base = torch.tensor([[[0.5, -0.5]]], requires_grad=True)
         actual_nonleaf = actual_nonleaf_base.sin()
