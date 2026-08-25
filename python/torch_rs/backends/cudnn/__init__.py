@@ -5,6 +5,20 @@ import types as _types
 import torch_rs as torch
 
 
+__cudnn_version = None
+
+
+def _init():
+    return torch._C._has_cudnn
+
+
+def version():
+    """Return the version of cuDNN."""
+    if not _init():
+        return None
+    return __cudnn_version
+
+
 def is_available():
     r"""Return a bool indicating if CUDNN is currently available."""
     return torch._C._has_cudnn
