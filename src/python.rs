@@ -4505,22 +4505,42 @@ fn tensor(
         .map_err(|error| tensor_error(&error))
 }
 
+const MIN_BACKWARD_LEAF_ROOTS: usize = 2;
+const MAX_BACKWARD_LEAF_ROOTS: usize = 7;
+
 #[pyfunction]
-#[pyo3(signature = (first, second, third=None, fourth=None, fifth=None, sixth=None))]
-fn _backward_leaf_roots(
-    first: &PyTensor,
-    second: &PyTensor,
-    third: Option<&PyTensor>,
-    fourth: Option<&PyTensor>,
-    fifth: Option<&PyTensor>,
-    sixth: Option<&PyTensor>,
-) -> PyResult<()> {
-    let mut roots = vec![first.inner(), second.inner()];
-    roots.extend(third.map(PyTensor::inner));
-    roots.extend(fourth.map(PyTensor::inner));
-    roots.extend(fifth.map(PyTensor::inner));
-    roots.extend(sixth.map(PyTensor::inner));
-    CoreTensor::backward_leaf_roots(&roots).map_err(|error| tensor_error(&error))
+fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !roots.is_exact_instance_of::<PyTuple>() && !roots.is_exact_instance_of::<PyList>() {
+        return Err(PyTypeError::new_err(
+            "_backward_leaf_roots expects an exact tuple or list",
+        ));
+    }
+
+    let roots = roots.cast::<PySequence>()?;
+    let root_count = roots.len()?;
+    if !(MIN_BACKWARD_LEAF_ROOTS..=MAX_BACKWARD_LEAF_ROOTS).contains(&root_count) {
+        return Err(PyTypeError::new_err(format!(
+            "_backward_leaf_roots expects between {MIN_BACKWARD_LEAF_ROOTS} and {MAX_BACKWARD_LEAF_ROOTS} roots"
+        )));
+    }
+
+    // Hold every Python borrow until all elements have been checked, then let
+    // the native slice engine validate every root before committing gradients.
+    let mut root_guards = Vec::with_capacity(root_count);
+    for index in 0..root_count {
+        let root = roots.get_item(index)?;
+        if !root.is_exact_instance_of::<PyTensor>() {
+            return Err(PyTypeError::new_err(format!(
+                "_backward_leaf_roots expected an exact native Tensor at element {index}"
+            )));
+        }
+        root_guards.push(root.extract::<PyRef<'_, PyTensor>>()?);
+    }
+    let native_roots = root_guards
+        .iter()
+        .map(|root| root.inner())
+        .collect::<Vec<_>>();
+    CoreTensor::backward_leaf_roots(&native_roots).map_err(|error| tensor_error(&error))
 }
 
 fn scalar_tensor_impl(
