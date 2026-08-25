@@ -12,9 +12,19 @@ import torch_rs.nn as nn
 import torch_rs.nn.functional as functional
 
 if __package__:
-    from .test_tanh import AUTOGRAD_GRADIENT_BITS, AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+    from .test_tanh import (
+        AUTOGRAD_GRADIENT_BITS,
+        AUTOGRAD_INPUT_BITS,
+        AUTOGRAD_OUTPUT_BITS,
+        AUTOGRAD_WEIGHTS,
+    )
 else:
-    from test_tanh import AUTOGRAD_GRADIENT_BITS, AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+    from test_tanh import (
+        AUTOGRAD_GRADIENT_BITS,
+        AUTOGRAD_INPUT_BITS,
+        AUTOGRAD_OUTPUT_BITS,
+        AUTOGRAD_WEIGHTS,
+    )
 
 
 FUNCTION_DOC = r"""tanh(input) -> Tensor
@@ -181,7 +191,7 @@ class FunctionalTanhTests(unittest.TestCase):
         self.assertEqual(args, (source,))
         self.assertIsNone(kwargs)
 
-    def test_scalar_and_rank_one_autograd_preserve_unsupported_boundaries(self):
+    def test_rank_two_or_lower_autograd_preserves_unsupported_boundaries(self):
         scalar = torch.tensor(0.5, requires_grad=True)
         scalar_output = functional.tanh(input=scalar)
         self.assertTrue(scalar_output.requires_grad)
@@ -205,6 +215,29 @@ class FunctionalTanhTests(unittest.TestCase):
             self.tensor_bits(vector.grad), AUTOGRAD_GRADIENT_BITS
         )
 
+        matrix = torch.tensor(
+            AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 4).tolist(),
+            requires_grad=True,
+        )
+        matrix_weights = torch.tensor(AUTOGRAD_WEIGHTS.reshape(2, 4).tolist())
+        matrix_output = functional.tanh(input=matrix)
+        self.assertTrue(matrix_output.requires_grad)
+        self.assertFalse(matrix_output.is_leaf)
+        self.assertEqual(matrix_output.shape, (2, 4))
+        self.assertEqual(matrix_output.stride(), (4, 1))
+        self.assertEqual(matrix_output.storage_offset(), 0)
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(matrix_output),
+            ", grad_fn=<TanhBackward0>",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(matrix_output), AUTOGRAD_OUTPUT_BITS
+        )
+        (matrix_output * matrix_weights).sum().backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(matrix.grad), AUTOGRAD_GRADIENT_BITS
+        )
+
         empty = torch.tensor([], requires_grad=True)
         empty_output = functional.tanh(empty)
         self.assertTrue(empty_output.requires_grad)
@@ -217,7 +250,23 @@ class FunctionalTanhTests(unittest.TestCase):
         empty_output.sum().backward()
         self.assertEqual(empty.grad.tolist(), [])
 
-        higher_order = torch.tensor([0.25, -0.25], requires_grad=True)
+        for shape, expected_stride in (
+            ((0, 0), (1, 1)),
+            ((0, 3), (3, 1)),
+            ((2, 0), (1, 1)),
+        ):
+            with self.subTest(empty_matrix_shape=shape):
+                empty_matrix = torch.zeros(shape, requires_grad=True)
+                empty_matrix_output = functional.tanh(empty_matrix)
+                self.assertTrue(empty_matrix_output.requires_grad)
+                self.assertFalse(empty_matrix_output.is_leaf)
+                self.assertEqual(empty_matrix_output.shape, shape)
+                self.assertEqual(empty_matrix_output.stride(), expected_stride)
+                empty_matrix_output.sum().backward()
+                self.assertEqual(empty_matrix.grad.shape, shape)
+                self.assertEqual(empty_matrix.grad.stride(), expected_stride)
+
+        higher_order = torch.tensor([[0.25, -0.25]], requires_grad=True)
         higher_order_loss = functional.tanh(higher_order).sum()
         with self.assertRaisesRegex(
             NotImplementedError,
@@ -228,13 +277,13 @@ class FunctionalTanhTests(unittest.TestCase):
         higher_order_loss.backward()
         self.assertIsNotNone(higher_order.grad)
 
-        matrix = torch.tensor([[0.5, -1.0]], requires_grad=True)
+        rank_three = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tanh\(\): autograd recording is not supported$",
         ):
-            functional.tanh(matrix)
-        self.assertIsNone(matrix.grad)
+            functional.tanh(rank_three)
+        self.assertIsNone(rank_three.grad)
 
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
