@@ -524,6 +524,174 @@ class TensorSigmoidReferenceTests(unittest.TestCase):
                         self.error(expected_empty_loss.backward),
                     )
 
+    def test_owned_rank_two_nonleaf_autograd_matches_pytorch_2_13_across_parent_nodes(
+        self,
+    ):
+        actual_cases = rank_preserving_nonleaf_parent_cases(torch)
+        expected_cases = rank_preserving_nonleaf_parent_cases(reference_torch)
+        values = [[0.25, 0.5], [0.5, 0.25]]
+        actual_weights = torch.tensor([[1.25, -0.75], [0.5, -1.5]])
+        expected_weights = reference_torch.tensor(
+            [[1.25, -0.75], [0.5, -1.5]], dtype=reference_torch.float32
+        )
+        for (case, make_actual_parent), (
+            expected_case,
+            make_expected_parent,
+        ) in zip(actual_cases, expected_cases, strict=True):
+            self.assertEqual(case, expected_case)
+            for form in ("method", "functional"):
+                with self.subTest(parent=case, form=form):
+                    actual_leaf = torch.tensor(values, requires_grad=True)
+                    expected_leaf = reference_torch.tensor(
+                        values,
+                        dtype=reference_torch.float32,
+                        requires_grad=True,
+                    )
+                    actual_parent = make_actual_parent(actual_leaf)
+                    expected_parent = make_expected_parent(expected_leaf)
+                    self.assert_tensor_matches(
+                        actual_parent,
+                        expected_parent,
+                        case=(case, form, "parent"),
+                        exact_bits=True,
+                    )
+                    self.assertFalse(actual_parent.is_set_to(actual_leaf))
+                    self.assertFalse(expected_parent.is_set_to(expected_leaf))
+                    self.assertNotEqual(actual_parent.data_ptr(), actual_leaf.data_ptr())
+                    self.assertNotEqual(
+                        expected_parent.data_ptr(), expected_leaf.data_ptr()
+                    )
+
+                    if form == "method":
+                        actual_output = actual_parent.sigmoid()
+                        expected_output = expected_parent.sigmoid()
+                    else:
+                        actual_output = torch.nn.functional.sigmoid(actual_parent)
+                        expected_output = reference_torch.nn.functional.sigmoid(
+                            expected_parent
+                        )
+                    self.assert_tensor_matches(
+                        actual_output,
+                        expected_output,
+                        case=(case, form, "sigmoid"),
+                        exact_bits=True,
+                    )
+                    self.assertEqual(
+                        torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                            actual_output
+                        ),
+                        f", grad_fn=<{type(expected_output.grad_fn).__name__}>",
+                    )
+
+                    actual_loss = (actual_output * actual_weights).sum()
+                    expected_loss = (expected_output * expected_weights).sum()
+                    actual_loss.backward()
+                    expected_loss.backward()
+                    self.assert_tensor_matches(
+                        actual_leaf.grad,
+                        expected_leaf.grad,
+                        case=(case, form, "weighted VJP"),
+                        exact_bits=True,
+                    )
+                    actual_gradient = self.tensor_values(actual_leaf.grad).copy()
+                    expected_gradient = self.tensor_values(expected_leaf.grad).copy()
+                    self.assertEqual(
+                        self.error(actual_loss.backward),
+                        self.error(expected_loss.backward),
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_values(actual_leaf.grad), actual_gradient
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_values(expected_leaf.grad), expected_gradient
+                    )
+
+                    actual_accumulated = torch.tensor(values, requires_grad=True)
+                    expected_accumulated = reference_torch.tensor(
+                        values,
+                        dtype=reference_torch.float32,
+                        requires_grad=True,
+                    )
+                    for _ in range(2):
+                        actual_parent = make_actual_parent(actual_accumulated)
+                        expected_parent = make_expected_parent(expected_accumulated)
+                        if form == "method":
+                            actual_output = actual_parent.sigmoid()
+                            expected_output = expected_parent.sigmoid()
+                        else:
+                            actual_output = torch.nn.functional.sigmoid(actual_parent)
+                            expected_output = reference_torch.nn.functional.sigmoid(
+                                expected_parent
+                            )
+                        (actual_output * actual_weights).sum().backward()
+                        (expected_output * expected_weights).sum().backward()
+                    self.assert_tensor_matches(
+                        actual_accumulated.grad,
+                        expected_accumulated.grad,
+                        case=(case, form, "accumulated VJP"),
+                        exact_bits=True,
+                    )
+
+                    for empty_shape in ((0, 0), (0, 3), (2, 0)):
+                        actual_empty = torch.zeros(
+                            empty_shape, requires_grad=True
+                        )
+                        expected_empty = reference_torch.zeros(
+                            empty_shape,
+                            dtype=reference_torch.float32,
+                            requires_grad=True,
+                        )
+                        actual_empty_parent = make_actual_parent(actual_empty)
+                        expected_empty_parent = make_expected_parent(expected_empty)
+                        self.assert_tensor_matches(
+                            actual_empty_parent,
+                            expected_empty_parent,
+                            case=(case, form, "empty parent", empty_shape),
+                            exact_bits=True,
+                        )
+                        self.assertFalse(actual_empty_parent.is_set_to(actual_empty))
+                        self.assertFalse(
+                            expected_empty_parent.is_set_to(expected_empty)
+                        )
+                        if form == "method":
+                            actual_empty_output = actual_empty_parent.sigmoid()
+                            expected_empty_output = expected_empty_parent.sigmoid()
+                        else:
+                            actual_empty_output = torch.nn.functional.sigmoid(
+                                actual_empty_parent
+                            )
+                            expected_empty_output = (
+                                reference_torch.nn.functional.sigmoid(
+                                    expected_empty_parent
+                                )
+                            )
+                        self.assert_tensor_matches(
+                            actual_empty_output,
+                            expected_empty_output,
+                            case=(case, form, "empty sigmoid", empty_shape),
+                            exact_bits=True,
+                        )
+                        self.assertEqual(
+                            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                                actual_empty_output
+                            ),
+                            f", grad_fn=<{type(expected_empty_output.grad_fn).__name__}>",
+                        )
+                        actual_empty_loss = actual_empty_output.sum()
+                        expected_empty_loss = expected_empty_output.sum()
+                        actual_empty_loss.backward()
+                        expected_empty_loss.backward()
+                        self.assert_tensor_matches(
+                            actual_empty.grad,
+                            expected_empty.grad,
+                            case=(case, form, "empty VJP", empty_shape),
+                            exact_bits=True,
+                        )
+                        self.assertEqual(
+                            self.error(actual_empty_loss.backward),
+                            self.error(expected_empty_loss.backward),
+                        )
+
     def test_rank_one_weighted_autograd_empty_and_graph_lifetime_match_pytorch_2_13(
         self,
     ):
@@ -1703,6 +1871,25 @@ print(json.dumps({
             actual_nonleaf.sum().backward()
             self.assertEqual(actual_nonleaf_base.grad.tolist(), [1.0, 1.0])
 
+            actual_matrix_nonleaf_base = torch.tensor(
+                [[0.5, 0.25]], requires_grad=True
+            )
+            actual_matrix_nonleaf = actual_matrix_nonleaf_base + value
+            for call in (
+                actual_matrix_nonleaf.sigmoid,
+                lambda: torch.nn.functional.sigmoid(actual_matrix_nonleaf),
+            ):
+                with self.subTest(
+                    nonfinite_rank_two_nonleaf=f"0x{bits:08x}", call=call
+                ):
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        call()
+            self.assertIsNone(actual_matrix_nonleaf_base.grad)
+            actual_matrix_nonleaf.sum().backward()
+            self.assertEqual(
+                actual_matrix_nonleaf_base.grad.tolist(), [[1.0, 1.0]]
+            )
+
             actual_vector = torch.tensor([0.5, value], requires_grad=True)
             with self.subTest(nonfinite_vector=f"0x{bits:08x}"):
                 with self.assertRaisesRegex(RuntimeError, message):
@@ -1805,6 +1992,25 @@ print(json.dumps({
         actual_full_vector_view.sum().backward()
         self.assertEqual(actual_full_vector_view_base.grad.tolist(), [1.0, 1.0])
 
+        actual_full_matrix_view_base = torch.tensor(
+            [[0.5, -0.5], [1.0, -1.0]], requires_grad=True
+        )
+        actual_full_matrix_view = actual_full_matrix_view_base.view((2, 2))
+        self.assertTrue(
+            actual_full_matrix_view.is_set_to(actual_full_matrix_view_base)
+        )
+        for call in (
+            actual_full_matrix_view.sigmoid,
+            lambda: torch.nn.functional.sigmoid(actual_full_matrix_view),
+        ):
+            with self.assertRaisesRegex(RuntimeError, message):
+                call()
+        actual_full_matrix_view.sum().backward()
+        self.assertEqual(
+            actual_full_matrix_view_base.grad.tolist(),
+            [[1.0, 1.0], [1.0, 1.0]],
+        )
+
         actual_vector_view_base = torch.tensor(
             [[0.5, -1.0], [2.0, -3.0]], requires_grad=True
         )
@@ -1878,18 +2084,18 @@ print(json.dumps({
         actual_high_rank_view.backward()
         self.assertEqual(actual_high_rank_view_base.grad.sum().item(), 1.0)
 
-        actual_matrix_nonleaf_base = torch.tensor(
-            [[0.5, -0.5]], requires_grad=True
+        actual_rank_three_nonleaf_base = torch.tensor(
+            [[[0.5, -0.5], [1.0, -1.0]]], requires_grad=True
         )
-        actual_matrix_nonleaf = actual_matrix_nonleaf_base.sin()
+        actual_rank_three_nonleaf = actual_rank_three_nonleaf_base.sin()
         for call in (
-            actual_matrix_nonleaf.sigmoid,
-            lambda: torch.nn.functional.sigmoid(actual_matrix_nonleaf),
+            actual_rank_three_nonleaf.sigmoid,
+            lambda: torch.nn.functional.sigmoid(actual_rank_three_nonleaf),
         ):
             with self.assertRaisesRegex(RuntimeError, message):
                 call()
-        actual_matrix_nonleaf.sum().backward()
-        self.assertIsNotNone(actual_matrix_nonleaf_base.grad)
+        actual_rank_three_nonleaf.sum().backward()
+        self.assertIsNotNone(actual_rank_three_nonleaf_base.grad)
 
         actual_rank_four_nonleaf_base = torch.tensor(
             [[[[0.5, -0.5]]]], requires_grad=True
