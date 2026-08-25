@@ -63,24 +63,176 @@ fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
 }
 
 #[test]
-fn absolute_value_rejects_recording_before_planning_and_honors_no_grad() {
+fn absolute_value_differentiates_finite_owned_scalars_and_releases_saved_input() {
+    // input, forward result, unit-upstream gradient
+    const CASES: [(u32, u32, u32); 6] = [
+        (0x4000_0000, 0x4000_0000, 0x3f80_0000),
+        (0xc000_0000, 0x4000_0000, 0xbf80_0000),
+        (0x0000_0000, 0x0000_0000, 0x0000_0000),
+        (0x8000_0000, 0x0000_0000, 0x0000_0000),
+        (0x0000_0001, 0x0000_0001, 0x3f80_0000),
+        (0x8000_0001, 0x0000_0001, 0xbf80_0000),
+    ];
+
+    for (input_bits, output_bits, gradient_bits) in CASES {
+        let leaf = Tensor::from_vec(vec![f32::from_bits(input_bits)], [])
+            .unwrap()
+            .with_requires_grad(true);
+        let output = leaf.abs().unwrap();
+
+        assert!(output.requires_grad());
+        assert!(!output.is_leaf());
+        assert!(output.shape().is_empty());
+        assert!(output.stride().is_empty());
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.shares_storage_with(&leaf));
+        assert_eq!(output.item().unwrap().to_bits(), output_bits);
+
+        output.backward().unwrap();
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+            gradient_bits
+        );
+        assert_eq!(output.backward(), Err(TensorError::BackwardGraphFreed));
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+            gradient_bits
+        );
+    }
+}
+
+#[test]
+fn absolute_value_supports_weighted_composition_and_cross_graph_accumulation() {
+    const WEIGHTED_CASES: [(u32, u32, u32); 4] = [
+        (0x4000_0000, 0xc040_0000, 0xc040_0000),
+        (0xc000_0000, 0xc040_0000, 0x4040_0000),
+        (0x0000_0000, 0xc040_0000, 0x8000_0000),
+        (0x8000_0000, 0xc040_0000, 0x8000_0000),
+    ];
+
+    for (input_bits, weight_bits, gradient_bits) in WEIGHTED_CASES {
+        let leaf = Tensor::from_vec(vec![f32::from_bits(input_bits)], [])
+            .unwrap()
+            .with_requires_grad(true);
+        leaf.abs()
+            .unwrap()
+            .mul_scalar(f32::from_bits(weight_bits))
+            .unwrap()
+            .backward()
+            .unwrap();
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+            gradient_bits
+        );
+    }
+
+    let composed = Tensor::from_vec(vec![-0.5], [])
+        .unwrap()
+        .with_requires_grad(true);
+    composed.abs().unwrap().sin().unwrap().backward().unwrap();
+    assert_eq!(
+        composed.grad().unwrap().unwrap().item().unwrap().to_bits(),
+        (-0.5_f32.cos()).to_bits()
+    );
+
+    let accumulated = Tensor::from_vec(vec![-2.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    accumulated
+        .abs()
+        .unwrap()
+        .mul_scalar(-3.0)
+        .unwrap()
+        .backward()
+        .unwrap();
+    accumulated
+        .abs()
+        .unwrap()
+        .mul_scalar(0.5)
+        .unwrap()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        accumulated
+            .grad()
+            .unwrap()
+            .unwrap()
+            .item()
+            .unwrap()
+            .to_bits(),
+        2.5_f32.to_bits()
+    );
+}
+
+#[test]
+fn absolute_value_rejects_unsupported_recording_before_mutation_or_planning() {
+    let unsupported = TensorError::AutogradRecordingUnsupported { operation: "abs" };
+
     let leaf = Tensor::from_vec(vec![-2.0, -0.0, 1.0, 4.0], [2, 2])
         .unwrap()
         .with_requires_grad(true);
+    assert_eq!(leaf.abs(), Err(unsupported.clone()));
+    assert!(leaf.grad().unwrap().is_none());
+
+    for bits in [
+        f32::INFINITY.to_bits(),
+        f32::NEG_INFINITY.to_bits(),
+        0x7f81_2345,
+        0xffc5_4321,
+    ] {
+        let nonfinite = Tensor::from_vec(vec![f32::from_bits(bits)], [])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(nonfinite.abs(), Err(unsupported.clone()));
+        assert!(nonfinite.grad().unwrap().is_none());
+        nonfinite.sum().backward().unwrap();
+        assert_eq!(
+            nonfinite.grad().unwrap().unwrap().item().unwrap().to_bits(),
+            1.0_f32.to_bits()
+        );
+    }
+
+    let view_base = Tensor::from_vec(vec![-2.0], [1])
+        .unwrap()
+        .with_requires_grad(true);
+    let scalar_view = view_base.index([0]).unwrap();
+    assert!(scalar_view.requires_grad());
+    assert!(!scalar_view.is_leaf());
+    assert_eq!(scalar_view.abs(), Err(unsupported.clone()));
+    scalar_view.backward().unwrap();
+    assert_eq!(values(&view_base.grad().unwrap().unwrap()), [1.0]);
+
+    let nonleaf_base = Tensor::from_vec(vec![-0.5], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let nonleaf = nonleaf_base.sin().unwrap();
+    assert_eq!(nonleaf.abs(), Err(unsupported.clone()));
+    nonleaf.backward().unwrap();
     assert_eq!(
-        leaf.abs(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "abs" })
+        nonleaf_base
+            .grad()
+            .unwrap()
+            .unwrap()
+            .item()
+            .unwrap()
+            .to_bits(),
+        (-0.5_f32).cos().to_bits()
     );
+
+    let no_grad_view = {
+        let _guard = no_grad();
+        leaf.index([0]).unwrap().index([0]).unwrap()
+    };
+    assert!(no_grad_view.requires_grad());
+    assert!(no_grad_view.is_leaf());
+    assert_eq!(no_grad_view.abs(), Err(unsupported.clone()));
 
     let extreme = Tensor::zeros([0])
         .unwrap()
         .reshape([0, i64::MAX, 3])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(
-        extreme.abs(),
-        Err(TensorError::AutogradRecordingUnsupported { operation: "abs" })
-    );
+    assert_eq!(extreme.abs(), Err(unsupported));
 
     {
         let _guard = no_grad();
@@ -107,6 +259,9 @@ fn absolute_value_rejects_recording_before_planning_and_honors_no_grad() {
 
     let detached = leaf.detach().unwrap().abs().unwrap();
     assert!(!detached.requires_grad());
+
+    leaf.sum().backward().unwrap();
+    assert_eq!(values(&leaf.grad().unwrap().unwrap()), [1.0; 4]);
 }
 
 #[test]

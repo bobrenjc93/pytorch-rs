@@ -2507,13 +2507,15 @@ impl Tensor {
     ///
     /// # Errors
     ///
-    /// Returns an error when gradient recording is enabled for this tensor, or
-    /// when result metadata or storage allocation fails.
+    /// Returns an error when gradient recording is enabled for an input other
+    /// than a finite, owned, rank-zero CPU float32 leaf, or when result
+    /// metadata or storage allocation fails.
     pub fn abs(&self) -> Result<Self, TensorError> {
-        if self.records_grad() {
+        if self.records_grad() && !self.is_finite_owned_scalar_leaf() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "abs" });
         }
-        self.unary_map(absolute_value)
+        let output = self.unary_map(absolute_value)?;
+        self.finish_saved_input_unary_vjp(output, AutogradNode::Abs, apply_abs_vjp)
     }
 
     /// Divides every element by a scalar using IEEE 754 true division.
@@ -3554,6 +3556,24 @@ fn apply_relu_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
         gradient.extend(
             upstream.iter().enumerate().map(|(index, &value)| {
                 relu_backward_value(input.value_at_linear_index(index), value)
+            }),
+        );
+    }
+}
+
+fn apply_abs_vjp(input: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
+    // Supported abs autograd inputs are owned scalars, but retain the generic
+    // saved-input traversal so widening the validation boundary does not need
+    // a different graph representation.
+    if let Some(saved_values) = input.contiguous_slice() {
+        debug_assert_eq!(saved_values.len(), upstream.len());
+        gradient.extend(saved_values.iter().zip(upstream).map(
+            |(&saved_value, &upstream_value)| abs_backward_value(saved_value, upstream_value),
+        ));
+    } else {
+        gradient.extend(
+            upstream.iter().enumerate().map(|(index, &value)| {
+                abs_backward_value(input.value_at_linear_index(index), value)
             }),
         );
     }
@@ -4938,6 +4958,20 @@ fn tanh_backward_value(output: f32, upstream: f32) -> f32 {
 }
 
 #[inline]
+fn abs_backward_value(input: f32, upstream: f32) -> f32 {
+    let bits = input.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    let derivative = if magnitude == 0 || magnitude > f32::INFINITY.to_bits() {
+        0.0
+    } else if bits & F32_SIGN_MASK == 0 {
+        1.0
+    } else {
+        -1.0
+    };
+    upstream * derivative
+}
+
+#[inline]
 #[cfg(any(feature = "python-bindings", test))]
 fn square_backward_value(input: f32, upstream: f32) -> f32 {
     (2.0 * input) * upstream
@@ -5296,6 +5330,7 @@ mod tests {
         let scalar = Tensor::from_vec(vec![0.5], [])
             .unwrap()
             .with_requires_grad(true);
+        assert_eq!(scalar.abs().unwrap().grad_fn_name(), Some("AbsBackward0"));
         assert_eq!(
             scalar.sigmoid().unwrap().grad_fn_name(),
             Some("SigmoidBackward0")

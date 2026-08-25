@@ -118,24 +118,130 @@ class TensorAbsTests(unittest.TestCase):
                     tuple(bits & 0x7FFF_FFFF for bits in source_bits),
                 )
 
-    def test_grad_recording_is_rejected_before_planning(self):
+    def test_finite_owned_scalar_autograd_matches_sign_and_saved_input_lifecycle(self):
+        cases = (
+            (0x4000_0000, 0x4000_0000, 0x3F80_0000),
+            (0xC000_0000, 0x4000_0000, 0xBF80_0000),
+            (0x0000_0000, 0x0000_0000, 0x0000_0000),
+            (0x8000_0000, 0x0000_0000, 0x0000_0000),
+            (0x0000_0001, 0x0000_0001, 0x3F80_0000),
+            (0x8000_0001, 0x0000_0001, 0xBF80_0000),
+        )
+        for input_bits, output_bits, gradient_bits in cases:
+            with self.subTest(input_bits=f"0x{input_bits:08x}"):
+                value = np.asarray(input_bits, dtype=np.uint32).view(np.float32).item()
+                leaf = torch.tensor(value, requires_grad=True)
+                output = leaf.abs()
+
+                self.assertTrue(output.requires_grad)
+                self.assertFalse(output.is_leaf)
+                self.assertEqual(output.shape, ())
+                self.assertEqual(output.stride(), ())
+                self.assertEqual(output.storage_offset(), 0)
+                self.assertFalse(output.is_set_to(leaf))
+                self.assertEqual(self.tensor_bits(output).item(), output_bits)
+                self.assertEqual(
+                    torch._C._nn_functional_dropout_tensor_autograd_suffix(output),
+                    ", grad_fn=<AbsBackward0>",
+                )
+
+                output.backward()
+                self.assertEqual(self.tensor_bits(leaf.grad).item(), gradient_bits)
+                with self.assertRaisesRegex(
+                    RuntimeError, "backward through the graph a second time"
+                ):
+                    output.backward()
+                self.assertEqual(self.tensor_bits(leaf.grad).item(), gradient_bits)
+
+    def test_scalar_autograd_weights_composes_accumulates_and_rejects_higher_order(self):
+        weighted_cases = (
+            (0x4000_0000, 0xC040_0000, 0xC040_0000),
+            (0xC000_0000, 0xC040_0000, 0x4040_0000),
+            (0x0000_0000, 0xC040_0000, 0x8000_0000),
+            (0x8000_0000, 0xC040_0000, 0x8000_0000),
+        )
+        for input_bits, weight_bits, gradient_bits in weighted_cases:
+            with self.subTest(input_bits=f"0x{input_bits:08x}"):
+                value = np.asarray(input_bits, dtype=np.uint32).view(np.float32).item()
+                weight = np.asarray(weight_bits, dtype=np.uint32).view(np.float32).item()
+                leaf = torch.tensor(value, requires_grad=True)
+                (leaf.abs() * weight).backward()
+                self.assertEqual(self.tensor_bits(leaf.grad).item(), gradient_bits)
+
+        composed = torch.tensor(-0.5, requires_grad=True)
+        composed.abs().sin().backward()
+        expected = -np.cos(np.float32(0.5))
+        np.testing.assert_allclose(np.asarray(composed.grad), expected, rtol=0.0, atol=0.0)
+
+        accumulated = torch.tensor(-2.0, requires_grad=True)
+        (accumulated.abs() * -3.0).backward()
+        (accumulated.abs() * 0.5).backward()
+        self.assertEqual(accumulated.grad.item(), 2.5)
+
+        higher_order = torch.tensor(-0.25, requires_grad=True)
+        loss = higher_order.abs()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        loss.backward()
+        self.assertEqual(higher_order.grad.item(), -1.0)
+
+    def test_unsupported_tracked_inputs_fail_before_mutation_or_planning(self):
+        message = r"^abs\(\): autograd recording is not supported$"
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, -4.0, 8.0]], requires_grad=True
         )
         source = leaf.transpose(0, 1)[1]
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^abs\(\): autograd recording is not supported$",
-        ):
+        with self.assertRaisesRegex(RuntimeError, message):
             source.abs()
+        self.assertIsNone(leaf.grad)
+
+        non_scalar = torch.tensor([-0.5], requires_grad=True)
+        with self.assertRaisesRegex(RuntimeError, message):
+            non_scalar.abs()
+        self.assertIsNone(non_scalar.grad)
+
+        for bits in (0x7F80_0000, 0xFF80_0000, 0x7FC1_2345, 0xFFC5_4321):
+            with self.subTest(nonfinite=f"0x{bits:08x}"):
+                value = np.asarray(bits, dtype=np.uint32).view(np.float32).item()
+                nonfinite = torch.tensor(value, requires_grad=True)
+                with self.assertRaisesRegex(RuntimeError, message):
+                    nonfinite.abs()
+                self.assertIsNone(nonfinite.grad)
+                nonfinite.sum().backward()
+                self.assertEqual(nonfinite.grad.item(), 1.0)
+
+        view_base = torch.tensor([-0.5], requires_grad=True)
+        scalar_view = view_base[0]
+        self.assertFalse(scalar_view.is_leaf)
+        with self.assertRaisesRegex(RuntimeError, message):
+            scalar_view.abs()
+        scalar_view.backward()
+        self.assertEqual(view_base.grad.tolist(), [1.0])
+
+        nonleaf_base = torch.tensor(-0.5, requires_grad=True)
+        nonleaf = nonleaf_base.sin()
+        with self.assertRaisesRegex(RuntimeError, message):
+            nonleaf.abs()
+        nonleaf.backward()
+        np.testing.assert_allclose(
+            nonleaf_base.grad.item(), np.cos(np.float32(0.5)), rtol=0.0, atol=0.0
+        )
+
+        with torch.no_grad():
+            no_grad_view = non_scalar[0]
+        self.assertTrue(no_grad_view.requires_grad)
+        self.assertTrue(no_grad_view.is_leaf)
+        with self.assertRaisesRegex(RuntimeError, message):
+            no_grad_view.abs()
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^abs\(\): autograd recording is not supported$",
-        ):
+        with self.assertRaisesRegex(RuntimeError, message):
             extreme.abs()
 
         with torch.no_grad():
@@ -146,6 +252,11 @@ class TensorAbsTests(unittest.TestCase):
 
         detached = source.detach()
         self.assert_result(detached.abs(), detached, (1,), case="detached")
+
+        leaf.sum().backward()
+        np.testing.assert_array_equal(
+            np.asarray(leaf.grad, dtype=np.float32), np.ones((2, 3), dtype=np.float32)
+        )
 
     def test_tensorbase_descriptor_metadata_and_no_argument_errors(self):
         tensor = torch.tensor([-4.0])
@@ -265,6 +376,17 @@ class TensorAbsTests(unittest.TestCase):
                 forwarded = plain.abs()
         self.assertEqual(order, ["upper", "lower"])
         self.assertEqual(forwarded.tolist(), [4.0])
+
+        order.clear()
+        scalar = torch.tensor(-4.0, requires_grad=True)
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                scalar_output = scalar.abs()
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertTrue(scalar_output.requires_grad)
+        self.assertFalse(scalar_output.is_leaf)
+        scalar_output.backward()
+        self.assertEqual(scalar.grad.item(), -1.0)
 
         order.clear()
         with self.assertRaisesRegex(

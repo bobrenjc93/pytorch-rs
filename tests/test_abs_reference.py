@@ -301,18 +301,169 @@ print(json.dumps({
             self.mode_dispatch_observation("torch"),
         )
 
-    def test_inference_boundary_and_unsupported_surface_are_explicit(self):
-        actual = torch.tensor([-2.0, -0.0, 3.0], requires_grad=True)
+    def test_finite_owned_scalar_autograd_bits_match_pytorch_2_13(self):
+        cases = (
+            0x4000_0000,
+            0xC000_0000,
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7F7F_FFFF,
+            0xFF7F_FFFF,
+        )
+        for input_bits in cases:
+            with self.subTest(input_bits=f"0x{input_bits:08x}"):
+                value = np.asarray(input_bits, dtype=np.uint32).view(np.float32).item()
+                actual_leaf = torch.tensor(value, requires_grad=True)
+                expected_leaf = reference_torch.tensor(
+                    value, dtype=reference_torch.float32, requires_grad=True
+                )
+                actual_output = actual_leaf.abs()
+                expected_output = expected_leaf.abs()
+
+                self.assert_tensor_matches(
+                    actual_output, expected_output, case="forward", raw_bits=True
+                )
+                self.assertEqual(type(expected_output.grad_fn).__name__, "AbsBackward0")
+                self.assertEqual(
+                    torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                        actual_output
+                    ),
+                    ", grad_fn=<AbsBackward0>",
+                )
+
+                actual_output.backward()
+                expected_output.backward()
+                self.assert_tensor_matches(
+                    actual_leaf.grad,
+                    expected_leaf.grad,
+                    case="gradient",
+                    raw_bits=True,
+                )
+                self.assertEqual(
+                    self.error(actual_output.backward),
+                    self.error(expected_output.backward),
+                )
+
+    def test_weighted_composition_and_accumulation_match_pytorch_2_13(self):
+        weighted_cases = (
+            (0x4000_0000, 0xC040_0000),
+            (0xC000_0000, 0xC040_0000),
+            (0x0000_0000, 0xC040_0000),
+            (0x8000_0000, 0xC040_0000),
+        )
+        for input_bits, weight_bits in weighted_cases:
+            value = np.asarray(input_bits, dtype=np.uint32).view(np.float32).item()
+            weight = np.asarray(weight_bits, dtype=np.uint32).view(np.float32).item()
+            actual_leaf = torch.tensor(value, requires_grad=True)
+            expected_leaf = reference_torch.tensor(
+                value, dtype=reference_torch.float32, requires_grad=True
+            )
+            (actual_leaf.abs() * weight).backward()
+            (expected_leaf.abs() * weight).backward()
+            self.assert_tensor_matches(
+                actual_leaf.grad,
+                expected_leaf.grad,
+                case=(f"0x{input_bits:08x}", f"0x{weight_bits:08x}"),
+                raw_bits=True,
+            )
+
+        gradients = []
+        for module in (torch, reference_torch):
+            composed = module.tensor(
+                -0.5, dtype=module.float32, requires_grad=True
+            )
+            composed.abs().sin().backward()
+
+            accumulated = module.tensor(
+                -2.0, dtype=module.float32, requires_grad=True
+            )
+            (accumulated.abs() * -3.0).backward()
+            first = self.tensor_bits(accumulated.grad).copy()
+            (accumulated.abs() * 0.5).backward()
+            second = self.tensor_bits(accumulated.grad).copy()
+            gradients.append(
+                (self.tensor_bits(composed.grad).copy(), first, second)
+            )
+
+        for actual, expected in zip(gradients[0], gradients[1], strict=True):
+            np.testing.assert_array_equal(actual, expected)
+
+    def test_autograd_modes_boundaries_and_unsupported_surface_are_explicit(self):
+        actual_scalar = torch.tensor(-0.5, requires_grad=True)
+        expected_scalar = reference_torch.tensor(
+            -0.5, dtype=reference_torch.float32, requires_grad=True
+        )
+        with torch.no_grad():
+            actual_no_grad_scalar = actual_scalar.abs()
+        with reference_torch.no_grad():
+            expected_no_grad_scalar = expected_scalar.abs()
+        self.assert_tensor_matches(
+            actual_no_grad_scalar,
+            expected_no_grad_scalar,
+            case="scalar no_grad",
+            raw_bits=True,
+        )
+        self.assert_tensor_matches(
+            actual_scalar.detach().abs(),
+            expected_scalar.detach().abs(),
+            case="scalar detached",
+            raw_bits=True,
+        )
+
+        higher_order = torch.tensor(-0.25, requires_grad=True)
+        loss = higher_order.abs()
         with self.assertRaisesRegex(
-            RuntimeError,
-            r"^abs\(\): autograd recording is not supported$",
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
         ):
+            loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        loss.backward()
+        self.assertEqual(higher_order.grad.item(), -1.0)
+
+        message = r"^abs\(\): autograd recording is not supported$"
+        for bits in (0x7F80_0000, 0xFF80_0000, 0x7FC1_2345, 0xFFC5_4321):
+            value = np.asarray(bits, dtype=np.uint32).view(np.float32).item()
+            actual_nonfinite = torch.tensor(value, requires_grad=True)
+            with self.subTest(nonfinite=f"0x{bits:08x}"):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    actual_nonfinite.abs()
+            self.assertIsNone(actual_nonfinite.grad)
+            actual_nonfinite.sum().backward()
+            self.assertEqual(actual_nonfinite.grad.item(), 1.0)
+
+        actual = torch.tensor([-2.0, -0.0, 3.0], requires_grad=True)
+        with self.assertRaisesRegex(RuntimeError, message):
             actual.abs()
+
+        view_base = torch.tensor([-0.5], requires_grad=True)
+        scalar_view = view_base[0]
+        with self.assertRaisesRegex(RuntimeError, message):
+            scalar_view.abs()
+        scalar_view.backward()
+        self.assertEqual(view_base.grad.tolist(), [1.0])
+
+        nonleaf_base = torch.tensor(-0.5, requires_grad=True)
+        nonleaf = nonleaf_base.sin()
+        with self.assertRaisesRegex(RuntimeError, message):
+            nonleaf.abs()
+        nonleaf.backward()
+        np.testing.assert_allclose(
+            nonleaf_base.grad.item(), np.cos(np.float32(0.5)), rtol=0.0, atol=0.0
+        )
+
+        with torch.no_grad():
+            no_grad_view = actual[0]
+        self.assertTrue(no_grad_view.requires_grad)
+        self.assertTrue(no_grad_view.is_leaf)
+        with self.assertRaisesRegex(RuntimeError, message):
+            no_grad_view.abs()
 
         expected = reference_torch.tensor(
             [-2.0, -0.0, 3.0], dtype=reference_torch.float32, requires_grad=True
         )
-        self.assertTrue(expected.abs().requires_grad)
 
         with torch.no_grad():
             actual_no_grad = actual.abs()
@@ -324,6 +475,12 @@ print(json.dumps({
         expected_detached = expected.detach().abs()
         self.assert_tensor_matches(
             actual_detached, expected_detached, case="detached"
+        )
+
+        actual.sum().backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(actual.grad),
+            self.tensor_bits(reference_torch.ones_like(expected)),
         )
 
         for name in ("abs", "absolute"):
