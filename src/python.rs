@@ -302,6 +302,9 @@ impl PyTensorBase {
                 tensor.inner.unsqueeze_back()
             } else if indices.len() > tensor.inner.shape().len() {
                 return Err(too_many_indices(tensor.inner.shape().len()));
+            } else if indices.len() == 2 && is_exact_full_slice(&indices.get_item(1)?)? {
+                let index = parse_integer_index(&indices.get_item(0)?)?;
+                tensor.inner.index_integer(index)
             } else {
                 let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
                 tensor.inner.index(indices)
