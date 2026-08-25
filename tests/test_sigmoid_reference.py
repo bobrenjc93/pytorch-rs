@@ -482,6 +482,137 @@ class TensorSigmoidReferenceTests(unittest.TestCase):
                 self.error(expected_empty_loss.backward),
             )
 
+    def test_rank_three_singletons_empty_shapes_and_autograd_match_pytorch_2_13(
+        self,
+    ):
+        values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 1, 4)
+        actual_leaf = torch.tensor(values.tolist(), requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_weights = torch.tensor(AUTOGRAD_WEIGHTS.reshape(2, 1, 4).tolist())
+        expected_weights = reference_torch.tensor(
+            AUTOGRAD_WEIGHTS.reshape(2, 1, 4), dtype=reference_torch.float32
+        )
+        actual_output = actual_leaf.sigmoid()
+        expected_output = expected_leaf.sigmoid()
+
+        self.assert_tensor_matches(
+            actual_output,
+            expected_output,
+            case="rank-three singleton forward",
+            exact_bits=True,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_output).reshape(-1).view(np.uint32),
+            AUTOGRAD_OUTPUT_BITS,
+        )
+        self.assertEqual(type(expected_output.grad_fn).__name__, "SigmoidBackward0")
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(actual_output),
+            ", grad_fn=<SigmoidBackward0>",
+        )
+
+        actual_loss = (actual_output * actual_weights).sum()
+        expected_loss = (expected_output * expected_weights).sum()
+        actual_loss.backward()
+        expected_loss.backward()
+        self.assert_tensor_matches(
+            actual_leaf.grad,
+            expected_leaf.grad,
+            case="rank-three weighted gradient",
+            exact_bits=True,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_leaf.grad).reshape(-1).view(np.uint32),
+            AUTOGRAD_GRADIENT_BITS,
+        )
+        actual_gradient_before = self.tensor_values(actual_leaf.grad).copy()
+        expected_gradient_before = self.tensor_values(expected_leaf.grad).copy()
+        self.assertEqual(
+            self.error(actual_loss.backward), self.error(expected_loss.backward)
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_leaf.grad), actual_gradient_before
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(expected_leaf.grad), expected_gradient_before
+        )
+
+        actual_accumulated = torch.tensor(values.tolist(), requires_grad=True)
+        expected_accumulated = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        for _ in range(2):
+            (actual_accumulated.sigmoid() * actual_weights).sum().backward()
+            (expected_accumulated.sigmoid() * expected_weights).sum().backward()
+        self.assert_tensor_matches(
+            actual_accumulated.grad,
+            expected_accumulated.grad,
+            case="rank-three accumulated gradient",
+            exact_bits=True,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_accumulated.grad)
+            .reshape(-1)
+            .view(np.uint32),
+            AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        )
+
+        actual_composed = torch.tensor(values.tolist(), requires_grad=True)
+        expected_composed = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_composed.sigmoid().sin().sum().backward()
+        expected_composed.sigmoid().sin().sum().backward()
+        self.assert_tensor_matches(
+            actual_composed.grad,
+            expected_composed.grad,
+            case="rank-three composition gradient",
+        )
+
+        for shape in ((0, 1, 3), (1, 0, 3), (2, 3, 0), (0, 0, 0)):
+            actual_empty = torch.zeros(shape, requires_grad=True)
+            expected_empty = reference_torch.zeros(
+                shape, dtype=reference_torch.float32, requires_grad=True
+            )
+            actual_empty_output = actual_empty.sigmoid()
+            expected_empty_output = expected_empty.sigmoid()
+            self.assert_tensor_matches(
+                actual_empty_output,
+                expected_empty_output,
+                case=("empty rank-three forward", shape),
+                exact_bits=True,
+            )
+            self.assertEqual(
+                type(expected_empty_output.grad_fn).__name__, "SigmoidBackward0"
+            )
+            actual_empty_loss = actual_empty_output.sum()
+            expected_empty_loss = expected_empty_output.sum()
+            actual_empty_loss.backward()
+            expected_empty_loss.backward()
+            self.assert_tensor_matches(
+                actual_empty.grad,
+                expected_empty.grad,
+                case=("empty rank-three gradient", shape),
+                exact_bits=True,
+            )
+            self.assertEqual(
+                self.error(actual_empty_loss.backward),
+                self.error(expected_empty_loss.backward),
+            )
+
+        higher_order = torch.tensor([[[0.25, -0.25]]], requires_grad=True)
+        higher_order_loss = higher_order.sigmoid().sum()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        higher_order_loss.backward()
+        self.assertIsNotNone(higher_order.grad)
+
     def test_scalar_backward_uses_the_saved_output_across_rounding_modes(self):
         try:
             runtime = ctypes.CDLL(None)
@@ -775,12 +906,20 @@ print(json.dumps({
             actual_matrix.sum().backward()
             self.assertEqual(actual_matrix.grad.tolist(), [[1.0, 1.0]])
 
-        actual_rank_three = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
+            actual_rank_three = torch.tensor([[[0.5, value]]], requires_grad=True)
+            with self.subTest(nonfinite_rank_three=f"0x{bits:08x}"):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    actual_rank_three.sigmoid()
+            self.assertIsNone(actual_rank_three.grad)
+            actual_rank_three.sum().backward()
+            self.assertEqual(actual_rank_three.grad.tolist(), [[[1.0, 1.0]]])
+
+        actual_rank_four = torch.tensor([[[[0.5, -1.0]]]], requires_grad=True)
         with self.assertRaisesRegex(RuntimeError, message):
-            actual_rank_three.sigmoid()
-        self.assertIsNone(actual_rank_three.grad)
-        actual_rank_three.sum().backward()
-        self.assertEqual(actual_rank_three.grad.tolist(), [[[1.0, 1.0]]])
+            actual_rank_four.sigmoid()
+        self.assertIsNone(actual_rank_four.grad)
+        actual_rank_four.sum().backward()
+        self.assertEqual(actual_rank_four.grad.tolist(), [[[[1.0, 1.0]]]])
 
         actual_leaf = torch.tensor(
             np.linspace(-3.75, 3.75, 24, dtype=np.float32)
