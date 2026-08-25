@@ -337,6 +337,12 @@ class FunctionalSiluTests(unittest.TestCase):
                 TypeError,
                 "silu(): argument 'input' (position 1) must be Tensor, not int",
             ),
+            (
+                lambda: functional.silu(np.zeros((2, 3), dtype=np.float32)),
+                TypeError,
+                "silu(): argument 'input' (position 1) must be Tensor, "
+                "not numpy.ndarray",
+            ),
         )
         for case, (call, error_type, message) in enumerate(cases):
             with self.subTest(case=case):

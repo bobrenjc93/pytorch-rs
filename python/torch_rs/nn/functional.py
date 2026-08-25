@@ -5,7 +5,7 @@ import warnings
 
 import torch_rs as torch
 from torch_rs import Tensor
-from torch_rs._diagnostics import _format_single_element_tensor
+from torch_rs._diagnostics import _format_single_element_tensor, _python_type_name
 from torch_rs.overrides import _dispatch_unary_torch_function
 
 from ..torch_rs import (
@@ -196,7 +196,7 @@ def _silu_impl(input, inplace):
     if not isinstance(input, Tensor):
         raise TypeError(
             "silu(): argument 'input' (position 1) must be Tensor, not "
-            f"{type(input).__name__}"
+            f"{_python_type_name(input)}"
         )
     if torch.is_grad_enabled() and input.requires_grad:
         raise RuntimeError("silu(): autograd recording is not supported")

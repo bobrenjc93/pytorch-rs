@@ -340,6 +340,14 @@ class FunctionalSiluReferenceTests(unittest.TestCase):
                 lambda: functional.silu(1),
                 lambda: reference_functional.silu(1),
             ),
+            (
+                lambda: functional.silu(
+                    np.zeros((2, 3), dtype=np.float32)
+                ),
+                lambda: reference_functional.silu(
+                    np.zeros((2, 3), dtype=np.float32)
+                ),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(paired_calls):
             with self.subTest(case=case):

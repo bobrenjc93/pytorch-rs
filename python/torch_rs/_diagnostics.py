@@ -6,6 +6,18 @@ import sys as _sys
 from .torch_rs import _nn_functional_dropout_tensor_autograd_suffix
 
 
+def _python_type_name(value):
+    value_type = type(value)
+    module = value_type.__module__
+    if module == "numpy" or module.startswith("numpy."):
+        return f"numpy.{value_type.__name__}"
+    if module == "torch" or module.startswith("torch."):
+        return f"torch.{value_type.__name__}"
+    if module == "torch_rs" or module.startswith("torch_rs."):
+        return f"torch.{value_type.__name__}"
+    return value_type.__name__
+
+
 def _format_single_element_tensor(tensor, value):
     finite = math.isfinite(value)
     if finite and value != 0.0:
