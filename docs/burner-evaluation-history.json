@@ -6097,6 +6097,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:908",
+      "recordedAt": "2026-08-25T07:06:22.276Z",
+      "label": "PR #908",
+      "kind": "leaf",
+      "prNumber": 908,
+      "title": "Add inference-only torch.nn.functional.softsign",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 91.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 73.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
