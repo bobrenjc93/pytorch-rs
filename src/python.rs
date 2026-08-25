@@ -4507,7 +4507,7 @@ fn tensor(
 }
 
 const MIN_BACKWARD_LEAF_ROOTS: usize = 2;
-const MAX_BACKWARD_LEAF_ROOTS: usize = 7;
+const MAX_BACKWARD_LEAF_ROOTS: usize = 8;
 
 #[pyfunction]
 fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
