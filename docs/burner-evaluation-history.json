@@ -6385,6 +6385,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.9
       }
+    },
+    {
+      "key": "pr:988",
+      "recordedAt": "2026-08-25T22:55:29.318Z",
+      "label": "PR #988",
+      "kind": "leaf",
+      "prNumber": 988,
+      "title": "Fuse reduction-none functional MSE loss into one native pass",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 93,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 75.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }

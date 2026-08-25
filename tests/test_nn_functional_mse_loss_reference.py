@@ -293,41 +293,80 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         self.assert_matches(actual, expected, case="mixed singleton strides")
 
     def test_float32_edge_bits_match_pytorch_2_13(self):
-        input_values = [
-            -0.0,
-            0.0,
-            1.0e-20,
-            -1.0e-20,
-            1.0,
-            -1.0,
-            1.0e10,
-            -1.0e10,
-            np.finfo(np.float32).max,
-            -np.finfo(np.float32).max,
-        ]
-        target_values = [
-            0.0,
-            -0.0,
-            0.0,
-            0.0,
-            -1.0,
-            1.0,
-            -1.0e10,
-            1.0e10,
-            0.0,
-            0.0,
-        ]
-        actual = functional.mse_loss(
-            self.tensor(torch, input_values),
-            self.tensor(torch, target_values),
-            reduction="none",
+        input_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
         )
-        expected = reference_functional.mse_loss(
-            self.tensor(reference_torch, input_values),
-            self.tensor(reference_torch, target_values),
-            reduction="none",
+        target_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0000,
+                0x8000_0001,
+                0x0000_0001,
+                0x807F_FFFF,
+                0x007F_FFFF,
+                0x8080_0000,
+                0x0080_0000,
+                0xBF80_0000,
+                0x3F80_0000,
+                0xFF7F_FFFF,
+                0x7F7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0xFFC6_789A,
+                0x7FC2_ABCD,
+                0xFF86_789A,
+                0x7F82_ABCD,
+            ],
+            dtype=np.uint32,
         )
-        self.assert_matches(actual, expected, case="float32 edges")
+        actual_input = torch.tensor(memoryview(input_bits.view(np.float32))).view(3, 6)
+        actual_target = torch.tensor(memoryview(target_bits.view(np.float32))).view(3, 6)
+        expected_input = reference_torch.tensor(
+            memoryview(input_bits.view(np.float32))
+        ).view(3, 6)
+        expected_target = reference_torch.tensor(
+            memoryview(target_bits.view(np.float32))
+        ).view(3, 6)
+
+        for case, transpose in (("contiguous", False), ("transposed", True)):
+            if transpose:
+                actual_operands = (
+                    actual_input.transpose(0, 1),
+                    actual_target.transpose(0, 1),
+                )
+                expected_operands = (
+                    expected_input.transpose(0, 1),
+                    expected_target.transpose(0, 1),
+                )
+            else:
+                actual_operands = (actual_input, actual_target)
+                expected_operands = (expected_input, expected_target)
+            actual = functional.mse_loss(*actual_operands, reduction="none")
+            expected = reference_functional.mse_loss(
+                *expected_operands,
+                reduction="none",
+            )
+            self.assert_matches(actual, expected, case=("float32 edges", case))
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
