@@ -5072,7 +5072,21 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
             "arange() missing required argument 'end'",
         ));
     };
-    if !end.value.is_exact_instance_of::<PyFloat>() {
+    let exact_float_endpoint = end.value.is_exact_instance_of::<PyFloat>();
+    // Peek only at a valid native dtype here so unsupported endpoint/dtype
+    // combinations retain the endpoint-first error ordering below.
+    let exact_integer_with_explicit_float32 = if end.value.is_exact_instance_of::<PyInt>() {
+        match dtype
+            .as_ref()
+            .and_then(|dtype| dtype.cast::<PyDType>().ok())
+        {
+            Some(dtype) => dtype.try_borrow()?.inner() == DType::Float32,
+            None => false,
+        }
+    } else {
+        false
+    };
+    if !exact_float_endpoint && !exact_integer_with_explicit_float32 {
         let position = end
             .position
             .map_or_else(String::new, |position| format!(" (position {position})"));
