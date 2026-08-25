@@ -6241,6 +6241,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.8
       }
+    },
+    {
+      "key": "pr:949",
+      "recordedAt": "2026-08-25T14:56:18.471Z",
+      "label": "PR #949",
+      "kind": "leaf",
+      "prNumber": 949,
+      "title": "Accept exactly four positional dimensions in Tensor.view",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 92.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 74.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.8
+      }
     }
   ]
 }
