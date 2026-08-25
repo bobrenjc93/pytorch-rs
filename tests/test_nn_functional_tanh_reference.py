@@ -8,6 +8,11 @@ import numpy as np
 import torch_rs as torch
 import torch_rs.nn.functional as functional
 
+if __package__:
+    from .test_tanh import AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+else:
+    from test_tanh import AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+
 try:
     import torch as reference_torch
     import torch.nn.functional as reference_functional
@@ -248,17 +253,87 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             case="scalar gradient",
         )
 
-        actual_leaf = torch.tensor([0.5, -1.0], requires_grad=True)
+        values = AUTOGRAD_INPUT_BITS.view(np.float32).tolist()
+        actual_leaf = torch.tensor(values, requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_weights = torch.tensor(AUTOGRAD_WEIGHTS.tolist())
+        expected_weights = reference_torch.tensor(
+            AUTOGRAD_WEIGHTS.tolist(), dtype=reference_torch.float32
+        )
+        actual_output = functional.tanh(actual_leaf)
+        expected_output = reference_functional.tanh(expected_leaf)
+        self.assert_tensor_matches(
+            actual_output, expected_output, case="rank-one forward"
+        )
+        self.assertEqual(type(expected_output.grad_fn).__name__, "TanhBackward0")
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(actual_output),
+            ", grad_fn=<TanhBackward0>",
+        )
+        (actual_output * actual_weights).sum().backward()
+        (expected_output * expected_weights).sum().backward()
+        self.assert_tensor_matches(
+            actual_leaf.grad, expected_leaf.grad, case="rank-one gradient"
+        )
+
+        actual_empty = torch.tensor([], requires_grad=True)
+        expected_empty = reference_torch.tensor(
+            [], dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_empty_output = functional.tanh(actual_empty)
+        expected_empty_output = reference_functional.tanh(expected_empty)
+        self.assert_tensor_matches(
+            actual_empty_output, expected_empty_output, case="empty forward"
+        )
+        actual_empty_output.sum().backward()
+        expected_empty_output.sum().backward()
+        self.assert_tensor_matches(
+            actual_empty.grad, expected_empty.grad, case="empty gradient"
+        )
+
+        higher_order = torch.tensor([0.25, -0.25], requires_grad=True)
+        higher_order_loss = functional.tanh(higher_order).sum()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        higher_order_loss.backward()
+        self.assertIsNotNone(higher_order.grad)
+
+        actual_matrix = torch.tensor([[0.5, -1.0]], requires_grad=True)
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tanh\(\): autograd recording is not supported$",
         ):
-            functional.tanh(actual_leaf)
+            functional.tanh(actual_matrix)
+        self.assertIsNone(actual_matrix.grad)
+        actual_matrix.sum().backward()
+        self.assertEqual(actual_matrix.grad.tolist(), [[1.0, 1.0]])
 
-        expected_leaf = reference_torch.tensor(
-            [0.5, -1.0], dtype=reference_torch.float32, requires_grad=True
-        )
-        self.assertTrue(reference_functional.tanh(expected_leaf).requires_grad)
+        actual_view_base = torch.tensor([[0.5, -1.0]], requires_grad=True)
+        actual_view = actual_view_base[0]
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^tanh\(\): autograd recording is not supported$",
+        ):
+            functional.tanh(actual_view)
+        self.assertIsNone(actual_view_base.grad)
+        actual_view.sum().backward()
+        self.assertEqual(actual_view_base.grad.tolist(), [[1.0, 1.0]])
+
+        actual_nonfinite = torch.tensor([0.5, float("inf")], requires_grad=True)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^tanh\(\): autograd recording is not supported$",
+        ):
+            functional.tanh(actual_nonfinite)
+        self.assertIsNone(actual_nonfinite.grad)
+        actual_nonfinite.sum().backward()
+        self.assertEqual(actual_nonfinite.grad.tolist(), [1.0, 1.0])
 
         with torch.no_grad():
             actual_no_grad = functional.tanh(actual_leaf)
