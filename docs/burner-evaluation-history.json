@@ -5985,6 +5985,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:877",
+      "recordedAt": "2026-08-25T01:22:58.385Z",
+      "label": "PR #877",
+      "kind": "leaf",
+      "prNumber": 877,
+      "title": "Expose inference-only top-level torch.fix",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 90.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 73.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
