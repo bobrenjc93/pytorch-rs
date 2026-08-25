@@ -6305,6 +6305,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.9
       }
+    },
+    {
+      "key": "pr:965",
+      "recordedAt": "2026-08-25T18:34:04.512Z",
+      "label": "PR #965",
+      "kind": "leaf",
+      "prNumber": 965,
+      "title": "Accept a trailing full slice after two leading integer indices",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 92.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 75.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.9
+      }
     }
   ]
 }
