@@ -6289,6 +6289,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.8
       }
+    },
+    {
+      "key": "pr:961",
+      "recordedAt": "2026-08-25T17:41:55.378Z",
+      "label": "PR #961",
+      "kind": "leaf",
+      "prNumber": 961,
+      "title": "Accept seven scalar leaf roots through a sequence bridge",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 92.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 75.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.9
+      }
     }
   ]
 }
