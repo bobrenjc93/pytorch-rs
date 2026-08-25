@@ -146,7 +146,7 @@ AUTOGRAD_ACCUMULATED_GRADIENT_BITS = np.asarray(
 )
 
 
-def scalar_nonleaf_parent_cases(module):
+def rank_one_nonleaf_parent_cases(module):
     return (
         ("clone", lambda input: input.clone()),
         ("add scalar", lambda input: input + 0.25),
@@ -170,6 +170,12 @@ def scalar_nonleaf_parent_cases(module):
         ("tanh", lambda input: input.tanh()),
         ("sqrt", lambda input: input.sqrt()),
         ("square", lambda input: input.square()),
+    )
+
+
+def scalar_nonleaf_parent_cases(module):
+    return (
+        *rank_one_nonleaf_parent_cases(module),
         ("sum", lambda input: input.sum()),
     )
 
@@ -1088,6 +1094,117 @@ class TensorSigmoidTests(unittest.TestCase):
         higher_order_loss.backward()
         self.assertIsNotNone(higher_order_leaf.grad)
 
+    def test_finite_owned_rank_one_nonleaves_compose_accumulate_and_free_graphs(self):
+        values = [0.25, 0.5, 0.75, 1.25]
+        weights = torch.tensor([1.0, -2.0, 0.5, -0.25])
+        sigmoid_forms = (
+            ("method", lambda input: input.sigmoid()),
+            ("functional", torch.nn.functional.sigmoid),
+        )
+        for parent_case, make_parent in rank_one_nonleaf_parent_cases(torch):
+            for form, apply_sigmoid in sigmoid_forms:
+                with self.subTest(parent=parent_case, form=form, case="nonempty"):
+                    leaf = torch.tensor(values, requires_grad=True)
+                    parent = make_parent(leaf)
+                    self.assertTrue(parent.requires_grad)
+                    self.assertFalse(parent.is_leaf)
+                    self.assertEqual(parent.shape, (4,))
+                    self.assertEqual(parent.stride(), (1,))
+                    self.assertEqual(parent.storage_offset(), 0)
+                    self.assertFalse(parent.is_set_to(leaf))
+                    self.assertNotEqual(parent.data_ptr(), leaf.data_ptr())
+
+                    expected_bits = self.tensor_bits(parent.detach().sigmoid())
+                    output = apply_sigmoid(parent)
+                    self.assertTrue(output.requires_grad)
+                    self.assertFalse(output.is_leaf)
+                    self.assertEqual(output.shape, (4,))
+                    self.assertEqual(output.stride(), (1,))
+                    self.assertEqual(output.storage_offset(), 0)
+                    self.assertFalse(output.is_set_to(parent))
+                    self.assertNotEqual(output.data_ptr(), parent.data_ptr())
+                    np.testing.assert_array_equal(
+                        self.tensor_bits(output), expected_bits
+                    )
+                    self.assertEqual(
+                        torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                            output
+                        ),
+                        ", grad_fn=<SigmoidBackward0>",
+                    )
+
+                    loss = (output * weights).sum()
+                    loss.backward()
+                    gradient_before_repeated_backward = np.asarray(
+                        leaf.grad, dtype=np.float32
+                    ).copy()
+                    with self.assertRaisesRegex(
+                        RuntimeError, "backward through the graph a second time"
+                    ):
+                        loss.backward()
+                    np.testing.assert_array_equal(
+                        np.asarray(leaf.grad, dtype=np.float32),
+                        gradient_before_repeated_backward,
+                    )
+
+                    accumulated = torch.tensor(values, requires_grad=True)
+                    for _ in range(2):
+                        accumulated_parent = make_parent(accumulated)
+                        (apply_sigmoid(accumulated_parent) * weights).sum().backward()
+                    np.testing.assert_array_equal(
+                        np.asarray(accumulated.grad, dtype=np.float32),
+                        gradient_before_repeated_backward
+                        + gradient_before_repeated_backward,
+                    )
+
+                with self.subTest(parent=parent_case, form=form, case="empty"):
+                    empty_leaf = torch.tensor([], requires_grad=True)
+                    empty_parent = make_parent(empty_leaf)
+                    self.assertTrue(empty_parent.requires_grad)
+                    self.assertFalse(empty_parent.is_leaf)
+                    self.assertEqual(empty_parent.shape, (0,))
+                    self.assertEqual(empty_parent.stride(), (1,))
+                    self.assertEqual(empty_parent.storage_offset(), 0)
+                    self.assertFalse(empty_parent.is_set_to(empty_leaf))
+
+                    empty_output = apply_sigmoid(empty_parent)
+                    self.assertTrue(empty_output.requires_grad)
+                    self.assertFalse(empty_output.is_leaf)
+                    self.assertEqual(empty_output.shape, (0,))
+                    self.assertEqual(empty_output.stride(), (1,))
+                    self.assertEqual(empty_output.storage_offset(), 0)
+                    self.assertFalse(empty_output.is_set_to(empty_parent))
+                    self.assertEqual(empty_output.tolist(), [])
+                    self.assertEqual(
+                        torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                            empty_output
+                        ),
+                        ", grad_fn=<SigmoidBackward0>",
+                    )
+
+                    empty_loss = empty_output.sum()
+                    empty_loss.backward()
+                    self.assertEqual(empty_leaf.grad.shape, (0,))
+                    self.assertEqual(empty_leaf.grad.stride(), (1,))
+                    self.assertEqual(empty_leaf.grad.tolist(), [])
+                    with self.assertRaisesRegex(
+                        RuntimeError, "backward through the graph a second time"
+                    ):
+                        empty_loss.backward()
+
+        higher_order_leaf = torch.tensor([0.25, -0.25], requires_grad=True)
+        higher_order_loss = torch.nn.functional.sigmoid(
+            higher_order_leaf.sin()
+        ).sum()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
+        self.assertIsNone(higher_order_leaf.grad)
+        higher_order_loss.backward()
+        self.assertIsNotNone(higher_order_leaf.grad)
+
     def test_unsupported_tracked_inputs_fail_before_existing_graphs_or_layouts_change(self):
         message = r"^sigmoid\(\): autograd recording is not supported$"
 
@@ -1121,6 +1238,22 @@ class TensorSigmoidTests(unittest.TestCase):
                 self.assertIsNone(vector.grad)
                 vector.sum().backward()
                 self.assertEqual(vector.grad.tolist(), [1.0, 1.0])
+
+                vector_nonleaf_base = torch.tensor(
+                    [0.5, 0.25], requires_grad=True
+                )
+                vector_nonleaf = vector_nonleaf_base + value
+                self.assertTrue(vector_nonleaf.requires_grad)
+                self.assertFalse(vector_nonleaf.is_leaf)
+                for call in (
+                    vector_nonleaf.sigmoid,
+                    lambda: torch.nn.functional.sigmoid(vector_nonleaf),
+                ):
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        call()
+                self.assertIsNone(vector_nonleaf_base.grad)
+                vector_nonleaf.sum().backward()
+                self.assertEqual(vector_nonleaf_base.grad.tolist(), [1.0, 1.0])
 
                 matrix = torch.tensor([[0.5, value]], requires_grad=True)
                 with self.assertRaisesRegex(RuntimeError, message):
@@ -1281,16 +1414,6 @@ class TensorSigmoidTests(unittest.TestCase):
             high_rank_view.sigmoid()
         high_rank_view.backward()
         self.assertEqual(high_rank_view_base.grad.sum().item(), 1.0)
-
-        nonleaf_base = torch.tensor([0.5, -0.5], requires_grad=True)
-        nonleaf = nonleaf_base.sin()
-        with self.assertRaisesRegex(RuntimeError, message):
-            nonleaf.sigmoid()
-        nonleaf.sum().backward()
-        np.testing.assert_allclose(
-            np.asarray(nonleaf_base.grad),
-            np.cos(np.asarray([0.5, -0.5], dtype=np.float32)),
-        )
 
         matrix_nonleaf_base = torch.tensor([[0.5, -0.5]], requires_grad=True)
         matrix_nonleaf = matrix_nonleaf_base.sin()

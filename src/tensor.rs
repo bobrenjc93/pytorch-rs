@@ -1040,7 +1040,7 @@ impl Tensor {
         };
         match &metadata.kind {
             AutogradKind::Leaf { .. } => true,
-            AutogradKind::NonLeaf { .. } => self.shape.is_empty(),
+            AutogradKind::NonLeaf { .. } => self.shape.len() <= 1,
         }
     }
 
@@ -2686,8 +2686,8 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when gradient recording is enabled for an input other
-    /// than a finite, owned CPU float32 leaf or rank-zero non-leaf, or when
-    /// result metadata or storage allocation fails.
+    /// than a finite, owned CPU float32 leaf or rank-one-or-lower non-leaf, or
+    /// when result metadata or storage allocation fails.
     pub fn sigmoid(&self) -> Result<Self, TensorError> {
         if self.records_grad() && !self.is_supported_sigmoid_autograd_input() {
             return Err(TensorError::AutogradRecordingUnsupported {

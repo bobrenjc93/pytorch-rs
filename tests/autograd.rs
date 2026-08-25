@@ -1636,7 +1636,7 @@ fn sigmoid_rejects_nonfinite_owned_inputs_before_graph_mutation() {
 }
 
 #[test]
-fn sigmoid_rejects_nonfinite_owned_scalar_nonleaves_before_graph_mutation() {
+fn sigmoid_rejects_nonfinite_owned_scalar_and_vector_nonleaves_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported {
         operation: "sigmoid",
     };
@@ -1666,11 +1666,27 @@ fn sigmoid_rejects_nonfinite_owned_scalar_nonleaves_before_graph_mutation() {
                 .to_bits(),
             1.0_f32.to_bits()
         );
+
+        let vector_nonleaf_base = Tensor::from_vec(vec![0.5, 0.25], [2])
+            .unwrap()
+            .with_requires_grad(true);
+        let vector_nonleaf = vector_nonleaf_base
+            .add_scalar(f32::from_bits(bits))
+            .unwrap();
+        assert!(vector_nonleaf.requires_grad());
+        assert!(!vector_nonleaf.is_leaf());
+        assert_eq!(vector_nonleaf.sigmoid(), Err(unsupported.clone()));
+        assert!(vector_nonleaf_base.grad().unwrap().is_none());
+        vector_nonleaf.sum().backward().unwrap();
+        assert_eq!(
+            values(&vector_nonleaf_base.grad().unwrap().unwrap()),
+            [1.0, 1.0]
+        );
     }
 }
 
 #[test]
-fn sigmoid_rejects_tracked_views_and_rank_one_or_higher_nonleaves_before_graph_mutation() {
+fn sigmoid_rejects_tracked_views_and_rank_two_or_higher_nonleaves_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported {
         operation: "sigmoid",
     };

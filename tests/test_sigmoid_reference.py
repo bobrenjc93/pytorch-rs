@@ -18,6 +18,7 @@ if __package__:
         AUTOGRAD_WEIGHTS,
         SPECIAL_INPUT_BITS,
         SPECIAL_OUTPUT_BITS,
+        rank_one_nonleaf_parent_cases,
         scalar_nonleaf_parent_cases,
     )
 else:
@@ -29,6 +30,7 @@ else:
         AUTOGRAD_WEIGHTS,
         SPECIAL_INPUT_BITS,
         SPECIAL_OUTPUT_BITS,
+        rank_one_nonleaf_parent_cases,
         scalar_nonleaf_parent_cases,
     )
 
@@ -359,6 +361,170 @@ class TensorSigmoidReferenceTests(unittest.TestCase):
                         expected_accumulated.grad,
                         case=(case, form, "accumulated gradient"),
                         exact_bits=True,
+                    )
+
+    def test_owned_rank_one_nonleaf_autograd_matches_pytorch_2_13_across_parent_nodes(
+        self,
+    ):
+        values = [0.25, 0.5, 0.75, 1.25]
+        actual_weights = torch.tensor([1.0, -2.0, 0.5, -0.25])
+        expected_weights = reference_torch.tensor(
+            [1.0, -2.0, 0.5, -0.25], dtype=reference_torch.float32
+        )
+        actual_cases = rank_one_nonleaf_parent_cases(torch)
+        expected_cases = rank_one_nonleaf_parent_cases(reference_torch)
+        for (case, make_actual_parent), (
+            expected_case,
+            make_expected_parent,
+        ) in zip(actual_cases, expected_cases, strict=True):
+            self.assertEqual(case, expected_case)
+            for form in ("method", "functional"):
+                with self.subTest(parent=case, form=form, case="nonempty"):
+                    actual_leaf = torch.tensor(values, requires_grad=True)
+                    expected_leaf = reference_torch.tensor(
+                        values,
+                        dtype=reference_torch.float32,
+                        requires_grad=True,
+                    )
+                    actual_parent = make_actual_parent(actual_leaf)
+                    expected_parent = make_expected_parent(expected_leaf)
+                    self.assert_tensor_matches(
+                        actual_parent,
+                        expected_parent,
+                        case=(case, form, "parent"),
+                        exact_bits=True,
+                    )
+                    self.assertFalse(actual_parent.is_set_to(actual_leaf))
+                    self.assertFalse(expected_parent.is_set_to(expected_leaf))
+                    self.assertNotEqual(actual_parent.data_ptr(), actual_leaf.data_ptr())
+                    self.assertNotEqual(
+                        expected_parent.data_ptr(), expected_leaf.data_ptr()
+                    )
+
+                    if form == "method":
+                        actual_output = actual_parent.sigmoid()
+                        expected_output = expected_parent.sigmoid()
+                    else:
+                        actual_output = torch.nn.functional.sigmoid(actual_parent)
+                        expected_output = reference_torch.nn.functional.sigmoid(
+                            expected_parent
+                        )
+                    self.assert_tensor_matches(
+                        actual_output,
+                        expected_output,
+                        case=(case, form, "sigmoid"),
+                        exact_bits=True,
+                    )
+                    self.assertEqual(
+                        torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                            actual_output
+                        ),
+                        f", grad_fn=<{type(expected_output.grad_fn).__name__}>",
+                    )
+
+                    actual_loss = (actual_output * actual_weights).sum()
+                    expected_loss = (expected_output * expected_weights).sum()
+                    actual_loss.backward()
+                    expected_loss.backward()
+                    self.assert_tensor_matches(
+                        actual_leaf.grad,
+                        expected_leaf.grad,
+                        case=(case, form, "composed gradient"),
+                        exact_bits=True,
+                    )
+                    actual_gradient = self.tensor_values(actual_leaf.grad).copy()
+                    expected_gradient = self.tensor_values(expected_leaf.grad).copy()
+                    self.assertEqual(
+                        self.error(actual_loss.backward),
+                        self.error(expected_loss.backward),
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_values(actual_leaf.grad), actual_gradient
+                    )
+                    np.testing.assert_array_equal(
+                        self.tensor_values(expected_leaf.grad), expected_gradient
+                    )
+
+                    actual_accumulated = torch.tensor(values, requires_grad=True)
+                    expected_accumulated = reference_torch.tensor(
+                        values,
+                        dtype=reference_torch.float32,
+                        requires_grad=True,
+                    )
+                    for _ in range(2):
+                        actual_parent = make_actual_parent(actual_accumulated)
+                        expected_parent = make_expected_parent(expected_accumulated)
+                        if form == "method":
+                            actual_output = actual_parent.sigmoid()
+                            expected_output = expected_parent.sigmoid()
+                        else:
+                            actual_output = torch.nn.functional.sigmoid(actual_parent)
+                            expected_output = reference_torch.nn.functional.sigmoid(
+                                expected_parent
+                            )
+                        (actual_output * actual_weights).sum().backward()
+                        (expected_output * expected_weights).sum().backward()
+                    self.assert_tensor_matches(
+                        actual_accumulated.grad,
+                        expected_accumulated.grad,
+                        case=(case, form, "accumulated gradient"),
+                        exact_bits=True,
+                    )
+
+                with self.subTest(parent=case, form=form, case="empty"):
+                    actual_empty_leaf = torch.tensor([], requires_grad=True)
+                    expected_empty_leaf = reference_torch.tensor(
+                        [], dtype=reference_torch.float32, requires_grad=True
+                    )
+                    actual_empty_parent = make_actual_parent(actual_empty_leaf)
+                    expected_empty_parent = make_expected_parent(expected_empty_leaf)
+                    self.assert_tensor_matches(
+                        actual_empty_parent,
+                        expected_empty_parent,
+                        case=(case, form, "empty parent"),
+                        exact_bits=True,
+                    )
+                    self.assertFalse(actual_empty_parent.is_set_to(actual_empty_leaf))
+                    self.assertFalse(
+                        expected_empty_parent.is_set_to(expected_empty_leaf)
+                    )
+
+                    if form == "method":
+                        actual_empty_output = actual_empty_parent.sigmoid()
+                        expected_empty_output = expected_empty_parent.sigmoid()
+                    else:
+                        actual_empty_output = torch.nn.functional.sigmoid(
+                            actual_empty_parent
+                        )
+                        expected_empty_output = reference_torch.nn.functional.sigmoid(
+                            expected_empty_parent
+                        )
+                    self.assert_tensor_matches(
+                        actual_empty_output,
+                        expected_empty_output,
+                        case=(case, form, "empty sigmoid"),
+                        exact_bits=True,
+                    )
+                    self.assertEqual(
+                        torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                            actual_empty_output
+                        ),
+                        f", grad_fn=<{type(expected_empty_output.grad_fn).__name__}>",
+                    )
+
+                    actual_empty_loss = actual_empty_output.sum()
+                    expected_empty_loss = expected_empty_output.sum()
+                    actual_empty_loss.backward()
+                    expected_empty_loss.backward()
+                    self.assert_tensor_matches(
+                        actual_empty_leaf.grad,
+                        expected_empty_leaf.grad,
+                        case=(case, form, "empty gradient"),
+                        exact_bits=True,
+                    )
+                    self.assertEqual(
+                        self.error(actual_empty_loss.backward),
+                        self.error(expected_empty_loss.backward),
                     )
 
     def test_rank_one_weighted_autograd_empty_and_graph_lifetime_match_pytorch_2_13(
@@ -1681,13 +1847,6 @@ print(json.dumps({
             actual_high_rank_view.sigmoid()
         actual_high_rank_view.backward()
         self.assertEqual(actual_high_rank_view_base.grad.sum().item(), 1.0)
-
-        actual_nonleaf_base = torch.tensor([0.5, -0.5], requires_grad=True)
-        actual_nonleaf = actual_nonleaf_base.sin()
-        with self.assertRaisesRegex(RuntimeError, message):
-            actual_nonleaf.sigmoid()
-        actual_nonleaf.sum().backward()
-        self.assertIsNotNone(actual_nonleaf_base.grad)
 
         actual_matrix_nonleaf_base = torch.tensor(
             [[0.5, -0.5]], requires_grad=True
