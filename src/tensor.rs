@@ -2449,27 +2449,30 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Power, apply_square_vjp)
     }
 
-    /// Squares a materialized dense tensor while retaining its exact strides.
+    /// Computes `(self - other) * (self - other)` in one same-shape binary pass.
     ///
-    /// This supports composed operators whose preceding binary `TensorIterator`
-    /// layout remains observable in the final output. Standalone square keeps
-    /// using its normal unary layout canonicalization.
+    /// The shared binary planner selects the same output strides as subtraction,
+    /// while the local difference preserves the float32 rounding boundary before
+    /// multiplication. This is an inference-only primitive for composed
+    /// operators; standalone subtraction and square retain their own dispatch
+    /// and autograd behavior.
     ///
     /// # Errors
     ///
-    /// Returns an error when result metadata or storage allocation fails.
+    /// Returns an error when the shapes differ or when result metadata or
+    /// storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
-    pub(crate) fn square_preserving_strides(&self) -> Result<Self, TensorError> {
-        debug_assert_eq!(self.offset, 0);
-        debug_assert!(self.elements == 0 || self.is_non_overlapping_and_dense());
-        let strides = try_clone_result_shape(&self.strides, self.elements)?;
-        let mut output = self.square()?;
-        // For a dense materialized input, unary planning can only alter the
-        // strides of singleton or zero-sized axes. Restoring those strides
-        // therefore leaves every stored element at the same physical offset.
-        debug_assert_eq!(output.offset, 0);
-        output.strides = strides;
-        Ok(output)
+    pub(crate) fn squared_difference_same_shape(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.shape != other.shape {
+            return Err(TensorError::ShapeMismatch {
+                left: try_clone_result_shape(&self.shape, self.elements)?,
+                right: try_clone_result_shape(&other.shape, other.elements)?,
+            });
+        }
+        self.zip_map_same_shape(other, |left, right| {
+            let difference = left - right;
+            difference * difference
+        })
     }
 
     /// Divides tensors element by element using IEEE 754 true division and
@@ -5145,29 +5148,121 @@ mod tests {
     }
 
     #[test]
-    fn square_can_preserve_a_binary_output_singleton_stride() {
+    fn squared_difference_same_shape_preserves_the_binary_output_layout() {
         let input = Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [2, 1, 3]).unwrap();
         let target = Tensor::from_vec(vec![-1.0, 0.0, 1.0, 2.0, 3.0, 4.0], [3, 1, 2])
             .unwrap()
             .permute_axes([2, 1, 0])
             .unwrap();
         let difference = input.sub(&target).unwrap();
+        let mut expected = difference.square().unwrap();
+        expected.strides.clone_from(&difference.strides);
+        let actual = input.squared_difference_same_shape(&target).unwrap();
 
         assert_eq!(input.stride(), &[3, 3, 1]);
         assert_eq!(target.stride(), &[1, 2, 2]);
         assert_eq!(difference.stride(), &[3, 6, 1]);
-
-        let ordinary = difference.square().unwrap();
-        let preserved = difference.square_preserving_strides().unwrap();
-        assert_eq!(ordinary.stride(), &[3, 3, 1]);
-        assert_eq!(preserved.stride(), &[3, 6, 1]);
+        assert_eq!(actual.stride(), &[3, 6, 1]);
+        assert_eq!(actual.storage_offset(), 0);
         assert!(
-            ordinary
+            actual
                 .logical_values()
                 .map(f32::to_bits)
-                .eq(preserved.logical_values().map(f32::to_bits))
+                .eq(expected.logical_values().map(f32::to_bits))
         );
-        assert_ne!(preserved.data_ptr(), difference.data_ptr());
+        assert!(!actual.shares_storage_with(&input));
+        assert!(!actual.shares_storage_with(&target));
+        assert!(!actual.shares_storage_with(&difference));
+    }
+
+    #[test]
+    fn squared_difference_same_shape_matches_two_pass_ieee_results() {
+        let input_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x0080_0000,
+            0x8080_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xff85_4321,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let target_bits = [
+            0x8000_0000,
+            0x0000_0000,
+            0x0000_0000,
+            0x0000_0000,
+            0x8080_0000,
+            0x0080_0000,
+            0xbf80_0000,
+            0x3f80_0000,
+            0xff7f_ffff,
+            0x7f7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0xffc6_789a,
+            0x7fc7_89ab,
+            0x7f89_abcd,
+            0xff8a_bcde,
+        ];
+        let verify = |input: &Tensor, target: &Tensor| {
+            let difference = input.sub(target).unwrap();
+            let mut expected = difference.square().unwrap();
+            expected.strides.clone_from(&difference.strides);
+            let actual = input.squared_difference_same_shape(target).unwrap();
+
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), expected.storage_offset());
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        };
+
+        let contiguous =
+            Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()]).unwrap();
+        let contiguous_target = Tensor::from_vec(
+            target_bits.map(f32::from_bits).to_vec(),
+            [target_bits.len()],
+        )
+        .unwrap();
+        verify(&contiguous, &contiguous_target);
+
+        let transposed = Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [4, 4])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let transposed_target = Tensor::from_vec(target_bits.map(f32::from_bits).to_vec(), [4, 4])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        verify(&transposed, &transposed_target);
+
+        let channels_last = Tensor::from_vec((0_u8..48).map(f32::from).collect(), [2, 2, 3, 4])
+            .unwrap()
+            .try_clone_with_memory_format(crate::memory_format::MemoryFormat::ChannelsLast)
+            .unwrap();
+        let channels_last_target =
+            Tensor::from_vec((0_u8..48).rev().map(f32::from).collect(), [2, 2, 3, 4])
+                .unwrap()
+                .try_clone_with_memory_format(crate::memory_format::MemoryFormat::ChannelsLast)
+                .unwrap();
+        verify(&channels_last, &channels_last_target);
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        let empty_target = Tensor::ones([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        verify(&empty, &empty_target);
     }
 
     #[test]
