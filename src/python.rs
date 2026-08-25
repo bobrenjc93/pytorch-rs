@@ -1600,6 +1600,14 @@ pub(crate) fn reciprocal_variable_function(
     unary_out_variable_function(UnaryOutOperation::RECIPROCAL, py, args, kwargs)
 }
 
+pub(crate) fn abs_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::ABS, py, args, kwargs)
+}
+
 pub(crate) fn exp_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2044,6 +2052,15 @@ struct UnaryOutOperation {
 }
 
 impl UnaryOutOperation {
+    const ABS: Self = Self {
+        name: "abs",
+        qualified_name: "torch.abs",
+        dispatch_allocation_error: "unable to allocate abs dispatch operands",
+        out_unsupported_error: "abs(): the 'out' argument is not supported",
+        autograd_unsupported_error: None,
+        apply: CoreTensor::abs,
+    };
+
     const NEG: Self = Self {
         name: "neg",
         qualified_name: "torch.neg",
