@@ -2252,11 +2252,18 @@ impl Tensor {
     /// for an empty tensor, a stride-incompatible layout, arithmetic overflow,
     /// or metadata allocation failure.
     pub fn view(&self, shape: impl AsRef<[i64]>) -> Result<Self, TensorError> {
-        let resolved = self.resolve_reshape_shape(shape.as_ref())?;
-        self.view_resolved(resolved)
+        let requested = shape.as_ref();
+        let resolved = self.resolve_view_shape(requested)?;
+        self.view_resolved(requested, resolved)
     }
 
     fn resolve_reshape_shape(&self, requested: &[i64]) -> Result<Vec<usize>, TensorError> {
+        let resolved = self.resolve_view_shape(requested)?;
+        self.validate_resolved_reshape_shape(requested, &resolved)?;
+        Ok(resolved)
+    }
+
+    fn resolve_view_shape(&self, requested: &[i64]) -> Result<Vec<usize>, TensorError> {
         let mut inferred_index = None;
 
         for (index, dimension) in requested.iter().copied().enumerate() {
@@ -2285,14 +2292,17 @@ impl Tensor {
             resolved.push(dimension);
         }
 
+        // PyTorch's shape inference multiplies dimensions as signed int64
+        // values before later metadata validation, so preserve that wrapping
+        // product here to match its error ordering at resource limits.
+        let specified_elements = requested
+            .iter()
+            .copied()
+            .filter(|dimension| *dimension != -1)
+            .fold(1_i64, i64::wrapping_mul);
+        let elements =
+            i64::try_from(self.elements).map_err(|_| TensorError::ElementCountOverflow)?;
         if let Some(index) = inferred_index {
-            let specified_elements = requested
-                .iter()
-                .copied()
-                .filter(|dimension| *dimension != -1)
-                .fold(1_i64, i64::wrapping_mul);
-            let elements =
-                i64::try_from(self.elements).map_err(|_| TensorError::ElementCountOverflow)?;
             if !((specified_elements > 0 && elements % specified_elements == 0)
                 || elements == specified_elements)
             {
@@ -2314,10 +2324,7 @@ impl Tensor {
             }
             resolved[index] = usize::try_from(elements / specified_elements)
                 .map_err(|_| TensorError::ElementCountOverflow)?;
-        }
-
-        let resolved_elements = element_count(&resolved)?;
-        if resolved_elements != self.elements {
+        } else if specified_elements != elements {
             return Err(TensorError::ReshapeElementCountMismatch {
                 shape: try_clone_reshape_shape(requested, self.elements)?,
                 elements: self.elements,
@@ -2325,6 +2332,22 @@ impl Tensor {
         }
 
         Ok(resolved)
+    }
+
+    fn validate_resolved_reshape_shape(
+        &self,
+        requested: &[i64],
+        resolved: &[usize],
+    ) -> Result<(), TensorError> {
+        let resolved_elements = element_count(resolved)?;
+        if resolved_elements != self.elements {
+            return Err(TensorError::ReshapeElementCountMismatch {
+                shape: try_clone_reshape_shape(requested, self.elements)?,
+                elements: self.elements,
+            });
+        }
+
+        Ok(())
     }
 
     fn reshape_resolved(&self, resolved: Vec<usize>) -> Result<Self, TensorError> {
@@ -2350,10 +2373,14 @@ impl Tensor {
         )
     }
 
-    fn view_resolved(&self, resolved: Vec<usize>) -> Result<Self, TensorError> {
+    fn view_resolved(&self, requested: &[i64], resolved: Vec<usize>) -> Result<Self, TensorError> {
+        // View compatibility is decided before TensorImpl validates the exact
+        // element count, which determines whether PyTorch reports a layout,
+        // invalid-shape, or numel-overflow error for extreme dimensions.
         let strides = self
             .reshape_view_strides(&resolved)?
             .ok_or(TensorError::ViewIncompatibleLayout)?;
+        self.validate_resolved_reshape_shape(requested, &resolved)?;
         self.finish_reshape_view(resolved, strides)
     }
 
@@ -4485,24 +4512,33 @@ fn compute_reshape_view_strides(
     }
 
     let mut new_strides = try_result_vector(new_shape.len(), elements)?;
-    new_strides.resize(new_shape.len(), 0);
+    new_strides.resize(new_shape.len(), 0_i64);
     let mut view_dimension = new_shape.len();
-    let mut chunk_base_stride = *old_strides
-        .last()
-        .ok_or(TensorError::StrideCalculationOverflow)?;
-    let mut tensor_elements = 1_usize;
-    let mut view_elements = 1_usize;
+    // ATen's computeStride accumulates signed int64 metadata before the
+    // resulting TensorImpl validates it. Preserve that wrapping here so an
+    // extreme shape reaches the same layout or stride error first.
+    let mut chunk_base_stride = i64::try_from(
+        *old_strides
+            .last()
+            .ok_or(TensorError::StrideCalculationOverflow)?,
+    )
+    .map_err(|_| TensorError::StrideCalculationOverflow)?;
+    let mut tensor_elements = 1_i64;
+    let mut view_elements = 1_i64;
 
     for tensor_dimension in (0..old_shape.len()).rev() {
-        tensor_elements = tensor_elements
-            .checked_mul(old_shape[tensor_dimension])
-            .ok_or(TensorError::ElementCountOverflow)?;
-        let chunk_ends = tensor_dimension == 0
-            || (old_shape[tensor_dimension - 1] != 1
-                && old_strides[tensor_dimension - 1]
-                    != tensor_elements
-                        .checked_mul(chunk_base_stride)
-                        .ok_or(TensorError::StrideCalculationOverflow)?);
+        let tensor_dimension_size = i64::try_from(old_shape[tensor_dimension])
+            .map_err(|_| TensorError::ElementCountOverflow)?;
+        tensor_elements = tensor_elements.wrapping_mul(tensor_dimension_size);
+        let chunk_ends = if tensor_dimension == 0 {
+            true
+        } else if old_shape[tensor_dimension - 1] == 1 {
+            false
+        } else {
+            let previous_stride = i64::try_from(old_strides[tensor_dimension - 1])
+                .map_err(|_| TensorError::StrideCalculationOverflow)?;
+            previous_stride != tensor_elements.wrapping_mul(chunk_base_stride)
+        };
         if !chunk_ends {
             continue;
         }
@@ -4511,25 +4547,30 @@ fn compute_reshape_view_strides(
             && (view_elements < tensor_elements || new_shape[view_dimension - 1] == 1)
         {
             view_dimension -= 1;
-            new_strides[view_dimension] = view_elements
-                .checked_mul(chunk_base_stride)
-                .ok_or(TensorError::StrideCalculationOverflow)?;
-            view_elements = view_elements
-                .checked_mul(new_shape[view_dimension])
-                .ok_or(TensorError::ElementCountOverflow)?;
+            new_strides[view_dimension] = view_elements.wrapping_mul(chunk_base_stride);
+            let view_dimension_size = i64::try_from(new_shape[view_dimension])
+                .map_err(|_| TensorError::ElementCountOverflow)?;
+            view_elements = view_elements.wrapping_mul(view_dimension_size);
         }
         if view_elements != tensor_elements {
             return Ok(None);
         }
         if tensor_dimension > 0 {
-            chunk_base_stride = old_strides[tensor_dimension - 1];
+            chunk_base_stride = i64::try_from(old_strides[tensor_dimension - 1])
+                .map_err(|_| TensorError::StrideCalculationOverflow)?;
             tensor_elements = 1;
             view_elements = 1;
         }
     }
 
     if view_dimension == 0 {
-        Ok(Some(new_strides))
+        new_strides
+            .into_iter()
+            .map(|stride| {
+                usize::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some)
     } else {
         Ok(None)
     }

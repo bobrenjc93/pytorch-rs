@@ -842,6 +842,37 @@ class TensorViewTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, f"^{re.escape(message)}$"):
                     call()
 
+    def test_six_positional_resource_limit_errors_follow_view_ordering(self):
+        maximum = sys.maxsize
+        empty = torch.zeros((0,))
+
+        with self.assertRaisesRegex(
+            RuntimeError, "^numel: integer multiplication overflow$"
+        ):
+            empty.view(maximum, maximum, 0, 1, 1, 1)
+
+        invalid_shape = (
+            "shape '[1, 1, 1, 1, "
+            f"{maximum}, {maximum}]' is invalid for input of size 0"
+        )
+        with self.assertRaisesRegex(RuntimeError, f"^{re.escape(invalid_shape)}$"):
+            empty.view(1, 1, 1, 1, maximum, maximum)
+
+        with self.assertRaisesRegex(
+            RuntimeError, f"^{re.escape(INCOMPATIBLE_LAYOUT)}$"
+        ):
+            torch.ones((1,)).view(1, 1, 1, 1, maximum, maximum)
+
+        with self.assertRaisesRegex(
+            RuntimeError, "^Stride calculation overflowed$"
+        ):
+            torch.ones((4,)).view(maximum, 2, maximum, 1, 1, 2)
+
+        with self.assertRaisesRegex(
+            RuntimeError, f"^{re.escape(INCOMPATIBLE_LAYOUT)}$"
+        ):
+            torch.ones((6,)).view(maximum, 2, maximum, 1, 3, -1)
+
     def test_dimension_conversion_matches_the_sequence_overload(self):
         tensor = torch.zeros((6,))
         for shape in (

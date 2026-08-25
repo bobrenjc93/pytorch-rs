@@ -3035,6 +3035,38 @@ fn view_reuses_reshape_stride_analysis_without_copying() {
             elements: 6,
         })
     );
+
+    let maximum = i64::MAX;
+    let empty = Tensor::zeros([0]).unwrap();
+    assert_eq!(
+        empty.view([maximum, maximum, 0, 1, 1, 1]),
+        Err(TensorError::ElementCountOverflow)
+    );
+    assert_eq!(
+        empty.view([1, 1, 1, 1, maximum, maximum]),
+        Err(TensorError::ReshapeElementCountMismatch {
+            shape: vec![1, 1, 1, 1, maximum, maximum],
+            elements: 0,
+        })
+    );
+    assert_eq!(
+        Tensor::ones([1])
+            .unwrap()
+            .view([1, 1, 1, 1, maximum, maximum]),
+        Err(TensorError::ViewIncompatibleLayout)
+    );
+    assert_eq!(
+        Tensor::ones([4])
+            .unwrap()
+            .view([maximum, 2, maximum, 1, 1, 2]),
+        Err(TensorError::StrideCalculationOverflow)
+    );
+    assert_eq!(
+        Tensor::ones([6])
+            .unwrap()
+            .view([maximum, 2, maximum, 1, 3, -1]),
+        Err(TensorError::ViewIncompatibleLayout)
+    );
 }
 
 #[test]

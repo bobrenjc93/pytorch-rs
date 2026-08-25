@@ -1202,6 +1202,48 @@ class TensorViewReferenceTests(unittest.TestCase):
             with self.subTest(single_error_case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
+    def test_six_positional_resource_limits_match_pytorch_2_13(self):
+        maximum = sys.maxsize
+        actual_empty = torch.zeros((0,), dtype=torch.float32)
+        expected_empty = reference_torch.zeros(
+            (0,), dtype=reference_torch.float32
+        )
+        actual_one = torch.ones((1,), dtype=torch.float32)
+        expected_one = reference_torch.ones(
+            (1,), dtype=reference_torch.float32
+        )
+        for actual_call, expected_call in (
+            (
+                lambda: actual_empty.view(maximum, maximum, 0, 1, 1, 1),
+                lambda: expected_empty.view(maximum, maximum, 0, 1, 1, 1),
+            ),
+            (
+                lambda: actual_empty.view(1, 1, 1, 1, maximum, maximum),
+                lambda: expected_empty.view(1, 1, 1, 1, maximum, maximum),
+            ),
+            (
+                lambda: actual_one.view(1, 1, 1, 1, maximum, maximum),
+                lambda: expected_one.view(1, 1, 1, 1, maximum, maximum),
+            ),
+            (
+                lambda: torch.ones((4,), dtype=torch.float32).view(
+                    maximum, 2, maximum, 1, 1, 2
+                ),
+                lambda: reference_torch.ones(
+                    (4,), dtype=reference_torch.float32
+                ).view(maximum, 2, maximum, 1, 1, 2),
+            ),
+            (
+                lambda: torch.ones((6,), dtype=torch.float32).view(
+                    maximum, 2, maximum, 1, 3, -1
+                ),
+                lambda: reference_torch.ones(
+                    (6,), dtype=reference_torch.float32
+                ).view(maximum, 2, maximum, 1, 3, -1),
+            ),
+        ):
+            self.assert_error_matches(actual_call, expected_call)
+
     def autograd_outcome(self, module):
         leaf = module.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],

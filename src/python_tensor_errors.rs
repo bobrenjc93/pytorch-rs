@@ -67,6 +67,14 @@ pub(crate) fn transpose_error(error: &TensorError) -> PyErr {
     }
 }
 
+pub(crate) fn view_error(error: &TensorError) -> PyErr {
+    if matches!(error, TensorError::ElementCountOverflow) {
+        PyRuntimeError::new_err("numel: integer multiplication overflow")
+    } else {
+        tensor_error(error)
+    }
+}
+
 pub(crate) fn permute_error(error: &TensorError) -> PyErr {
     if matches!(error, TensorError::PermutationRankMismatch { .. }) {
         PyRuntimeError::new_err(format!("permute(sparse_coo): {error}"))

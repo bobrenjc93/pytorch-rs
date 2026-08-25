@@ -28,7 +28,7 @@ use crate::{
     python_no_argument_builtins::add_no_argument_builtins,
     python_scalar_conversions::register_scalar_conversions,
     python_size::size_type_object,
-    python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
+    python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error, view_error},
     python_tensor_queries::add_tensor_queries,
     python_torch_function_mode as torch_function_mode_stack,
     python_torch_function_probe::add_torch_function_probe,
@@ -1241,7 +1241,7 @@ Example::
                     .try_borrow()?
                     .inner
                     .view(shape)
-                    .map_err(|error| tensor_error(&error))?
+                    .map_err(|error| view_error(&error))?
             }
             ViewArgument::DType(dtype) => {
                 let dtype = dtype.try_borrow()?.inner();
@@ -3379,7 +3379,7 @@ fn apply_view_as(
         .try_borrow()?
         .inner
         .view(shape)
-        .map_err(|error| tensor_error(&error))?;
+        .map_err(|error| view_error(&error))?;
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
