@@ -295,6 +295,42 @@ class ArangeReferenceTests(unittest.TestCase):
                     lambda end=end: reference_torch.arange(end),
                 )
 
+    def test_explicit_float32_integer_boundary_errors_match_pytorch_2_13(self):
+        endpoints = (
+            -(2**63),
+            -(2**63) - 1,
+            2**63 - 1,
+            2**63,
+            2**64 - 1,
+            2**64,
+        )
+        for end in endpoints:
+            for dtype_name in ("float32", "float"):
+                actual_dtype = getattr(torch, dtype_name)
+                expected_dtype = getattr(reference_torch, dtype_name)
+                for form in ("positional", "keyword"):
+                    with self.subTest(
+                        end=end, dtype=dtype_name, form=form
+                    ):
+                        if form == "positional":
+                            self.assert_error_matches(
+                                lambda end=end, dtype=actual_dtype: torch.arange(
+                                    end, dtype=dtype
+                                ),
+                                lambda end=end, dtype=expected_dtype: reference_torch.arange(
+                                    end, dtype=dtype
+                                ),
+                            )
+                        else:
+                            self.assert_error_matches(
+                                lambda end=end, dtype=actual_dtype: torch.arange(
+                                    end=end, dtype=dtype
+                                ),
+                                lambda end=end, dtype=expected_dtype: reference_torch.arange(
+                                    end=end, dtype=dtype
+                                ),
+                            )
+
     def mode_dispatch_observation(self, module):
         function = module.arange
         marker = object()

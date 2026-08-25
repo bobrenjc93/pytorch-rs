@@ -5121,8 +5121,19 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
             "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
         ));
     }
-    let elements = arange_element_count(end.value.extract::<f64>()?)?;
+    let elements = arange_element_count(extract_arange_end(&end.value)?)?;
     Ok((elements, requires_grad))
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn extract_arange_end(end: &Bound<'_, PyAny>) -> PyResult<f64> {
+    if end.is_exact_instance_of::<PyInt>() {
+        if let Ok(end) = end.extract::<i64>() {
+            return Ok(end as f64);
+        }
+        return end.extract::<u64>().map(|end| end as f64);
+    }
+    end.extract::<f64>()
 }
 
 fn arange_element_count(end: f64) -> PyResult<usize> {

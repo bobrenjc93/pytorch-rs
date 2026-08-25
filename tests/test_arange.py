@@ -256,6 +256,47 @@ class ArangeTests(unittest.TestCase):
                     lambda end=end: torch.arange(end), RuntimeError, message
                 )
 
+    def test_explicit_float32_integer_boundaries_fail_before_allocation(self):
+        cases = (
+            (
+                -(2**63),
+                RuntimeError,
+                "upper bound and lower bound inconsistent with step sign",
+            ),
+            (
+                -(2**63) - 1,
+                OverflowError,
+                "can't convert negative int to unsigned",
+            ),
+            (
+                2**63 - 1,
+                RuntimeError,
+                "IntArrayRef contains an int that cannot be represented as a SymInt: -9223372036854775808",
+            ),
+            (
+                2**63,
+                RuntimeError,
+                "IntArrayRef contains an int that cannot be represented as a SymInt: -9223372036854775808",
+            ),
+            (2**64 - 1, RuntimeError, "invalid size, possible overflow?"),
+            (2**64, OverflowError, "int too big to convert"),
+        )
+        for end, error_type, message in cases:
+            for form, call in (
+                (
+                    "positional",
+                    lambda end=end: torch.arange(end, dtype=torch.float32),
+                ),
+                (
+                    "keyword",
+                    lambda end=end: torch.arange(
+                        end=end, dtype=torch.float
+                    ),
+                ),
+            ):
+                with self.subTest(end=end, form=form):
+                    self.assert_error(call, error_type, message)
+
     def test_other_endpoint_types_remain_unsupported(self):
         calls = (
             lambda: torch.arange(3),
