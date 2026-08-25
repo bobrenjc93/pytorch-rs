@@ -1003,12 +1003,11 @@ impl Tensor {
         self.requires_grad() && is_grad_enabled()
     }
 
-    fn is_finite_owned_leaf_with_max_rank(&self, max_rank: usize) -> bool {
+    fn is_finite_owned_leaf(&self) -> bool {
         // Factory-created leaves span their complete allocation. Recorded
         // views are non-leaves, while views created under no_grad carry
         // view_requires_grad without leaf metadata.
-        if self.shape.len() > max_rank
-            || self.offset != 0
+        if self.offset != 0
             || self.storage.len() != self.elements
             || self.dtype() != DType::Float32
             || self.device() != Device::Cpu
@@ -1022,6 +1021,10 @@ impl Tensor {
         };
         matches!(&metadata.kind, AutogradKind::Leaf { .. })
             && self.logical_values().all(f32::is_finite)
+    }
+
+    fn is_finite_owned_leaf_with_max_rank(&self, max_rank: usize) -> bool {
+        self.shape.len() <= max_rank && self.is_finite_owned_leaf()
     }
 
     fn record_transform(
@@ -2647,10 +2650,10 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when gradient recording is enabled for an input other
-    /// than a finite, owned CPU float32 leaf with rank at most five, or when
-    /// result metadata or storage allocation fails.
+    /// than a finite, owned CPU float32 leaf, or when result metadata or
+    /// storage allocation fails.
     pub fn sigmoid(&self) -> Result<Self, TensorError> {
-        if self.records_grad() && !self.is_finite_owned_leaf_with_max_rank(5) {
+        if self.records_grad() && !self.is_finite_owned_leaf() {
             return Err(TensorError::AutogradRecordingUnsupported {
                 operation: "sigmoid",
             });
@@ -3578,9 +3581,8 @@ fn apply_exp_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>
 }
 
 fn apply_sigmoid_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
-    // Supported sigmoid leaves save contiguous outputs through rank five.
-    // Keep the generic fallback because the saved-output node itself is
-    // layout-agnostic.
+    // Supported sigmoid leaves save contiguous outputs at every rank. Keep the
+    // generic fallback because the saved-output node itself is layout-agnostic.
     if let Some(saved_values) = output.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
         gradient.extend(saved_values.iter().zip(upstream).map(
