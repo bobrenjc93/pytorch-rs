@@ -188,6 +188,27 @@ def sigmoid(input):
     return input.sigmoid()
 
 
+def _softsign_impl(input):
+    if isinstance(input, Tensor) and torch.is_grad_enabled() and input.requires_grad:
+        raise RuntimeError("softsign(): autograd recording is not supported")
+    return input / (input.abs() + 1)
+
+
+def softsign(input):
+    r"""softsign(input) -> Tensor
+
+    Applies element-wise, the function :math:`\text{SoftSign}(x) = \frac{x}{1 + |x|}`
+
+    See :class:`~torch.nn.Softsign` for more details.
+    """
+    return _dispatch_unary_torch_function(
+        softsign,
+        _softsign_impl,
+        input,
+        {},
+    )
+
+
 def linear(input: Tensor, weight: Tensor, bias: Tensor | None = None) -> Tensor:
     return _nn_functional_linear(input, weight, bias)
 
