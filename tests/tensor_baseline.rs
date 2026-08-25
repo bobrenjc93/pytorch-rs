@@ -3696,6 +3696,42 @@ fn integer_indexing_uses_checked_offset_arithmetic() {
         TensorError::InvalidStorageOffset { offset: -4 }.to_string(),
         "Tensor: invalid storage offset -4"
     );
+
+    let wrapped = Tensor::zeros([maximum, 1, 0, 3]).unwrap();
+    let first_dimension = wrapped.index_integer(i64::MAX - 1).unwrap();
+    assert_eq!(first_dimension.shape(), [1, 0, 3]);
+    assert_eq!(first_dimension.stride(), [3, 3, 1]);
+    assert_eq!(first_dimension.storage_offset(), maximum - 5);
+
+    for indices in [[i64::MAX - 1, 0], [-1, 0]] {
+        let selected = wrapped.index(indices).unwrap();
+        assert_eq!(selected.shape(), [0, 3]);
+        assert_eq!(selected.stride(), [3, 1]);
+        assert_eq!(selected.storage_offset(), maximum - 5);
+        assert!(selected.shares_storage_with(&wrapped));
+        assert!(selected.try_to_vec().unwrap().is_empty());
+    }
+    assert_eq!(
+        wrapped.index([i64::MAX - 1, 1]),
+        Err(TensorError::IndexOutOfBounds {
+            index: 1,
+            dimension: 1,
+            size: 1,
+        })
+    );
+
+    let tracked = Tensor::zeros([maximum, 1, 0, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let selected = tracked.index([i64::MAX - 1, 0]).unwrap();
+    assert!(selected.requires_grad());
+    assert!(!selected.is_leaf());
+    selected.sum().backward().unwrap();
+    let gradient = tracked.grad().unwrap().unwrap();
+    assert_eq!(gradient.shape(), [maximum, 1, 0, 3]);
+    assert_eq!(gradient.stride(), [3, 3, 3, 1]);
+    assert_eq!(gradient.storage_offset(), 0);
+    assert!(gradient.try_to_vec().unwrap().is_empty());
 }
 
 #[test]

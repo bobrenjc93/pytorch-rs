@@ -1,5 +1,6 @@
 import gc
 import inspect
+import sys
 import unittest
 
 import numpy as np
@@ -332,6 +333,86 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.two_leading_integer_full_slice_contract(torch),
             self.two_leading_integer_full_slice_contract(reference_torch),
+        )
+
+    def extreme_empty_two_integer_full_slice_contract(self, module):
+        source = module.zeros(
+            (sys.maxsize, 1, 0, 3), dtype=module.float32
+        )
+        views = []
+        for first_index in (sys.maxsize - 1, -1):
+            selected = source[first_index, 0, :]
+            direct = source[first_index, 0]
+            views.append(
+                (
+                    tuple(selected.shape),
+                    selected.stride(),
+                    selected.storage_offset(),
+                    selected.data_ptr(),
+                    selected.is_set_to(direct),
+                )
+            )
+
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        first = IndexValue(sys.maxsize - 1)
+        second = IndexValue(1)
+        try:
+            source[first, second, :]
+        except Exception as error:
+            bounds_error = type(error).__name__, str(error)
+        else:
+            self.fail("out-of-bounds extreme empty index unexpectedly succeeded")
+
+        try:
+            source[sys.maxsize // 2, 0, :]
+        except Exception as error:
+            negative_offset_error = type(error).__name__, str(error)
+        else:
+            self.fail("wrapped-negative storage offset unexpectedly succeeded")
+
+        tracked = module.zeros(
+            (sys.maxsize, 1, 0, 3),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        selected = tracked[sys.maxsize - 1, 0, :]
+        selected_metadata = (
+            tuple(selected.shape),
+            selected.stride(),
+            selected.storage_offset(),
+            selected.requires_grad,
+            selected.is_leaf,
+            selected.output_nr,
+        )
+        selected.sum().backward()
+        gradient_metadata = (
+            tuple(tracked.grad.shape),
+            tracked.grad.stride(),
+            tracked.grad.storage_offset(),
+            tracked.grad.numel(),
+            tracked.grad.data_ptr(),
+        )
+        return (
+            tuple(views),
+            bounds_error,
+            (first.calls, second.calls),
+            negative_offset_error,
+            selected_metadata,
+            gradient_metadata,
+        )
+
+    def test_extreme_empty_two_integer_full_slice_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.extreme_empty_two_integer_full_slice_contract(torch),
+            self.extreme_empty_two_integer_full_slice_contract(reference_torch),
         )
 
     def scalar_error_contract(self, module, index):

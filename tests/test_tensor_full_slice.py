@@ -1,5 +1,6 @@
 import gc
 import inspect
+import sys
 import types
 import unittest
 
@@ -247,6 +248,44 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                 )
         self.assertEqual(dynamic_first.calls, 1)
         self.assertEqual(dynamic_second.calls, 1)
+
+    def test_two_leading_integer_full_slice_wraps_extreme_empty_offsets(self):
+        source = torch.zeros((sys.maxsize, 1, 0, 3))
+        for first_index in (sys.maxsize - 1, -1):
+            with self.subTest(first_index=first_index):
+                selected = source[first_index, 0, :]
+                self.assert_same_view(selected, source[first_index, 0])
+                self.assertEqual(selected.shape, (0, 3))
+                self.assertEqual(selected.stride(), (3, 1))
+                self.assertEqual(selected.storage_offset(), sys.maxsize - 5)
+
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        first = IndexValue(sys.maxsize - 1)
+        second = IndexValue(1)
+        with self.assertRaisesRegex(
+            IndexError, "index 1 is out of bounds for dimension 1 with size 1"
+        ):
+            source[first, second, :]
+        self.assertEqual((first.calls, second.calls), (1, 1))
+
+        tracked = torch.zeros((sys.maxsize, 1, 0, 3), requires_grad=True)
+        selected = tracked[sys.maxsize - 1, 0, :]
+        self.assertTrue(selected.requires_grad)
+        self.assertFalse(selected.is_leaf)
+        self.assertEqual(selected.storage_offset(), sys.maxsize - 5)
+        selected.sum().backward()
+        self.assertEqual(tracked.grad.shape, tracked.shape)
+        self.assertEqual(tracked.grad.stride(), tracked.stride())
+        self.assertEqual(tracked.grad.storage_offset(), 0)
+        self.assertEqual(tracked.grad.numel(), 0)
 
     def test_scalar_full_slice_raises_the_exact_pytorch_error(self):
         with self.assertRaises(IndexError) as raised:
