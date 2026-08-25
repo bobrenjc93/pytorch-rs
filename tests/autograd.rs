@@ -1285,6 +1285,101 @@ fn tanh_differentiates_owned_matrices_with_weighting_accumulation_and_graph_free
 }
 
 #[test]
+fn tanh_differentiates_owned_rank_three_tensors_with_singletons_and_empty_dimensions() {
+    let input = TANH_AUTOGRAD_INPUT_BITS.map(f32::from_bits).to_vec();
+    let weights =
+        Tensor::from_vec(vec![1.0, -2.0, 0.5, -0.25, 3.0, -4.0, 5.0, -6.0], [2, 1, 4]).unwrap();
+    let leaf = Tensor::from_vec(input.clone(), [2, 1, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let output = leaf.tanh().unwrap();
+
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
+    assert_eq!(output.shape(), [2, 1, 4]);
+    assert_eq!(output.stride(), [4, 4, 1]);
+    assert_eq!(output.storage_offset(), 0);
+    assert!(!output.shares_storage_with(&leaf));
+    assert_eq!(
+        output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        TANH_AUTOGRAD_OUTPUT_BITS
+    );
+
+    let loss = output.mul(&weights).unwrap().sum();
+    loss.backward().unwrap();
+    let gradient = leaf.grad().unwrap().unwrap();
+    assert_eq!(gradient.shape(), [2, 1, 4]);
+    assert_eq!(gradient.stride(), [4, 4, 1]);
+    assert_eq!(
+        gradient
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        TANH_AUTOGRAD_GRADIENT_BITS
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+    assert_eq!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        TANH_AUTOGRAD_GRADIENT_BITS
+    );
+
+    let accumulated = Tensor::from_vec(input, [2, 1, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    for _ in 0..2 {
+        accumulated
+            .tanh()
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+    }
+    assert_eq!(
+        accumulated
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        TANH_AUTOGRAD_ACCUMULATED_GRADIENT_BITS
+    );
+
+    for (shape, expected_stride) in [
+        ([0, 1, 4], [4, 4, 1]),
+        ([2, 0, 4], [4, 4, 1]),
+        ([2, 1, 0], [1, 1, 1]),
+        ([1, 0, 1], [1, 1, 1]),
+    ] {
+        let empty = Tensor::zeros(shape).unwrap().with_requires_grad(true);
+        let empty_output = empty.tanh().unwrap();
+        assert!(empty_output.requires_grad());
+        assert!(!empty_output.is_leaf());
+        assert_eq!(empty_output.shape(), shape);
+        assert_eq!(empty_output.stride(), expected_stride);
+        assert_eq!(empty_output.storage_offset(), 0);
+        assert!(!empty_output.shares_storage_with(&empty));
+        let empty_loss = empty_output.sum();
+        empty_loss.backward().unwrap();
+        let empty_gradient = empty.grad().unwrap().unwrap();
+        assert_eq!(empty_gradient.shape(), shape);
+        assert_eq!(empty_gradient.stride(), expected_stride);
+        assert!(values(&empty_gradient).is_empty());
+        assert_eq!(empty_loss.backward(), Err(TensorError::BackwardGraphFreed));
+    }
+}
+
+#[test]
 fn tanh_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
     let composed = Tensor::from_vec(vec![0.5], [])
         .unwrap()
@@ -1329,7 +1424,7 @@ fn tanh_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
 }
 
 #[test]
-fn tanh_rejects_nonfinite_and_rank_three_owned_leaves_before_graph_mutation() {
+fn tanh_rejects_nonfinite_and_rank_four_owned_leaves_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported { operation: "tanh" };
 
     for bits in [
@@ -1364,15 +1459,23 @@ fn tanh_rejects_nonfinite_and_rank_three_owned_leaves_before_graph_mutation() {
         assert!(matrix.grad().unwrap().is_none());
         matrix.sum().backward().unwrap();
         assert_eq!(values(&matrix.grad().unwrap().unwrap()), [1.0, 1.0]);
+
+        let rank_three = Tensor::from_vec(vec![0.5, f32::from_bits(bits)], [1, 1, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(rank_three.tanh(), Err(unsupported.clone()));
+        assert!(rank_three.grad().unwrap().is_none());
+        rank_three.sum().backward().unwrap();
+        assert_eq!(values(&rank_three.grad().unwrap().unwrap()), [1.0, 1.0]);
     }
 
-    let rank_three = Tensor::from_vec(vec![0.5, -1.0], [1, 1, 2])
+    let rank_four = Tensor::from_vec(vec![0.5, -1.0], [1, 1, 1, 2])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(rank_three.tanh(), Err(unsupported.clone()));
-    assert!(rank_three.grad().unwrap().is_none());
-    rank_three.sum().backward().unwrap();
-    assert_eq!(values(&rank_three.grad().unwrap().unwrap()), [1.0, 1.0]);
+    assert_eq!(rank_four.tanh(), Err(unsupported.clone()));
+    assert!(rank_four.grad().unwrap().is_none());
+    rank_four.sum().backward().unwrap();
+    assert_eq!(values(&rank_four.grad().unwrap().unwrap()), [1.0, 1.0]);
 }
 
 #[test]
@@ -1418,7 +1521,21 @@ fn tanh_rejects_tracked_views_and_nonleaves_before_graph_or_layout_mutation() {
         [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
     );
 
-    let nonleaf_base = Tensor::from_vec(vec![0.5, -0.5], [1, 2])
+    let rank_three_view_base = Tensor::from_vec(vec![0.5, -1.0, 2.0, -3.0], [2, 1, 1, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let rank_three_view = rank_three_view_base.index([0]).unwrap();
+    assert!(rank_three_view.requires_grad());
+    assert!(!rank_three_view.is_leaf());
+    assert_eq!(rank_three_view.shape(), [1, 1, 2]);
+    assert_eq!(rank_three_view.tanh(), Err(unsupported.clone()));
+    rank_three_view.sum().backward().unwrap();
+    assert_eq!(
+        values(&rank_three_view_base.grad().unwrap().unwrap()),
+        [1.0, 1.0, 0.0, 0.0]
+    );
+
+    let nonleaf_base = Tensor::from_vec(vec![0.5, -0.5], [1, 1, 2])
         .unwrap()
         .with_requires_grad(true);
     let nonleaf = nonleaf_base.sin().unwrap();
@@ -1438,6 +1555,15 @@ fn tanh_rejects_tracked_views_and_nonleaves_before_graph_or_layout_mutation() {
     assert_eq!(no_grad_view.shape(), [2, 2]);
     assert_eq!(no_grad_view.tanh(), Err(unsupported.clone()));
 
+    let no_grad_rank_three_view = {
+        let _guard = no_grad();
+        rank_three_view_base.index([0]).unwrap()
+    };
+    assert!(no_grad_rank_three_view.requires_grad());
+    assert!(no_grad_rank_three_view.is_leaf());
+    assert_eq!(no_grad_rank_three_view.shape(), [1, 1, 2]);
+    assert_eq!(no_grad_rank_three_view.tanh(), Err(unsupported.clone()));
+
     let empty_view_base = Tensor::zeros([1, 0]).unwrap().with_requires_grad(true);
     let empty_view = {
         let _guard = no_grad();
@@ -1450,7 +1576,7 @@ fn tanh_rejects_tracked_views_and_nonleaves_before_graph_or_layout_mutation() {
 
     let extreme = Tensor::zeros([0])
         .unwrap()
-        .reshape([0, i64::MAX, 3])
+        .reshape([0, 1, i64::MAX, 3])
         .unwrap()
         .with_requires_grad(true);
     assert_eq!(extreme.tanh(), Err(unsupported));

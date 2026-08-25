@@ -13,6 +13,7 @@ import torch_rs.nn.functional as functional
 
 if __package__:
     from .test_tanh import (
+        AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
         AUTOGRAD_GRADIENT_BITS,
         AUTOGRAD_INPUT_BITS,
         AUTOGRAD_OUTPUT_BITS,
@@ -20,6 +21,7 @@ if __package__:
     )
 else:
     from test_tanh import (
+        AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
         AUTOGRAD_GRADIENT_BITS,
         AUTOGRAD_INPUT_BITS,
         AUTOGRAD_OUTPUT_BITS,
@@ -191,7 +193,7 @@ class FunctionalTanhTests(unittest.TestCase):
         self.assertEqual(args, (source,))
         self.assertIsNone(kwargs)
 
-    def test_rank_two_or_lower_autograd_preserves_unsupported_boundaries(self):
+    def test_rank_three_or_lower_autograd_preserves_unsupported_boundaries(self):
         scalar = torch.tensor(0.5, requires_grad=True)
         scalar_output = functional.tanh(input=scalar)
         self.assertTrue(scalar_output.requires_grad)
@@ -238,6 +240,50 @@ class FunctionalTanhTests(unittest.TestCase):
             self.tensor_bits(matrix.grad), AUTOGRAD_GRADIENT_BITS
         )
 
+        rank_three_values = (
+            AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 1, 4).tolist()
+        )
+        rank_three_weights = torch.tensor(
+            AUTOGRAD_WEIGHTS.reshape(2, 1, 4).tolist()
+        )
+        rank_three = torch.tensor(rank_three_values, requires_grad=True)
+        rank_three_output = functional.tanh(input=rank_three)
+        self.assertTrue(rank_three_output.requires_grad)
+        self.assertFalse(rank_three_output.is_leaf)
+        self.assertEqual(rank_three_output.shape, (2, 1, 4))
+        self.assertEqual(rank_three_output.stride(), (4, 4, 1))
+        self.assertEqual(rank_three_output.storage_offset(), 0)
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                rank_three_output
+            ),
+            ", grad_fn=<TanhBackward0>",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(rank_three_output), AUTOGRAD_OUTPUT_BITS
+        )
+        rank_three_loss = (rank_three_output * rank_three_weights).sum()
+        rank_three_loss.backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(rank_three.grad), AUTOGRAD_GRADIENT_BITS
+        )
+        gradient_before_repeated_backward = self.tensor_bits(rank_three.grad).copy()
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            rank_three_loss.backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(rank_three.grad), gradient_before_repeated_backward
+        )
+
+        accumulated = torch.tensor(rank_three_values, requires_grad=True)
+        for _ in range(2):
+            (functional.tanh(accumulated) * rank_three_weights).sum().backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(accumulated.grad),
+            AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        )
+
         empty = torch.tensor([], requires_grad=True)
         empty_output = functional.tanh(empty)
         self.assertTrue(empty_output.requires_grad)
@@ -254,19 +300,28 @@ class FunctionalTanhTests(unittest.TestCase):
             ((0, 0), (1, 1)),
             ((0, 3), (3, 1)),
             ((2, 0), (1, 1)),
+            ((0, 1, 4), (4, 4, 1)),
+            ((2, 0, 4), (4, 4, 1)),
+            ((2, 1, 0), (1, 1, 1)),
+            ((1, 0, 1), (1, 1, 1)),
         ):
-            with self.subTest(empty_matrix_shape=shape):
-                empty_matrix = torch.zeros(shape, requires_grad=True)
-                empty_matrix_output = functional.tanh(empty_matrix)
-                self.assertTrue(empty_matrix_output.requires_grad)
-                self.assertFalse(empty_matrix_output.is_leaf)
-                self.assertEqual(empty_matrix_output.shape, shape)
-                self.assertEqual(empty_matrix_output.stride(), expected_stride)
-                empty_matrix_output.sum().backward()
-                self.assertEqual(empty_matrix.grad.shape, shape)
-                self.assertEqual(empty_matrix.grad.stride(), expected_stride)
+            with self.subTest(empty_shape=shape):
+                empty_tensor = torch.zeros(shape, requires_grad=True)
+                empty_output = functional.tanh(empty_tensor)
+                self.assertTrue(empty_output.requires_grad)
+                self.assertFalse(empty_output.is_leaf)
+                self.assertEqual(empty_output.shape, shape)
+                self.assertEqual(empty_output.stride(), expected_stride)
+                empty_loss = empty_output.sum()
+                empty_loss.backward()
+                self.assertEqual(empty_tensor.grad.shape, shape)
+                self.assertEqual(empty_tensor.grad.stride(), expected_stride)
+                with self.assertRaisesRegex(
+                    RuntimeError, "backward through the graph a second time"
+                ):
+                    empty_loss.backward()
 
-        higher_order = torch.tensor([[0.25, -0.25]], requires_grad=True)
+        higher_order = torch.tensor([[[0.25, -0.25]]], requires_grad=True)
         higher_order_loss = functional.tanh(higher_order).sum()
         with self.assertRaisesRegex(
             NotImplementedError,
@@ -277,13 +332,49 @@ class FunctionalTanhTests(unittest.TestCase):
         higher_order_loss.backward()
         self.assertIsNotNone(higher_order.grad)
 
-        rank_three = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
+        rank_four = torch.tensor([[[[0.5, -1.0]]]], requires_grad=True)
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tanh\(\): autograd recording is not supported$",
         ):
-            functional.tanh(rank_three)
-        self.assertIsNone(rank_three.grad)
+            functional.tanh(rank_four)
+        self.assertIsNone(rank_four.grad)
+        rank_four.sum().backward()
+        self.assertEqual(rank_four.grad.tolist(), [[[[1.0, 1.0]]]])
+
+        nonfinite = torch.tensor([[[0.5, float("inf")]]], requires_grad=True)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^tanh\(\): autograd recording is not supported$",
+        ):
+            functional.tanh(nonfinite)
+        self.assertIsNone(nonfinite.grad)
+
+        rank_three_view_base = torch.tensor(
+            [[[[0.5, -1.0]]], [[[2.0, -3.0]]]], requires_grad=True
+        )
+        rank_three_view = rank_three_view_base[0]
+        self.assertEqual(rank_three_view.shape, (1, 1, 2))
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^tanh\(\): autograd recording is not supported$",
+        ):
+            functional.tanh(rank_three_view)
+        rank_three_view.sum().backward()
+        self.assertEqual(
+            rank_three_view_base.grad.tolist(),
+            [[[[1.0, 1.0]]], [[[0.0, 0.0]]]],
+        )
+
+        nonleaf_base = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
+        nonleaf = nonleaf_base.sin()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^tanh\(\): autograd recording is not supported$",
+        ):
+            functional.tanh(nonleaf)
+        nonleaf.sum().backward()
+        self.assertIsNotNone(nonleaf_base.grad)
 
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
