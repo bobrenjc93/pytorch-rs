@@ -6113,6 +6113,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:910",
+      "recordedAt": "2026-08-25T07:59:56.423Z",
+      "label": "PR #910",
+      "kind": "leaf",
+      "prNumber": 910,
+      "title": "Accept a trailing full slice after one leading integer index",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 91.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 74,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
