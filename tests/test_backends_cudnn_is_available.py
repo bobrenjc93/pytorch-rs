@@ -13,7 +13,8 @@ from unittest import mock
 import torch_rs as torch
 
 
-FUNCTION_DOC = "Return a bool indicating if CUDNN is currently available."
+IS_AVAILABLE_DOC = "Return a bool indicating if CUDNN is currently available."
+VERSION_DOC = "Return the version of cuDNN."
 
 
 def fresh_cudnn_module():
@@ -27,11 +28,20 @@ def fresh_cudnn_module():
 
 
 class CudnnIsAvailableTests(unittest.TestCase):
-    def test_returns_exact_false_native_build_metadata_without_runtime_probes(self):
-        function = torch.backends.cudnn.is_available
-        self.assertEqual(function.__code__.co_names, ("torch", "_C", "_has_cudnn"))
-        self.assertEqual(function.__code__.co_freevars, ())
-        self.assertEqual(function.__code__.co_cellvars, ())
+    def test_returns_cpu_build_metadata_without_runtime_probes(self):
+        cudnn = torch.backends.cudnn
+        is_available = cudnn.is_available
+        version = cudnn.version
+        self.assertEqual(
+            is_available.__code__.co_names,
+            ("torch", "_C", "_has_cudnn"),
+        )
+        self.assertEqual(is_available.__code__.co_freevars, ())
+        self.assertEqual(is_available.__code__.co_cellvars, ())
+        self.assertEqual(version.__code__.co_names, ("_init", "__cudnn_version"))
+        self.assertEqual(version.__code__.co_freevars, ())
+        self.assertEqual(version.__code__.co_cellvars, ())
+        self.assertEqual(cudnn._init.__code__.co_names, ("torch", "_C", "_has_cudnn"))
 
         environments = (
             {},
@@ -47,10 +57,12 @@ class CudnnIsAvailableTests(unittest.TestCase):
         for environment in environments:
             with self.subTest(environment=environment):
                 with mock.patch.dict(os.environ, environment, clear=True):
-                    result = function()
-                    self.assertIs(type(result), bool)
-                    self.assertIs(result, False)
-                    self.assertIs(result, torch._C._has_cudnn)
+                    availability = is_available()
+                    self.assertIs(type(availability), bool)
+                    self.assertIs(availability, False)
+                    self.assertIs(availability, torch._C._has_cudnn)
+                    self.assertIs(cudnn._init(), torch._C._has_cudnn)
+                    self.assertIs(version(), None)
 
         self.assertFalse(hasattr(torch, "_has_cudnn"))
         self.assertNotIn("_has_cudnn", torch.__all__)
@@ -58,7 +70,8 @@ class CudnnIsAvailableTests(unittest.TestCase):
 
     def test_signature_documentation_and_module_identity_match_pytorch_2_13(self):
         cudnn = importlib.import_module("torch_rs.backends.cudnn")
-        function = cudnn.is_available
+        is_available = cudnn.is_available
+        version = cudnn.version
 
         self.assertIs(torch.backends.cudnn, cudnn)
         self.assertIs(sys.modules["torch_rs.backends.cudnn"], cudnn)
@@ -74,26 +87,35 @@ class CudnnIsAvailableTests(unittest.TestCase):
         self.assertIs(type(cudnn.m), types.ModuleType)
         self.assertIsNot(cudnn.m, cudnn)
         self.assertEqual(cudnn.m.__name__, cudnn.__name__)
-        self.assertIs(function, cudnn.m.is_available)
+        self.assertIs(is_available, cudnn.m.is_available)
+        self.assertIs(version, cudnn.m.version)
         self.assertIs(cudnn.torch, torch)
 
-        self.assertIs(type(function), types.FunctionType)
-        self.assertEqual(str(inspect.signature(function)), "()")
-        self.assertEqual(inspect.get_annotations(function), {})
-        self.assertEqual(function.__name__, "is_available")
-        self.assertEqual(function.__qualname__, "is_available")
-        self.assertEqual(function.__module__, "torch_rs.backends.cudnn")
-        self.assertIs(inspect.getmodule(function), cudnn)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
-        self.assertIsNone(function.__defaults__)
-        self.assertIsNone(function.__kwdefaults__)
-        self.assertEqual(function.__dict__, {})
-        self.assertFalse(hasattr(function, "__text_signature__"))
+        for function, name, doc in (
+            (is_available, "is_available", IS_AVAILABLE_DOC),
+            (version, "version", VERSION_DOC),
+        ):
+            with self.subTest(function=name):
+                self.assertIs(type(function), types.FunctionType)
+                self.assertEqual(str(inspect.signature(function)), "()")
+                self.assertEqual(inspect.get_annotations(function), {})
+                self.assertEqual(function.__name__, name)
+                self.assertEqual(function.__qualname__, name)
+                self.assertEqual(function.__module__, "torch_rs.backends.cudnn")
+                self.assertIs(inspect.getmodule(function), cudnn)
+                self.assertEqual(function.__doc__, doc)
+                self.assertIsNone(function.__defaults__)
+                self.assertIsNone(function.__kwdefaults__)
+                self.assertEqual(function.__dict__, {})
+                self.assertFalse(hasattr(function, "__text_signature__"))
 
     def test_imports_wildcards_copying_and_pickling_are_canonical(self):
         backends = importlib.import_module("torch_rs.backends")
         cudnn = importlib.import_module("torch_rs.backends.cudnn")
-        function = cudnn.is_available
+        functions = {
+            "is_available": cudnn.is_available,
+            "version": cudnn.version,
+        }
 
         self.assertIs(torch.backends, backends)
         self.assertIs(backends.cudnn, cudnn)
@@ -104,17 +126,21 @@ class CudnnIsAvailableTests(unittest.TestCase):
 
         package_import = {}
         backend_import = {}
-        function_import = {}
+        function_imports = {}
         parent_wildcard = {}
         child_wildcard = {}
         exec("from torch_rs import backends", package_import)
         exec("from torch_rs.backends import cudnn", backend_import)
-        exec("from torch_rs.backends.cudnn import is_available", function_import)
+        for name in functions:
+            namespace = {}
+            exec(f"from torch_rs.backends.cudnn import {name}", namespace)
+            function_imports[name] = namespace[name]
         exec("from torch_rs.backends import *", parent_wildcard)
         exec("from torch_rs.backends.cudnn import *", child_wildcard)
         self.assertIs(package_import["backends"], backends)
         self.assertIs(backend_import["cudnn"], cudnn)
-        self.assertIs(function_import["is_available"], function)
+        for name, function in functions.items():
+            self.assertIs(function_imports[name], function)
         self.assertIs(parent_wildcard["cudnn"], cudnn)
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
@@ -129,24 +155,28 @@ class CudnnIsAvailableTests(unittest.TestCase):
         self.assertNotIn("backends", top_level_wildcard)
         self.assertNotIn("cudnn", top_level_wildcard)
 
-        self.assertIs(copy.copy(function), function)
-        self.assertIs(copy.deepcopy(function), function)
+        for name, function in functions.items():
+            with self.subTest(function=name):
+                self.assertIs(copy.copy(function), function)
+                self.assertIs(copy.deepcopy(function), function)
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                    payload = pickle.dumps(function, protocol=protocol)
+                    self.assertIn(b"torch_rs.backends.cudnn", payload)
+                    self.assertIs(pickle.loads(payload), function)
         for copier in (copy.copy, copy.deepcopy):
             with self.assertRaisesRegex(
                 TypeError,
                 "^cannot pickle 'CudnnModule' object$",
             ):
                 copier(cudnn)
-        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-            with self.subTest(protocol=protocol):
-                payload = pickle.dumps(function, protocol=protocol)
-                self.assertIn(b"torch_rs.backends.cudnn", payload)
-                self.assertIs(pickle.loads(payload), function)
 
     def test_reload_matches_pytorch_module_replacement_behavior(self):
         backends = torch.backends
         cudnn = backends.cudnn
-        old_function = cudnn.is_available
+        old_functions = {
+            "is_available": cudnn.is_available,
+            "version": cudnn.version,
+        }
         namespace = cudnn.__dict__
 
         try:
@@ -157,55 +187,61 @@ class CudnnIsAvailableTests(unittest.TestCase):
             self.assertIs(backends.cudnn, cudnn)
             self.assertIs(sys.modules[cudnn.__name__], reloaded)
             self.assertIs(reloaded.m, cudnn)
-            self.assertIsNot(cudnn.is_available, old_function)
-            self.assertIs(reloaded.is_available, cudnn.is_available)
+            for name, old_function in old_functions.items():
+                new_function = getattr(cudnn, name)
+                self.assertIsNot(new_function, old_function)
+                self.assertIs(getattr(reloaded, name), new_function)
+                self.assertIs(copy.copy(new_function), new_function)
+                self.assertIs(copy.deepcopy(new_function), new_function)
+                self.assertIs(
+                    pickle.loads(pickle.dumps(new_function)),
+                    new_function,
+                )
+                with self.assertRaises(pickle.PicklingError) as raised:
+                    pickle.dumps(old_function)
+                message = re.sub(r"0x[0-9a-fA-F]+", "0x...", str(raised.exception))
+                self.assertEqual(
+                    message,
+                    f"Can't pickle <function {name} at 0x...>: "
+                    "it's not the same object as "
+                    f"torch_rs.backends.cudnn.{name}",
+                )
             self.assertIs(cudnn.is_available(), False)
-            self.assertIs(copy.copy(cudnn.is_available), cudnn.is_available)
-            self.assertIs(copy.deepcopy(cudnn.is_available), cudnn.is_available)
-            self.assertIs(
-                pickle.loads(pickle.dumps(cudnn.is_available)),
-                cudnn.is_available,
-            )
-            with self.assertRaises(pickle.PicklingError) as raised:
-                pickle.dumps(old_function)
-            message = re.sub(r"0x[0-9a-fA-F]+", "0x...", str(raised.exception))
-            self.assertEqual(
-                message,
-                "Can't pickle <function is_available at 0x...>: "
-                "it's not the same object as torch_rs.backends.cudnn.is_available",
-            )
+            self.assertIs(cudnn.version(), None)
         finally:
             fresh_cudnn_module()
 
     def test_rejects_arguments_with_pytorch_2_13_errors(self):
-        function = torch.backends.cudnn.is_available
-        cases = (
-            (
-                lambda: function(None),
-                "is_available() takes 0 positional arguments but 1 was given",
-            ),
-            (
-                lambda: function(None, None),
-                "is_available() takes 0 positional arguments but 2 were given",
-            ),
-            (
-                lambda: function(enabled=True),
-                "is_available() got an unexpected keyword argument 'enabled'",
-            ),
-            (
-                lambda: function(None, enabled=True),
-                "is_available() got an unexpected keyword argument 'enabled'",
-            ),
-        )
-        for call, message in cases:
-            with self.subTest(message=message):
-                with self.assertRaises(TypeError) as raised:
-                    call()
-                self.assertEqual(str(raised.exception), message)
-                self.assertEqual(raised.exception.args, (message,))
+        for name in ("is_available", "version"):
+            function = getattr(torch.backends.cudnn, name)
+            cases = (
+                ((None,), {}, f"{name}() takes 0 positional arguments but 1 was given"),
+                (
+                    (None, None),
+                    {},
+                    f"{name}() takes 0 positional arguments but 2 were given",
+                ),
+                (
+                    (),
+                    {"enabled": True},
+                    f"{name}() got an unexpected keyword argument 'enabled'",
+                ),
+                (
+                    (None,),
+                    {"enabled": True},
+                    f"{name}() got an unexpected keyword argument 'enabled'",
+                ),
+            )
+            for args, kwargs, message in cases:
+                with self.subTest(function=name, args=args, kwargs=kwargs):
+                    with self.assertRaises(TypeError) as raised:
+                        function(*args, **kwargs)
+                    self.assertEqual(str(raised.exception), message)
+                    self.assertEqual(raised.exception.args, (message,))
 
-    def test_version_configuration_execution_and_cuda_tensors_remain_unsupported(self):
+    def test_configuration_execution_and_cuda_tensors_remain_unsupported(self):
         cudnn = torch.backends.cudnn
+        self.assertIs(cudnn.version(), None)
         for name in (
             "CUDNN_TENSOR_DTYPES",
             "allow_tf32",
@@ -220,7 +256,6 @@ class CudnnIsAvailableTests(unittest.TestCase):
             "is_acceptable",
             "rnn",
             "set_flags",
-            "version",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cudnn, name))
@@ -266,15 +301,18 @@ os.environ.update(
 )
 import torch_rs as torch
 from torch_rs.backends import cudnn
-from torch_rs.backends.cudnn import is_available
+from torch_rs.backends.cudnn import is_available, version
 
 assert torch.backends.cudnn is cudnn
 assert cudnn.is_available is is_available
+assert cudnn.version is version
 assert is_available.__code__.co_names == ("torch", "_C", "_has_cudnn")
+assert version.__code__.co_names == ("_init", "__cudnn_version")
+assert cudnn._init.__code__.co_names == ("torch", "_C", "_has_cudnn")
 assert is_available() is torch._C._has_cudnn is False
+assert version() is None
 assert not hasattr(torch, "_has_cudnn")
 assert not hasattr(torch, "cuda")
-assert not hasattr(cudnn, "version")
 assert not hasattr(cudnn, "flags")
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
