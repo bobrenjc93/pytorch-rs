@@ -3681,8 +3681,23 @@ fn integer_indexing_empty_dimensions_preserves_offsets_without_storage_access() 
 }
 
 #[test]
-fn integer_indexing_uses_checked_offset_arithmetic() {
+fn integer_indexing_uses_pytorch_offset_arithmetic() {
     let maximum = usize::try_from(i64::MAX).unwrap();
+    let wrapped = Tensor::zeros([maximum, 1, 0, 3]).unwrap();
+    let wrapped_view = wrapped.index([i64::MAX - 1, 0]).unwrap();
+    assert_eq!(wrapped_view.shape(), [0, 3]);
+    assert_eq!(wrapped_view.stride(), [3, 1]);
+    assert_eq!(wrapped_view.storage_offset(), maximum - 5);
+    assert!(wrapped_view.shares_storage_with(&wrapped));
+    assert_eq!(
+        wrapped.index([i64::MAX - 1, 1]),
+        Err(TensorError::IndexOutOfBounds {
+            index: 1,
+            dimension: 1,
+            size: 1,
+        })
+    );
+
     let empty = Tensor::zeros([maximum, 0]).unwrap();
     let once = empty.index_integer(i64::MAX - 1).unwrap();
     assert_eq!(once.storage_offset(), maximum - 1);

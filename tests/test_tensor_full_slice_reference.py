@@ -1,5 +1,6 @@
 import gc
 import inspect
+import sys
 import unittest
 
 import numpy as np
@@ -325,6 +326,67 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.two_leading_integers_full_slice_contract(torch),
             self.two_leading_integers_full_slice_contract(reference_torch),
+        )
+
+    def two_leading_integers_extreme_empty_contract(self, module):
+        maximum = sys.maxsize
+        source = module.zeros((maximum, 1, 0, 3), dtype=module.float32)
+        selected = source[maximum - 1, 0, :]
+        direct = source[maximum - 1, 0]
+        tracked_source = module.zeros(
+            (maximum, 1, 0, 3), dtype=module.float32, requires_grad=True
+        )
+        tracked = tracked_source[maximum - 1, 0, :]
+        tracked.sum().backward()
+
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        first = IndexValue(maximum - 1)
+        invalid_second = IndexValue(1)
+        try:
+            source[first, invalid_second, :]
+        except Exception as error:
+            later_index_error = type(error).__name__, str(error)
+        else:
+            self.fail("out-of-bounds second index unexpectedly succeeded")
+
+        return {
+            "shape": tuple(selected.shape),
+            "stride": selected.stride(),
+            "storage_offset": selected.storage_offset(),
+            "data_pointer": selected.data_ptr(),
+            "same_logical_view": selected.is_set_to(direct),
+            "same_data_pointer": selected.data_ptr() == direct.data_ptr(),
+            "tracked": (
+                tracked.requires_grad,
+                tracked.is_leaf,
+                tracked.output_nr,
+                tuple(tracked.shape),
+                tracked.stride(),
+                tracked.storage_offset(),
+                tuple(tracked_source.grad.shape),
+                tracked_source.grad.stride(),
+                tracked_source.grad.storage_offset(),
+            ),
+            "later_index_error": later_index_error,
+            "conversion_calls": (first.calls, invalid_second.calls),
+        }
+
+    @unittest.skipUnless(
+        sys.maxsize == (1 << 63) - 1,
+        "signed 64-bit offset wrapping requires a 64-bit Python build",
+    )
+    def test_two_leading_integers_extreme_empty_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.two_leading_integers_extreme_empty_contract(torch),
+            self.two_leading_integers_extreme_empty_contract(reference_torch),
         )
 
     def scalar_error_contract(self, module, index):

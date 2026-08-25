@@ -1,5 +1,6 @@
 import gc
 import inspect
+import sys
 import types
 import unittest
 
@@ -236,6 +237,48 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                 self.assert_same_view(source[first, second, :], source[normalized])
         self.assertEqual(dynamic_first.calls, 1)
         self.assertEqual(dynamic_second.calls, 1)
+
+    @unittest.skipUnless(
+        sys.maxsize == (1 << 63) - 1,
+        "signed 64-bit offset wrapping requires a 64-bit Python build",
+    )
+    def test_two_leading_integers_full_slice_preserves_extreme_empty_offsets(self):
+        maximum = sys.maxsize
+        source = torch.zeros((maximum, 1, 0, 3))
+        selected = source[maximum - 1, 0, :]
+        self.assert_same_view(selected, source[maximum - 1, 0])
+        self.assertEqual(selected.shape, (0, 3))
+        self.assertEqual(selected.stride(), (3, 1))
+        self.assertEqual(selected.storage_offset(), maximum - 5)
+        self.assertEqual(selected.data_ptr(), 0)
+
+        tracked_source = torch.zeros((maximum, 1, 0, 3), requires_grad=True)
+        tracked = tracked_source[maximum - 1, 0, :]
+        self.assertEqual(tracked.storage_offset(), maximum - 5)
+        self.assertTrue(tracked.requires_grad)
+        self.assertFalse(tracked.is_leaf)
+        tracked.sum().backward()
+        self.assertEqual(tracked_source.grad.shape, (maximum, 1, 0, 3))
+        self.assertEqual(tracked_source.grad.stride(), (3, 3, 3, 1))
+        self.assertEqual(tracked_source.grad.storage_offset(), 0)
+
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        first = IndexValue(maximum - 1)
+        invalid_second = IndexValue(1)
+        with self.assertRaisesRegex(
+            IndexError, "index 1 is out of bounds for dimension 1 with size 1"
+        ):
+            source[first, invalid_second, :]
+        self.assertEqual(first.calls, 1)
+        self.assertEqual(invalid_second.calls, 1)
 
     def test_scalar_full_slice_raises_the_exact_pytorch_error(self):
         with self.assertRaises(IndexError) as raised:
