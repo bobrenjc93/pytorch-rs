@@ -4486,16 +4486,18 @@ fn tensor(
 }
 
 #[pyfunction]
-#[pyo3(signature = (first, second, third=None, fourth=None))]
+#[pyo3(signature = (first, second, third=None, fourth=None, fifth=None))]
 fn _backward_leaf_roots(
     first: &PyTensor,
     second: &PyTensor,
     third: Option<&PyTensor>,
     fourth: Option<&PyTensor>,
+    fifth: Option<&PyTensor>,
 ) -> PyResult<()> {
     let mut roots = vec![first.inner(), second.inner()];
     roots.extend(third.map(PyTensor::inner));
     roots.extend(fourth.map(PyTensor::inner));
+    roots.extend(fifth.map(PyTensor::inner));
     CoreTensor::backward_leaf_roots(&roots).map_err(|error| tensor_error(&error))
 }
 
