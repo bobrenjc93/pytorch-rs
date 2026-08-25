@@ -166,7 +166,7 @@ class FunctionalMseLossTests(unittest.TestCase):
             "``size_average=None``",
             "``reduce=None``",
             "``weight=None``",
-            "native subtraction and square kernels",
+            "one native squared-difference pass",
             "fresh, independent tensor",
             "Broadcasting",
             "Tensor subclasses",
@@ -201,7 +201,7 @@ class FunctionalMseLossTests(unittest.TestCase):
         exec("from torch_rs.nn.functional import *", wildcard)
         self.assertIs(wildcard["mse_loss"], mse_loss)
 
-    def test_supported_forms_compose_subtraction_and_square(self):
+    def test_supported_forms_match_established_composition(self):
         for case, input, target in self.layout_cases():
             difference = input - target
             expected = difference.square()
@@ -272,23 +272,54 @@ class FunctionalMseLossTests(unittest.TestCase):
                     self.assertNotEqual(first.data_ptr(), target.data_ptr())
 
     def test_float32_edge_values_match_kernel_composition_bits(self):
-        input = torch.tensor(
+        input_bits = np.asarray(
             [
-                -0.0,
-                0.0,
-                1.0e-20,
-                -1.0e-20,
-                1.0,
-                -1.0,
-                1.0e10,
-                -1.0e10,
-                np.finfo(np.float32).max,
-                -np.finfo(np.float32).max,
-            ]
+                0x80000000,
+                0x00000000,
+                0x1E3CE508,
+                0x9E3CE508,
+                0x3F800000,
+                0xBF800000,
+                0x501502F9,
+                0xD01502F9,
+                0x7F7FFFFF,
+                0xFF7FFFFF,
+                0x7F800000,
+                0xFF800000,
+                0x7F812345,
+                0xFF812345,
+                0x7FC12345,
+                0xFFC54321,
+                0x00000001,
+                0x80000001,
+            ],
+            dtype=np.uint32,
         )
-        target = torch.tensor(
-            [0.0, -0.0, 0.0, 0.0, -1.0, 1.0, -1.0e10, 1.0e10, 0.0, 0.0]
+        target_bits = np.asarray(
+            [
+                0x00000000,
+                0x80000000,
+                0x00000000,
+                0x00000000,
+                0xBF800000,
+                0x3F800000,
+                0xD01502F9,
+                0x501502F9,
+                0x00000000,
+                0x00000000,
+                0x7F800000,
+                0xFF800000,
+                0xFF854321,
+                0x7FC6789A,
+                0x3F800000,
+                0xBF800000,
+                0x80000001,
+                0x00000001,
+            ],
+            dtype=np.uint32,
         )
+        input = torch.tensor(memoryview(input_bits.view(np.float32)))
+        target = torch.tensor(memoryview(target_bits.view(np.float32)))
         actual = functional.mse_loss(input, target, reduction="none")
         expected = (input - target).square()
         np.testing.assert_array_equal(

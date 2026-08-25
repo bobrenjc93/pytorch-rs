@@ -293,38 +293,60 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
         self.assert_matches(actual, expected, case="mixed singleton strides")
 
     def test_float32_edge_bits_match_pytorch_2_13(self):
-        input_values = [
-            -0.0,
-            0.0,
-            1.0e-20,
-            -1.0e-20,
-            1.0,
-            -1.0,
-            1.0e10,
-            -1.0e10,
-            np.finfo(np.float32).max,
-            -np.finfo(np.float32).max,
-        ]
-        target_values = [
-            0.0,
-            -0.0,
-            0.0,
-            0.0,
-            -1.0,
-            1.0,
-            -1.0e10,
-            1.0e10,
-            0.0,
-            0.0,
-        ]
+        input_bits = np.asarray(
+            [
+                0x80000000,
+                0x00000000,
+                0x1E3CE508,
+                0x9E3CE508,
+                0x3F800000,
+                0xBF800000,
+                0x501502F9,
+                0xD01502F9,
+                0x7F7FFFFF,
+                0xFF7FFFFF,
+                0x7F800000,
+                0xFF800000,
+                0x7F812345,
+                0xFF812345,
+                0x7FC12345,
+                0xFFC54321,
+                0x00000001,
+                0x80000001,
+            ],
+            dtype=np.uint32,
+        )
+        target_bits = np.asarray(
+            [
+                0x00000000,
+                0x80000000,
+                0x00000000,
+                0x00000000,
+                0xBF800000,
+                0x3F800000,
+                0xD01502F9,
+                0x501502F9,
+                0x00000000,
+                0x00000000,
+                0x7F800000,
+                0xFF800000,
+                0xFF854321,
+                0x7FC6789A,
+                0x3F800000,
+                0xBF800000,
+                0x80000001,
+                0x00000001,
+            ],
+            dtype=np.uint32,
+        )
         actual = functional.mse_loss(
-            self.tensor(torch, input_values),
-            self.tensor(torch, target_values),
+            torch.tensor(memoryview(input_bits.view(np.float32))),
+            torch.tensor(memoryview(target_bits.view(np.float32))),
             reduction="none",
         )
         expected = reference_functional.mse_loss(
-            self.tensor(reference_torch, input_values),
-            self.tensor(reference_torch, target_values),
+            reference_torch.tensor(memoryview(input_bits.view(np.float32))),
+            reference_torch.tensor(memoryview(target_bits.view(np.float32))),
             reduction="none",
         )
         self.assert_matches(actual, expected, case="float32 edges")
