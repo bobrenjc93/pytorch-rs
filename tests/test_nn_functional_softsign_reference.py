@@ -50,12 +50,24 @@ class FunctionalSoftsignReferenceTests(unittest.TestCase):
             .tolist(),
             dtype=module.float32,
         )
+        mixed_singleton = module.tensor(
+            np.linspace(-1.5, 1.5, 6, dtype=np.float32)
+            .reshape(3, 1, 2)
+            .tolist(),
+            dtype=module.float32,
+        ).permute(2, 1, 0)
         channels_last = module.tensor(
             np.linspace(-2.0, 2.0, 120, dtype=np.float32)
             .reshape(2, 3, 4, 5)
             .tolist(),
             dtype=module.float32,
         ).contiguous(memory_format=module.channels_last)
+        channels_last_3d = module.tensor(
+            np.linspace(-3.0, 3.0, 720, dtype=np.float32)
+            .reshape(2, 3, 4, 5, 6)
+            .tolist(),
+            dtype=module.float32,
+        ).contiguous(memory_format=module.channels_last_3d)
         special_bits = np.asarray(
             (
                 0x0000_0000,
@@ -84,13 +96,27 @@ class FunctionalSoftsignReferenceTests(unittest.TestCase):
         return (
             ("scalar", module.tensor(-0.0, dtype=module.float32)),
             (
-                "empty",
+                "empty offset",
                 module.zeros((2, 0, 3), dtype=module.float32)
                 .transpose(0, 2)[1],
             ),
+            (
+                "empty singleton trailing",
+                module.zeros((0, 1), dtype=module.float32),
+            ),
+            (
+                "empty singleton middle",
+                module.zeros((0, 1, 2), dtype=module.float32),
+            ),
+            (
+                "empty singleton surrounding",
+                module.zeros((1, 0, 1), dtype=module.float32),
+            ),
             ("offset", base[1]),
             ("noncontiguous", base.transpose(0, 2)[1]),
+            ("mixed singleton strides", mixed_singleton),
             ("channels_last", channels_last),
+            ("channels_last_3d", channels_last_3d),
             (
                 "numerical_edges",
                 module.tensor(memoryview(special_bits.view(np.float32))),

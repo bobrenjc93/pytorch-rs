@@ -51,17 +51,32 @@ class FunctionalSoftsignTests(unittest.TestCase):
             .reshape(2, 3, 4)
             .tolist()
         )
+        mixed_singleton = torch.tensor(
+            np.linspace(-1.5, 1.5, 6, dtype=np.float32)
+            .reshape(3, 1, 2)
+            .tolist()
+        ).permute(2, 1, 0)
         channels_last = torch.tensor(
             np.linspace(-2.0, 2.0, 120, dtype=np.float32)
             .reshape(2, 3, 4, 5)
             .tolist()
         ).contiguous(memory_format=torch.channels_last)
+        channels_last_3d = torch.tensor(
+            np.linspace(-3.0, 3.0, 720, dtype=np.float32)
+            .reshape(2, 3, 4, 5, 6)
+            .tolist()
+        ).contiguous(memory_format=torch.channels_last_3d)
         return (
             ("scalar", torch.tensor(-0.0)),
-            ("empty", torch.zeros((2, 0, 3)).transpose(0, 2)[1]),
+            ("empty offset", torch.zeros((2, 0, 3)).transpose(0, 2)[1]),
+            ("empty singleton trailing", torch.zeros((0, 1))),
+            ("empty singleton middle", torch.zeros((0, 1, 2))),
+            ("empty singleton surrounding", torch.zeros((1, 0, 1))),
             ("offset", base[1]),
             ("noncontiguous", base.transpose(0, 2)[1]),
+            ("mixed singleton strides", mixed_singleton),
             ("channels_last", channels_last),
+            ("channels_last_3d", channels_last_3d),
         )
 
     def assert_matches_composition(self, actual, expected, source, *, case):
@@ -247,7 +262,7 @@ class FunctionalSoftsignTests(unittest.TestCase):
         self.assertEqual(args, (source,))
         self.assertEqual(kwargs, {})
 
-    def test_active_autograd_is_rejected_before_composition(self):
+    def test_active_autograd_is_rejected_before_native_work(self):
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
         )
@@ -266,6 +281,19 @@ class FunctionalSoftsignTests(unittest.TestCase):
                 after = self.tensor_state(source)
                 self.assertEqual(after[:-1], before[:-1])
                 np.testing.assert_array_equal(after[-1], before[-1])
+
+        extreme = torch.zeros((0,), requires_grad=True).reshape(
+            (0, sys.maxsize, 3)
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^softsign\(\): autograd recording is not supported$",
+        ):
+            functional.softsign(extreme)
+
+        with torch.no_grad():
+            with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+                functional.softsign(extreme)
 
     def test_detached_and_no_grad_inputs_use_the_inference_path(self):
         leaf = torch.tensor(

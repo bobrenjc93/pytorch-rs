@@ -219,6 +219,15 @@ fn _nn_functional_dropout_tensor_autograd_suffix(input: &PyTensor) -> String {
     )
 }
 
+#[pyfunction]
+fn _nn_functional_softsign(input: &PyTensor) -> PyResult<PyTensor> {
+    input
+        .inner()
+        .softsign()
+        .map(PyTensor::new)
+        .map_err(|error| tensor_error(&error))
+}
+
 fn exact_linear_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyTensor>> {
     if !value.is_exact_instance_of::<PyTensor>() {
         return Err(PyTypeError::new_err(LINEAR_EXACT_TENSORS_ERROR));
@@ -450,6 +459,7 @@ pub(crate) fn add_nn_functional_bridges(module: &Bound<'_, PyModule>) -> PyResul
         wrap_pyfunction!(_nn_functional_dropout_tensor_autograd_suffix, module)?,
         wrap_pyfunction!(_nn_functional_linear, module)?,
         wrap_pyfunction!(_nn_functional_mse_loss, module)?,
+        wrap_pyfunction!(_nn_functional_softsign, module)?,
     ] {
         let name = function.getattr("__name__")?;
         module.add_function(function.clone())?;

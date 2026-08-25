@@ -2526,6 +2526,22 @@ impl Tensor {
         self.unary_map(absolute_value)
     }
 
+    /// Applies the softsign activation in one unary-layout pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn softsign(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported {
+                operation: "softsign",
+            });
+        }
+        self.unary_map(softsign_value)
+    }
+
     /// Divides every element by a scalar using IEEE 754 true division.
     ///
     /// # Errors
@@ -4852,6 +4868,11 @@ fn absolute_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() & !F32_SIGN_MASK)
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn softsign_value(value: f32) -> f32 {
+    value / (absolute_value(value) + 1.0)
+}
+
 fn relu_value(value: f32) -> f32 {
     // Only exact zeros bypass the established max path, so FTZ/DAZ cannot
     // classify a subnormal as zero and NaN behavior remains unchanged.
@@ -5064,6 +5085,50 @@ mod tests {
         assert_eq!(
             inputs.map(|bits| sqrt_value(f32::from_bits(bits)).to_bits()),
             expected
+        );
+    }
+
+    #[test]
+    fn softsign_matches_the_established_composition_in_one_unary_layout() {
+        let input = Tensor::from_vec(
+            [
+                0x8000_0000,
+                0x0000_0001,
+                0x7f7f_ffff,
+                0x7f80_0000,
+                0x7f81_2345,
+                0xffc5_4321,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [3, 1, 2],
+        )
+        .unwrap()
+        .permute_axes([2, 1, 0])
+        .unwrap();
+        let denominator = input.abs().unwrap().add_scalar(1.0).unwrap();
+        let expected = input.div(&denominator).unwrap();
+        let actual = input.softsign().unwrap();
+
+        assert_eq!(actual.shape(), input.shape());
+        assert_eq!(actual.stride(), expected.stride());
+        assert_eq!(actual.storage_offset(), 0);
+        assert!(!actual.shares_storage_with(&input));
+        assert!(
+            actual
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(expected.logical_values().map(f32::to_bits))
+        );
+
+        let tracked = Tensor::from_vec(vec![0.5], [])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(
+            tracked.softsign(),
+            Err(TensorError::AutogradRecordingUnsupported {
+                operation: "softsign"
+            })
         );
     }
 
@@ -6335,6 +6400,10 @@ mod tests {
         );
         assert_eq!(
             tensor.abs(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.softsign(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(

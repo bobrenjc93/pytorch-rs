@@ -12,6 +12,7 @@ from ..torch_rs import (
     _nn_functional_dropout,
     _nn_functional_linear,
     _nn_functional_mse_loss,
+    _nn_functional_softsign,
 )
 
 
@@ -191,6 +192,8 @@ def sigmoid(input):
 def _softsign_impl(input):
     if isinstance(input, Tensor) and torch.is_grad_enabled() and input.requires_grad:
         raise RuntimeError("softsign(): autograd recording is not supported")
+    if type(input) is Tensor:
+        return _nn_functional_softsign(input)
     return input / (input.abs() + 1)
 
 
