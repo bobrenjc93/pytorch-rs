@@ -43,6 +43,7 @@ static MT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
+const TENSOR_COPY_CONSTRUCTION_WARNING: &CStr = c"To copy construct from a tensor, it is recommended to use sourceTensor.detach().clone() or sourceTensor.detach().clone().requires_grad_(True), rather than torch.tensor(sourceTensor).";
 static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 
 // These are compile-time facts about the native Cargo build. Keep them native
@@ -4482,6 +4483,14 @@ fn tensor(
     let requires_grad = requires_grad.0;
     let dtype_was_explicit = dtype.is_some();
     let (dtype, device) = parse_metadata("tensor", dtype, device)?;
+    if data.is_exact_instance_of::<PyTensor>() {
+        return copy_construct_tensor(data, dtype, device, requires_grad);
+    }
+    if data.cast::<PyTensor>().is_ok() {
+        return Err(PyTypeError::new_err(
+            "tensor(): native Tensor subclasses are not supported",
+        ));
+    }
     let (flattened, shape) = if let Ok(scalar) = data.extract::<f32>() {
         (vec![scalar], Vec::new())
     } else if data.cast::<PyBytes>().is_ok() {
@@ -4502,6 +4511,44 @@ fn tensor(
         return Err(unsupported_tensor_data_error(data, dtype_was_explicit)?);
     };
     CoreTensor::from_vec_with_metadata(flattened, shape, dtype, device)
+        .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
+        .map_err(|error| tensor_error(&error))
+}
+
+fn copy_construct_tensor(
+    data: &Bound<'_, PyAny>,
+    dtype: DType,
+    device: Device,
+    requires_grad: bool,
+) -> PyResult<PyTensor> {
+    let source = data
+        .cast::<PyTensor>()
+        .expect("the tensor input type was checked before copy construction");
+    {
+        let source = source.try_borrow()?;
+        if source.inner.dtype() != dtype || source.inner.device() != device {
+            return Err(PyRuntimeError::new_err(
+                "tensor(): dtype or device conversion from a native Tensor is not supported",
+            ));
+        }
+    }
+
+    // Match torch.tensor(Tensor): warn before any copy allocation, sever the
+    // source graph, preserve the source's dense layout, and then create a new
+    // leaf according to the explicit requires_grad request.
+    PyErr::warn(
+        data.py(),
+        &data.py().get_type::<PyUserWarning>(),
+        TENSOR_COPY_CONSTRUCTION_WARNING,
+        1,
+    )?;
+    let source = source.try_borrow()?;
+    let detached = source
+        .inner
+        .detach()
+        .map_err(|error| tensor_error(&error))?;
+    detached
+        .try_clone()
         .map(|inner| PyTensor::new(inner.with_requires_grad(requires_grad)))
         .map_err(|error| tensor_error(&error))
 }
