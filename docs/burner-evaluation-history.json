@@ -6001,6 +6001,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:883",
+      "recordedAt": "2026-08-25T02:16:53.627Z",
+      "label": "PR #883",
+      "kind": "leaf",
+      "prNumber": 883,
+      "title": "Complete out-of-place fix alias semantics",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 90.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 73.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
