@@ -6369,6 +6369,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.9
       }
+    },
+    {
+      "key": "pr:979",
+      "recordedAt": "2026-08-25T21:59:58.270Z",
+      "label": "PR #979",
+      "kind": "leaf",
+      "prNumber": 979,
+      "title": "Accept a trailing full slice after three leading integer indices",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 93,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 75.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.9
+      }
     }
   ]
 }
