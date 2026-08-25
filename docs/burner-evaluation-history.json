@@ -6321,6 +6321,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.9
       }
+    },
+    {
+      "key": "pr:967",
+      "recordedAt": "2026-08-25T19:31:50.826Z",
+      "label": "PR #967",
+      "kind": "leaf",
+      "prNumber": 967,
+      "title": "Differentiate finite owned scalar non-leaf sigmoid inputs",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 92.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 75.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.9
+      }
     }
   ]
 }
