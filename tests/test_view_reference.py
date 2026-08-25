@@ -330,7 +330,7 @@ class TensorViewReferenceTests(unittest.TestCase):
                 self.assertEqual(actual[:-1], expected[:-1])
                 np.testing.assert_array_equal(actual[-1], expected[-1])
 
-    def two_view_observation(self, module, source, dimensions):
+    def positional_view_observation(self, module, source, dimensions):
         result = source.view(*dimensions)
         direct = source.reshape(tuple(result.shape))
         return (
@@ -386,10 +386,10 @@ class TensorViewReferenceTests(unittest.TestCase):
             expected_name, expected_source, expected_dimensions = expected_case
             self.assertEqual(case, expected_name)
             with self.subTest(case=case):
-                actual = self.two_view_observation(
+                actual = self.positional_view_observation(
                     torch, actual_source, actual_dimensions
                 )
-                expected = self.two_view_observation(
+                expected = self.positional_view_observation(
                     reference_torch, expected_source, expected_dimensions
                 )
                 self.assertEqual(actual[:-1], expected[:-1])
@@ -416,41 +416,131 @@ class TensorViewReferenceTests(unittest.TestCase):
                 self.fail(f"{module.__name__} accepted a nonintegral dimension")
         self.assertEqual(invalid_outcomes[0], invalid_outcomes[1])
 
+    def three_view_cases(self, module):
+        base = module.tensor(
+            np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist(),
+            dtype=module.float32,
+        )
+        return (
+            ("contiguous-inferred", base, (2, -1, 2)),
+            (
+                "contiguous-offset",
+                base[1],
+                (IntSubclass(2), np.int64(3), IndexDimension(2)),
+            ),
+            (
+                "empty-offset",
+                module.zeros((2, 0, 3), dtype=module.float32).transpose(0, 2)[1],
+                (1, 0, 2),
+            ),
+            (
+                "empty-same-shape",
+                module.zeros((0, 1), dtype=module.float32) + 1,
+                (0, 1, 1),
+            ),
+            (
+                "noncontiguous-offset-inferred",
+                base.transpose(0, 1)[1],
+                (2, 2, IndexDimension(-1)),
+            ),
+            (
+                "noncontiguous-same-shape",
+                base.transpose(0, 1),
+                (3, 2, 4),
+            ),
+        )
+
+    def test_three_positional_dimensions_match_pytorch_2_13(self):
+        actual_cases = self.three_view_cases(torch)
+        expected_cases = self.three_view_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases, expected_cases, strict=True
+        ):
+            case, actual_source, actual_dimensions = actual_case
+            expected_name, expected_source, expected_dimensions = expected_case
+            self.assertEqual(case, expected_name)
+            with self.subTest(case=case):
+                actual = self.positional_view_observation(
+                    torch, actual_source, actual_dimensions
+                )
+                expected = self.positional_view_observation(
+                    reference_torch, expected_source, expected_dimensions
+                )
+                self.assertEqual(actual[:-1], expected[:-1])
+                np.testing.assert_array_equal(actual[-1], expected[-1])
+
+        outcomes = []
+        for module in (torch, reference_torch):
+            first = StatefulIndexDimension((2, 1, 2))
+            second = StatefulIndexDimension((3,))
+            third = StatefulIndexDimension((4,))
+            result = module.zeros((24,), dtype=module.float32).view(
+                first, second, third
+            )
+            outcomes.append(
+                (
+                    tuple(result.shape),
+                    result.stride(),
+                    first.calls,
+                    second.calls,
+                    third.calls,
+                )
+            )
+        self.assertEqual(outcomes[0], outcomes[1])
+
+        invalid_outcomes = []
+        for module in (torch, reference_torch):
+            first = StatefulIndexDimension((2, 3.0))
+            try:
+                module.zeros((24,), dtype=module.float32).view(first, 3, 4)
+            except Exception as error:
+                invalid_outcomes.append((type(error), str(error), first.calls))
+            else:
+                self.fail(f"{module.__name__} accepted a nonintegral dimension")
+        self.assertEqual(invalid_outcomes[0], invalid_outcomes[1])
+
     def test_dual_sequence_index_overload_resolution_matches_pytorch_2_13(self):
         for dimension_type in (TupleIndexDimension, ListIndexDimension):
-            outcomes = []
-            for module in (torch, reference_torch):
-                source = module.zeros((6,), dtype=module.float32)
-                sequence = dimension_type((6,), 2)
-                result = source.view(sequence, 3)
-                outcomes.append(
-                    (
-                        tuple(result.shape),
-                        result.stride(),
-                        result.storage_offset(),
-                        result.data_ptr() == source.data_ptr(),
-                        sequence.calls,
+            for trailing_dimensions in ((3,), (3, 1)):
+                outcomes = []
+                for module in (torch, reference_torch):
+                    source = module.zeros((6,), dtype=module.float32)
+                    sequence = dimension_type((6,), 2)
+                    result = source.view(sequence, *trailing_dimensions)
+                    outcomes.append(
+                        (
+                            tuple(result.shape),
+                            result.stride(),
+                            result.storage_offset(),
+                            result.data_ptr() == source.data_ptr(),
+                            sequence.calls,
+                        )
                     )
-                )
-            with self.subTest(dimension_type=dimension_type.__name__):
-                self.assertEqual(outcomes[0], outcomes[1])
+                with self.subTest(
+                    dimension_type=dimension_type.__name__,
+                    trailing_dimensions=trailing_dimensions,
+                ):
+                    self.assertEqual(outcomes[0], outcomes[1])
 
-            fallback_outcomes = []
-            for module in (torch, reference_torch):
-                source = module.zeros((6,), dtype=module.float32)
-                sequence = dimension_type((2.0, 3), 2)
-                result = source.view(sequence, 3)
-                fallback_outcomes.append(
-                    (
-                        tuple(result.shape),
-                        result.stride(),
-                        result.storage_offset(),
-                        result.data_ptr() == source.data_ptr(),
-                        sequence.calls,
+                fallback_outcomes = []
+                for module in (torch, reference_torch):
+                    source = module.zeros((6,), dtype=module.float32)
+                    sequence = dimension_type((2.0, 3), 2)
+                    result = source.view(sequence, *trailing_dimensions)
+                    fallback_outcomes.append(
+                        (
+                            tuple(result.shape),
+                            result.stride(),
+                            result.storage_offset(),
+                            result.data_ptr() == source.data_ptr(),
+                            sequence.calls,
+                        )
                     )
-                )
-            with self.subTest(fallback_type=dimension_type.__name__):
-                self.assertEqual(fallback_outcomes[0], fallback_outcomes[1])
+                with self.subTest(
+                    fallback_type=dimension_type.__name__,
+                    trailing_dimensions=trailing_dimensions,
+                ):
+                    self.assertEqual(fallback_outcomes[0], fallback_outcomes[1])
 
     def test_inference_extreme_empty_and_view_errors_match_pytorch_2_13(self):
         actual_source = torch.tensor(
@@ -527,6 +617,10 @@ class TensorViewReferenceTests(unittest.TestCase):
                 lambda: expected_noncontiguous.view(6, 4),
             ),
             (
+                lambda: actual_noncontiguous.view(6, 2, 2),
+                lambda: expected_noncontiguous.view(6, 2, 2),
+            ),
+            (
                 lambda: actual_noncontiguous.view((6, 4)),
                 lambda: expected_noncontiguous.view((6, 4)),
             ),
@@ -535,6 +629,12 @@ class TensorViewReferenceTests(unittest.TestCase):
                 lambda: reference_torch.zeros(
                     (6,), dtype=reference_torch.float32
                 ).view(2, 2),
+            ),
+            (
+                lambda: torch.zeros((6,), dtype=torch.float32).view(2, 2, 2),
+                lambda: reference_torch.zeros(
+                    (6,), dtype=reference_torch.float32
+                ).view(2, 2, 2),
             ),
             (
                 lambda: torch.zeros((6,), dtype=torch.float32).view((2, 2)),
@@ -549,6 +649,12 @@ class TensorViewReferenceTests(unittest.TestCase):
                 ).view(-1, -1),
             ),
             (
+                lambda: torch.zeros((6,), dtype=torch.float32).view(-1, -1, 1),
+                lambda: reference_torch.zeros(
+                    (6,), dtype=reference_torch.float32
+                ).view(-1, -1, 1),
+            ),
+            (
                 lambda: torch.zeros((6,), dtype=torch.float32).view((-1, -1)),
                 lambda: reference_torch.zeros(
                     (6,), dtype=reference_torch.float32
@@ -561,6 +667,12 @@ class TensorViewReferenceTests(unittest.TestCase):
                 ).view(2, -2),
             ),
             (
+                lambda: torch.zeros((6,), dtype=torch.float32).view(2, -2, 1),
+                lambda: reference_torch.zeros(
+                    (6,), dtype=reference_torch.float32
+                ).view(2, -2, 1),
+            ),
+            (
                 lambda: torch.zeros((6,), dtype=torch.float32).view((2, -2)),
                 lambda: reference_torch.zeros(
                     (6,), dtype=reference_torch.float32
@@ -571,6 +683,12 @@ class TensorViewReferenceTests(unittest.TestCase):
                 lambda: reference_torch.zeros(
                     (0,), dtype=reference_torch.float32
                 ).view(0, -1),
+            ),
+            (
+                lambda: torch.zeros((0,), dtype=torch.float32).view(0, -1, 1),
+                lambda: reference_torch.zeros(
+                    (0,), dtype=reference_torch.float32
+                ).view(0, -1, 1),
             ),
             (
                 lambda: torch.zeros((0,), dtype=torch.float32).view((0, -1)),
@@ -628,6 +746,29 @@ class TensorViewReferenceTests(unittest.TestCase):
         (result * weights).sum().backward()
         return metadata, self.tensor_array(leaf.grad, module).copy()
 
+    def three_dimensional_autograd_outcome(self, module):
+        leaf = module.tensor(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        source = leaf.transpose(0, 1)
+        result = source.view(3, 1, -1)
+        metadata = (
+            tuple(result.shape),
+            result.stride(),
+            result.storage_offset(),
+            result.requires_grad,
+            result.is_leaf,
+            result.data_ptr() == source.data_ptr(),
+        )
+        weights = module.tensor(
+            [[[10.0, 20.0]], [[30.0, 40.0]], [[50.0, 60.0]]],
+            dtype=module.float32,
+        )
+        (result * weights).sum().backward()
+        return metadata, self.tensor_array(leaf.grad, module).copy()
+
     def repeated_backward_outcome(self, module):
         leaf = module.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
@@ -668,7 +809,7 @@ class TensorViewReferenceTests(unittest.TestCase):
         )
         source = leaf.transpose(0, 1)
         with module.no_grad():
-            result = source.view(3, 2)
+            result = source.view(3, 1, 2)
         return (
             tuple(result.shape),
             result.stride(),
@@ -684,6 +825,14 @@ class TensorViewReferenceTests(unittest.TestCase):
         expected_metadata, expected_grad = self.autograd_outcome(reference_torch)
         self.assertEqual(actual_metadata, expected_metadata)
         np.testing.assert_array_equal(actual_grad, expected_grad)
+        actual_three_metadata, actual_three_grad = (
+            self.three_dimensional_autograd_outcome(torch)
+        )
+        expected_three_metadata, expected_three_grad = (
+            self.three_dimensional_autograd_outcome(reference_torch)
+        )
+        self.assertEqual(actual_three_metadata, expected_three_metadata)
+        np.testing.assert_array_equal(actual_three_grad, expected_three_grad)
         np.testing.assert_array_equal(
             self.repeated_backward_outcome(torch),
             self.repeated_backward_outcome(reference_torch),
@@ -736,6 +885,7 @@ class TensorViewReferenceTests(unittest.TestCase):
             tuple(descriptor(tensor, (2, 1)).shape),
             tuple(descriptor(tensor, -1).shape),
             tuple(descriptor(tensor, 2, 1).shape),
+            tuple(descriptor(tensor, 1, 2, 1).shape),
             tuple(descriptor(tensor, size=[2, 1]).shape),
         )
 
@@ -793,6 +943,7 @@ class TensorViewReferenceTests(unittest.TestCase):
             lambda: tensor.view(module.Size((2, 3))),
             lambda: tensor.view(-1),
             lambda: tensor.view(2, 3),
+            lambda: tensor.view(1, 2, 3),
             lambda: tensor.view(tuple_index, 3),
             lambda: tensor.view(list_index, 3),
             lambda: tensor.view(size=(2, 3)),
@@ -814,6 +965,10 @@ class TensorViewReferenceTests(unittest.TestCase):
         variadic_deferred = RecordingMode(marker)
         with variadic_deferred:
             variadic_deferred_result = tensor.view(2, 3.0)
+
+        three_dimensional_deferred = RecordingMode(marker)
+        with three_dimensional_deferred:
+            three_dimensional_deferred_result = tensor.view(1, 2, 3.0)
 
         invalid = RecordingMode(marker)
         try:
@@ -873,6 +1028,12 @@ class TensorViewReferenceTests(unittest.TestCase):
         order.clear()
         with ForwardingMode("lower"):
             with ForwardingMode("upper"):
+                three_dimensional_forwarded = tensor.view(1, 2, 3)
+        three_dimensional_order = tuple(order)
+
+        order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
                 dtype_forwarded = tensor.view(dtype=module.float)
         dtype_order = tuple(order)
 
@@ -898,6 +1059,10 @@ class TensorViewReferenceTests(unittest.TestCase):
             "variadic_deferred": (
                 variadic_deferred_result is marker,
                 tuple(map(normalize_call, variadic_deferred.calls)),
+            ),
+            "three_dimensional_deferred": (
+                three_dimensional_deferred_result is marker,
+                tuple(map(normalize_call, three_dimensional_deferred.calls)),
             ),
             "invalid": invalid_error,
             "invalid_calls": len(invalid.calls),
@@ -935,6 +1100,16 @@ class TensorViewReferenceTests(unittest.TestCase):
                 variadic_forwarded.stride(),
                 variadic_forwarded.storage_offset(),
                 variadic_forwarded.data_ptr() == tensor.data_ptr(),
+            ),
+            "three_dimensional_forwarding": tuple(
+                (label, normalize_call((func, dispatch_types, args, kwargs)))
+                for label, func, dispatch_types, args, kwargs in three_dimensional_order
+            ),
+            "three_dimensional_forwarded": (
+                tuple(three_dimensional_forwarded.shape),
+                three_dimensional_forwarded.stride(),
+                three_dimensional_forwarded.storage_offset(),
+                three_dimensional_forwarded.data_ptr() == tensor.data_ptr(),
             ),
             "dtype_forwarding": tuple(
                 (label, normalize_call((func, dispatch_types, args, kwargs)))
@@ -1092,6 +1267,70 @@ class TensorViewReferenceTests(unittest.TestCase):
                 )
                 self.assertIn("Overflow when unpacking long long", str(error))
 
+    def test_three_positional_dimension_conversion_matches_pytorch_2_13(self):
+        actual = torch.zeros((24,), dtype=torch.float32)
+        expected = reference_torch.zeros((24,), dtype=reference_torch.float32)
+        dimension_factories = (
+            lambda: (IntSubclass(2), np.int64(3), IndexDimension(4)),
+            lambda: (IndexDimension(2), np.uint32(3), 4),
+            lambda: (2, IndexDimension(3), np.int64(4)),
+        )
+        for factory in dimension_factories:
+            actual_dimensions = factory()
+            expected_dimensions = factory()
+            actual_result = actual.view(*actual_dimensions)
+            expected_result = expected.view(*expected_dimensions)
+            self.assertEqual(
+                (
+                    tuple(actual_result.shape),
+                    actual_result.stride(),
+                    actual_result.data_ptr() == actual.data_ptr(),
+                ),
+                (
+                    tuple(expected_result.shape),
+                    expected_result.stride(),
+                    expected_result.data_ptr() == expected.data_ptr(),
+                ),
+            )
+
+        for dimensions in ((24, True, 1), (24, 1, True)):
+            actual_result = actual.view(*dimensions)
+            expected_result = expected.view(*dimensions)
+            self.assertEqual(
+                (tuple(actual_result.shape), actual_result.stride()),
+                (tuple(expected_result.shape), expected_result.stride()),
+            )
+        self.assert_error_matches(
+            lambda: actual.view(True, 24, 1),
+            lambda: expected.view(True, 24, 1),
+        )
+        self.assert_error_matches(
+            lambda: actual.view(2.0, 3, 4),
+            lambda: expected.view(2.0, 3, 4),
+        )
+        self.assert_error_matches(
+            lambda: actual.view(2, 3.0, 4),
+            lambda: expected.view(2, 3.0, 4),
+        )
+        self.assert_error_matches(
+            lambda: actual.view(2, 3, 4.0),
+            lambda: expected.view(2, 3, 4.0),
+        )
+        for position, actual_dimensions, expected_dimensions in (
+            (1, (2**63, 1, 1), (2**63, 1, 1)),
+            (2, (1, 2**63, 1), (1, 2**63, 1)),
+            (3, (1, 1, 2**63), (1, 1, 2**63)),
+        ):
+            with self.assertRaises(TypeError) as actual_overflow:
+                actual.view(*actual_dimensions)
+            with self.assertRaises(TypeError) as expected_overflow:
+                expected.view(*expected_dimensions)
+            for error in (actual_overflow.exception, expected_overflow.exception):
+                self.assertIn(
+                    f"failed to unpack the object at pos {position}", str(error)
+                )
+                self.assertIn("Overflow when unpacking long long", str(error))
+
     def test_operator_index_poisoning_matches_pytorch_2_13(self):
         actual = torch.zeros((6,), dtype=torch.float32)
         expected = reference_torch.zeros((6,), dtype=reference_torch.float32)
@@ -1127,6 +1366,20 @@ class TensorViewReferenceTests(unittest.TestCase):
                     expected_variadic.data_ptr() == expected.data_ptr(),
                 ),
             )
+            actual_three_dimensional = actual.view(1, 2, 3)
+            expected_three_dimensional = expected.view(1, 2, 3)
+            self.assertEqual(
+                (
+                    tuple(actual_three_dimensional.shape),
+                    actual_three_dimensional.stride(),
+                    actual_three_dimensional.data_ptr() == actual.data_ptr(),
+                ),
+                (
+                    tuple(expected_three_dimensional.shape),
+                    expected_three_dimensional.stride(),
+                    expected_three_dimensional.data_ptr() == expected.data_ptr(),
+                ),
+            )
             self.assert_error_matches(
                 lambda: actual.view((2, 3.0)),
                 lambda: expected.view((2, 3.0)),
@@ -1152,7 +1405,14 @@ class TensorViewReferenceTests(unittest.TestCase):
         actual = torch.zeros((6,), dtype=torch.float32)
         expected = reference_torch.zeros((6,), dtype=reference_torch.float32)
         for actual_call, expected_call in (
-            (lambda: actual.view(1, 2, 3), lambda: expected.view(1, 2, 3)),
+            (
+                lambda: actual.view(1, 1, 2, 3),
+                lambda: expected.view(1, 1, 2, 3),
+            ),
+            (
+                lambda: actual.view(1, 1, 1, 2, 3),
+                lambda: expected.view(1, 1, 1, 2, 3),
+            ),
         ):
             with self.assertRaises(TypeError):
                 actual_call()
@@ -1190,6 +1450,10 @@ class TensorViewReferenceTests(unittest.TestCase):
             (
                 lambda: actual.view(2, 3, size=(2, 3)),
                 lambda: expected.view(2, 3, size=(2, 3)),
+            ),
+            (
+                lambda: actual.view(1, 2, 3, size=(1, 2, 3)),
+                lambda: expected.view(1, 2, 3, size=(1, 2, 3)),
             ),
         )
         for actual_call, expected_call in mixed_calls:
