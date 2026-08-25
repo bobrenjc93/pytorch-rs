@@ -5072,7 +5072,21 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
             "arange() missing required argument 'end'",
         ));
     };
-    if !end.value.is_exact_instance_of::<PyFloat>() {
+    let exact_float_endpoint = end.value.is_exact_instance_of::<PyFloat>();
+    // Peek only at a valid native dtype here so unsupported endpoint/dtype
+    // combinations retain the endpoint-first error ordering below.
+    let exact_integer_with_explicit_float32 = if end.value.is_exact_instance_of::<PyInt>() {
+        match dtype
+            .as_ref()
+            .and_then(|dtype| dtype.cast::<PyDType>().ok())
+        {
+            Some(dtype) => dtype.try_borrow()?.inner() == DType::Float32,
+            None => false,
+        }
+    } else {
+        false
+    };
+    if !exact_float_endpoint && !exact_integer_with_explicit_float32 {
         let position = end
             .position
             .map_or_else(String::new, |position| format!(" (position {position})"));
@@ -5107,8 +5121,21 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
             "arange(): pin_memory=True is not supported; only unpinned CPU storage is implemented",
         ));
     }
-    let elements = arange_element_count(end.value.extract::<f64>()?)?;
+    let elements = arange_element_count(extract_arange_end(&end.value)?)?;
     Ok((elements, requires_grad))
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn extract_arange_end(end: &Bound<'_, PyAny>) -> PyResult<f64> {
+    if end.is_exact_instance_of::<PyInt>() {
+        // Match PyTorch's signed-then-unsigned scalar conversion, including
+        // the distinct overflow errors outside the combined i64/u64 range.
+        if let Ok(end) = end.extract::<i64>() {
+            return Ok(end as f64);
+        }
+        return end.extract::<u64>().map(|end| end as f64);
+    }
+    end.extract::<f64>()
 }
 
 fn arange_element_count(end: f64) -> PyResult<usize> {
