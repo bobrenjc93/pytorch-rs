@@ -28,6 +28,21 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             ("offset-noncontiguous", base.transpose(0, 3)[1]),
         )
 
+    def leading_integer_full_slice_layout_cases(self):
+        values = np.arange(120, dtype=np.float32).reshape(2, 3, 4, 5)
+        base = torch.tensor(values.tolist())
+        return (
+            (
+                "contiguous-negative",
+                torch.tensor([[1.0, 2.0], [-0.0, 4.0]]),
+                -1,
+            ),
+            ("empty", torch.zeros((2, 0, 3)), 1),
+            ("offset", base[1], -1),
+            ("noncontiguous", base.transpose(0, 3), -1),
+            ("offset-noncontiguous", base.transpose(0, 3)[1], -1),
+        )
+
     def higher_rank_full_slice_layout_cases(self, rank):
         shape = tuple(range(2, rank + 2))
         values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
@@ -69,6 +84,21 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         self.assertEqual(alias.device, source.device)
         self.assertEqual(alias.tolist(), source.tolist())
 
+    def assert_leading_integer_full_slice_view(self, source, index, expected_index):
+        expected = source[expected_index]
+        selected = source[index, :]
+        self.assertIsNot(selected, expected)
+        self.assertEqual(selected.shape, expected.shape)
+        self.assertEqual(selected.stride(), expected.stride())
+        self.assertEqual(selected.storage_offset(), expected.storage_offset())
+        self.assertEqual(selected.is_contiguous(), expected.is_contiguous())
+        self.assertTrue(selected.is_set_to(expected))
+        self.assertEqual(selected.data_ptr(), expected.data_ptr())
+        self.assertIs(selected.dtype, expected.dtype)
+        self.assertEqual(selected.device, expected.device)
+        self.assertEqual(selected.tolist(), expected.tolist())
+        return selected
+
     def test_full_slice_returns_a_distinct_exact_metadata_alias(self):
         for case, source in self.layout_cases():
             with self.subTest(case=case):
@@ -97,6 +127,41 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         signed_zero = torch.tensor([[-0.0]])[index]
         self.assertEqual(np.asarray(signed_zero).view(np.uint32).item(), 0x8000_0000)
+
+    def test_leading_integer_full_slice_reuses_integer_view_layouts(self):
+        for case, source, index in self.leading_integer_full_slice_layout_cases():
+            with self.subTest(case=case):
+                selected = self.assert_leading_integer_full_slice_view(
+                    source, index, index
+                )
+                if case == "contiguous-negative":
+                    self.assertEqual(
+                        np.asarray(selected).view(np.uint32)[0], 0x8000_0000
+                    )
+
+    def test_leading_integer_full_slice_accepts_integer_protocol_values(self):
+        class IntSubclass(int):
+            pass
+
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        source = torch.tensor([[0.0, 1.0], [2.0, 3.0]])
+        index_value = IndexValue(-1)
+        for case, index in (
+            ("int-subclass", IntSubclass(-1)),
+            ("numpy-integer", np.int64(-1)),
+            ("index-protocol", index_value),
+        ):
+            with self.subTest(case=case):
+                self.assert_leading_integer_full_slice_view(source, index, -1)
+        self.assertEqual(index_value.calls, 1)
 
     def test_three_or_more_full_slice_tuples_return_exact_metadata_aliases(self):
         for count in (3, 4):
@@ -164,6 +229,40 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                     str(raised.exception),
                     f"too many indices for tensor of dimension {dimensions}",
                 )
+
+    def test_leading_integer_full_slice_requires_rank_two_before_conversion(self):
+        class IndexValue:
+            def __init__(self):
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return 0
+
+        for dimensions, source in (
+            (0, torch.tensor(-0.0)),
+            (1, torch.tensor([-0.0, 1.0])),
+        ):
+            index = IndexValue()
+            with self.subTest(dimensions=dimensions):
+                with self.assertRaises(IndexError) as raised:
+                    source[index, :]
+                self.assertEqual(
+                    str(raised.exception),
+                    f"too many indices for tensor of dimension {dimensions}",
+                )
+                self.assertEqual(index.calls, 0)
+
+    def test_leading_integer_full_slice_preserves_integer_index_errors(self):
+        source = torch.zeros((2, 3))
+        for index, message in (
+            (2, "index 2 is out of bounds for dimension 0 with size 2"),
+            (-3, "index -3 is out of bounds for dimension 0 with size 2"),
+        ):
+            with self.subTest(index=index):
+                with self.assertRaises(IndexError) as raised:
+                    source[index, :]
+                self.assertEqual(str(raised.exception), message)
 
     def test_three_or_more_full_slice_tuples_require_sufficient_rank(self):
         for count in (3, 4):
@@ -253,6 +352,50 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None), slice(None)), "AliasBackward0", diagnostic_rank=2
         )
 
+    def test_leading_integer_full_slice_reuses_integer_view_autograd(self):
+        values = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
+        leaf = torch.tensor(values.tolist(), requires_grad=True)
+        source = (leaf * 2.0).transpose(0, 1)
+        selected = source[-1, :]
+        expected_view = source[-1]
+        self.assertTrue(selected.is_set_to(expected_view))
+        self.assertEqual(selected.data_ptr(), expected_view.data_ptr())
+        self.assertTrue(selected.requires_grad)
+        self.assertFalse(selected.is_leaf)
+        self.assertEqual(selected.output_nr, 0)
+
+        weight_values = np.arange(1, 9, dtype=np.float32).reshape(2, 4)
+        weights = torch.tensor(weight_values.tolist())
+        (selected * weights).sum().backward()
+        expected_gradient = np.zeros_like(values)
+        expected_gradient[:, -1, :] = 2.0 * weight_values
+        np.testing.assert_array_equal(np.asarray(leaf.grad), expected_gradient)
+
+        diagnostic_leaf = torch.tensor([[2.0]], requires_grad=True)
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^dropout probability has to be between 0 and 1, but got "
+            r"tensor\(\[2\.\], grad_fn=<SelectBackward0>\)$",
+        ):
+            torch.nn.functional.dropout(
+                None, p=diagnostic_leaf[0, :], training=False
+            )
+
+        no_grad_source = torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+        )
+        with torch.no_grad():
+            untracked = no_grad_source[1, :]
+        self.assertTrue(untracked.requires_grad)
+        self.assertTrue(untracked.is_leaf)
+        self.assertEqual(untracked.output_nr, 0)
+        self.assertTrue(untracked.is_set_to(no_grad_source[1]))
+
+        empty = torch.zeros((2, 0, 3), requires_grad=True)
+        empty[1, :].sum().backward()
+        self.assertEqual(empty.grad.shape, (2, 0, 3))
+        self.assertEqual(empty.grad.tolist(), [[], []])
+
     def test_three_or_more_full_slice_tuples_use_alias_autograd_semantics(self):
         for count in (3, 4):
             with self.subTest(count=count):
@@ -333,6 +476,37 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None), slice(None))
         )
 
+    def test_leading_integer_full_slice_survives_source_lifetime(self):
+        values = np.arange(120, dtype=np.float32).reshape(2, 3, 4, 5)
+
+        def retained_view():
+            source = torch.tensor(values.tolist()).transpose(0, 3)[1]
+            return source[-1, :]
+
+        surviving = retained_view()
+        gc.collect()
+        self.assertEqual(surviving.shape, (4, 2))
+        self.assertEqual(surviving.stride(), (5, 60))
+        self.assertEqual(surviving.storage_offset(), 41)
+        np.testing.assert_array_equal(
+            np.asarray(surviving), np.swapaxes(values, 0, 3)[1][-1]
+        )
+
+        leaf = torch.tensor(values.tolist(), requires_grad=True)
+
+        def retained_autograd_view():
+            source = (leaf * 2.0).transpose(0, 3)[1]
+            return source[-1, :]
+
+        tracked = retained_autograd_view()
+        gc.collect()
+        weight_values = np.arange(1, 9, dtype=np.float32).reshape(4, 2)
+        weights = torch.tensor(weight_values.tolist())
+        (tracked * weights).sum().backward()
+        expected_gradient = np.zeros_like(values)
+        expected_gradient[:, -1, :, 1] = 2.0 * weight_values.T
+        np.testing.assert_array_equal(np.asarray(leaf.grad), expected_gradient)
+
     def test_three_or_more_full_slice_tuples_survive_source_lifetime(self):
         for count in (3, 4):
             with self.subTest(count=count):
@@ -350,7 +524,9 @@ class TensorFullSliceIndexTests(unittest.TestCase):
                         index, source_rank=max(slice_count, 2)
                     )
 
-    def assert_dispatches_through_tensorbase_mode_before_indexing(self, index):
+    def assert_dispatches_through_tensorbase_mode_before_indexing(
+        self, index, expected_integer=None
+    ):
         index_rank = len(index) if isinstance(index, tuple) else 1
         shape = (2,) * max(index_rank, 2)
         values = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
@@ -410,7 +586,15 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         with ForwardingMode():
             forwarded = source[index]
-        self.assert_metadata_alias(source, forwarded)
+        if expected_integer is None:
+            self.assert_metadata_alias(source, forwarded)
+        else:
+            expected = source[expected_integer]
+            self.assertEqual(forwarded.shape, expected.shape)
+            self.assertEqual(forwarded.stride(), expected.stride())
+            self.assertEqual(forwarded.storage_offset(), expected.storage_offset())
+            self.assertTrue(forwarded.is_set_to(expected))
+            self.assertEqual(forwarded.tolist(), expected.tolist())
 
     def test_full_slice_dispatches_through_tensorbase_mode_before_indexing(self):
         self.assert_dispatches_through_tensorbase_mode_before_indexing(slice(None))
@@ -423,6 +607,12 @@ class TensorFullSliceIndexTests(unittest.TestCase):
     def test_double_full_slice_tuple_dispatches_with_original_index(self):
         self.assert_dispatches_through_tensorbase_mode_before_indexing(
             (slice(None), slice(None))
+        )
+
+    def test_leading_integer_full_slice_dispatches_with_original_tuple(self):
+        index = (0, slice(None))
+        self.assert_dispatches_through_tensorbase_mode_before_indexing(
+            index, expected_integer=0
         )
 
     def test_three_or_more_full_slice_tuples_dispatch_with_original_index(self):
@@ -454,6 +644,18 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         self.assertEqual(selected.shape, (3,))
         self.assertEqual(selected.stride(), (1,))
         self.assertEqual(selected.storage_offset(), 0)
+
+        class LeadingIntegerFullSliceRemapTuple(tuple):
+            def __iter__(self):
+                return iter((-1, slice(None)))
+
+        selected = source[LeadingIntegerFullSliceRemapTuple((slice(None),))]
+        expected = source[-1]
+        self.assertEqual(selected.tolist(), expected.tolist())
+        self.assertEqual(selected.shape, expected.shape)
+        self.assertEqual(selected.stride(), expected.stride())
+        self.assertEqual(selected.storage_offset(), expected.storage_offset())
+        self.assertTrue(selected.is_set_to(expected))
 
         class FullSliceRemapTuple(tuple):
             def __iter__(self):
@@ -528,7 +730,10 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None, None, 1),),
             (slice(None, None, 2),),
             (slice(None), 0),
-            (0, slice(None)),
+            (0, slice(1, None)),
+            (0, slice(None, -1)),
+            (0, slice(None, None, 1)),
+            (0, slice(None, None, 2)),
             (slice(1, None), slice(None)),
             (slice(None), slice(None, -1)),
             (slice(None, None, 1), slice(None)),
@@ -547,6 +752,9 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             (slice(None), slice(None, None, 1), slice(None)),
             (slice(None), slice(None, None, 2), slice(None)),
             (slice(None), 0, slice(None)),
+            (0, slice(None), Ellipsis),
+            (0, slice(None), 0),
+            (0, Ellipsis),
         )
         for index in unsupported:
             with self.subTest(index=repr(index)):
