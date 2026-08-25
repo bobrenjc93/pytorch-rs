@@ -410,12 +410,21 @@ class FunctionalSigmoidReferenceTests(unittest.TestCase):
         nonfinite.sum().backward()
         self.assertEqual(nonfinite.grad.tolist(), [[[1.0, 1.0]]])
 
-        rank_four = torch.tensor([[[[0.5, -1.0]]]], requires_grad=True)
+        rank_four_nonfinite = torch.tensor(
+            [[[[0.5, float("inf")]]]], requires_grad=True
+        )
         with self.assertRaisesRegex(RuntimeError, message):
-            functional.sigmoid(rank_four)
-        self.assertIsNone(rank_four.grad)
-        rank_four.sum().backward()
-        self.assertEqual(rank_four.grad.tolist(), [[[[1.0, 1.0]]]])
+            functional.sigmoid(rank_four_nonfinite)
+        self.assertIsNone(rank_four_nonfinite.grad)
+        rank_four_nonfinite.sum().backward()
+        self.assertEqual(rank_four_nonfinite.grad.tolist(), [[[[1.0, 1.0]]]])
+
+        rank_five = torch.tensor([[[[[0.5, -1.0]]]]], requires_grad=True)
+        with self.assertRaisesRegex(RuntimeError, message):
+            functional.sigmoid(rank_five)
+        self.assertIsNone(rank_five.grad)
+        rank_five.sum().backward()
+        self.assertEqual(rank_five.grad.tolist(), [[[[[1.0, 1.0]]]]])
 
         matrix_view_base = torch.tensor(
             [
@@ -442,6 +451,27 @@ class FunctionalSigmoidReferenceTests(unittest.TestCase):
             functional.sigmoid(nonleaf)
         nonleaf.sum().backward()
         self.assertIsNotNone(nonleaf_base.grad)
+
+        rank_four_view_base = torch.tensor(
+            [[[[[0.5, -1.0]]]], [[[[2.0, -3.0]]]]], requires_grad=True
+        )
+        rank_four_view = rank_four_view_base[0]
+        with self.assertRaisesRegex(RuntimeError, message):
+            functional.sigmoid(rank_four_view)
+        rank_four_view.sum().backward()
+        self.assertEqual(
+            rank_four_view_base.grad.tolist(),
+            [[[[[1.0, 1.0]]]], [[[[0.0, 0.0]]]]],
+        )
+
+        rank_four_nonleaf_base = torch.tensor(
+            [[[[0.5, -0.5]]]], requires_grad=True
+        )
+        rank_four_nonleaf = rank_four_nonleaf_base.sin()
+        with self.assertRaisesRegex(RuntimeError, message):
+            functional.sigmoid(rank_four_nonleaf)
+        rank_four_nonleaf.sum().backward()
+        self.assertIsNotNone(rank_four_nonleaf_base.grad)
 
     def test_rank_three_autograd_matches_pytorch_2_13(self):
         values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 1, 4)
@@ -576,6 +606,151 @@ class FunctionalSigmoidReferenceTests(unittest.TestCase):
         higher_order_loss.backward()
         self.assertIsNotNone(higher_order.grad)
 
+    def test_rank_four_autograd_matches_pytorch_2_13(self):
+        values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(1, 2, 1, 4)
+        actual_leaf = torch.tensor(values.tolist(), requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_weights = torch.tensor(AUTOGRAD_WEIGHTS.reshape(1, 2, 1, 4).tolist())
+        expected_weights = reference_torch.tensor(
+            AUTOGRAD_WEIGHTS.reshape(1, 2, 1, 4), dtype=reference_torch.float32
+        )
+        actual_output = functional.sigmoid(actual_leaf)
+        expected_output = reference_functional.sigmoid(expected_leaf)
+
+        self.assert_tensor_matches(
+            actual_output, expected_output, case="rank-four singleton forward"
+        )
+        self.assertFalse(actual_output.is_set_to(actual_leaf))
+        self.assertFalse(expected_output.is_set_to(expected_leaf))
+        self.assertNotEqual(actual_output.data_ptr(), actual_leaf.data_ptr())
+        self.assertNotEqual(expected_output.data_ptr(), expected_leaf.data_ptr())
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_output).reshape(-1).view(np.uint32),
+            AUTOGRAD_OUTPUT_BITS,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_output).reshape(-1).view(np.uint32),
+            self.tensor_values(expected_output).reshape(-1).view(np.uint32),
+        )
+        self.assertEqual(type(expected_output.grad_fn).__name__, "SigmoidBackward0")
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(actual_output),
+            ", grad_fn=<SigmoidBackward0>",
+        )
+
+        actual_loss = (actual_output * actual_weights).sum()
+        expected_loss = (expected_output * expected_weights).sum()
+        actual_loss.backward()
+        expected_loss.backward()
+        self.assert_tensor_matches(
+            actual_leaf.grad,
+            expected_leaf.grad,
+            case="rank-four weighted gradient",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_leaf.grad).reshape(-1).view(np.uint32),
+            AUTOGRAD_GRADIENT_BITS,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_leaf.grad).reshape(-1).view(np.uint32),
+            self.tensor_values(expected_leaf.grad).reshape(-1).view(np.uint32),
+        )
+        actual_gradient_before = self.tensor_values(actual_leaf.grad).copy()
+        expected_gradient_before = self.tensor_values(expected_leaf.grad).copy()
+        self.assertEqual(
+            self.error(actual_loss.backward), self.error(expected_loss.backward)
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_leaf.grad), actual_gradient_before
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(expected_leaf.grad), expected_gradient_before
+        )
+
+        actual_accumulated = torch.tensor(values.tolist(), requires_grad=True)
+        expected_accumulated = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        for _ in range(2):
+            (functional.sigmoid(actual_accumulated) * actual_weights).sum().backward()
+            (
+                reference_functional.sigmoid(expected_accumulated)
+                * expected_weights
+            ).sum().backward()
+        self.assert_tensor_matches(
+            actual_accumulated.grad,
+            expected_accumulated.grad,
+            case="rank-four accumulated gradient",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_accumulated.grad)
+            .reshape(-1)
+            .view(np.uint32),
+            AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        )
+
+        actual_composed = torch.tensor(values.tolist(), requires_grad=True)
+        expected_composed = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        functional.sigmoid(actual_composed).sin().sum().backward()
+        reference_functional.sigmoid(expected_composed).sin().sum().backward()
+        self.assert_tensor_matches(
+            actual_composed.grad,
+            expected_composed.grad,
+            case="rank-four composition gradient",
+        )
+
+        for shape in (
+            (0, 1, 2, 3),
+            (1, 0, 2, 3),
+            (1, 2, 0, 3),
+            (1, 2, 3, 0),
+            (0, 0, 0, 0),
+        ):
+            actual_empty = torch.zeros(shape, requires_grad=True)
+            expected_empty = reference_torch.zeros(
+                shape, dtype=reference_torch.float32, requires_grad=True
+            )
+            actual_empty_output = functional.sigmoid(actual_empty)
+            expected_empty_output = reference_functional.sigmoid(expected_empty)
+            self.assert_tensor_matches(
+                actual_empty_output,
+                expected_empty_output,
+                case=("empty rank-four forward", shape),
+            )
+            self.assertFalse(actual_empty_output.is_set_to(actual_empty))
+            self.assertFalse(expected_empty_output.is_set_to(expected_empty))
+            self.assertEqual(
+                type(expected_empty_output.grad_fn).__name__, "SigmoidBackward0"
+            )
+            actual_empty_loss = actual_empty_output.sum()
+            expected_empty_loss = expected_empty_output.sum()
+            actual_empty_loss.backward()
+            expected_empty_loss.backward()
+            self.assert_tensor_matches(
+                actual_empty.grad,
+                expected_empty.grad,
+                case=("empty rank-four gradient", shape),
+            )
+            self.assertEqual(
+                self.error(actual_empty_loss.backward),
+                self.error(expected_empty_loss.backward),
+            )
+
+        higher_order = torch.tensor([[[[0.25, -0.25]]]], requires_grad=True)
+        higher_order_loss = functional.sigmoid(higher_order).sum()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        higher_order_loss.backward()
+        self.assertIsNotNone(higher_order.grad)
+
     def test_supported_and_unsupported_boundaries_are_explicit(self):
         actual_scalar = torch.tensor(0.5, requires_grad=True)
         expected_scalar = reference_torch.tensor(
@@ -630,15 +805,15 @@ class FunctionalSigmoidReferenceTests(unittest.TestCase):
             actual_empty.grad, expected_empty.grad, case="empty gradient"
         )
 
-        actual_rank_four = torch.tensor([[[[0.5, -1.0]]]], requires_grad=True)
+        actual_rank_five = torch.tensor([[[[[0.5, -1.0]]]]], requires_grad=True)
         with self.assertRaisesRegex(
             RuntimeError,
             r"^sigmoid\(\): autograd recording is not supported$",
         ):
-            functional.sigmoid(actual_rank_four)
-        self.assertIsNone(actual_rank_four.grad)
-        actual_rank_four.sum().backward()
-        self.assertEqual(actual_rank_four.grad.tolist(), [[[[1.0, 1.0]]]])
+            functional.sigmoid(actual_rank_five)
+        self.assertIsNone(actual_rank_five.grad)
+        actual_rank_five.sum().backward()
+        self.assertEqual(actual_rank_five.grad.tolist(), [[[[[1.0, 1.0]]]]])
 
         actual_view_base = torch.tensor([[0.5, -1.0]], requires_grad=True)
         actual_view = actual_view_base[0]
