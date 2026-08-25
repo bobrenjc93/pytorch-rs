@@ -3681,6 +3681,27 @@ fn integer_indexing_empty_dimensions_preserves_offsets_without_storage_access() 
 }
 
 #[test]
+fn integer_indexing_uses_signed_wrapping_for_extreme_empty_offsets() {
+    let maximum = isize::MAX.unsigned_abs();
+    let empty = Tensor::zeros([maximum, 1, 0, 3]).unwrap();
+    let selected = empty.index([i64::MAX - 1, 0]).unwrap();
+
+    assert_eq!(selected.shape(), [0, 3]);
+    assert_eq!(selected.stride(), [3, 1]);
+    assert_eq!(selected.storage_offset(), maximum - 5);
+    assert!(selected.shares_storage_with(&empty));
+    assert!(selected.as_slice().is_empty());
+    assert_eq!(
+        empty.index([i64::MAX - 1, 1]),
+        Err(TensorError::IndexOutOfBounds {
+            index: 1,
+            dimension: 1,
+            size: 1,
+        })
+    );
+}
+
+#[test]
 fn integer_indexing_uses_checked_offset_arithmetic() {
     let maximum = usize::try_from(i64::MAX).unwrap();
     let empty = Tensor::zeros([maximum, 0]).unwrap();

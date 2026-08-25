@@ -1,5 +1,6 @@
 import gc
 import inspect
+import sys
 import unittest
 
 import numpy as np
@@ -100,6 +101,12 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             (module.zeros((2, 3, 0, 4), dtype=module.float32), (-1, -2)),
             (base[1], (-2, -1)),
             (base[1].transpose(0, 2), (-1, -2)),
+            (
+                module.zeros(
+                    (sys.maxsize, 1, 0, 3), dtype=module.float32
+                ),
+                (sys.maxsize - 1, 0),
+            ),
         )
 
     def alias_contract(self, source, index):
@@ -495,6 +502,13 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
         overflow_error = capture(
             lambda: module.zeros((2, 3, 4), dtype=module.float32)[0, 2**100, :]
         )
+        wrapping_first = IndexValue(sys.maxsize - 1)
+        wrapping_second_out_of_bounds = IndexValue(1)
+        wrapping_bounds_error = capture(
+            lambda: module.zeros(
+                (sys.maxsize, 1, 0, 3), dtype=module.float32
+            )[wrapping_first, wrapping_second_out_of_bounds, :]
+        )
         return {
             "lower_rank": tuple(lower_rank),
             "first_bounds": (
@@ -509,6 +523,11 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             ),
             "invalid": (invalid_error, invalid_second.calls),
             "overflow": overflow_error,
+            "wrapping_bounds": (
+                wrapping_bounds_error,
+                wrapping_first.calls,
+                wrapping_second_out_of_bounds.calls,
+            ),
         }
 
     def test_two_leading_integer_full_slice_errors_match_pytorch_2_13(self):
@@ -877,6 +896,12 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
 
         empty = module.zeros((2, 3, 0, 4), requires_grad=True)
         empty[-1, -2, :].sum().backward()
+
+        wrapping_empty = module.zeros(
+            (sys.maxsize, 1, 0, 3), requires_grad=True
+        )
+        wrapping_selected = wrapping_empty[sys.maxsize - 1, 0, :]
+        wrapping_selected.sum().backward()
         return {
             "metadata": metadata,
             "gradient": leaf.grad.tolist(),
@@ -894,6 +919,17 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             ),
             "empty_gradient_shape": tuple(empty.grad.shape),
             "empty_gradient": empty.grad.tolist(),
+            "wrapping_empty": (
+                tuple(wrapping_selected.shape),
+                wrapping_selected.stride(),
+                wrapping_selected.storage_offset(),
+                wrapping_selected.requires_grad,
+                wrapping_selected.is_leaf,
+                tuple(wrapping_empty.grad.shape),
+                wrapping_empty.grad.stride(),
+                wrapping_empty.grad.storage_offset(),
+                wrapping_empty.grad.numel(),
+            ),
         }
 
     def test_two_leading_integer_full_slice_autograd_matches_pytorch_2_13(self):

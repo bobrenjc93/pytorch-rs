@@ -1,5 +1,6 @@
 import gc
 import inspect
+import sys
 import types
 import unittest
 
@@ -82,6 +83,11 @@ class TensorFullSliceIndexTests(unittest.TestCase):
             ("empty", torch.zeros((2, 3, 0, 4)), (-1, -2)),
             ("offset", base[1], (-2, -1)),
             ("offset-noncontiguous", base[1].transpose(0, 2), (-1, -2)),
+            (
+                "wrapping-empty",
+                torch.zeros((sys.maxsize, 1, 0, 3)),
+                (sys.maxsize - 1, 0),
+            ),
         )
 
     def assert_metadata_alias(self, source, alias):
@@ -202,15 +208,14 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         self.assertEqual(cases[-1][0].calls, 1)
 
     def test_two_leading_integer_full_slice_reuses_the_integer_tuple_view(self):
-        for (
-            case,
-            source,
-            indices,
-        ) in self.two_leading_integer_full_slice_layout_cases():
+        for case, source, indices in (
+            self.two_leading_integer_full_slice_layout_cases()
+        ):
             with self.subTest(case=case):
-                self.assert_same_view(
-                    source[indices[0], indices[1], :], source[indices]
-                )
+                selected = source[indices[0], indices[1], :]
+                self.assert_same_view(selected, source[indices])
+                if case == "wrapping-empty":
+                    self.assertEqual(selected.storage_offset(), sys.maxsize - 5)
 
     def test_two_leading_integer_full_slice_accepts_integer_protocol_values(self):
         class IntegerSubclass(int):
@@ -467,6 +472,20 @@ class TensorFullSliceIndexTests(unittest.TestCase):
         empty[-1, -2, :].sum().backward()
         self.assertEqual(empty.grad.shape, (2, 3, 0, 4))
         self.assertEqual(empty.grad.tolist(), [[[], [], []], [[], [], []]])
+
+        wrapping_empty = torch.zeros(
+            (sys.maxsize, 1, 0, 3), requires_grad=True
+        )
+        wrapping_selected = wrapping_empty[sys.maxsize - 1, 0, :]
+        self.assertEqual(wrapping_selected.shape, (0, 3))
+        self.assertEqual(wrapping_selected.stride(), (3, 1))
+        self.assertEqual(wrapping_selected.storage_offset(), sys.maxsize - 5)
+        self.assertTrue(wrapping_selected.requires_grad)
+        self.assertFalse(wrapping_selected.is_leaf)
+        wrapping_selected.sum().backward()
+        self.assertEqual(wrapping_empty.grad.shape, wrapping_empty.shape)
+        self.assertEqual(wrapping_empty.grad.stride(), wrapping_empty.stride())
+        self.assertEqual(wrapping_empty.grad.storage_offset(), 0)
 
     def assert_storage_and_autograd_survive_source_lifetime(
         self, index, source_rank=2
@@ -985,6 +1004,17 @@ class TensorFullSliceIndexTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Overflow when unpacking long long"):
             torch.zeros((2, 3, 4))[0, 2**100, :]
+
+        wrapping_first = IndexValue(sys.maxsize - 1)
+        wrapping_second_out_of_bounds = IndexValue(1)
+        with self.assertRaisesRegex(
+            IndexError, "index 1 is out of bounds for dimension 1 with size 1"
+        ):
+            torch.zeros((sys.maxsize, 1, 0, 3))[
+                wrapping_first, wrapping_second_out_of_bounds, :
+            ]
+        self.assertEqual(wrapping_first.calls, 1)
+        self.assertEqual(wrapping_second_out_of_bounds.calls, 1)
 
 
 if __name__ == "__main__":
