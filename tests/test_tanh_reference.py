@@ -407,6 +407,119 @@ class TensorTanhReferenceTests(unittest.TestCase):
             self.error(expected_empty_loss.backward),
         )
 
+    def test_rank_two_weighted_autograd_empty_and_graph_lifetime_match_pytorch_2_13(
+        self,
+    ):
+        values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 4).tolist()
+        weights = AUTOGRAD_WEIGHTS.reshape(2, 4).tolist()
+        actual_leaf = torch.tensor(values, requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_weights = torch.tensor(weights)
+        expected_weights = reference_torch.tensor(
+            weights, dtype=reference_torch.float32
+        )
+        actual_output = torch.tanh(actual_leaf, out=None)
+        expected_output = reference_torch.tanh(expected_leaf, out=None)
+
+        self.assert_tensor_matches(
+            actual_output,
+            expected_output,
+            case="rank-two forward",
+            exact_bits=True,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_output).reshape(-1).view(np.uint32),
+            AUTOGRAD_OUTPUT_BITS,
+        )
+        self.assertEqual(type(expected_output.grad_fn).__name__, "TanhBackward0")
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(actual_output),
+            ", grad_fn=<TanhBackward0>",
+        )
+
+        actual_loss = (actual_output * actual_weights).sum()
+        expected_loss = (expected_output * expected_weights).sum()
+        actual_loss.backward()
+        expected_loss.backward()
+        self.assert_tensor_matches(
+            actual_leaf.grad,
+            expected_leaf.grad,
+            case="rank-two weighted gradient",
+            exact_bits=True,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_leaf.grad).reshape(-1).view(np.uint32),
+            AUTOGRAD_GRADIENT_BITS,
+        )
+        actual_gradient_before = self.tensor_values(actual_leaf.grad).copy()
+        expected_gradient_before = self.tensor_values(expected_leaf.grad).copy()
+        self.assertEqual(self.error(actual_loss.backward), self.error(expected_loss.backward))
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_leaf.grad), actual_gradient_before
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(expected_leaf.grad), expected_gradient_before
+        )
+
+        actual_accumulated = torch.tensor(values, requires_grad=True)
+        expected_accumulated = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        for _ in range(2):
+            (actual_accumulated.tanh() * actual_weights).sum().backward()
+            (expected_accumulated.tanh() * expected_weights).sum().backward()
+        self.assert_tensor_matches(
+            actual_accumulated.grad,
+            expected_accumulated.grad,
+            case="rank-two accumulated gradient",
+            exact_bits=True,
+        )
+        np.testing.assert_array_equal(
+            self.tensor_values(actual_accumulated.grad)
+            .reshape(-1)
+            .view(np.uint32),
+            AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        )
+
+        for shape in ((0, 3), (2, 0)):
+            actual_empty = torch.zeros(shape, requires_grad=True)
+            expected_empty = reference_torch.zeros(
+                shape, dtype=reference_torch.float32, requires_grad=True
+            )
+            actual_empty_output = torch.tanh(actual_empty, out=None)
+            expected_empty_output = reference_torch.tanh(expected_empty, out=None)
+            self.assert_tensor_matches(
+                actual_empty_output,
+                expected_empty_output,
+                case=("rank-two empty forward", shape),
+                exact_bits=True,
+            )
+            self.assertEqual(
+                type(expected_empty_output.grad_fn).__name__, "TanhBackward0"
+            )
+            self.assertEqual(
+                torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                    actual_empty_output
+                ),
+                ", grad_fn=<TanhBackward0>",
+            )
+            actual_empty_loss = actual_empty_output.sum()
+            expected_empty_loss = expected_empty_output.sum()
+            actual_empty_loss.backward()
+            expected_empty_loss.backward()
+            self.assert_tensor_matches(
+                actual_empty.grad,
+                expected_empty.grad,
+                case=("rank-two empty gradient", shape),
+                exact_bits=True,
+            )
+            self.assertEqual(
+                self.error(actual_empty_loss.backward),
+                self.error(expected_empty_loss.backward),
+            )
+
     def test_scalar_composition_accumulation_and_freed_graph_match_pytorch_2_13(self):
         snapshots = []
         for module in (torch, reference_torch):
@@ -998,7 +1111,7 @@ print(json.dumps({
             exact_bits=True,
         )
 
-        higher_order = torch.tensor([0.25, -0.25], requires_grad=True)
+        higher_order = torch.tensor([[0.25, -0.25]], requires_grad=True)
         loss = higher_order.tanh().sum()
         with self.assertRaisesRegex(
             NotImplementedError,
@@ -1040,21 +1153,36 @@ print(json.dumps({
             actual_vector.sum().backward()
             self.assertEqual(actual_vector.grad.tolist(), [1.0, 1.0])
 
-        actual_matrix = torch.tensor([[0.5, -1.0]], requires_grad=True)
+            actual_matrix = torch.tensor([[0.5, value]], requires_grad=True)
+            for call in (
+                actual_matrix.tanh,
+                lambda actual_matrix=actual_matrix: torch.tanh(actual_matrix),
+                lambda actual_matrix=actual_matrix: torch.tanh(
+                    actual_matrix, out=None
+                ),
+            ):
+                with self.subTest(nonfinite_matrix=f"0x{bits:08x}"):
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        call()
+            self.assertIsNone(actual_matrix.grad)
+            actual_matrix.sum().backward()
+            self.assertEqual(actual_matrix.grad.tolist(), [[1.0, 1.0]])
+
+        actual_rank_three = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
         for call in (
-            actual_matrix.tanh,
-            lambda: torch.tanh(actual_matrix),
-            lambda: torch.tanh(actual_matrix, out=None),
+            actual_rank_three.tanh,
+            lambda: torch.tanh(actual_rank_three),
+            lambda: torch.tanh(actual_rank_three, out=None),
         ):
             with self.assertRaisesRegex(RuntimeError, message):
                 call()
-        self.assertIsNone(actual_matrix.grad)
-        actual_matrix.sum().backward()
-        self.assertEqual(actual_matrix.grad.tolist(), [[1.0, 1.0]])
+        self.assertIsNone(actual_rank_three.grad)
+        actual_rank_three.sum().backward()
+        self.assertEqual(actual_rank_three.grad.tolist(), [[[1.0, 1.0]]])
 
-        actual_leaf = torch.tensor([0.5, -1.0], requires_grad=True)
+        actual_leaf = torch.tensor([[0.5, -1.0]], requires_grad=True)
         expected_leaf = reference_torch.tensor(
-            [0.5, -1.0], dtype=reference_torch.float32, requires_grad=True
+            [[0.5, -1.0]], dtype=reference_torch.float32, requires_grad=True
         )
         self.assertTrue(actual_leaf.tanh().requires_grad)
         self.assertTrue(torch.tanh(actual_leaf).requires_grad)
@@ -1084,18 +1212,44 @@ print(json.dumps({
             actual_vector_view_base.grad.tolist(), [[1.0, 1.0], [0.0, 0.0]]
         )
 
-        actual_nonleaf_base = torch.tensor([0.5, -0.5], requires_grad=True)
+        actual_matrix_view_base = torch.tensor(
+            [
+                [[0.5, -1.0], [2.0, -3.0]],
+                [[4.0, -5.0], [6.0, -7.0]],
+            ],
+            requires_grad=True,
+        )
+        actual_matrix_view = actual_matrix_view_base[0]
+        for call in (
+            actual_matrix_view.tanh,
+            lambda: torch.tanh(actual_matrix_view, out=None),
+        ):
+            with self.assertRaisesRegex(RuntimeError, message):
+                call()
+        actual_matrix_view.sum().backward()
+        self.assertEqual(
+            actual_matrix_view_base.grad.tolist(),
+            [
+                [[1.0, 1.0], [1.0, 1.0]],
+                [[0.0, 0.0], [0.0, 0.0]],
+            ],
+        )
+
+        actual_nonleaf_base = torch.tensor(
+            [[0.5, -0.5], [1.0, -1.0]], requires_grad=True
+        )
         actual_nonleaf = actual_nonleaf_base.sin()
         with self.assertRaisesRegex(RuntimeError, message):
             actual_nonleaf.tanh()
         actual_nonleaf.sum().backward()
         self.assertIsNotNone(actual_nonleaf_base.grad)
 
-        empty_view_base = torch.zeros((1, 0), requires_grad=True)
+        empty_view_base = torch.zeros((1, 2, 0), requires_grad=True)
         with torch.no_grad():
             empty_view = empty_view_base[0]
         self.assertTrue(empty_view.requires_grad)
         self.assertTrue(empty_view.is_leaf)
+        self.assertEqual(empty_view.shape, (2, 0))
         with self.assertRaisesRegex(RuntimeError, message):
             empty_view.tanh()
 

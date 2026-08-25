@@ -362,6 +362,82 @@ class TensorTanhTests(unittest.TestCase):
         higher_order_loss.backward()
         self.assertIsNotNone(higher_order.grad)
 
+    def test_finite_owned_matrices_support_weighted_autograd_and_empty_shapes(self):
+        values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 4).tolist()
+        weights = torch.tensor(AUTOGRAD_WEIGHTS.reshape(2, 4).tolist())
+        leaf = torch.tensor(values, requires_grad=True)
+        output = leaf.tanh()
+
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        self.assertEqual(output.shape, (2, 4))
+        self.assertEqual(output.stride(), (4, 1))
+        self.assertEqual(output.storage_offset(), 0)
+        self.assertFalse(output.is_set_to(leaf))
+        np.testing.assert_array_equal(self.tensor_bits(output), AUTOGRAD_OUTPUT_BITS)
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(output),
+            ", grad_fn=<TanhBackward0>",
+        )
+
+        loss = (output * weights).sum()
+        loss.backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(leaf.grad), AUTOGRAD_GRADIENT_BITS
+        )
+        gradient_before_repeated_backward = self.tensor_bits(leaf.grad).copy()
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            loss.backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(leaf.grad), gradient_before_repeated_backward
+        )
+
+        accumulated = torch.tensor(values, requires_grad=True)
+        for _ in range(2):
+            (accumulated.tanh() * weights).sum().backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(accumulated.grad), AUTOGRAD_ACCUMULATED_GRADIENT_BITS
+        )
+
+        for shape, expected_stride in (((0, 3), (3, 1)), ((2, 0), (1, 1))):
+            with self.subTest(shape=shape):
+                empty = torch.zeros(shape, requires_grad=True)
+                empty_output = empty.tanh()
+                self.assertTrue(empty_output.requires_grad)
+                self.assertFalse(empty_output.is_leaf)
+                self.assertEqual(empty_output.shape, shape)
+                self.assertEqual(empty_output.stride(), expected_stride)
+                self.assertEqual(empty_output.storage_offset(), 0)
+                self.assertFalse(empty_output.is_set_to(empty))
+                self.assertEqual(
+                    torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                        empty_output
+                    ),
+                    ", grad_fn=<TanhBackward0>",
+                )
+                empty_loss = empty_output.sum()
+                empty_loss.backward()
+                self.assertEqual(empty.grad.shape, shape)
+                self.assertEqual(empty.grad.stride(), expected_stride)
+                self.assertEqual(empty.grad.numel(), 0)
+                with self.assertRaisesRegex(
+                    RuntimeError, "backward through the graph a second time"
+                ):
+                    empty_loss.backward()
+
+        higher_order = torch.tensor([[0.25, -0.25]], requires_grad=True)
+        higher_order_loss = higher_order.tanh().sum()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        higher_order_loss.backward()
+        self.assertIsNotNone(higher_order.grad)
+
     def test_scalar_autograd_composes_accumulates_and_obeys_grad_mode(self):
         composed = torch.tensor(0.5, requires_grad=True)
         composed.tanh().sin().backward()
@@ -431,17 +507,29 @@ class TensorTanhTests(unittest.TestCase):
                 vector.sum().backward()
                 self.assertEqual(vector.grad.tolist(), [1.0, 1.0])
 
-        matrix = torch.tensor([[0.5, -1.0]], requires_grad=True)
+                matrix = torch.tensor([[0.5, value]], requires_grad=True)
+                for call in (
+                    matrix.tanh,
+                    lambda matrix=matrix: torch.tanh(matrix),
+                    lambda matrix=matrix: torch.tanh(matrix, out=None),
+                ):
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        call()
+                self.assertIsNone(matrix.grad)
+                matrix.sum().backward()
+                self.assertEqual(matrix.grad.tolist(), [[1.0, 1.0]])
+
+        rank_three = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
         for call in (
-            matrix.tanh,
-            lambda: torch.tanh(matrix),
-            lambda: torch.tanh(matrix, out=None),
+            rank_three.tanh,
+            lambda: torch.tanh(rank_three),
+            lambda: torch.tanh(rank_three, out=None),
         ):
             with self.assertRaisesRegex(RuntimeError, message):
                 call()
-        self.assertIsNone(matrix.grad)
-        matrix.sum().backward()
-        self.assertEqual(matrix.grad.tolist(), [[1.0, 1.0]])
+        self.assertIsNone(rank_three.grad)
+        rank_three.sum().backward()
+        self.assertEqual(rank_three.grad.tolist(), [[[1.0, 1.0]]])
 
         view_base = torch.tensor([0.5], requires_grad=True)
         scalar_view = view_base[0]
@@ -462,30 +550,55 @@ class TensorTanhTests(unittest.TestCase):
         vector_view.sum().backward()
         self.assertEqual(vector_view_base.grad.tolist(), [[1.0, 1.0], [0.0, 0.0]])
 
-        nonleaf_base = torch.tensor([0.5, -0.5], requires_grad=True)
+        matrix_view_base = torch.tensor(
+            [
+                [[0.5, -1.0], [2.0, -3.0]],
+                [[4.0, -5.0], [6.0, -7.0]],
+            ],
+            requires_grad=True,
+        )
+        matrix_view = matrix_view_base[0]
+        self.assertEqual(matrix_view.shape, (2, 2))
+        self.assertFalse(matrix_view.is_leaf)
+        with self.assertRaisesRegex(RuntimeError, message):
+            matrix_view.tanh()
+        matrix_view.sum().backward()
+        self.assertEqual(
+            matrix_view_base.grad.tolist(),
+            [
+                [[1.0, 1.0], [1.0, 1.0]],
+                [[0.0, 0.0], [0.0, 0.0]],
+            ],
+        )
+
+        nonleaf_base = torch.tensor(
+            [[0.5, -0.5], [1.0, -1.0]], requires_grad=True
+        )
         nonleaf = nonleaf_base.sin()
         with self.assertRaisesRegex(RuntimeError, message):
             nonleaf.tanh()
         nonleaf.sum().backward()
         np.testing.assert_allclose(
             np.asarray(nonleaf_base.grad),
-            np.cos(np.asarray([0.5, -0.5], dtype=np.float32)),
+            np.cos(
+                np.asarray([[0.5, -0.5], [1.0, -1.0]], dtype=np.float32)
+            ),
         )
 
         with torch.no_grad():
-            no_grad_view = vector_view_base[0]
+            no_grad_view = matrix_view_base[0]
         self.assertTrue(no_grad_view.requires_grad)
         self.assertTrue(no_grad_view.is_leaf)
-        self.assertEqual(no_grad_view.shape, (2,))
+        self.assertEqual(no_grad_view.shape, (2, 2))
         with self.assertRaisesRegex(RuntimeError, message):
             no_grad_view.tanh()
 
-        empty_view_base = torch.zeros((1, 0), requires_grad=True)
+        empty_view_base = torch.zeros((1, 2, 0), requires_grad=True)
         with torch.no_grad():
             empty_view = empty_view_base[0]
         self.assertTrue(empty_view.requires_grad)
         self.assertTrue(empty_view.is_leaf)
-        self.assertEqual(empty_view.shape, (0,))
+        self.assertEqual(empty_view.shape, (2, 0))
         with self.assertRaisesRegex(RuntimeError, message):
             empty_view.tanh()
 
@@ -498,7 +611,7 @@ class TensorTanhTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
                 extreme.tanh()
 
-    def test_top_level_supports_finite_owned_scalar_and_vector_autograd(self):
+    def test_top_level_supports_finite_owned_scalar_vector_and_matrix_autograd(self):
         scalar = torch.tensor(0.5, requires_grad=True)
         calls = self.top_level_calls(scalar)
         for form, call in calls:
@@ -526,6 +639,25 @@ class TensorTanhTests(unittest.TestCase):
         (vector_output * torch.tensor(AUTOGRAD_WEIGHTS.tolist())).sum().backward()
         np.testing.assert_array_equal(
             self.tensor_bits(vector.grad), AUTOGRAD_GRADIENT_BITS
+        )
+
+        matrix = torch.tensor(
+            AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 4).tolist(),
+            requires_grad=True,
+        )
+        matrix_output = torch.tanh(matrix, out=None)
+        self.assertTrue(matrix_output.requires_grad)
+        self.assertFalse(matrix_output.is_leaf)
+        self.assertEqual(matrix_output.shape, (2, 4))
+        self.assertEqual(matrix_output.stride(), (4, 1))
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(matrix_output),
+            ", grad_fn=<TanhBackward0>",
+        )
+        matrix_weights = torch.tensor(AUTOGRAD_WEIGHTS.reshape(2, 4).tolist())
+        (matrix_output * matrix_weights).sum().backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(matrix.grad), AUTOGRAD_GRADIENT_BITS
         )
 
         leaf = torch.tensor(
@@ -820,8 +952,8 @@ class TensorTanhTests(unittest.TestCase):
         self.assertEqual(invalid_mode.calls, [])
 
     def test_top_level_concrete_out_is_rejected_without_mutation(self):
-        source = torch.tensor([0.5, -0.5], requires_grad=True)
-        destination = torch.tensor([17.0, 19.0])
+        source = torch.tensor([[0.5, -0.5]], requires_grad=True)
+        destination = torch.tensor([[17.0, 19.0]])
         for form, call in (
             ("positional", lambda: torch.tanh(source, out=destination)),
             ("keyword", lambda: torch.tanh(input=source, out=destination)),
@@ -833,7 +965,7 @@ class TensorTanhTests(unittest.TestCase):
                     r"^tanh\(\): the 'out' argument is not supported$",
                 ):
                     call()
-                self.assertEqual(destination.tolist(), [17.0, 19.0])
+                self.assertEqual(destination.tolist(), [[17.0, 19.0]])
                 self.assertIsNone(source.grad)
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
@@ -844,7 +976,7 @@ class TensorTanhTests(unittest.TestCase):
             r"^tanh\(\): the 'out' argument is not supported$",
         ):
             torch.tanh(extreme, out=destination)
-        self.assertEqual(destination.tolist(), [17.0, 19.0])
+        self.assertEqual(destination.tolist(), [[17.0, 19.0]])
         self.assertIsNone(source.grad)
 
         with torch.no_grad():
