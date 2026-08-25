@@ -276,6 +276,7 @@ from . import overrides as overrides
 from . import _tensor as _tensor
 from . import serialization as serialization
 from . import utils as utils
+from . import version as version
 from .functional import atleast_1d as atleast_1d
 from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
