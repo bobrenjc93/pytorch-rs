@@ -2449,27 +2449,25 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Power, apply_square_vjp)
     }
 
-    /// Squares a materialized dense tensor while retaining its exact strides.
+    /// Computes the elementwise squared difference of same-shaped tensors in
+    /// one binary pass.
     ///
-    /// This supports composed operators whose preceding binary `TensorIterator`
-    /// layout remains observable in the final output. Standalone square keeps
-    /// using its normal unary layout canonicalization.
+    /// Reusing the same-shape binary planner keeps the output layout identical
+    /// to subtraction while avoiding an intermediate materialized difference.
+    /// The subtraction is bound to an `f32` before multiplication so its
+    /// rounding and IEEE edge behavior match a separate subtraction followed
+    /// by square.
     ///
     /// # Errors
     ///
     /// Returns an error when result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
-    pub(crate) fn square_preserving_strides(&self) -> Result<Self, TensorError> {
-        debug_assert_eq!(self.offset, 0);
-        debug_assert!(self.elements == 0 || self.is_non_overlapping_and_dense());
-        let strides = try_clone_result_shape(&self.strides, self.elements)?;
-        let mut output = self.square()?;
-        // For a dense materialized input, unary planning can only alter the
-        // strides of singleton or zero-sized axes. Restoring those strides
-        // therefore leaves every stored element at the same physical offset.
-        debug_assert_eq!(output.offset, 0);
-        output.strides = strides;
-        Ok(output)
+    pub(crate) fn squared_difference_same_shape(&self, other: &Self) -> Result<Self, TensorError> {
+        debug_assert_eq!(self.shape, other.shape);
+        self.zip_map_same_shape(other, |left, right| {
+            let difference = left - right;
+            difference * difference
+        })
     }
 
     /// Divides tensors element by element using IEEE 754 true division and
@@ -5145,7 +5143,7 @@ mod tests {
     }
 
     #[test]
-    fn square_can_preserve_a_binary_output_singleton_stride() {
+    fn squared_difference_same_shape_preserves_binary_output_singleton_stride() {
         let input = Tensor::from_vec(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0], [2, 1, 3]).unwrap();
         let target = Tensor::from_vec(vec![-1.0, 0.0, 1.0, 2.0, 3.0, 4.0], [3, 1, 2])
             .unwrap()
@@ -5157,17 +5155,76 @@ mod tests {
         assert_eq!(target.stride(), &[1, 2, 2]);
         assert_eq!(difference.stride(), &[3, 6, 1]);
 
-        let ordinary = difference.square().unwrap();
-        let preserved = difference.square_preserving_strides().unwrap();
-        assert_eq!(ordinary.stride(), &[3, 3, 1]);
-        assert_eq!(preserved.stride(), &[3, 6, 1]);
+        let composed = difference.square().unwrap();
+        let fused = input.squared_difference_same_shape(&target).unwrap();
+        assert_eq!(composed.stride(), &[3, 3, 1]);
+        assert_eq!(fused.stride(), &[3, 6, 1]);
         assert!(
-            ordinary
+            composed
                 .logical_values()
                 .map(f32::to_bits)
-                .eq(preserved.logical_values().map(f32::to_bits))
+                .eq(fused.logical_values().map(f32::to_bits))
         );
-        assert_ne!(preserved.data_ptr(), difference.data_ptr());
+        assert_ne!(fused.data_ptr(), input.data_ptr());
+        assert_ne!(fused.data_ptr(), target.data_ptr());
+        assert_ne!(fused.data_ptr(), difference.data_ptr());
+    }
+
+    #[test]
+    fn squared_difference_same_shape_matches_composed_ieee_bits() {
+        let input_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x0080_0000,
+            0x8080_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x7f81_2345,
+            0xff85_4321,
+        ];
+        let target_bits = [
+            0x8000_0000,
+            0x0000_0000,
+            0x8000_0001,
+            0x0000_0001,
+            0x8080_0000,
+            0x0080_0000,
+            0xbf80_0000,
+            0x3f80_0000,
+            0xff7f_ffff,
+            0x7f7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0xffc5_4321,
+            0x7fc1_2345,
+            0xff85_4321,
+            0x7f81_2345,
+        ];
+        let input =
+            Tensor::from_vec(input_bits.map(f32::from_bits).to_vec(), [input_bits.len()]).unwrap();
+        let target = Tensor::from_vec(
+            target_bits.map(f32::from_bits).to_vec(),
+            [target_bits.len()],
+        )
+        .unwrap();
+
+        let composed = input.sub(&target).unwrap().square().unwrap();
+        let fused = input.squared_difference_same_shape(&target).unwrap();
+
+        assert!(
+            composed
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(fused.logical_values().map(f32::to_bits))
+        );
     }
 
     #[test]
