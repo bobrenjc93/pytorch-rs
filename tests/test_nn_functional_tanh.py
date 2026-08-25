@@ -11,6 +11,11 @@ import torch_rs as torch
 import torch_rs.nn as nn
 import torch_rs.nn.functional as functional
 
+if __package__:
+    from .test_tanh import AUTOGRAD_GRADIENT_BITS, AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+else:
+    from test_tanh import AUTOGRAD_GRADIENT_BITS, AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+
 
 FUNCTION_DOC = r"""tanh(input) -> Tensor
 
@@ -176,13 +181,41 @@ class FunctionalTanhTests(unittest.TestCase):
         self.assertEqual(args, (source,))
         self.assertIsNone(kwargs)
 
-    def test_scalar_autograd_and_existing_unsupported_boundaries_are_preserved(self):
+    def test_scalar_and_rank_one_autograd_preserve_existing_unsupported_boundaries(self):
         scalar = torch.tensor(0.5, requires_grad=True)
         scalar_output = functional.tanh(input=scalar)
         self.assertTrue(scalar_output.requires_grad)
         self.assertFalse(scalar_output.is_leaf)
         scalar_output.backward()
         self.assertEqual(self.tensor_bits(scalar.grad).item(), 0x3F49_54A3)
+
+        vector = torch.tensor(
+            AUTOGRAD_INPUT_BITS.view(np.float32).tolist(), requires_grad=True
+        )
+        weights = torch.tensor(AUTOGRAD_WEIGHTS.tolist())
+        vector_output = functional.tanh(input=vector)
+        self.assertTrue(vector_output.requires_grad)
+        self.assertFalse(vector_output.is_leaf)
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(vector_output),
+            ", grad_fn=<TanhBackward0>",
+        )
+        (vector_output * weights).sum().backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(vector.grad), AUTOGRAD_GRADIENT_BITS
+        )
+
+        empty = torch.tensor([], requires_grad=True)
+        empty_output = functional.tanh(empty)
+        self.assertTrue(empty_output.requires_grad)
+        self.assertFalse(empty_output.is_leaf)
+        self.assertEqual(empty_output.shape, (0,))
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(empty_output),
+            ", grad_fn=<TanhBackward0>",
+        )
+        empty_output.sum().backward()
+        self.assertEqual(empty.grad.tolist(), [])
 
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True

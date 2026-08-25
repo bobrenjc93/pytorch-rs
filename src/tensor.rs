@@ -1024,10 +1024,6 @@ impl Tensor {
             && self.logical_values().all(f32::is_finite)
     }
 
-    fn is_finite_owned_scalar_leaf(&self) -> bool {
-        self.is_finite_owned_leaf_with_max_rank(0)
-    }
-
     fn is_finite_owned_scalar_or_vector_leaf(&self) -> bool {
         self.is_finite_owned_leaf_with_max_rank(1)
     }
@@ -2672,10 +2668,10 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when gradient recording is enabled for an input other
-    /// than a finite, owned, rank-zero CPU float32 leaf, or when result
-    /// metadata or storage allocation fails.
+    /// than a finite, owned, rank-zero or rank-one CPU float32 leaf, or when
+    /// result metadata or storage allocation fails.
     pub fn tanh(&self) -> Result<Self, TensorError> {
-        if self.records_grad() && !self.is_finite_owned_scalar_leaf() {
+        if self.records_grad() && !self.is_finite_owned_scalar_or_vector_leaf() {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" });
         }
         let output = self.unary_map(tanh_value)?;
@@ -3602,9 +3598,8 @@ fn apply_sigmoid_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<
 }
 
 fn apply_tanh_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
-    // Scalar tanh autograd always saves one contiguous output today. Keep the
-    // generic saved-output iteration shape so widening support does not need a
-    // different graph representation.
+    // Supported tanh leaves save contiguous scalar or vector outputs. Keep the
+    // generic fallback because the saved-output node itself is layout-agnostic.
     if let Some(saved_values) = output.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());
         gradient.extend(saved_values.iter().zip(upstream).map(
@@ -5289,10 +5284,7 @@ mod tests {
             source.sigmoid().unwrap().grad_fn_name(),
             Some("SigmoidBackward0")
         );
-        assert_eq!(
-            source.tanh(),
-            Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" })
-        );
+        assert_eq!(source.tanh().unwrap().grad_fn_name(), Some("TanhBackward0"));
         let scalar = Tensor::from_vec(vec![0.5], [])
             .unwrap()
             .with_requires_grad(true);
