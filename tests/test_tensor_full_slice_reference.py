@@ -72,6 +72,21 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             return self.double_full_slice_layout_cases(module)
         return self.higher_rank_full_slice_layout_cases(module, slice_count)
 
+    def leading_integer_full_slice_layout_cases(self, module):
+        values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
+        base = module.tensor(values.tolist(), dtype=module.float32)
+        return (
+            (
+                module.tensor(
+                    [[-0.0, 1.0], [2.0, 3.0]], dtype=module.float32
+                ),
+                -1,
+            ),
+            (module.zeros((2, 0, 3), dtype=module.float32), -1),
+            (base[1], 1),
+            (base[1].transpose(0, 1), -1),
+        )
+
     def alias_contract(self, source, index):
         alias = source[index]
         values = np.asarray(alias.detach(), dtype=np.float32).reshape(-1)
@@ -168,6 +183,71 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                             self.alias_contract(expected, index),
                         )
 
+    def leading_integer_full_slice_contract(self, module):
+        layouts = []
+        for source, index in self.leading_integer_full_slice_layout_cases(module):
+            selected = source[index, :]
+            direct = source[index]
+            values = np.asarray(selected.detach(), dtype=np.float32).reshape(-1)
+            layouts.append(
+                {
+                    "values": selected.tolist(),
+                    "value_bits": tuple(values.view(np.uint32).tolist()),
+                    "shape": tuple(selected.shape),
+                    "stride": selected.stride(),
+                    "storage_offset": selected.storage_offset(),
+                    "same_logical_view": selected.is_set_to(direct),
+                    "same_data_pointer": selected.data_ptr() == direct.data_ptr(),
+                    "dtype": str(selected.dtype),
+                    "device": str(selected.device),
+                }
+            )
+
+        class IntegerSubclass(int):
+            pass
+
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        dynamic_index = IndexValue(-1)
+        source = module.tensor(
+            [[0.0, 1.0], [2.0, 3.0]], dtype=module.float32
+        )
+        protocols = []
+        for index, normalized in (
+            (IntegerSubclass(1), 1),
+            (np.int64(-1), 1),
+            (np.uint64(0), 0),
+            (dynamic_index, 1),
+        ):
+            selected = source[index, :]
+            direct = source[normalized]
+            protocols.append(
+                (
+                    selected.tolist(),
+                    tuple(selected.shape),
+                    selected.stride(),
+                    selected.storage_offset(),
+                    selected.is_set_to(direct),
+                    selected.data_ptr() == direct.data_ptr(),
+                )
+            )
+        return layouts, protocols, dynamic_index.calls
+
+    def test_leading_integer_full_slice_layout_and_protocol_match_pytorch_2_13(
+        self,
+    ):
+        self.assertEqual(
+            self.leading_integer_full_slice_contract(torch),
+            self.leading_integer_full_slice_contract(reference_torch),
+        )
+
     def scalar_error_contract(self, module, index):
         try:
             module.tensor(-0.0, dtype=module.float32)[index]
@@ -236,6 +316,44 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                             ),
                         )
 
+    def leading_integer_full_slice_error_contract(self, module):
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        def capture(call):
+            try:
+                call()
+            except Exception as error:
+                return type(error).__name__, str(error)
+            self.fail("leading-integer full slice unexpectedly succeeded")
+
+        rank_one_index = IndexValue(0)
+        rank_one_error = capture(
+            lambda: module.zeros((2,), dtype=module.float32)[rank_one_index, :]
+        )
+        out_of_bounds = IndexValue(2)
+        bounds_error = capture(
+            lambda: module.zeros((2, 3), dtype=module.float32)[out_of_bounds, :]
+        )
+        return (
+            rank_one_error,
+            rank_one_index.calls,
+            bounds_error,
+            out_of_bounds.calls,
+        )
+
+    def test_leading_integer_full_slice_errors_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.leading_integer_full_slice_error_contract(torch),
+            self.leading_integer_full_slice_error_contract(reference_torch),
+        )
+
     def tuple_subclass_contract(self, module):
         source = module.tensor(
             [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], dtype=module.float32
@@ -275,6 +393,12 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                 return iter((slice(None), Ellipsis, slice(None)))
 
         mixed_alias = source[FullSliceEllipsisRemapTuple((0,))]
+
+        class LeadingIntegerFullSliceRemapTuple(tuple):
+            def __iter__(self):
+                return iter((1, slice(None)))
+
+        selected_with_slice = source[LeadingIntegerFullSliceRemapTuple((0,))]
 
         class EmptyRemapTuple(tuple):
             def __iter__(self):
@@ -330,6 +454,16 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             "mixed_alias_same_logical_view": mixed_alias.is_set_to(source),
             "mixed_alias_same_data_pointer": (
                 mixed_alias.data_ptr() == source.data_ptr()
+            ),
+            "selected_with_slice_values": selected_with_slice.tolist(),
+            "selected_with_slice_shape": tuple(selected_with_slice.shape),
+            "selected_with_slice_stride": selected_with_slice.stride(),
+            "selected_with_slice_offset": selected_with_slice.storage_offset(),
+            "selected_with_slice_same_logical_view": selected_with_slice.is_set_to(
+                source[1]
+            ),
+            "selected_with_slice_same_data_pointer": (
+                selected_with_slice.data_ptr() == source[1].data_ptr()
             ),
             "empty_alias_values": empty_alias.tolist(),
             "empty_alias_shape": tuple(empty_alias.shape),
@@ -467,6 +601,56 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
     def test_empty_tuple_autograd_matches_pytorch_2_13(self):
         self.assert_autograd_node_gradient_and_no_grad_status_match_pytorch_2_13(())
 
+    def leading_integer_full_slice_autograd_contract(self, module):
+        leaf = module.tensor(
+            [float(value) for value in range(48)], requires_grad=True
+        )
+        source = (leaf * 2.0).reshape(2, 2, 3, 4)[1].transpose(0, 1)
+        selected = source[-2, :]
+        direct = source[-2]
+        metadata = (
+            selected.requires_grad,
+            selected.is_leaf,
+            selected.output_nr,
+            tuple(selected.shape),
+            selected.stride(),
+            selected.storage_offset(),
+            selected.is_set_to(direct),
+            selected.data_ptr() == direct.data_ptr(),
+        )
+        (selected.transpose(0, 1) * 3.0).sum().backward()
+
+        no_grad_source = module.tensor(
+            [[1.0, 2.0], [3.0, 4.0]], requires_grad=True
+        )
+        with module.no_grad():
+            untracked = no_grad_source[1, :]
+
+        empty = module.zeros((2, 0, 3), requires_grad=True)
+        empty[-1, :].sum().backward()
+        return {
+            "metadata": metadata,
+            "gradient": leaf.grad.tolist(),
+            "node": self.node_diagnostic(module, (0, slice(None)), rank=2),
+            "no_grad": (
+                untracked.requires_grad,
+                untracked.is_leaf,
+                untracked.output_nr,
+                tuple(untracked.shape),
+                untracked.stride(),
+                untracked.storage_offset(),
+                untracked.is_set_to(no_grad_source[1]),
+            ),
+            "empty_gradient_shape": tuple(empty.grad.shape),
+            "empty_gradient": empty.grad.tolist(),
+        }
+
+    def test_leading_integer_full_slice_autograd_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.leading_integer_full_slice_autograd_contract(torch),
+            self.leading_integer_full_slice_autograd_contract(reference_torch),
+        )
+
     def lifetime_contract(self, module, index, source_rank=2):
         input_shape = tuple(range(2, source_rank + 3))
         values = np.arange(np.prod(input_shape), dtype=np.float32).reshape(
@@ -538,6 +722,39 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                     self.assert_source_lifetime_matches_pytorch_2_13(
                         index, source_rank=max(slice_count, 2)
                     )
+
+    def leading_integer_full_slice_lifetime_contract(self, module):
+        values = np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4)
+        leaf = module.tensor(
+            values.tolist(), dtype=module.float32, requires_grad=True
+        )
+
+        def make_view():
+            source = (leaf * 2.0)[1].transpose(0, 1)
+            return source[-1, :]
+
+        selected = make_view()
+        gc.collect()
+        metadata = (
+            selected.tolist(),
+            tuple(selected.shape),
+            selected.stride(),
+            selected.storage_offset(),
+            selected.requires_grad,
+            selected.is_leaf,
+        )
+        weights = module.tensor(
+            [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]],
+            dtype=module.float32,
+        )
+        (selected * weights).sum().backward()
+        return metadata, leaf.grad.tolist()
+
+    def test_leading_integer_full_slice_lifetime_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.leading_integer_full_slice_lifetime_contract(torch),
+            self.leading_integer_full_slice_lifetime_contract(reference_torch),
+        )
 
     def mode_dispatch_contract(self, module, index):
         index_rank = len(index) if isinstance(index, tuple) else 1
@@ -665,6 +882,11 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
                     self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
                         index
                     )
+
+    def test_leading_integer_full_slice_mode_dispatch_matches_pytorch_2_13(self):
+        self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
+            (0, slice(None))
+        )
 
 
 if __name__ == "__main__":
