@@ -9829,7 +9829,7 @@ fn bind_view_argument<'py>(
         return Err(unsupported_view_call_error(positional, keywords)?);
     }
 
-    if matches!(positional.len(), 2..=4) {
+    if matches!(positional.len(), 2..=5) {
         let first = positional.get_item(0)?;
         if !is_view_shape_dimension(&first) {
             return Err(unsupported_view_call_error(positional, keywords)?);
@@ -9871,7 +9871,7 @@ fn bind_view_argument<'py>(
         _ if keyword_error.is_some() => {
             return Err(unsupported_view_call_error(positional, keywords)?);
         }
-        _ => return Err(unsupported_five_or_more_view_dimensions_error()),
+        _ => return Err(unsupported_six_or_more_view_dimensions_error()),
     };
     let shape = if let Ok(shape) = value.cast::<PyTuple>() {
         ViewShapeArgument::Tuple(shape.clone())
@@ -10038,9 +10038,9 @@ fn unsupported_view_size_dtype_error(
     )))
 }
 
-fn unsupported_five_or_more_view_dimensions_error() -> PyErr {
+fn unsupported_six_or_more_view_dimensions_error() -> PyErr {
     PyTypeError::new_err(
-        "view(): five or more positional dimensions are not supported; pass a tuple, list, or torch.Size",
+        "view(): six or more positional dimensions are not supported; pass a tuple, list, or torch.Size",
     )
 }
 
