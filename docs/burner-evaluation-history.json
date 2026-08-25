@@ -6017,6 +6017,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:888",
+      "recordedAt": "2026-08-25T03:03:29.845Z",
+      "label": "PR #888",
+      "kind": "leaf",
+      "prNumber": 888,
+      "title": "Widen tanh autograd to finite owned rank-1 tensors",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 90.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 73.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
