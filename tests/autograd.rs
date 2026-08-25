@@ -103,6 +103,74 @@ fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
 }
 
 #[test]
+fn dense_noncontiguous_and_empty_leaves_preserve_gradient_layouts() {
+    let transposed = Tensor::from_vec((1_u8..=6).map(f32::from).collect(), [2, 3])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap()
+        .try_clone()
+        .unwrap()
+        .with_requires_grad(true);
+    let transposed_weights = Tensor::from_vec((1_u8..=6).map(f32::from).collect(), [3, 2]).unwrap();
+    transposed
+        .mul(&transposed_weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    let first_transposed_grad = transposed.grad().unwrap().unwrap();
+    assert_eq!(first_transposed_grad.stride(), transposed.stride());
+    assert_eq!(first_transposed_grad.storage_offset(), 0);
+    assert_eq!(values(&first_transposed_grad), values(&transposed_weights));
+    transposed.sum().backward().unwrap();
+    assert_eq!(first_transposed_grad.stride(), transposed.stride());
+    assert_eq!(
+        values(&first_transposed_grad),
+        [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    );
+    let accumulated_transposed_grad = transposed.grad().unwrap().unwrap();
+    assert_eq!(accumulated_transposed_grad.stride(), transposed.stride());
+    assert_eq!(
+        values(&accumulated_transposed_grad),
+        [2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    );
+
+    let channels_last = Tensor::from_vec((1_u8..=48).map(f32::from).collect(), [2, 3, 2, 4])
+        .unwrap()
+        .try_clone_with_memory_format(MemoryFormat::ChannelsLast)
+        .unwrap()
+        .with_requires_grad(true);
+    let channels_last_weights =
+        Tensor::from_vec((1_u8..=48).map(f32::from).collect(), [2, 3, 2, 4]).unwrap();
+    channels_last
+        .mul(&channels_last_weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    let channels_last_grad = channels_last.grad().unwrap().unwrap();
+    assert_eq!(channels_last_grad.stride(), channels_last.stride());
+    assert_eq!(channels_last_grad.storage_offset(), 0);
+    assert_eq!(values(&channels_last_grad), values(&channels_last_weights));
+
+    let empty = Tensor::zeros([2, 0, 3])
+        .unwrap()
+        .transpose(0, 2)
+        .unwrap()
+        .index([1])
+        .unwrap()
+        .try_clone()
+        .unwrap()
+        .with_requires_grad(true);
+    empty.sum().backward().unwrap();
+    let empty_grad = empty.grad().unwrap().unwrap();
+    assert_eq!(empty_grad.shape(), empty.shape());
+    assert_eq!(empty_grad.stride(), empty.stride());
+    assert_eq!(empty_grad.storage_offset(), 0);
+    assert!(values(&empty_grad).is_empty());
+}
+
+#[test]
 fn absolute_value_rejects_recording_before_planning_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-2.0, -0.0, 1.0, 4.0], [2, 2])
         .unwrap()

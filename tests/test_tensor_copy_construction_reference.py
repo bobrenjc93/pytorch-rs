@@ -140,6 +140,45 @@ class TensorCopyConstructionReferenceTests(unittest.TestCase):
         self.assertEqual(actual_warnings, expected_warnings)
         np.testing.assert_array_equal(actual_grad, expected_grad)
 
+    def gradient_layout_outcome(self, module, source):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            copied = module.tensor(source, requires_grad=True)
+        if copied.numel() == 0:
+            copied.sum().backward()
+        else:
+            weights = module.tensor(
+                np.arange(1, copied.numel() + 1, dtype=np.float32)
+                .reshape(tuple(copied.shape))
+                .tolist(),
+                dtype=module.float32,
+            )
+            (copied * weights).sum().backward()
+        first_gradient = copied.grad
+        copied.sum().backward()
+        return (
+            copied.stride(),
+            first_gradient.shape,
+            first_gradient.stride(),
+            first_gradient.storage_offset(),
+            copied.grad is first_gradient,
+            self.tensor_bits(first_gradient).copy(),
+            self.tensor_bits(copied.grad).copy(),
+        )
+
+    def test_noncontiguous_and_empty_gradient_layouts_match_pytorch_2_13(self):
+        actual_sources = dict(self.make_sources(torch))
+        expected_sources = dict(self.make_sources(reference_torch))
+        for case in ("transposed", "channels-last", "empty-offset"):
+            with self.subTest(case=case):
+                actual = self.gradient_layout_outcome(torch, actual_sources[case])
+                expected = self.gradient_layout_outcome(
+                    reference_torch, expected_sources[case]
+                )
+                self.assertEqual(actual[:-2], expected[:-2])
+                np.testing.assert_array_equal(actual[-2], expected[-2])
+                np.testing.assert_array_equal(actual[-1], expected[-1])
+
     def test_existing_non_tensor_paths_remain_warning_free(self):
         actual_cases = (
             -0.0,

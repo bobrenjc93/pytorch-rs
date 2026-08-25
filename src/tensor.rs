@@ -27,6 +27,7 @@ struct AutogradMeta {
 enum AutogradKind {
     Leaf {
         shape: Vec<usize>,
+        strides: Vec<usize>,
         dtype: DType,
         device: Device,
         grad: Mutex<Option<Arc<Storage>>>,
@@ -834,6 +835,11 @@ impl Tensor {
     /// Calling this with `true` on a tensor which already participates in a
     /// graph preserves that graph. Freshly marked tensors accumulate gradients
     /// according to their current logical shape.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a non-dense tensor contains invalid internal shape metadata
+    /// which cannot be represented by contiguous gradient strides.
     #[must_use]
     pub fn with_requires_grad(mut self, requires_grad: bool) -> Self {
         if !requires_grad {
@@ -841,9 +847,16 @@ impl Tensor {
             self.output_nr = 0;
             self.view_requires_grad = false;
         } else if self.autograd.is_none() {
+            let gradient_strides = if self.elements == 0 || self.is_non_overlapping_and_dense() {
+                self.strides.clone()
+            } else {
+                contiguous_strides(&self.shape, self.elements)
+                    .expect("a validated nonempty tensor shape must have contiguous strides")
+            };
             self.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::Leaf {
                     shape: self.shape.clone(),
+                    strides: gradient_strides,
                     dtype: self.dtype(),
                     device: self.device(),
                     grad: Mutex::new(None),
@@ -855,7 +868,7 @@ impl Tensor {
         self
     }
 
-    /// Returns a detached, contiguous snapshot of an accumulated leaf gradient.
+    /// Returns a detached snapshot of an accumulated leaf gradient.
     ///
     /// Non-leaf tensors and leaves which have not been used by a successful
     /// backward pass return [`None`].
@@ -867,7 +880,13 @@ impl Tensor {
         let Some(meta) = &self.autograd else {
             return Ok(None);
         };
-        let AutogradKind::Leaf { shape, grad, .. } = &meta.kind else {
+        let AutogradKind::Leaf {
+            shape,
+            strides,
+            grad,
+            ..
+        } = &meta.kind
+        else {
             return Ok(None);
         };
         let grad = grad
@@ -878,7 +897,7 @@ impl Tensor {
         };
         let elements = storage.len();
         let shape = try_clone_result_shape(shape, elements)?;
-        let strides = contiguous_strides(&shape, elements)?;
+        let strides = try_clone_result_shape(strides, elements)?;
         let values = storage.try_copy_values(|values| copied_storage(values, elements))?;
         Ok(Some(Self::from_owned_parts(
             values,
@@ -894,7 +913,13 @@ impl Tensor {
         let Some(meta) = &self.autograd else {
             return Ok(None);
         };
-        let AutogradKind::Leaf { shape, grad, .. } = &meta.kind else {
+        let AutogradKind::Leaf {
+            shape,
+            strides,
+            grad,
+            ..
+        } = &meta.kind
+        else {
             return Ok(None);
         };
         let grad = grad
@@ -905,7 +930,7 @@ impl Tensor {
         };
         let elements = storage.len();
         let shape = try_clone_result_shape(shape, elements)?;
-        let strides = contiguous_strides(&shape, elements)?;
+        let strides = try_clone_result_shape(strides, elements)?;
         Ok(Some(Self {
             storage: Arc::clone(storage),
             shape,
@@ -990,10 +1015,15 @@ impl Tensor {
             }
             add_gradient(&mut gradients, &meta, output_nr, vec![1.0]);
         }
+        let mut leaf_gradients = Vec::with_capacity(unique_roots.len());
         for (meta, output_nr) in unique_roots {
             let gradient = gradients
                 .remove(&gradient_key(&meta, output_nr))
                 .expect("every unique leaf root must have an aggregated gradient");
+            let gradient = prepare_leaf_gradient(&meta, gradient)?;
+            leaf_gradients.push((meta, gradient));
+        }
+        for (meta, gradient) in leaf_gradients {
             accumulate_leaf_gradient(&meta, gradient);
         }
         Ok(())
@@ -3258,9 +3288,13 @@ fn run_backward(root: &Arc<AutogradMeta>, root_output_nr: usize) -> Result<(), T
         }
     }
 
+    for (meta, gradient) in &mut leaf_gradients {
+        *gradient = prepare_leaf_gradient(meta, std::mem::take(gradient))?;
+    }
+
     // Release only value-dependent saved state after all fallible gradient
-    // calculations have succeeded. Metadata-only edges remain available for
-    // repeated backward traversals.
+    // calculations, including leaf-layout materialization, have succeeded.
+    // Metadata-only edges remain available for repeated backward traversals.
     for (meta, grad_fn) in &topology {
         if grad_fn.is_some()
             && let AutogradKind::NonLeaf { grad_fn } = &meta.kind
@@ -3773,6 +3807,26 @@ fn add_gradient(
             }
         })
         .or_insert(contribution);
+}
+
+fn prepare_leaf_gradient(
+    meta: &AutogradMeta,
+    contribution: Vec<f32>,
+) -> Result<Vec<f32>, TensorError> {
+    let AutogradKind::Leaf { shape, strides, .. } = &meta.kind else {
+        unreachable!("only leaf nodes are queued for gradient accumulation");
+    };
+    if layout_is_contiguous(shape, strides, contribution.len()) {
+        return Ok(contribution);
+    }
+
+    let elements = contribution.len();
+    let mut physical = filled_storage(elements, 0.0)?;
+    for (logical_index, value) in contribution.into_iter().enumerate() {
+        let storage_offset = logical_offset_for_linear_index(shape, strides, 0, logical_index)?;
+        physical[storage_offset] = value;
+    }
+    Ok(physical)
 }
 
 fn accumulate_leaf_gradient(meta: &AutogradMeta, contribution: Vec<f32>) {

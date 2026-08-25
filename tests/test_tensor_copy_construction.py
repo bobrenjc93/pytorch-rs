@@ -126,6 +126,39 @@ class TensorCopyConstructionTests(unittest.TestCase):
         self.assertTrue(no_grad_copy.requires_grad)
         self.assertTrue(no_grad_copy.is_leaf)
 
+    def test_noncontiguous_and_empty_copy_gradients_preserve_leaf_layout(self):
+        cases = {
+            case: source
+            for case, source in self.make_sources()
+            if case in {"empty-offset", "transposed", "channels-last"}
+        }
+        for case, source in cases.items():
+            with self.subTest(case=case):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    copied = torch.tensor(source, requires_grad=True)
+                if copied.numel() == 0:
+                    copied.sum().backward()
+                    expected = []
+                else:
+                    weights = torch.tensor(
+                        np.arange(1, copied.numel() + 1, dtype=np.float32)
+                        .reshape(copied.shape)
+                        .tolist()
+                    )
+                    (copied * weights).sum().backward()
+                    expected = weights.tolist()
+
+                self.assertEqual(copied.grad.shape, copied.shape)
+                self.assertEqual(copied.grad.stride(), copied.stride())
+                self.assertEqual(copied.grad.storage_offset(), 0)
+                self.assertEqual(copied.grad.tolist(), expected)
+
+                first_gradient = copied.grad
+                copied.sum().backward()
+                self.assertIs(copied.grad, first_gradient)
+                self.assertEqual(copied.grad.stride(), copied.stride())
+
     def test_warning_as_error_precedes_copy_construction(self):
         source = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
         pointer = source.data_ptr()
