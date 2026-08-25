@@ -1442,7 +1442,100 @@ fn sigmoid_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
 }
 
 #[test]
-fn sigmoid_rejects_nonfinite_owned_leaves_before_graph_mutation() {
+fn sigmoid_differentiates_owned_scalar_nonleaves_across_parent_nodes() {
+    type ParentOperation = fn(&Tensor) -> Result<Tensor, TensorError>;
+    let cases: [(&str, ParentOperation); 16] = [
+        ("clone", Tensor::try_clone),
+        ("add scalar", |input| input.add_scalar(0.25)),
+        ("subtract scalar", |input| input.sub_scalar(0.25)),
+        ("reflected subtract", |input| input.scalar_sub(0.25)),
+        ("multiply scalar", |input| input.mul_scalar(1.5)),
+        ("multiply tensor", |input| input.mul(input)),
+        ("relu", Tensor::relu),
+        ("sin", Tensor::sin),
+        ("exp", Tensor::exp),
+        ("floor", Tensor::floor),
+        ("ceil", Tensor::ceil),
+        ("trunc", Tensor::trunc),
+        ("sigmoid", Tensor::sigmoid),
+        ("tanh", Tensor::tanh),
+        ("sqrt", Tensor::sqrt),
+        ("sum", |input| Ok(input.sum())),
+    ];
+
+    for (case, make_parent) in cases {
+        let leaf = Tensor::from_vec(vec![0.5], [])
+            .unwrap()
+            .with_requires_grad(true);
+        let parent = make_parent(&leaf).unwrap();
+        assert!(parent.requires_grad(), "{case}");
+        assert!(!parent.is_leaf(), "{case}");
+        assert!(parent.shape().is_empty(), "{case}");
+        assert_eq!(parent.storage_offset(), 0, "{case}");
+        assert!(!parent.shares_storage_with(&leaf), "{case}");
+
+        let expected_output_bits = parent
+            .detach()
+            .unwrap()
+            .sigmoid()
+            .unwrap()
+            .item()
+            .unwrap()
+            .to_bits();
+        let output = parent.sigmoid().unwrap();
+        assert!(output.requires_grad(), "{case}");
+        assert!(!output.is_leaf(), "{case}");
+        assert_eq!(
+            output.item().unwrap().to_bits(),
+            expected_output_bits,
+            "{case}"
+        );
+
+        output.backward().unwrap();
+        let gradient_before_repeated_backward = leaf.grad().unwrap().unwrap().item().unwrap();
+        assert_eq!(
+            output.backward(),
+            Err(TensorError::BackwardGraphFreed),
+            "{case}"
+        );
+        assert_eq!(
+            leaf.grad().unwrap().unwrap().item().unwrap().to_bits(),
+            gradient_before_repeated_backward.to_bits(),
+            "{case}"
+        );
+
+        let accumulated = Tensor::from_vec(vec![0.5], [])
+            .unwrap()
+            .with_requires_grad(true);
+        make_parent(&accumulated)
+            .unwrap()
+            .sigmoid()
+            .unwrap()
+            .backward()
+            .unwrap();
+        let first = accumulated.grad().unwrap().unwrap().item().unwrap();
+        make_parent(&accumulated)
+            .unwrap()
+            .sigmoid()
+            .unwrap()
+            .backward()
+            .unwrap();
+        assert_eq!(
+            accumulated
+                .grad()
+                .unwrap()
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits(),
+            (first + first).to_bits(),
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn sigmoid_rejects_nonfinite_owned_inputs_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported {
         operation: "sigmoid",
     };
@@ -1543,7 +1636,41 @@ fn sigmoid_rejects_nonfinite_owned_leaves_before_graph_mutation() {
 }
 
 #[test]
-fn sigmoid_rejects_tracked_views_and_nonleaves_before_graph_mutation() {
+fn sigmoid_rejects_nonfinite_owned_scalar_nonleaves_before_graph_mutation() {
+    let unsupported = TensorError::AutogradRecordingUnsupported {
+        operation: "sigmoid",
+    };
+
+    for bits in [
+        f32::INFINITY.to_bits(),
+        f32::NEG_INFINITY.to_bits(),
+        0x7f81_2345,
+        0xffc5_4321,
+    ] {
+        let nonleaf_base = Tensor::from_vec(vec![0.5], [])
+            .unwrap()
+            .with_requires_grad(true);
+        let nonleaf = nonleaf_base.add_scalar(f32::from_bits(bits)).unwrap();
+        assert!(nonleaf.requires_grad());
+        assert!(!nonleaf.is_leaf());
+        assert_eq!(nonleaf.sigmoid(), Err(unsupported.clone()));
+        assert!(nonleaf_base.grad().unwrap().is_none());
+        nonleaf.backward().unwrap();
+        assert_eq!(
+            nonleaf_base
+                .grad()
+                .unwrap()
+                .unwrap()
+                .item()
+                .unwrap()
+                .to_bits(),
+            1.0_f32.to_bits()
+        );
+    }
+}
+
+#[test]
+fn sigmoid_rejects_tracked_views_and_rank_one_or_higher_nonleaves_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported {
         operation: "sigmoid",
     };
@@ -1585,23 +1712,6 @@ fn sigmoid_rejects_tracked_views_and_nonleaves_before_graph_mutation() {
     assert_eq!(
         values(&matrix_view_base.grad().unwrap().unwrap()),
         [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
-    );
-
-    let nonleaf_base = Tensor::from_vec(vec![0.5], [])
-        .unwrap()
-        .with_requires_grad(true);
-    let nonleaf = nonleaf_base.sin().unwrap();
-    assert_eq!(nonleaf.sigmoid(), Err(unsupported.clone()));
-    nonleaf.backward().unwrap();
-    assert_eq!(
-        nonleaf_base
-            .grad()
-            .unwrap()
-            .unwrap()
-            .item()
-            .unwrap()
-            .to_bits(),
-        0.5_f32.cos().to_bits()
     );
 
     let matrix_nonleaf_base = Tensor::from_vec(vec![0.5, -0.5], [1, 2])
