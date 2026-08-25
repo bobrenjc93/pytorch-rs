@@ -16,7 +16,7 @@ use pyo3::types::{
 };
 
 use crate::{
-    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError, is_grad_enabled,
+    DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
     python_cpython_compat as cpython_compat,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
@@ -793,6 +793,23 @@ impl PyTensorBase {
     fn trunc(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
         let tensor = slf.as_any().cast::<PyTensor>()?;
         if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "trunc")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.trunc().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nfix() -> Tensor\n\nSee :func:`torch.fix`.\n"]
+    #[pyo3(text_signature = None)]
+    fn fix(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "fix")? {
             return Ok(result);
         }
 
@@ -2039,7 +2056,6 @@ struct UnaryOutOperation {
     qualified_name: &'static str,
     dispatch_allocation_error: &'static str,
     out_unsupported_error: &'static str,
-    autograd_unsupported_error: Option<&'static str>,
     apply: UnaryOutApplication,
 }
 
@@ -2049,7 +2065,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.neg",
         dispatch_allocation_error: "unable to allocate neg dispatch operands",
         out_unsupported_error: "neg(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::negate,
     };
 
@@ -2058,7 +2073,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.negative",
         dispatch_allocation_error: "unable to allocate negative dispatch operands",
         out_unsupported_error: "negative(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::negate,
     };
 
@@ -2067,7 +2081,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.exp",
         dispatch_allocation_error: "unable to allocate exp dispatch operands",
         out_unsupported_error: "exp(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::exp,
     };
 
@@ -2076,7 +2089,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.floor",
         dispatch_allocation_error: "unable to allocate floor dispatch operands",
         out_unsupported_error: "floor(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::floor,
     };
 
@@ -2085,7 +2097,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.ceil",
         dispatch_allocation_error: "unable to allocate ceil dispatch operands",
         out_unsupported_error: "ceil(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::ceil,
     };
 
@@ -2094,7 +2105,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.trunc",
         dispatch_allocation_error: "unable to allocate trunc dispatch operands",
         out_unsupported_error: "trunc(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::trunc,
     };
 
@@ -2103,7 +2113,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.fix",
         dispatch_allocation_error: "unable to allocate fix dispatch operands",
         out_unsupported_error: "fix(): the 'out' argument is not supported",
-        autograd_unsupported_error: Some("fix(): autograd recording is not supported"),
         apply: CoreTensor::trunc,
     };
 
@@ -2112,7 +2121,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.reciprocal",
         dispatch_allocation_error: "unable to allocate reciprocal dispatch operands",
         out_unsupported_error: "reciprocal(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::reciprocal,
     };
 
@@ -2121,7 +2129,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.sin",
         dispatch_allocation_error: "unable to allocate sin dispatch operands",
         out_unsupported_error: "sin(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::sin,
     };
 
@@ -2130,7 +2137,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.sqrt",
         dispatch_allocation_error: "unable to allocate sqrt dispatch operands",
         out_unsupported_error: "sqrt(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::sqrt,
     };
 
@@ -2139,7 +2145,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.square",
         dispatch_allocation_error: "unable to allocate square dispatch operands",
         out_unsupported_error: "square(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::square,
     };
 
@@ -2148,7 +2153,6 @@ impl UnaryOutOperation {
         qualified_name: "torch.tanh",
         dispatch_allocation_error: "unable to allocate tanh dispatch operands",
         out_unsupported_error: "tanh(): the 'out' argument is not supported",
-        autograd_unsupported_error: None,
         apply: CoreTensor::tanh,
     };
 }
@@ -2408,6 +2412,7 @@ fn dispatch_tensorbase_mode(
                     | "ceil"
                     | "const_data_ptr"
                     | "exp"
+                    | "fix"
                     | "floor"
                     | "reciprocal"
                     | "sigmoid"
@@ -3002,12 +3007,6 @@ fn apply_top_level_unary_out(
         unreachable!("unary-out overrides were dispatched before the native path")
     };
     let input = input.try_borrow()?;
-    if input.inner.requires_grad()
-        && is_grad_enabled()
-        && let Some(error) = operation.autograd_unsupported_error
-    {
-        return Err(PyRuntimeError::new_err(error));
-    }
     let output = (operation.apply)(&input.inner).map_err(|error| tensor_error(&error))?;
     Ok(Py::new(py, PyTensor::new(output))?.into_any())
 }

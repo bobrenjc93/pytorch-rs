@@ -10,19 +10,27 @@ import numpy as np
 import torch_rs as torch
 
 if __package__:
+    from .signature_utils import assert_no_argument_signature
     from .test_trunc import SPECIAL_OUTPUT_BITS, make_cases
 else:
+    from signature_utils import assert_no_argument_signature
     from test_trunc import SPECIAL_OUTPUT_BITS, make_cases
 
 
-FIX_DOC = """
+TENSOR_FIX_DOC = """
+fix() -> Tensor
+
+See :func:`torch.fix`.
+"""
+
+TOP_LEVEL_FIX_DOC = """
 fix(input, *, out=None) -> Tensor
 
 Alias for :func:`torch.trunc`
 """
 
 
-class TopLevelFixTests(unittest.TestCase):
+class TensorFixTests(unittest.TestCase):
     @staticmethod
     def tensor_bits(tensor):
         return np.asarray(tensor, dtype=np.float32).reshape(-1).view(np.uint32)
@@ -43,8 +51,48 @@ class TopLevelFixTests(unittest.TestCase):
             )
 
     @staticmethod
+    def make_tracked_cases():
+        scalar = torch.tensor(-1.25, requires_grad=True)
+        empty_leaf = torch.zeros((2, 0, 3), requires_grad=True)
+        empty = empty_leaf.transpose(0, 2)[1]
+        leaf = torch.tensor(
+            np.linspace(-3.75, 3.75, 24, dtype=np.float32)
+            .reshape(2, 3, 4)
+            .tolist(),
+            requires_grad=True,
+        )
+        strided = leaf.transpose(0, 2)
+        channels_last_leaf = torch.tensor(
+            np.linspace(-15.0, 15.0, 120, dtype=np.float32)
+            .reshape(2, 3, 4, 5)
+            .tolist(),
+            requires_grad=True,
+        )
+        channels_last = channels_last_leaf.contiguous(
+            memory_format=torch.channels_last
+        )
+        channels_last_3d_leaf = torch.tensor(
+            np.linspace(-90.0, 90.0, 720, dtype=np.float32)
+            .reshape(2, 3, 4, 5, 6)
+            .tolist(),
+            requires_grad=True,
+        )
+        channels_last_3d = channels_last_3d_leaf.contiguous(
+            memory_format=torch.channels_last_3d
+        )
+        return (
+            (scalar, scalar),
+            (empty_leaf, empty),
+            (leaf, strided[1]),
+            (leaf, strided),
+            (channels_last_leaf, channels_last),
+            (channels_last_3d_leaf, channels_last_3d),
+        )
+
+    @staticmethod
     def supported_calls(source):
         return (
+            ("method", source.fix),
             ("positional", lambda: torch.fix(source)),
             ("input", lambda: torch.fix(input=source)),
             ("x", lambda: torch.fix(x=source)),
@@ -70,45 +118,108 @@ class TopLevelFixTests(unittest.TestCase):
                         self.tensor_bits(output), SPECIAL_OUTPUT_BITS
                     )
 
-    def test_autograd_is_rejected_before_planning_but_no_grad_and_detach_work(self):
-        leaf = torch.tensor(
-            np.linspace(-3.75, 3.75, 24, dtype=np.float32)
-            .reshape(2, 3, 4)
-            .tolist(),
-            requires_grad=True,
-        )
-        source = leaf.transpose(0, 2)[1]
+    def test_autograd_records_reusable_trunc_backward_for_every_call_form(self):
+        for case, (leaf, source) in enumerate(self.make_tracked_cases()):
+            expected = source.trunc()
+            for form, call in self.supported_calls(source):
+                with self.subTest(case=case, form=form):
+                    output = call()
+                    self.assert_matches(output, expected, case=(case, form))
+                    self.assertTrue(output.requires_grad)
+                    self.assertFalse(output.is_leaf)
+                    self.assertFalse(output.is_set_to(source))
+                    self.assertEqual(
+                        torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                            output
+                        ),
+                        ", grad_fn=<TruncBackward0>",
+                    )
 
-        for form, call in self.supported_calls(source):
-            with self.subTest(form=form, mode="recording"):
-                with self.assertRaisesRegex(
-                    RuntimeError,
-                    r"^fix\(\): autograd recording is not supported$",
-                ):
-                    call()
-            with self.subTest(form=form, mode="no_grad"):
-                with torch.no_grad():
-                    actual = call()
-                    expected = source.trunc()
-                self.assert_matches(actual, expected, case=(form, "no_grad"))
-                self.assertFalse(actual.is_set_to(source))
-
-        detached = source.detach()
-        self.assert_matches(
-            torch.fix(detached), detached.trunc(), case="detached input"
-        )
+                    loss = output if output.numel() == 1 else output.sum()
+                    loss.backward()
+                    loss.backward()
+                    gradient_bits = self.tensor_bits(leaf.grad)
+                    np.testing.assert_array_equal(
+                        gradient_bits,
+                        np.zeros(gradient_bits.shape, dtype=np.uint32),
+                    )
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^fix\(\): autograd recording is not supported$",
+        for form, call in (
+            ("method", extreme.fix),
+            ("function", lambda: torch.fix(extreme, out=None)),
         ):
-            torch.fix(extreme)
-        with torch.no_grad():
-            with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
-                torch.fix(extreme)
+            with self.subTest(form=form, mode="recording"):
+                with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
+                    call()
+            with self.subTest(form=form, mode="no_grad"):
+                with torch.no_grad():
+                    with self.assertRaisesRegex(
+                        RuntimeError, "Stride calculation overflowed"
+                    ):
+                        call()
+
+    def test_zero_vjp_ignores_upstreams_composes_accumulates_and_repeats(self):
+        for form, apply in (
+            ("method", lambda tensor: tensor.fix()),
+            ("function", lambda tensor: torch.fix(tensor, out=None)),
+        ):
+            with self.subTest(form=form, case="special upstream"):
+                leaf = torch.tensor([-1.25, -0.0, 1.75, 4.5], requires_grad=True)
+                weights = torch.tensor(
+                    [float("nan"), float("inf"), -float("inf"), -0.0]
+                )
+                (apply(leaf) * weights).sum().backward()
+                np.testing.assert_array_equal(
+                    self.tensor_bits(leaf.grad), np.zeros((4,), dtype=np.uint32)
+                )
+
+            with self.subTest(form=form, case="accumulation and repeated backward"):
+                accumulated = torch.tensor([-2.0, 0.0, 3.0], requires_grad=True)
+                (accumulated * 3.0).sum().backward()
+                before_zero = self.tensor_bits(accumulated.grad).copy()
+                reusable_loss = apply(accumulated).sum()
+                reusable_loss.backward()
+                np.testing.assert_array_equal(
+                    self.tensor_bits(accumulated.grad), before_zero
+                )
+                reusable_loss.backward()
+                np.testing.assert_array_equal(
+                    self.tensor_bits(accumulated.grad), before_zero
+                )
+
+            with self.subTest(form=form, case="composition"):
+                composed = torch.tensor([-0.5, 0.5], requires_grad=True)
+                composed_loss = apply(composed.sin()).sum()
+                composed_loss.backward()
+                np.testing.assert_array_equal(
+                    self.tensor_bits(composed.grad), np.zeros((2,), dtype=np.uint32)
+                )
+                with self.assertRaisesRegex(
+                    RuntimeError, "backward through the graph a second time"
+                ):
+                    composed_loss.backward()
+
+    def test_no_grad_and_detached_inputs_use_the_inference_path(self):
+        for case, (_, source) in enumerate(self.make_tracked_cases()):
+            detached = source.detach()
+            expected = detached.trunc()
+            for form, call in self.supported_calls(source):
+                with self.subTest(case=case, form=form, mode="no_grad"):
+                    with torch.no_grad():
+                        actual = call()
+                    self.assert_matches(actual, expected, case=(case, form))
+                    self.assertFalse(actual.requires_grad)
+                    self.assertTrue(actual.is_leaf)
+                    self.assertFalse(actual.is_set_to(source))
+
+            for form, call in self.supported_calls(detached):
+                with self.subTest(case=case, form=form, mode="detached"):
+                    actual = call()
+                    self.assert_matches(actual, expected, case=(case, form))
+                    self.assertFalse(actual.is_set_to(detached))
 
     def test_concrete_out_is_rejected_before_autograd_or_planning(self):
         source = torch.tensor([1.25, -1.25], requires_grad=True)
@@ -137,6 +248,162 @@ class TopLevelFixTests(unittest.TestCase):
             r"^fix\(\): the 'out' argument is not supported$",
         ):
             torch.fix(extreme, out=destination)
+
+    def test_tensorbase_descriptor_metadata_is_distinct_and_no_argument_only(self):
+        tensor = torch.tensor([1.25])
+        descriptor = inspect.getattr_static(torch.Tensor, "fix")
+        trunc_descriptor = inspect.getattr_static(torch.Tensor, "trunc")
+        bound = tensor.fix
+
+        self.assertIs(torch.Tensor.fix, descriptor)
+        self.assertIsNot(descriptor, trunc_descriptor)
+        self.assertIsNot(descriptor, torch.fix)
+        self.assertIs(type(descriptor), types.MethodDescriptorType)
+        self.assertIs(type(bound), types.BuiltinMethodType)
+        self.assertEqual(
+            repr(descriptor), "<method 'fix' of 'torch._C.TensorBase' objects>"
+        )
+        self.assertEqual(descriptor.__name__, "fix")
+        self.assertEqual(descriptor.__qualname__, "TensorBase.fix")
+        self.assertEqual(bound.__name__, "fix")
+        self.assertEqual(bound.__qualname__, "Tensor.fix")
+        self.assertEqual(descriptor.__doc__, TENSOR_FIX_DOC)
+        self.assertEqual(bound.__doc__, TENSOR_FIX_DOC)
+        self.assertEqual(descriptor.__objclass__.__name__, "TensorBase")
+        self.assertEqual(descriptor.__objclass__.__module__, "torch._C")
+        self.assertFalse(hasattr(descriptor, "__module__"))
+        self.assertIsNone(bound.__module__)
+        assert_no_argument_signature(self, descriptor, "(self, /)")
+        assert_no_argument_signature(self, bound, "()")
+
+        cases = (
+            (
+                lambda: tensor.fix(1),
+                "TensorBase.fix() takes no arguments (1 given)",
+            ),
+            (lambda: bound(1), "Tensor.fix() takes no arguments (1 given)"),
+            (
+                lambda: descriptor(tensor, 1),
+                "TensorBase.fix() takes no arguments (1 given)",
+            ),
+            (
+                lambda: tensor.fix(1, 2),
+                "TensorBase.fix() takes no arguments (2 given)",
+            ),
+            (
+                lambda: tensor.fix(input=tensor),
+                (
+                    "Tensor.fix() takes no keyword arguments"
+                    if sys.version_info < (3, 11)
+                    else "TensorBase.fix() takes no keyword arguments"
+                ),
+            ),
+            (
+                lambda: bound(unexpected=True),
+                "Tensor.fix() takes no keyword arguments",
+            ),
+            (
+                lambda: descriptor(tensor, unexpected=True),
+                "TensorBase.fix() takes no keyword arguments",
+            ),
+            (
+                lambda: descriptor(),
+                "unbound method TensorBase.fix() needs an argument",
+            ),
+            (
+                lambda: descriptor(1),
+                "descriptor 'fix' for 'torch._C.TensorBase' objects "
+                "doesn't apply to a 'int' object",
+            ),
+            (
+                lambda: descriptor(self=tensor),
+                "unbound method TensorBase.fix() needs an argument",
+            ),
+        )
+        for case, (call, message) in enumerate(cases):
+            with self.subTest(case=case):
+                with self.assertRaises(TypeError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception), message)
+
+    def test_tensor_method_modes_dispatch_through_the_fix_descriptor(self):
+        tracked = torch.tensor([1.25], requires_grad=True)
+        plain = tracked.detach()
+        descriptor = inspect.getattr_static(torch.Tensor, "fix")
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        mode = RecordingMode(marker)
+        with mode:
+            result = tracked.fix()
+        self.assertIs(result, marker)
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(function, descriptor)
+        self.assertIsNot(function, inspect.getattr_static(torch.Tensor, "trunc"))
+        self.assertEqual(dispatch_types, (torch.Tensor,))
+        self.assertEqual(len(args), 1)
+        self.assertIs(args[0], tracked)
+        self.assertIsNone(kwargs)
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = plain.fix()
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertEqual(forwarded.tolist(), [1.0])
+
+        order.clear()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                tracked_forwarded = tracked.fix()
+        self.assertEqual(order, ["upper", "lower"])
+        self.assertTrue(tracked_forwarded.requires_grad)
+        self.assertFalse(tracked_forwarded.is_leaf)
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                tracked_forwarded
+            ),
+            ", grad_fn=<TruncBackward0>",
+        )
+
+        old_recursion_limit = sys.getrecursionlimit()
+        declining = RecordingMode(NotImplemented)
+        try:
+            sys.setrecursionlimit(80)
+            with declining:
+                with self.assertRaises(RecursionError):
+                    plain.fix()
+                self.assertEqual(
+                    len(torch.overrides._get_current_function_mode_stack()), 1
+                )
+        finally:
+            sys.setrecursionlimit(old_recursion_limit)
+        self.assertGreater(len(declining.calls), 1)
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
+
+        invalid = RecordingMode(marker)
+        with self.assertRaises(TypeError):
+            with invalid:
+                plain.fix(1)
+        self.assertEqual(invalid.calls, [])
 
     def test_modes_and_overrides_observe_calls_before_native_limits(self):
         tensor = torch.tensor([1.25], requires_grad=True)
@@ -236,7 +503,7 @@ class TopLevelFixTests(unittest.TestCase):
         self.assertEqual(function.__name__, "fix")
         self.assertEqual(function.__qualname__, "_VariableFunctionsClass.fix")
         self.assertEqual(function.__module__, "torch")
-        self.assertEqual(function.__doc__, FIX_DOC)
+        self.assertEqual(function.__doc__, TOP_LEVEL_FIX_DOC)
         self.assertIsNone(function.__text_signature__)
         self.assertRegex(
             repr(function),
@@ -276,14 +543,26 @@ class TopLevelFixTests(unittest.TestCase):
         exec("from torch_rs import *", wildcard_namespace)
         self.assertIs(wildcard_namespace["fix"], function)
 
-    def test_tensor_and_inplace_forms_remain_unsupported(self):
-        tensor = torch.tensor([1.25])
-        self.assertFalse(hasattr(torch.Tensor, "fix"))
+    def test_inplace_forms_remain_unsupported_without_mutation(self):
+        tensor = torch.tensor([1.25, -1.25], requires_grad=True)
+        pointer = tensor.data_ptr()
+        bits = self.tensor_bits(tensor).copy()
+        self.assertTrue(hasattr(torch.Tensor, "fix"))
         self.assertFalse(hasattr(torch.Tensor, "fix_"))
-        self.assertFalse(hasattr(tensor, "fix"))
+        self.assertTrue(hasattr(tensor, "fix"))
         self.assertFalse(hasattr(tensor, "fix_"))
         self.assertFalse(hasattr(torch, "fix_"))
         self.assertNotIn("fix_", torch.__all__)
+        for call in (
+            lambda: tensor.fix_(),
+            lambda: torch.fix_(tensor),
+            lambda: tensor.fix(out=None),
+        ):
+            with self.assertRaises((AttributeError, TypeError)):
+                call()
+            self.assertEqual(tensor.data_ptr(), pointer)
+            np.testing.assert_array_equal(self.tensor_bits(tensor), bits)
+            self.assertIsNone(tensor.grad)
 
     def test_binding_and_type_error_precedence_matches_pytorch_2_13(self):
         tensor = torch.tensor([1.0])
