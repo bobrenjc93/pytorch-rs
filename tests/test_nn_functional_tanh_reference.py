@@ -9,9 +9,21 @@ import torch_rs as torch
 import torch_rs.nn.functional as functional
 
 if __package__:
-    from .test_tanh import AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+    from .test_tanh import (
+        AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        AUTOGRAD_GRADIENT_BITS,
+        AUTOGRAD_INPUT_BITS,
+        AUTOGRAD_OUTPUT_BITS,
+        AUTOGRAD_WEIGHTS,
+    )
 else:
-    from test_tanh import AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+    from test_tanh import (
+        AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        AUTOGRAD_GRADIENT_BITS,
+        AUTOGRAD_INPUT_BITS,
+        AUTOGRAD_OUTPUT_BITS,
+        AUTOGRAD_WEIGHTS,
+    )
 
 try:
     import torch as reference_torch
@@ -37,6 +49,10 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
         except Exception as error:
             return type(error).__name__, str(error), error.args
         return None
+
+    @staticmethod
+    def tensor_bits(tensor):
+        return np.asarray(tensor, dtype=np.float32).reshape(-1).view(np.uint32)
 
     @staticmethod
     def make_case(module, case):
@@ -278,6 +294,80 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             actual_leaf.grad, expected_leaf.grad, case="rank-one gradient"
         )
 
+        matrix_values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 4).tolist()
+        matrix_weight_values = AUTOGRAD_WEIGHTS.reshape(2, 4).tolist()
+        actual_matrix = torch.tensor(matrix_values, requires_grad=True)
+        expected_matrix = reference_torch.tensor(
+            matrix_values,
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_matrix_weights = torch.tensor(matrix_weight_values)
+        expected_matrix_weights = reference_torch.tensor(
+            matrix_weight_values, dtype=reference_torch.float32
+        )
+        actual_matrix_output = functional.tanh(actual_matrix)
+        expected_matrix_output = reference_functional.tanh(expected_matrix)
+        self.assert_tensor_matches(
+            actual_matrix_output,
+            expected_matrix_output,
+            case="rank-two forward",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(actual_matrix_output), AUTOGRAD_OUTPUT_BITS
+        )
+        self.assertEqual(type(expected_matrix_output.grad_fn).__name__, "TanhBackward0")
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                actual_matrix_output
+            ),
+            ", grad_fn=<TanhBackward0>",
+        )
+        actual_matrix_loss = (
+            actual_matrix_output * actual_matrix_weights
+        ).sum()
+        expected_matrix_loss = (
+            expected_matrix_output * expected_matrix_weights
+        ).sum()
+        actual_matrix_loss.backward()
+        expected_matrix_loss.backward()
+        self.assert_tensor_matches(
+            actual_matrix.grad,
+            expected_matrix.grad,
+            case="rank-two gradient",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(actual_matrix.grad), AUTOGRAD_GRADIENT_BITS
+        )
+        self.assertEqual(
+            self.error(actual_matrix_loss.backward),
+            self.error(expected_matrix_loss.backward),
+        )
+
+        actual_accumulated = torch.tensor(matrix_values, requires_grad=True)
+        expected_accumulated = reference_torch.tensor(
+            matrix_values,
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        for _ in range(2):
+            (
+                functional.tanh(actual_accumulated) * actual_matrix_weights
+            ).sum().backward()
+            (
+                reference_functional.tanh(expected_accumulated)
+                * expected_matrix_weights
+            ).sum().backward()
+        self.assert_tensor_matches(
+            actual_accumulated.grad,
+            expected_accumulated.grad,
+            case="rank-two accumulated gradient",
+        )
+        np.testing.assert_array_equal(
+            self.tensor_bits(actual_accumulated.grad),
+            AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        )
+
         actual_empty = torch.tensor([], requires_grad=True)
         expected_empty = reference_torch.tensor(
             [], dtype=reference_torch.float32, requires_grad=True
@@ -293,7 +383,38 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             actual_empty.grad, expected_empty.grad, case="empty gradient"
         )
 
-        higher_order = torch.tensor([0.25, -0.25], requires_grad=True)
+        for shape in ((0, 0), (0, 3), (2, 0)):
+            with self.subTest(empty_matrix_shape=shape):
+                actual_empty_matrix = torch.zeros(shape, requires_grad=True)
+                expected_empty_matrix = reference_torch.zeros(
+                    shape,
+                    dtype=reference_torch.float32,
+                    requires_grad=True,
+                )
+                actual_empty_output = functional.tanh(actual_empty_matrix)
+                expected_empty_output = reference_functional.tanh(
+                    expected_empty_matrix
+                )
+                self.assert_tensor_matches(
+                    actual_empty_output,
+                    expected_empty_output,
+                    case=(shape, "empty matrix forward"),
+                )
+                actual_empty_loss = actual_empty_output.sum()
+                expected_empty_loss = expected_empty_output.sum()
+                actual_empty_loss.backward()
+                expected_empty_loss.backward()
+                self.assert_tensor_matches(
+                    actual_empty_matrix.grad,
+                    expected_empty_matrix.grad,
+                    case=(shape, "empty matrix gradient"),
+                )
+                self.assertEqual(
+                    self.error(actual_empty_loss.backward),
+                    self.error(expected_empty_loss.backward),
+                )
+
+        higher_order = torch.tensor([[0.25, -0.25]], requires_grad=True)
         higher_order_loss = functional.tanh(higher_order).sum()
         with self.assertRaisesRegex(
             NotImplementedError,
@@ -304,18 +425,19 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
         higher_order_loss.backward()
         self.assertIsNotNone(higher_order.grad)
 
-        actual_matrix = torch.tensor([[0.5, -1.0]], requires_grad=True)
+        actual_rank_three = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tanh\(\): autograd recording is not supported$",
         ):
-            functional.tanh(actual_matrix)
-        self.assertIsNone(actual_matrix.grad)
-        actual_matrix.sum().backward()
-        self.assertEqual(actual_matrix.grad.tolist(), [[1.0, 1.0]])
+            functional.tanh(actual_rank_three)
+        self.assertIsNone(actual_rank_three.grad)
+        actual_rank_three.sum().backward()
+        self.assertEqual(actual_rank_three.grad.tolist(), [[[1.0, 1.0]]])
 
-        actual_view_base = torch.tensor([[0.5, -1.0]], requires_grad=True)
+        actual_view_base = torch.tensor([[[0.5, -1.0]]], requires_grad=True)
         actual_view = actual_view_base[0]
+        self.assertEqual(actual_view.shape, (1, 2))
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tanh\(\): autograd recording is not supported$",
@@ -323,9 +445,11 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             functional.tanh(actual_view)
         self.assertIsNone(actual_view_base.grad)
         actual_view.sum().backward()
-        self.assertEqual(actual_view_base.grad.tolist(), [[1.0, 1.0]])
+        self.assertEqual(actual_view_base.grad.tolist(), [[[1.0, 1.0]]])
 
-        actual_nonfinite = torch.tensor([0.5, float("inf")], requires_grad=True)
+        actual_nonfinite = torch.tensor(
+            [[0.5, float("inf")]], requires_grad=True
+        )
         with self.assertRaisesRegex(
             RuntimeError,
             r"^tanh\(\): autograd recording is not supported$",
@@ -333,7 +457,7 @@ class FunctionalTanhReferenceTests(unittest.TestCase):
             functional.tanh(actual_nonfinite)
         self.assertIsNone(actual_nonfinite.grad)
         actual_nonfinite.sum().backward()
-        self.assertEqual(actual_nonfinite.grad.tolist(), [1.0, 1.0])
+        self.assertEqual(actual_nonfinite.grad.tolist(), [[1.0, 1.0]])
 
         with torch.no_grad():
             actual_no_grad = functional.tanh(actual_leaf)
