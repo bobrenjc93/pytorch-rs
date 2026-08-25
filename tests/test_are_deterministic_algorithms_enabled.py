@@ -184,6 +184,7 @@ class AreDeterministicAlgorithmsEnabledTests(unittest.TestCase):
             "_set_deterministic_algorithms",
             "_get_deterministic_algorithms",
             "_get_deterministic_algorithms_warn_only",
+            "_get_deterministic_debug_mode",
         )
         for name in names:
             with self.subTest(name=name):

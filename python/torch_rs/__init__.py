@@ -202,13 +202,7 @@ def get_deterministic_debug_mode() -> _builtins.int:
     documentation for more details.
     """
 
-    if _C._get_deterministic_algorithms():
-        if _C._get_deterministic_algorithms_warn_only():
-            return 1
-        else:
-            return 2
-    else:
-        return 0
+    return _C._get_deterministic_debug_mode()
 
 
 def get_default_device() -> "torch.device":

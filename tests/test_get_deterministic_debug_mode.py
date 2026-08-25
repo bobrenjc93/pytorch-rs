@@ -37,11 +37,7 @@ class GetDeterministicDebugModeTests(unittest.TestCase):
         function = torch.get_deterministic_debug_mode
         self.assertEqual(
             function.__code__.co_names,
-            (
-                "_C",
-                "_get_deterministic_algorithms",
-                "_get_deterministic_algorithms_warn_only",
-            ),
+            ("_C", "_get_deterministic_debug_mode"),
         )
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
@@ -113,6 +109,57 @@ class GetDeterministicDebugModeTests(unittest.TestCase):
                     expected_grad_state,
                 ),
             )
+
+    def test_concurrent_transitions_do_not_synthesize_warn_mode(self):
+        function = torch.get_deterministic_debug_mode
+        iterations = 100_000
+        barrier = threading.Barrier(2)
+        finished = threading.Event()
+        observed = set()
+        errors = []
+        read_count = 0
+
+        torch.use_deterministic_algorithms(True, warn_only=False)
+        observed.add(function())
+
+        def writer():
+            try:
+                barrier.wait(timeout=10)
+                for _ in range(iterations):
+                    torch.use_deterministic_algorithms(False, warn_only=True)
+                    torch.use_deterministic_algorithms(True, warn_only=False)
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                finished.set()
+
+        def reader():
+            nonlocal read_count
+            try:
+                barrier.wait(timeout=10)
+                while not finished.is_set():
+                    observed.add(function())
+                    read_count += 1
+            except BaseException as error:
+                errors.append(error)
+
+        original_switch_interval = sys.getswitchinterval()
+        try:
+            sys.setswitchinterval(1e-6)
+            threads = [threading.Thread(target=writer), threading.Thread(target=reader)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=20)
+        finally:
+            sys.setswitchinterval(original_switch_interval)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertGreater(read_count, 0)
+        torch.use_deterministic_algorithms(False, warn_only=True)
+        observed.add(function())
+        self.assertEqual(observed, {0, 2})
 
     def test_signature_annotations_documentation_and_module_identity(self):
         package = importlib.import_module("torch_rs")
