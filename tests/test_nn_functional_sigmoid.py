@@ -12,9 +12,21 @@ import torch_rs.nn as nn
 import torch_rs.nn.functional as functional
 
 if __package__:
-    from .test_sigmoid import AUTOGRAD_GRADIENT_BITS, AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+    from .test_sigmoid import (
+        AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        AUTOGRAD_GRADIENT_BITS,
+        AUTOGRAD_INPUT_BITS,
+        AUTOGRAD_OUTPUT_BITS,
+        AUTOGRAD_WEIGHTS,
+    )
 else:
-    from test_sigmoid import AUTOGRAD_GRADIENT_BITS, AUTOGRAD_INPUT_BITS, AUTOGRAD_WEIGHTS
+    from test_sigmoid import (
+        AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        AUTOGRAD_GRADIENT_BITS,
+        AUTOGRAD_INPUT_BITS,
+        AUTOGRAD_OUTPUT_BITS,
+        AUTOGRAD_WEIGHTS,
+    )
 
 
 FUNCTION_DOC = r"""sigmoid(input) -> Tensor
@@ -186,7 +198,7 @@ class FunctionalSigmoidTests(unittest.TestCase):
         self.assertEqual(args, (source,))
         self.assertIsNone(kwargs)
 
-    def test_scalar_and_rank_one_autograd_preserve_existing_unsupported_boundaries(self):
+    def test_scalar_vector_and_matrix_autograd_preserve_unsupported_boundaries(self):
         scalar = torch.tensor(0.5, requires_grad=True)
         scalar_output = functional.sigmoid(input=scalar)
         self.assertTrue(scalar_output.requires_grad)
@@ -210,6 +222,45 @@ class FunctionalSigmoidTests(unittest.TestCase):
             self.tensor_bits(vector.grad), AUTOGRAD_GRADIENT_BITS
         )
 
+        matrix_values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 4).tolist()
+        matrix_weights = torch.tensor(AUTOGRAD_WEIGHTS.reshape(2, 4).tolist())
+        matrix = torch.tensor(matrix_values, requires_grad=True)
+        matrix_output = functional.sigmoid(input=matrix)
+        self.assertTrue(matrix_output.requires_grad)
+        self.assertFalse(matrix_output.is_leaf)
+        self.assertEqual(matrix_output.shape, (2, 4))
+        self.assertEqual(matrix_output.stride(), (4, 1))
+        self.assertEqual(matrix_output.storage_offset(), 0)
+        self.assertFalse(matrix_output.is_set_to(matrix))
+        np.testing.assert_array_equal(
+            self.tensor_bits(matrix_output), AUTOGRAD_OUTPUT_BITS
+        )
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(matrix_output),
+            ", grad_fn=<SigmoidBackward0>",
+        )
+        matrix_loss = (matrix_output * matrix_weights).sum()
+        matrix_loss.backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(matrix.grad), AUTOGRAD_GRADIENT_BITS
+        )
+        matrix_gradient_before = self.tensor_bits(matrix.grad).copy()
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            matrix_loss.backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(matrix.grad), matrix_gradient_before
+        )
+
+        accumulated_matrix = torch.tensor(matrix_values, requires_grad=True)
+        for _ in range(2):
+            (functional.sigmoid(accumulated_matrix) * matrix_weights).sum().backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(accumulated_matrix.grad),
+            AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        )
+
         empty = torch.tensor([], requires_grad=True)
         empty_output = functional.sigmoid(empty)
         self.assertTrue(empty_output.requires_grad)
@@ -221,6 +272,30 @@ class FunctionalSigmoidTests(unittest.TestCase):
         )
         empty_output.sum().backward()
         self.assertEqual(empty.grad.tolist(), [])
+
+        for shape, expected_stride in (
+            ((0, 3), (3, 1)),
+            ((2, 0), (1, 1)),
+            ((0, 0), (1, 1)),
+        ):
+            with self.subTest(empty_matrix_shape=shape):
+                empty_matrix = torch.zeros(shape, requires_grad=True)
+                empty_matrix_output = functional.sigmoid(empty_matrix)
+                self.assertTrue(empty_matrix_output.requires_grad)
+                self.assertFalse(empty_matrix_output.is_leaf)
+                self.assertEqual(empty_matrix_output.shape, shape)
+                self.assertEqual(empty_matrix_output.stride(), expected_stride)
+                empty_matrix_output.sum().backward()
+                self.assertEqual(empty_matrix.grad.shape, shape)
+                self.assertEqual(empty_matrix.grad.stride(), expected_stride)
+                self.assertEqual(empty_matrix.grad.tolist(), empty_matrix.tolist())
+
+        rank_three = torch.zeros((1, 1, 1), requires_grad=True)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^sigmoid\(\): autograd recording is not supported$",
+        ):
+            functional.sigmoid(rank_three)
 
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, 4.0, 8.0]], requires_grad=True
