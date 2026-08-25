@@ -2108,28 +2108,32 @@ impl Tensor {
             autograd: None,
         };
         if record_history && self.records_grad() {
-            let mut logical_prefix = 0_usize;
-            for (dimension, index) in indices.iter().copied().enumerate() {
-                let size = self.shape[dimension];
-                let signed_size =
-                    i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
-                let normalized = if index < 0 {
-                    signed_size
-                        .checked_add(index)
-                        .ok_or(TensorError::IndexCalculationOverflow)?
-                } else {
-                    index
-                };
-                let normalized = usize::try_from(normalized)
-                    .map_err(|_| TensorError::IndexCalculationOverflow)?;
-                logical_prefix = logical_prefix
-                    .checked_mul(size)
-                    .and_then(|prefix| prefix.checked_add(normalized))
-                    .ok_or(TensorError::IndexCalculationOverflow)?;
-            }
-            let input_start = logical_prefix
-                .checked_mul(elements)
-                .ok_or(TensorError::IndexCalculationOverflow)?;
+            let input_start = if elements == 0 {
+                0
+            } else {
+                let mut logical_prefix = 0_usize;
+                for (dimension, index) in indices.iter().copied().enumerate() {
+                    let size = self.shape[dimension];
+                    let signed_size =
+                        i64::try_from(size).map_err(|_| TensorError::IndexCalculationOverflow)?;
+                    let normalized = if index < 0 {
+                        signed_size
+                            .checked_add(index)
+                            .ok_or(TensorError::IndexCalculationOverflow)?
+                    } else {
+                        index
+                    };
+                    let normalized = usize::try_from(normalized)
+                        .map_err(|_| TensorError::IndexCalculationOverflow)?;
+                    logical_prefix = logical_prefix
+                        .checked_mul(size)
+                        .and_then(|prefix| prefix.checked_add(normalized))
+                        .ok_or(TensorError::IndexCalculationOverflow)?;
+                }
+                logical_prefix
+                    .checked_mul(elements)
+                    .ok_or(TensorError::IndexCalculationOverflow)?
+            };
             self.record_transform(
                 &mut output,
                 TransformMapping::Index { input_start },
@@ -2167,6 +2171,17 @@ impl Tensor {
         } else {
             index
         };
+        if self.elements == 0 {
+            // PyTorch carries empty-view offsets as signed 64-bit metadata and
+            // permits arithmetic to wrap before rejecting a negative result.
+            let offset =
+                i64::try_from(offset).map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let stride = i64::try_from(self.strides[dimension])
+                .map_err(|_| TensorError::IndexCalculationOverflow)?;
+            let offset = offset.wrapping_add(normalized.wrapping_mul(stride));
+            return usize::try_from(offset)
+                .map_err(|_| TensorError::InvalidStorageOffset { offset });
+        }
         let normalized =
             usize::try_from(normalized).map_err(|_| TensorError::IndexCalculationOverflow)?;
         let contribution = normalized
