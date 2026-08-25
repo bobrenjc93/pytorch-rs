@@ -31,7 +31,7 @@ use crate::{
     python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_tensor_queries::add_tensor_queries,
     python_torch_function_mode as torch_function_mode_stack,
-    python_torch_function_probe::add_torch_function_probe,
+    python_torch_function_probe::{add_torch_function_probe, is_disabled_torch_function_handler},
     python_variable_functions::{add_variable_functions, variable_function},
 };
 
@@ -2263,18 +2263,27 @@ fn probe_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
     // PyTorch's argument parser uses the legacy, exception-suppressing
-    // PyObject_HasAttr API here. If the initial probe fails, its tensor-type
-    // fallback retries once before rejecting the input. The actual callable is
-    // deliberately resolved only after the active mode has declined.
-    // SAFETY: `value` is live for this call and the attribute name is a static,
-    // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
-    let has_override =
-        unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
-    let has_override = has_override
-        || unsafe {
-            ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0
-        };
-    if !has_override {
+    // attribute probe here. If the initial probe fails, its tensor-type
+    // fallback retries once before rejecting the input. Retain the successful
+    // lookup only long enough to exclude PyTorch's disabled override sentinel;
+    // the actual callable is deliberately resolved again only after the active
+    // mode has declined.
+    let lookup = || {
+        // SAFETY: `value` is live for this call and the attribute name is a
+        // static, NUL-terminated string. A non-null result is a new reference.
+        let handler =
+            unsafe { ffi::PyObject_GetAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) };
+        if handler.is_null() {
+            // SAFETY: PyTorch's legacy probe suppresses every lookup failure.
+            unsafe { ffi::PyErr_Clear() };
+            None
+        } else {
+            // SAFETY: PyObject_GetAttrString returned a new owned reference.
+            Some(unsafe { Bound::<PyAny>::from_owned_ptr(value.py(), handler) })
+        }
+    };
+    let handler = lookup().or_else(lookup)?;
+    if is_disabled_torch_function_handler(&handler) {
         return None;
     }
     Some(probed_torch_function_override(value))

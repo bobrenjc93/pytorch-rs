@@ -560,6 +560,96 @@ print(json.dumps({
             ),
         )
 
+    @staticmethod
+    def disabled_override_observation(module_name):
+        source = r'''
+import importlib
+import json
+import torch as reference_torch
+
+module = importlib.import_module(MODULE)
+sentinel = reference_torch._C._disabled_torch_function_impl
+
+class DisabledOverride:
+    __torch_function__ = sentinel
+
+class RecordingMode(module.overrides.TorchFunctionMode):
+    def __init__(self):
+        self.calls = []
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        self.calls.append((func, types, args, kwargs))
+        return object()
+
+def error_outcome(call):
+    try:
+        call()
+    except Exception as error:
+        return [type(error).__name__, str(error), list(error.args)]
+    return ["return"]
+
+input_calls = (
+    lambda value: module.abs(value),
+    lambda value: module.abs(input=value),
+    lambda value: module.abs(x=value),
+    lambda value: module.abs(a=value),
+    lambda value: module.abs(x1=value),
+)
+destination_calls = (
+    lambda tensor, value: module.abs(tensor, out=value),
+    lambda tensor, value: module.abs(input=tensor, out=value),
+    lambda tensor, value: module.abs(x=tensor, out=value),
+)
+tensor = module.tensor([-1.0])
+plain = []
+mode = []
+for call in input_calls:
+    plain.append(error_outcome(lambda call=call: call(DisabledOverride())))
+    active = RecordingMode()
+    with active:
+        mode.append(error_outcome(lambda call=call: call(DisabledOverride())))
+    mode[-1].append(len(active.calls))
+for call in destination_calls:
+    plain.append(
+        error_outcome(lambda call=call: call(tensor, DisabledOverride()))
+    )
+    active = RecordingMode()
+    with active:
+        mode.append(
+            error_outcome(lambda call=call: call(tensor, DisabledOverride()))
+        )
+    mode[-1].append(len(active.calls))
+
+print(json.dumps({
+    "has_torch_function_unary": module.overrides.has_torch_function_unary(
+        DisabledOverride()
+    ),
+    "plain": plain,
+    "mode": mode,
+}, sort_keys=True))
+'''
+        return subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_disabled_override_sentinel_is_rejected_without_dispatch_or_crash(self):
+        actual = self.disabled_override_observation("torch_rs")
+        expected = self.disabled_override_observation("torch")
+        self.assertEqual(
+            actual.returncode,
+            0,
+            msg=f"torch_rs subprocess failed:\n{actual.stdout}{actual.stderr}",
+        )
+        self.assertEqual(
+            expected.returncode,
+            0,
+            msg=f"PyTorch subprocess failed:\n{expected.stdout}{expected.stderr}",
+        )
+        self.assertEqual(json.loads(actual.stdout), json.loads(expected.stdout))
+
     def test_top_level_binding_errors_match_pytorch_2_13(self):
         actual = torch.tensor([-4.0])
         expected = reference_torch.tensor([-4.0])
