@@ -2502,6 +2502,20 @@ impl Tensor {
         self.finish_negate_vjp(output, AutogradNode::Negate)
     }
 
+    /// Computes the absolute value of every element by clearing its IEEE 754
+    /// sign bit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn abs(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "abs" });
+        }
+        self.unary_map(absolute_value)
+    }
+
     /// Divides every element by a scalar using IEEE 754 true division.
     ///
     /// # Errors
@@ -4826,6 +4840,10 @@ fn negate_value(value: f32) -> f32 {
     f32::from_bits(value.to_bits() ^ F32_SIGN_MASK)
 }
 
+fn absolute_value(value: f32) -> f32 {
+    f32::from_bits(value.to_bits() & !F32_SIGN_MASK)
+}
+
 fn relu_value(value: f32) -> f32 {
     // Only exact zeros bypass the established max path, so FTZ/DAZ cannot
     // classify a subnormal as zero and NaN behavior remains unchanged.
@@ -6308,6 +6326,10 @@ mod tests {
 
         assert_eq!(
             tensor.exp(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.abs(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(

@@ -5969,6 +5969,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.6
       }
+    },
+    {
+      "key": "pr:875",
+      "recordedAt": "2026-08-25T00:28:09.321Z",
+      "label": "PR #875",
+      "kind": "leaf",
+      "prNumber": 875,
+      "title": "Add inference-only Tensor.abs",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 90.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 73,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.6
+      }
     }
   ]
 }
