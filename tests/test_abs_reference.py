@@ -1,10 +1,14 @@
+import builtins
+import copy
 import ctypes
 import inspect
 import json
+import pickle
 import subprocess
 import sys
 import types
 import unittest
+from multiprocessing.reduction import ForkingPickler
 
 import numpy as np
 import torch_rs as torch
@@ -123,6 +127,14 @@ class TensorAbsReferenceTests(unittest.TestCase):
             ("IEEE edges", special),
         )
 
+    @staticmethod
+    def supported_calls(tensor):
+        return (
+            ("abs", tensor.abs),
+            ("absolute", tensor.absolute),
+            ("operator", lambda: builtins.abs(tensor)),
+        )
+
     def test_values_layouts_and_fresh_storage_match_pytorch_2_13(self):
         actual_cases = self.make_cases(torch)
         expected_cases = self.make_cases(reference_torch)
@@ -130,19 +142,27 @@ class TensorAbsReferenceTests(unittest.TestCase):
             actual_cases, expected_cases, strict=True
         ):
             self.assertEqual(case, expected_case)
-            actual_output = actual.abs()
-            expected_output = expected.abs()
-            self.assert_tensor_matches(
-                actual_output,
-                expected_output,
-                case=case,
-                raw_bits=case == "IEEE edges",
-            )
-            self.assertFalse(actual_output.is_set_to(actual))
-            self.assertFalse(expected_output.is_set_to(expected))
-            if actual.numel():
-                self.assertNotEqual(actual_output.data_ptr(), actual.data_ptr())
-                self.assertNotEqual(expected_output.data_ptr(), expected.data_ptr())
+            actual_calls = self.supported_calls(actual)
+            expected_calls = self.supported_calls(expected)
+            for (form, actual_call), (expected_form, expected_call) in zip(
+                actual_calls, expected_calls, strict=True
+            ):
+                self.assertEqual(form, expected_form)
+                actual_output = actual_call()
+                expected_output = expected_call()
+                self.assert_tensor_matches(
+                    actual_output,
+                    expected_output,
+                    case=(case, form),
+                    raw_bits=case == "IEEE edges",
+                )
+                self.assertFalse(actual_output.is_set_to(actual))
+                self.assertFalse(expected_output.is_set_to(expected))
+                if actual.numel():
+                    self.assertNotEqual(actual_output.data_ptr(), actual.data_ptr())
+                    self.assertNotEqual(
+                        expected_output.data_ptr(), expected.data_ptr()
+                    )
 
     @staticmethod
     def error(action):
@@ -150,7 +170,7 @@ class TensorAbsReferenceTests(unittest.TestCase):
             action()
         except Exception as error:
             return type(error).__name__, str(error)
-        raise AssertionError("Tensor.abs unexpectedly accepted an invalid call")
+        raise AssertionError("absolute-value method unexpectedly accepted an invalid call")
 
     @staticmethod
     def signature_outcome(callable_object):
@@ -159,10 +179,10 @@ class TensorAbsReferenceTests(unittest.TestCase):
         except Exception as error:
             return "error", type(error).__name__
 
-    def callable_contract(self, module):
+    def callable_contract(self, module, name):
         tensor = module.tensor([-4.0], dtype=module.float32)
-        descriptor = inspect.getattr_static(module.Tensor, "abs")
-        bound = tensor.abs
+        descriptor = inspect.getattr_static(module.Tensor, name)
+        bound = getattr(tensor, name)
         return {
             "descriptor_type": type(descriptor).__name__,
             "bound_type": type(bound).__name__,
@@ -190,11 +210,11 @@ class TensorAbsReferenceTests(unittest.TestCase):
             "errors": tuple(
                 self.error(call)
                 for call in (
-                    lambda: tensor.abs(1),
+                    lambda: getattr(tensor, name)(1),
                     lambda: bound(1),
                     lambda: descriptor(tensor, 1),
-                    lambda: tensor.abs(1, 2),
-                    lambda: tensor.abs(input=tensor),
+                    lambda: getattr(tensor, name)(1, 2),
+                    lambda: getattr(tensor, name)(input=tensor),
                     lambda: bound(unexpected=True),
                     lambda: descriptor(tensor, unexpected=True),
                     lambda: descriptor(),
@@ -205,21 +225,89 @@ class TensorAbsReferenceTests(unittest.TestCase):
         }
 
     def test_callable_contract_matches_pytorch_2_13(self):
+        for name in ("abs", "absolute"):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    self.callable_contract(torch, name),
+                    self.callable_contract(reference_torch, name),
+                )
+
+    @staticmethod
+    def alias_and_serialization_contract(module):
+        tensor = module.tensor([-4.0], dtype=module.float32)
+        abs_descriptor = inspect.getattr_static(module.Tensor, "abs")
+        absolute_descriptor = inspect.getattr_static(module.Tensor, "absolute")
+        operator_descriptor = inspect.getattr_static(module.Tensor, "__abs__")
+        try:
+            inspect.getattr_static(abs_descriptor.__objclass__, "__abs__")
+        except AttributeError:
+            base_has_operator = False
+        else:
+            base_has_operator = True
+
+        copy_contract = []
+        for name in ("abs", "absolute", "__abs__"):
+            descriptor = inspect.getattr_static(module.Tensor, name)
+            bound = getattr(tensor, name)
+            copy_contract.append(
+                (
+                    name,
+                    copy.copy(descriptor) is descriptor,
+                    copy.deepcopy(descriptor) is descriptor,
+                    copy.copy(bound) is bound,
+                    copy.deepcopy(bound) is bound,
+                    tuple(
+                        (
+                            pickle.loads(pickle.dumps(descriptor, protocol))
+                            is descriptor,
+                            pickle.loads(ForkingPickler.dumps(descriptor, protocol))
+                            is descriptor,
+                        )
+                        for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
+                    ),
+                )
+            )
+
+        return {
+            "operator_is_abs": operator_descriptor is abs_descriptor,
+            "operator_is_not_absolute": operator_descriptor
+            is not absolute_descriptor,
+            "methods_are_distinct": abs_descriptor is not absolute_descriptor,
+            "operator_in_tensor_dict": module.Tensor.__dict__["__abs__"]
+            is abs_descriptor,
+            "method_names_not_in_tensor_dict": (
+                "abs" not in module.Tensor.__dict__,
+                "absolute" not in module.Tensor.__dict__,
+            ),
+            "base_has_operator": base_has_operator,
+            "operator_bound_metadata": (
+                tensor.__abs__.__name__,
+                tensor.__abs__.__qualname__,
+                tensor.__abs__.__doc__,
+                tensor.__abs__.__text_signature__,
+                tensor.__abs__.__module__,
+                type(tensor.__abs__).__name__,
+            ),
+            "copy_contract": tuple(copy_contract),
+        }
+
+    def test_alias_identity_copying_and_pickling_match_pytorch_2_13(self):
         self.assertEqual(
-            self.callable_contract(torch), self.callable_contract(reference_torch)
+            self.alias_and_serialization_contract(torch),
+            self.alias_and_serialization_contract(reference_torch),
         )
 
     @staticmethod
     def mode_dispatch_observation(module_name):
         source = r'''
 import importlib
+import builtins
 import inspect
 import json
 import sys
 
 module = importlib.import_module(MODULE)
 tensor = module.tensor([-4.0], dtype=module.float32)
-descriptor = inspect.getattr_static(module.Tensor, "abs")
 marker = object()
 
 class RecordingMode(module.overrides.TorchFunctionMode):
@@ -231,61 +319,87 @@ class RecordingMode(module.overrides.TorchFunctionMode):
         self.calls.append((func, types, args, kwargs))
         return self.result
 
-recording = RecordingMode(marker)
-with recording:
-    intercepted = tensor.abs()
-function, dispatch_types, args, kwargs = recording.calls[0]
-
-order = []
 class ForwardingMode(module.overrides.TorchFunctionMode):
-    def __init__(self, label):
+    def __init__(self, label, order):
         self.label = label
+        self.order = order
 
     def __torch_function__(self, func, types, args=(), kwargs=None):
-        order.append(self.label)
+        self.order.append(self.label)
         return func(*args, **(kwargs or {}))
 
-with ForwardingMode("lower"):
-    with ForwardingMode("upper"):
-        forwarded = tensor.abs()
+forms = (
+    ("abs", "abs"),
+    ("absolute", "absolute"),
+    ("operator", "abs"),
+)
+
+def invoke(form):
+    if form == "abs":
+        return tensor.abs()
+    if form == "absolute":
+        return tensor.absolute()
+    return builtins.abs(tensor)
+
+def invoke_invalid(form):
+    if form == "abs":
+        return tensor.abs(1)
+    if form == "absolute":
+        return tensor.absolute(1)
+    return builtins.abs(tensor, 1)
 
 sys.setrecursionlimit(80)
-declining = RecordingMode(NotImplemented)
-try:
-    with declining:
-        tensor.abs()
-except Exception as error:
-    declining_error = [type(error).__name__, str(error)]
-else:
-    declining_error = None
+observations = {}
+for form, descriptor_name in forms:
+    descriptor = inspect.getattr_static(module.Tensor, descriptor_name)
+    recording = RecordingMode(marker)
+    with recording:
+        intercepted = invoke(form)
+    function, dispatch_types, args, kwargs = recording.calls[0]
 
-invalid = RecordingMode(marker)
-try:
-    with invalid:
-        tensor.abs(1)
-except Exception as error:
-    invalid_error = [type(error).__name__, str(error)]
-else:
-    invalid_error = None
+    order = []
+    with ForwardingMode("lower", order):
+        with ForwardingMode("upper", order):
+            forwarded = invoke(form)
 
-print(json.dumps({
-    "intercepted": intercepted is marker,
-    "call_count": len(recording.calls),
-    "function_type": type(function).__name__,
-    "function_name": function.__name__,
-    "function_qualname": function.__qualname__,
-    "function_is_descriptor": function is descriptor,
-    "types": dispatch_types == (module.Tensor,),
-    "args": len(args) == 1 and args[0] is tensor,
-    "kwargs_is_none": kwargs is None,
-    "forwarding_order": order,
-    "forwarded": forwarded.tolist(),
-    "declining_error": declining_error,
-    "declining_calls": len(declining.calls),
-    "invalid_error": invalid_error,
-    "invalid_calls": len(invalid.calls),
-    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
-}, sort_keys=True))
+    declining = RecordingMode(NotImplemented)
+    try:
+        with declining:
+            invoke(form)
+    except Exception as error:
+        declining_error = [type(error).__name__, str(error)]
+    else:
+        declining_error = None
+
+    invalid = RecordingMode(marker)
+    try:
+        with invalid:
+            invoke_invalid(form)
+    except Exception as error:
+        invalid_error = [type(error).__name__, str(error)]
+    else:
+        invalid_error = None
+
+    observations[form] = {
+        "intercepted": intercepted is marker,
+        "call_count": len(recording.calls),
+        "function_type": type(function).__name__,
+        "function_name": function.__name__,
+        "function_qualname": function.__qualname__,
+        "function_is_descriptor": function is descriptor,
+        "types": dispatch_types == (module.Tensor,),
+        "args": len(args) == 1 and args[0] is tensor,
+        "kwargs_is_none": kwargs is None,
+        "forwarding_order": order,
+        "forwarded": forwarded.tolist(),
+        "declining_error": declining_error,
+        "declining_calls": len(declining.calls),
+        "invalid_error": invalid_error,
+        "invalid_calls": len(invalid.calls),
+        "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+    }
+
+print(json.dumps(observations, sort_keys=True))
 '''
         result = subprocess.run(
             [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
@@ -303,33 +417,49 @@ print(json.dumps({
 
     def test_inference_boundary_and_unsupported_surface_are_explicit(self):
         actual = torch.tensor([-2.0, -0.0, 3.0], requires_grad=True)
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^abs\(\): autograd recording is not supported$",
-        ):
-            actual.abs()
-
         expected = reference_torch.tensor(
             [-2.0, -0.0, 3.0], dtype=reference_torch.float32, requires_grad=True
         )
-        self.assertTrue(expected.abs().requires_grad)
+        actual_calls = self.supported_calls(actual)
+        expected_calls = self.supported_calls(expected)
+        for (form, actual_call), (expected_form, expected_call) in zip(
+            actual_calls, expected_calls, strict=True
+        ):
+            self.assertEqual(form, expected_form)
+            with self.subTest(form=form, mode="recording"):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^abs\(\): autograd recording is not supported$",
+                ):
+                    actual_call()
+                self.assertTrue(expected_call().requires_grad)
 
-        with torch.no_grad():
-            actual_no_grad = actual.abs()
-        with reference_torch.no_grad():
-            expected_no_grad = expected.abs()
-        self.assert_tensor_matches(actual_no_grad, expected_no_grad, case="no_grad")
+            with torch.no_grad():
+                actual_no_grad = actual_call()
+            with reference_torch.no_grad():
+                expected_no_grad = expected_call()
+            self.assert_tensor_matches(
+                actual_no_grad, expected_no_grad, case=(form, "no_grad")
+            )
 
-        actual_detached = actual.detach().abs()
-        expected_detached = expected.detach().abs()
-        self.assert_tensor_matches(
-            actual_detached, expected_detached, case="detached"
-        )
+        actual_detached = actual.detach()
+        expected_detached = expected.detach()
+        for (form, actual_call), (expected_form, expected_call) in zip(
+            self.supported_calls(actual_detached),
+            self.supported_calls(expected_detached),
+            strict=True,
+        ):
+            self.assertEqual(form, expected_form)
+            self.assert_tensor_matches(
+                actual_call(), expected_call(), case=(form, "detached")
+            )
 
         for name in ("abs", "absolute"):
             self.assertFalse(hasattr(torch, name))
             self.assertTrue(hasattr(reference_torch, name))
-        for name in ("absolute", "abs_", "absolute_"):
+        self.assertTrue(hasattr(torch.Tensor, "absolute"))
+        self.assertTrue(hasattr(torch.Tensor, "__abs__"))
+        for name in ("abs_", "absolute_"):
             self.assertFalse(hasattr(torch.Tensor, name))
             self.assertTrue(hasattr(reference_torch.Tensor, name))
 
