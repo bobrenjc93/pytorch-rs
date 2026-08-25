@@ -915,6 +915,240 @@ class TensorSigmoidReferenceTests(unittest.TestCase):
         higher_order_loss.backward()
         self.assertIsNotNone(higher_order.grad)
 
+    def test_rank_six_and_high_rank_autograd_match_pytorch_2_13(self):
+        shape = (1, 2, 1, 1, 1, 4)
+        values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(shape)
+        actual_leaf = torch.tensor(values.tolist(), requires_grad=True)
+        expected_leaf = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_weights = torch.tensor(AUTOGRAD_WEIGHTS.reshape(shape).tolist())
+        expected_weights = reference_torch.tensor(
+            AUTOGRAD_WEIGHTS.reshape(shape), dtype=reference_torch.float32
+        )
+        actual_output = actual_leaf.sigmoid()
+        expected_output = expected_leaf.sigmoid()
+
+        self.assert_tensor_matches(
+            actual_output,
+            expected_output,
+            case="rank-six singleton forward",
+            exact_bits=True,
+        )
+        self.assertEqual(type(expected_output.grad_fn).__name__, "SigmoidBackward0")
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(actual_output),
+            ", grad_fn=<SigmoidBackward0>",
+        )
+
+        actual_loss = (actual_output * actual_weights).sum()
+        expected_loss = (expected_output * expected_weights).sum()
+        actual_loss.backward()
+        expected_loss.backward()
+        self.assert_tensor_matches(
+            actual_leaf.grad,
+            expected_leaf.grad,
+            case="rank-six weighted gradient",
+            exact_bits=True,
+        )
+        self.assertEqual(
+            self.error(actual_loss.backward), self.error(expected_loss.backward)
+        )
+
+        actual_accumulated = torch.tensor(values.tolist(), requires_grad=True)
+        expected_accumulated = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        for _ in range(2):
+            (actual_accumulated.sigmoid() * actual_weights).sum().backward()
+            (expected_accumulated.sigmoid() * expected_weights).sum().backward()
+        self.assert_tensor_matches(
+            actual_accumulated.grad,
+            expected_accumulated.grad,
+            case="rank-six accumulated gradient",
+            exact_bits=True,
+        )
+
+        actual_composed = torch.tensor(values.tolist(), requires_grad=True)
+        expected_composed = reference_torch.tensor(
+            values, dtype=reference_torch.float32, requires_grad=True
+        )
+        actual_composed.sigmoid().sin().sum().backward()
+        expected_composed.sigmoid().sin().sum().backward()
+        self.assert_tensor_matches(
+            actual_composed.grad,
+            expected_composed.grad,
+            case="rank-six composition gradient",
+        )
+
+        actual_empty = torch.zeros((1, 2, 0, 1, 1, 4), requires_grad=True)
+        expected_empty = reference_torch.zeros(
+            (1, 2, 0, 1, 1, 4),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_empty_output = actual_empty.sigmoid()
+        expected_empty_output = expected_empty.sigmoid()
+        self.assert_tensor_matches(
+            actual_empty_output,
+            expected_empty_output,
+            case="empty rank-six forward",
+            exact_bits=True,
+        )
+        self.assertEqual(
+            type(expected_empty_output.grad_fn).__name__, "SigmoidBackward0"
+        )
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                actual_empty_output
+            ),
+            ", grad_fn=<SigmoidBackward0>",
+        )
+        actual_empty_loss = actual_empty_output.sum()
+        expected_empty_loss = expected_empty_output.sum()
+        actual_empty_loss.backward()
+        expected_empty_loss.backward()
+        self.assert_tensor_matches(
+            actual_empty.grad,
+            expected_empty.grad,
+            case="empty rank-six gradient",
+            exact_bits=True,
+        )
+        self.assertEqual(
+            self.error(actual_empty_loss.backward),
+            self.error(expected_empty_loss.backward),
+        )
+
+        high_rank_shape = (1,) * 65
+        actual_high_rank = torch.full(
+            high_rank_shape, 0.5, requires_grad=True
+        )
+        expected_high_rank = reference_torch.full(
+            high_rank_shape,
+            0.5,
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_high_rank_output = actual_high_rank.sigmoid()
+        expected_high_rank_output = expected_high_rank.sigmoid()
+        self.assertEqual(actual_high_rank_output.shape, expected_high_rank_output.shape)
+        self.assertEqual(
+            actual_high_rank_output.stride(), expected_high_rank_output.stride()
+        )
+        self.assertEqual(
+            np.float32(actual_high_rank_output.item()).view(np.uint32).item(),
+            np.float32(expected_high_rank_output.item()).view(np.uint32).item(),
+        )
+        self.assertEqual(
+            type(expected_high_rank_output.grad_fn).__name__, "SigmoidBackward0"
+        )
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                actual_high_rank_output
+            ),
+            ", grad_fn=<SigmoidBackward0>",
+        )
+        actual_high_rank_output.backward()
+        expected_high_rank_output.backward()
+        self.assertEqual(actual_high_rank.grad.shape, expected_high_rank.grad.shape)
+        self.assertEqual(actual_high_rank.grad.stride(), expected_high_rank.grad.stride())
+        self.assertEqual(
+            np.float32(actual_high_rank.grad.item()).view(np.uint32).item(),
+            np.float32(expected_high_rank.grad.item()).view(np.uint32).item(),
+        )
+        self.assertEqual(
+            self.error(actual_high_rank_output.backward),
+            self.error(expected_high_rank_output.backward),
+        )
+
+        actual_high_rank_accumulated = torch.full(
+            high_rank_shape, 0.5, requires_grad=True
+        )
+        expected_high_rank_accumulated = reference_torch.full(
+            high_rank_shape,
+            0.5,
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        for _ in range(2):
+            actual_high_rank_accumulated.sigmoid().backward()
+            expected_high_rank_accumulated.sigmoid().backward()
+        self.assertEqual(
+            np.float32(actual_high_rank_accumulated.grad.item())
+            .view(np.uint32)
+            .item(),
+            np.float32(expected_high_rank_accumulated.grad.item())
+            .view(np.uint32)
+            .item(),
+        )
+
+        actual_high_rank_composed = torch.full(
+            high_rank_shape, 0.5, requires_grad=True
+        )
+        expected_high_rank_composed = reference_torch.full(
+            high_rank_shape,
+            0.5,
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_high_rank_composed.sigmoid().sin().backward()
+        expected_high_rank_composed.sigmoid().sin().backward()
+        np.testing.assert_allclose(
+            np.float32(actual_high_rank_composed.grad.item()),
+            np.float32(expected_high_rank_composed.grad.item()),
+            rtol=2.0e-6,
+            atol=0.0,
+        )
+
+        high_rank_empty_shape = (1,) * 32 + (0,) + (1,) * 32
+        actual_high_rank_empty = torch.zeros(
+            high_rank_empty_shape, requires_grad=True
+        )
+        expected_high_rank_empty = reference_torch.zeros(
+            high_rank_empty_shape,
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        actual_high_rank_empty_output = actual_high_rank_empty.sigmoid()
+        expected_high_rank_empty_output = expected_high_rank_empty.sigmoid()
+        self.assertEqual(
+            actual_high_rank_empty_output.shape,
+            expected_high_rank_empty_output.shape,
+        )
+        self.assertEqual(
+            actual_high_rank_empty_output.stride(),
+            expected_high_rank_empty_output.stride(),
+        )
+        self.assertEqual(actual_high_rank_empty_output.numel(), 0)
+        self.assertEqual(expected_high_rank_empty_output.numel(), 0)
+        self.assertEqual(
+            type(expected_high_rank_empty_output.grad_fn).__name__,
+            "SigmoidBackward0",
+        )
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                actual_high_rank_empty_output
+            ),
+            ", grad_fn=<SigmoidBackward0>",
+        )
+        actual_high_rank_empty_loss = actual_high_rank_empty_output.sum()
+        expected_high_rank_empty_loss = expected_high_rank_empty_output.sum()
+        actual_high_rank_empty_loss.backward()
+        expected_high_rank_empty_loss.backward()
+        self.assertEqual(
+            actual_high_rank_empty.grad.shape, expected_high_rank_empty.grad.shape
+        )
+        self.assertEqual(
+            actual_high_rank_empty.grad.stride(),
+            expected_high_rank_empty.grad.stride(),
+        )
+        self.assertEqual(actual_high_rank_empty.grad.numel(), 0)
+        self.assertEqual(expected_high_rank_empty.grad.numel(), 0)
+        self.assertEqual(
+            self.error(actual_high_rank_empty_loss.backward),
+            self.error(expected_high_rank_empty_loss.backward),
+        )
+
     def test_scalar_backward_uses_the_saved_output_across_rounding_modes(self):
         try:
             runtime = ctypes.CDLL(None)
@@ -1234,14 +1468,24 @@ print(json.dumps({
             actual_rank_five.sum().backward()
             self.assertEqual(actual_rank_five.grad.tolist(), [[[[[1.0, 1.0]]]]])
 
-        actual_rank_six = torch.tensor(
-            [[[[[[0.5, -1.0]]]]]], requires_grad=True
+            actual_rank_six = torch.tensor(
+                [[[[[[0.5, value]]]]]], requires_grad=True
+            )
+            with self.subTest(nonfinite_rank_six=f"0x{bits:08x}"):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    actual_rank_six.sigmoid()
+            self.assertIsNone(actual_rank_six.grad)
+            actual_rank_six.sum().backward()
+            self.assertEqual(actual_rank_six.grad.tolist(), [[[[[[1.0, 1.0]]]]]])
+
+        actual_high_rank_nonfinite = torch.full(
+            (1,) * 65, float("inf"), requires_grad=True
         )
         with self.assertRaisesRegex(RuntimeError, message):
-            actual_rank_six.sigmoid()
-        self.assertIsNone(actual_rank_six.grad)
-        actual_rank_six.sum().backward()
-        self.assertEqual(actual_rank_six.grad.tolist(), [[[[[[1.0, 1.0]]]]]])
+            actual_high_rank_nonfinite.sigmoid()
+        self.assertIsNone(actual_high_rank_nonfinite.grad)
+        actual_high_rank_nonfinite.sum().backward()
+        self.assertEqual(actual_high_rank_nonfinite.grad.item(), 1.0)
 
         actual_leaf = torch.tensor(
             np.linspace(-3.75, 3.75, 24, dtype=np.float32)
@@ -1322,6 +1566,25 @@ print(json.dumps({
             [[[[[[1.0, 1.0]]]]], [[[[[0.0, 0.0]]]]]],
         )
 
+        actual_rank_six_view_base = torch.full(
+            (2,) + (1,) * 5 + (2,), 0.5, requires_grad=True
+        )
+        actual_rank_six_view = actual_rank_six_view_base[0]
+        with self.assertRaisesRegex(RuntimeError, message):
+            actual_rank_six_view.sigmoid()
+        actual_rank_six_view.sum().backward()
+        self.assertEqual(actual_rank_six_view_base.grad.sum().item(), 2.0)
+
+        actual_high_rank_view_base = torch.full(
+            (2,) + (1,) * 65, 0.5, requires_grad=True
+        )
+        actual_high_rank_view = actual_high_rank_view_base[0]
+        self.assertEqual(actual_high_rank_view.shape, (1,) * 65)
+        with self.assertRaisesRegex(RuntimeError, message):
+            actual_high_rank_view.sigmoid()
+        actual_high_rank_view.backward()
+        self.assertEqual(actual_high_rank_view_base.grad.sum().item(), 1.0)
+
         actual_nonleaf_base = torch.tensor([0.5, -0.5], requires_grad=True)
         actual_nonleaf = actual_nonleaf_base.sin()
         with self.assertRaisesRegex(RuntimeError, message):
@@ -1355,6 +1618,24 @@ print(json.dumps({
             actual_rank_five_nonleaf.sigmoid()
         actual_rank_five_nonleaf.sum().backward()
         self.assertIsNotNone(actual_rank_five_nonleaf_base.grad)
+
+        actual_rank_six_nonleaf_base = torch.full(
+            (1,) * 5 + (2,), 0.5, requires_grad=True
+        )
+        actual_rank_six_nonleaf = actual_rank_six_nonleaf_base.sin()
+        with self.assertRaisesRegex(RuntimeError, message):
+            actual_rank_six_nonleaf.sigmoid()
+        actual_rank_six_nonleaf.sum().backward()
+        self.assertIsNotNone(actual_rank_six_nonleaf_base.grad)
+
+        actual_high_rank_nonleaf_base = torch.full(
+            (1,) * 65, 0.5, requires_grad=True
+        )
+        actual_high_rank_nonleaf = actual_high_rank_nonleaf_base.sin()
+        with self.assertRaisesRegex(RuntimeError, message):
+            actual_high_rank_nonleaf.sigmoid()
+        actual_high_rank_nonleaf.backward()
+        self.assertIsNotNone(actual_high_rank_nonleaf_base.grad)
 
         empty_view_base = torch.zeros((1, 0), requires_grad=True)
         with torch.no_grad():
