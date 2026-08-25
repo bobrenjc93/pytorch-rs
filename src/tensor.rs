@@ -2664,10 +2664,10 @@ impl Tensor {
     /// # Errors
     ///
     /// Returns an error when gradient recording is enabled for an input other
-    /// than a finite, owned CPU float32 leaf with rank at most three, or when
+    /// than a finite, owned CPU float32 leaf with rank at most four, or when
     /// result metadata or storage allocation fails.
     pub fn tanh(&self) -> Result<Self, TensorError> {
-        if self.records_grad() && !self.is_finite_owned_leaf_with_max_rank(3) {
+        if self.records_grad() && !self.is_finite_owned_leaf_with_max_rank(4) {
             return Err(TensorError::AutogradRecordingUnsupported { operation: "tanh" });
         }
         let output = self.unary_map(tanh_value)?;
@@ -3594,7 +3594,7 @@ fn apply_sigmoid_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<
 }
 
 fn apply_tanh_vjp(output: &SavedTensor, upstream: &[f32], gradient: &mut Vec<f32>) {
-    // Supported tanh leaves save contiguous outputs through rank three. Keep the
+    // Supported tanh leaves save contiguous outputs through rank four. Keep the
     // generic fallback because the saved-output node itself is layout-agnostic.
     if let Some(saved_values) = output.contiguous_slice() {
         debug_assert_eq!(saved_values.len(), upstream.len());

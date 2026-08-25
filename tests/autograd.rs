@@ -1700,6 +1700,143 @@ fn tanh_differentiates_owned_rank_three_tensors_with_singletons_and_empty_dimens
 }
 
 #[test]
+fn tanh_differentiates_owned_rank_four_tensors_with_singletons_and_empty_dimensions() {
+    let input = TANH_AUTOGRAD_INPUT_BITS.map(f32::from_bits).to_vec();
+    let weights = Tensor::from_vec(
+        vec![1.0, -2.0, 0.5, -0.25, 3.0, -4.0, 5.0, -6.0],
+        [1, 2, 1, 4],
+    )
+    .unwrap();
+    let leaf = Tensor::from_vec(input.clone(), [1, 2, 1, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    let output = leaf.tanh().unwrap();
+
+    assert!(output.requires_grad());
+    assert!(!output.is_leaf());
+    assert_eq!(output.shape(), [1, 2, 1, 4]);
+    assert_eq!(output.stride(), [8, 4, 4, 1]);
+    assert_eq!(output.storage_offset(), 0);
+    assert_eq!(output.dtype(), leaf.dtype());
+    assert_eq!(output.device(), leaf.device());
+    assert!(!output.shares_storage_with(&leaf));
+    assert_eq!(
+        output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        TANH_AUTOGRAD_OUTPUT_BITS
+    );
+
+    let loss = output.mul(&weights).unwrap().sum();
+    loss.backward().unwrap();
+    let gradient = leaf.grad().unwrap().unwrap();
+    assert_eq!(gradient.shape(), [1, 2, 1, 4]);
+    assert_eq!(gradient.stride(), [8, 4, 4, 1]);
+    assert_eq!(gradient.storage_offset(), 0);
+    assert_eq!(gradient.dtype(), leaf.dtype());
+    assert_eq!(gradient.device(), leaf.device());
+    assert_eq!(
+        gradient
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        TANH_AUTOGRAD_GRADIENT_BITS
+    );
+    assert_eq!(loss.backward(), Err(TensorError::BackwardGraphFreed));
+    assert_eq!(
+        leaf.grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        TANH_AUTOGRAD_GRADIENT_BITS
+    );
+
+    let accumulated = Tensor::from_vec(input.clone(), [1, 2, 1, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    for _ in 0..2 {
+        accumulated
+            .tanh()
+            .unwrap()
+            .mul(&weights)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+    }
+    assert_eq!(
+        accumulated
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        TANH_AUTOGRAD_ACCUMULATED_GRADIENT_BITS
+    );
+
+    let composed = Tensor::from_vec(input, [1, 2, 1, 4])
+        .unwrap()
+        .with_requires_grad(true);
+    composed
+        .tanh()
+        .unwrap()
+        .sin()
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    let expected_composed_gradient = TANH_AUTOGRAD_OUTPUT_BITS.map(|bits| {
+        let tanh = f32::from_bits(bits);
+        (tanh.cos() * (-tanh).mul_add(tanh, 1.0)).to_bits()
+    });
+    assert_eq!(
+        composed
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        expected_composed_gradient
+    );
+}
+
+#[test]
+fn tanh_differentiates_owned_empty_rank_four_tensors() {
+    for (shape, expected_stride) in [
+        ([0, 1, 2, 3], [6, 6, 3, 1]),
+        ([1, 0, 2, 3], [6, 6, 3, 1]),
+        ([1, 2, 0, 3], [6, 3, 3, 1]),
+        ([1, 2, 3, 0], [6, 3, 1, 1]),
+        ([0, 0, 0, 0], [1, 1, 1, 1]),
+    ] {
+        let empty = Tensor::zeros(shape).unwrap().with_requires_grad(true);
+        let empty_output = empty.tanh().unwrap();
+        assert!(empty_output.requires_grad());
+        assert!(!empty_output.is_leaf());
+        assert_eq!(empty_output.shape(), shape);
+        assert_eq!(empty_output.stride(), expected_stride);
+        assert_eq!(empty_output.storage_offset(), 0);
+        assert_eq!(empty_output.dtype(), empty.dtype());
+        assert_eq!(empty_output.device(), empty.device());
+        assert!(!empty_output.shares_storage_with(&empty));
+
+        let empty_loss = empty_output.sum();
+        empty_loss.backward().unwrap();
+        let empty_gradient = empty.grad().unwrap().unwrap();
+        assert_eq!(empty_gradient.shape(), shape);
+        assert_eq!(empty_gradient.stride(), expected_stride);
+        assert_eq!(empty_gradient.storage_offset(), 0);
+        assert!(values(&empty_gradient).is_empty());
+        assert_eq!(empty_loss.backward(), Err(TensorError::BackwardGraphFreed));
+    }
+}
+
+#[test]
 fn tanh_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
     let composed = Tensor::from_vec(vec![0.5], [])
         .unwrap()
@@ -1744,7 +1881,7 @@ fn tanh_scalar_autograd_composes_accumulates_and_obeys_grad_mode() {
 }
 
 #[test]
-fn tanh_rejects_nonfinite_and_rank_four_owned_leaves_before_graph_mutation() {
+fn tanh_rejects_nonfinite_and_rank_five_owned_leaves_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported { operation: "tanh" };
 
     for bits in [
@@ -1787,15 +1924,23 @@ fn tanh_rejects_nonfinite_and_rank_four_owned_leaves_before_graph_mutation() {
         assert!(rank_three.grad().unwrap().is_none());
         rank_three.sum().backward().unwrap();
         assert_eq!(values(&rank_three.grad().unwrap().unwrap()), [1.0, 1.0]);
+
+        let rank_four = Tensor::from_vec(vec![0.5, f32::from_bits(bits)], [1, 1, 1, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(rank_four.tanh(), Err(unsupported.clone()));
+        assert!(rank_four.grad().unwrap().is_none());
+        rank_four.sum().backward().unwrap();
+        assert_eq!(values(&rank_four.grad().unwrap().unwrap()), [1.0, 1.0]);
     }
 
-    let rank_four = Tensor::from_vec(vec![0.5, -1.0], [1, 1, 1, 2])
+    let rank_five = Tensor::from_vec(vec![0.5, -1.0], [1, 1, 1, 1, 2])
         .unwrap()
         .with_requires_grad(true);
-    assert_eq!(rank_four.tanh(), Err(unsupported.clone()));
-    assert!(rank_four.grad().unwrap().is_none());
-    rank_four.sum().backward().unwrap();
-    assert_eq!(values(&rank_four.grad().unwrap().unwrap()), [1.0, 1.0]);
+    assert_eq!(rank_five.tanh(), Err(unsupported.clone()));
+    assert!(rank_five.grad().unwrap().is_none());
+    rank_five.sum().backward().unwrap();
+    assert_eq!(values(&rank_five.grad().unwrap().unwrap()), [1.0, 1.0]);
 }
 
 #[test]
@@ -1896,7 +2041,7 @@ fn tanh_rejects_tracked_views_and_nonleaves_before_graph_or_layout_mutation() {
 
     let extreme = Tensor::zeros([0])
         .unwrap()
-        .reshape([0, 1, i64::MAX, 3])
+        .reshape([0, i64::MAX, 1, 1, 3])
         .unwrap()
         .with_requires_grad(true);
     assert_eq!(extreme.tanh(), Err(unsupported));
@@ -1904,6 +2049,42 @@ fn tanh_rejects_tracked_views_and_nonleaves_before_graph_or_layout_mutation() {
         let _guard = no_grad();
         assert_eq!(extreme.tanh(), Err(TensorError::StrideCalculationOverflow));
     }
+}
+
+#[test]
+fn tanh_rejects_rank_four_tracked_views_and_nonleaves() {
+    let unsupported = TensorError::AutogradRecordingUnsupported { operation: "tanh" };
+
+    let view_base = Tensor::from_vec(vec![0.5, -1.0, 2.0, -3.0], [2, 1, 1, 1, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let view = view_base.index([0]).unwrap();
+    assert!(view.requires_grad());
+    assert!(!view.is_leaf());
+    assert_eq!(view.shape(), [1, 1, 1, 2]);
+    assert_eq!(view.tanh(), Err(unsupported.clone()));
+    view.sum().backward().unwrap();
+    assert_eq!(
+        values(&view_base.grad().unwrap().unwrap()),
+        [1.0, 1.0, 0.0, 0.0]
+    );
+
+    let nonleaf_base = Tensor::from_vec(vec![0.5, -0.5], [1, 1, 1, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let nonleaf = nonleaf_base.sin().unwrap();
+    assert_eq!(nonleaf.tanh(), Err(unsupported));
+    nonleaf.sum().backward().unwrap();
+    assert_eq!(
+        nonleaf_base
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        [0.5_f32.cos().to_bits(), (-0.5_f32).cos().to_bits()]
+    );
 }
 
 #[test]
