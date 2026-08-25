@@ -6273,6 +6273,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 96.8
       }
+    },
+    {
+      "key": "pr:955",
+      "recordedAt": "2026-08-25T16:43:40.676Z",
+      "label": "PR #955",
+      "kind": "leaf",
+      "prNumber": 955,
+      "title": "Expose CPU-build torch.version.cuda metadata",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 92.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 75,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 96.8
+      }
     }
   ]
 }
