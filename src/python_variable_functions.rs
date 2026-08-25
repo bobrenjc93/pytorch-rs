@@ -17,7 +17,7 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 use crate::python::{
     adjoint_variable_function, arange_variable_function, atleast_1d_variable_function,
     atleast_2d_variable_function, atleast_3d_variable_function, can_cast_variable_function,
-    ceil_variable_function, detach_variable_function, exp_variable_function,
+    ceil_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, is_conj_variable_function,
     is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
     movedim_variable_function, mul_variable_function, multiply_variable_function,
@@ -31,7 +31,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 36] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 37] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -49,6 +49,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 36] = [
     "floor",
     "ceil",
     "trunc",
+    "fix",
     "sin",
     "sqrt",
     "square",
@@ -304,6 +305,12 @@ Example::
     tensor([ 3.4742,  0.5466, -0.8008, -0.9079])
     >>> torch.trunc(a)
     tensor([ 3.,  0., -0., -0.])
+";
+
+const FIX_DOC: &std::ffi::CStr = c"
+fix(input, *, out=None) -> Tensor
+
+Alias for :func:`torch.trunc`
 ";
 
 const SIN_DOC: &std::ffi::CStr = cr"
@@ -740,6 +747,7 @@ variable_function_callback!(exp_callback, exp_variable_function);
 variable_function_callback!(floor_callback, floor_variable_function);
 variable_function_callback!(ceil_callback, ceil_variable_function);
 variable_function_callback!(trunc_callback, trunc_variable_function);
+variable_function_callback!(fix_callback, fix_variable_function);
 variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
@@ -804,6 +812,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"floor", floor_callback, FLOOR_DOC),
         variable_function_method!(c"ceil", ceil_callback, CEIL_DOC),
         variable_function_method!(c"trunc", trunc_callback, TRUNC_DOC),
+        variable_function_method!(c"fix", fix_callback, FIX_DOC),
         variable_function_method!(c"sin", sin_callback, SIN_DOC),
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
