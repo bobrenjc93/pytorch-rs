@@ -240,9 +240,10 @@ __doc__ = _native.__doc__
 # Keep package-only exports out of the native module's list, just as PyTorch's
 # numeric constants live on ``torch`` rather than ``torch._C``.  A separate
 # list also keeps reloading safe: the native wildcard import must only name
-# attributes that the extension itself owns.
+# attributes that the extension itself owns. PyTorch keeps ``__version__``
+# directly importable but excludes it from package wildcard imports.
 __all__ = [
-    *_native.__all__,
+    *(name for name in _native.__all__ if name != "__version__"),
     "are_deterministic_algorithms_enabled",
     "get_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
@@ -276,6 +277,7 @@ from . import overrides as overrides
 from . import _tensor as _tensor
 from . import serialization as serialization
 from . import utils as utils
+from . import version as version
 from .functional import atleast_1d as atleast_1d
 from .functional import atleast_2d as atleast_2d
 from .functional import atleast_3d as atleast_3d
