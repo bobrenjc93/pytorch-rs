@@ -1,5 +1,8 @@
+import copy
 import ctypes
 import inspect
+import pickle
+import re
 import sys
 import types
 import unittest
@@ -12,6 +15,26 @@ ABS_DOC = """
 abs() -> Tensor
 
 See :func:`torch.abs`
+"""
+
+TOP_LEVEL_ABS_DOC = """
+abs(input: Tensor, *, out: Optional[Tensor]) -> Tensor
+
+Computes the absolute value of each element in :attr:`input`.
+
+.. math::
+    \\text{out}_{i} = |\\text{input}_{i}|
+
+Args:
+    input (Tensor): the input tensor.
+
+Keyword args:
+    out (Tensor, optional): the output tensor.
+
+Example::
+
+    >>> torch.abs(torch.tensor([-1, -2, 3]))
+    tensor([ 1,  2,  3])
 """
 
 
@@ -107,45 +130,72 @@ class TensorAbsTests(unittest.TestCase):
             ),
         )
 
+    @staticmethod
+    def supported_calls(source):
+        return (
+            ("method", source.abs),
+            ("positional", lambda: torch.abs(source)),
+            ("input", lambda: torch.abs(input=source)),
+            ("x", lambda: torch.abs(x=source)),
+            ("a", lambda: torch.abs(a=source)),
+            ("x1", lambda: torch.abs(x1=source)),
+            ("out none", lambda: torch.abs(source, out=None)),
+            ("alias and out none", lambda: torch.abs(x=source, out=None)),
+        )
+
     def test_values_layouts_offsets_empty_tensors_and_fresh_storage(self):
         for case, source, expected_stride in self.make_cases():
-            output = source.abs()
-            self.assert_result(output, source, expected_stride, case=case)
-            if case == "IEEE edges":
-                source_bits = self.raw_storage_bits(source)
-                self.assertEqual(
-                    self.raw_storage_bits(output),
-                    tuple(bits & 0x7FFF_FFFF for bits in source_bits),
+            for form, call in self.supported_calls(source):
+                output = call()
+                self.assert_result(
+                    output, source, expected_stride, case=(case, form)
                 )
+                if case == "IEEE edges":
+                    source_bits = self.raw_storage_bits(source)
+                    self.assertEqual(
+                        self.raw_storage_bits(output),
+                        tuple(bits & 0x7FFF_FFFF for bits in source_bits),
+                    )
 
     def test_grad_recording_is_rejected_before_planning(self):
         leaf = torch.tensor(
             [[-2.0, -0.0, 1.0], [2.0, -4.0, 8.0]], requires_grad=True
         )
         source = leaf.transpose(0, 1)[1]
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^abs\(\): autograd recording is not supported$",
-        ):
-            source.abs()
+        for form, call in self.supported_calls(source):
+            with self.subTest(form=form, mode="recording"):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^abs\(\): autograd recording is not supported$",
+                ):
+                    call()
+            with self.subTest(form=form, mode="no_grad"):
+                with torch.no_grad():
+                    output = call()
+                self.assert_result(
+                    output, source, (1,), case=(form, "no_grad")
+                )
 
         extreme = torch.zeros((0,), requires_grad=True).reshape(
             (0, sys.maxsize, 3)
         )
-        with self.assertRaisesRegex(
-            RuntimeError,
-            r"^abs\(\): autograd recording is not supported$",
-        ):
-            extreme.abs()
-
-        with torch.no_grad():
-            output = source.abs()
-            with self.assertRaisesRegex(RuntimeError, "Stride calculation overflowed"):
-                extreme.abs()
-        self.assert_result(output, source, (1,), case="no_grad")
+        for form, call in self.supported_calls(extreme):
+            with self.subTest(form=form, case="extreme recording"):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^abs\(\): autograd recording is not supported$",
+                ):
+                    call()
+            with self.subTest(form=form, case="extreme no_grad"):
+                with torch.no_grad():
+                    with self.assertRaisesRegex(
+                        RuntimeError, "Stride calculation overflowed"
+                    ):
+                        call()
 
         detached = source.detach()
-        self.assert_result(detached.abs(), detached, (1,), case="detached")
+        for form, call in self.supported_calls(detached):
+            self.assert_result(call(), detached, (1,), case=(form, "detached"))
 
     def test_tensorbase_descriptor_metadata_and_no_argument_errors(self):
         tensor = torch.tensor([-4.0])
@@ -282,9 +332,246 @@ class TensorAbsTests(unittest.TestCase):
                 plain.abs(1)
         self.assertEqual(invalid_mode.calls, [])
 
-    def test_alias_top_level_and_inplace_forms_remain_unsupported(self):
+    def test_top_level_modes_and_subclass_overrides_observe_native_limits(self):
+        tensor = torch.tensor([-4.0], requires_grad=True)
+        destination = torch.tensor([17.0])
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result=marker):
+                self.calls = []
+                self.result = result
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        mode = RecordingMode()
+        with mode:
+            result = torch.abs(input=tensor, out=destination)
+        self.assertIs(result, marker)
+        self.assertEqual(len(mode.calls), 1)
+        function, dispatch_types, args, kwargs = mode.calls[0]
+        self.assertIs(function, torch.abs)
+        self.assertEqual(dispatch_types, ())
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs, {"input": tensor, "out": destination})
+
+        override_calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                override_calls.append((func, types, args, kwargs))
+                return marker
+
+        self.assertIs(torch.abs(Override()), marker)
+        self.assertIs(torch.abs(torch.tensor([-4.0]), out=Override()), marker)
+        self.assertEqual(len(override_calls), 2)
+        for function, dispatch_types, _, _ in override_calls:
+            self.assertIs(function, torch.abs)
+            self.assertEqual(dispatch_types, (Override,))
+
+        subclass_order = []
+
+        class BaseOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                subclass_order.append("base")
+                return marker
+
+        class DerivedOverride(BaseOverride):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                subclass_order.append("derived")
+                return marker
+
+        self.assertIs(torch.abs(BaseOverride(), out=DerivedOverride()), marker)
+        self.assertEqual(subclass_order, ["derived"])
+
+        forwarding_order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                forwarding_order.append(self.label)
+                return func(*args, **(kwargs or {}))
+
+        plain = tensor.detach()
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = torch.abs(input=plain, out=None)
+        self.assertEqual(forwarding_order, ["upper", "lower"])
+        self.assertEqual(forwarded.tolist(), [4.0])
+
+        forwarding_order.clear()
+        with self.assertRaisesRegex(
+            RuntimeError,
+            r"^abs\(\): autograd recording is not supported$",
+        ):
+            with ForwardingMode("lower"):
+                with ForwardingMode("upper"):
+                    torch.abs(input=tensor, out=None)
+        self.assertEqual(forwarding_order, ["upper", "lower"])
+
+        events = []
+
+        class DecliningMode(torch.overrides.TorchFunctionMode):
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                events.append("mode")
+                return NotImplemented
+
+        class FallbackOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                events.append("override")
+                return marker
+
+        with DecliningMode():
+            self.assertIs(torch.abs(FallbackOverride()), marker)
+        self.assertEqual(events, ["mode", "override"])
+
+        invalid = RecordingMode()
+        with self.assertRaises(TypeError):
+            with invalid:
+                torch.abs(tensor, tensor)
+        self.assertEqual(invalid.calls, [])
+
+    def test_top_level_builtin_metadata_exports_copying_and_pickling(self):
+        function = torch.abs
+        self.assertIs(function, torch._C.abs)
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "abs")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.abs")
+        self.assertEqual(function.__module__, "torch")
+        self.assertEqual(function.__doc__, TOP_LEVEL_ABS_DOC)
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function), r"^<built-in method abs of type object at 0x[0-9a-f]+>$"
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.abs, function)
+        for action in (
+            lambda: setattr(owner, "abs", None),
+            lambda: delattr(owner, "abs"),
+        ):
+            with self.assertRaises(TypeError):
+                action()
+            self.assertIs(owner.abs, function)
+
+        self.assertIs(copy.copy(function), function)
+        self.assertIs(copy.deepcopy(function), function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)), function
+                )
+
+        self.assertEqual(torch.__all__.count("abs"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["abs"], function)
+
+    def test_top_level_binding_and_type_error_precedence(self):
         tensor = torch.tensor([-4.0])
-        for name in ("abs", "absolute", "abs_", "absolute_"):
+        cases = (
+            (
+                lambda: torch.abs(),
+                'abs() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.abs(tensor, tensor),
+                "abs() takes 1 positional argument but 2 were given",
+            ),
+            (
+                lambda: torch.abs(tensor, input=tensor),
+                "abs() got multiple values for argument 'input'",
+            ),
+            (
+                lambda: torch.abs(out=tensor),
+                'abs() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.abs(extra=tensor),
+                'abs() missing 1 required positional arguments: "input"',
+            ),
+            (
+                lambda: torch.abs(1, extra=True),
+                "abs(): argument 'input' (position 1) must be Tensor, not int",
+            ),
+            (
+                lambda: torch.abs(input=[]),
+                "abs(): argument 'input' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.abs(tensor, out=[]),
+                "abs(): argument 'out' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.abs(tensor, extra=True, out=[]),
+                "abs(): argument 'out' must be Tensor, not list",
+            ),
+            (
+                lambda: torch.abs(tensor, extra=True),
+                "abs() got an unexpected keyword argument 'extra'",
+            ),
+            (
+                lambda: torch.abs(input=tensor, a=tensor),
+                "abs() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.abs(a=tensor, x=tensor, out=None),
+                "abs() got an unexpected keyword argument 'a'",
+            ),
+            (
+                lambda: torch.abs(x=tensor, a=tensor, out=None),
+                "abs() got an unexpected keyword argument 'x'",
+            ),
+            (
+                lambda: torch.abs(np.zeros((2, 3), dtype=np.float32)),
+                "abs(): argument 'input' (position 1) must be Tensor, not numpy.ndarray",
+            ),
+        )
+        for call, message in cases:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+                    call()
+
+    def test_concrete_out_is_rejected_without_mutation(self):
+        source = torch.tensor([-4.0, -0.0, 3.0], requires_grad=True)
+        destination = torch.tensor([17.0, 19.0, 23.0])
+        pointer = destination.data_ptr()
+        for form, call in (
+            ("positional", lambda: torch.abs(source, out=destination)),
+            ("keyword", lambda: torch.abs(input=source, out=destination)),
+            ("alias", lambda: torch.abs(x=source, out=destination)),
+        ):
+            with self.subTest(form=form):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    r"^abs\(\): the 'out' argument is not supported$",
+                ):
+                    call()
+                self.assertEqual(destination.data_ptr(), pointer)
+                self.assertEqual(destination.tolist(), [17.0, 19.0, 23.0])
+                self.assertIsNone(source.grad)
+
+    def test_absolute_and_inplace_forms_remain_unsupported(self):
+        tensor = torch.tensor([-4.0])
+        self.assertTrue(hasattr(torch, "abs"))
+        self.assertIn("abs", torch.__all__)
+        for name in ("absolute", "abs_", "absolute_"):
             with self.subTest(owner="torch", name=name):
                 self.assertFalse(hasattr(torch, name))
                 self.assertNotIn(name, torch.__all__)
