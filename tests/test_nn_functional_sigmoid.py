@@ -345,12 +345,23 @@ class FunctionalSigmoidTests(unittest.TestCase):
         rank_four_nonfinite.sum().backward()
         self.assertEqual(rank_four_nonfinite.grad.tolist(), [[[[1.0, 1.0]]]])
 
-        rank_five = torch.tensor([[[[[0.5, -1.0]]]]], requires_grad=True)
+        rank_five_nonfinite = torch.tensor(
+            [[[[[0.5, float("inf")]]]]], requires_grad=True
+        )
         with self.assertRaisesRegex(RuntimeError, message):
-            functional.sigmoid(rank_five)
-        self.assertIsNone(rank_five.grad)
-        rank_five.sum().backward()
-        self.assertEqual(rank_five.grad.tolist(), [[[[[1.0, 1.0]]]]])
+            functional.sigmoid(rank_five_nonfinite)
+        self.assertIsNone(rank_five_nonfinite.grad)
+        rank_five_nonfinite.sum().backward()
+        self.assertEqual(
+            rank_five_nonfinite.grad.tolist(), [[[[[1.0, 1.0]]]]]
+        )
+
+        rank_six = torch.tensor([[[[[[0.5, -1.0]]]]]], requires_grad=True)
+        with self.assertRaisesRegex(RuntimeError, message):
+            functional.sigmoid(rank_six)
+        self.assertIsNone(rank_six.grad)
+        rank_six.sum().backward()
+        self.assertEqual(rank_six.grad.tolist(), [[[[[[1.0, 1.0]]]]]])
 
         view_base = torch.tensor(
             [
@@ -399,6 +410,27 @@ class FunctionalSigmoidTests(unittest.TestCase):
             functional.sigmoid(rank_four_nonleaf)
         rank_four_nonleaf.sum().backward()
         self.assertIsNotNone(rank_four_nonleaf_base.grad)
+
+        rank_five_view_base = torch.tensor(
+            [[[[[[0.5, -1.0]]]]], [[[[[2.0, -3.0]]]]]], requires_grad=True
+        )
+        rank_five_view = rank_five_view_base[0]
+        with self.assertRaisesRegex(RuntimeError, message):
+            functional.sigmoid(rank_five_view)
+        rank_five_view.sum().backward()
+        self.assertEqual(
+            rank_five_view_base.grad.tolist(),
+            [[[[[[1.0, 1.0]]]]], [[[[[0.0, 0.0]]]]]],
+        )
+
+        rank_five_nonleaf_base = torch.tensor(
+            [[[[[0.5, -0.5]]]]], requires_grad=True
+        )
+        rank_five_nonleaf = rank_five_nonleaf_base.sin()
+        with self.assertRaisesRegex(RuntimeError, message):
+            functional.sigmoid(rank_five_nonleaf)
+        rank_five_nonleaf.sum().backward()
+        self.assertIsNotNone(rank_five_nonleaf_base.grad)
 
     def test_finite_owned_rank_three_autograd_matches_the_tensor_method(self):
         values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(2, 1, 4)
@@ -599,6 +631,120 @@ class FunctionalSigmoidTests(unittest.TestCase):
                     empty_loss.backward()
 
         higher_order = torch.tensor([[[[0.25, -0.25]]]], requires_grad=True)
+        higher_order_loss = functional.sigmoid(higher_order).sum()
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            r"^torch_rs\.Tensor\.backward does not support create_graph=True$",
+        ):
+            higher_order_loss.backward(create_graph=True)
+        self.assertIsNone(higher_order.grad)
+        higher_order_loss.backward()
+        self.assertIsNotNone(higher_order.grad)
+
+    def test_finite_owned_rank_five_autograd_matches_the_tensor_method(self):
+        values = AUTOGRAD_INPUT_BITS.view(np.float32).reshape(1, 2, 1, 1, 4)
+        weights = torch.tensor(AUTOGRAD_WEIGHTS.reshape(1, 2, 1, 1, 4).tolist())
+        leaf = torch.tensor(values.tolist(), requires_grad=True)
+        output = functional.sigmoid(input=leaf)
+
+        self.assertTrue(output.requires_grad)
+        self.assertFalse(output.is_leaf)
+        self.assertEqual(output.shape, (1, 2, 1, 1, 4))
+        self.assertEqual(output.stride(), (8, 4, 4, 4, 1))
+        self.assertEqual(output.storage_offset(), 0)
+        self.assertIs(output.dtype, torch.float32)
+        self.assertEqual(output.device, torch.device("cpu"))
+        self.assertFalse(output.is_set_to(leaf))
+        self.assertNotEqual(output.data_ptr(), leaf.data_ptr())
+        np.testing.assert_array_equal(self.tensor_bits(output), AUTOGRAD_OUTPUT_BITS)
+        self.assertEqual(
+            torch._C._nn_functional_dropout_tensor_autograd_suffix(output),
+            ", grad_fn=<SigmoidBackward0>",
+        )
+
+        loss = (output * weights).sum()
+        loss.backward()
+        self.assertEqual(leaf.grad.shape, (1, 2, 1, 1, 4))
+        self.assertEqual(leaf.grad.stride(), (8, 4, 4, 4, 1))
+        self.assertEqual(leaf.grad.storage_offset(), 0)
+        self.assertIs(leaf.grad.dtype, torch.float32)
+        self.assertEqual(leaf.grad.device, torch.device("cpu"))
+        np.testing.assert_array_equal(
+            self.tensor_bits(leaf.grad), AUTOGRAD_GRADIENT_BITS
+        )
+        gradient_before_repeated_backward = self.tensor_bits(leaf.grad).copy()
+        with self.assertRaisesRegex(
+            RuntimeError, "backward through the graph a second time"
+        ):
+            loss.backward()
+        np.testing.assert_array_equal(
+            self.tensor_bits(leaf.grad), gradient_before_repeated_backward
+        )
+
+        accumulated = torch.tensor(values.tolist(), requires_grad=True)
+        for _ in range(2):
+            (functional.sigmoid(accumulated) * weights).sum().backward()
+        self.assertEqual(accumulated.grad.shape, (1, 2, 1, 1, 4))
+        self.assertEqual(accumulated.grad.stride(), (8, 4, 4, 4, 1))
+        np.testing.assert_array_equal(
+            self.tensor_bits(accumulated.grad),
+            AUTOGRAD_ACCUMULATED_GRADIENT_BITS,
+        )
+
+        composed = torch.tensor(values.tolist(), requires_grad=True)
+        functional.sigmoid(composed).sin().sum().backward()
+        sigmoid_values = AUTOGRAD_OUTPUT_BITS.view(np.float32).reshape(
+            1, 2, 1, 1, 4
+        )
+        expected_composed_gradient = (
+            np.cos(sigmoid_values, dtype=np.float32)
+            * (np.float32(1.0) - sigmoid_values)
+            * sigmoid_values
+        )
+        np.testing.assert_allclose(
+            np.asarray(composed.grad),
+            expected_composed_gradient,
+            rtol=2.0e-6,
+            atol=0.0,
+        )
+
+        for shape, expected_stride in (
+            ((0, 1, 2, 3, 4), (24, 24, 12, 4, 1)),
+            ((1, 0, 2, 3, 4), (24, 24, 12, 4, 1)),
+            ((1, 2, 0, 3, 4), (24, 12, 12, 4, 1)),
+            ((1, 2, 3, 0, 4), (24, 12, 4, 4, 1)),
+            ((1, 2, 3, 4, 0), (24, 12, 4, 1, 1)),
+            ((0, 0, 0, 0, 0), (1, 1, 1, 1, 1)),
+        ):
+            with self.subTest(empty_shape=shape):
+                empty = torch.zeros(shape, requires_grad=True)
+                empty_output = functional.sigmoid(empty)
+                self.assertTrue(empty_output.requires_grad)
+                self.assertFalse(empty_output.is_leaf)
+                self.assertEqual(empty_output.shape, shape)
+                self.assertEqual(empty_output.stride(), expected_stride)
+                self.assertEqual(empty_output.storage_offset(), 0)
+                self.assertIs(empty_output.dtype, torch.float32)
+                self.assertEqual(empty_output.device, torch.device("cpu"))
+                self.assertFalse(empty_output.is_set_to(empty))
+                self.assertEqual(
+                    torch._C._nn_functional_dropout_tensor_autograd_suffix(
+                        empty_output
+                    ),
+                    ", grad_fn=<SigmoidBackward0>",
+                )
+                empty_loss = empty_output.sum()
+                empty_loss.backward()
+                self.assertEqual(empty.grad.shape, shape)
+                self.assertEqual(empty.grad.stride(), expected_stride)
+                self.assertEqual(empty.grad.storage_offset(), 0)
+                self.assertEqual(empty.grad.tolist(), empty.tolist())
+                with self.assertRaisesRegex(
+                    RuntimeError, "backward through the graph a second time"
+                ):
+                    empty_loss.backward()
+
+        higher_order = torch.tensor([[[[[0.25, -0.25]]]]], requires_grad=True)
         higher_order_loss = functional.sigmoid(higher_order).sum()
         with self.assertRaisesRegex(
             NotImplementedError,
