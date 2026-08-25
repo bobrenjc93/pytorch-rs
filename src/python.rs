@@ -302,8 +302,9 @@ impl PyTensorBase {
                 tensor.inner.unsqueeze_back()
             } else if indices.len() > tensor.inner.shape().len() {
                 return Err(too_many_indices(tensor.inner.shape().len()));
-            } else if let Some(index) = parse_leading_integer_full_slice(indices)? {
-                tensor.inner.index_integer(index)
+            } else if let Some(indices) = parse_leading_integer_full_slice(&tensor.inner, indices)?
+            {
+                tensor.inner.index(indices)
             } else {
                 let indices = parse_integer_indices(&tensor.inner, indices.len(), indices.iter())?;
                 tensor.inner.index(indices)
@@ -10538,13 +10539,27 @@ fn is_exact_full_slice(index: &Bound<'_, PyAny>) -> PyResult<bool> {
         && slice.getattr("step")?.is_none())
 }
 
-// The caller checks tuple arity against the tensor rank first so rank-one
-// `(index, :)` retains PyTorch's "too many indices" error without conversion.
-fn parse_leading_integer_full_slice(indices: &Bound<'_, PyTuple>) -> PyResult<Option<i64>> {
-    if indices.len() != 2 || !is_exact_full_slice(&indices.get_item(1)?)? {
+// The caller checks tuple arity against the tensor rank first so lower-rank
+// `(index, :)` and `(index, index, :)` forms retain PyTorch's "too many
+// indices" error without converting their integer-like objects.
+fn parse_leading_integer_full_slice(
+    tensor: &CoreTensor,
+    indices: &Bound<'_, PyTuple>,
+) -> PyResult<Option<Vec<i64>>> {
+    let integer_dimensions = match indices.len() {
+        2 => 1,
+        3 => 2,
+        _ => return Ok(None),
+    };
+    if !is_exact_full_slice(&indices.get_item(integer_dimensions)?)? {
         return Ok(None);
     }
-    parse_integer_index(&indices.get_item(0)?).map(Some)
+    parse_integer_indices(
+        tensor,
+        integer_dimensions,
+        indices.iter().take(integer_dimensions),
+    )
+    .map(Some)
 }
 
 // Return how many tensor dimensions an alias-only tuple consumes. A single
