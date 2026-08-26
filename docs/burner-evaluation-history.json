@@ -6561,6 +6561,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1027",
+      "recordedAt": "2026-08-26T08:15:00.539Z",
+      "label": "PR #1027",
+      "kind": "leaf",
+      "prNumber": 1027,
+      "title": "Accept custom Sequence roots in torch.autograd.backward",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 94.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 76.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
