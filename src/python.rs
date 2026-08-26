@@ -10553,7 +10553,7 @@ fn is_exact_full_slice(index: &Bound<'_, PyAny>) -> PyResult<bool> {
 }
 
 // The caller checks tuple arity against the tensor rank first so lower-rank
-// `(index, :)` through `(index, index, index, index, :)` forms retain
+// `(index, :)` through `(index, index, index, index, index, :)` forms retain
 // PyTorch's "too many indices" error without converting their integer-like
 // objects.
 fn parse_leading_integer_full_slice(
@@ -10565,6 +10565,7 @@ fn parse_leading_integer_full_slice(
         3 => 2,
         4 => 3,
         5 => 4,
+        6 => 5,
         _ => return Ok(None),
     };
     if !is_exact_full_slice(&indices.get_item(integer_dimensions)?)? {
