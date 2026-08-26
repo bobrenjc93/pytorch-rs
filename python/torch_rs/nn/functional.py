@@ -12,6 +12,7 @@ from ..torch_rs import (
     _nn_functional_dropout,
     _nn_functional_linear,
     _nn_functional_mse_loss,
+    _nn_functional_relu6,
 )
 
 
@@ -167,6 +168,35 @@ def relu(input: Tensor, inplace: bool = False) -> Tensor:
             "torch_rs.nn.functional.relu does not support inplace=True"
         )
     return torch.relu(input)
+
+
+def _relu6_impl(input, inplace):
+    if type(input) is not Tensor:
+        operation = "relu6_" if inplace else "relu6"
+        raise TypeError(
+            f"{operation}(): argument 'input' (position 1) must be Tensor, "
+            f"not {type(input).__name__}"
+        )
+    if inplace:
+        raise NotImplementedError(
+            "torch_rs.nn.functional.relu6 does not support inplace=True"
+        )
+    return _nn_functional_relu6(input)
+
+
+def relu6(input: Tensor, inplace: bool = False) -> Tensor:
+    r"""relu6(input, inplace=False) -> Tensor
+
+    Applies the element-wise function :math:`\text{ReLU6}(x) = \min(\max(0,x), 6)`.
+
+    See :class:`~torch.nn.ReLU6` for more details.
+    """
+    return _dispatch_unary_torch_function(
+        relu6,
+        _relu6_impl,
+        input,
+        {"inplace": inplace},
+    )
 
 
 def tanh(input):
