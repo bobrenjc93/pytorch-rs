@@ -2414,9 +2414,9 @@ impl Tensor {
     /// Computes a squared difference in one binary elementwise pass.
     ///
     /// Same-shaped inputs retain the dedicated binary fast path. Broadcast
-    /// inputs reuse the shared planner, with empty results applying the final
-    /// unary-style restriding used by `PyTorch` MSE without materializing an
-    /// intermediate difference tensor.
+    /// inputs reuse the shared planner, then apply the final unary-style
+    /// restriding used by `PyTorch` MSE without materializing an intermediate
+    /// difference tensor.
     ///
     /// # Errors
     ///
@@ -2429,11 +2429,11 @@ impl Tensor {
             let difference = left - right;
             difference * difference
         })?;
-        if !shapes_match && output.elements == 0 {
-            // The native MSE kernel receives already-expanded operands. For an
-            // empty broadcast, its output is restrided like the final square
-            // in `(input - target).square()`, even though no intermediate
-            // values need to be materialized.
+        if !shapes_match {
+            // The native MSE kernel receives already-expanded operands, so its
+            // output is restrided like the final square in
+            // `(input - target).square()`, even though no intermediate values
+            // need to be materialized.
             output.strides = output.unary_output_strides(&output.shape, output.elements)?;
         }
         Ok(output)
@@ -5540,13 +5540,25 @@ mod tests {
             .transpose(0, 1)
             .unwrap();
         let vector = Tensor::from_vec(vec![0.5, -1.5, 2.5], [3]).unwrap();
+        let singleton_row = Tensor::from_vec(vec![1.0, 2.0, 3.0], [3, 1])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
         let empty_rows = Tensor::zeros([3, 0]).unwrap().transpose(0, 1).unwrap();
         let empty_columns = Tensor::zeros([0, 3]).unwrap().transpose(0, 1).unwrap();
         let empty_vector = Tensor::zeros([0]).unwrap();
 
+        assert_eq!(singleton_row.stride(), &[1, 1]);
+        assert_eq!(
+            singleton_row.squared_difference(&vector).unwrap().stride(),
+            &[3, 1]
+        );
+
         for (left, right) in [
             (&matrix, &vector),
             (&vector, &matrix),
+            (&singleton_row, &vector),
+            (&vector, &singleton_row),
             (&empty_rows, &vector),
             (&vector, &empty_rows),
             (&empty_columns, &empty_vector),

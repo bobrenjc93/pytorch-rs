@@ -171,6 +171,11 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             module,
             [[11.0, -4.0], [12.0, 0.0], [13.0, 2.0], [14.0, 5.0]],
         ).transpose(0, 1)[1]
+        singleton_row_matrix = self.tensor(
+            module,
+            [[1.0], [2.0], [3.0]],
+        ).transpose(0, 1)
+        singleton_row_vector = self.tensor(module, [0.5, 1.5, 2.5])
         empty_rows_matrix = module.zeros(
             (4, 0), dtype=module.float32
         ).transpose(0, 1)
@@ -199,6 +204,16 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 "strided matrix target",
                 strided_vector,
                 transposed_matrix,
+            ),
+            (
+                "singleton-row matrix input",
+                singleton_row_matrix,
+                singleton_row_vector,
+            ),
+            (
+                "singleton-row matrix target",
+                singleton_row_vector,
+                singleton_row_matrix,
             ),
             ("empty rows matrix input", empty_rows_matrix, contiguous_vector),
             ("empty columns matrix target", empty_vector, empty_columns_matrix),
@@ -390,6 +405,16 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 expected_target,
             )
             self.assert_matches(actual, expected, case=case)
+            if case.startswith("singleton-row"):
+                actual_matrix = actual_input if actual_input.dim() == 2 else actual_target
+                expected_matrix = (
+                    expected_input if expected_input.dim() == 2 else expected_target
+                )
+                with self.subTest(case=case, singleton_row_stride=True):
+                    self.assertEqual(actual_matrix.stride(), (1, 1))
+                    self.assertEqual(expected_matrix.stride(), (1, 1))
+                    self.assertEqual(actual.stride(), (3, 1))
+                    self.assertEqual(expected.stride(), (3, 1))
             with self.subTest(case=case, warnings=True):
                 self.assertEqual(actual_warnings, expected_warnings)
                 self.assertEqual(len(actual_warnings), 1)

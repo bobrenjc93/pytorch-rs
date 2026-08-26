@@ -169,6 +169,8 @@ class FunctionalMseLossTests(unittest.TestCase):
         strided_vector = torch.tensor(
             [[11.0, -4.0], [12.0, 0.0], [13.0, 2.0], [14.0, 5.0]]
         ).transpose(0, 1)[1]
+        singleton_row_matrix = torch.tensor([[1.0], [2.0], [3.0]]).transpose(0, 1)
+        singleton_row_vector = torch.tensor([0.5, 1.5, 2.5])
         empty_rows_matrix = torch.zeros((4, 0)).transpose(0, 1)
         empty_columns_matrix = torch.zeros((0, 3)).transpose(0, 1)
         empty_vector = torch.zeros((0,))
@@ -193,6 +195,16 @@ class FunctionalMseLossTests(unittest.TestCase):
                 "strided matrix target",
                 strided_vector,
                 transposed_matrix,
+            ),
+            (
+                "singleton-row matrix input",
+                singleton_row_matrix,
+                singleton_row_vector,
+            ),
+            (
+                "singleton-row matrix target",
+                singleton_row_vector,
+                singleton_row_matrix,
             ),
             ("empty rows matrix input", empty_rows_matrix, contiguous_vector),
             ("empty columns matrix target", empty_vector, empty_columns_matrix),
