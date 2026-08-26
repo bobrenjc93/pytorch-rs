@@ -4507,7 +4507,9 @@ fn tensor(
 }
 
 const MIN_BACKWARD_LEAF_ROOTS: usize = 2;
-const MAX_BACKWARD_LEAF_ROOTS: usize = 9;
+// Export this private native constant to the Python wrapper so both layers
+// enforce the same bridge bound without duplicating it in Python source.
+const MAX_BACKWARD_LEAF_ROOTS: usize = 10;
 
 #[pyfunction]
 fn _backward_leaf_roots(roots: &Bound<'_, PyAny>) -> PyResult<()> {
@@ -11440,10 +11442,11 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("is_tensor", is_tensor_helpers.getattr("is_tensor")?)?;
     add_no_argument_builtins(module)?;
     module.add_function(wrap_pyfunction!(tensor, module)?)?;
+    module.add("_MAX_BACKWARD_LEAF_ROOTS", MAX_BACKWARD_LEAF_ROOTS)?;
     module.add_function(wrap_pyfunction!(_backward_leaf_roots, module)?)?;
-    module
-        .getattr("__all__")?
-        .call_method1("remove", ("_backward_leaf_roots",))?;
+    for name in ["_MAX_BACKWARD_LEAF_ROOTS", "_backward_leaf_roots"] {
+        exports.call_method1("remove", (name,))?;
+    }
     torch_function_mode_stack::add_torch_function_mode_stack(module)?;
     add_torch_function_probe(module)?;
     add_variable_functions(module)?;
