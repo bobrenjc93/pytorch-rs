@@ -133,6 +133,33 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             ),
         )
 
+    def four_leading_integer_full_slice_layout_cases(self, module):
+        contiguous_values = np.arange(720, dtype=np.float32).reshape(
+            2, 3, 4, 5, 6
+        )
+        contiguous_values[1, 1, 1, 1, 0] = -0.0
+        base_values = np.arange(5040, dtype=np.float32).reshape(2, 3, 4, 5, 6, 7)
+        base = module.tensor(base_values.tolist(), dtype=module.float32)
+        return (
+            (
+                module.tensor(contiguous_values.tolist(), dtype=module.float32),
+                (-1, -2, -3, -4),
+            ),
+            (base, (-1, -2, -3, -4)),
+            (
+                module.zeros((2, 3, 4, 5, 0, 6), dtype=module.float32),
+                (-1, -2, -3, -4),
+            ),
+            (base[1], (-2, -1, -3, -4)),
+            (base[1].transpose(0, 4), (-1, -2, -3, -4)),
+            (
+                module.zeros(
+                    (sys.maxsize, 1, 1, 1, 0, 3), dtype=module.float32
+                ),
+                (sys.maxsize - 1, 0, 0, 0),
+            ),
+        )
+
     def alias_contract(self, source, index):
         alias = source[index]
         values = np.asarray(alias.detach(), dtype=np.float32).reshape(-1)
@@ -451,6 +478,111 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             self.three_leading_integer_full_slice_contract(reference_torch),
         )
 
+    def four_leading_integer_full_slice_contract(self, module):
+        layouts = []
+        for source, indices in self.four_leading_integer_full_slice_layout_cases(
+            module
+        ):
+            selected = source[
+                indices[0], indices[1], indices[2], indices[3], :
+            ]
+            direct = source[indices]
+            values = np.asarray(selected.detach(), dtype=np.float32).reshape(-1)
+            layouts.append(
+                {
+                    "values": selected.tolist(),
+                    "value_bits": tuple(values.view(np.uint32).tolist()),
+                    "shape": tuple(selected.shape),
+                    "stride": selected.stride(),
+                    "storage_offset": selected.storage_offset(),
+                    "same_logical_view": selected.is_set_to(direct),
+                    "same_data_pointer": selected.data_ptr() == direct.data_ptr(),
+                    "dtype": str(selected.dtype),
+                    "device": str(selected.device),
+                }
+            )
+
+        class IntegerSubclass(int):
+            pass
+
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        first_dynamic = IndexValue(-1)
+        second_dynamic = IndexValue(-2)
+        third_dynamic = IndexValue(-3)
+        fourth_dynamic = IndexValue(-4)
+        source = module.tensor(
+            np.arange(720, dtype=np.float32).reshape(2, 3, 4, 5, 6).tolist(),
+            dtype=module.float32,
+        )
+        protocols = []
+        for indices, normalized in (
+            (
+                (
+                    IntegerSubclass(1),
+                    np.int64(-1),
+                    np.uint64(2),
+                    IntegerSubclass(-4),
+                ),
+                (1, 2, 2, 1),
+            ),
+            (
+                (
+                    np.uint64(0),
+                    second_dynamic,
+                    IntegerSubclass(-1),
+                    fourth_dynamic,
+                ),
+                (0, 1, 3, 1),
+            ),
+            (
+                (
+                    first_dynamic,
+                    IntegerSubclass(0),
+                    third_dynamic,
+                    np.uint64(4),
+                ),
+                (1, 0, 1, 4),
+            ),
+        ):
+            selected = source[
+                indices[0], indices[1], indices[2], indices[3], :
+            ]
+            direct = source[normalized]
+            protocols.append(
+                (
+                    selected.tolist(),
+                    tuple(selected.shape),
+                    selected.stride(),
+                    selected.storage_offset(),
+                    selected.is_set_to(direct),
+                    selected.data_ptr() == direct.data_ptr(),
+                )
+            )
+        return (
+            layouts,
+            protocols,
+            first_dynamic.calls,
+            second_dynamic.calls,
+            third_dynamic.calls,
+            fourth_dynamic.calls,
+        )
+
+    def test_four_leading_integer_full_slice_layout_and_protocol_match_pytorch_2_13(
+        self,
+    ):
+        self.assertEqual(
+            self.four_leading_integer_full_slice_contract(torch),
+            self.four_leading_integer_full_slice_contract(reference_torch),
+        )
+
     def scalar_error_contract(self, module, index):
         try:
             module.tensor(-0.0, dtype=module.float32)[index]
@@ -762,6 +894,167 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             self.three_leading_integer_full_slice_error_contract(reference_torch),
         )
 
+    def four_leading_integer_full_slice_error_contract(self, module):
+        class IndexValue:
+            def __init__(self, value):
+                self.value = value
+                self.calls = 0
+
+            def __index__(self):
+                self.calls += 1
+                return self.value
+
+        def capture(call):
+            try:
+                call()
+            except Exception as error:
+                return type(error).__name__, str(error)
+            self.fail("four-leading-integer full slice unexpectedly succeeded")
+
+        lower_rank = []
+        for dimensions in range(5):
+            first = IndexValue(0)
+            second = IndexValue(0)
+            third = IndexValue(0)
+            fourth = IndexValue(0)
+            error = capture(
+                lambda dimensions=dimensions, first=first, second=second, third=third, fourth=fourth: module.zeros(
+                    (2,) * dimensions, dtype=module.float32
+                )[first, second, third, fourth, :]
+            )
+            lower_rank.append(
+                (error, first.calls, second.calls, third.calls, fourth.calls)
+            )
+
+        first_out_of_bounds = IndexValue(2)
+        skipped_second = IndexValue(0)
+        skipped_third = IndexValue(0)
+        skipped_fourth = IndexValue(0)
+        first_bounds_error = capture(
+            lambda: module.zeros((2, 3, 4, 5, 6), dtype=module.float32)[
+                first_out_of_bounds,
+                skipped_second,
+                skipped_third,
+                skipped_fourth,
+                :,
+            ]
+        )
+
+        valid_first = IndexValue(0)
+        second_out_of_bounds = IndexValue(3)
+        skipped_third_after_second = IndexValue(0)
+        skipped_fourth_after_second = IndexValue(0)
+        second_bounds_error = capture(
+            lambda: module.zeros((2, 3, 4, 5, 6), dtype=module.float32)[
+                valid_first,
+                second_out_of_bounds,
+                skipped_third_after_second,
+                skipped_fourth_after_second,
+                :,
+            ]
+        )
+
+        valid_first_for_third = IndexValue(0)
+        valid_second = IndexValue(0)
+        third_out_of_bounds = IndexValue(4)
+        skipped_fourth_after_third = IndexValue(0)
+        third_bounds_error = capture(
+            lambda: module.zeros((2, 3, 4, 5, 6), dtype=module.float32)[
+                valid_first_for_third,
+                valid_second,
+                third_out_of_bounds,
+                skipped_fourth_after_third,
+                :,
+            ]
+        )
+
+        valid_first_for_fourth = IndexValue(0)
+        valid_second_for_fourth = IndexValue(0)
+        valid_third = IndexValue(0)
+        fourth_out_of_bounds = IndexValue(5)
+        fourth_bounds_error = capture(
+            lambda: module.zeros((2, 3, 4, 5, 6), dtype=module.float32)[
+                valid_first_for_fourth,
+                valid_second_for_fourth,
+                valid_third,
+                fourth_out_of_bounds,
+                :,
+            ]
+        )
+
+        invalid_fourth = IndexValue(1.5)
+        invalid_error = capture(
+            lambda: module.zeros((2, 3, 4, 5, 6), dtype=module.float32)[
+                0, 0, 0, invalid_fourth, :
+            ]
+        )
+        overflow_error = capture(
+            lambda: module.zeros((2, 3, 4, 5, 6), dtype=module.float32)[
+                0, 0, 0, 2**100, :
+            ]
+        )
+        wrapping_first = IndexValue(sys.maxsize - 1)
+        wrapping_second = IndexValue(0)
+        wrapping_third = IndexValue(0)
+        wrapping_fourth_out_of_bounds = IndexValue(1)
+        wrapping_bounds_error = capture(
+            lambda: module.zeros(
+                (sys.maxsize, 1, 1, 1, 0, 3), dtype=module.float32
+            )[
+                wrapping_first,
+                wrapping_second,
+                wrapping_third,
+                wrapping_fourth_out_of_bounds,
+                :,
+            ]
+        )
+        return {
+            "lower_rank": tuple(lower_rank),
+            "first_bounds": (
+                first_bounds_error,
+                first_out_of_bounds.calls,
+                skipped_second.calls,
+                skipped_third.calls,
+                skipped_fourth.calls,
+            ),
+            "second_bounds": (
+                second_bounds_error,
+                valid_first.calls,
+                second_out_of_bounds.calls,
+                skipped_third_after_second.calls,
+                skipped_fourth_after_second.calls,
+            ),
+            "third_bounds": (
+                third_bounds_error,
+                valid_first_for_third.calls,
+                valid_second.calls,
+                third_out_of_bounds.calls,
+                skipped_fourth_after_third.calls,
+            ),
+            "fourth_bounds": (
+                fourth_bounds_error,
+                valid_first_for_fourth.calls,
+                valid_second_for_fourth.calls,
+                valid_third.calls,
+                fourth_out_of_bounds.calls,
+            ),
+            "invalid": (invalid_error, invalid_fourth.calls),
+            "overflow": overflow_error,
+            "wrapping_bounds": (
+                wrapping_bounds_error,
+                wrapping_first.calls,
+                wrapping_second.calls,
+                wrapping_third.calls,
+                wrapping_fourth_out_of_bounds.calls,
+            ),
+        }
+
+    def test_four_leading_integer_full_slice_errors_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.four_leading_integer_full_slice_error_contract(torch),
+            self.four_leading_integer_full_slice_error_contract(reference_torch),
+        )
+
     def tuple_subclass_contract(self, module):
         source = module.tensor(
             [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]], dtype=module.float32
@@ -827,6 +1120,19 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
 
         selected_with_three_integers = rank_four_source[
             ThreeLeadingIntegerFullSliceRemapTuple((0,))
+        ]
+
+        rank_five_source = module.tensor(
+            np.arange(720, dtype=np.float32).reshape(2, 3, 4, 5, 6).tolist(),
+            dtype=module.float32,
+        )
+
+        class FourLeadingIntegerFullSliceRemapTuple(tuple):
+            def __iter__(self):
+                return iter((1, 2, 3, 4, slice(None)))
+
+        selected_with_four_integers = rank_five_source[
+            FourLeadingIntegerFullSliceRemapTuple((0,))
         ]
 
         class EmptyRemapTuple(tuple):
@@ -931,6 +1237,25 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             "selected_with_three_integers_same_data_pointer": (
                 selected_with_three_integers.data_ptr()
                 == rank_four_source[1, 2, 3].data_ptr()
+            ),
+            "selected_with_four_integers_values": (
+                selected_with_four_integers.tolist()
+            ),
+            "selected_with_four_integers_shape": tuple(
+                selected_with_four_integers.shape
+            ),
+            "selected_with_four_integers_stride": (
+                selected_with_four_integers.stride()
+            ),
+            "selected_with_four_integers_offset": (
+                selected_with_four_integers.storage_offset()
+            ),
+            "selected_with_four_integers_same_logical_view": (
+                selected_with_four_integers.is_set_to(rank_five_source[1, 2, 3, 4])
+            ),
+            "selected_with_four_integers_same_data_pointer": (
+                selected_with_four_integers.data_ptr()
+                == rank_five_source[1, 2, 3, 4].data_ptr()
             ),
             "empty_alias_values": empty_alias.tolist(),
             "empty_alias_shape": tuple(empty_alias.shape),
@@ -1274,6 +1599,82 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             ),
         )
 
+    def four_leading_integer_full_slice_autograd_contract(self, module):
+        values = np.arange(5040, dtype=np.float32).reshape(2, 3, 4, 5, 6, 7)
+        leaf = module.tensor(
+            values.reshape(-1).tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        )
+        source = (leaf * 2.0).reshape(2, 3, 4, 5, 6, 7)[1].transpose(0, 4)
+        selected = source[-1, -2, -3, -4, :]
+        direct = source[-1, -2, -3, -4]
+        metadata = (
+            selected.requires_grad,
+            selected.is_leaf,
+            selected.output_nr,
+            tuple(selected.shape),
+            selected.stride(),
+            selected.storage_offset(),
+            selected.is_set_to(direct),
+            selected.data_ptr() == direct.data_ptr(),
+        )
+        weights = module.tensor([3.0, 5.0, 7.0], dtype=module.float32)
+        (selected * weights).sum().backward()
+
+        no_grad_values = np.arange(32, dtype=np.float32).reshape(2, 2, 2, 2, 2)
+        no_grad_source = module.tensor(
+            no_grad_values.tolist(),
+            dtype=module.float32,
+            requires_grad=True,
+        ).transpose(0, 4)
+        with module.no_grad():
+            untracked = no_grad_source[1, 0, 1, 0, :]
+
+        empty = module.zeros((2, 3, 4, 5, 0, 6), requires_grad=True)
+        empty[-1, -2, -3, -4, :].sum().backward()
+
+        wrapping_empty = module.zeros(
+            (sys.maxsize, 1, 1, 1, 0, 3), requires_grad=True
+        )
+        wrapping_selected = wrapping_empty[sys.maxsize - 1, 0, 0, 0, :]
+        wrapping_selected.sum().backward()
+        return {
+            "metadata": metadata,
+            "gradient": leaf.grad.tolist(),
+            "node": self.node_diagnostic(
+                module, (0, 0, 0, 0, slice(None)), rank=5
+            ),
+            "no_grad": (
+                untracked.requires_grad,
+                untracked.is_leaf,
+                untracked.output_nr,
+                tuple(untracked.shape),
+                untracked.stride(),
+                untracked.storage_offset(),
+                untracked.is_set_to(no_grad_source[1, 0, 1, 0]),
+            ),
+            "empty_gradient_shape": tuple(empty.grad.shape),
+            "empty_gradient": empty.grad.tolist(),
+            "wrapping_empty": (
+                tuple(wrapping_selected.shape),
+                wrapping_selected.stride(),
+                wrapping_selected.storage_offset(),
+                wrapping_selected.requires_grad,
+                wrapping_selected.is_leaf,
+                tuple(wrapping_empty.grad.shape),
+                wrapping_empty.grad.stride(),
+                wrapping_empty.grad.storage_offset(),
+                wrapping_empty.grad.numel(),
+            ),
+        }
+
+    def test_four_leading_integer_full_slice_autograd_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.four_leading_integer_full_slice_autograd_contract(torch),
+            self.four_leading_integer_full_slice_autograd_contract(reference_torch),
+        )
+
     def lifetime_contract(self, module, index, source_rank=2):
         input_shape = tuple(range(2, source_rank + 3))
         values = np.arange(np.prod(input_shape), dtype=np.float32).reshape(
@@ -1441,6 +1842,36 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
             ),
         )
 
+    def four_leading_integer_full_slice_lifetime_contract(self, module):
+        values = np.arange(5040, dtype=np.float32).reshape(2, 3, 4, 5, 6, 7)
+        leaf = module.tensor(
+            values.tolist(), dtype=module.float32, requires_grad=True
+        )
+
+        def make_view():
+            source = (leaf * 2.0)[1].transpose(0, 4)
+            return source[-1, -2, -3, -4, :]
+
+        selected = make_view()
+        gc.collect()
+        metadata = (
+            selected.tolist(),
+            tuple(selected.shape),
+            selected.stride(),
+            selected.storage_offset(),
+            selected.requires_grad,
+            selected.is_leaf,
+        )
+        weights = module.tensor([1.0, 2.0, 3.0], dtype=module.float32)
+        (selected * weights).sum().backward()
+        return metadata, leaf.grad.tolist()
+
+    def test_four_leading_integer_full_slice_lifetime_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.four_leading_integer_full_slice_lifetime_contract(torch),
+            self.four_leading_integer_full_slice_lifetime_contract(reference_torch),
+        )
+
     def mode_dispatch_contract(self, module, index):
         index_rank = len(index) if isinstance(index, tuple) else 1
         shape = (2,) * max(index_rank, 2)
@@ -1585,6 +2016,13 @@ class TensorFullSliceIndexReferenceTests(unittest.TestCase):
     ):
         self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
             (0, 0, 0, slice(None))
+        )
+
+    def test_four_leading_integer_full_slice_mode_dispatch_matches_pytorch_2_13(
+        self,
+    ):
+        self.assert_tensorbase_mode_dispatch_matches_pytorch_2_13(
+            (0, 0, 0, 0, slice(None))
         )
 
 
