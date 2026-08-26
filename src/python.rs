@@ -5096,9 +5096,15 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
         ));
     };
     let exact_float_endpoint = end.value.is_exact_instance_of::<PyFloat>();
+    let exact_integer_endpoint = end.value.is_exact_instance_of::<PyInt>();
+    let numpy_float_endpoint = if exact_float_endpoint || exact_integer_endpoint {
+        false
+    } else {
+        is_numpy_scalar_of_types(&end.value, &["floating"])?
+    };
     // Peek only at a valid native dtype here so unsupported endpoint/dtype
     // combinations retain the endpoint-first error ordering below.
-    let exact_integer_with_explicit_float32 = if end.value.is_exact_instance_of::<PyInt>() {
+    let exact_integer_with_explicit_float32 = if exact_integer_endpoint {
         match dtype
             .as_ref()
             .and_then(|dtype| dtype.cast::<PyDType>().ok())
@@ -5109,7 +5115,7 @@ fn parse_arange_arguments(arguments: ArangeCallArguments<'_>) -> PyResult<(usize
     } else {
         false
     };
-    if !exact_float_endpoint && !exact_integer_with_explicit_float32 {
+    if !exact_float_endpoint && !numpy_float_endpoint && !exact_integer_with_explicit_float32 {
         let position = end
             .position
             .map_or_else(String::new, |position| format!(" (position {position})"));
@@ -5331,14 +5337,21 @@ fn validate_scalar_tensor_value(scalar: &ParsedCallArgument<'_>) -> PyResult<()>
 }
 
 fn is_numpy_scalar_tensor_number(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    is_numpy_scalar_of_types(value, &["bool_", "integer", "floating", "complexfloating"])
+}
+
+fn is_numpy_scalar_of_types(value: &Bound<'_, PyAny>, scalar_types: &[&str]) -> PyResult<bool> {
     let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
         return Ok(false);
     };
-    if !value.is_instance(&numpy.getattr("generic")?)? {
+    let value_type = value.get_type();
+    let numpy_generic = numpy.getattr("generic")?.cast_into::<PyType>()?;
+    if !value_type.is_subclass(numpy_generic.as_any())? {
         return Ok(false);
     }
-    for scalar_type in ["bool_", "integer", "floating", "complexfloating"] {
-        if value.is_instance(&numpy.getattr(scalar_type)?)? {
+    for scalar_type in scalar_types {
+        let scalar_type = numpy.getattr(*scalar_type)?.cast_into::<PyType>()?;
+        if value_type.is_subclass(scalar_type.as_any())? {
             return Ok(true);
         }
     }

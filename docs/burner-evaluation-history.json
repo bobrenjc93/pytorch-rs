@@ -6465,6 +6465,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1008",
+      "recordedAt": "2026-08-26T03:16:58.615Z",
+      "label": "PR #1008",
+      "kind": "leaf",
+      "prNumber": 1008,
+      "title": "Accept NumPy floating endpoints in one-bound torch.arange",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 93.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 76.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
