@@ -28,6 +28,7 @@ SUPPORTED = {
     "empty_cache",
     "is_available",
     "max_memory_allocated",
+    "max_memory_reserved",
     "memory_allocated",
     "memory_reserved",
     "memory_stats",
@@ -36,6 +37,7 @@ SUPPORTED = {
 MEMORY_LOCAL = {
     "empty_cache",
     "max_memory_allocated",
+    "max_memory_reserved",
     "memory_allocated",
     "memory_reserved",
     "memory_stats",
@@ -109,6 +111,7 @@ class AcceleratorReferenceTests(unittest.TestCase):
             "empty_cache",
             "is_available",
             "max_memory_allocated",
+            "max_memory_reserved",
             "memory_allocated",
             "memory_reserved",
             "memory_stats",
@@ -178,6 +181,14 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(
             expected_module.max_memory_allocated,
             expected_memory.max_memory_allocated,
+        )
+        self.assertIs(
+            actual_module.max_memory_reserved,
+            actual_memory.max_memory_reserved,
+        )
+        self.assertIs(
+            expected_module.max_memory_reserved,
+            expected_memory.max_memory_reserved,
         )
         self.assertIs(
             actual_module.memory_allocated,
@@ -279,6 +290,14 @@ assert (
     is reference_torch.accelerator.memory.max_memory_allocated
 )
 assert (
+    torch.accelerator.max_memory_reserved
+    is torch.accelerator.memory.max_memory_reserved
+)
+assert (
+    reference_torch.accelerator.max_memory_reserved
+    is reference_torch.accelerator.memory.max_memory_reserved
+)
+assert (
     torch.accelerator.memory_reserved
     is torch.accelerator.memory.memory_reserved
 )
@@ -358,6 +377,25 @@ expected_max_allocated = [
 assert actual_max_allocated == expected_max_allocated == [0, 0, 0, 0, 0]
 assert all(type(result) is int for result in actual_max_allocated)
 assert all(type(result) is int for result in expected_max_allocated)
+actual_max_reserved = [
+    torch.accelerator.max_memory_reserved(),
+    torch.accelerator.max_memory_reserved(None),
+    torch.accelerator.max_memory_reserved("cuda:0"),
+    torch.accelerator.max_memory_reserved(torch.device("cpu")),
+    torch.accelerator.max_memory_reserved(ExplodingDeviceToken()),
+]
+expected_max_reserved = [
+    reference_torch.accelerator.max_memory_reserved(),
+    reference_torch.accelerator.max_memory_reserved(None),
+    reference_torch.accelerator.max_memory_reserved("cuda:0"),
+    reference_torch.accelerator.max_memory_reserved(
+        reference_torch.device("cpu")
+    ),
+    reference_torch.accelerator.max_memory_reserved(ExplodingDeviceToken()),
+]
+assert actual_max_reserved == expected_max_reserved == [0, 0, 0, 0, 0]
+assert all(type(result) is int for result in actual_max_reserved)
+assert all(type(result) is int for result in expected_max_reserved)
 actual_reserved = [
     torch.accelerator.memory_reserved(),
     torch.accelerator.memory_reserved(None),
@@ -600,6 +638,8 @@ assert torch.accelerator.memory_allocated is torch.accelerator.memory.memory_all
 assert torch.accelerator.memory_allocated.__code__.co_names == ("memory_stats", "get")
 assert torch.accelerator.max_memory_allocated is torch.accelerator.memory.max_memory_allocated
 assert torch.accelerator.max_memory_allocated.__code__.co_names == ("memory_stats", "get")
+assert torch.accelerator.max_memory_reserved is torch.accelerator.memory.max_memory_reserved
+assert torch.accelerator.max_memory_reserved.__code__.co_names == ("memory_stats", "get")
 assert torch.accelerator.memory_reserved is torch.accelerator.memory.memory_reserved
 assert torch.accelerator.memory_reserved.__code__.co_names == ("memory_stats", "get")
 assert torch.accelerator.memory_stats is torch.accelerator.memory.memory_stats
@@ -643,6 +683,13 @@ torch_rs_max_allocated_before = [
 ]
 assert torch_rs_max_allocated_before == [0, 0, 0]
 assert all(type(value) is int for value in torch_rs_max_allocated_before)
+torch_rs_max_reserved_before = [
+    torch.accelerator.max_memory_reserved(),
+    torch.accelerator.max_memory_reserved("cuda:0"),
+    torch.accelerator.max_memory_reserved(ExplodingDeviceToken()),
+]
+assert torch_rs_max_reserved_before == [0, 0, 0]
+assert all(type(value) is int for value in torch_rs_max_reserved_before)
 torch_rs_reserved_before = [
     torch.accelerator.memory_reserved(),
     torch.accelerator.memory_reserved("cuda:0"),
@@ -666,6 +713,11 @@ reference_max_allocated_before = reference_torch.accelerator.max_memory_allocate
 )
 assert type(reference_max_allocated_before) is int
 assert reference_max_allocated_before == 0
+reference_max_reserved_before = reference_torch.accelerator.max_memory_reserved(
+    ExplodingDeviceToken()
+)
+assert type(reference_max_reserved_before) is int
+assert reference_max_reserved_before == 0
 reference_reserved_before = reference_torch.accelerator.memory_reserved(
     ExplodingDeviceToken()
 )
@@ -704,6 +756,11 @@ assert (
     reference_after["reserved_bytes.all.current"]
     >= reference_after["allocated_bytes.all.current"]
 )
+assert type(reference_after["reserved_bytes.all.peak"]) is int
+assert (
+    reference_after["reserved_bytes.all.peak"]
+    >= reference_after["reserved_bytes.all.current"]
+)
 assert type(reference_after["allocation.all.current"]) is int
 assert reference_after["allocation.all.current"] >= 1
 reference_allocated_after = reference_torch.accelerator.memory_allocated(device_index)
@@ -718,6 +775,15 @@ assert reference_max_allocated_after == reference_after["allocated_bytes.all.pea
 assert (
     reference_max_allocated_after
     >= reference_max_allocated_before + allocation_bytes
+)
+reference_max_reserved_after = (
+    reference_torch.accelerator.max_memory_reserved(device_index)
+)
+assert type(reference_max_reserved_after) is int
+assert reference_max_reserved_after == reference_after["reserved_bytes.all.peak"]
+assert (
+    reference_max_reserved_after
+    >= reference_max_reserved_before + allocation_bytes
 )
 reference_reserved_after = reference_torch.accelerator.memory_reserved(device_index)
 assert type(reference_reserved_after) is int
@@ -747,6 +813,15 @@ torch_rs_max_allocated_after = [
 ]
 assert torch_rs_max_allocated_after == [0, 0, 0]
 assert all(type(value) is int for value in torch_rs_max_allocated_after)
+torch_rs_max_reserved_after = [
+    torch.accelerator.max_memory_reserved(),
+    torch.accelerator.max_memory_reserved(device_index),
+    torch.accelerator.max_memory_reserved(
+        reference_torch.device("cuda:0")
+    ),
+]
+assert torch_rs_max_reserved_after == [0, 0, 0]
+assert all(type(value) is int for value in torch_rs_max_reserved_after)
 torch_rs_reserved_after = [
     torch.accelerator.memory_reserved(),
     torch.accelerator.memory_reserved(device_index),
@@ -768,18 +843,34 @@ assert (
     reference_released["allocated_bytes.all.peak"]
     == reference_max_allocated_after
 )
+assert (
+    reference_released["reserved_bytes.all.peak"]
+    == reference_max_reserved_after
+)
 reference_max_allocated_released = (
     reference_torch.accelerator.max_memory_allocated(device_index)
 )
 assert type(reference_max_allocated_released) is int
 assert reference_max_allocated_released == reference_max_allocated_after
-torch_rs_released = [
+reference_max_reserved_released = (
+    reference_torch.accelerator.max_memory_reserved(device_index)
+)
+assert type(reference_max_reserved_released) is int
+assert reference_max_reserved_released == reference_max_reserved_after
+torch_rs_max_allocated_released = [
     torch.accelerator.max_memory_allocated(),
     torch.accelerator.max_memory_allocated(device_index),
     torch.accelerator.max_memory_allocated(ExplodingDeviceToken()),
 ]
-assert torch_rs_released == [0, 0, 0]
-assert all(type(value) is int for value in torch_rs_released)
+assert torch_rs_max_allocated_released == [0, 0, 0]
+assert all(type(value) is int for value in torch_rs_max_allocated_released)
+torch_rs_max_reserved_released = [
+    torch.accelerator.max_memory_reserved(),
+    torch.accelerator.max_memory_reserved(device_index),
+    torch.accelerator.max_memory_reserved(ExplodingDeviceToken()),
+]
+assert torch_rs_max_reserved_released == [0, 0, 0]
+assert all(type(value) is int for value in torch_rs_max_reserved_released)
 assert not hasattr(torch, "cuda")
 assert torch._C._has_cuda is False
 assert torch.version.cuda is None
@@ -810,6 +901,8 @@ assert torch.version.cuda is None
             accelerator.memory_allocated(),
             accelerator.max_memory_allocated(),
             accelerator.max_memory_allocated(),
+            accelerator.max_memory_reserved(),
+            accelerator.max_memory_reserved(),
             accelerator.memory_reserved(),
             accelerator.memory_reserved(),
             accelerator.memory_stats(),
@@ -837,6 +930,8 @@ assert torch.version.cuda is None
                         accelerator.memory_allocated(),
                         accelerator.max_memory_allocated(),
                         accelerator.max_memory_allocated(),
+                        accelerator.max_memory_reserved(),
+                        accelerator.max_memory_reserved(),
                         accelerator.memory_reserved(),
                         accelerator.memory_reserved(),
                         accelerator.memory_stats(),
@@ -866,17 +961,19 @@ assert torch.version.cuda is None
                 for index, result in enumerate(results):
                     expected_grad_state = index % 2 == 0
                     self.assertEqual(result[0], expected_grad_state)
-                    self.assertEqual(result[1:15], baseline)
-                    self.assertEqual(result[15], expected_grad_state)
+                    self.assertEqual(result[1:17], baseline)
+                    self.assertEqual(result[17], expected_grad_state)
                     self.assertIs(type(result[7]), int)
                     self.assertIs(type(result[8]), int)
                     self.assertIs(type(result[9]), int)
                     self.assertIs(type(result[10]), int)
                     self.assertIs(type(result[11]), int)
                     self.assertIs(type(result[12]), int)
-                    self.assertIs(type(result[13]), OrderedDict)
-                    self.assertIs(type(result[14]), OrderedDict)
-                    self.assertIsNot(result[13], result[14])
+                    self.assertIs(type(result[13]), int)
+                    self.assertIs(type(result[14]), int)
+                    self.assertIs(type(result[15]), OrderedDict)
+                    self.assertIs(type(result[16]), OrderedDict)
+                    self.assertIsNot(result[15], result[16])
                 self.assertEqual(baseline[2], baseline[3])
                 self.assertIs(type(baseline[6]), int)
                 self.assertIs(type(baseline[7]), int)
@@ -884,9 +981,11 @@ assert torch.version.cuda is None
                 self.assertIs(type(baseline[9]), int)
                 self.assertIs(type(baseline[10]), int)
                 self.assertIs(type(baseline[11]), int)
-                self.assertIs(type(baseline[12]), OrderedDict)
-                self.assertIs(type(baseline[13]), OrderedDict)
-                self.assertIsNot(baseline[12], baseline[13])
+                self.assertIs(type(baseline[12]), int)
+                self.assertIs(type(baseline[13]), int)
+                self.assertIs(type(baseline[14]), OrderedDict)
+                self.assertIs(type(baseline[15]), OrderedDict)
+                self.assertIsNot(baseline[14], baseline[15])
                 if module is torch:
                     self.assertEqual(
                         baseline[2],
@@ -899,9 +998,9 @@ assert torch.version.cuda is None
                     )
                 self.assertIs(type(baseline[4]), bool)
                 self.assertIs(type(baseline[5]), int)
-                all_stats = [baseline[12], baseline[13]]
-                all_stats.extend(result[13] for result in results)
-                all_stats.extend(result[14] for result in results)
+                all_stats = [baseline[14], baseline[15]]
+                all_stats.extend(result[15] for result in results)
+                all_stats.extend(result[16] for result in results)
                 self.assertEqual(
                     len({id(stats) for stats in all_stats}), len(all_stats)
                 )
@@ -913,6 +1012,8 @@ assert torch.version.cuda is None
         old_empty_cache = accelerator.empty_cache
         old_max_memory_allocated = accelerator.max_memory_allocated
         max_memory_allocated_before = old_max_memory_allocated()
+        old_max_memory_reserved = accelerator.max_memory_reserved
+        max_memory_reserved_before = old_max_memory_reserved()
         old_memory_allocated = accelerator.memory_allocated
         old_memory_reserved = accelerator.memory_reserved
         old_memory_stats = accelerator.memory_stats
@@ -924,6 +1025,7 @@ assert torch.version.cuda is None
             name: getattr(accelerator, name) for name in ACCELERATOR_LOCAL
         }
         max_memory_allocated_after = accelerator.max_memory_allocated()
+        max_memory_reserved_after = accelerator.max_memory_reserved()
 
         stale_pickle_errors = []
         for old_function in old_functions.values():
@@ -953,6 +1055,10 @@ assert torch.version.cuda is None
             accelerator.max_memory_allocated is memory.max_memory_allocated,
             type(max_memory_allocated_after) is int,
             max_memory_allocated_after == max_memory_allocated_before,
+            accelerator.max_memory_reserved is old_max_memory_reserved,
+            accelerator.max_memory_reserved is memory.max_memory_reserved,
+            type(max_memory_reserved_after) is int,
+            max_memory_reserved_after == max_memory_reserved_before,
             accelerator.memory_allocated is old_memory_allocated,
             accelerator.memory_allocated is memory.memory_allocated,
             accelerator.memory_allocated(),
@@ -1010,6 +1116,8 @@ assert torch.version.cuda is None
         new_stats = new_functions["memory_stats"]()
         old_max_allocated = old_functions["max_memory_allocated"]()
         new_max_allocated = new_functions["max_memory_allocated"]()
+        old_max_reserved = old_functions["max_memory_reserved"]()
+        new_max_reserved = new_functions["max_memory_reserved"]()
         old_allocated = old_functions["memory_allocated"]()
         new_allocated = new_functions["memory_allocated"]()
         old_reserved = old_functions["memory_reserved"]()
@@ -1040,6 +1148,9 @@ assert torch.version.cuda is None
             type(old_max_allocated) is int,
             type(new_max_allocated) is int,
             old_max_allocated == new_max_allocated,
+            type(old_max_reserved) is int,
+            type(new_max_reserved) is int,
+            old_max_reserved == new_max_reserved,
             type(old_allocated) is int,
             type(new_allocated) is int,
             old_allocated,
@@ -1074,6 +1185,11 @@ assert torch.version.cuda is None
             accelerator.max_memory_allocated is memory.max_memory_allocated,
             type(accelerator.max_memory_allocated()) is int,
             accelerator.max_memory_allocated() == new_max_allocated,
+            accelerator.max_memory_reserved
+            is new_functions["max_memory_reserved"],
+            accelerator.max_memory_reserved is memory.max_memory_reserved,
+            type(accelerator.max_memory_reserved()) is int,
+            accelerator.max_memory_reserved() == new_max_reserved,
             accelerator.memory_allocated is new_functions["memory_allocated"],
             accelerator.memory_allocated is memory.memory_allocated,
             accelerator.memory_allocated(),
@@ -1180,6 +1296,18 @@ assert torch.version.cuda is None
             (
                 lambda: actual.max_memory_allocated(unexpected=True),
                 lambda: expected.max_memory_allocated(unexpected=True),
+            ),
+            (
+                lambda: actual.max_memory_reserved(device_index=None),
+                lambda: expected.max_memory_reserved(device_index=None),
+            ),
+            (
+                lambda: actual.max_memory_reserved(None, None),
+                lambda: expected.max_memory_reserved(None, None),
+            ),
+            (
+                lambda: actual.max_memory_reserved(unexpected=True),
+                lambda: expected.max_memory_reserved(unexpected=True),
             ),
             (
                 lambda: actual.memory_reserved(device_index=None),

@@ -169,6 +169,7 @@ class CpuCurrentDeviceReferenceTests(unittest.TestCase):
         supported = {
             "current_device",
             "device_count",
+            "Event",
             "is_available",
             "is_initialized",
             "synchronize",
@@ -178,7 +179,7 @@ class CpuCurrentDeviceReferenceTests(unittest.TestCase):
             actual_cpu.__all__,
             [name for name in expected_cpu.__all__ if name in supported],
         )
-        for name in ("cpu", *sorted(supported)):
+        for name in ("cpu", *sorted(supported - {"Event"})):
             with self.subTest(top_level_export=name):
                 self.assertEqual(
                     torch.__all__.count(name), reference_torch.__all__.count(name)
@@ -246,7 +247,7 @@ class CpuCurrentDeviceReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_streams_events_device_mutation_and_other_cpu_apis_remain_unsupported(self):
+    def test_streams_device_mutation_and_other_cpu_apis_remain_unsupported(self):
         actual_cpu = torch.cpu
         expected_cpu = reference_torch.cpu
         actual_public = {
@@ -261,6 +262,7 @@ class CpuCurrentDeviceReferenceTests(unittest.TestCase):
             {
                 "current_device",
                 "device_count",
+                "Event",
                 "is_available",
                 "is_initialized",
                 "synchronize",
@@ -271,7 +273,6 @@ class CpuCurrentDeviceReferenceTests(unittest.TestCase):
             {
                 "amp",
                 "current_stream",
-                "Event",
                 "get_capabilities",
                 "set_device",
                 "Stream",
