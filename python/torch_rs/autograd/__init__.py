@@ -2,6 +2,7 @@
 
 import operator as _operator
 from collections.abc import Sequence as _Sequence
+from itertools import islice as _islice
 from typing import Union as _Union
 
 from .. import _C as _C
@@ -67,7 +68,7 @@ def _normalize_roots(tensors):
     if isinstance(tensors, _Sequence) and not isinstance(
         tensors, (str, bytes, bytearray)
     ):
-        roots = tuple(tensors)
+        roots = tuple(_islice(tensors, _MAX_BACKWARD_LEAF_ROOTS + 1))
         root_count = len(roots)
         if root_count == 0:
             return ()

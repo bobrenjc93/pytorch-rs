@@ -35,6 +35,26 @@ class MaterializationCountingSequence(CustomSequence):
         return iter(self.values)
 
 
+class GuardedInfiniteSequence(Sequence):
+    def __init__(self, value, maximum_yields):
+        self.value = value
+        self.maximum_yields = maximum_yields
+        self.yields = 0
+
+    def __getitem__(self, index):
+        return self.value
+
+    def __len__(self):
+        return sys.maxsize
+
+    def __iter__(self):
+        while True:
+            if self.yields == self.maximum_yields:
+                raise AssertionError("root sequence was consumed past its bound")
+            self.yields += 1
+            yield self.value
+
+
 class ListSubclass(list):
     pass
 
@@ -795,6 +815,24 @@ class AutogradBackwardTests(unittest.TestCase):
         self.assertTrue(
             all(root.grad.tolist() == [1.0] for root in roots.values)
         )
+
+    def test_oversized_custom_root_sequence_consumption_is_bounded(self):
+        root = torch.tensor([1.0], requires_grad=True)
+        roots = GuardedInfiniteSequence(
+            root, torch.autograd._MAX_BACKWARD_LEAF_ROOTS + 1
+        )
+        root_error = (
+            "torch_rs.autograd.backward only supports an exact native Tensor, "
+            "directly or in a non-string Sequence containing at most ten "
+            "exact native Tensors"
+        )
+
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(root_error)}$"):
+            torch.autograd.backward(roots)
+        self.assertEqual(
+            roots.yields, torch.autograd._MAX_BACKWARD_LEAF_ROOTS + 1
+        )
+        self.assertIsNone(root.grad)
 
     def test_custom_root_sequences_validate_before_mutation(self):
         root_error = (
