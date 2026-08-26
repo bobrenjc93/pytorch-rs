@@ -1,5 +1,6 @@
 import inspect
 import unittest
+import warnings
 
 import numpy as np
 import torch_rs as torch
@@ -115,6 +116,37 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def make_scalar_broadcast_cases(self, module):
+        scalar = self.tensor(module, [99.0, 1.25])[1]
+        contiguous = self.tensor(
+            module,
+            np.linspace(-3.0, 4.0, 24, dtype=np.float32)
+            .reshape(2, 3, 4)
+            .tolist(),
+        )
+        offset_strided = self.tensor(
+            module,
+            np.arange(48, dtype=np.float32).reshape(2, 2, 4, 3).tolist(),
+        )[1].transpose(1, 2)
+        channels_last = self.tensor(
+            module,
+            np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4).tolist(),
+        ).contiguous(memory_format=module.channels_last)
+        empty_strided = module.zeros(
+            (2, 0, 3), dtype=module.float32
+        ).transpose(0, 2)
+
+        return (
+            ("scalar input contiguous", scalar, contiguous),
+            ("scalar target contiguous", contiguous, scalar),
+            ("scalar input offset strided", scalar, offset_strided),
+            ("scalar target offset strided", offset_strided, scalar),
+            ("scalar input channels last", scalar, channels_last),
+            ("scalar target channels last", channels_last, scalar),
+            ("scalar input empty strided", scalar, empty_strided),
+            ("scalar target empty strided", empty_strided, scalar),
+        )
+
     @staticmethod
     def call(module_functional, input, target, form):
         if form == "reduction keyword":
@@ -158,6 +190,15 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 np.asarray(actual).reshape(-1).view(np.uint32),
                 expected.detach().cpu().numpy().reshape(-1).view(np.uint32),
             )
+
+    def assert_warnings_match(self, actual, expected, *, case):
+        with self.subTest(case=case, warnings=True):
+            self.assertEqual(len(actual), 1)
+            self.assertEqual(len(expected), 1)
+            self.assertEqual(actual[0].category, expected[0].category)
+            self.assertEqual(str(actual[0].message), str(expected[0].message))
+            self.assertEqual(actual[0].filename, expected[0].filename)
+            self.assertEqual(actual[0].lineno, expected[0].lineno)
 
     def test_name_signature_defaults_and_annotations_match_pytorch_2_13(self):
         self.assertEqual(
@@ -254,6 +295,107 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 self.assertTrue(
                     reference_torch.equal(expected_target, expected_target_before)
                 )
+
+    def test_scalar_broadcast_layouts_warnings_storage_and_nonmutation_match(self):
+        actual_cases = self.make_scalar_broadcast_cases(torch)
+        expected_cases = self.make_scalar_broadcast_cases(reference_torch)
+        for actual_case, expected_case in zip(
+            actual_cases,
+            expected_cases,
+            strict=True,
+        ):
+            case, actual_input, actual_target = actual_case
+            expected_name, expected_input, expected_target = expected_case
+            self.assertEqual(case, expected_name)
+            actual_input_before = np.asarray(actual_input).copy()
+            actual_target_before = np.asarray(actual_target).copy()
+            expected_input_before = expected_input.clone()
+            expected_target_before = expected_target.clone()
+            for form in (
+                "reduction keyword",
+                "legacy none keywords",
+                "five positional",
+                "six positional",
+            ):
+                with warnings.catch_warnings(record=True) as actual_warnings:
+                    warnings.simplefilter("always")
+                    actual = self.call(
+                        functional,
+                        actual_input,
+                        actual_target,
+                        form,
+                    )
+                with warnings.catch_warnings(record=True) as expected_warnings:
+                    warnings.simplefilter("always")
+                    expected = self.call(
+                        reference_functional,
+                        expected_input,
+                        expected_target,
+                        form,
+                    )
+                self.assert_warnings_match(
+                    actual_warnings,
+                    expected_warnings,
+                    case=(case, form),
+                )
+                self.assert_matches(actual, expected, case=(case, form))
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    actual_repeat = self.call(
+                        functional,
+                        actual_input,
+                        actual_target,
+                        form,
+                    )
+                    expected_repeat = self.call(
+                        reference_functional,
+                        expected_input,
+                        expected_target,
+                        form,
+                    )
+                with self.subTest(case=(case, form), storage=True):
+                    self.assertFalse(actual.is_set_to(actual_repeat))
+                    self.assertFalse(expected.is_set_to(expected_repeat))
+                    self.assertFalse(actual.is_set_to(actual_input))
+                    self.assertFalse(expected.is_set_to(expected_input))
+                    self.assertFalse(actual.is_set_to(actual_target))
+                    self.assertFalse(expected.is_set_to(expected_target))
+
+            with self.subTest(case=case, nonmutation=True):
+                np.testing.assert_array_equal(
+                    np.asarray(actual_input), actual_input_before
+                )
+                np.testing.assert_array_equal(
+                    np.asarray(actual_target), actual_target_before
+                )
+                self.assertTrue(
+                    reference_torch.equal(expected_input, expected_input_before)
+                )
+                self.assertTrue(
+                    reference_torch.equal(expected_target, expected_target_before)
+                )
+
+    def test_scalar_broadcast_warning_as_error_matches_pytorch_2_13(self):
+        actual_operands = (torch.tensor(1.0), torch.zeros((2, 3)))
+        expected_operands = (
+            reference_torch.tensor(1.0, dtype=reference_torch.float32),
+            reference_torch.zeros((2, 3), dtype=reference_torch.float32),
+        )
+
+        def capture(module_functional, operands):
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                try:
+                    module_functional.mse_loss(*operands, reduction="none")
+                except Exception as error:
+                    return type(error), str(error)
+            self.fail("expected scalar broadcasting warning to raise")
+
+        self.assertEqual(
+            capture(functional, actual_operands),
+            capture(reference_functional, expected_operands),
+        )
 
     def test_mixed_layout_singleton_stride_matches_pytorch_2_13(self):
         actual_input = self.tensor(
@@ -368,6 +510,82 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             )
             self.assert_matches(actual, expected, case=("float32 edges", case))
 
+    def test_scalar_broadcast_float32_edge_bits_match_pytorch_2_13(self):
+        tensor_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x007F_FFFF,
+                0x807F_FFFF,
+                0x0080_0000,
+                0x8080_0000,
+                0x3F80_0000,
+                0xBF80_0000,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        actual_tensor = torch.tensor(
+            memoryview(tensor_bits.view(np.float32))
+        ).view(3, 6).transpose(0, 1)
+        expected_tensor = reference_torch.tensor(
+            memoryview(tensor_bits.view(np.float32))
+        ).view(3, 6).transpose(0, 1)
+
+        for scalar_bits in (
+            0x0000_0000,
+            0x8000_0000,
+            0x3F00_0000,
+            0x7F80_0000,
+            0xFF80_0000,
+            0x7FC6_789A,
+            0xFFC2_ABCD,
+            0x7F86_789A,
+            0xFF82_ABCD,
+        ):
+            scalar_values = np.asarray([0, scalar_bits], dtype=np.uint32)
+            actual_scalar = torch.tensor(
+                memoryview(scalar_values.view(np.float32))
+            )[1]
+            expected_scalar = reference_torch.tensor(
+                memoryview(scalar_values.view(np.float32))
+            )[1]
+            for scalar_on_left in (True, False):
+                actual_operands = (
+                    (actual_scalar, actual_tensor)
+                    if scalar_on_left
+                    else (actual_tensor, actual_scalar)
+                )
+                expected_operands = (
+                    (expected_scalar, expected_tensor)
+                    if scalar_on_left
+                    else (expected_tensor, expected_scalar)
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    actual = functional.mse_loss(
+                        *actual_operands,
+                        reduction="none",
+                    )
+                    expected = reference_functional.mse_loss(
+                        *expected_operands,
+                        reduction="none",
+                    )
+                self.assert_matches(
+                    actual,
+                    expected,
+                    case=(hex(scalar_bits), scalar_on_left),
+                )
+
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
@@ -409,6 +627,53 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                 expected,
                 case=(input_requires_grad, target_requires_grad),
             )
+
+    def test_scalar_broadcast_requires_grad_matches_inside_no_grad(self):
+        actual_input = torch.tensor(1.0, requires_grad=True)
+        actual_target = torch.zeros((2, 3), requires_grad=True)
+        expected_input = reference_torch.tensor(
+            1.0,
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+        expected_target = reference_torch.zeros(
+            (2, 3),
+            dtype=reference_torch.float32,
+            requires_grad=True,
+        )
+
+        with warnings.catch_warnings(record=True) as actual_warnings:
+            warnings.simplefilter("always")
+            with torch.no_grad():
+                actual = self.call(
+                    functional,
+                    actual_input,
+                    actual_target,
+                    "reduction keyword",
+                )
+        with warnings.catch_warnings(record=True) as expected_warnings:
+            warnings.simplefilter("always")
+            with reference_torch.no_grad():
+                expected = self.call(
+                    reference_functional,
+                    expected_input,
+                    expected_target,
+                    "reduction keyword",
+                )
+        self.assert_warnings_match(
+            actual_warnings,
+            expected_warnings,
+            case="requires grad inside no_grad",
+        )
+        self.assert_matches(
+            actual,
+            expected,
+            case="requires grad inside no_grad",
+        )
+        self.assertIsNone(actual_input.grad)
+        self.assertIsNone(actual_target.grad)
+        self.assertIsNone(expected_input.grad)
+        self.assertIsNone(expected_target.grad)
 
 
 if __name__ == "__main__":

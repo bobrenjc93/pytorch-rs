@@ -1,6 +1,8 @@
 //! Native bridges for Python neural-network functional operators.
 
-use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError};
+use std::ffi::CString;
+
+use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError, PyUserWarning};
 use pyo3::types::{PyAny, PyModule, PyString};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
@@ -249,6 +251,16 @@ fn exact_mse_loss_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, 
         .clone())
 }
 
+fn warn_mse_loss_broadcast(py: Python<'_>, input: &PyTensor, target: &PyTensor) -> PyResult<()> {
+    let message = CString::new(format!(
+        "Using a target size (torch.Size({:?})) that is different to the input size (torch.Size({:?})). This will likely lead to incorrect results due to broadcasting. Please ensure they have the same size.",
+        target.inner().shape(),
+        input.inner().shape(),
+    ))
+    .expect("tensor shapes cannot contain an embedded null byte");
+    PyErr::warn(py, &py.get_type::<PyUserWarning>(), &message, 2)
+}
+
 fn linear_vector_bias_size_error(out_features: usize, bias_features: usize) -> PyErr {
     PyRuntimeError::new_err(format!(
         "The expanded size of the tensor ({out_features}) must match the existing size ({bias_features}) at non-singleton dimension 1.  Target sizes: [1, {out_features}].  Tensor sizes: [{bias_features}]"
@@ -425,10 +437,15 @@ fn _nn_functional_mse_loss(
             "torch_rs.nn.functional.mse_loss only supports CPU float32 tensors",
         ));
     }
-    if input.inner().shape() != target.inner().shape() {
+    let shapes_match = input.inner().shape() == target.inner().shape();
+    let scalar_broadcast = input.inner().shape().is_empty() ^ target.inner().shape().is_empty();
+    if !shapes_match && !scalar_broadcast {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.mse_loss does not support broadcasting",
         ));
+    }
+    if scalar_broadcast {
+        warn_mse_loss_broadcast(py, &input, &target)?;
     }
     if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {
         return Err(PyRuntimeError::new_err(
@@ -438,7 +455,7 @@ fn _nn_functional_mse_loss(
 
     let output = input
         .inner()
-        .squared_difference_same_shape(target.inner())
+        .squared_difference(target.inner())
         .map_err(|error| tensor_error(&error))?;
     PyTensor::new(output).into_py_any(py)
 }

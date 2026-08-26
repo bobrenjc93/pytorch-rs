@@ -2411,25 +2411,40 @@ impl Tensor {
         self.zip_map(other, |left, right| left - right)
     }
 
-    /// Computes a same-shaped squared difference in one binary elementwise pass.
+    /// Computes a squared difference in one binary elementwise pass.
     ///
-    /// This deliberately uses the binary output-layout planner so callers get
-    /// the same strides as subtraction followed by a stride-preserving square,
-    /// without materializing the intermediate difference tensor.
+    /// This deliberately uses the shared binary planner so same-shaped inputs
+    /// retain their fused fast path while broadcast inputs get the same shape
+    /// and nonempty strides as subtraction, without materializing the
+    /// intermediate difference tensor. Empty scalar broadcasts reproduce the
+    /// contiguous layout selected after `PyTorch` expands both operands.
     ///
     /// # Errors
     ///
-    /// Returns an error when the input shapes differ or when result metadata or
-    /// storage allocation fails.
+    /// Returns an error when the input shapes are not broadcastable or when
+    /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
-    pub(crate) fn squared_difference_same_shape(&self, other: &Self) -> Result<Self, TensorError> {
-        if self.shape != other.shape {
-            return Err(TensorError::ShapeMismatch {
-                left: try_clone_result_shape(&self.shape, self.elements)?,
-                right: try_clone_result_shape(&other.shape, other.elements)?,
-            });
+    pub(crate) fn squared_difference(&self, other: &Self) -> Result<Self, TensorError> {
+        if self.shape.is_empty() != other.shape.is_empty()
+            && (self.elements == 0 || other.elements == 0)
+        {
+            // Functional MSE expands both operands before entering its native
+            // TensorIterator kernel. Empty expanded operands are treated as
+            // contiguous, unlike an ordinary scalar subtraction whose output
+            // keeps the non-scalar operand's dimension order.
+            let non_scalar = if self.shape.is_empty() { other } else { self };
+            let shape = try_clone_result_shape(&non_scalar.shape, non_scalar.elements)?;
+            let strides = contiguous_strides(&shape, non_scalar.elements)?;
+            let data = try_result_vector(non_scalar.elements, non_scalar.elements)?;
+            return Ok(Self::from_owned_parts(
+                data,
+                shape,
+                strides,
+                self.dtype(),
+                self.device(),
+            ));
         }
-        self.zip_map_same_shape(other, |left, right| {
+        self.zip_map(other, |left, right| {
             let difference = left - right;
             difference * difference
         })
@@ -5159,7 +5174,7 @@ mod tests {
         assert_eq!(difference.stride(), &[3, 6, 1]);
 
         let ordinary = difference.square().unwrap();
-        let fused = input.squared_difference_same_shape(&target).unwrap();
+        let fused = input.squared_difference(&target).unwrap();
         assert_eq!(ordinary.stride(), &[3, 3, 1]);
         assert_eq!(fused.stride(), difference.stride());
         assert!(
@@ -5379,7 +5394,7 @@ mod tests {
         let assert_matches = |left: &Tensor, right: &Tensor| {
             let difference = left.sub(right).unwrap();
             let expected = difference.square().unwrap();
-            let actual = left.squared_difference_same_shape(right).unwrap();
+            let actual = left.squared_difference(right).unwrap();
 
             assert_eq!(actual.shape(), expected.shape());
             assert_eq!(actual.stride(), difference.stride());
@@ -5474,6 +5489,70 @@ mod tests {
         let empty_left = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
         let empty_right = Tensor::ones([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
         assert_matches(&empty_left, &empty_right);
+    }
+
+    #[test]
+    fn squared_difference_broadcasts_rank_zero_through_the_shared_planner() {
+        let scalar_value = f32::from_bits(0x7f86_789a);
+        let scalar = Tensor::from_vec(vec![0.0, scalar_value], [2])
+            .unwrap()
+            .index([1])
+            .unwrap();
+        let singleton = Tensor::from_vec(vec![scalar_value], [1, 1]).unwrap();
+        let mut view_values = vec![0.0; 6];
+        view_values.extend(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7f80_0000,
+                0xff80_0000,
+                0x7fc5_4321,
+                0xffc6_789a,
+            ]
+            .map(f32::from_bits),
+        );
+        let view = Tensor::from_vec(view_values, [2, 2, 3])
+            .unwrap()
+            .index([1])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+
+        for (actual, expected) in [
+            (
+                scalar.squared_difference(&view).unwrap(),
+                singleton.squared_difference(&view).unwrap(),
+            ),
+            (
+                view.squared_difference(&scalar).unwrap(),
+                view.squared_difference(&singleton).unwrap(),
+            ),
+        ] {
+            assert_eq!(actual.shape(), [3, 2]);
+            assert_eq!(actual.stride(), [1, 3]);
+            assert_eq!(actual.storage_offset(), 0);
+            assert!(!actual.shares_storage_with(&scalar));
+            assert!(!actual.shares_storage_with(&view));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+        for output in [
+            scalar.squared_difference(&empty).unwrap(),
+            empty.squared_difference(&scalar).unwrap(),
+        ] {
+            assert_eq!(output.shape(), [3, 0, 2]);
+            assert_eq!(output.stride(), [2, 2, 1]);
+            assert_eq!(output.storage_offset(), 0);
+            assert_eq!(output.numel(), 0);
+            assert!(!output.shares_storage_with(&scalar));
+            assert!(!output.shares_storage_with(&empty));
+        }
     }
 
     #[test]
