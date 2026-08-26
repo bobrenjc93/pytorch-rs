@@ -4,6 +4,7 @@ import pickle
 import re
 import types
 import unittest
+from unittest.mock import MagicMock
 
 import numpy as np
 import torch_rs as torch
@@ -120,6 +121,39 @@ class ArangeReferenceTests(unittest.TestCase):
                                 self.tensor_contract(torch, actual),
                                 self.tensor_contract(reference_torch, expected),
                             )
+
+    def test_spoofed_numpy_floating_class_rejection_matches_pytorch_2_13(self):
+        for scalar_type in NUMPY_FLOAT_TYPES:
+            for dtype_name in (None, "float32"):
+                for form in ("positional", "keyword"):
+                    errors = []
+                    conversion_counts = []
+                    for module in (torch, reference_torch):
+                        end = MagicMock(spec=scalar_type)
+                        end.__float__.return_value = 2.5
+                        options = (
+                            {}
+                            if dtype_name is None
+                            else {"dtype": module.float32}
+                        )
+                        try:
+                            if form == "positional":
+                                module.arange(end, **options)
+                            else:
+                                module.arange(end=end, **options)
+                        except Exception as error:
+                            errors.append(type(error))
+                        else:
+                            errors.append(None)
+                        conversion_counts.append(end.__float__.call_count)
+
+                    with self.subTest(
+                        scalar_type=scalar_type.__name__,
+                        dtype=dtype_name,
+                        form=form,
+                    ):
+                        self.assertEqual(errors, [TypeError, TypeError])
+                        self.assertEqual(conversion_counts, [0, 0])
 
     def test_explicit_float32_integer_endpoints_match_pytorch_2_13(self):
         for end in (0, 1, 3, 8):

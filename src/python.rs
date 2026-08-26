@@ -5344,11 +5344,17 @@ fn is_numpy_scalar_of_types(value: &Bound<'_, PyAny>, scalar_types: &[&str]) -> 
     let Ok(numpy) = PyModule::import(value.py(), "numpy") else {
         return Ok(false);
     };
-    if !value.is_instance(&numpy.getattr("generic")?)? {
+    // PyAny::is_instance honors a dynamic __class__ attribute. Inspect the
+    // concrete runtime type so mocks and proxies cannot impersonate NumPy
+    // scalars while preserving genuine user-defined NumPy scalar subclasses.
+    let value_type = value.get_type();
+    let generic = numpy.getattr("generic")?.cast_into::<PyType>()?;
+    if !value_type.is_subclass(generic.as_any())? {
         return Ok(false);
     }
     for scalar_type in scalar_types {
-        if value.is_instance(&numpy.getattr(*scalar_type)?)? {
+        let scalar_type = numpy.getattr(*scalar_type)?.cast_into::<PyType>()?;
+        if value_type.is_subclass(scalar_type.as_any())? {
             return Ok(true);
         }
     }

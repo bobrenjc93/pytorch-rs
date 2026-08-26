@@ -4,6 +4,7 @@ import pickle
 import re
 import types
 import unittest
+from unittest.mock import MagicMock
 
 import numpy as np
 import torch_rs as torch
@@ -101,6 +102,33 @@ class ArangeTests(unittest.TestCase):
                             form=form,
                         ):
                             self.assert_default_tensor(call(), expected)
+
+    def test_spoofed_numpy_floating_class_is_rejected_without_conversion(self):
+        calls = (
+            ("positional-default", lambda end: torch.arange(end)),
+            ("keyword-default", lambda end: torch.arange(end=end)),
+            (
+                "positional-float32",
+                lambda end: torch.arange(end, dtype=torch.float32),
+            ),
+            (
+                "keyword-float32",
+                lambda end: torch.arange(end=end, dtype=torch.float32),
+            ),
+        )
+        for scalar_type in NUMPY_FLOAT_TYPES:
+            for form, call in calls:
+                end = MagicMock(spec=scalar_type)
+                end.__float__.return_value = 2.5
+                self.assertIs(end.__class__, scalar_type)
+                self.assertTrue(issubclass(type(end), MagicMock))
+                self.assertFalse(issubclass(type(end), np.floating))
+                self.assertIsInstance(end, np.floating)
+
+                with self.subTest(scalar_type=scalar_type.__name__, form=form):
+                    with self.assertRaisesRegex(TypeError, r"not MagicMock$"):
+                        call(end)
+                    end.__float__.assert_not_called()
 
     def test_exact_integer_endpoint_requires_explicit_float32_dtype(self):
         cases = (
