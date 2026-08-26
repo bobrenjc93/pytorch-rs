@@ -1395,6 +1395,21 @@ pub(crate) fn get_device_variable_function(
     device_ordinal(tensor.inner.device())?.into_py_any(py)
 }
 
+pub(crate) fn numel_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let input = bind_legacy_single_tensor_or_override_argument("numel", args, kwargs)?;
+    dispatch_single_tensor_override(
+        SingleTensorOverrideOperation::NUMEL,
+        py,
+        &input,
+        args,
+        kwargs,
+    )
+}
+
 pub(crate) fn scalar_tensor_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2112,6 +2127,12 @@ struct SingleTensorOverrideOperation {
 }
 
 impl SingleTensorOverrideOperation {
+    const NUMEL: Self = Self {
+        name: "numel",
+        qualified_name: "torch.numel",
+        apply_native: apply_top_level_numel,
+    };
+
     const POSITIVE: Self = Self {
         name: "positive",
         qualified_name: "torch.positive",
@@ -2995,6 +3016,10 @@ fn dispatch_single_tensor_override(
 )]
 fn apply_top_level_positive(_py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
     Ok(tensor.clone().unbind().into_any())
+}
+
+fn apply_top_level_numel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {
+    tensor.try_borrow()?.inner().numel().into_py_any(py)
 }
 
 fn apply_top_level_ravel(py: Python<'_>, tensor: &Bound<'_, PyTensor>) -> PyResult<Py<PyAny>> {

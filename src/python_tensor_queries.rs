@@ -1,68 +1,9 @@
 //! Top-level Python bindings for tensor metadata and scalar truth queries.
 
-use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule, PyTuple};
 
-use crate::python::{PyTensor, bind_legacy_single_tensor_argument, python_type_name};
-
-/// Returns the total number of elements in the input tensor.
-#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
-fn numel(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<usize> {
-    if args.len() > 1 {
-        return Err(PyTypeError::new_err(format!(
-            "numel() takes 1 positional argument but {} were given",
-            args.len()
-        )));
-    }
-
-    let keyword_input = match kwargs {
-        Some(values) => values.get_item("input")?,
-        None => None,
-    };
-    if args.is_empty() && keyword_input.is_none() {
-        return Err(PyTypeError::new_err(
-            "numel() missing 1 required positional arguments: \"input\"",
-        ));
-    }
-
-    let (input, position) = if args.is_empty() {
-        (
-            keyword_input
-                .as_ref()
-                .expect("the required keyword input was checked above"),
-            None,
-        )
-    } else {
-        (&args.get_item(0)?, Some(1))
-    };
-    let Ok(tensor) = input.cast::<PyTensor>() else {
-        let position =
-            position.map_or_else(String::new, |position| format!(" (position {position})"));
-        let input_type = python_type_name(input)?;
-        return Err(PyTypeError::new_err(format!(
-            "numel(): argument 'input'{position} must be Tensor, not {input_type}"
-        )));
-    };
-
-    if !args.is_empty() && keyword_input.is_some() {
-        return Err(PyTypeError::new_err(
-            "numel() got multiple values for argument 'input'",
-        ));
-    }
-    if let Some(kwargs) = kwargs {
-        for key in kwargs.keys() {
-            let key = key.extract::<String>()?;
-            if key != "input" {
-                return Err(PyTypeError::new_err(format!(
-                    "numel() got an unexpected keyword argument '{key}'"
-                )));
-            }
-        }
-    }
-
-    Ok(tensor.try_borrow()?.inner().numel())
-}
+use crate::python::{PyTensor, bind_legacy_single_tensor_argument};
 
 // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
 #[allow(clippy::doc_markdown)]
@@ -129,7 +70,6 @@ fn is_signed(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> P
 }
 
 pub(crate) fn add_tensor_queries(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_function(wrap_pyfunction!(numel, module)?)?;
     module.add_function(wrap_pyfunction!(is_nonzero, module)?)?;
     module.add_function(wrap_pyfunction!(is_complex, module)?)?;
     module.add_function(wrap_pyfunction!(is_floating_point, module)?)?;

@@ -22,18 +22,19 @@ use crate::python::{
     floor_variable_function, get_device_variable_function, is_conj_variable_function,
     is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
     movedim_variable_function, mul_variable_function, multiply_variable_function,
-    neg_variable_function, negative_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    reciprocal_variable_function, resolve_conj_variable_function, resolve_neg_variable_function,
-    scalar_tensor_variable_function, select_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, tanh_variable_function,
-    trunc_variable_function, unbind_variable_function,
+    neg_variable_function, negative_variable_function, numel_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, reciprocal_variable_function, resolve_conj_variable_function,
+    resolve_neg_variable_function, scalar_tensor_variable_function, select_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function,
+    tanh_variable_function, trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 38] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 39] = [
     "get_device",
+    "numel",
     "scalar_tensor",
     "arange",
     "atleast_1d",
@@ -96,6 +97,8 @@ Example::
     >>> (A.adjoint() == A.mH).all()
     tensor(True)
 ";
+
+const NUMEL_DOC: &std::ffi::CStr = c"\nnumel(input: Tensor) -> int\n\nReturns the total number of elements in the :attr:`input` tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> a = torch.randn(1, 2, 3, 4, 5)\n    >>> torch.numel(a)\n    120\n    >>> a = torch.zeros(4,4)\n    >>> torch.numel(a)\n    16\n\n";
 
 const ARANGE_DOC: &std::ffi::CStr = cr"
 arange(start=0, end, step=1, *, out=None, dtype=None, layout=torch.strided, device=None, requires_grad=False) -> Tensor
@@ -733,6 +736,7 @@ macro_rules! variable_function_callback {
 }
 
 variable_function_callback!(get_device_callback, get_device_variable_function);
+variable_function_callback!(numel_callback, numel_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(arange_callback, arange_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
@@ -802,6 +806,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
     // this tiny table deliberately so it remains valid for the type lifetime.
     let methods = Box::leak(Box::new([
         variable_function_method!(c"get_device", get_device_callback, c""),
+        variable_function_method!(c"numel", numel_callback, NUMEL_DOC),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
