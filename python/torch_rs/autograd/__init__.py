@@ -11,7 +11,7 @@ from .grad_mode import no_grad as no_grad
 
 _Tensor = _C.Tensor
 _backward_leaf_roots = _C._backward_leaf_roots
-_MAX_BACKWARD_LEAF_ROOTS = 7
+_MAX_BACKWARD_LEAF_ROOTS = 8
 _TensorOrTensorsOrGradEdge = _Union[
     _Tensor,
     _Sequence[_Tensor],
@@ -46,8 +46,10 @@ def _require_supported_leaf_roots(roots):
             root_count = "five roots when all five"
         elif len(roots) == 6:
             root_count = "six roots when all six"
-        else:
+        elif len(roots) == 7:
             root_count = "seven roots when all seven"
+        else:
+            root_count = "eight roots when all eight"
         raise NotImplementedError(
             "torch_rs.autograd.backward only supports "
             f"{root_count} "
@@ -72,7 +74,7 @@ def _normalize_roots(tensors):
             return roots
     raise TypeError(
         "torch_rs.autograd.backward only supports an exact native Tensor, "
-        "directly or in an exact tuple or list containing at most seven "
+        "directly or in an exact tuple or list containing at most eight "
         "exact native Tensors"
     )
 
