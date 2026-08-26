@@ -6449,6 +6449,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1000",
+      "recordedAt": "2026-08-26T02:36:03.939Z",
+      "label": "PR #1000",
+      "kind": "leaf",
+      "prNumber": 1000,
+      "title": "Broaden sigmoid autograd to owned rank-3 non-leaves",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 93.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 76,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
