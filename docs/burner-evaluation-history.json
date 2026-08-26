@@ -6705,6 +6705,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1056",
+      "recordedAt": "2026-08-26T16:10:55.698Z",
+      "label": "PR #1056",
+      "kind": "leaf",
+      "prNumber": 1056,
+      "title": "Add CPU-build torch.accelerator.memory_stats",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 95.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 77.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
