@@ -94,10 +94,34 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             result = module.autograd.backward(
                 roots, grad_tensors=list(gradients)
             )
+        elif form == "tuple subclass grad_tensors":
+            result = module.autograd.backward(
+                roots, grad_tensors=TupleSubclass(gradients)
+            )
+        elif form == "list subclass grad_tensors":
+            result = module.autograd.backward(
+                roots, grad_tensors=ListSubclass(gradients)
+            )
+        elif form == "custom sequence grad_tensors":
+            result = module.autograd.backward(
+                roots, grad_tensors=CustomSequence(gradients)
+            )
         elif form == "tuple singleton None":
             result = module.autograd.backward(roots, grad_tensors=(None,))
         elif form == "list singleton None":
             result = module.autograd.backward(roots, grad_tensors=[None])
+        elif form == "tuple subclass singleton None":
+            result = module.autograd.backward(
+                roots, grad_tensors=TupleSubclass((None,))
+            )
+        elif form == "list subclass singleton None":
+            result = module.autograd.backward(
+                roots, grad_tensors=ListSubclass((None,))
+            )
+        elif form == "custom sequence singleton None":
+            result = module.autograd.backward(
+                roots, grad_tensors=CustomSequence((None,))
+            )
         else:
             raise AssertionError(f"unknown form: {form}")
         return result, tuple(
@@ -150,6 +174,24 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
         return (
             result,
             roots.materializations,
+            tuple(np.asarray(root.grad).copy() for root in leaves),
+        )
+
+    @staticmethod
+    def grad_materialization_outcome(module, root_count, gradient_count):
+        leaves = tuple(
+            module.tensor([float(index)], requires_grad=True)
+            for index in range(root_count)
+        )
+        grad_tensors = MaterializationCountingSequence(
+            (None,) * gradient_count
+        )
+        result = module.autograd.backward(
+            leaves, grad_tensors=grad_tensors
+        )
+        return (
+            result,
+            grad_tensors.materializations,
             tuple(np.asarray(root.grad).copy() for root in leaves),
         )
 
@@ -1262,6 +1304,9 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             "explicit None",
             "tuple grad_tensors",
             "list grad_tensors",
+            "tuple subclass grad_tensors",
+            "list subclass grad_tensors",
+            "custom sequence grad_tensors",
         )
         for sequence_type in sequence_types:
             for root_count in range(11):
@@ -1270,6 +1315,9 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                     forms += (
                         "tuple singleton None",
                         "list singleton None",
+                        "tuple subclass singleton None",
+                        "list subclass singleton None",
+                        "custom sequence singleton None",
                     )
                 for form in forms:
                     with self.subTest(
@@ -1303,7 +1351,14 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
             ListSubclass,
             CustomSequence,
         ):
-            for grad_sequence_type in (None, tuple, list):
+            for grad_sequence_type in (
+                None,
+                tuple,
+                list,
+                TupleSubclass,
+                ListSubclass,
+                CustomSequence,
+            ):
                 with self.subTest(
                     sequence_type=sequence_type,
                     grad_sequence_type=grad_sequence_type,
@@ -1341,6 +1396,28 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                 actual = self.materialization_outcome(torch, root_count)
                 expected = self.materialization_outcome(
                     reference_torch, root_count
+                )
+                self.assertIsNone(actual[0])
+                self.assertIsNone(expected[0])
+                self.assertEqual(actual[1], expected[1])
+                self.assertEqual(actual[1], 1)
+                for actual_gradient, expected_gradient in zip(
+                    actual[2], expected[2]
+                ):
+                    np.testing.assert_array_equal(
+                        actual_gradient, expected_gradient
+                    )
+
+    def test_custom_grad_sequence_materialization_matches_pytorch_2_13(self):
+        for root_count, gradient_count in ((0, 0), (0, 1), (1, 1), (10, 10)):
+            with self.subTest(
+                root_count=root_count, gradient_count=gradient_count
+            ):
+                actual = self.grad_materialization_outcome(
+                    torch, root_count, gradient_count
+                )
+                expected = self.grad_materialization_outcome(
+                    reference_torch, root_count, gradient_count
                 )
                 self.assertIsNone(actual[0])
                 self.assertIsNone(expected[0])
@@ -2200,7 +2277,14 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
 
     def test_accumulation_graph_reuse_and_freeing_match_pytorch_2_13(self):
         for root_sequence_type in (None, tuple, list):
-            for grad_sequence_type in (None, tuple, list):
+            for grad_sequence_type in (
+                None,
+                tuple,
+                list,
+                TupleSubclass,
+                ListSubclass,
+                CustomSequence,
+            ):
                 with self.subTest(
                     root_sequence_type=root_sequence_type,
                     grad_sequence_type=grad_sequence_type,

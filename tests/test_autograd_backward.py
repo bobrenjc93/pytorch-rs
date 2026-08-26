@@ -50,7 +50,7 @@ class GuardedInfiniteSequence(Sequence):
     def __iter__(self):
         while True:
             if self.yields == self.maximum_yields:
-                raise AssertionError("root sequence was consumed past its bound")
+                raise AssertionError("sequence was consumed past its bound")
             self.yields += 1
             yield self.value
 
@@ -754,13 +754,69 @@ class AutogradBackwardTests(unittest.TestCase):
                         )
                     )
 
+    def test_custom_grad_sequences_accept_all_none_forms_for_zero_to_ten_roots(
+        self,
+    ):
+        for grad_sequence_type in (
+            TupleSubclass,
+            ListSubclass,
+            CustomSequence,
+        ):
+            for root_count in range(11):
+                gradient_counts = (0, 1) if root_count == 0 else (root_count,)
+                for gradient_count in gradient_counts:
+                    with self.subTest(
+                        grad_sequence_type=grad_sequence_type,
+                        root_count=root_count,
+                        gradient_count=gradient_count,
+                    ):
+                        roots = tuple(
+                            torch.tensor([float(index)], requires_grad=True)
+                            for index in range(root_count)
+                        )
+                        grad_tensors = grad_sequence_type(
+                            (None,) * gradient_count
+                        )
+
+                        self.assertIsNone(
+                            torch.autograd.backward(
+                                roots, grad_tensors=grad_tensors
+                            )
+                        )
+                        accumulated = tuple(root.grad for root in roots)
+                        self.assertTrue(
+                            all(root.grad.tolist() == [1.0] for root in roots)
+                        )
+
+                        self.assertIsNone(
+                            torch.autograd.backward(
+                                roots, grad_tensors=grad_tensors
+                            )
+                        )
+                        self.assertTrue(
+                            all(
+                                root.grad is gradient
+                                for root, gradient in zip(roots, accumulated)
+                            )
+                        )
+                        self.assertTrue(
+                            all(root.grad.tolist() == [2.0] for root in roots)
+                        )
+
     def test_custom_root_sequences_preserve_duplicate_accumulation_identity(self):
         for root_sequence_type in (
             TupleSubclass,
             ListSubclass,
             CustomSequence,
         ):
-            for grad_sequence_type in (None, tuple, list):
+            for grad_sequence_type in (
+                None,
+                tuple,
+                list,
+                TupleSubclass,
+                ListSubclass,
+                CustomSequence,
+            ):
                 with self.subTest(
                     root_sequence_type=root_sequence_type,
                     grad_sequence_type=grad_sequence_type,
@@ -816,6 +872,31 @@ class AutogradBackwardTests(unittest.TestCase):
             all(root.grad.tolist() == [1.0] for root in roots.values)
         )
 
+    def test_custom_grad_sequence_is_materialized_once_per_call(self):
+        roots = (
+            torch.tensor([1.0], requires_grad=True),
+            torch.tensor([2.0], requires_grad=True),
+        )
+        grad_tensors = MaterializationCountingSequence((None, None))
+
+        self.assertIsNone(
+            torch.autograd.backward(roots, grad_tensors=grad_tensors)
+        )
+        accumulated = tuple(root.grad for root in roots)
+        self.assertEqual(grad_tensors.materializations, 1)
+
+        self.assertIsNone(
+            torch.autograd.backward(roots, grad_tensors=grad_tensors)
+        )
+        self.assertEqual(grad_tensors.materializations, 2)
+        self.assertTrue(
+            all(
+                root.grad is gradient
+                for root, gradient in zip(roots, accumulated)
+            )
+        )
+        self.assertTrue(all(root.grad.tolist() == [2.0] for root in roots))
+
     def test_oversized_custom_root_sequence_consumption_is_bounded(self):
         root = torch.tensor([1.0], requires_grad=True)
         roots = GuardedInfiniteSequence(
@@ -833,6 +914,29 @@ class AutogradBackwardTests(unittest.TestCase):
             roots.yields, torch.autograd._MAX_BACKWARD_LEAF_ROOTS + 1
         )
         self.assertIsNone(root.grad)
+
+    def test_oversized_custom_grad_sequence_consumption_is_bounded(self):
+        leaf = torch.tensor([2.0, 3.0], requires_grad=True)
+        loss = (leaf * leaf).sum()
+        grad_tensors = GuardedInfiniteSequence(
+            None, torch.autograd._MAX_BACKWARD_LEAF_ROOTS + 1
+        )
+        message = (
+            "torch_rs.autograd.backward does not support explicit gradients"
+        )
+
+        with self.assertRaisesRegex(
+            NotImplementedError, f"^{re.escape(message)}$"
+        ):
+            torch.autograd.backward(loss, grad_tensors=grad_tensors)
+        self.assertEqual(
+            grad_tensors.yields,
+            torch.autograd._MAX_BACKWARD_LEAF_ROOTS + 1,
+        )
+        self.assertIsNone(leaf.grad)
+
+        loss.backward()
+        self.assertEqual(leaf.grad.tolist(), [4.0, 6.0])
 
     def test_custom_root_sequences_validate_before_mutation(self):
         root_error = (
@@ -913,40 +1017,60 @@ class AutogradBackwardTests(unittest.TestCase):
         self.assertIsNone(first.grad)
         self.assertIsNone(second.grad)
 
-    def test_custom_roots_keep_custom_and_concrete_gradients_unsupported(self):
+    def test_generator_grad_tensors_are_rejected_without_consumption(self):
         message = (
             "torch_rs.autograd.backward does not support explicit gradients"
         )
-        gradient_cases = (
-            ("custom sequence", lambda: CustomSequence((None, None))),
-            ("tuple subclass", lambda: TupleSubclass((None, None))),
-            ("list subclass", lambda: ListSubclass((None, None))),
-            ("concrete tuple", lambda: (torch.tensor(1.0), None)),
-            ("concrete list", lambda: [None, torch.tensor(1.0)]),
-        )
+        leaf = torch.tensor([2.0, 3.0], requires_grad=True)
+        loss = (leaf * leaf).sum()
+        grad_tensors = (gradient for gradient in (None,))
 
-        for root_sequence_type in (
+        with self.assertRaisesRegex(
+            NotImplementedError, f"^{re.escape(message)}$"
+        ):
+            torch.autograd.backward(loss, grad_tensors=grad_tensors)
+        self.assertIs(next(grad_tensors), None)
+        self.assertIsNone(leaf.grad)
+
+        loss.backward()
+        self.assertEqual(leaf.grad.tolist(), [4.0, 6.0])
+
+    def test_custom_grad_sequences_reject_concrete_values_and_mismatches(self):
+        message = (
+            "torch_rs.autograd.backward does not support explicit gradients"
+        )
+        for grad_sequence_type in (
             TupleSubclass,
             ListSubclass,
             CustomSequence,
         ):
-            for label, make_grad_tensors in gradient_cases:
+            gradient_cases = (
+                ("too short", grad_sequence_type(())),
+                ("too long", grad_sequence_type((None, None))),
+                (
+                    "concrete",
+                    grad_sequence_type((torch.tensor(1.0),)),
+                ),
+            )
+            for label, grad_tensors in gradient_cases:
                 with self.subTest(
-                    root_sequence_type=root_sequence_type,
+                    grad_sequence_type=grad_sequence_type,
                     grad_tensors=label,
                 ):
-                    roots = (
-                        torch.tensor([1.0], requires_grad=True),
-                        torch.tensor([2.0], requires_grad=True),
-                    )
+                    leaf = torch.tensor([2.0, 3.0], requires_grad=True)
+                    leaf.sum().backward()
+                    loss = (leaf * leaf).sum()
                     with self.assertRaisesRegex(
                         NotImplementedError, f"^{re.escape(message)}$"
                     ):
                         torch.autograd.backward(
-                            root_sequence_type(roots),
-                            grad_tensors=make_grad_tensors(),
+                            loss,
+                            grad_tensors=grad_tensors,
                         )
-                    self.assertTrue(all(root.grad is None for root in roots))
+                    self.assertEqual(leaf.grad.tolist(), [1.0, 1.0])
+
+                    loss.backward()
+                    self.assertEqual(leaf.grad.tolist(), [5.0, 7.0])
 
     def test_private_sequence_bridge_enforces_its_bound_before_mutation(self):
         self.assertEqual(torch._C._MAX_BACKWARD_LEAF_ROOTS, 10)
@@ -1856,7 +1980,13 @@ class AutogradBackwardTests(unittest.TestCase):
 
     def test_singleton_none_grad_tensors_preserve_backward_semantics(self):
         for root_sequence_type in (None, tuple, list):
-            for grad_sequence_type in (tuple, list):
+            for grad_sequence_type in (
+                tuple,
+                list,
+                TupleSubclass,
+                ListSubclass,
+                CustomSequence,
+            ):
                 with self.subTest(
                     root_sequence_type=root_sequence_type,
                     grad_sequence_type=grad_sequence_type,
@@ -2639,9 +2769,6 @@ class AutogradBackwardTests(unittest.TestCase):
             ("empty list", list),
             ("multiple tuple", lambda: (None, None)),
             ("multiple list", lambda: [None, None]),
-            ("custom sequence", lambda: CustomSequence((None,))),
-            ("tuple subclass", lambda: TupleSubclass((None,))),
-            ("list subclass", lambda: ListSubclass([None])),
         )
         message = (
             "torch_rs.autograd.backward does not support explicit gradients"
@@ -2677,9 +2804,6 @@ class AutogradBackwardTests(unittest.TestCase):
             ("second concrete", lambda: [None, torch.tensor(1.0)]),
             ("three tuple", lambda: (None, None, None)),
             ("three list", lambda: [None, None, None]),
-            ("custom sequence", lambda: CustomSequence((None, None))),
-            ("tuple subclass", lambda: TupleSubclass((None, None))),
-            ("list subclass", lambda: ListSubclass([None, None])),
         )
         message = (
             "torch_rs.autograd.backward does not support explicit gradients"
@@ -2719,18 +2843,6 @@ class AutogradBackwardTests(unittest.TestCase):
             ("third concrete", lambda: (None, None, torch.tensor(1.0))),
             ("four tuple", lambda: (None, None, None, None)),
             ("four list", lambda: [None, None, None, None]),
-            (
-                "custom sequence",
-                lambda: CustomSequence((None, None, None)),
-            ),
-            (
-                "tuple subclass",
-                lambda: TupleSubclass((None, None, None)),
-            ),
-            (
-                "list subclass",
-                lambda: ListSubclass([None, None, None]),
-            ),
         )
         message = (
             "torch_rs.autograd.backward does not support explicit gradients"
@@ -2792,18 +2904,6 @@ class AutogradBackwardTests(unittest.TestCase):
             ),
             ("five tuple", lambda: (None, None, None, None, None)),
             ("five list", lambda: [None, None, None, None, None]),
-            (
-                "custom sequence",
-                lambda: CustomSequence((None, None, None, None)),
-            ),
-            (
-                "tuple subclass",
-                lambda: TupleSubclass((None, None, None, None)),
-            ),
-            (
-                "list subclass",
-                lambda: ListSubclass([None, None, None, None]),
-            ),
         )
         message = (
             "torch_rs.autograd.backward does not support explicit gradients"
@@ -2872,18 +2972,6 @@ class AutogradBackwardTests(unittest.TestCase):
             ),
             ("six tuple", lambda: (None, None, None, None, None, None)),
             ("six list", lambda: [None, None, None, None, None, None]),
-            (
-                "custom sequence",
-                lambda: CustomSequence((None, None, None, None, None)),
-            ),
-            (
-                "tuple subclass",
-                lambda: TupleSubclass((None, None, None, None, None)),
-            ),
-            (
-                "list subclass",
-                lambda: ListSubclass([None, None, None, None, None]),
-            ),
         )
         message = (
             "torch_rs.autograd.backward does not support explicit gradients"
@@ -3006,24 +3094,6 @@ class AutogradBackwardTests(unittest.TestCase):
             (
                 "seven list",
                 lambda: [None, None, None, None, None, None, None],
-            ),
-            (
-                "custom sequence",
-                lambda: CustomSequence(
-                    (None, None, None, None, None, None)
-                ),
-            ),
-            (
-                "tuple subclass",
-                lambda: TupleSubclass(
-                    (None, None, None, None, None, None)
-                ),
-            ),
-            (
-                "list subclass",
-                lambda: ListSubclass(
-                    [None, None, None, None, None, None]
-                ),
             ),
         )
         message = (
@@ -3229,10 +3299,6 @@ class AutogradBackwardTests(unittest.TestCase):
             ("list with tensor", lambda: [torch.tensor(1.0)]),
             ("multiple tuple", lambda: (None, None)),
             ("multiple list", lambda: [None, None]),
-            ("custom empty sequence", lambda: CustomSequence(())),
-            ("custom singleton None", lambda: CustomSequence((None,))),
-            ("empty tuple subclass", TupleSubclass),
-            ("empty list subclass", ListSubclass),
         )
         message = (
             "torch_rs.autograd.backward does not support explicit gradients"
@@ -3634,7 +3700,13 @@ class AutogradBackwardTests(unittest.TestCase):
             ),
         )
         for root_sequence_type in (None, tuple, list):
-            for grad_sequence_type in (tuple, list):
+            for grad_sequence_type in (
+                tuple,
+                list,
+                TupleSubclass,
+                ListSubclass,
+                CustomSequence,
+            ):
                 for label, message, make_options in cases:
                     with self.subTest(
                         root_sequence_type=root_sequence_type,
@@ -3683,7 +3755,19 @@ class AutogradBackwardTests(unittest.TestCase):
                 lambda leaf: {"inputs": leaf},
             ),
         )
-        supported_grad_tensors = (None, (), [], (None,), [None])
+        supported_grad_tensors = (
+            None,
+            (),
+            [],
+            (None,),
+            [None],
+            TupleSubclass(),
+            TupleSubclass((None,)),
+            ListSubclass(),
+            ListSubclass((None,)),
+            CustomSequence(()),
+            CustomSequence((None,)),
+        )
 
         for root_sequence_type in (tuple, list):
             for grad_tensors in supported_grad_tensors:
