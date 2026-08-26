@@ -6753,6 +6753,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1068",
+      "recordedAt": "2026-08-26T19:00:22.261Z",
+      "label": "PR #1068",
+      "kind": "leaf",
+      "prNumber": 1068,
+      "title": "Remove the five-index cap from integer-prefix full-slice indexing",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 95.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 78.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
