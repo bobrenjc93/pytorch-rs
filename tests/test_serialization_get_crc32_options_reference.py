@@ -275,6 +275,7 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         actual_serialization = torch.serialization
         expected_serialization = reference_torch.serialization
         supported_names = (
+            "check_module_version_greater_or_equal",
             "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",
@@ -317,7 +318,8 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         expected_direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "LoadEndianness, get_crc32_options, set_crc32_options, "
+            "check_module_version_greater_or_equal, LoadEndianness, "
+            "get_crc32_options, set_crc32_options, "
             "get_default_load_endianness, set_default_load_endianness, "
             "get_default_mmap_options, "
             "set_default_mmap_options",
@@ -325,7 +327,8 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         )
         exec(
             "from torch.serialization import "
-            "LoadEndianness, get_crc32_options, set_crc32_options, "
+            "check_module_version_greater_or_equal, LoadEndianness, "
+            "get_crc32_options, set_crc32_options, "
             "get_default_load_endianness, set_default_load_endianness, "
             "get_default_mmap_options, "
             "set_default_mmap_options",
@@ -423,6 +426,7 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
         self.assertEqual(
             actual_public,
             {
+                "check_module_version_greater_or_equal",
                 "LoadEndianness",
                 "get_crc32_options",
                 "set_crc32_options",
@@ -444,6 +448,7 @@ class SerializationCrc32OptionsReferenceTests(unittest.TestCase):
                 self.assertFalse(hasattr(torch, name))
                 self.assertNotIn(name, torch.__all__)
         for name in (
+            "check_module_version_greater_or_equal",
             "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",

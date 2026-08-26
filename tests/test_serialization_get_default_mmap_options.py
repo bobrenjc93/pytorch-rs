@@ -127,6 +127,7 @@ class SerializationDefaultMmapOptionsTests(unittest.TestCase):
         serialization = torch.serialization
         function = serialization.get_default_mmap_options
         exported_names = [
+            "check_module_version_greater_or_equal",
             "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",

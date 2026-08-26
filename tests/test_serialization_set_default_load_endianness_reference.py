@@ -256,6 +256,7 @@ class SerializationSetDefaultLoadEndiannessReferenceTests(unittest.TestCase):
                 for name in expected_module.__all__
                 if name
                 in {
+                    "check_module_version_greater_or_equal",
                     "LoadEndianness",
                     "get_crc32_options",
                     "set_crc32_options",

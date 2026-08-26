@@ -282,6 +282,7 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
         actual_module = torch.serialization
         expected_module = reference_torch.serialization
         supported_names = (
+            "check_module_version_greater_or_equal",
             "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",
@@ -470,6 +471,7 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
         self.assertEqual(
             actual_public,
             {
+                "check_module_version_greater_or_equal",
                 "LoadEndianness",
                 "get_crc32_options",
                 "set_crc32_options",
@@ -485,6 +487,7 @@ class SerializationDefaultLoadEndiannessReferenceTests(unittest.TestCase):
                 self.assertNotIn(name, actual_module.__all__)
 
         for name in (
+            "check_module_version_greater_or_equal",
             "LoadEndianness",
             "get_default_load_endianness",
             "set_default_load_endianness",

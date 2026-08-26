@@ -225,6 +225,9 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         serialization = torch.serialization
         exports = {
+            "check_module_version_greater_or_equal": (
+                serialization.check_module_version_greater_or_equal
+            ),
             "LoadEndianness": serialization.LoadEndianness,
             "get_crc32_options": serialization.get_crc32_options,
             "set_crc32_options": serialization.set_crc32_options,
@@ -247,7 +250,8 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         direct_import = {}
         exec(
             "from torch_rs.serialization import "
-            "LoadEndianness, get_crc32_options, set_crc32_options, "
+            "check_module_version_greater_or_equal, LoadEndianness, "
+            "get_crc32_options, set_crc32_options, "
             "get_default_load_endianness, set_default_load_endianness, "
             "get_default_mmap_options, "
             "set_default_mmap_options",
@@ -383,6 +387,7 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
         self.assertEqual(
             {name for name in vars(serialization) if not name.startswith("_")},
             {
+                "check_module_version_greater_or_equal",
                 "LoadEndianness",
                 "get_crc32_options",
                 "set_crc32_options",
@@ -398,6 +403,7 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
                 self.assertNotIn(name, serialization.__all__)
 
         for name in (
+            "check_module_version_greater_or_equal",
             "get_crc32_options",
             "set_crc32_options",
             "LoadEndianness",
@@ -451,6 +457,7 @@ assert (
     == replacement.get_default_mmap_options()
 )
 assert serialization.__all__ == [
+    "check_module_version_greater_or_equal",
     "LoadEndianness",
     "get_crc32_options",
     "set_crc32_options",
@@ -460,6 +467,7 @@ assert serialization.__all__ == [
     "set_default_mmap_options",
 ]
 assert replacement.__all__ == [
+    "check_module_version_greater_or_equal",
     "LoadEndianness",
     "get_crc32_options",
     "set_crc32_options",

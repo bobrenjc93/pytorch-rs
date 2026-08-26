@@ -179,6 +179,7 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
         load_endianness = serialization.LoadEndianness
         function = serialization.get_default_load_endianness
         exported_names = [
+            "check_module_version_greater_or_equal",
             "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",
@@ -348,6 +349,7 @@ class SerializationDefaultLoadEndiannessTests(unittest.TestCase):
         self.assertEqual(
             {name for name in vars(serialization) if not name.startswith("_")},
             {
+                "check_module_version_greater_or_equal",
                 "LoadEndianness",
                 "get_crc32_options",
                 "set_crc32_options",

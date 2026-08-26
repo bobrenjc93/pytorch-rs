@@ -193,6 +193,7 @@ class SerializationDefaultMmapOptionsReferenceTests(unittest.TestCase):
         actual = actual_module.get_default_mmap_options
         expected = expected_module.get_default_mmap_options
         supported_names = (
+            "check_module_version_greater_or_equal",
             "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",

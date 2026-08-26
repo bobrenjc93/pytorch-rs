@@ -10,6 +10,7 @@ Python package names may contain a hyphen, but Python identifiers may not. The p
 
 ```python
 import mmap
+import types
 
 import torch_rs as torch
 
@@ -104,6 +105,14 @@ torch.serialization.set_default_load_endianness(None)
 assert torch.serialization.get_crc32_options() is True
 assert torch.serialization.get_default_mmap_options() == getattr(
     mmap, "MAP_PRIVATE", None
+)
+versioned_module = types.SimpleNamespace(
+    __name__="example_extension",
+    __version__="2.13.0",
+)
+assert torch.serialization.check_module_version_greater_or_equal(
+    versioned_module,
+    (2, 12),
 )
 assert torch.distributed.is_available() is False
 assert torch.distributed.get_pg_count() == 0
@@ -220,7 +229,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.jit.Attribute(value, type)` is the same two-field tuple carrier exposed from `torch.jit._script.Attribute`, preserving both supplied objects exactly in eager execution. `torch.jit.isinstance(obj, target_type)` provides PyTorch-compatible eager checks for ordinary types, tuples of candidate types, parameterized lists and dictionaries, fixed-length typed tuples, `Optional`, and `Union`. Empty containers retain PyTorch's eager ambiguity warning, and raw container annotations are rejected with the same guidance to add contained types. `torch.jit.strict_fusion()` is an eager no-op context manager that preserves exception and gradient-mode behavior while emitting PyTorch's warning that it only works in script mode. `torch.jit.onednn_fusion_enabled()` reports the invariant eager state as the exact `False` singleton without importing PyTorch. This does not enable `torch.jit.enable_onednn_fusion` or TorchScript: `ScriptModule`, scripting, interfaces, tracing, compilation, fusion execution, and graph execution remain unsupported, while the existing eager JIT decorators and state queries are unchanged.
 
-`torch.serialization.LoadEndianness` exposes PyTorch's `NATIVE`, `LITTLE`, and `BIG` load-byte-order choices. `torch.serialization.get_default_load_endianness()` reports the exact default `None` state, and `torch.serialization.set_default_load_endianness(endianness)` updates that process-global fallback to `None` or a current enum member. `torch.serialization.get_crc32_options()` and `torch.serialization.set_crc32_options(compute_crc32)` expose mutable process-global archive-record checksum state without importing PyTorch. The state starts as the exact `True` singleton, the setter returns `None`, and the getter returns the most recently supplied value. `torch.serialization.get_default_mmap_options()` reports the process-global default used by PyTorch for memory-mapped loads: `mmap.MAP_PRIVATE` initially on supported POSIX platforms. `torch.serialization.set_default_mmap_options(flags)` immediately selects `mmap.MAP_PRIVATE` or `mmap.MAP_SHARED` and also acts as a context manager that restores the prior setting on exit. The mmap setter is unavailable on Windows, while `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
+`torch.serialization.check_module_version_greater_or_equal(module, req_version_tuple, error_if_malformed=True)` coerces each dotted module-version field with the corresponding requirement field's type and performs PyTorch's lexicographic tuple comparison. Malformed versions raise a `RuntimeError` chained from the conversion or comparison failure by default; disabling the error emits a caller-site warning and assumes the requirement is met. The check does not change serialization state. `torch.serialization.LoadEndianness` exposes PyTorch's `NATIVE`, `LITTLE`, and `BIG` load-byte-order choices. `torch.serialization.get_default_load_endianness()` reports the exact default `None` state, and `torch.serialization.set_default_load_endianness(endianness)` updates that process-global fallback to `None` or a current enum member. `torch.serialization.get_crc32_options()` and `torch.serialization.set_crc32_options(compute_crc32)` expose mutable process-global archive-record checksum state without importing PyTorch. The state starts as the exact `True` singleton, the setter returns `None`, and the getter returns the most recently supplied value. `torch.serialization.get_default_mmap_options()` reports the process-global default used by PyTorch for memory-mapped loads: `mmap.MAP_PRIVATE` initially on supported POSIX platforms. `torch.serialization.set_default_mmap_options(flags)` immediately selects `mmap.MAP_PRIVATE` or `mmap.MAP_SHARED` and also acts as a context manager that restores the prior setting on exit. The mmap setter is unavailable on Windows, while `torch.save`, `torch.load`, and the rest of the serialization namespace remain unsupported.
 
 `Tensor.is_shared()` returns the exact `False` singleton for every supported CPU tensor, including views, empty tensors, and accumulated gradients, because ordinary and mutex-backed gradient storage are process-local. Shared-memory mutation and storage-object APIs remain unsupported.
 

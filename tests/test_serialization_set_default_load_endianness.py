@@ -123,6 +123,7 @@ class SerializationSetDefaultLoadEndiannessTests(unittest.TestCase):
         serialization = self.serialization
         setter = serialization.set_default_load_endianness
         exported_names = [
+            "check_module_version_greater_or_equal",
             "LoadEndianness",
             "get_crc32_options",
             "set_crc32_options",
