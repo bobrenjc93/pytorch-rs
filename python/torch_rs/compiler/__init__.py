@@ -15,6 +15,7 @@ __all__ = [
     "is_compiling",
     "is_dynamo_compiling",
     "is_exporting",
+    "skip_all_guards_unsafe",
 ]
 
 
@@ -187,3 +188,20 @@ def is_exporting() -> bool:
         >>>     # ...rest of the function...
     """
     return False
+
+
+def skip_all_guards_unsafe(guard_entries):
+    """
+    A function for skipping all guards on a compiled function.
+
+    WARNING: This function will drop all the safety guarantees from Dynamo
+             compiled function. Use this with caution.
+
+    To use this API, use guard_filter_fn argument while calling torch.compile
+
+    >> opt_mod = torch.compile(
+    >>     mod,
+    >>     options={"guard_filter_fn": torch.compiler.skip_all_guards_unsafe},
+    >> )
+    """
+    return [False for entry in guard_entries]
