@@ -1,8 +1,11 @@
 //! Native bridges for Python neural-network functional operators.
 
 use std::ffi::CString;
+use std::fmt::Write as _;
 
-use pyo3::exceptions::{PyNotImplementedError, PyRuntimeError, PyTypeError, PyUserWarning};
+use pyo3::exceptions::{
+    PyMemoryError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyUserWarning,
+};
 use pyo3::types::{PyAny, PyModule, PyString};
 use pyo3::{IntoPyObjectExt, prelude::*};
 
@@ -251,13 +254,43 @@ fn exact_mse_loss_tensor<'py>(value: &Bound<'py, PyAny>) -> PyResult<Bound<'py, 
         .clone())
 }
 
-fn format_tensor_size(shape: &[usize]) -> String {
-    let dimensions = shape
-        .iter()
-        .map(usize::to_string)
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("torch.Size([{dimensions}])")
+const TENSOR_SIZE_PREFIX: &str = "torch.Size([";
+const TENSOR_SIZE_SUFFIX: &str = "])";
+const MSE_WARNING_PREFIX: &str = "Using a target size (";
+const MSE_WARNING_INFIX: &str = ") that is different to the input size (";
+const MSE_WARNING_SUFFIX: &str = "). This will likely lead to incorrect results due to broadcasting. Please ensure they have the same size.";
+
+fn decimal_length(mut value: usize) -> usize {
+    let mut length = 1;
+    while value >= 10 {
+        value /= 10;
+        length += 1;
+    }
+    length
+}
+
+fn tensor_size_display_length(shape: &[usize]) -> Option<usize> {
+    shape.iter().enumerate().try_fold(
+        TENSOR_SIZE_PREFIX.len() + TENSOR_SIZE_SUFFIX.len(),
+        |length, (position, dimension)| {
+            length
+                .checked_add(if position == 0 { 0 } else { ", ".len() })?
+                .checked_add(decimal_length(*dimension))
+        },
+    )
+}
+
+fn push_tensor_size(output: &mut String, shape: &[usize]) -> PyResult<()> {
+    output.push_str(TENSOR_SIZE_PREFIX);
+    for (position, dimension) in shape.iter().enumerate() {
+        if position != 0 {
+            output.push_str(", ");
+        }
+        write!(output, "{dimension}")
+            .map_err(|_| PyRuntimeError::new_err("unable to format mse_loss broadcast warning"))?;
+    }
+    output.push_str(TENSOR_SIZE_SUFFIX);
+    Ok(())
 }
 
 fn warn_mse_loss_broadcast(
@@ -265,12 +298,36 @@ fn warn_mse_loss_broadcast(
     input_shape: &[usize],
     target_shape: &[usize],
 ) -> PyResult<()> {
-    let message = CString::new(format!(
-        "Using a target size ({}) that is different to the input size ({}). This will likely lead to incorrect results due to broadcasting. Please ensure they have the same size.",
-        format_tensor_size(target_shape),
-        format_tensor_size(input_shape),
-    ))
-    .expect("tensor sizes cannot contain NUL bytes");
+    let capacity = MSE_WARNING_PREFIX
+        .len()
+        .checked_add(
+            tensor_size_display_length(target_shape)
+                .ok_or_else(|| PyMemoryError::new_err("mse_loss broadcast warning is too large"))?,
+        )
+        .and_then(|length| length.checked_add(MSE_WARNING_INFIX.len()))
+        .and_then(|length| {
+            tensor_size_display_length(input_shape)
+                .and_then(|input_length| length.checked_add(input_length))
+        })
+        .and_then(|length| length.checked_add(MSE_WARNING_SUFFIX.len()))
+        .ok_or_else(|| PyMemoryError::new_err("mse_loss broadcast warning is too large"))?;
+    let capacity_with_nul = capacity
+        .checked_add(1)
+        .ok_or_else(|| PyMemoryError::new_err("mse_loss broadcast warning is too large"))?;
+    let mut message = String::new();
+    message
+        .try_reserve_exact(capacity_with_nul)
+        .map_err(|_| PyMemoryError::new_err("unable to allocate mse_loss broadcast warning"))?;
+    message.push_str(MSE_WARNING_PREFIX);
+    push_tensor_size(&mut message, target_shape)?;
+    message.push_str(MSE_WARNING_INFIX);
+    push_tensor_size(&mut message, input_shape)?;
+    message.push_str(MSE_WARNING_SUFFIX);
+    debug_assert_eq!(message.len(), capacity);
+    message.push('\0');
+    let message = CString::from_vec_with_nul(message.into_bytes()).map_err(|_| {
+        PyRuntimeError::new_err("mse_loss broadcast warning unexpectedly contained a NUL byte")
+    })?;
     PyErr::warn(py, &py.get_type::<PyUserWarning>(), &message, 2)
 }
 

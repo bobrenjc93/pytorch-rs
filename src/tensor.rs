@@ -2415,7 +2415,7 @@ impl Tensor {
     ///
     /// Same-shaped inputs retain the dedicated binary fast path. Broadcast
     /// inputs reuse the shared planner, with empty results applying the final
-    /// unary-style restriding used by PyTorch MSE without materializing an
+    /// unary-style restriding used by `PyTorch` MSE without materializing an
     /// intermediate difference tensor.
     ///
     /// # Errors

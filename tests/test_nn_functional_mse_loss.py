@@ -1,6 +1,9 @@
 import importlib
 import inspect
 import re
+import subprocess
+import sys
+import textwrap
 import types
 import unittest
 import warnings
@@ -319,6 +322,66 @@ class FunctionalMseLossTests(unittest.TestCase):
                 )
                 np.testing.assert_array_equal(
                     self.tensor_state(target)[-1], target_state[-1]
+                )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux RLIMIT_AS")
+    def test_high_rank_scalar_broadcast_warning_is_fallible(self):
+        script = textwrap.dedent(
+            """\
+            import os
+            import resource
+            import sys
+            import warnings
+
+            import torch_rs as torch
+            import torch_rs.nn.functional as functional
+
+            mode = sys.argv[1]
+            rank = 750_000
+            scalar = torch.tensor(0.0)
+            empty = torch.zeros((0,) * rank)
+            with open("/proc/self/statm", encoding="ascii") as statm:
+                virtual_pages = int(statm.read().split()[0])
+            current_virtual_size = virtual_pages * os.sysconf("SC_PAGE_SIZE")
+            allowance = {"memory_error": 1, "warning": 64}[mode]
+            limit = current_virtual_size + allowance * 1024 * 1024
+            _, hard_limit = resource.getrlimit(resource.RLIMIT_AS)
+            if hard_limit != resource.RLIM_INFINITY and limit > hard_limit:
+                raise SystemExit(77)
+            resource.setrlimit(resource.RLIMIT_AS, (limit, hard_limit))
+
+            warnings.simplefilter("error")
+            try:
+                functional.mse_loss(scalar, empty, reduction="none")
+            except MemoryError as error:
+                if mode != "memory_error":
+                    raise
+                assert str(error) == "unable to allocate mse_loss broadcast warning"
+            except UserWarning as warning:
+                if mode != "warning":
+                    raise
+                message = str(warning)
+                assert message.startswith("Using a target size (torch.Size([")
+                assert message.endswith("Please ensure they have the same size.")
+            else:
+                raise AssertionError("the scalar-broadcast warning was not raised")
+            """
+        )
+        for mode in ("memory_error", "warning"):
+            with self.subTest(mode=mode):
+                completed = subprocess.run(
+                    [sys.executable, "-c", script, mode],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=60,
+                )
+                if completed.returncode == 77:
+                    self.skipTest("process hard address-space limit is too low")
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}",
                 )
 
     def test_mixed_layout_singleton_keeps_binary_tensoriterator_stride(self):
