@@ -19,6 +19,8 @@ MODULE_DOC = """
 This package introduces support for the current :ref:`accelerator<accelerators>` in python.
 """
 
+NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
+
 FUNCTION_DOCS = {
     "current_accelerator": """Return the device of the accelerator available at compilation time.
     If no accelerator were available at compilation time, returns None.
@@ -80,6 +82,12 @@ FUNCTION_DOCS = {
 
 
 class AcceleratorTests(unittest.TestCase):
+    def assert_no_accelerator_error(self, call):
+        with self.assertRaises(RuntimeError) as raised:
+            call()
+        self.assertEqual(str(raised.exception), NO_ACCELERATOR_ERROR)
+        self.assertEqual(raised.exception.args, (NO_ACCELERATOR_ERROR,))
+
     def test_cpu_only_results_come_from_one_probe_without_hardware_discovery(self):
         accelerator = torch.accelerator
         discovery = accelerator._discover_accelerator
@@ -107,19 +115,22 @@ class AcceleratorTests(unittest.TestCase):
             count = accelerator.device_count()
             self.assertIs(type(count), int)
             self.assertEqual(count, 0)
-            current_index = accelerator.current_device_index()
-            self.assertIs(current_index, None)
-            self.assertIs(accelerator.current_device_index(), current_index)
+            self.assert_no_accelerator_error(accelerator.current_device_index)
+            self.assert_no_accelerator_error(accelerator.current_device_index)
 
         self.assertEqual(shared_discovery.call_count, 6)
         self.assertEqual(shared_discovery.call_args_list, [mock.call()] * 6)
-        for function in (
-            accelerator.current_accelerator,
-            accelerator.current_device_index,
-            accelerator.is_available,
-            accelerator.device_count,
-        ):
-            self.assertEqual(function.__code__.co_names, ("_discover_accelerator",))
+        expected_names = {
+            accelerator.current_accelerator: ("_discover_accelerator",),
+            accelerator.current_device_index: (
+                "_discover_accelerator",
+                "RuntimeError",
+            ),
+            accelerator.is_available: ("_discover_accelerator",),
+            accelerator.device_count: ("_discover_accelerator",),
+        }
+        for function, names in expected_names.items():
+            self.assertEqual(function.__code__.co_names, names)
 
         class ExplodingTruth:
             def __bool__(self):
@@ -144,7 +155,9 @@ class AcceleratorTests(unittest.TestCase):
                         side_effect=AssertionError("hardware was probed"),
                     ):
                         self.assertIs(accelerator.current_accelerator(), None)
-                        self.assertIs(accelerator.current_device_index(), None)
+                        self.assert_no_accelerator_error(
+                            accelerator.current_device_index
+                        )
                         self.assertIs(accelerator.is_available(), False)
                         self.assertEqual(accelerator.device_count(), 0)
 
@@ -299,7 +312,7 @@ class AcceleratorTests(unittest.TestCase):
             accelerator._discover_accelerator(), (None, False, 0, None)
         )
         self.assertIs(accelerator.current_accelerator(), None)
-        self.assertIs(accelerator.current_device_index(), None)
+        self.assert_no_accelerator_error(accelerator.current_device_index)
         self.assertIs(accelerator.is_available(), False)
         self.assertEqual(accelerator.device_count(), 0)
 
@@ -380,6 +393,13 @@ class AcceleratorTests(unittest.TestCase):
         results = [None] * worker_count
         errors = []
 
+        def current_device_index_outcome():
+            try:
+                torch.accelerator.current_device_index()
+            except RuntimeError as error:
+                return type(error), str(error), error.args
+            raise AssertionError("current_device_index unexpectedly returned")
+
         def worker(index):
             try:
                 context = torch.no_grad() if index % 2 else contextlib.nullcontext()
@@ -391,8 +411,8 @@ class AcceleratorTests(unittest.TestCase):
                         torch.accelerator.current_accelerator(True),
                         torch.accelerator.is_available(),
                         torch.accelerator.device_count(),
-                        torch.accelerator.current_device_index(),
-                        torch.accelerator.current_device_index(),
+                        current_device_index_outcome(),
+                        current_device_index_outcome(),
                         torch.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -419,8 +439,16 @@ class AcceleratorTests(unittest.TestCase):
                     None,
                     False,
                     0,
-                    None,
-                    None,
+                    (
+                        RuntimeError,
+                        NO_ACCELERATOR_ERROR,
+                        (NO_ACCELERATOR_ERROR,),
+                    ),
+                    (
+                        RuntimeError,
+                        NO_ACCELERATOR_ERROR,
+                        (NO_ACCELERATOR_ERROR,),
+                    ),
                     expected_grad_state,
                 ),
             )
@@ -499,8 +527,14 @@ modules_before_calls = set(sys.modules)
 assert torch.accelerator._discover_accelerator() == (None, False, 0, None)
 assert torch.accelerator.current_accelerator() is None
 assert torch.accelerator.current_accelerator(check_available=True) is None
-assert torch.accelerator.current_device_index() is None
-assert torch.accelerator.current_device_index() is None
+for _ in range(2):
+    try:
+        torch.accelerator.current_device_index()
+    except RuntimeError as error:
+        assert str(error) == "Cannot access accelerator device when none is available."
+        assert error.args == ("Cannot access accelerator device when none is available.",)
+    else:
+        raise AssertionError("current_device_index unexpectedly returned")
 assert torch.accelerator.is_available() is False
 count = torch.accelerator.device_count()
 assert type(count) is int and count == 0

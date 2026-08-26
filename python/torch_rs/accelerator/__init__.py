@@ -96,6 +96,8 @@ def current_device_index() -> int:
         int: the index of a currently selected device.
     """
     _, _, _, index = _discover_accelerator()
+    if index is None:
+        raise RuntimeError("Cannot access accelerator device when none is available.")
     return index
 
 

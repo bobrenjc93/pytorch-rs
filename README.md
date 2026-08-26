@@ -52,7 +52,10 @@ assert torch.cpu.is_available() is True
 assert torch.cpu.current_device() == "cpu"
 assert torch.cpu.device_count() == 1
 assert torch.cpu.synchronize() is None
-assert torch.accelerator.current_device_index() is None
+try:
+    torch.accelerator.current_device_index()
+except RuntimeError as error:
+    assert str(error) == "Cannot access accelerator device when none is available."
 assert torch.get_num_threads() == 1
 assert torch.get_num_interop_threads() == 1
 assert torch.has_openmp is False
@@ -199,7 +202,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.cpu.is_available()` is the canonical device-agnostic CPU availability query and returns the exact `True` singleton. `torch.cpu.is_initialized()` likewise returns exact `True`, reflecting that the eager CPU backend is always initialized. `torch.cpu.current_device()` returns the invariant string `"cpu"`, and `torch.cpu.device_count()` reports the single logical CPU device as the exact integer `1`. Because native CPU execution is eager, `torch.cpu.synchronize(device=None)` ignores any device value and returns the exact `None` singleton. These APIs do not probe hardware, environment variables, or PyTorch. CPU streams, events, device mutation, capabilities, AMP, and the rest of the `torch.cpu` namespace remain unsupported.
 
-`torch.accelerator.current_device_index()` returns the exact `None` singleton because this CPU-only build has no selected accelerator. The query uses native build metadata without probing installed drivers or importing PyTorch, so a CUDA-capable host does not change its result. Accelerator selection, streams, memory management, graphs, synchronization, and execution remain unsupported.
+`torch.accelerator.current_device_index()` raises `RuntimeError("Cannot access accelerator device when none is available.")` because this CPU-only build has no selected accelerator, matching PyTorch 2.13's CPU build. The query uses native build metadata without probing installed drivers or importing PyTorch, so a CUDA-capable host does not change its result. Accelerator selection, streams, memory management, graphs, synchronization, and execution remain unsupported.
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
 
