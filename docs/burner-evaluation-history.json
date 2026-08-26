@@ -6529,6 +6529,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1020",
+      "recordedAt": "2026-08-26T06:34:35.410Z",
+      "label": "PR #1020",
+      "kind": "leaf",
+      "prNumber": 1020,
+      "title": "Accept exactly ten scalar leaf roots from one native-owned limit",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 93.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 76.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
