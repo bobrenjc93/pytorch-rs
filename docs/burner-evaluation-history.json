@@ -6801,6 +6801,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1074",
+      "recordedAt": "2026-08-26T21:24:02.822Z",
+      "label": "PR #1074",
+      "kind": "leaf",
+      "prNumber": 1074,
+      "title": "Add CPU-build torch.accelerator.max_memory_allocated",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 95.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 78.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
