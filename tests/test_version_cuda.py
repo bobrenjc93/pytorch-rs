@@ -21,6 +21,7 @@ class VersionCudaTests(unittest.TestCase):
             importlib.metadata.version("torch-rs"),
         )
         self.assertIs(type(version.__version__), str)
+        self.assertIs(version.debug, False)
         self.assertIs(torch._C._has_cuda, False)
         for name in ("cuda", "hip", "rocm", "xpu"):
             with self.subTest(name=name):
@@ -54,7 +55,7 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIsNone(version.__doc__)
         self.assertEqual(
             version.__all__,
-            ["__version__", "cuda", "hip", "rocm", "xpu"],
+            ["__version__", "debug", "cuda", "hip", "rocm", "xpu"],
         )
         self.assertEqual(
             version.__annotations__,
@@ -72,11 +73,10 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIs(version.Optional, typing.Optional)
         self.assertEqual(
             {name for name in vars(version) if not name.startswith("_")},
-            {"Optional", "cuda", "hip", "rocm", "xpu"},
+            {"Optional", "debug", "cuda", "hip", "rocm", "xpu"},
         )
-        for name in ("debug", "git_version"):
-            with self.subTest(unsupported=name):
-                self.assertFalse(hasattr(version, name))
+        self.assertIs(version.debug, False)
+        self.assertFalse(hasattr(version, "git_version"))
 
     def test_direct_and_wildcard_imports_use_the_canonical_module(self):
         version = torch.version
@@ -89,7 +89,7 @@ class VersionCudaTests(unittest.TestCase):
         exec("from torch_rs import version", package_import)
         exec("import torch_rs.version as version", module_import)
         exec(
-            "from torch_rs.version import __version__, cuda, hip, rocm, xpu",
+            "from torch_rs.version import __version__, debug, cuda, hip, rocm, xpu",
             direct_import,
         )
         exec("from torch_rs.version import *", child_wildcard)
@@ -98,20 +98,24 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIs(package_import["version"], version)
         self.assertIs(module_import["version"], version)
         self.assertIs(direct_import["__version__"], version.__version__)
+        self.assertIs(direct_import["debug"], version.debug)
+        self.assertIs(direct_import["debug"], False)
         for name in ("cuda", "hip", "rocm", "xpu"):
             self.assertIs(direct_import[name], getattr(version, name))
         self.assertEqual(
             [name for name in child_wildcard if name != "__builtins__"],
-            ["__version__", "cuda", "hip", "rocm", "xpu"],
+            ["__version__", "debug", "cuda", "hip", "rocm", "xpu"],
         )
         self.assertIs(child_wildcard["__version__"], version.__version__)
+        self.assertIs(child_wildcard["debug"], version.debug)
+        self.assertIs(child_wildcard["debug"], False)
         for name in ("cuda", "hip", "rocm", "xpu"):
             self.assertIs(child_wildcard[name], getattr(version, name))
         self.assertNotIn("version", torch.__all__)
         self.assertNotIn("__version__", torch.__all__)
         self.assertNotIn("version", top_level_wildcard)
         self.assertNotIn("__version__", top_level_wildcard)
-        for name in ("cuda", "hip", "rocm", "xpu"):
+        for name in ("debug", "cuda", "hip", "rocm", "xpu"):
             self.assertNotIn(name, torch.__all__)
             self.assertNotIn(name, top_level_wildcard)
 
@@ -122,6 +126,7 @@ class VersionCudaTests(unittest.TestCase):
         old_annotations = version.__annotations__
         expected_package_version = torch.__version__
         version.__version__ = "stale"
+        version.debug = True
         for name in ("cuda", "hip", "rocm", "xpu"):
             setattr(version, name, "stale")
 
@@ -135,13 +140,15 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIs(version.__annotations__, old_annotations)
         self.assertEqual(
             version.__all__,
-            ["__version__", "cuda", "hip", "rocm", "xpu"],
+            ["__version__", "debug", "cuda", "hip", "rocm", "xpu"],
         )
         self.assertEqual(
             list(version.__annotations__),
             ["cuda", "hip", "rocm", "xpu"],
         )
         self.assertIs(version.__version__, expected_package_version)
+        self.assertIs(version.debug, False)
+        self.assertFalse(hasattr(version, "git_version"))
         for name in ("cuda", "hip", "rocm", "xpu"):
             self.assertIs(getattr(version, name), None)
 
@@ -176,11 +183,13 @@ os.environ.update(
 import torch_rs as torch
 import torch_rs.version as version
 from torch_rs import version as package_version
-from torch_rs.version import __version__, cuda, hip, rocm, xpu
+from torch_rs.version import __version__, debug, cuda, hip, rocm, xpu
 
 assert version is package_version is torch.version
 assert version is sys.modules["torch_rs.version"]
 assert __version__ == version.__version__ == torch.__version__
+assert debug is version.debug is False
+assert not hasattr(version, "git_version")
 assert torch._C._has_cuda is False
 assert cuda is version.cuda is None
 assert hip is version.hip is None

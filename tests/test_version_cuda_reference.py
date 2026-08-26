@@ -24,7 +24,7 @@ class VersionCudaReferenceTests(unittest.TestCase):
     def test_module_metadata_and_identity_match_the_supported_scope(self):
         actual = importlib.import_module("torch_rs.version")
         expected = importlib.import_module("torch.version")
-        supported = ("__version__", "cuda", "hip", "rocm", "xpu")
+        supported = ("__version__", "debug", "cuda", "hip", "rocm", "xpu")
 
         self.assertIs(torch.version, actual)
         self.assertIs(reference_torch.version, expected)
@@ -56,17 +56,17 @@ class VersionCudaReferenceTests(unittest.TestCase):
             {
                 name
                 for name in vars(expected)
-                if name in {"Optional", "cuda", "hip", "rocm", "xpu"}
+                if name in {"Optional", "debug", "cuda", "hip", "rocm", "xpu"}
             },
         )
         self.assertIs(type(actual.__version__), type(expected.__version__))
+        self.assertIs(actual.debug, expected.debug)
+        self.assertIs(actual.debug, False)
         for name in ("cuda", "hip", "rocm", "xpu"):
             with self.subTest(name=name):
                 self.assertIs(getattr(actual, name), None)
-        for name in ("debug", "git_version"):
-            with self.subTest(unsupported=name):
-                self.assertFalse(hasattr(actual, name))
-                self.assertTrue(hasattr(expected, name))
+        self.assertFalse(hasattr(actual, "git_version"))
+        self.assertTrue(hasattr(expected, "git_version"))
 
     def test_direct_and_wildcard_imports_match_pytorch_2_13(self):
         actual = torch.version
@@ -83,12 +83,12 @@ class VersionCudaReferenceTests(unittest.TestCase):
             exec(f"import {package_name}.version as version", module_import)
             exec(
                 f"from {package_name}.version import "
-                "__version__, cuda, hip, rocm, xpu",
+                "__version__, debug, cuda, hip, rocm, xpu",
                 direct_import,
             )
             self.assertIs(package_import["version"], module)
             self.assertIs(module_import["version"], module)
-            for name in ("__version__", "cuda", "hip", "rocm", "xpu"):
+            for name in ("__version__", "debug", "cuda", "hip", "rocm", "xpu"):
                 self.assertIs(direct_import[name], getattr(module, name))
 
         actual_wildcard = {}
@@ -100,10 +100,13 @@ class VersionCudaReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_wildcard
-                if name in {"__version__", "cuda", "hip", "rocm", "xpu"}
+                if name
+                in {"__version__", "debug", "cuda", "hip", "rocm", "xpu"}
             ],
         )
         self.assertIs(actual_wildcard["__version__"], actual.__version__)
+        self.assertIs(actual_wildcard["debug"], actual.debug)
+        self.assertIs(actual_wildcard["debug"], False)
         for name in ("cuda", "hip", "rocm", "xpu"):
             self.assertIs(actual_wildcard[name], getattr(actual, name))
 
@@ -112,7 +115,7 @@ class VersionCudaReferenceTests(unittest.TestCase):
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("version", namespace)
             self.assertNotIn("__version__", namespace)
-            for name in ("cuda", "hip", "rocm", "xpu"):
+            for name in ("debug", "cuda", "hip", "rocm", "xpu"):
                 self.assertNotIn(name, namespace)
 
     def reload_contract(self, root):
@@ -122,6 +125,7 @@ class VersionCudaReferenceTests(unittest.TestCase):
         old_annotations = module.__annotations__
         expected_version = module.__version__
         module.__version__ = "stale"
+        module.debug = True
         for name in ("cuda", "hip", "rocm", "xpu"):
             setattr(module, name, "stale")
 
@@ -138,6 +142,7 @@ class VersionCudaReferenceTests(unittest.TestCase):
             type(module.__version__).__name__,
             module.__annotations__ is old_annotations,
             tuple(module.__annotations__),
+            module.debug,
             tuple(getattr(module, name) for name in ("cuda", "hip", "rocm", "xpu")),
         )
 
@@ -151,13 +156,15 @@ class VersionCudaReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected[5]
-                if name in {"__version__", "cuda", "hip", "rocm", "xpu"}
+                if name
+                in {"__version__", "debug", "cuda", "hip", "rocm", "xpu"}
             ],
         )
-        self.assertEqual(actual[6:10], expected[6:10])
-        self.assertEqual(actual[10], (None, None, None, None))
+        self.assertEqual(actual[6:11], expected[6:11])
+        self.assertIs(actual[10], False)
+        self.assertEqual(actual[11], (None, None, None, None))
         self.assertEqual(
-            expected[10],
+            expected[11],
             tuple(
                 getattr(reference_torch.version, name)
                 for name in ("cuda", "hip", "rocm", "xpu")
