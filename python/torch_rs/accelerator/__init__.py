@@ -7,17 +7,18 @@ from .. import device as _device
 
 __all__ = [
     "current_accelerator",
+    "current_device_index",
     "device_count",
     "is_available",
 ]
 
 
-def _discover_accelerator() -> tuple[_device | None, bool, int]:
-    """Return the native backend's accelerator, availability, and device count."""
-    # The native Device enum currently contains only CPU. Keep the three public
+def _discover_accelerator() -> tuple[_device | None, bool, int, int | None]:
+    """Return the native backend's accelerator discovery metadata."""
+    # The native Device enum currently contains only CPU. Keep the public
     # discovery queries on one boundary so a future accelerator backend can
     # replace this result without scattering hardware probes through the API.
-    return None, False, 0
+    return None, False, 0, None
 
 
 def device_count() -> int:
@@ -31,7 +32,7 @@ def device_count() -> int:
         On CUDA, this API will NOT poison fork if NVML discovery succeeds.
         Otherwise, it will. For more details, see :ref:`multiprocessing-poison-fork-note`.
     """
-    _, _, count = _discover_accelerator()
+    _, _, count, _ = _discover_accelerator()
     return count
 
 
@@ -52,7 +53,7 @@ def is_available() -> bool:
 
         >>> assert torch.accelerator.is_available() "No available accelerators detected."
     """
-    _, available, _ = _discover_accelerator()
+    _, available, _, _ = _discover_accelerator()
     return available
 
 
@@ -82,7 +83,23 @@ def current_accelerator(check_available: bool = False) -> _device | None:
         >>> if (current_device := current_accelerator(check_available=True)) is not None:
         >>>     model.to(current_device)
     """
-    accelerator, available, _ = _discover_accelerator()
+    accelerator, available, _, _ = _discover_accelerator()
     if accelerator is not None and ((not check_available) or available):
         return accelerator
     return None
+
+
+def current_device_index() -> int:
+    r"""Return the index of a currently selected device for the current :ref:`accelerator<accelerators>`.
+
+    Returns:
+        int: the index of a currently selected device.
+    """
+    _, _, _, index = _discover_accelerator()
+    return index
+
+
+# PyTorch 2.13's deprecated ``current_device_idx`` wrapper also annotates the
+# canonical wrapped function. Preserve that observable metadata without
+# exposing the unsupported alias.
+current_device_index.__deprecated__ = "Use `current_device_index` instead."

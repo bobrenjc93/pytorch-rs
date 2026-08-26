@@ -21,6 +21,7 @@ except ImportError:
 
 SUPPORTED = {
     "current_accelerator",
+    "current_device_index",
     "device_count",
     "is_available",
 }
@@ -69,7 +70,12 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(sys.modules["torch.accelerator"], expected_module)
         self.assertEqual(actual_module.__doc__, expected_module.__doc__)
 
-        for name in ("current_accelerator", "device_count", "is_available"):
+        for name in (
+            "current_accelerator",
+            "current_device_index",
+            "device_count",
+            "is_available",
+        ):
             with self.subTest(name=name):
                 actual = getattr(actual_module, name)
                 expected = getattr(expected_module, name)
@@ -161,6 +167,9 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 self.assertNotIn(name, namespace)
 
     def test_cpu_only_values_bound_the_cuda_enabled_reference(self):
+        current_index = torch.accelerator.current_device_index()
+        self.assertIs(current_index, None)
+        self.assertIs(torch.accelerator.current_device_index(), current_index)
         self.assertIs(torch.accelerator.current_accelerator(), None)
         self.assertIs(
             torch.accelerator.current_accelerator(check_available=True), None
@@ -183,6 +192,16 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIsNone(reference_accelerator.index)
         self.assertIs(reference_torch.accelerator.is_available(), True)
         self.assertGreaterEqual(reference_torch.accelerator.device_count(), 1)
+        reference_index = reference_torch.accelerator.current_device_index()
+        self.assertIs(type(reference_index), int)
+        self.assertEqual(reference_index, reference_torch.cuda.current_device())
+        self.assertEqual(
+            tuple(
+                reference_torch.accelerator.current_device_index()
+                for _ in range(4)
+            ),
+            (reference_index,) * 4,
+        )
 
         probe = reference_torch.ones(
             1, device=reference_torch.device("cuda", 0)
@@ -191,6 +210,7 @@ class AcceleratorReferenceTests(unittest.TestCase):
         reference_torch.cuda.synchronize(0)
 
         self.assertIs(torch.accelerator.current_accelerator(), None)
+        self.assertIs(torch.accelerator.current_device_index(), None)
         self.assertIs(torch.accelerator.is_available(), False)
         self.assertEqual(torch.accelerator.device_count(), 0)
         self.assertFalse(hasattr(torch, "cuda"))
@@ -366,6 +386,18 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 lambda: actual.device_count(device=True),
                 lambda: expected.device_count(device=True),
             ),
+            (
+                lambda: actual.current_device_index(None),
+                lambda: expected.current_device_index(None),
+            ),
+            (
+                lambda: actual.current_device_index(None, None),
+                lambda: expected.current_device_index(None, None),
+            ),
+            (
+                lambda: actual.current_device_index(device=True),
+                lambda: expected.current_device_index(device=True),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
@@ -378,7 +410,6 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertTrue(
             {
                 "Graph",
-                "current_device_index",
                 "current_stream",
                 "device_index",
                 "empty_cache",
