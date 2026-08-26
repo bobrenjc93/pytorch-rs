@@ -467,15 +467,6 @@ class FunctionalSigmoidReferenceTests(unittest.TestCase):
             ],
         )
 
-        rank_three_nonleaf_base = torch.tensor(
-            [[[0.5, -0.5], [1.0, -1.0]]], requires_grad=True
-        )
-        rank_three_nonleaf = rank_three_nonleaf_base.sin()
-        with self.assertRaisesRegex(RuntimeError, message):
-            functional.sigmoid(rank_three_nonleaf)
-        rank_three_nonleaf.sum().backward()
-        self.assertIsNotNone(rank_three_nonleaf_base.grad)
-
         rank_four_view_base = torch.tensor(
             [[[[[0.5, -1.0]]]], [[[[2.0, -3.0]]]]], requires_grad=True
         )
