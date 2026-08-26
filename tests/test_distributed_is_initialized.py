@@ -136,6 +136,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "get_world_size",
                 "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
@@ -172,6 +173,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_world_size",
                 "get_pg_count",
                 "is_available",
                 "is_gloo_available",
@@ -196,6 +198,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
         self.assertEqual(
             {name for name in owner_namespace if not name.startswith("__")},
             {
+                "get_world_size",
                 "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
@@ -268,6 +271,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
             {name for name in vars(distributed) if not name.startswith("_")},
             {
                 "distributed_c10d",
+                "get_world_size",
                 "get_pg_count",
                 "is_available",
                 "is_gloo_available",
@@ -286,6 +290,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
                 if not name.startswith("_")
             },
             {
+                "get_world_size",
                 "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
@@ -303,7 +308,6 @@ class DistributedIsInitializedTests(unittest.TestCase):
             "all_reduce",
             "destroy_process_group",
             "get_rank",
-            "get_world_size",
             "init_process_group",
         ):
             with self.subTest(name=name):

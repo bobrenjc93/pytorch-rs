@@ -3,6 +3,7 @@
 import os as _os
 
 __all__ = [
+    "get_world_size",
     "get_pg_count",
     "is_gloo_available",
     "is_initialized",
@@ -12,6 +13,34 @@ __all__ = [
     "is_xccl_available",
     "get_node_local_rank",
 ]
+
+
+# Preserve PyTorch's annotation spelling without exporting an unsupported type.
+_ProcessGroup = type("ProcessGroup", (), {"__module__": __name__})
+
+
+def get_world_size(group: _ProcessGroup | None = None) -> int:
+    """
+    Return the number of processes in the current process group.
+
+    Args:
+        group (ProcessGroup, optional): The process group to work on. If None,
+            the default process group will be used.
+
+    Returns:
+        The world size of the process group
+        -1, if not part of the group
+
+    """
+    if group is not None:
+        raise NotImplementedError(
+            "torch_rs.distributed.get_world_size() does not support non-None "
+            "process groups"
+        )
+    raise ValueError(
+        "Default process group has not been initialized, please make sure to "
+        "call init_process_group."
+    )
 
 
 def get_pg_count() -> int:

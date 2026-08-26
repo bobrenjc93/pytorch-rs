@@ -215,6 +215,7 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "get_world_size",
                 "get_pg_count",
                 "is_available",
                 "is_gloo_available",
@@ -239,7 +240,6 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
                     "all_reduce",
                     "destroy_process_group",
                     "get_rank",
-                    "get_world_size",
                     "init_process_group",
                 }.issubset(unsupported)
             )
