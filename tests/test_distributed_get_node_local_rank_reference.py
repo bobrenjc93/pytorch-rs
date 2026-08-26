@@ -247,6 +247,7 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
         actual = actual_distributed.get_node_local_rank
         expected = expected_distributed.get_node_local_rank
         supported = {
+            "get_world_size",
             "get_pg_count",
             "is_gloo_available",
             "is_initialized",
@@ -331,7 +332,6 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
             "all_reduce",
             "destroy_process_group",
             "get_rank",
-            "get_world_size",
             "init_process_group",
             "new_group",
         ):

@@ -129,6 +129,15 @@ assert torch.serialization.get_default_mmap_options() == getattr(
 )
 assert torch.distributed.is_available() is False
 assert torch.distributed.get_pg_count() == 0
+try:
+    torch.distributed.get_world_size()
+except ValueError as error:
+    assert str(error) == (
+        "Default process group has not been initialized, please make sure to "
+        "call init_process_group."
+    )
+else:
+    raise AssertionError("get_world_size unexpectedly returned")
 assert torch.distributed.is_gloo_available() is False
 assert torch.distributed.is_initialized() is False
 assert torch.distributed.is_mpi_available() is False
@@ -250,7 +259,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `Tensor.is_shared()` returns the exact `False` singleton for every supported CPU tensor, including views, empty tensors, and accumulated gradients, because ordinary and mutex-backed gradient storage are process-local. Shared-memory mutation and storage-object APIs remain unsupported.
 
-`Tensor.is_distributed()` returns the exact `False` singleton for every supported local CPU tensor without inspecting or changing storage, layout, or autograd state. `torch.distributed.is_available()`, `torch.distributed.is_gloo_available()`, `torch.distributed.is_mpi_available()`, `torch.distributed.is_nccl_available()`, `torch.distributed.is_ucc_available()`, and `torch.distributed.is_xccl_available()` are honest package, Gloo, MPI, NCCL, UCC, and XCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state and `torch.distributed.get_pg_count()` reports the exact integer `0`. `torch.distributed.get_node_local_rank(fallback_rank=None)` returns the integer value of `LOCAL_RANK` when present, otherwise converts a supplied fallback to `int`, and raises PyTorch's missing-environment error when neither is available. The capability queries do not probe hardware, environment variables, or PyTorch, and local-rank discovery only reads the process environment. Distributed tensor types, Gloo, MPI, NCCL, UCC, or XCCL initialization and execution, process-group creation, global-rank and world-size access, collectives, and every other distributed API remain unsupported.
+`Tensor.is_distributed()` returns the exact `False` singleton for every supported local CPU tensor without inspecting or changing storage, layout, or autograd state. `torch.distributed.is_available()`, `torch.distributed.is_gloo_available()`, `torch.distributed.is_mpi_available()`, `torch.distributed.is_nccl_available()`, `torch.distributed.is_ucc_available()`, and `torch.distributed.is_xccl_available()` are honest package, Gloo, MPI, NCCL, UCC, and XCCL backend-capability queries, while `torch.distributed.is_initialized()` exposes the stable default process-group state and `torch.distributed.get_pg_count()` reports the exact integer `0`. `torch.distributed.get_world_size(group=None)` raises PyTorch 2.13's exact uninitialized-default-process-group `ValueError`; non-`None` groups are explicitly unsupported. `torch.distributed.get_node_local_rank(fallback_rank=None)` returns the integer value of `LOCAL_RANK` when present, otherwise converts a supplied fallback to `int`, and raises PyTorch's missing-environment error when neither is available. The capability and default process-group queries do not probe hardware, environment variables, or PyTorch, and local-rank discovery only reads the process environment. Distributed tensor types, Gloo, MPI, NCCL, UCC, or XCCL initialization and execution, process-group creation, global-rank and non-default world-size access, collectives, and every other distributed API remain unsupported.
 
 ## Non-negotiable evaluation rules
 

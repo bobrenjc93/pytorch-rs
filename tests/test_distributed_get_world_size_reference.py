@@ -5,6 +5,7 @@ import inspect
 import os
 import pickle
 import pickletools
+import subprocess
 import sys
 import threading
 import types
@@ -21,26 +22,30 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedGetPgCountReferenceTests(unittest.TestCase):
+class DistributedGetWorldSizeReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.get_pg_count differentials require pinned PyTorch 2.13.0"
+                "distributed.get_world_size differentials require pinned "
+                "PyTorch 2.13.0"
             )
 
+    def error_outcome(self, call):
+        try:
+            call()
+        except BaseException as error:
+            return type(error), str(error), error.args
+        return None
+
     def assert_error_matches(self, actual_call, expected_call):
-        with self.assertRaises(Exception) as actual_raised:
-            actual_call()
-        with self.assertRaises(Exception) as expected_raised:
-            expected_call()
-        self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
-        self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
-        self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
+        actual = self.error_outcome(actual_call)
+        expected = self.error_outcome(expected_call)
+        self.assertIsNotNone(actual)
+        self.assertEqual(actual, expected)
 
     def threaded_outcome(self, module):
-        function = module.distributed.get_pg_count
-        baseline = function()
+        function = module.distributed.get_world_size
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         worker_states = [None] * worker_count
@@ -51,14 +56,24 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 context = module.no_grad() if index % 2 else contextlib.nullcontext()
                 with context:
                     barrier.wait(timeout=10)
-                    first = function()
-                    second = function()
+                    outcomes = []
+                    for args, kwargs in (
+                        ((), {}),
+                        ((None,), {}),
+                        ((), {"group": None}),
+                        ((), {}),
+                    ):
+                        outcomes.append(
+                            self.error_outcome(
+                                lambda args=args, kwargs=kwargs: function(
+                                    *args, **kwargs
+                                )
+                            )
+                        )
                     worker_states[index] = (
                         module.is_grad_enabled(),
-                        type(first).__name__,
-                        first,
-                        type(second).__name__,
-                        second,
+                        outcomes,
+                        module.is_grad_enabled(),
                     )
             except BaseException as error:
                 errors.append((type(error).__name__, str(error)))
@@ -74,7 +89,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
 
         self.assertFalse(any(thread.is_alive() for thread in threads))
         self.assertEqual(errors, [])
-        return type(baseline).__name__, baseline, worker_states
+        return worker_states
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -88,14 +103,14 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def test_uninitialized_count_matches_across_environments_and_threads(self):
-        actual = torch.distributed.get_pg_count
-        expected = reference_torch.distributed.get_pg_count
+    def test_default_errors_match_environments_threads_and_grad_modes(self):
+        actual = torch.distributed.get_world_size
+        expected = reference_torch.distributed.get_world_size
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
 
-        self.assertEqual(expected_c10d._world.group_count, 0)
+        self.assertIs(expected_c10d.GroupMember.WORLD, None)
         environments = (
             {},
             {"USE_DISTRIBUTED": "0"},
@@ -105,26 +120,31 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 "MASTER_ADDR": "127.0.0.1",
                 "MASTER_PORT": "29500",
                 "RANK": "0",
-                "WORLD_SIZE": "1",
+                "WORLD_SIZE": "64",
             },
         )
         for environment in environments:
             with self.subTest(environment=environment):
                 with mock.patch.dict(os.environ, environment, clear=True):
-                    actual_result = actual()
-                    expected_result = expected()
-                    self.assertIs(type(actual_result), int)
-                    self.assertIs(type(expected_result), int)
-                    self.assertEqual(actual_result, 0)
-                    self.assertEqual(actual_result, expected_result)
+                    for actual_call, expected_call in (
+                        (lambda: actual(), lambda: expected()),
+                        (lambda: actual(None), lambda: expected(None)),
+                        (
+                            lambda: actual(group=None),
+                            lambda: expected(group=None),
+                        ),
+                    ):
+                        self.assert_error_matches(actual_call, expected_call)
 
         self.assertEqual(
             self.threaded_outcome(torch),
             self.threaded_outcome(reference_torch),
         )
-        self.assertEqual(expected_c10d._world.group_count, 0)
+        self.assertIs(torch.distributed.is_initialized(), False)
+        self.assertIs(reference_torch.distributed.is_initialized(), False)
+        self.assertIs(expected_c10d.GroupMember.WORLD, None)
 
-    def test_signature_annotations_documentation_and_identity_match(self):
+    def test_signature_documentation_and_identity_match(self):
         actual_distributed = importlib.import_module("torch_rs.distributed")
         expected_distributed = importlib.import_module("torch.distributed")
         actual_c10d = importlib.import_module(
@@ -133,22 +153,25 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
-        actual = actual_distributed.get_pg_count
-        expected = expected_distributed.get_pg_count
+        actual = actual_distributed.get_world_size
+        expected = expected_distributed.get_world_size
 
-        self.assertIs(torch.distributed, actual_distributed)
-        self.assertIs(reference_torch.distributed, expected_distributed)
-        self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
-        self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-        self.assertIs(actual_c10d.get_pg_count, actual)
-        self.assertIs(expected_c10d.get_pg_count, expected)
+        self.assertIs(actual_c10d.get_world_size, actual)
+        self.assertIs(expected_c10d.get_world_size, expected)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
-            str(inspect.signature(actual)), str(inspect.signature(expected))
+            str(inspect.signature(actual)).replace("torch_rs", "torch"),
+            str(inspect.signature(expected)),
         )
-        self.assertEqual(actual.__annotations__, expected.__annotations__)
-        self.assertEqual(typing.get_type_hints(actual), typing.get_type_hints(expected))
+        self.assertEqual(
+            str(actual.__annotations__).replace("torch_rs", "torch"),
+            str(expected.__annotations__),
+        )
+        self.assertEqual(
+            str(typing.get_type_hints(actual)).replace("torch_rs", "torch"),
+            str(typing.get_type_hints(expected)),
+        )
         self.assertEqual(actual.__name__, expected.__name__)
         self.assertEqual(actual.__qualname__, expected.__qualname__)
         self.assertEqual(
@@ -165,50 +188,36 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
             hasattr(expected, "__text_signature__"),
         )
 
-    def test_imports_copy_wildcards_and_pickle_match_the_supported_scope(self):
+    def test_imports_copy_wildcards_and_pickle_match(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.get_pg_count
-        expected = expected_distributed.get_pg_count
+        actual = actual_distributed.get_world_size
+        expected = expected_distributed.get_world_size
+        supported = {
+            "get_world_size",
+            "get_pg_count",
+            "is_gloo_available",
+            "is_initialized",
+            "is_mpi_available",
+            "is_nccl_available",
+            "is_ucc_available",
+            "is_xccl_available",
+            "get_node_local_rank",
+        }
 
-        self.assertIs(
-            sys.modules["torch_rs.distributed.distributed_c10d"], actual_c10d
-        )
-        self.assertIs(
-            sys.modules["torch.distributed.distributed_c10d"], expected_c10d
-        )
         self.assertEqual(
             hasattr(actual_distributed, "__all__"),
             hasattr(expected_distributed, "__all__"),
         )
         self.assertEqual(
             actual_c10d.__all__,
-            [
-                name
-                for name in expected_c10d.__all__
-                if name
-                in {
-                    "get_world_size",
-                    "get_pg_count",
-                    "is_gloo_available",
-                    "is_initialized",
-                    "is_mpi_available",
-                    "is_nccl_available",
-                    "is_ucc_available",
-                    "is_xccl_available",
-                    "get_node_local_rank",
-                }
-            ],
+            [name for name in expected_c10d.__all__ if name in supported],
         )
         self.assertEqual(
-            torch.__all__.count("distributed"),
-            reference_torch.__all__.count("distributed"),
-        )
-        self.assertEqual(
-            torch.__all__.count("get_pg_count"),
-            reference_torch.__all__.count("get_pg_count"),
+            torch.__all__.count("get_world_size"),
+            reference_torch.__all__.count("get_world_size"),
         )
 
         for module, function in (
@@ -219,20 +228,12 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["get_pg_count"], function)
-
-        actual_namespace = {}
-        expected_namespace = {}
-        exec("from torch_rs.distributed import *", actual_namespace)
-        exec("from torch.distributed import *", expected_namespace)
-        self.assertIs(actual_namespace["distributed_c10d"], actual_c10d)
-        self.assertIs(expected_namespace["distributed_c10d"], expected_c10d)
+            self.assertIs(namespace["get_world_size"], function)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertNotIn("distributed", namespace)
-            self.assertNotIn("get_pg_count", namespace)
+            self.assertNotIn("get_world_size", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -241,87 +242,95 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
                 self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
-                self.assertIs(pickle.loads(pickle.dumps(expected, protocol)), expected)
+                self.assertIs(
+                    pickle.loads(pickle.dumps(expected, protocol)), expected
+                )
                 self.assertEqual(
                     self.pickle_shape(actual, protocol),
                     self.pickle_shape(expected, protocol),
                 )
 
-    def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.get_pg_count
-        expected = reference_torch.distributed.get_pg_count
+    def test_argument_binding_errors_match_pytorch_2_13(self):
+        actual = torch.distributed.get_world_size
+        expected = reference_torch.distributed.get_world_size
         cases = (
-            (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
             (
-                lambda: actual(None, enabled=True),
-                lambda: expected(None, enabled=True),
+                lambda: actual(enabled=True),
+                lambda: expected(enabled=True),
+            ),
+            (
+                lambda: actual(None, group=None),
+                lambda: expected(None, group=None),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_existing_queries_are_preserved_and_execution_remains_unsupported(self):
+    def test_module_reload_preserves_the_uninitialized_error(self):
+        script = r"""
+import importlib
+import torch
+import torch_rs
+
+def outcome(function):
+    results = []
+    for args, kwargs in (((), {}), ((None,), {}), ((), {"group": None})):
+        try:
+            function(*args, **kwargs)
+        except BaseException as error:
+            results.append((type(error).__name__, str(error), error.args))
+        else:
+            results.append(None)
+    return results
+
+actual_module = importlib.import_module("torch_rs.distributed.distributed_c10d")
+expected_module = importlib.import_module("torch.distributed.distributed_c10d")
+actual_before = actual_module.get_world_size
+expected_before = expected_module.get_world_size
+actual_after = importlib.reload(actual_module).get_world_size
+expected_after = importlib.reload(expected_module).get_world_size
+assert actual_before is not actual_after
+assert expected_before is not expected_after
+assert outcome(actual_before) == outcome(expected_before)
+assert outcome(actual_after) == outcome(expected_after)
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
+    def test_non_none_groups_and_distributed_execution_remain_unsupported(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
+
+        for group in (
+            object(),
+            0,
+            False,
+            expected_c10d.GroupMember.NON_GROUP_MEMBER,
+        ):
+            with self.subTest(group=group):
+                with self.assertRaises(NotImplementedError):
+                    actual_distributed.get_world_size(group)
+
         actual_public = {
             name for name in vars(actual_distributed) if not name.startswith("_")
         }
         expected_public = {
             name for name in vars(expected_distributed) if not name.startswith("_")
         }
-
-        self.assertEqual(
-            actual_public,
-            {
-                "distributed_c10d",
-                "get_world_size",
-                "get_pg_count",
-                "is_available",
-                "is_gloo_available",
-                "is_initialized",
-                "is_mpi_available",
-                "is_nccl_available",
-                "is_ucc_available",
-                "is_xccl_available",
-                "get_node_local_rank",
-            },
-        )
-        self.assertEqual(
-            {
-                name for name in vars(actual_c10d) if not name.startswith("_")
-            },
-            {
-                "get_world_size",
-                "get_pg_count",
-                "is_gloo_available",
-                "is_initialized",
-                "is_mpi_available",
-                "is_nccl_available",
-                "is_ucc_available",
-                "is_xccl_available",
-                "get_node_local_rank",
-            },
-        )
-        for name in (
-            "is_available",
-            "is_gloo_available",
-            "is_initialized",
-            "is_mpi_available",
-            "is_nccl_available",
-            "is_ucc_available",
-            "is_xccl_available",
-        ):
-            with self.subTest(name=name):
-                self.assertIs(getattr(actual_distributed, name)(), False)
-                self.assertIs(
-                    type(getattr(expected_distributed, name)()), bool
-                )
-
+        self.assertIn("get_world_size", actual_public)
         unsupported = expected_public - actual_public
         self.assertTrue(unsupported)
         for name in unsupported:

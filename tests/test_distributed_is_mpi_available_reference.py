@@ -170,6 +170,7 @@ class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
                 for name in expected_c10d.__all__
                 if name
                 in {
+                    "get_world_size",
                     "get_pg_count",
                     "is_gloo_available",
                     "is_initialized",
@@ -258,6 +259,7 @@ class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "get_world_size",
                 "get_pg_count",
                 "is_available",
                 "is_gloo_available",
@@ -274,6 +276,7 @@ class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
             {
+                "get_world_size",
                 "get_pg_count",
                 "is_gloo_available",
                 "is_initialized",
@@ -297,7 +300,6 @@ class DistributedIsMpiAvailableReferenceTests(unittest.TestCase):
             "all_reduce",
             "destroy_process_group",
             "get_rank",
-            "get_world_size",
             "init_process_group",
             "new_group",
         ):
