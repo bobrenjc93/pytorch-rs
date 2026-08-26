@@ -24,6 +24,19 @@ class NumpyFloatSubclass(np.float32):
     pass
 
 
+class SpoofedNumpyFloat:
+    def __init__(self):
+        self.float_calls = 0
+
+    @property
+    def __class__(self):
+        return np.float32
+
+    def __float__(self):
+        self.float_calls += 1
+        return 3.0
+
+
 class ArangeTests(unittest.TestCase):
     def assert_default_tensor(self, tensor, values, *, requires_grad=False):
         self.assertEqual(tuple(tensor.shape), (len(values),))
@@ -562,6 +575,26 @@ class ArangeTests(unittest.TestCase):
                     ):
                         with self.assertRaises(TypeError):
                             call()
+
+    def test_spoofed_numpy_floating_type_is_rejected_without_conversion(self):
+        for dtype in (None, torch.float32, torch.float):
+            options = {} if dtype is None else {"dtype": dtype}
+            for form in ("positional", "keyword"):
+                endpoint = SpoofedNumpyFloat()
+                self.assertTrue(isinstance(endpoint, np.generic))
+                self.assertTrue(isinstance(endpoint, np.floating))
+                position = " (position 1)" if form == "positional" else ""
+                if form == "positional":
+                    call = lambda: torch.arange(endpoint, **options)
+                else:
+                    call = lambda: torch.arange(end=endpoint, **options)
+                with self.subTest(dtype=dtype, form=form):
+                    self.assert_error(
+                        call,
+                        TypeError,
+                        f"arange(): argument 'end'{position} must be an exact Python float, not SpoofedNumpyFloat",
+                    )
+                    self.assertEqual(endpoint.float_calls, 0)
 
     def test_overloads_outputs_and_nondefault_options_remain_unsupported(self):
         overloads = (

@@ -21,6 +21,19 @@ class NumpyFloatSubclass(np.float32):
     pass
 
 
+class SpoofedNumpyFloat:
+    def __init__(self):
+        self.float_calls = 0
+
+    @property
+    def __class__(self):
+        return np.float32
+
+    def __float__(self):
+        self.float_calls += 1
+        return 3.0
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class ArangeReferenceTests(unittest.TestCase):
     @classmethod
@@ -120,6 +133,38 @@ class ArangeReferenceTests(unittest.TestCase):
                                 self.tensor_contract(torch, actual),
                                 self.tensor_contract(reference_torch, expected),
                             )
+
+    def test_spoofed_numpy_floating_type_rejection_matches_pytorch_2_13(self):
+        def outcome(module, endpoint, dtype_name, form):
+            options = (
+                {}
+                if dtype_name is None
+                else {"dtype": getattr(module, dtype_name)}
+            )
+            try:
+                if form == "positional":
+                    module.arange(endpoint, **options)
+                else:
+                    module.arange(end=endpoint, **options)
+            except Exception as error:
+                return type(error).__name__, endpoint.float_calls
+            return "accepted", endpoint.float_calls
+
+        for dtype_name in (None, "float32", "float"):
+            for form in ("positional", "keyword"):
+                actual_endpoint = SpoofedNumpyFloat()
+                expected_endpoint = SpoofedNumpyFloat()
+                self.assertTrue(isinstance(actual_endpoint, np.generic))
+                self.assertTrue(isinstance(actual_endpoint, np.floating))
+                with self.subTest(dtype=dtype_name, form=form):
+                    actual = outcome(
+                        torch, actual_endpoint, dtype_name, form
+                    )
+                    expected = outcome(
+                        reference_torch, expected_endpoint, dtype_name, form
+                    )
+                    self.assertEqual(actual, expected)
+                    self.assertEqual(actual, ("TypeError", 0))
 
     def test_explicit_float32_integer_endpoints_match_pytorch_2_13(self):
         for end in (0, 1, 3, 8):
