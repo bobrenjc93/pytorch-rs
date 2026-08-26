@@ -196,6 +196,7 @@ class CompilerAssumeConstantResultTests(unittest.TestCase):
                 "is_compiling",
                 "is_dynamo_compiling",
                 "is_exporting",
+                "skip_all_guards_unsafe",
             ],
         )
         compiler_namespace = {}
