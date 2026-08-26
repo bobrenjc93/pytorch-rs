@@ -133,7 +133,7 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
         self.assertFalse(hasattr(backends, "__all__"))
         self.assertEqual(
             {name for name in vars(backends) if not name.startswith("_")},
-            {*BACKENDS, "cuda", "cudnn"},
+            {*BACKENDS, "cuda", "cudnn", "mha"},
         )
 
         package_import = {}
@@ -144,7 +144,7 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
         exec("from torch_rs.backends import *", parent_wildcard)
         self.assertEqual(
             {name for name in parent_wildcard if not name.startswith("__")},
-            {*BACKENDS, "cuda", "cudnn"},
+            {*BACKENDS, "cuda", "cudnn", "mha"},
         )
         self.assertNotIn("backends", torch.__all__)
         top_level_wildcard = {}
