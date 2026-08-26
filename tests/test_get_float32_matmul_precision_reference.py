@@ -212,12 +212,13 @@ class GetFloat32MatmulPrecisionReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_reduced_precision_setter_remains_deliberately_unsupported(self):
+    def test_highest_only_setter_is_an_explicit_python_layer_subset(self):
         self.assertTrue(hasattr(reference_torch, "set_float32_matmul_precision"))
         self.assertIn("set_float32_matmul_precision", reference_torch.__all__)
-        self.assertFalse(hasattr(torch, "set_float32_matmul_precision"))
-        self.assertNotIn("set_float32_matmul_precision", torch.__all__)
+        self.assertTrue(hasattr(torch, "set_float32_matmul_precision"))
+        self.assertEqual(torch.__all__.count("set_float32_matmul_precision"), 1)
         self.assertFalse(hasattr(torch._C, "_set_float32_matmul_precision"))
+        self.assertTrue(hasattr(reference_torch._C, "_set_float32_matmul_precision"))
 
 
 if __name__ == "__main__":
