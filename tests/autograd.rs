@@ -1832,6 +1832,149 @@ fn sigmoid_differentiates_owned_rank_two_nonleaves_across_parent_nodes() {
     }
 }
 
+fn assert_rank_three_nonleaf_sigmoid_forward_vjp_and_graph_freeing(
+    case: &str,
+    make_parent: SigmoidParentOperation,
+    weights: &Tensor,
+) {
+    let leaf = Tensor::from_vec(vec![0.25, 0.5, 0.5, 0.25], [2, 1, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let parent = make_parent(&leaf).unwrap();
+    assert!(parent.requires_grad(), "{case}");
+    assert!(!parent.is_leaf(), "{case}");
+    assert_eq!(parent.shape(), [2, 1, 2], "{case}");
+    assert_eq!(parent.stride(), [2, 2, 1], "{case}");
+    assert_eq!(parent.storage_offset(), 0, "{case}");
+    assert!(!parent.shares_storage_with(&leaf), "{case}");
+
+    let expected_output_bits = parent
+        .detach()
+        .unwrap()
+        .sigmoid()
+        .unwrap()
+        .logical_values()
+        .map(f32::to_bits)
+        .collect::<Vec<_>>();
+    let output = parent.sigmoid().unwrap();
+    assert!(output.requires_grad(), "{case}");
+    assert!(!output.is_leaf(), "{case}");
+    assert_eq!(output.shape(), [2, 1, 2], "{case}");
+    assert_eq!(output.stride(), [2, 2, 1], "{case}");
+    assert_eq!(output.storage_offset(), 0, "{case}");
+    assert!(!output.shares_storage_with(&parent), "{case}");
+    assert_eq!(
+        output
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        expected_output_bits,
+        "{case}"
+    );
+
+    let loss = output.mul(weights).unwrap().sum();
+    loss.backward().unwrap();
+    let gradient_before_repeated_backward = values(&leaf.grad().unwrap().unwrap());
+    assert_eq!(
+        loss.backward(),
+        Err(TensorError::BackwardGraphFreed),
+        "{case}"
+    );
+    assert_eq!(
+        values(&leaf.grad().unwrap().unwrap()),
+        gradient_before_repeated_backward,
+        "{case}"
+    );
+}
+
+fn assert_rank_three_nonleaf_sigmoid_accumulation(
+    case: &str,
+    make_parent: SigmoidParentOperation,
+    weights: &Tensor,
+) {
+    let accumulated = Tensor::from_vec(vec![0.25, 0.5, 0.5, 0.25], [2, 1, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    make_parent(&accumulated)
+        .unwrap()
+        .sigmoid()
+        .unwrap()
+        .mul(weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    let first = values(&accumulated.grad().unwrap().unwrap());
+    make_parent(&accumulated)
+        .unwrap()
+        .sigmoid()
+        .unwrap()
+        .mul(weights)
+        .unwrap()
+        .sum()
+        .backward()
+        .unwrap();
+    assert_eq!(
+        accumulated
+            .grad()
+            .unwrap()
+            .unwrap()
+            .logical_values()
+            .map(f32::to_bits)
+            .collect::<Vec<_>>(),
+        first
+            .into_iter()
+            .map(|value| (value + value).to_bits())
+            .collect::<Vec<_>>(),
+        "{case}"
+    );
+}
+
+fn assert_empty_rank_three_nonleaf_sigmoid(case: &str, make_parent: SigmoidParentOperation) {
+    for shape in [[0, 1, 3], [1, 0, 3], [2, 3, 0], [0, 0, 0]] {
+        let empty = Tensor::zeros(shape).unwrap().with_requires_grad(true);
+        let expected_stride = empty.stride().to_vec();
+        let parent = make_parent(&empty).unwrap();
+        assert!(parent.requires_grad(), "{case}: {shape:?}");
+        assert!(!parent.is_leaf(), "{case}: {shape:?}");
+        assert_eq!(parent.shape(), shape, "{case}: {shape:?}");
+        assert_eq!(parent.storage_offset(), 0, "{case}: {shape:?}");
+        assert!(!parent.shares_storage_with(&empty), "{case}: {shape:?}");
+        let output = parent.sigmoid().unwrap();
+        assert!(output.requires_grad(), "{case}: {shape:?}");
+        assert!(!output.is_leaf(), "{case}: {shape:?}");
+        assert_eq!(output.shape(), shape, "{case}: {shape:?}");
+        assert_eq!(output.stride(), expected_stride, "{case}: {shape:?}");
+        assert!(!output.shares_storage_with(&parent), "{case}: {shape:?}");
+        let loss = output.sum();
+        loss.backward().unwrap();
+        let gradient = empty.grad().unwrap().unwrap();
+        assert_eq!(gradient.shape(), shape, "{case}: {shape:?}");
+        assert_eq!(gradient.stride(), expected_stride, "{case}: {shape:?}");
+        assert!(values(&gradient).is_empty(), "{case}: {shape:?}");
+        assert_eq!(
+            loss.backward(),
+            Err(TensorError::BackwardGraphFreed),
+            "{case}: {shape:?}"
+        );
+    }
+}
+
+#[test]
+fn sigmoid_differentiates_owned_rank_three_nonleaves_across_parent_nodes() {
+    let weights = Tensor::from_vec(vec![1.25, -0.75, 0.5, -1.5], [2, 1, 2]).unwrap();
+
+    for (case, make_parent) in sigmoid_parent_operations() {
+        assert_rank_three_nonleaf_sigmoid_forward_vjp_and_graph_freeing(
+            case,
+            make_parent,
+            &weights,
+        );
+        assert_rank_three_nonleaf_sigmoid_accumulation(case, make_parent, &weights);
+        assert_empty_rank_three_nonleaf_sigmoid(case, make_parent);
+    }
+}
+
 #[test]
 fn sigmoid_rejects_nonfinite_owned_inputs_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported {
@@ -1934,7 +2077,7 @@ fn sigmoid_rejects_nonfinite_owned_inputs_before_graph_mutation() {
 }
 
 #[test]
-fn sigmoid_rejects_nonfinite_owned_rank_zero_through_two_nonleaves_before_graph_mutation() {
+fn sigmoid_rejects_nonfinite_owned_rank_zero_through_three_nonleaves_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported {
         operation: "sigmoid",
     };
@@ -1996,11 +2139,27 @@ fn sigmoid_rejects_nonfinite_owned_rank_zero_through_two_nonleaves_before_graph_
             values(&matrix_nonleaf_base.grad().unwrap().unwrap()),
             [1.0, 1.0]
         );
+
+        let rank_three_nonleaf_base = Tensor::from_vec(vec![0.5, 0.25], [1, 1, 2])
+            .unwrap()
+            .with_requires_grad(true);
+        let rank_three_nonleaf = rank_three_nonleaf_base
+            .add_scalar(f32::from_bits(bits))
+            .unwrap();
+        assert!(rank_three_nonleaf.requires_grad());
+        assert!(!rank_three_nonleaf.is_leaf());
+        assert_eq!(rank_three_nonleaf.sigmoid(), Err(unsupported.clone()));
+        assert!(rank_three_nonleaf_base.grad().unwrap().is_none());
+        rank_three_nonleaf.sum().backward().unwrap();
+        assert_eq!(
+            values(&rank_three_nonleaf_base.grad().unwrap().unwrap()),
+            [1.0, 1.0]
+        );
     }
 }
 
 #[test]
-fn sigmoid_rejects_tracked_views_and_rank_three_or_higher_nonleaves_before_graph_mutation() {
+fn sigmoid_rejects_tracked_views_and_rank_four_or_higher_nonleaves_before_graph_mutation() {
     let unsupported = TensorError::AutogradRecordingUnsupported {
         operation: "sigmoid",
     };
@@ -2045,6 +2204,21 @@ fn sigmoid_rejects_tracked_views_and_rank_three_or_higher_nonleaves_before_graph
         [1.0, 1.0, 1.0, 1.0]
     );
 
+    let full_rank_three_view_base = Tensor::from_vec(vec![0.5, -0.5, 1.0, -1.0], [2, 1, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let full_rank_three_view = full_rank_three_view_base.view([2, 1, 2]).unwrap();
+    assert!(full_rank_three_view.requires_grad());
+    assert!(!full_rank_three_view.is_leaf());
+    assert_eq!(full_rank_three_view.shape(), [2, 1, 2]);
+    assert!(full_rank_three_view.shares_storage_with(&full_rank_three_view_base));
+    assert_eq!(full_rank_three_view.sigmoid(), Err(unsupported.clone()));
+    full_rank_three_view.sum().backward().unwrap();
+    assert_eq!(
+        values(&full_rank_three_view_base.grad().unwrap().unwrap()),
+        [1.0, 1.0, 1.0, 1.0]
+    );
+
     let vector_view_base = Tensor::from_vec(vec![0.5, -1.0, 2.0, -3.0], [2, 2])
         .unwrap()
         .with_requires_grad(true);
@@ -2072,23 +2246,6 @@ fn sigmoid_rejects_tracked_views_and_rank_three_or_higher_nonleaves_before_graph
     assert_eq!(
         values(&matrix_view_base.grad().unwrap().unwrap()),
         [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
-    );
-
-    let rank_three_nonleaf_base = Tensor::from_vec(vec![0.5, -0.5], [1, 1, 2])
-        .unwrap()
-        .with_requires_grad(true);
-    let rank_three_nonleaf = rank_three_nonleaf_base.sin().unwrap();
-    assert_eq!(rank_three_nonleaf.sigmoid(), Err(unsupported.clone()));
-    rank_three_nonleaf.sum().backward().unwrap();
-    assert_eq!(
-        rank_three_nonleaf_base
-            .grad()
-            .unwrap()
-            .unwrap()
-            .logical_values()
-            .map(f32::to_bits)
-            .collect::<Vec<_>>(),
-        [0.5_f32.cos().to_bits(), (-0.5_f32).cos().to_bits()]
     );
 
     let no_grad_view = {
