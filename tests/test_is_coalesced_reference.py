@@ -165,6 +165,7 @@ class TensorIsCoalescedReferenceTests(unittest.TestCase):
 import importlib
 import inspect
 import json
+import sys
 
 module = importlib.import_module(MODULE)
 tensor = module.tensor([1.0], dtype=module.float32)
@@ -172,14 +173,15 @@ descriptor = inspect.getattr_static(module.Tensor, "is_coalesced")
 marker = object()
 
 class RecordingMode(module.overrides.TorchFunctionMode):
-    def __init__(self):
+    def __init__(self, result):
+        self.result = result
         self.calls = []
 
     def __torch_function__(self, func, types, args=(), kwargs=None):
         self.calls.append((func, types, args, kwargs))
-        return marker
+        return self.result
 
-recording = RecordingMode()
+recording = RecordingMode(marker)
 with recording:
     intercepted = tensor.is_coalesced()
 function, dispatch_types, args, kwargs = recording.calls[0]
@@ -202,6 +204,18 @@ except Exception as error:
 else:
     forwarded_error = None
 
+sys.setrecursionlimit(80)
+declining = RecordingMode(NotImplemented)
+lower = RecordingMode(marker)
+try:
+    with lower:
+        with declining:
+            tensor.is_coalesced()
+except Exception as error:
+    declining_error = [type(error).__name__, str(error)]
+else:
+    declining_error = None
+
 print(json.dumps({
     "intercepted": intercepted is marker,
     "call_count": len(recording.calls),
@@ -214,6 +228,9 @@ print(json.dumps({
     "kwargs_is_none": kwargs is None,
     "forwarding_order": order,
     "forwarded_error": forwarded_error,
+    "declining_error": declining_error,
+    "declining_calls": len(declining.calls),
+    "lower_skipped": len(lower.calls) == 0,
     "stack_depth": len(module.overrides._get_current_function_mode_stack()),
 }, sort_keys=True))
 '''
@@ -230,6 +247,120 @@ print(json.dumps({
             self.mode_dispatch_observation("torch_rs"),
             self.mode_dispatch_observation("torch"),
         )
+
+    def legacy_descriptor_mode_boundary_observation(self, module_name):
+        source = r'''
+import importlib
+import json
+import sys
+
+module = importlib.import_module(MODULE)
+tensor = module.tensor([1.0], dtype=module.float32)
+sys.setrecursionlimit(80)
+
+def make_mode(target_resolution):
+    marker = object()
+    calls = []
+
+    class CallableHandler:
+        def __init__(self, receiver, resolution):
+            self.__self__ = receiver
+            self.resolution = resolution
+
+        def __call__(self, func, types, args=(), kwargs=None):
+            calls.append(self.resolution)
+            if self.resolution == target_resolution:
+                return marker
+            return NotImplemented
+
+    class StatefulModeDescriptor:
+        def __init__(self):
+            self.lookups = 0
+
+        def __get__(self, instance, owner):
+            self.lookups += 1
+            return CallableHandler(instance, self.lookups)
+
+    descriptor = StatefulModeDescriptor()
+
+    class Mode(module.overrides.TorchFunctionMode):
+        __torch_function__ = descriptor
+
+    return marker, calls, descriptor, Mode
+
+direct_marker, direct_calls, direct_descriptor, DirectMode = make_mode(76)
+try:
+    with DirectMode():
+        direct_result = tensor.is_coalesced()
+except Exception as error:
+    direct_outcome = ["error", type(error).__name__, str(error)]
+else:
+    direct_outcome = ["result", direct_result is direct_marker]
+
+def observe(wrapper_depth, target_resolution):
+    marker, calls, descriptor, Mode = make_mode(target_resolution)
+
+    def invoke(remaining):
+        if remaining:
+            return invoke(remaining - 1)
+        return tensor.is_coalesced()
+
+    try:
+        with Mode():
+            result = invoke(wrapper_depth)
+    except Exception as error:
+        outcome = ["error", type(error).__name__, str(error)]
+    else:
+        outcome = ["result", result is marker]
+    return [
+        wrapper_depth,
+        target_resolution,
+        descriptor.lookups,
+        calls,
+        outcome,
+    ]
+
+print(json.dumps({
+    "direct": [direct_descriptor.lookups, direct_calls, direct_outcome],
+    "nested": [
+        observe(wrapper_depth, target_resolution)
+        for wrapper_depth in range(5)
+        for target_resolution in range(68, 81)
+    ],
+    "stack_depth": len(module.overrides._get_current_function_mode_stack()),
+}, sort_keys=True))
+'''
+        result = subprocess.run(
+            [sys.executable, "-c", f"MODULE = {module_name!r}\n" + source],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    @unittest.skipUnless(
+        sys.version_info < (3, 12),
+        "legacy CPython mode recursion accounting only applies before 3.12",
+    )
+    def test_legacy_declining_and_stateful_mode_boundary_matches_pytorch_2_13(
+        self,
+    ):
+        actual = self.legacy_descriptor_mode_boundary_observation("torch_rs")
+        expected = self.legacy_descriptor_mode_boundary_observation("torch")
+        self.assertEqual(actual, expected)
+        self.assertTrue(
+            any(
+                observation[-1][0:2] == ["error", "RecursionError"]
+                for observation in actual["nested"]
+            )
+        )
+        self.assertTrue(
+            any(
+                observation[-1] == ["result", True]
+                for observation in actual["nested"]
+            )
+        )
+        self.assertEqual(actual["stack_depth"], 0)
 
     def test_reference_sparse_coo_behavior_bounds_unsupported_surface(self):
         for name in ("sparse_coo_tensor", "sparse_coo"):

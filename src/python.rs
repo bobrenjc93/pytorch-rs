@@ -2510,6 +2510,7 @@ fn dispatch_tensorbase_mode(
                     | "exp"
                     | "fix"
                     | "floor"
+                    | "is_coalesced"
                     | "reciprocal"
                     | "sigmoid"
                     | "sin"
