@@ -6625,6 +6625,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1042",
+      "recordedAt": "2026-08-26T12:01:03.984Z",
+      "label": "PR #1042",
+      "kind": "leaf",
+      "prNumber": 1042,
+      "title": "Expose CPU-build torch.accelerator.current_device_index",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 94.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 77.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
