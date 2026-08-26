@@ -9,7 +9,7 @@ except ImportError:
     reference_torch = None
 
 
-CAPABILITY_NAMES = ("has_openmp", "has_mkl", "has_lapack")
+CAPABILITY_NAMES = ("has_openmp", "has_mkl", "has_lapack", "has_spectral")
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")

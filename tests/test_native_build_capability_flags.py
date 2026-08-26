@@ -8,14 +8,19 @@ from unittest import mock
 import torch_rs as torch
 
 
-CAPABILITY_NAMES = ("has_openmp", "has_mkl", "has_lapack")
+CAPABILITY_NAMES = ("has_openmp", "has_mkl", "has_lapack", "has_spectral")
 
 
 class NativeBuildCapabilityFlagsTests(unittest.TestCase):
     def test_current_cargo_build_reports_exact_false_singletons(self):
         environments = (
             {},
-            {"USE_OPENMP": "1", "USE_MKL": "1", "USE_LAPACK": "1"},
+            {
+                "USE_OPENMP": "1",
+                "USE_MKL": "1",
+                "USE_LAPACK": "1",
+                "USE_SPECTRAL": "1",
+            },
             {"OMP_NUM_THREADS": "64", "MKL_NUM_THREADS": "64"},
         )
         for environment in environments:
@@ -54,6 +59,16 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
                 exec(f"from torch_rs._C import {name}", explicit_native)
                 self.assertIs(explicit_package[name], value)
                 self.assertIs(explicit_native[name], value)
+
+    def test_spectral_operations_remain_unsupported(self):
+        for name in ("fft", "stft", "istft", "spectral"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(torch, name))
+
+        for module_name in ("torch_rs.fft", "torch_rs.spectral"):
+            with self.subTest(module=module_name):
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module(module_name)
 
     def test_reload_preserves_flags_tensor_type_and_matmul(self):
         package = torch
@@ -142,6 +157,7 @@ class NativeBuildCapabilityFlagsTests(unittest.TestCase):
 
     def test_import_does_not_probe_external_runtimes_or_import_pytorch(self):
         script = r'''
+import importlib
 import os
 import sys
 
@@ -158,14 +174,32 @@ os.environ.update(
     USE_OPENMP="1",
     USE_MKL="1",
     USE_LAPACK="1",
+    USE_SPECTRAL="1",
     OMP_NUM_THREADS="64",
     MKL_NUM_THREADS="64",
 )
 import torch_rs as torch
 
-for name in ("has_openmp", "has_mkl", "has_lapack"):
-    assert getattr(torch, name) is False
-    assert getattr(torch._C, name) is False
+package_wildcard = {}
+native_wildcard = {}
+exec("from torch_rs import *", package_wildcard)
+exec("from torch_rs._C import *", native_wildcard)
+for name in ("has_openmp", "has_mkl", "has_lapack", "has_spectral"):
+    package_value = getattr(torch, name)
+    native_value = getattr(torch._C, name)
+    assert package_value is native_value is False
+    assert package_wildcard[name] is package_value
+    assert native_wildcard[name] is native_value
+package = torch
+native = torch._C
+assert importlib.reload(package) is package
+assert torch.has_spectral is torch._C.has_spectral is False
+assert importlib.reload(native) is native
+assert torch.has_spectral is torch._C.has_spectral is False
+assert not hasattr(torch, "fft")
+assert not hasattr(torch, "stft")
+assert not hasattr(torch, "istft")
+assert not hasattr(torch, "spectral")
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules

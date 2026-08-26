@@ -6641,6 +6641,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1045",
+      "recordedAt": "2026-08-26T12:51:42.682Z",
+      "label": "PR #1045",
+      "kind": "leaf",
+      "prNumber": 1045,
+      "title": "Expose native torch.has_spectral capability metadata",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 94.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 77.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }

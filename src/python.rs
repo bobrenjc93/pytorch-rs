@@ -48,12 +48,13 @@ static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
 // tensor runtime to infer capabilities.
-const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 5] = [
+const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 6] = [
     ("_has_cudnn", false),
     ("_has_cuda", false),
     ("has_openmp", false),
     ("has_mkl", false),
     ("has_lapack", false),
+    ("has_spectral", false),
 ];
 
 const IS_TENSOR_SOURCE: &CStr = cr#"
