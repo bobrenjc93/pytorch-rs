@@ -6769,6 +6769,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1070",
+      "recordedAt": "2026-08-26T20:00:45.842Z",
+      "label": "PR #1070",
+      "kind": "leaf",
+      "prNumber": 1070,
+      "title": "Add CPU-build torch.accelerator.memory_reserved",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 95.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 78.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
