@@ -2,6 +2,7 @@
 
 import operator as _operator
 from collections.abc import Sequence as _Sequence
+from itertools import islice as _islice
 from typing import Union as _Union
 
 from .. import _C as _C
@@ -64,21 +65,23 @@ def _require_supported_leaf_roots(roots):
 def _normalize_roots(tensors):
     if type(tensors) is _Tensor:
         return (tensors,)
-    if type(tensors) is tuple or type(tensors) is list:
-        root_count = len(tensors)
+    if isinstance(tensors, _Sequence) and not isinstance(
+        tensors, (str, bytes, bytearray)
+    ):
+        roots = tuple(_islice(tensors, _MAX_BACKWARD_LEAF_ROOTS + 1))
+        root_count = len(roots)
         if root_count == 0:
             return ()
-        if root_count == 1 and type(tensors[0]) is _Tensor:
-            return (tensors[0],)
+        if root_count == 1 and type(roots[0]) is _Tensor:
+            return roots
         if 2 <= root_count <= _MAX_BACKWARD_LEAF_ROOTS and all(
-            type(root) is _Tensor for root in tensors
+            type(root) is _Tensor for root in roots
         ):
-            roots = tuple(tensors)
             _require_supported_leaf_roots(roots)
             return roots
     raise TypeError(
         "torch_rs.autograd.backward only supports an exact native Tensor, "
-        "directly or in an exact tuple or list containing at most ten "
+        "directly or in a non-string Sequence containing at most ten "
         "exact native Tensors"
     )
 

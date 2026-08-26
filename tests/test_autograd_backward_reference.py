@@ -4,6 +4,7 @@ import inspect
 import pickle
 import types
 import unittest
+from collections.abc import Sequence
 
 import numpy as np
 import torch_rs as torch
@@ -12,6 +13,35 @@ try:
     import torch as reference_torch
 except ImportError:
     reference_torch = None
+
+
+class CustomSequence(Sequence):
+    def __init__(self, values):
+        self.values = values
+
+    def __getitem__(self, index):
+        return self.values[index]
+
+    def __len__(self):
+        return len(self.values)
+
+
+class MaterializationCountingSequence(CustomSequence):
+    def __init__(self, values):
+        super().__init__(values)
+        self.materializations = 0
+
+    def __iter__(self):
+        self.materializations += 1
+        return iter(self.values)
+
+
+class ListSubclass(list):
+    pass
+
+
+class TupleSubclass(tuple):
+    pass
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -43,6 +73,85 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
         if sequence_type is None:
             return None
         return sequence_type((None,))
+
+    @staticmethod
+    def custom_root_outcome(module, sequence_type, root_count, form):
+        leaves = tuple(
+            module.tensor([float(index)], requires_grad=True)
+            for index in range(root_count)
+        )
+        roots = sequence_type(leaves)
+        gradients = (None,) * root_count
+        if form == "omitted":
+            result = module.autograd.backward(roots)
+        elif form == "explicit None":
+            result = module.autograd.backward(roots, grad_tensors=None)
+        elif form == "tuple grad_tensors":
+            result = module.autograd.backward(
+                roots, grad_tensors=tuple(gradients)
+            )
+        elif form == "list grad_tensors":
+            result = module.autograd.backward(
+                roots, grad_tensors=list(gradients)
+            )
+        elif form == "tuple singleton None":
+            result = module.autograd.backward(roots, grad_tensors=(None,))
+        elif form == "list singleton None":
+            result = module.autograd.backward(roots, grad_tensors=[None])
+        else:
+            raise AssertionError(f"unknown form: {form}")
+        return result, tuple(
+            np.asarray(root.grad).copy() for root in leaves
+        )
+
+    @staticmethod
+    def custom_duplicate_outcome(module, sequence_type, grad_sequence_type):
+        duplicate = module.tensor([1.0], requires_grad=True)
+        distinct = module.tensor([[2.0]], requires_grad=True)
+        (duplicate * 16_777_216.0).backward()
+        duplicate_gradient = duplicate.grad
+        roots = sequence_type(
+            (duplicate, distinct, duplicate, duplicate)
+        )
+        grad_tensors = (
+            None
+            if grad_sequence_type is None
+            else grad_sequence_type((None,) * 4)
+        )
+
+        first_result = module.autograd.backward(
+            roots, grad_tensors=grad_tensors
+        )
+        distinct_gradient = distinct.grad
+        first = (
+            duplicate.grad is duplicate_gradient,
+            np.asarray(duplicate.grad).copy(),
+            np.asarray(distinct.grad).copy(),
+        )
+        second_result = module.autograd.backward(
+            roots, grad_tensors=grad_tensors
+        )
+        second = (
+            duplicate.grad is duplicate_gradient,
+            distinct.grad is distinct_gradient,
+            np.asarray(duplicate.grad).copy(),
+            np.asarray(distinct.grad).copy(),
+        )
+        return first_result, first, second_result, second
+
+    @staticmethod
+    def materialization_outcome(module, root_count):
+        leaves = tuple(
+            module.tensor([float(index)], requires_grad=True)
+            for index in range(root_count)
+        )
+        roots = MaterializationCountingSequence(leaves)
+        result = module.autograd.backward(roots)
+        return (
+            result,
+            roots.materializations,
+            tuple(np.asarray(root.grad).copy() for root in leaves),
+        )
 
     def supported_outcome(self, module, form, sequence_type):
         leaf = module.tensor([2.0, -3.0], requires_grad=True)
@@ -1116,7 +1225,14 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
         )
 
     def test_single_root_default_calls_match_pytorch_2_13(self):
-        for sequence_type in (None, tuple, list):
+        for sequence_type in (
+            None,
+            tuple,
+            list,
+            TupleSubclass,
+            ListSubclass,
+            CustomSequence,
+        ):
             for form in (
                 "positional",
                 "keyword",
@@ -1135,6 +1251,104 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                     )
                     self.assertIsNone(actual_result)
                     self.assertIsNone(expected_result)
+                    np.testing.assert_array_equal(
+                        actual_gradient, expected_gradient
+                    )
+
+    def test_custom_root_sequences_match_pytorch_2_13(self):
+        sequence_types = (TupleSubclass, ListSubclass, CustomSequence)
+        default_forms = (
+            "omitted",
+            "explicit None",
+            "tuple grad_tensors",
+            "list grad_tensors",
+        )
+        for sequence_type in sequence_types:
+            for root_count in range(11):
+                forms = default_forms
+                if root_count == 0:
+                    forms += (
+                        "tuple singleton None",
+                        "list singleton None",
+                    )
+                for form in forms:
+                    with self.subTest(
+                        sequence_type=sequence_type,
+                        root_count=root_count,
+                        form=form,
+                    ):
+                        actual_result, actual_gradients = (
+                            self.custom_root_outcome(
+                                torch, sequence_type, root_count, form
+                            )
+                        )
+                        expected_result, expected_gradients = (
+                            self.custom_root_outcome(
+                                reference_torch,
+                                sequence_type,
+                                root_count,
+                                form,
+                            )
+                        )
+                        self.assertIsNone(actual_result)
+                        self.assertIsNone(expected_result)
+                        for actual, expected in zip(
+                            actual_gradients, expected_gradients
+                        ):
+                            np.testing.assert_array_equal(actual, expected)
+
+    def test_custom_sequence_duplicate_accumulation_matches_pytorch_2_13(self):
+        for sequence_type in (
+            TupleSubclass,
+            ListSubclass,
+            CustomSequence,
+        ):
+            for grad_sequence_type in (None, tuple, list):
+                with self.subTest(
+                    sequence_type=sequence_type,
+                    grad_sequence_type=grad_sequence_type,
+                ):
+                    actual = self.custom_duplicate_outcome(
+                        torch, sequence_type, grad_sequence_type
+                    )
+                    expected = self.custom_duplicate_outcome(
+                        reference_torch,
+                        sequence_type,
+                        grad_sequence_type,
+                    )
+                    self.assertIsNone(actual[0])
+                    self.assertIsNone(expected[0])
+                    self.assertEqual(actual[1][0], expected[1][0])
+                    np.testing.assert_array_equal(
+                        actual[1][1], expected[1][1]
+                    )
+                    np.testing.assert_array_equal(
+                        actual[1][2], expected[1][2]
+                    )
+                    self.assertIsNone(actual[2])
+                    self.assertIsNone(expected[2])
+                    self.assertEqual(actual[3][:2], expected[3][:2])
+                    np.testing.assert_array_equal(
+                        actual[3][2], expected[3][2]
+                    )
+                    np.testing.assert_array_equal(
+                        actual[3][3], expected[3][3]
+                    )
+
+    def test_custom_sequence_materialization_matches_pytorch_2_13(self):
+        for root_count in (0, 1, 10):
+            with self.subTest(root_count=root_count):
+                actual = self.materialization_outcome(torch, root_count)
+                expected = self.materialization_outcome(
+                    reference_torch, root_count
+                )
+                self.assertIsNone(actual[0])
+                self.assertIsNone(expected[0])
+                self.assertEqual(actual[1], expected[1])
+                self.assertEqual(actual[1], 1)
+                for actual_gradient, expected_gradient in zip(
+                    actual[2], expected[2]
+                ):
                     np.testing.assert_array_equal(
                         actual_gradient, expected_gradient
                     )
