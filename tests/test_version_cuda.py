@@ -22,7 +22,9 @@ class VersionCudaTests(unittest.TestCase):
         )
         self.assertIs(type(version.__version__), str)
         self.assertIs(torch._C._has_cuda, False)
-        self.assertIs(version.cuda, None)
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            with self.subTest(name=name):
+                self.assertIs(getattr(version, name), None)
 
         environments = (
             {},
@@ -38,7 +40,8 @@ class VersionCudaTests(unittest.TestCase):
             with self.subTest(environment=environment):
                 with mock.patch.dict(os.environ, environment, clear=True):
                     self.assertIs(torch._C._has_cuda, False)
-                    self.assertIs(version.cuda, None)
+                    for name in ("cuda", "hip", "rocm", "xpu"):
+                        self.assertIs(getattr(version, name), None)
 
     def test_module_identity_and_supported_metadata_match_pytorch_shape(self):
         version = importlib.import_module("torch_rs.version")
@@ -49,14 +52,29 @@ class VersionCudaTests(unittest.TestCase):
         self.assertEqual(version.__name__, "torch_rs.version")
         self.assertEqual(version.__package__, "torch_rs")
         self.assertIsNone(version.__doc__)
-        self.assertEqual(version.__all__, ["__version__", "cuda"])
-        self.assertEqual(version.__annotations__, {"cuda": typing.Optional[str]})
+        self.assertEqual(
+            version.__all__,
+            ["__version__", "cuda", "hip", "rocm", "xpu"],
+        )
+        self.assertEqual(
+            version.__annotations__,
+            {
+                "cuda": typing.Optional[str],
+                "hip": typing.Optional[str],
+                "rocm": typing.Optional[str],
+                "xpu": typing.Optional[str],
+            },
+        )
+        self.assertEqual(
+            list(version.__annotations__),
+            ["cuda", "hip", "rocm", "xpu"],
+        )
         self.assertIs(version.Optional, typing.Optional)
         self.assertEqual(
             {name for name in vars(version) if not name.startswith("_")},
-            {"Optional", "cuda"},
+            {"Optional", "cuda", "hip", "rocm", "xpu"},
         )
-        for name in ("debug", "git_version", "hip", "rocm", "xpu"):
+        for name in ("debug", "git_version"):
             with self.subTest(unsupported=name):
                 self.assertFalse(hasattr(version, name))
 
@@ -70,34 +88,42 @@ class VersionCudaTests(unittest.TestCase):
         top_level_wildcard = {}
         exec("from torch_rs import version", package_import)
         exec("import torch_rs.version as version", module_import)
-        exec("from torch_rs.version import __version__, cuda", direct_import)
+        exec(
+            "from torch_rs.version import __version__, cuda, hip, rocm, xpu",
+            direct_import,
+        )
         exec("from torch_rs.version import *", child_wildcard)
         exec("from torch_rs import *", top_level_wildcard)
 
         self.assertIs(package_import["version"], version)
         self.assertIs(module_import["version"], version)
         self.assertIs(direct_import["__version__"], version.__version__)
-        self.assertIs(direct_import["cuda"], version.cuda)
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            self.assertIs(direct_import[name], getattr(version, name))
         self.assertEqual(
-            {name for name in child_wildcard if name != "__builtins__"},
-            {"__version__", "cuda"},
+            [name for name in child_wildcard if name != "__builtins__"],
+            ["__version__", "cuda", "hip", "rocm", "xpu"],
         )
         self.assertIs(child_wildcard["__version__"], version.__version__)
-        self.assertIs(child_wildcard["cuda"], version.cuda)
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            self.assertIs(child_wildcard[name], getattr(version, name))
         self.assertNotIn("version", torch.__all__)
         self.assertNotIn("__version__", torch.__all__)
-        self.assertNotIn("cuda", torch.__all__)
         self.assertNotIn("version", top_level_wildcard)
         self.assertNotIn("__version__", top_level_wildcard)
-        self.assertNotIn("cuda", top_level_wildcard)
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            self.assertNotIn(name, torch.__all__)
+            self.assertNotIn(name, top_level_wildcard)
 
     def test_reload_preserves_canonical_identity_and_restores_metadata(self):
         version = torch.version
         namespace = version.__dict__
         old_all = version.__all__
+        old_annotations = version.__annotations__
         expected_package_version = torch.__version__
         version.__version__ = "stale"
-        version.cuda = "stale"
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            setattr(version, name, "stale")
 
         reloaded = importlib.reload(version)
 
@@ -106,17 +132,35 @@ class VersionCudaTests(unittest.TestCase):
         self.assertIs(torch.version, version)
         self.assertIs(sys.modules["torch_rs.version"], version)
         self.assertIsNot(version.__all__, old_all)
-        self.assertEqual(version.__all__, ["__version__", "cuda"])
+        self.assertIs(version.__annotations__, old_annotations)
+        self.assertEqual(
+            version.__all__,
+            ["__version__", "cuda", "hip", "rocm", "xpu"],
+        )
+        self.assertEqual(
+            list(version.__annotations__),
+            ["cuda", "hip", "rocm", "xpu"],
+        )
         self.assertIs(version.__version__, expected_package_version)
-        self.assertIs(version.cuda, None)
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            self.assertIs(getattr(version, name), None)
 
-    def test_import_does_not_import_pytorch_or_probe_external_cuda_runtimes(self):
-        script = r'''
+    def test_import_does_not_import_pytorch_or_probe_accelerator_runtimes(self):
+        script = r"""
 import os
 import sys
 
 class RejectExternalRuntimeImport:
-    blocked = {"cupy", "nvidia", "numpy", "pynvml", "torch"}
+    blocked = {
+        "amdsmi",
+        "cupy",
+        "intel_extension_for_pytorch",
+        "nvidia",
+        "numpy",
+        "pyamdgpuinfo",
+        "pynvml",
+        "torch",
+    }
 
     def find_spec(self, fullname, path=None, target=None):
         if fullname.split(".", 1)[0] in self.blocked:
@@ -132,19 +176,22 @@ os.environ.update(
 import torch_rs as torch
 import torch_rs.version as version
 from torch_rs import version as package_version
-from torch_rs.version import __version__, cuda
+from torch_rs.version import __version__, cuda, hip, rocm, xpu
 
 assert version is package_version is torch.version
 assert version is sys.modules["torch_rs.version"]
 assert __version__ == version.__version__ == torch.__version__
 assert torch._C._has_cuda is False
 assert cuda is version.cuda is None
+assert hip is version.hip is None
+assert rocm is version.rocm is None
+assert xpu is version.xpu is None
 assert not hasattr(torch, "cuda")
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules
 )
-'''
+"""
         completed = subprocess.run(
             [sys.executable, "-c", script],
             check=False,
