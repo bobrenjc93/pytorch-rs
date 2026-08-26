@@ -164,14 +164,11 @@ class GetDeterministicDebugModeTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_deterministic_setters_remain_unsupported(self):
-        for name in (
-            "use_deterministic_algorithms",
-            "set_deterministic_debug_mode",
-        ):
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(torch, name))
-                self.assertNotIn(name, torch.__all__)
+    def test_default_only_debug_mode_setter_is_exposed(self):
+        self.assertFalse(hasattr(torch, "use_deterministic_algorithms"))
+        self.assertNotIn("use_deterministic_algorithms", torch.__all__)
+        self.assertTrue(hasattr(torch, "set_deterministic_debug_mode"))
+        self.assertEqual(torch.__all__.count("set_deterministic_debug_mode"), 1)
 
     def test_importing_and_calling_does_not_import_pytorch(self):
         script = r"""
@@ -190,7 +187,8 @@ result = torch.get_deterministic_debug_mode()
 assert type(result) is int
 assert result == 0
 assert not hasattr(torch, "use_deterministic_algorithms")
-assert not hasattr(torch, "set_deterministic_debug_mode")
+assert torch.set_deterministic_debug_mode("default") is None
+assert torch.get_deterministic_debug_mode() == 0
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

@@ -50,6 +50,71 @@ def get_deterministic_debug_mode() -> _builtins.int:
     return 0
 
 
+def set_deterministic_debug_mode(debug_mode: _builtins.int | str) -> None:
+    r"""Sets the debug mode for deterministic operations.
+
+    .. note:: This is an alternative interface for
+        :func:`torch.use_deterministic_algorithms`. Refer to that function's
+        documentation for details about affected operations.
+
+    Args:
+        debug_mode(str or int): If "default" or 0, don't error or warn on
+            nondeterministic operations. If "warn" or 1, warn on
+            nondeterministic operations. If "error" or 2, error on
+            nondeterministic operations.
+    """
+    if not _builtins.isinstance(
+        debug_mode,
+        (_builtins.int, _builtins.str),
+    ):
+        debug_mode_type = _builtins.type(debug_mode)
+        if debug_mode_type is Tensor:
+            type_name = "<class 'torch.Tensor'>"
+        elif debug_mode_type is dtype:
+            type_name = "<class 'torch.dtype'>"
+        elif debug_mode_type is device:
+            type_name = "<class 'torch.device'>"
+        elif debug_mode_type is memory_format:
+            type_name = "<class 'torch.memory_format'>"
+        elif debug_mode_type is layout:
+            type_name = "<class 'torch.layout'>"
+        elif debug_mode_type is Size:
+            type_name = "<class 'torch.Size'>"
+        elif debug_mode_type is finfo:
+            type_name = "<class 'torch.finfo'>"
+        else:
+            type_name = _builtins.str(debug_mode_type)
+        raise TypeError(
+            f"debug_mode must be str or int, but got {type_name}"
+        )
+
+    requested_mode = debug_mode
+    if _builtins.isinstance(debug_mode, _builtins.str):
+        if debug_mode == "default":
+            debug_mode = 0
+        elif debug_mode == "warn":
+            debug_mode = 1
+        elif debug_mode == "error":
+            debug_mode = 2
+        else:
+            raise RuntimeError(
+                "invalid value of debug_mode, expected one of `default`, "
+                f"`warn`, `error`, but got {debug_mode}"
+            )
+
+    if debug_mode == 0:
+        return None
+    if debug_mode == 1 or debug_mode == 2:
+        raise NotImplementedError(
+            "set_deterministic_debug_mode(): debug_mode "
+            f"{requested_mode!r} is not supported; only 0, False, and "
+            "'default' are implemented"
+        )
+    raise RuntimeError(
+        f"invalid value of debug_mode, expected 0, 1, or 2, but got {debug_mode}"
+    )
+
+
 def is_deterministic_algorithms_warn_only_enabled() -> _builtins.bool:
     r"""Returns True if the global deterministic flag is set to warn only.
     Refer to :func:`torch.use_deterministic_algorithms` documentation for more
@@ -347,6 +412,7 @@ __all__ = [
     *(name for name in _native.__all__ if name != "__version__"),
     "are_deterministic_algorithms_enabled",
     "get_deterministic_debug_mode",
+    "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
     "get_default_device",
     "get_device_module",
