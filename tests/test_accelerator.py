@@ -97,6 +97,18 @@ FUNCTION_DOCS = {
     Returns:
         int: the current memory occupied by live tensors (in bytes) within the current process.
     """,
+    "memory_reserved": """Return the current :ref:`accelerator<accelerators>` device memory managed by the caching allocator
+    in bytes for a given device index.
+
+    Args:
+        device_index (:class:`torch.device`, str, int, optional): the index of the device to target.
+            If not given, use :func:`torch.accelerator.current_device_index` by default.
+            If a :class:`torch.device` or str is provided, its type must match the current
+            :ref:`accelerator<accelerators>` device type.
+
+    Returns:
+        int: the current memory reserved by PyTorch (in bytes) within the current process.
+    """,
     "memory_stats": """Return a dictionary of accelerator device memory allocator statistics for a given device index.
 
     The return value of this function is a dictionary of statistics, each of
@@ -197,6 +209,8 @@ class AcceleratorTests(unittest.TestCase):
             self.assertIs(accelerator.empty_cache(), None)
             self.assertIs(type(accelerator.memory_allocated()), int)
             self.assertEqual(accelerator.memory_allocated(), 0)
+            self.assertIs(type(accelerator.memory_reserved()), int)
+            self.assertEqual(accelerator.memory_reserved(), 0)
             self.assertEqual(accelerator.memory_stats(), OrderedDict())
             self.assertIs(accelerator.is_available(), False)
             count = accelerator.device_count()
@@ -218,6 +232,10 @@ class AcceleratorTests(unittest.TestCase):
         self.assertEqual(accelerator.empty_cache.__code__.co_names, ())
         self.assertEqual(
             accelerator.memory_allocated.__code__.co_names,
+            ("memory_stats", "get"),
+        )
+        self.assertEqual(
+            accelerator.memory_reserved.__code__.co_names,
             ("memory_stats", "get"),
         )
         self.assertEqual(accelerator.memory_stats.__code__.co_names, ("_OrderedDict",))
@@ -250,6 +268,7 @@ class AcceleratorTests(unittest.TestCase):
                         )
                         self.assertIs(accelerator.empty_cache(), None)
                         self.assertEqual(accelerator.memory_allocated(), 0)
+                        self.assertEqual(accelerator.memory_reserved(), 0)
                         self.assertEqual(accelerator.memory_stats(), OrderedDict())
                         self.assertIs(accelerator.is_available(), False)
                         self.assertEqual(accelerator.device_count(), 0)
@@ -319,6 +338,8 @@ class AcceleratorTests(unittest.TestCase):
                 accelerator.memory_allocated(token) for token in tokens
             )
             allocated += tuple(accelerator.memory_allocated() for _ in range(8))
+            reserved = tuple(accelerator.memory_reserved(token) for token in tokens)
+            reserved += tuple(accelerator.memory_reserved() for _ in range(8))
 
         self.assertTrue(all(type(result) is OrderedDict for result in results))
         self.assertTrue(all(result == OrderedDict() for result in results))
@@ -328,15 +349,23 @@ class AcceleratorTests(unittest.TestCase):
         self.assertTrue(all(not result for result in results[1:]))
         self.assertEqual(allocated, (0,) * len(allocated))
         self.assertTrue(all(type(result) is int for result in allocated))
+        self.assertEqual(reserved, (0,) * len(reserved))
+        self.assertTrue(all(type(result) is int for result in reserved))
 
         sentinel = object()
         with mock.patch.object(
             accelerator.memory,
             "memory_stats",
-            return_value=OrderedDict((("allocated_bytes.all.current", 37),)),
+            return_value=OrderedDict(
+                (
+                    ("allocated_bytes.all.current", 37),
+                    ("reserved_bytes.all.current", 53),
+                )
+            ),
         ) as memory_stats:
             self.assertEqual(accelerator.memory_allocated(sentinel), 37)
-        memory_stats.assert_called_once_with(sentinel)
+            self.assertEqual(accelerator.memory_reserved(sentinel), 53)
+        self.assertEqual(memory_stats.call_args_list, [mock.call(sentinel)] * 2)
 
     def test_signature_annotations_documentation_and_module_identity(self):
         accelerator = importlib.import_module("torch_rs.accelerator")
@@ -357,6 +386,17 @@ class AcceleratorTests(unittest.TestCase):
             "is_available": inspect.Signature(return_annotation=bool),
             "device_count": inspect.Signature(return_annotation=int),
             "memory_allocated": inspect.Signature(
+                parameters=(
+                    inspect.Parameter(
+                        "device_index",
+                        inspect.Parameter.POSITIONAL_ONLY,
+                        default=None,
+                        annotation=torch.device | str | int | None,
+                    ),
+                ),
+                return_annotation=int,
+            ),
+            "memory_reserved": inspect.Signature(
                 parameters=(
                     inspect.Parameter(
                         "device_index",
@@ -392,6 +432,10 @@ class AcceleratorTests(unittest.TestCase):
                 "device_index": torch.device | str | int | None,
                 "return": int,
             },
+            "memory_reserved": {
+                "device_index": torch.device | str | int | None,
+                "return": int,
+            },
             "memory_stats": {
                 "device_index": torch.device | str | int | None,
                 "return": OrderedDict[str, typing.Any],
@@ -412,6 +456,7 @@ class AcceleratorTests(unittest.TestCase):
             "empty_cache",
             "is_available",
             "memory_allocated",
+            "memory_reserved",
             "memory_stats",
         ):
             with self.subTest(name=name):
@@ -428,7 +473,13 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertEqual(function.__qualname__, name)
                 defining_module = (
                     accelerator.memory
-                    if name in {"empty_cache", "memory_allocated", "memory_stats"}
+                    if name
+                    in {
+                        "empty_cache",
+                        "memory_allocated",
+                        "memory_reserved",
+                        "memory_stats",
+                    }
                     else accelerator
                 )
                 self.assertEqual(function.__module__, defining_module.__name__)
@@ -442,7 +493,8 @@ class AcceleratorTests(unittest.TestCase):
                     (False,)
                     if name == "current_accelerator"
                     else (None,)
-                    if name in {"memory_allocated", "memory_stats"}
+                    if name
+                    in {"memory_allocated", "memory_reserved", "memory_stats"}
                     else None,
                 )
                 self.assertIsNone(function.__kwdefaults__)
@@ -463,6 +515,7 @@ class AcceleratorTests(unittest.TestCase):
             "empty_cache",
             "is_available",
             "memory_allocated",
+            "memory_reserved",
             "memory_stats",
         }
         memory = importlib.import_module("torch_rs.accelerator.memory")
@@ -470,15 +523,17 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(accelerator.memory, memory)
         self.assertIs(accelerator.empty_cache, memory.empty_cache)
         self.assertIs(accelerator.memory_allocated, memory.memory_allocated)
+        self.assertIs(accelerator.memory_reserved, memory.memory_reserved)
         self.assertIs(accelerator.memory_stats, memory.memory_stats)
         self.assertIs(sys.modules["torch_rs.accelerator.memory"], memory)
         self.assertIsNone(memory.__doc__)
         self.assertEqual(
-            memory.__all__, ["empty_cache", "memory_allocated", "memory_stats"]
+            memory.__all__,
+            ["empty_cache", "memory_allocated", "memory_reserved", "memory_stats"],
         )
         self.assertEqual(
             {name for name in vars(memory) if not name.startswith("_")},
-            {"empty_cache", "memory_allocated", "memory_stats"},
+            {"empty_cache", "memory_allocated", "memory_reserved", "memory_stats"},
         )
 
         self.assertEqual(
@@ -490,6 +545,7 @@ class AcceleratorTests(unittest.TestCase):
                 "empty_cache",
                 "is_available",
                 "memory_allocated",
+                "memory_reserved",
                 "memory_stats",
             ],
         )
@@ -504,7 +560,7 @@ class AcceleratorTests(unittest.TestCase):
         memory_wildcard_import = {}
         exec("from torch_rs import accelerator", package_import)
         exec(
-            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, empty_cache, is_available, memory_allocated, memory_stats",
+            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, empty_cache, is_available, memory_allocated, memory_reserved, memory_stats",
             direct_import,
         )
         exec("from torch_rs.accelerator import *", wildcard_import)
@@ -520,14 +576,19 @@ class AcceleratorTests(unittest.TestCase):
                 for name in memory_wildcard_import
                 if not name.startswith("__")
             },
-            {"empty_cache", "memory_allocated", "memory_stats"},
+            {"empty_cache", "memory_allocated", "memory_reserved", "memory_stats"},
         )
         for name in supported:
             function = getattr(accelerator, name)
             with self.subTest(name=name):
                 self.assertIs(direct_import[name], function)
                 self.assertIs(wildcard_import[name], function)
-                if name in {"empty_cache", "memory_allocated", "memory_stats"}:
+                if name in {
+                    "empty_cache",
+                    "memory_allocated",
+                    "memory_reserved",
+                    "memory_stats",
+                }:
                     self.assertIs(memory_wildcard_import[name], function)
                 self.assertIs(copy.copy(function), function)
                 self.assertIs(copy.deepcopy(function), function)
@@ -549,6 +610,7 @@ class AcceleratorTests(unittest.TestCase):
         old_discovery = accelerator._discover_accelerator
         old_empty_cache = accelerator.empty_cache
         old_memory_allocated = accelerator.memory_allocated
+        old_memory_reserved = accelerator.memory_reserved
         old_memory_stats = accelerator.memory_stats
         memory = accelerator.memory
         old_functions = {
@@ -575,6 +637,9 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(accelerator.memory_allocated, old_memory_allocated)
         self.assertIs(accelerator.memory_allocated, memory.memory_allocated)
         self.assertEqual(accelerator.memory_allocated(), 0)
+        self.assertIs(accelerator.memory_reserved, old_memory_reserved)
+        self.assertIs(accelerator.memory_reserved, memory.memory_reserved)
+        self.assertEqual(accelerator.memory_reserved(), 0)
         self.assertIs(accelerator.memory_stats, old_memory_stats)
         self.assertIs(accelerator.memory_stats, memory.memory_stats)
         self.assertEqual(accelerator.memory_stats(), OrderedDict())
@@ -605,6 +670,7 @@ class AcceleratorTests(unittest.TestCase):
         old_functions = {
             "empty_cache": memory.empty_cache,
             "memory_allocated": memory.memory_allocated,
+            "memory_reserved": memory.memory_reserved,
             "memory_stats": memory.memory_stats,
         }
 
@@ -612,6 +678,7 @@ class AcceleratorTests(unittest.TestCase):
         new_functions = {
             "empty_cache": memory.empty_cache,
             "memory_allocated": memory.memory_allocated,
+            "memory_reserved": memory.memory_reserved,
             "memory_stats": memory.memory_stats,
         }
 
@@ -619,7 +686,12 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(accelerator.memory, memory)
         self.assertIs(sys.modules["torch_rs.accelerator.memory"], memory)
         self.assertIsNot(memory.__all__, old_all)
-        for name in ("empty_cache", "memory_allocated", "memory_stats"):
+        for name in (
+            "empty_cache",
+            "memory_allocated",
+            "memory_reserved",
+            "memory_stats",
+        ):
             with self.subTest(name=name):
                 old_function = old_functions[name]
                 new_function = new_functions[name]
@@ -643,6 +715,13 @@ class AcceleratorTests(unittest.TestCase):
             ),
             (0, 0),
         )
+        self.assertEqual(
+            (
+                old_functions["memory_reserved"](object()),
+                new_functions["memory_reserved"](object()),
+            ),
+            (0, 0),
+        )
         old_stats = old_functions["memory_stats"](object())
         new_stats = new_functions["memory_stats"](object())
         self.assertIs(type(old_stats), OrderedDict)
@@ -660,6 +739,12 @@ class AcceleratorTests(unittest.TestCase):
         )
         self.assertIs(accelerator.memory_allocated, memory.memory_allocated)
         self.assertEqual(accelerator.memory_allocated(), 0)
+        self.assertIs(
+            accelerator.memory_reserved,
+            new_functions["memory_reserved"],
+        )
+        self.assertIs(accelerator.memory_reserved, memory.memory_reserved)
+        self.assertEqual(accelerator.memory_reserved(), 0)
         self.assertIs(accelerator.memory_stats, new_functions["memory_stats"])
         self.assertIs(accelerator.memory_stats, memory.memory_stats)
         self.assertEqual(accelerator.memory_stats(), OrderedDict())
@@ -716,6 +801,18 @@ class AcceleratorTests(unittest.TestCase):
             (
                 lambda: accelerator.memory_allocated(unexpected=True),
                 "memory_allocated() got an unexpected keyword argument 'unexpected'",
+            ),
+            (
+                lambda: accelerator.memory_reserved(device_index=None),
+                "memory_reserved() got some positional-only arguments passed as keyword arguments: 'device_index'",
+            ),
+            (
+                lambda: accelerator.memory_reserved(None, None),
+                "memory_reserved() takes from 0 to 1 positional arguments but 2 were given",
+            ),
+            (
+                lambda: accelerator.memory_reserved(unexpected=True),
+                "memory_reserved() got an unexpected keyword argument 'unexpected'",
             ),
             (
                 lambda: accelerator.memory_stats(device_index=None),
@@ -790,6 +887,10 @@ class AcceleratorTests(unittest.TestCase):
                             torch.accelerator.memory_allocated(index)
                             for _ in range(4)
                         ),
+                        tuple(
+                            torch.accelerator.memory_reserved(index)
+                            for _ in range(4)
+                        ),
                         tuple(torch.accelerator.memory_stats(index) for _ in range(4)),
                         torch.accelerator.is_available(),
                         torch.accelerator.device_count(),
@@ -820,6 +921,7 @@ class AcceleratorTests(unittest.TestCase):
                     (RuntimeError, NO_ACCELERATOR_ERROR, (NO_ACCELERATOR_ERROR,)),
                     (None,) * 4,
                     (0,) * 4,
+                    (0,) * 4,
                     (OrderedDict(),) * 4,
                     False,
                     0,
@@ -827,12 +929,13 @@ class AcceleratorTests(unittest.TestCase):
                 ),
             )
             self.assertTrue(all(type(value) is int for value in result[5]))
-            self.assertTrue(all(type(stats) is OrderedDict for stats in result[6]))
-            self.assertEqual(len({id(stats) for stats in result[6]}), 4)
-            self.assertIs(result[7], False)
-            self.assertIs(type(result[8]), int)
+            self.assertTrue(all(type(value) is int for value in result[6]))
+            self.assertTrue(all(type(stats) is OrderedDict for stats in result[7]))
+            self.assertEqual(len({id(stats) for stats in result[7]}), 4)
+            self.assertIs(result[8], False)
+            self.assertIs(type(result[9]), int)
 
-        all_stats = [stats for result in results for stats in result[6]]
+        all_stats = [stats for result in results for stats in result[7]]
         self.assertEqual(len({id(stats) for stats in all_stats}), len(all_stats))
 
     def test_selection_stream_memory_graph_and_execution_apis_stay_unsupported(self):
@@ -847,7 +950,6 @@ class AcceleratorTests(unittest.TestCase):
             "get_memory_info",
             "max_memory_allocated",
             "max_memory_reserved",
-            "memory_reserved",
             "reset_accumulated_memory_stats",
             "reset_peak_memory_stats",
             "set_device_idx",
@@ -866,7 +968,8 @@ class AcceleratorTests(unittest.TestCase):
         memory = importlib.import_module("torch_rs.accelerator.memory")
         self.assertIs(accelerator.memory, memory)
         self.assertEqual(
-            memory.__all__, ["empty_cache", "memory_allocated", "memory_stats"]
+            memory.__all__,
+            ["empty_cache", "memory_allocated", "memory_reserved", "memory_stats"],
         )
         for name in unsupported:
             with self.subTest(memory_name=name):
@@ -917,7 +1020,12 @@ os.environ.update(
     PYTORCH_NVML_BASED_CUDA_CHECK="1",
 )
 import torch_rs as torch
-from torch_rs.accelerator.memory import empty_cache, memory_allocated, memory_stats
+from torch_rs.accelerator.memory import (
+    empty_cache,
+    memory_allocated,
+    memory_reserved,
+    memory_stats,
+)
 
 class ExplodingDeviceToken:
     def __bool__(self):
@@ -935,6 +1043,7 @@ class ExplodingDeviceToken:
 modules_before_calls = set(sys.modules)
 assert torch.accelerator.empty_cache is empty_cache
 assert torch.accelerator.memory_allocated is memory_allocated
+assert torch.accelerator.memory_reserved is memory_reserved
 assert torch.accelerator.memory_stats is memory_stats
 assert torch.accelerator._discover_accelerator() == (None, False, 0, None)
 assert torch.accelerator.current_accelerator() is None
@@ -969,6 +1078,13 @@ allocated = [
 ]
 assert allocated == [0, 0, 0]
 assert all(type(value) is int for value in allocated)
+reserved = [
+    torch.accelerator.memory_reserved(),
+    torch.accelerator.memory_reserved("cuda:0"),
+    memory_reserved(ExplodingDeviceToken()),
+]
+assert reserved == [0, 0, 0]
+assert all(type(value) is int for value in reserved)
 assert set(sys.modules) == modules_before_calls
 assert not hasattr(torch, "cuda")
 assert not any(
