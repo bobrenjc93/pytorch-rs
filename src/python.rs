@@ -167,6 +167,10 @@ fn device_ordinal(device: Device) -> PyResult<i64> {
         .map_or(Ok(-1), |index| i64::try_from(index).map_err(Into::into))
 }
 
+fn imag_non_complex_error() -> PyErr {
+    PyRuntimeError::new_err("imag is not implemented for tensors with non-complex dtypes.")
+}
+
 // Internal descriptor owner matching PyTorch's native tensor base class.
 #[pyclass(
     name = "TensorBase",
@@ -645,6 +649,31 @@ impl PyTensorBase {
         // Float32 is the only supported dtype, so every Tensor is already real.
         // Preserve the wrapper itself without inspecting storage or autograd state.
         Ok(tensor.clone().unbind().into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nReturns a new tensor containing imaginary values of the :attr:`self` tensor.\nThe returned tensor and :attr:`self` share the same underlying storage.\n\n.. warning::\n    :func:`imag` is only supported for tensors with complex dtypes.\n\nExample::\n\n    >>> x=torch.randn(4, dtype=torch.cfloat)\n    >>> x\n    tensor([(0.3100+0.3553j), (-0.5445-0.7896j), (-1.6492-0.0633j), (-0.0638-0.8119j)])\n    >>> x.imag\n    tensor([ 0.3553, -0.7896, -0.0633, -0.8119])\n\n"]
+    #[getter]
+    fn imag(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("imag"))?
+        {
+            return Ok(result);
+        }
+
+        Err(imag_non_complex_error())
+    }
+
+    #[setter(imag)]
+    fn set_imag(_slf: &Bound<'_, Self>, _value: &Bound<'_, PyAny>) -> PyResult<()> {
+        Err(imag_non_complex_error())
+    }
+
+    #[deleter(imag)]
+    fn delete_imag(_slf: &Bound<'_, Self>) -> PyResult<()> {
+        Err(imag_non_complex_error())
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
