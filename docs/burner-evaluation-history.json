@@ -6577,6 +6577,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1029",
+      "recordedAt": "2026-08-26T09:10:14.231Z",
+      "label": "PR #1029",
+      "kind": "leaf",
+      "prNumber": 1029,
+      "title": "Accept a trailing full slice after five leading integer indices",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 94.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 76.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
