@@ -6817,6 +6817,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1080",
+      "recordedAt": "2026-08-26T22:09:46.449Z",
+      "label": "PR #1080",
+      "kind": "composite",
+      "prNumber": 1080,
+      "title": "YOLO generation 129: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 95.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 78.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
