@@ -56,6 +56,7 @@ assert torch.cpu.synchronize() is None
 assert torch.accelerator.current_accelerator() is None
 assert torch.accelerator.is_available() is False
 assert torch.accelerator.device_count() == 0
+assert torch.accelerator.empty_cache() is None
 try:
     torch.accelerator.current_device_index()
 except RuntimeError as error:
@@ -210,7 +211,7 @@ The CPU core provides `float32` tensors, checked construction including copied o
 
 `torch.cpu.is_available()` is the canonical device-agnostic CPU availability query and returns the exact `True` singleton. `torch.cpu.is_initialized()` likewise returns exact `True`, reflecting that the eager CPU backend is always initialized. `torch.cpu.current_device()` returns the invariant string `"cpu"`, and `torch.cpu.device_count()` reports the single logical CPU device as the exact integer `1`. Because native CPU execution is eager, `torch.cpu.synchronize(device=None)` ignores any device value and returns the exact `None` singleton. These APIs do not probe hardware, environment variables, or PyTorch. CPU streams, events, device mutation, capabilities, AMP, and the rest of the `torch.cpu` namespace remain unsupported.
 
-`torch.accelerator.current_device_index()` exposes PyTorch 2.13's no-argument current-accelerator ordinal query and raises `RuntimeError("Cannot access accelerator device when none is available.")` for this CPU-only build, alongside `current_accelerator() is None`, `is_available() is False`, and `device_count() == 0`. These calls share one static build-capability boundary and do not inspect host drivers, CUDA visibility, environment variables, or PyTorch, so a CUDA-enabled host cannot change their results. Accelerator selection, streams, memory management, graphs, execution, and the rest of the `torch.accelerator` namespace remain unsupported.
+`torch.accelerator.current_device_index()` exposes PyTorch 2.13's no-argument current-accelerator ordinal query and raises `RuntimeError("Cannot access accelerator device when none is available.")` for this CPU-only build, alongside `current_accelerator() is None`, `is_available() is False`, and `device_count() == 0`. These discovery calls share one static build-capability boundary and do not inspect host drivers, CUDA visibility, environment variables, or PyTorch, so a CUDA-enabled host cannot change their results. `torch.accelerator.empty_cache()`, defined by the canonical `torch.accelerator.memory` module, is a repeatable, thread-safe no-op returning `None` because this build has no initialized accelerator allocator; it likewise performs no hardware or runtime probes and remains stable across module reloads. Accelerator selection, streams, other memory-management APIs, graphs, execution, and the rest of the `torch.accelerator` namespace remain unsupported.
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
 
