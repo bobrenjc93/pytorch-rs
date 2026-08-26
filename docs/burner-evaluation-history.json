@@ -6593,6 +6593,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1036",
+      "recordedAt": "2026-08-26T10:11:54.487Z",
+      "label": "PR #1036",
+      "kind": "composite",
+      "prNumber": 1036,
+      "title": "YOLO generation 124: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 94.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 77,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
