@@ -6689,6 +6689,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1055",
+      "recordedAt": "2026-08-26T15:11:30.345Z",
+      "label": "PR #1055",
+      "kind": "leaf",
+      "prNumber": 1055,
+      "title": "Add CPU-build torch.accelerator.empty_cache",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 95,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 77.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
