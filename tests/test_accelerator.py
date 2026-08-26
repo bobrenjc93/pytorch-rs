@@ -71,6 +71,11 @@ FUNCTION_DOCS = {
         On CUDA, this API will NOT poison fork if NVML discovery succeeds.
         Otherwise, it will. For more details, see :ref:`multiprocessing-poison-fork-note`.
     """,
+    "current_device_index": """Return the index of a currently selected device for the current :ref:`accelerator<accelerators>`.
+
+    Returns:
+        int: the index of a currently selected device.
+    """,
 }
 
 
@@ -83,10 +88,11 @@ class AcceleratorTests(unittest.TestCase):
         self.assertEqual(discovery.__code__.co_freevars, ())
         self.assertEqual(discovery.__code__.co_cellvars, ())
         state = discovery()
-        self.assertEqual(state, (None, False, 0))
+        self.assertEqual(state, (None, False, 0, None))
         self.assertIs(state[0], None)
         self.assertIs(state[1], False)
         self.assertIs(type(state[2]), int)
+        self.assertIs(state[3], None)
 
         with mock.patch.object(
             accelerator,
@@ -97,15 +103,17 @@ class AcceleratorTests(unittest.TestCase):
             self.assertIs(
                 accelerator.current_accelerator(check_available=True), None
             )
+            self.assertIs(accelerator.current_device_index(), None)
             self.assertIs(accelerator.is_available(), False)
             count = accelerator.device_count()
             self.assertIs(type(count), int)
             self.assertEqual(count, 0)
 
-        self.assertEqual(shared_discovery.call_count, 4)
-        self.assertEqual(shared_discovery.call_args_list, [mock.call()] * 4)
+        self.assertEqual(shared_discovery.call_count, 5)
+        self.assertEqual(shared_discovery.call_args_list, [mock.call()] * 5)
         for function in (
             accelerator.current_accelerator,
+            accelerator.current_device_index,
             accelerator.is_available,
             accelerator.device_count,
         ):
@@ -134,6 +142,7 @@ class AcceleratorTests(unittest.TestCase):
                         side_effect=AssertionError("hardware was probed"),
                     ):
                         self.assertIs(accelerator.current_accelerator(), None)
+                        self.assertIs(accelerator.current_device_index(), None)
                         self.assertIs(accelerator.is_available(), False)
                         self.assertEqual(accelerator.device_count(), 0)
 
@@ -151,6 +160,7 @@ class AcceleratorTests(unittest.TestCase):
                 ),
                 return_annotation=torch.device | None,
             ),
+            "current_device_index": inspect.Signature(return_annotation=int),
             "is_available": inspect.Signature(return_annotation=bool),
             "device_count": inspect.Signature(return_annotation=int),
         }
@@ -159,6 +169,7 @@ class AcceleratorTests(unittest.TestCase):
                 "check_available": bool,
                 "return": torch.device | None,
             },
+            "current_device_index": {"return": int},
             "is_available": {"return": bool},
             "device_count": {"return": int},
         }
@@ -166,7 +177,12 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(torch.accelerator, accelerator)
         self.assertIs(sys.modules["torch_rs.accelerator"], accelerator)
         self.assertEqual(accelerator.__doc__, MODULE_DOC)
-        for name in ("current_accelerator", "device_count", "is_available"):
+        for name in (
+            "current_accelerator",
+            "current_device_index",
+            "device_count",
+            "is_available",
+        ):
             with self.subTest(name=name):
                 function = getattr(accelerator, name)
                 self.assertIs(type(function), types.FunctionType)
@@ -190,20 +206,31 @@ class AcceleratorTests(unittest.TestCase):
                     (False,) if name == "current_accelerator" else None,
                 )
                 self.assertIsNone(function.__kwdefaults__)
-                self.assertEqual(function.__dict__, {})
+                self.assertEqual(
+                    function.__dict__,
+                    {"__deprecated__": "Use `current_device_index` instead."}
+                    if name == "current_device_index"
+                    else {},
+                )
                 self.assertFalse(hasattr(function, "__text_signature__"))
 
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         accelerator = torch.accelerator
         supported = {
             "current_accelerator",
+            "current_device_index",
             "device_count",
             "is_available",
         }
 
         self.assertEqual(
             accelerator.__all__,
-            ["current_accelerator", "device_count", "is_available"],
+            [
+                "current_accelerator",
+                "current_device_index",
+                "device_count",
+                "is_available",
+            ],
         )
         self.assertEqual(
             {name for name in vars(accelerator) if not name.startswith("_")},
@@ -215,7 +242,7 @@ class AcceleratorTests(unittest.TestCase):
         wildcard_import = {}
         exec("from torch_rs import accelerator", package_import)
         exec(
-            "from torch_rs.accelerator import current_accelerator, device_count, is_available",
+            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, is_available",
             direct_import,
         )
         exec("from torch_rs.accelerator import *", wildcard_import)
@@ -249,7 +276,12 @@ class AcceleratorTests(unittest.TestCase):
         old_discovery = accelerator._discover_accelerator
         old_functions = {
             name: getattr(accelerator, name)
-            for name in ("current_accelerator", "device_count", "is_available")
+            for name in (
+                "current_accelerator",
+                "current_device_index",
+                "device_count",
+                "is_available",
+            )
         }
 
         reloaded = importlib.reload(accelerator)
@@ -259,8 +291,11 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(sys.modules["torch_rs.accelerator"], accelerator)
         self.assertIsNot(accelerator.__all__, old_all)
         self.assertIsNot(accelerator._discover_accelerator, old_discovery)
-        self.assertEqual(accelerator._discover_accelerator(), (None, False, 0))
+        self.assertEqual(
+            accelerator._discover_accelerator(), (None, False, 0, None)
+        )
         self.assertIs(accelerator.current_accelerator(), None)
+        self.assertIs(accelerator.current_device_index(), None)
         self.assertIs(accelerator.is_available(), False)
         self.assertEqual(accelerator.device_count(), 0)
 
@@ -294,6 +329,18 @@ class AcceleratorTests(unittest.TestCase):
             (
                 lambda: accelerator.is_available(None),
                 "is_available() takes 0 positional arguments but 1 was given",
+            ),
+            (
+                lambda: accelerator.current_device_index(None),
+                "current_device_index() takes 0 positional arguments but 1 was given",
+            ),
+            (
+                lambda: accelerator.current_device_index(None, None),
+                "current_device_index() takes 0 positional arguments but 2 were given",
+            ),
+            (
+                lambda: accelerator.current_device_index(device=True),
+                "current_device_index() got an unexpected keyword argument 'device'",
             ),
             (
                 lambda: accelerator.is_available(None, None),
@@ -338,6 +385,7 @@ class AcceleratorTests(unittest.TestCase):
                         torch.is_grad_enabled(),
                         torch.accelerator.current_accelerator(),
                         torch.accelerator.current_accelerator(True),
+                        torch.accelerator.current_device_index(),
                         torch.accelerator.is_available(),
                         torch.accelerator.device_count(),
                         torch.is_grad_enabled(),
@@ -364,20 +412,21 @@ class AcceleratorTests(unittest.TestCase):
                     expected_grad_state,
                     None,
                     None,
+                    None,
                     False,
                     0,
                     expected_grad_state,
                 ),
             )
-            self.assertIs(result[3], False)
-            self.assertIs(type(result[4]), int)
+            self.assertIs(result[3], None)
+            self.assertIs(result[4], False)
+            self.assertIs(type(result[5]), int)
 
     def test_selection_stream_memory_graph_and_execution_apis_stay_unsupported(self):
         accelerator = torch.accelerator
         unsupported = {
             "Graph",
             "current_device_idx",
-            "current_device_index",
             "current_stream",
             "device_index",
             "empty_cache",
@@ -442,9 +491,11 @@ os.environ.update(
 import torch_rs as torch
 
 modules_before_calls = set(sys.modules)
-assert torch.accelerator._discover_accelerator() == (None, False, 0)
+assert torch.accelerator._discover_accelerator() == (None, False, 0, None)
 assert torch.accelerator.current_accelerator() is None
 assert torch.accelerator.current_accelerator(check_available=True) is None
+for _ in range(3):
+    assert torch.accelerator.current_device_index() is None
 assert torch.accelerator.is_available() is False
 count = torch.accelerator.device_count()
 assert type(count) is int and count == 0
