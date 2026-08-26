@@ -180,6 +180,10 @@ assert matrix.shape == (2, 3)
 features = torch.flatten(matrix, start_dim=0, end_dim=1)
 assert features.shape == (6,)
 
+# Top-level reshape shares Tensor.reshape's native view-or-copy engine.
+matrix_again = torch.reshape(features, shape=torch.Size([2, 3]))
+assert matrix_again.shape == (2, 3)
+
 # Materialize a view in native row-major or channel-last storage.
 view = torch.transpose(torch.zeros((2, 3, 4, 5)), 0, 3)
 packed = view.contiguous()
@@ -201,6 +205,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.overrides.has_torch_function_unary` is the public alias of the native `torch._C._has_torch_function_unary` builtin used by the Python-owned unary dispatch wrappers. It matches PyTorch's exact-tensor, Tensor-class, custom-override, disabled-handler, mode, and descriptor-failure behavior without exposing the generic or variadic probes.
 
 `Tensor.ravel()` and top-level `torch.ravel()` share the native view-or-copy path: row-contiguous inputs alias storage through a new one-dimensional wrapper, while other layouts are materialized.
+
+`torch.reshape(input, shape)` is an immutable `_VariableFunctionsClass` builtin accepting tuple, list, and `torch.Size` shapes. It delegates to the same native engine as `Tensor.reshape()`, including compatible shared-storage views, noncontiguous copies, offsets, empty tensors, eager autograd, generated-binding diagnostics, and `__torch_function__` mode and operand dispatch.
 
 `Tensor.exp()` and `torch.exp()` share the native float32 CPU kernel and record `ExpBackward0` when eager gradient recording is active. Top-level calls accept `out=None`; concrete output tensors remain explicitly unsupported.
 
