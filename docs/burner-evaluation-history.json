@@ -6545,6 +6545,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1022",
+      "recordedAt": "2026-08-26T07:33:53.908Z",
+      "label": "PR #1022",
+      "kind": "leaf",
+      "prNumber": 1022,
+      "title": "Expose release-build torch.version.debug metadata",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 94,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 76.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
