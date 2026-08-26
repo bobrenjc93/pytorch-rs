@@ -62,13 +62,19 @@ def _require_supported_leaf_roots(roots):
         )
 
 
+def _materialize_bounded_sequence(value):
+    if isinstance(value, _Sequence) and not isinstance(
+        value, (str, bytes, bytearray)
+    ):
+        return tuple(_islice(value, _MAX_BACKWARD_LEAF_ROOTS + 1))
+    return None
+
+
 def _normalize_roots(tensors):
     if type(tensors) is _Tensor:
         return (tensors,)
-    if isinstance(tensors, _Sequence) and not isinstance(
-        tensors, (str, bytes, bytearray)
-    ):
-        roots = tuple(_islice(tensors, _MAX_BACKWARD_LEAF_ROOTS + 1))
+    roots = _materialize_bounded_sequence(tensors)
+    if roots is not None:
         root_count = len(roots)
         if root_count == 0:
             return ()
@@ -89,11 +95,12 @@ def _normalize_roots(tensors):
 def _require_default_grad_tensors(grad_tensors, *, root_count):
     if grad_tensors is None:
         return
-    if type(grad_tensors) is tuple or type(grad_tensors) is list:
-        if root_count == 0 and len(grad_tensors) == 0:
+    gradients = _materialize_bounded_sequence(grad_tensors)
+    if gradients is not None:
+        if root_count == 0 and len(gradients) == 0:
             return
-        if len(grad_tensors) == max(1, root_count) and all(
-            gradient is None for gradient in grad_tensors
+        if len(gradients) == max(1, root_count) and all(
+            gradient is None for gradient in gradients
         ):
             return
     raise NotImplementedError(
