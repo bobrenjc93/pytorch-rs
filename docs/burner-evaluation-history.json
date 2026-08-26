@@ -6721,6 +6721,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1059",
+      "recordedAt": "2026-08-26T17:08:39.010Z",
+      "label": "PR #1059",
+      "kind": "leaf",
+      "prNumber": 1059,
+      "title": "Add torch.backends.mha fastpath state control",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 95.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 77.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
