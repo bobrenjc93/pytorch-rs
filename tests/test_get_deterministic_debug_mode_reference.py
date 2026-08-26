@@ -227,16 +227,13 @@ class GetDeterministicDebugModeReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_deterministic_setters_remain_deliberately_unsupported(self):
-        for name in (
-            "use_deterministic_algorithms",
-            "set_deterministic_debug_mode",
-        ):
-            with self.subTest(name=name):
-                self.assertTrue(hasattr(reference_torch, name))
-                self.assertEqual(reference_torch.__all__.count(name), 1)
-                self.assertFalse(hasattr(torch, name))
-                self.assertNotIn(name, torch.__all__)
+    def test_default_only_debug_mode_setter_support_boundary(self):
+        self.assertTrue(hasattr(reference_torch, "use_deterministic_algorithms"))
+        self.assertFalse(hasattr(torch, "use_deterministic_algorithms"))
+        self.assertNotIn("use_deterministic_algorithms", torch.__all__)
+        self.assertTrue(hasattr(reference_torch, "set_deterministic_debug_mode"))
+        self.assertTrue(hasattr(torch, "set_deterministic_debug_mode"))
+        self.assertEqual(torch.__all__.count("set_deterministic_debug_mode"), 1)
 
 
 if __name__ == "__main__":

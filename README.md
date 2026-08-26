@@ -22,6 +22,10 @@ product = torch.matmul(input=x, other=y)
 assert product.tolist() == [[1.0, 1.0], [-1.0, -1.0]]
 assert torch.set_float32_matmul_precision("highest") is None
 assert torch.get_float32_matmul_precision() == "highest"
+assert torch.set_deterministic_debug_mode("default") is None
+assert torch.get_deterministic_debug_mode() == 0
+assert torch.are_deterministic_algorithms_enabled() is False
+assert torch.is_deterministic_algorithms_warn_only_enabled() is False
 scaled = torch.multiply(input=2.0, other=x)
 assert scaled.tolist() == [[-2.0, 4.0], [6.0, -8.0]]
 exponential = torch.exp(input=x)
@@ -220,6 +224,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.accelerator.current_device_index()` exposes PyTorch 2.13's no-argument current-accelerator ordinal query and raises `RuntimeError("Cannot access accelerator device when none is available.")` for this CPU-only build, alongside `current_accelerator() is None`, `is_available() is False`, and `device_count() == 0`. These discovery calls share one static build-capability boundary and do not inspect host drivers, CUDA visibility, environment variables, or PyTorch, so a CUDA-enabled host cannot change their results. `torch.accelerator.empty_cache()` and positional-only `torch.accelerator.memory_stats(device_index=None, /)`, both defined by the canonical `torch.accelerator.memory` module, are repeatable, thread-safe CPU-build operations because this build has no initialized accelerator allocator: the former returns `None`, while the latter ignores the unneeded device token and returns a fresh empty `OrderedDict`. Neither performs hardware or runtime probes, and both remain stable across module reloads. Accelerator selection, streams, other memory-management APIs, graphs, execution, and the rest of the `torch.accelerator` namespace remain unsupported.
 
 `torch.get_num_threads()` reports the native engine's fixed single intra-op worker as the exact integer `1`. `torch.get_num_interop_threads()` likewise returns the exact integer `1`, reflecting the absence of a separate inter-op executor. Neither query probes hardware, environment variables, or PyTorch; both thread setters and parallel execution remain unsupported.
+
+`torch.set_deterministic_debug_mode(debug_mode)` accepts the default-equivalent `0`, `False`, and `"default"` forms as idempotent no-ops. `torch.get_deterministic_debug_mode()`, `torch.are_deterministic_algorithms_enabled()`, and `torch.is_deterministic_algorithms_warn_only_enabled()` remain coherently fixed at `0`, `False`, and `False` across threads, package reloads, and grad modes. Warn and error modes remain explicitly unsupported and are rejected before any state can change; `torch.use_deterministic_algorithms` is not exposed.
 
 `torch.set_warn_always(b)` and `torch.is_warn_always_enabled()` expose PyTorch's process-global native warning policy. The default once-only mode consumes each native warning site's marker on its first attempted emission, always mode emits from native warn-once sites on every call without consuming unused markers, and returning to once-only mode preserves markers consumed earlier. The state is shared across threads and package reloads, while ordinary Python `warnings.warn` sites retain Python's standard filtering behavior.
 
