@@ -4,7 +4,13 @@ from typing import Any as _Any
 from .. import device as _device
 
 
-__all__ = ["empty_cache", "memory_allocated", "memory_reserved", "memory_stats"]
+__all__ = [
+    "empty_cache",
+    "max_memory_allocated",
+    "memory_allocated",
+    "memory_reserved",
+    "memory_stats",
+]
 
 
 def empty_cache() -> None:
@@ -97,6 +103,26 @@ def memory_allocated(device_index: _device | str | int | None = None, /) -> int:
         int: the current memory occupied by live tensors (in bytes) within the current process.
     """
     return memory_stats(device_index).get("allocated_bytes.all.current", 0)
+
+
+def max_memory_allocated(device_index: _device | str | int | None = None, /) -> int:
+    r"""Return the current :ref:`accelerator<accelerators>` maximum device memory occupied by tensors
+    in bytes for a given device index.
+
+    By default, this returns the peak allocated memory since the beginning of
+    this program. :func:`~torch.accelerator.reset_peak_memory_stats` can be used to
+    reset the starting point in tracking this metric.
+
+    Args:
+        device_index (:class:`torch.device`, str, int, optional): the index of the device to target.
+            If not given, use :func:`torch.accelerator.current_device_index` by default.
+            If a :class:`torch.device` or str is provided, its type must match the current
+            :ref:`accelerator<accelerators>` device type.
+
+    Returns:
+        int: the peak memory occupied by live tensors (in bytes) within the current process.
+    """
+    return memory_stats(device_index).get("allocated_bytes.all.peak", 0)
 
 
 def memory_reserved(device_index: _device | str | int | None = None, /) -> int:
