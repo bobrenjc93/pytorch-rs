@@ -6481,6 +6481,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:1009",
+      "recordedAt": "2026-08-26T03:54:00.999Z",
+      "label": "PR #1009",
+      "kind": "leaf",
+      "prNumber": 1009,
+      "title": "Expose CPU-build torch.version HIP, ROCm, and XPU metadata",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 93.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 76.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }

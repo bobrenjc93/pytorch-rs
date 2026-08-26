@@ -18,13 +18,13 @@ class VersionCudaReferenceTests(unittest.TestCase):
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "version.cuda differentials require pinned PyTorch 2.13.0"
+                "torch.version differentials require pinned PyTorch 2.13.0"
             )
 
     def test_module_metadata_and_identity_match_the_supported_scope(self):
         actual = importlib.import_module("torch_rs.version")
         expected = importlib.import_module("torch.version")
-        supported = {"__version__", "cuda"}
+        supported = ("__version__", "cuda", "hip", "rocm", "xpu")
 
         self.assertIs(torch.version, actual)
         self.assertIs(reference_torch.version, expected)
@@ -45,6 +45,10 @@ class VersionCudaReferenceTests(unittest.TestCase):
                 if name in supported
             },
         )
+        self.assertEqual(
+            list(actual.__annotations__),
+            [name for name in expected.__annotations__ if name in supported],
+        )
         self.assertIs(actual.Optional, typing.Optional)
         self.assertIs(expected.Optional, typing.Optional)
         self.assertEqual(
@@ -52,12 +56,14 @@ class VersionCudaReferenceTests(unittest.TestCase):
             {
                 name
                 for name in vars(expected)
-                if name in {"Optional", "cuda"}
+                if name in {"Optional", "cuda", "hip", "rocm", "xpu"}
             },
         )
         self.assertIs(type(actual.__version__), type(expected.__version__))
-        self.assertIs(actual.cuda, None)
-        for name in ("debug", "git_version", "hip", "rocm", "xpu"):
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            with self.subTest(name=name):
+                self.assertIs(getattr(actual, name), None)
+        for name in ("debug", "git_version"):
             with self.subTest(unsupported=name):
                 self.assertFalse(hasattr(actual, name))
                 self.assertTrue(hasattr(expected, name))
@@ -76,43 +82,48 @@ class VersionCudaReferenceTests(unittest.TestCase):
             exec(f"from {package_name} import version", package_import)
             exec(f"import {package_name}.version as version", module_import)
             exec(
-                f"from {package_name}.version import __version__, cuda",
+                f"from {package_name}.version import "
+                "__version__, cuda, hip, rocm, xpu",
                 direct_import,
             )
             self.assertIs(package_import["version"], module)
             self.assertIs(module_import["version"], module)
-            self.assertIs(direct_import["__version__"], module.__version__)
-            self.assertIs(direct_import["cuda"], module.cuda)
+            for name in ("__version__", "cuda", "hip", "rocm", "xpu"):
+                self.assertIs(direct_import[name], getattr(module, name))
 
         actual_wildcard = {}
         expected_wildcard = {}
         exec("from torch_rs.version import *", actual_wildcard)
         exec("from torch.version import *", expected_wildcard)
         self.assertEqual(
-            {name for name in actual_wildcard if name != "__builtins__"},
-            {
+            [name for name in actual_wildcard if name != "__builtins__"],
+            [
                 name
                 for name in expected_wildcard
-                if name in {"__version__", "cuda"}
-            },
+                if name in {"__version__", "cuda", "hip", "rocm", "xpu"}
+            ],
         )
         self.assertIs(actual_wildcard["__version__"], actual.__version__)
-        self.assertIs(actual_wildcard["cuda"], actual.cuda)
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            self.assertIs(actual_wildcard[name], getattr(actual, name))
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("version", namespace)
             self.assertNotIn("__version__", namespace)
-            self.assertNotIn("cuda", namespace)
+            for name in ("cuda", "hip", "rocm", "xpu"):
+                self.assertNotIn(name, namespace)
 
     def reload_contract(self, root):
         module = root.version
         namespace = module.__dict__
         old_all = module.__all__
+        old_annotations = module.__annotations__
         expected_version = module.__version__
         module.__version__ = "stale"
-        module.cuda = "stale"
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            setattr(module, name, "stale")
 
         reloaded = importlib.reload(module)
 
@@ -125,7 +136,9 @@ class VersionCudaReferenceTests(unittest.TestCase):
             module.__all__,
             module.__version__ == expected_version,
             type(module.__version__).__name__,
-            module.cuda,
+            module.__annotations__ is old_annotations,
+            tuple(module.__annotations__),
+            tuple(getattr(module, name) for name in ("cuda", "hip", "rocm", "xpu")),
         )
 
     def test_reload_behavior_matches_pytorch_2_13(self):
@@ -135,11 +148,21 @@ class VersionCudaReferenceTests(unittest.TestCase):
         self.assertEqual(actual[:5], expected[:5])
         self.assertEqual(
             actual[5],
-            [name for name in expected[5] if name in {"__version__", "cuda"}],
+            [
+                name
+                for name in expected[5]
+                if name in {"__version__", "cuda", "hip", "rocm", "xpu"}
+            ],
         )
-        self.assertEqual(actual[6:8], expected[6:8])
-        self.assertIs(actual[8], None)
-        self.assertEqual(expected[8], reference_torch.version.cuda)
+        self.assertEqual(actual[6:10], expected[6:10])
+        self.assertEqual(actual[10], (None, None, None, None))
+        self.assertEqual(
+            expected[10],
+            tuple(
+                getattr(reference_torch.version, name)
+                for name in ("cuda", "hip", "rocm", "xpu")
+            ),
+        )
 
     def test_cuda_visible_h100_reports_reference_build_version_only(self):
         if not reference_torch.cuda.is_available():
@@ -151,12 +174,20 @@ class VersionCudaReferenceTests(unittest.TestCase):
 
         self.assertGreaterEqual(reference_torch.cuda.device_count(), 1)
         self.assertIs(reference_torch._C._has_cuda, True)
-        self.assertEqual(reference_torch.version.cuda, "13.0")
+        self.assertEqual(
+            tuple(
+                getattr(reference_torch.version, name)
+                for name in ("cuda", "hip", "rocm", "xpu")
+            ),
+            ("13.0", None, None, None),
+        )
         self.assertIn("+cu130", reference_torch.version.__version__)
 
         self.assertIs(torch._C._has_cuda, False)
         self.assertIs(torch.backends.cuda.is_built(), False)
-        self.assertIs(torch.version.cuda, None)
+        for name in ("cuda", "hip", "rocm", "xpu"):
+            with self.subTest(name=name):
+                self.assertIs(getattr(torch.version, name), None)
         self.assertNotIn("+cu", torch.version.__version__)
 
         probe = reference_torch.ones(1, device=reference_torch.device("cuda", 0))
