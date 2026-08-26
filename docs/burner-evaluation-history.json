@@ -6417,6 +6417,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:992",
+      "recordedAt": "2026-08-26T00:47:43.724Z",
+      "label": "PR #992",
+      "kind": "leaf",
+      "prNumber": 992,
+      "title": "Accept exactly eight scalar leaf roots in autograd.backward",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 93.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 75.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
