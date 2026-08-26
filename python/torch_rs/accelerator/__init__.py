@@ -3,12 +3,14 @@ This package introduces support for the current :ref:`accelerator<accelerators>`
 """
 
 from .. import device as _device
+from .memory import empty_cache
 
 
 __all__ = [
     "current_accelerator",
     "current_device_index",
     "device_count",
+    "empty_cache",
     "is_available",
 ]
 

@@ -1,5 +1,6 @@
 import contextlib
 import copy
+import gc
 import importlib
 import inspect
 import pickle
@@ -19,12 +20,14 @@ except ImportError:
     reference_torch = None
 
 
-SUPPORTED = {
+SUPPORTED_PARENT = {
     "current_accelerator",
     "current_device_index",
     "device_count",
     "is_available",
 }
+SUPPORTED_MEMORY = {"empty_cache"}
+SUPPORTED = SUPPORTED_PARENT | SUPPORTED_MEMORY
 
 NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
 
@@ -78,15 +81,20 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(sys.modules["torch.accelerator"], expected_module)
         self.assertEqual(actual_module.__doc__, expected_module.__doc__)
 
-        for name in (
-            "current_accelerator",
-            "current_device_index",
-            "device_count",
-            "is_available",
-        ):
+        for name in SUPPORTED:
             with self.subTest(name=name):
                 actual = getattr(actual_module, name)
                 expected = getattr(expected_module, name)
+                actual_owner = (
+                    actual_module.memory
+                    if name in SUPPORTED_MEMORY
+                    else actual_module
+                )
+                expected_owner = (
+                    expected_module.memory
+                    if name in SUPPORTED_MEMORY
+                    else expected_module
+                )
                 self.assertIs(type(actual), types.FunctionType)
                 self.assertIs(type(expected), types.FunctionType)
                 self.assertEqual(
@@ -107,8 +115,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
                     actual.__module__.replace("torch_rs", "torch"),
                     expected.__module__,
                 )
-                self.assertIs(inspect.getmodule(actual), actual_module)
-                self.assertIs(inspect.getmodule(expected), expected_module)
+                self.assertIs(inspect.getmodule(actual), actual_owner)
+                self.assertIs(inspect.getmodule(expected), expected_owner)
                 self.assertEqual(actual.__doc__, expected.__doc__)
                 self.assertEqual(actual.__defaults__, expected.__defaults__)
                 self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
@@ -139,14 +147,44 @@ class AcceleratorReferenceTests(unittest.TestCase):
         exec("from torch import accelerator", expected_package_import)
         self.assertIs(actual_package_import["accelerator"], actual_module)
         self.assertIs(expected_package_import["accelerator"], expected_module)
+        self.assertIs(
+            importlib.import_module("torch_rs.accelerator.memory"),
+            actual_module.memory,
+        )
+        self.assertIs(
+            importlib.import_module("torch.accelerator.memory"),
+            expected_module.memory,
+        )
+        self.assertEqual(
+            actual_module.memory.__all__,
+            [
+                name
+                for name in expected_module.memory.__all__
+                if name in SUPPORTED_MEMORY
+            ],
+        )
 
         actual_namespace = {}
         expected_namespace = {}
+        actual_memory_namespace = {}
+        expected_memory_namespace = {}
         exec("from torch_rs.accelerator import *", actual_namespace)
         exec("from torch.accelerator import *", expected_namespace)
+        exec(
+            "from torch_rs.accelerator.memory import *", actual_memory_namespace
+        )
+        exec("from torch.accelerator.memory import *", expected_memory_namespace)
         self.assertEqual(
             {name for name in actual_namespace if not name.startswith("__")},
             SUPPORTED,
+        )
+        self.assertEqual(
+            {
+                name
+                for name in actual_memory_namespace
+                if not name.startswith("__")
+            },
+            SUPPORTED_MEMORY,
         )
         for name in SUPPORTED:
             with self.subTest(name=name):
@@ -167,6 +205,13 @@ class AcceleratorReferenceTests(unittest.TestCase):
                         self.pickle_shape(actual, protocol),
                         self.pickle_shape(expected, protocol),
                     )
+        for name in SUPPORTED_MEMORY:
+            self.assertIs(
+                actual_memory_namespace[name], getattr(actual_module.memory, name)
+            )
+            self.assertIs(
+                expected_memory_namespace[name], getattr(expected_module.memory, name)
+            )
 
         for module in (torch, reference_torch):
             namespace = {}
@@ -264,6 +309,63 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertNotIn("torch_rs.cuda", sys.modules)
 
+    def test_empty_cache_around_real_cuda_allocation_preserves_cpu_build(self):
+        actual_accelerator = torch.accelerator
+        actual_memory = importlib.import_module("torch_rs.accelerator.memory")
+
+        def actual_state():
+            return (
+                actual_accelerator.current_accelerator(),
+                actual_accelerator.is_available(),
+                actual_accelerator.device_count(),
+                actual_accelerator.empty_cache(),
+                actual_memory.empty_cache(),
+                torch._C._has_cuda,
+                torch.version.cuda,
+                hasattr(torch, "cuda"),
+            )
+
+        cpu_build_state = (None, False, 0, None, None, False, None, False)
+        self.assertEqual(actual_state(), cpu_build_state)
+
+        if not reference_torch.cuda.is_available():
+            self.skipTest("requires a CUDA-visible reference PyTorch build")
+
+        expected_accelerator = reference_torch.accelerator
+        expected_memory = importlib.import_module("torch.accelerator.memory")
+        self.assertIs(expected_accelerator.memory, expected_memory)
+        self.assertIs(expected_accelerator.empty_cache, expected_memory.empty_cache)
+
+        device_index = reference_torch.cuda.current_device()
+        device = reference_torch.device("cuda", device_index)
+        self.assertIs(expected_accelerator.empty_cache(), None)
+        self.assertIs(actual_accelerator.empty_cache(), None)
+        baseline_allocated = reference_torch.cuda.memory_allocated(device_index)
+
+        probe = reference_torch.ones(1 << 20, device=device)
+        reference_torch.cuda.synchronize(device_index)
+        live_allocated = reference_torch.cuda.memory_allocated(device_index)
+        self.assertGreater(live_allocated, baseline_allocated)
+        self.assertIs(expected_memory.empty_cache(), None)
+        self.assertIs(actual_memory.empty_cache(), None)
+        self.assertEqual(probe[0].item(), 1.0)
+        self.assertEqual(
+            reference_torch.cuda.memory_allocated(device_index), live_allocated
+        )
+
+        del probe
+        gc.collect()
+        reference_torch.cuda.synchronize(device_index)
+        cached_reserved = reference_torch.cuda.memory_reserved(device_index)
+        self.assertLess(
+            reference_torch.cuda.memory_allocated(device_index), live_allocated
+        )
+        self.assertIs(expected_accelerator.empty_cache(), None)
+        self.assertLessEqual(
+            reference_torch.cuda.memory_reserved(device_index), cached_reserved
+        )
+        self.assertEqual(actual_state(), cpu_build_state)
+
     def threaded_outcome(self, module):
         accelerator = module.accelerator
         baseline = (
@@ -273,6 +375,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
             self.call_outcome(accelerator.current_device_index),
             accelerator.is_available(),
             accelerator.device_count(),
+            accelerator.empty_cache(),
+            accelerator.memory.empty_cache(),
         )
         worker_count = 8
         barrier = threading.Barrier(worker_count)
@@ -292,6 +396,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
                         self.call_outcome(accelerator.current_device_index),
                         accelerator.is_available(),
                         accelerator.device_count(),
+                        accelerator.empty_cache(),
+                        accelerator.memory.empty_cache(),
                         module.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -317,8 +423,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 for index, result in enumerate(results):
                     expected_grad_state = index % 2 == 0
                     self.assertEqual(result[0], expected_grad_state)
-                    self.assertEqual(result[1:7], baseline)
-                    self.assertEqual(result[7], expected_grad_state)
+                    self.assertEqual(result[1:9], baseline)
+                    self.assertEqual(result[9], expected_grad_state)
                 self.assertEqual(baseline[2], baseline[3])
                 if module is torch:
                     self.assertEqual(
@@ -332,16 +438,18 @@ class AcceleratorReferenceTests(unittest.TestCase):
                     )
                 self.assertIs(type(baseline[4]), bool)
                 self.assertIs(type(baseline[5]), int)
+                self.assertIs(baseline[6], None)
+                self.assertIs(baseline[7], None)
 
     def reload_contract(self, module):
         accelerator = module.accelerator
         old_all = accelerator.__all__
         old_functions = {
-            name: getattr(accelerator, name) for name in SUPPORTED
+            name: getattr(accelerator, name) for name in SUPPORTED_PARENT
         }
         reloaded = importlib.reload(accelerator)
         new_functions = {
-            name: getattr(accelerator, name) for name in SUPPORTED
+            name: getattr(accelerator, name) for name in SUPPORTED_PARENT
         }
 
         stale_pickle_errors = []
@@ -366,20 +474,76 @@ class AcceleratorReferenceTests(unittest.TestCase):
             accelerator.__all__ is not old_all,
             tuple(
                 old_functions[name] is not new_functions[name]
-                for name in sorted(SUPPORTED)
+                for name in sorted(SUPPORTED_PARENT)
             ),
-            tuple(copy.copy(new_functions[name]) is new_functions[name] for name in sorted(SUPPORTED)),
+            tuple(
+                copy.copy(new_functions[name]) is new_functions[name]
+                for name in sorted(SUPPORTED_PARENT)
+            ),
             tuple(
                 copy.deepcopy(new_functions[name]) is new_functions[name]
-                for name in sorted(SUPPORTED)
+                for name in sorted(SUPPORTED_PARENT)
             ),
             tuple(
                 pickle.loads(pickle.dumps(new_functions[name]))
                 is new_functions[name]
-                for name in sorted(SUPPORTED)
+                for name in sorted(SUPPORTED_PARENT)
             ),
             tuple(stale_pickle_errors),
         )
+
+    def memory_reload_contract(self, module):
+        accelerator = module.accelerator
+        memory = importlib.import_module(f"{module.__name__}.accelerator.memory")
+        old_all = memory.__all__
+        old_empty_cache = memory.empty_cache
+
+        reloaded_accelerator = importlib.reload(accelerator)
+        parent_reload_state = (
+            reloaded_accelerator is accelerator,
+            accelerator.memory is memory,
+            accelerator.empty_cache is old_empty_cache,
+            memory.empty_cache is old_empty_cache,
+            accelerator.empty_cache(),
+        )
+
+        reloaded_memory = importlib.reload(memory)
+        new_empty_cache = memory.empty_cache
+        try:
+            pickle.dumps(old_empty_cache)
+        except Exception as error:
+            stale_pickle_error = (
+                type(error).__name__,
+                re.sub(r"0x[0-9a-fA-F]+", "0x...", str(error)).replace(
+                    "torch_rs", "torch"
+                ),
+            )
+        else:
+            self.fail("the stale memory function unexpectedly remained pickleable")
+
+        memory_reload_state = (
+            reloaded_memory is memory,
+            accelerator.memory is memory,
+            sys.modules[memory.__name__] is memory,
+            memory.__all__ is not old_all,
+            tuple(name for name in memory.__all__ if name in SUPPORTED_MEMORY),
+            new_empty_cache is not old_empty_cache,
+            accelerator.empty_cache is old_empty_cache,
+            accelerator.empty_cache is not new_empty_cache,
+            copy.copy(new_empty_cache) is new_empty_cache,
+            copy.deepcopy(new_empty_cache) is new_empty_cache,
+            pickle.loads(pickle.dumps(new_empty_cache)) is new_empty_cache,
+            new_empty_cache(),
+            stale_pickle_error,
+        )
+
+        importlib.reload(accelerator)
+        rebound_state = (
+            accelerator.memory is memory,
+            accelerator.empty_cache is new_empty_cache,
+            accelerator.empty_cache(),
+        )
+        return parent_reload_state, memory_reload_state, rebound_state
 
     def test_reload_behavior_matches_pytorch_2_13(self):
         self.assertEqual(
@@ -404,6 +568,12 @@ class AcceleratorReferenceTests(unittest.TestCase):
                         getattr(reference_torch.accelerator, name), protocol
                     ),
                 )
+
+    def test_memory_reload_behavior_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.memory_reload_contract(torch),
+            self.memory_reload_contract(reference_torch),
+        )
 
     def test_argument_errors_match_pytorch_2_13(self):
         actual = torch.accelerator
@@ -461,6 +631,18 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 lambda: actual.device_count(device=True),
                 lambda: expected.device_count(device=True),
             ),
+            (
+                lambda: actual.empty_cache(None),
+                lambda: expected.empty_cache(None),
+            ),
+            (
+                lambda: actual.empty_cache(None, None),
+                lambda: expected.empty_cache(None, None),
+            ),
+            (
+                lambda: actual.empty_cache(device=True),
+                lambda: expected.empty_cache(device=True),
+            ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
@@ -475,7 +657,6 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 "Graph",
                 "current_stream",
                 "device_index",
-                "empty_cache",
                 "get_memory_info",
                 "memory_stats",
                 "set_device_index",
@@ -483,17 +664,28 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 "synchronize",
             }.issubset(unsupported)
         )
-        for name in unsupported | {"graphs", "memory"}:
+        for name in unsupported | {"graphs"}:
             with self.subTest(name=name):
                 self.assertFalse(hasattr(actual, name))
 
-        for module_name in (
-            "torch_rs.accelerator.graphs",
-            "torch_rs.accelerator.memory",
-        ):
-            with self.subTest(module=module_name):
-                with self.assertRaises(ModuleNotFoundError):
-                    importlib.import_module(module_name)
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("torch_rs.accelerator.graphs")
+
+        actual_memory = importlib.import_module("torch_rs.accelerator.memory")
+        expected_memory = importlib.import_module("torch.accelerator.memory")
+        self.assertIs(actual.memory, actual_memory)
+        self.assertIs(actual.empty_cache, actual_memory.empty_cache)
+        self.assertEqual(
+            actual_memory.__all__,
+            [
+                name
+                for name in expected_memory.__all__
+                if name in SUPPORTED_MEMORY
+            ],
+        )
+        for name in set(expected_memory.__all__) - SUPPORTED_MEMORY:
+            with self.subTest(memory_name=name):
+                self.assertFalse(hasattr(actual_memory, name))
 
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertTrue(hasattr(reference_torch, "cuda"))
