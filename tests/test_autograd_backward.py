@@ -35,6 +35,30 @@ class MaterializationCountingSequence(CustomSequence):
         return iter(self.values)
 
 
+class BoundedConsumptionSequence(Sequence):
+    def __init__(self, value, count):
+        self.value = value
+        self.count = count
+        self.length_requests = 0
+        self.materializations = 0
+        self.consumed = 0
+
+    def __getitem__(self, index):
+        if 0 <= index < self.count:
+            return self.value
+        raise IndexError(index)
+
+    def __len__(self):
+        self.length_requests += 1
+        return 1_000_000
+
+    def __iter__(self):
+        self.materializations += 1
+        for _ in range(self.count):
+            self.consumed += 1
+            yield self.value
+
+
 class ListSubclass(list):
     pass
 
@@ -228,6 +252,25 @@ class AutogradBackwardTests(unittest.TestCase):
         self.assertEqual(roots.materializations, 2)
         self.assertIs(leaf.grad, gradient)
         self.assertEqual(leaf.grad.tolist(), [6.0])
+
+    def test_custom_root_sequence_overflow_has_bounded_consumption(self):
+        message = (
+            "torch_rs.autograd.backward only supports an exact native Tensor, "
+            "directly or in a non-string Sequence containing at most ten "
+            "exact native Tensors"
+        )
+        leaf = torch.tensor([3.0], requires_grad=True)
+        roots = BoundedConsumptionSequence(leaf, 1_000)
+
+        with self.assertRaisesRegex(TypeError, f"^{re.escape(message)}$"):
+            torch.autograd.backward(roots)
+        self.assertEqual(roots.length_requests, 0)
+        self.assertEqual(roots.materializations, 1)
+        self.assertEqual(roots.consumed, 11)
+        self.assertIsNone(leaf.grad)
+
+        leaf.backward()
+        self.assertEqual(leaf.grad.tolist(), [1.0])
 
     def test_two_leaf_roots_return_none_and_accumulate_unit_gradients(self):
         calls = (
