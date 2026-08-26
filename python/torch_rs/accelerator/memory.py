@@ -4,7 +4,7 @@ from typing import Any as _Any
 from .. import device as _device
 
 
-__all__ = ["empty_cache", "memory_stats"]
+__all__ = ["empty_cache", "memory_allocated", "memory_stats"]
 
 
 def empty_cache() -> None:
@@ -81,3 +81,19 @@ def memory_stats(
         OrderedDict[str, Any]: an ordered dictionary mapping statistic names to their values.
     """
     return _OrderedDict()
+
+
+def memory_allocated(device_index: _device | str | int | None = None, /) -> int:
+    r"""Return the current :ref:`accelerator<accelerators>` device memory occupied by tensors
+    in bytes for a given device index.
+
+    Args:
+        device_index (:class:`torch.device`, str, int, optional): the index of the device to target.
+            If not given, use :func:`torch.accelerator.current_device_index` by default.
+            If a :class:`torch.device` or str is provided, its type must match the current
+            :ref:`accelerator<accelerators>` device type.
+
+    Returns:
+        int: the current memory occupied by live tensors (in bytes) within the current process.
+    """
+    return memory_stats(device_index).get("allocated_bytes.all.current", 0)
