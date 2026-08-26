@@ -158,6 +158,46 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("empty strided scalar target", empty_strided, scalar),
         )
 
+    def matrix_vector_broadcast_cases(self):
+        contiguous_matrix = torch.tensor(
+            [[-3.0, -1.0, 0.0, 2.0], [4.0, 1.5, -2.5, 3.0]]
+        )
+        contiguous_vector = torch.tensor([2.0, -2.0, 0.5, -0.5])
+        transposed_matrix = torch.tensor(
+            [[-6.0, 4.0], [-2.0, 3.0], [0.0, 2.0], [5.0, -1.0]]
+        ).transpose(0, 1)
+        strided_vector = torch.tensor(
+            [[11.0, -4.0], [12.0, 0.0], [13.0, 2.0], [14.0, 5.0]]
+        ).transpose(0, 1)[1]
+        empty_rows_matrix = torch.zeros((4, 0)).transpose(0, 1)
+        empty_columns_matrix = torch.zeros((0, 3)).transpose(0, 1)
+        empty_vector = torch.zeros((0,))
+
+        return (
+            (
+                "contiguous matrix input",
+                contiguous_matrix,
+                contiguous_vector,
+            ),
+            (
+                "contiguous matrix target",
+                contiguous_vector,
+                contiguous_matrix,
+            ),
+            (
+                "strided matrix input",
+                transposed_matrix,
+                strided_vector,
+            ),
+            (
+                "strided matrix target",
+                strided_vector,
+                transposed_matrix,
+            ),
+            ("empty rows matrix input", empty_rows_matrix, contiguous_vector),
+            ("empty columns matrix target", empty_vector, empty_columns_matrix),
+        )
+
     @staticmethod
     def broadcast_warning(input, target):
         return (
@@ -212,9 +252,12 @@ class FunctionalMseLossTests(unittest.TestCase):
             "``reduce=None``",
             "``weight=None``",
             "exactly one operand may be rank zero",
+            "rank-2 ``(M, N)`` matrix",
+            "rank-1 ``(N,)`` vector",
+            "either operand order",
             "fuses subtraction and square into one native pass",
             "fresh, independent tensor",
-            "scalar-broadcast warning",
+            "broadcast warning",
             "Other broadcasting",
             "Tensor subclasses",
             "active ``TorchFunctionMode`` contexts",
@@ -281,8 +324,9 @@ class FunctionalMseLossTests(unittest.TestCase):
                         self.tensor_state(target)[-1], target_state[-1]
                     )
 
-    def test_scalar_broadcast_matches_composition_warning_and_storage(self):
-        for case, input, target in self.scalar_broadcast_cases():
+    def test_supported_broadcasts_match_composition_warning_and_storage(self):
+        cases = self.scalar_broadcast_cases() + self.matrix_vector_broadcast_cases()
+        for case, input, target in cases:
             difference = input - target
             expected = difference.square()
             input_state = self.tensor_state(input)
@@ -537,6 +581,44 @@ class FunctionalMseLossTests(unittest.TestCase):
                         self.tensor_bits(expected),
                     )
 
+    def test_matrix_vector_broadcast_float32_edges_match_composition_bits(self):
+        matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0x7F81_2345,
+            ],
+            dtype=np.uint32,
+        )
+        vector_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0001,
+                0xFFC6_789A,
+            ],
+            dtype=np.uint32,
+        )
+        matrix = torch.tensor(memoryview(matrix_bits.view(np.float32)))
+        matrix = matrix.view(3, 2).transpose(0, 1)
+        vector = torch.tensor(memoryview(vector_bits.view(np.float32)))
+
+        for matrix_on_left in (True, False):
+            input, target = (matrix, vector) if matrix_on_left else (vector, matrix)
+            difference = input - target
+            expected = difference.square()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                actual = functional.mse_loss(input, target, reduction="none")
+            with self.subTest(matrix_on_left=matrix_on_left):
+                self.assertEqual(actual.stride(), difference.stride())
+                np.testing.assert_array_equal(
+                    self.tensor_bits(actual),
+                    self.tensor_bits(expected),
+                )
+
     def test_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
@@ -611,6 +693,38 @@ class FunctionalMseLossTests(unittest.TestCase):
                 self.assertIsNone(input.grad)
                 self.assertIsNone(target.grad)
 
+    def test_matrix_vector_broadcast_requires_grad_operands_need_no_grad(self):
+        for matrix_on_left in (True, False):
+            matrix = torch.tensor(
+                [[1.0, -2.0, 3.0], [4.0, -5.0, 6.0]],
+                requires_grad=True,
+            )
+            vector = torch.tensor([0.5, -1.5, 2.5])
+            input, target = (matrix, vector) if matrix_on_left else (vector, matrix)
+            with self.subTest(matrix_on_left=matrix_on_left):
+                with self.assertWarnsRegex(UserWarning, "Using a target size"):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        r"^mse_loss\(\): autograd recording is not supported$",
+                    ):
+                        functional.mse_loss(input, target, reduction="none")
+
+                with warnings.catch_warnings(), torch.no_grad():
+                    warnings.simplefilter("ignore")
+                    actual = functional.mse_loss(input, target, reduction="none")
+                    difference = input - target
+                    expected = difference.square()
+                self.assert_matches_composition(
+                    actual,
+                    expected,
+                    case="matrix-vector no_grad",
+                    expected_stride=difference.stride(),
+                )
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertIsNone(matrix.grad)
+                self.assertIsNone(vector.grad)
+
     def test_unsupported_options_shapes_and_operands_are_rejected(self):
         input = torch.ones((2, 3))
         target = torch.zeros((2, 3))
@@ -666,17 +780,33 @@ class FunctionalMseLossTests(unittest.TestCase):
         broadcast_error = (
             "torch_rs.nn.functional.mse_loss does not support broadcasting"
         )
-        for other in (
-            torch.zeros((3,)),
-            torch.zeros((2, 1)),
-            torch.zeros((2, 2)),
+        for actual_input, actual_target in (
+            (input, torch.zeros((4,))),
+            (torch.zeros((4,)), input),
+            (input, torch.zeros((1,))),
+            (torch.zeros((1,)), input),
+            (input, torch.zeros((2, 1))),
+            (torch.zeros((2, 1)), input),
+            (input, torch.zeros((1, 3))),
+            (torch.zeros((1, 3)), input),
+            (input, torch.zeros((2, 2))),
+            (torch.zeros((2, 2)), input),
+            (input, torch.zeros((1, 2, 3))),
+            (torch.zeros((1, 2, 3)), input),
         ):
-            with self.subTest(target_shape=other.shape):
+            with self.subTest(
+                input_shape=actual_input.shape,
+                target_shape=actual_target.shape,
+            ):
                 with self.assertRaisesRegex(
                     NotImplementedError,
                     f"^{re.escape(broadcast_error)}$",
                 ):
-                    functional.mse_loss(input, other, reduction="none")
+                    functional.mse_loss(
+                        actual_input,
+                        actual_target,
+                        reduction="none",
+                    )
 
         class Override:
             calls = 0

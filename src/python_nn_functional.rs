@@ -512,12 +512,16 @@ fn _nn_functional_mse_loss(
     let shapes_match = input_shape == target_shape;
     let broadcasts_one_scalar =
         !shapes_match && (input_shape.is_empty() != target_shape.is_empty());
-    if !shapes_match && !broadcasts_one_scalar {
+    let broadcasts_matrix_vector = (input_shape.len() == 2
+        && target_shape.len() == 1
+        && input_shape[1] == target_shape[0])
+        || (target_shape.len() == 2 && input_shape.len() == 1 && target_shape[1] == input_shape[0]);
+    if !shapes_match && !broadcasts_one_scalar && !broadcasts_matrix_vector {
         return Err(PyNotImplementedError::new_err(
             "torch_rs.nn.functional.mse_loss does not support broadcasting",
         ));
     }
-    if broadcasts_one_scalar {
+    if !shapes_match {
         warn_mse_loss_broadcast(py, input_shape, target_shape)?;
     }
     if is_grad_enabled() && (input.inner().requires_grad() || target.inner().requires_grad()) {

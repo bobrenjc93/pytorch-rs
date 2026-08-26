@@ -5534,6 +5534,42 @@ mod tests {
     }
 
     #[test]
+    fn squared_difference_broadcasts_trailing_vectors_in_both_operand_orders() {
+        let matrix = Tensor::from_vec(vec![-3.0, 4.0, -1.0, 2.0, 0.0, 1.0], [3, 2])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let vector = Tensor::from_vec(vec![0.5, -1.5, 2.5], [3]).unwrap();
+        let empty_rows = Tensor::zeros([3, 0]).unwrap().transpose(0, 1).unwrap();
+        let empty_columns = Tensor::zeros([0, 3]).unwrap().transpose(0, 1).unwrap();
+        let empty_vector = Tensor::zeros([0]).unwrap();
+
+        for (left, right) in [
+            (&matrix, &vector),
+            (&vector, &matrix),
+            (&empty_rows, &vector),
+            (&vector, &empty_rows),
+            (&empty_columns, &empty_vector),
+            (&empty_vector, &empty_columns),
+        ] {
+            let expected = left.sub(right).unwrap().square().unwrap();
+            let actual = left.squared_difference(right).unwrap();
+
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), 0);
+            assert!(!actual.shares_storage_with(left));
+            assert!(!actual.shares_storage_with(right));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
     fn contiguous_matmul_is_bitwise_identical_to_shared_gradient_fallback() {
         let left = Tensor::from_vec(
             [

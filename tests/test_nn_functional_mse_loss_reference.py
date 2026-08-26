@@ -154,6 +154,56 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
             ("empty strided scalar target", empty_strided, scalar),
         )
 
+    def make_matrix_vector_broadcast_cases(self, module):
+        contiguous_matrix = self.tensor(
+            module,
+            [[-3.0, -1.0, 0.0, 2.0], [4.0, 1.5, -2.5, 3.0]],
+        )
+        contiguous_vector = self.tensor(
+            module,
+            [2.0, -2.0, 0.5, -0.5],
+        )
+        transposed_matrix = self.tensor(
+            module,
+            [[-6.0, 4.0], [-2.0, 3.0], [0.0, 2.0], [5.0, -1.0]],
+        ).transpose(0, 1)
+        strided_vector = self.tensor(
+            module,
+            [[11.0, -4.0], [12.0, 0.0], [13.0, 2.0], [14.0, 5.0]],
+        ).transpose(0, 1)[1]
+        empty_rows_matrix = module.zeros(
+            (4, 0), dtype=module.float32
+        ).transpose(0, 1)
+        empty_columns_matrix = module.zeros(
+            (0, 3), dtype=module.float32
+        ).transpose(0, 1)
+        empty_vector = module.zeros((0,), dtype=module.float32)
+
+        return (
+            (
+                "contiguous matrix input",
+                contiguous_matrix,
+                contiguous_vector,
+            ),
+            (
+                "contiguous matrix target",
+                contiguous_vector,
+                contiguous_matrix,
+            ),
+            (
+                "strided matrix input",
+                transposed_matrix,
+                strided_vector,
+            ),
+            (
+                "strided matrix target",
+                strided_vector,
+                transposed_matrix,
+            ),
+            ("empty rows matrix input", empty_rows_matrix, contiguous_vector),
+            ("empty columns matrix target", empty_vector, empty_columns_matrix),
+        )
+
     @staticmethod
     def call(module_functional, input, target, form):
         if form == "reduction keyword":
@@ -305,9 +355,17 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     reference_torch.equal(expected_target, expected_target_before)
                 )
 
-    def test_scalar_broadcast_layouts_warnings_storage_and_nonmutation_match(self):
-        actual_cases = self.make_scalar_broadcast_cases(torch)
-        expected_cases = self.make_scalar_broadcast_cases(reference_torch)
+    def test_supported_broadcasts_layouts_warnings_storage_and_nonmutation_match(
+        self,
+    ):
+        actual_cases = (
+            self.make_scalar_broadcast_cases(torch)
+            + self.make_matrix_vector_broadcast_cases(torch)
+        )
+        expected_cases = (
+            self.make_scalar_broadcast_cases(reference_torch)
+            + self.make_matrix_vector_broadcast_cases(reference_torch)
+        )
         for actual_case, expected_case in zip(
             actual_cases,
             expected_cases,
@@ -546,6 +604,63 @@ class FunctionalMseLossReferenceTests(unittest.TestCase):
                     expected,
                     case=(hex(scalar_bits), scalar_on_left),
                 )
+
+    def test_matrix_vector_broadcast_float32_edge_bits_match_pytorch_2_13(self):
+        matrix_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0x7F81_2345,
+            ],
+            dtype=np.uint32,
+        )
+        vector_bits = np.asarray(
+            [
+                0x8000_0000,
+                0x0000_0001,
+                0xFFC6_789A,
+            ],
+            dtype=np.uint32,
+        )
+        actual_matrix = torch.tensor(memoryview(matrix_bits.view(np.float32)))
+        actual_matrix = actual_matrix.view(3, 2).transpose(0, 1)
+        actual_vector = torch.tensor(memoryview(vector_bits.view(np.float32)))
+        expected_matrix = reference_torch.tensor(
+            memoryview(matrix_bits.view(np.float32))
+        ).view(3, 2).transpose(0, 1)
+        expected_vector = reference_torch.tensor(
+            memoryview(vector_bits.view(np.float32))
+        )
+
+        for matrix_on_left in (True, False):
+            actual_operands = (
+                (actual_matrix, actual_vector)
+                if matrix_on_left
+                else (actual_vector, actual_matrix)
+            )
+            expected_operands = (
+                (expected_matrix, expected_vector)
+                if matrix_on_left
+                else (expected_vector, expected_matrix)
+            )
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                actual = functional.mse_loss(
+                    *actual_operands,
+                    reduction="none",
+                )
+                expected = reference_functional.mse_loss(
+                    *expected_operands,
+                    reduction="none",
+                )
+            self.assert_matches(
+                actual,
+                expected,
+                case=("matrix-vector float32 edges", matrix_on_left),
+            )
 
     def test_requires_grad_operands_match_inside_no_grad(self):
         for input_requires_grad, target_requires_grad in (
