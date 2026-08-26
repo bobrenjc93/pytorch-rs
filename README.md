@@ -63,6 +63,7 @@ assert torch.accelerator.is_available() is False
 assert torch.accelerator.device_count() == 0
 assert torch.accelerator.empty_cache() is None
 assert torch.accelerator.memory_allocated() == 0
+assert torch.accelerator.memory_reserved() == 0
 assert torch.accelerator.memory_stats() == OrderedDict()
 try:
     torch.accelerator.current_device_index()
