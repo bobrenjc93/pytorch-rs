@@ -169,15 +169,11 @@ class IsDeterministicAlgorithmsWarnOnlyEnabledTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_deterministic_setters_remain_unsupported(self):
-        unsupported = (
-            "use_deterministic_algorithms",
-            "set_deterministic_debug_mode",
-        )
-        for name in unsupported:
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(torch, name))
-                self.assertNotIn(name, torch.__all__)
+    def test_default_only_debug_mode_setter_is_exposed(self):
+        self.assertFalse(hasattr(torch, "use_deterministic_algorithms"))
+        self.assertNotIn("use_deterministic_algorithms", torch.__all__)
+        self.assertTrue(hasattr(torch, "set_deterministic_debug_mode"))
+        self.assertEqual(torch.__all__.count("set_deterministic_debug_mode"), 1)
 
     def test_importing_the_package_does_not_import_pytorch(self):
         script = r"""
