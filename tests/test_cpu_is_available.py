@@ -133,6 +133,7 @@ class CpuIsAvailableTests(unittest.TestCase):
                 "synchronize",
                 "current_device",
                 "device_count",
+                "Event",
             ],
         )
 
@@ -151,6 +152,7 @@ class CpuIsAvailableTests(unittest.TestCase):
             {
                 "current_device",
                 "device_count",
+                "Event",
                 "is_available",
                 "is_initialized",
                 "synchronize",
@@ -214,6 +216,7 @@ class CpuIsAvailableTests(unittest.TestCase):
             {
                 "current_device",
                 "device_count",
+                "Event",
                 "is_available",
                 "is_initialized",
                 "synchronize",
@@ -222,7 +225,6 @@ class CpuIsAvailableTests(unittest.TestCase):
         for name in (
             "amp",
             "current_stream",
-            "Event",
             "get_capabilities",
             "set_device",
             "Stream",

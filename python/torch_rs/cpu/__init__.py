@@ -11,6 +11,7 @@ __all__ = [
     "synchronize",
     "current_device",
     "device_count",
+    "Event",
 ]
 
 
@@ -39,6 +40,20 @@ def synchronize(device: _device | str | int | None = None) -> None:
 
     N.B. This function only exists to facilitate device-agnostic code.
     """
+
+
+class Event:
+    def query(self) -> bool:
+        return True
+
+    def record(self, stream=None) -> None:
+        pass
+
+    def synchronize(self) -> None:
+        pass
+
+    def wait(self, stream=None) -> None:
+        pass
 
 
 def current_device() -> str:

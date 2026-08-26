@@ -205,6 +205,7 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
         supported = {
             "current_device",
             "device_count",
+            "Event",
             "is_available",
             "is_initialized",
             "synchronize",
@@ -294,7 +295,7 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_streams_events_and_device_mutation_remain_unsupported(self):
+    def test_streams_and_device_mutation_remain_unsupported(self):
         actual_cpu = torch.cpu
         expected_cpu = reference_torch.cpu
         actual_public = {
@@ -309,6 +310,7 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
             {
                 "current_device",
                 "device_count",
+                "Event",
                 "is_available",
                 "is_initialized",
                 "synchronize",
@@ -319,7 +321,6 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
             {
                 "amp",
                 "current_stream",
-                "Event",
                 "get_capabilities",
                 "set_device",
                 "Stream",

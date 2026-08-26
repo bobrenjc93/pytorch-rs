@@ -132,6 +132,7 @@ class CpuCurrentDeviceTests(unittest.TestCase):
                 "synchronize",
                 "current_device",
                 "device_count",
+                "Event",
             ],
         )
 
@@ -150,6 +151,7 @@ class CpuCurrentDeviceTests(unittest.TestCase):
             {
                 "current_device",
                 "device_count",
+                "Event",
                 "is_available",
                 "is_initialized",
                 "synchronize",
@@ -204,7 +206,7 @@ class CpuCurrentDeviceTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_streams_events_device_mutation_and_other_cpu_apis_remain_unsupported(self):
+    def test_streams_device_mutation_and_other_cpu_apis_remain_unsupported(self):
         cpu = torch.cpu
 
         self.assertEqual(
@@ -212,6 +214,7 @@ class CpuCurrentDeviceTests(unittest.TestCase):
             {
                 "current_device",
                 "device_count",
+                "Event",
                 "is_available",
                 "is_initialized",
                 "synchronize",
@@ -220,7 +223,6 @@ class CpuCurrentDeviceTests(unittest.TestCase):
         for name in (
             "amp",
             "current_stream",
-            "Event",
             "get_capabilities",
             "set_device",
             "Stream",
