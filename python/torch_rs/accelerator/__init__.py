@@ -96,7 +96,8 @@ def current_device_index() -> int:
         int: the index of a currently selected device.
     """
     _, _, _, device_index = _discover_accelerator()
-    # PyTorch retains an ``int`` annotation even though CPU-only builds return None.
+    if device_index is None:
+        raise RuntimeError("Cannot access accelerator device when none is available.")
     return device_index
 
 
