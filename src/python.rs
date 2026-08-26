@@ -159,6 +159,8 @@ const ADJOINT_SCALAR_WARNING: &CStr =
     c"adjoint() is deprecated on 0-D tensors. Consider using x.conj().";
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
 const TORCH_FUNCTION_PLAIN_METHOD_WARNING: &CStr = c"Defining your `__torch_function__` as a plain method is deprecated and will be an error in future, please define it as a classmethod.";
+const IMAG_NON_COMPLEX_DTYPE_ERROR: &str =
+    "imag is not implemented for tensors with non-complex dtypes.";
 
 fn device_ordinal(device: Device) -> PyResult<i64> {
     device
@@ -644,6 +646,33 @@ impl PyTensorBase {
         // Float32 is the only supported dtype, so every Tensor is already real.
         // Preserve the wrapper itself without inspecting storage or autograd state.
         Ok(tensor.clone().unbind().into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nReturns a new tensor containing imaginary values of the :attr:`self` tensor.\nThe returned tensor and :attr:`self` share the same underlying storage.\n\n.. warning::\n    :func:`imag` is only supported for tensors with complex dtypes.\n\nExample::\n\n    >>> x=torch.randn(4, dtype=torch.cfloat)\n    >>> x\n    tensor([(0.3100+0.3553j), (-0.5445-0.7896j), (-1.6492-0.0633j), (-0.0638-0.8119j)])\n    >>> x.imag\n    tensor([ 0.3553, -0.7896, -0.0633, -0.8119])\n\n"]
+    #[getter]
+    fn imag(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_mode(slf.py(), tensor, TensorBaseModeTarget::GetSet("imag"))?
+        {
+            return Ok(result);
+        }
+
+        // Float32 is the only supported dtype, so no Tensor has an imaginary
+        // component. Construct a new exception for every descriptor access.
+        Err(PyRuntimeError::new_err(IMAG_NON_COMPLEX_DTYPE_ERROR))
+    }
+
+    #[setter(imag)]
+    fn set_imag(_slf: &Bound<'_, Self>, _value: &Bound<'_, PyAny>) -> PyResult<()> {
+        Err(PyRuntimeError::new_err(IMAG_NON_COMPLEX_DTYPE_ERROR))
+    }
+
+    #[deleter(imag)]
+    fn delete_imag(_slf: &Bound<'_, Self>) -> PyResult<()> {
+        Err(PyRuntimeError::new_err(IMAG_NON_COMPLEX_DTYPE_ERROR))
     }
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
