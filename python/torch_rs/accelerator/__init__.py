@@ -3,7 +3,7 @@ This package introduces support for the current :ref:`accelerator<accelerators>`
 """
 
 from .. import device as _device
-from .memory import empty_cache, memory_allocated, memory_stats
+from .memory import empty_cache, memory_allocated, memory_reserved, memory_stats
 
 
 __all__ = [
@@ -13,6 +13,7 @@ __all__ = [
     "empty_cache",
     "is_available",
     "memory_allocated",
+    "memory_reserved",
     "memory_stats",
 ]
 
