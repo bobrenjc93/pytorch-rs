@@ -25,6 +25,7 @@ SUPPORTED = {
     "device_count",
     "is_available",
 }
+SUPPORTED_EXPORTS = SUPPORTED | {"empty_cache"}
 
 NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
 
@@ -124,9 +125,9 @@ class AcceleratorReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_module.__all__,
-            [name for name in expected_module.__all__ if name in SUPPORTED],
+            [name for name in expected_module.__all__ if name in SUPPORTED_EXPORTS],
         )
-        for name in ("accelerator", *SUPPORTED):
+        for name in ("accelerator", *SUPPORTED_EXPORTS):
             with self.subTest(top_level_export=name):
                 self.assertEqual(
                     torch.__all__.count(name),
@@ -146,9 +147,9 @@ class AcceleratorReferenceTests(unittest.TestCase):
         exec("from torch.accelerator import *", expected_namespace)
         self.assertEqual(
             {name for name in actual_namespace if not name.startswith("__")},
-            SUPPORTED,
+            SUPPORTED_EXPORTS,
         )
-        for name in SUPPORTED:
+        for name in SUPPORTED_EXPORTS:
             with self.subTest(name=name):
                 actual = getattr(actual_module, name)
                 expected = getattr(expected_module, name)
@@ -171,7 +172,7 @@ class AcceleratorReferenceTests(unittest.TestCase):
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            for name in ("accelerator", *SUPPORTED):
+            for name in ("accelerator", *SUPPORTED_EXPORTS):
                 self.assertNotIn(name, namespace)
 
     def test_cpu_only_values_bound_the_cuda_enabled_reference(self):
@@ -391,7 +392,7 @@ class AcceleratorReferenceTests(unittest.TestCase):
             [
                 name
                 for name in reference_torch.accelerator.__all__
-                if name in SUPPORTED
+                if name in SUPPORTED_EXPORTS
             ],
         )
         for name in sorted(SUPPORTED):
@@ -466,16 +467,15 @@ class AcceleratorReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_selection_stream_memory_graph_and_execution_remain_unsupported(self):
+    def test_selection_stream_other_memory_graph_and_execution_remain_unsupported(self):
         actual = torch.accelerator
         expected = reference_torch.accelerator
-        unsupported = set(expected.__all__) - SUPPORTED
+        unsupported = set(expected.__all__) - SUPPORTED_EXPORTS
         self.assertTrue(
             {
                 "Graph",
                 "current_stream",
                 "device_index",
-                "empty_cache",
                 "get_memory_info",
                 "memory_stats",
                 "set_device_index",
@@ -483,17 +483,12 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 "synchronize",
             }.issubset(unsupported)
         )
-        for name in unsupported | {"graphs", "memory"}:
+        for name in unsupported | {"graphs"}:
             with self.subTest(name=name):
                 self.assertFalse(hasattr(actual, name))
 
-        for module_name in (
-            "torch_rs.accelerator.graphs",
-            "torch_rs.accelerator.memory",
-        ):
-            with self.subTest(module=module_name):
-                with self.assertRaises(ModuleNotFoundError):
-                    importlib.import_module(module_name)
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("torch_rs.accelerator.graphs")
 
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertTrue(hasattr(reference_torch, "cuda"))
