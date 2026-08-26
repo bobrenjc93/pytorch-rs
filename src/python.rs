@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
-    PyIndexError, PyMemoryError, PyOverflowError, PyRuntimeError, PyTypeError, PyUserWarning,
-    PyValueError,
+    PyIndexError, PyMemoryError, PyNotImplementedError, PyOverflowError, PyRuntimeError,
+    PyTypeError, PyUserWarning, PyValueError,
 };
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -44,6 +44,10 @@ static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
+const BROADCAST_TENSORS_EXACT_TENSORS_ERROR: &str =
+    "broadcast_tensors() only supports exact native Tensor inputs";
+const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
+    "torch_rs.broadcast_tensors does not support shape expansion";
 
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
@@ -1402,7 +1406,7 @@ pub(crate) fn arange_variable_function(
         .unbind())
 }
 
-fn dispatch_empty_atleast_input(
+fn dispatch_empty_variadic_tensor_input(
     py: Python<'_>,
     name: &str,
     args: &Bound<'_, PyTuple>,
@@ -1458,7 +1462,7 @@ pub(crate) fn atleast_1d_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if let Some(result) = dispatch_empty_atleast_input(py, "atleast_1d", args, kwargs)? {
+    if let Some(result) = dispatch_empty_variadic_tensor_input(py, "atleast_1d", args, kwargs)? {
         return Ok(result);
     }
     if args.len() != 1 || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
@@ -1498,7 +1502,7 @@ pub(crate) fn atleast_2d_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if let Some(result) = dispatch_empty_atleast_input(py, "atleast_2d", args, kwargs)? {
+    if let Some(result) = dispatch_empty_variadic_tensor_input(py, "atleast_2d", args, kwargs)? {
         return Ok(result);
     }
     if args.len() != 1 || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
@@ -1537,7 +1541,7 @@ pub(crate) fn atleast_3d_variable_function(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Py<PyAny>> {
-    if let Some(result) = dispatch_empty_atleast_input(py, "atleast_3d", args, kwargs)? {
+    if let Some(result) = dispatch_empty_variadic_tensor_input(py, "atleast_3d", args, kwargs)? {
         return Ok(result);
     }
     if args.len() != 1 || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
@@ -1573,6 +1577,47 @@ pub(crate) fn atleast_3d_variable_function(
         .map_err(|error| tensor_error(&error))?
     };
     Ok(Py::new(py, PyTensor::new(inner))?.into_any())
+}
+
+pub(crate) fn broadcast_tensors_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if let Some(result) =
+        dispatch_empty_variadic_tensor_input(py, "broadcast_tensors", args, kwargs)?
+    {
+        return Ok(result);
+    }
+    if args.len() != 1 || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
+        return Err(PyTypeError::new_err(BROADCAST_TENSORS_EXACT_TENSORS_ERROR));
+    }
+
+    let inputs = args.get_item(0)?;
+    if !inputs.is_exact_instance_of::<PyTuple>() {
+        return Err(PyTypeError::new_err(BROADCAST_TENSORS_EXACT_TENSORS_ERROR));
+    }
+    let inputs = inputs.cast::<PyTuple>()?;
+    if inputs.is_empty() {
+        return Ok(inputs.clone().into_any().unbind());
+    }
+    for input in inputs {
+        if !input.is_exact_instance_of::<PyTensor>() {
+            return Err(PyTypeError::new_err(BROADCAST_TENSORS_EXACT_TENSORS_ERROR));
+        }
+    }
+
+    let first = inputs.get_item(0)?.cast_into::<PyTensor>()?.try_borrow()?;
+    for input in inputs.iter().skip(1) {
+        let input = input.cast_into::<PyTensor>()?.try_borrow()?;
+        if !first.inner().is_same_size(input.inner()) {
+            return Err(PyNotImplementedError::new_err(
+                BROADCAST_TENSORS_EXPANSION_ERROR,
+            ));
+        }
+    }
+
+    Ok(inputs.clone().into_any().unbind())
 }
 
 pub(crate) fn adjoint_variable_function(

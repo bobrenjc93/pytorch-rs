@@ -237,11 +237,9 @@ class BroadcastShapesTests(unittest.TestCase):
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
 
-        self.assertFalse(hasattr(torch, "broadcast_tensors"))
-        self.assertFalse(hasattr(functional, "broadcast_tensors"))
+        self.assertIs(torch.broadcast_tensors, functional.broadcast_tensors)
         self.assertFalse(hasattr(torch, "SymInt"))
 
 
 if __name__ == "__main__":
     unittest.main()
-

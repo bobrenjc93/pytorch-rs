@@ -16,8 +16,9 @@ use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
     adjoint_variable_function, arange_variable_function, atleast_1d_variable_function,
-    atleast_2d_variable_function, atleast_3d_variable_function, can_cast_variable_function,
-    ceil_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
+    atleast_2d_variable_function, atleast_3d_variable_function,
+    broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
+    detach_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, is_conj_variable_function,
     is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
     movedim_variable_function, mul_variable_function, multiply_variable_function,
@@ -31,13 +32,14 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 37] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 38] = [
     "get_device",
     "scalar_tensor",
     "arange",
     "atleast_1d",
     "atleast_2d",
     "atleast_3d",
+    "broadcast_tensors",
     "adjoint",
     "positive",
     "detach",
@@ -736,6 +738,10 @@ variable_function_callback!(arange_callback, arange_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
 variable_function_callback!(atleast_2d_callback, atleast_2d_variable_function);
 variable_function_callback!(atleast_3d_callback, atleast_3d_variable_function);
+variable_function_callback!(
+    broadcast_tensors_callback,
+    broadcast_tensors_variable_function
+);
 variable_function_callback!(adjoint_callback, adjoint_variable_function);
 variable_function_callback!(positive_callback, positive_variable_function);
 variable_function_callback!(detach_callback, detach_variable_function);
@@ -801,6 +807,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),
+        variable_function_method!(c"broadcast_tensors", broadcast_tensors_callback, c""),
         variable_function_method!(c"adjoint", adjoint_callback, ADJOINT_DOC),
         variable_function_method!(c"positive", positive_callback, POSITIVE_DOC),
         variable_function_method!(c"detach", detach_callback, c""),

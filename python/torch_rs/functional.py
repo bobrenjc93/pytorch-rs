@@ -13,10 +13,17 @@ from .torch_rs import (
     atleast_1d as _VF_atleast_1d,
     atleast_2d as _VF_atleast_2d,
     atleast_3d as _VF_atleast_3d,
+    broadcast_tensors as _VF_broadcast_tensors,
 )
 
 
-__all__ = ["atleast_1d", "atleast_2d", "atleast_3d", "broadcast_shapes"]
+__all__ = [
+    "atleast_1d",
+    "atleast_2d",
+    "atleast_3d",
+    "broadcast_shapes",
+    "broadcast_tensors",
+]
 
 
 _ATLEAST_1D_SEQUENCE_UNSUPPORTED = (
@@ -252,6 +259,51 @@ def atleast_3d(*tensors):
         atleast_3d,
         _atleast_3d_impl,
         tensors[0],
+        {},
+    )
+
+
+def _broadcast_tensors_impl(tensors):
+    return tensors
+
+
+def broadcast_tensors(*tensors):
+    r"""broadcast_tensors(*tensors) -> List of Tensors
+
+    Broadcasts the given tensors according to :ref:`broadcasting-semantics`.
+
+    Args:
+        *tensors: any number of tensors of the same type
+
+    .. warning::
+
+        More than one element of a broadcasted tensor may refer to a single
+        memory location. As a result, in-place operations (especially ones that
+        are vectorized) may result in incorrect behavior. If you need to write
+        to the tensors, please clone them first.
+
+    Example::
+
+        >>> x = torch.arange(3).view(1, 3)
+        >>> y = torch.arange(2).view(2, 1)
+        >>> a, b = torch.broadcast_tensors(x, y)
+        >>> a.size()
+        torch.Size([2, 3])
+        >>> a
+        tensor([[0, 1, 2],
+                [0, 1, 2]])
+    """
+    if not tensors:
+        return _VF_broadcast_tensors(tensors)
+
+    # The native bridge validates the whole argument tuple before mode
+    # dispatch, so unsupported operands cannot run overrides and differing
+    # shapes cannot allocate expansion views.
+    _VF_broadcast_tensors(tensors)
+    return _dispatch_exact_native_variadic_torch_function(
+        broadcast_tensors,
+        _broadcast_tensors_impl,
+        tensors,
         {},
     )
 
