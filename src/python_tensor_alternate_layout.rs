@@ -1,6 +1,7 @@
 //! Python alternate-layout metadata for native tensors.
 
 use pyo3::IntoPyObjectExt;
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 use crate::python::{
@@ -9,6 +10,26 @@ use crate::python::{
 
 #[pymethods]
 impl PyTensorBase {
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nis_coalesced() -> bool\n\nReturns ``True`` if :attr:`self` is a :ref:`sparse COO tensor\n<sparse-coo-docs>` that is coalesced, ``False`` otherwise.\n\n.. warning::\n  Throws an error if :attr:`self` is not a sparse COO tensor.\n\nSee :meth:`coalesce` and :ref:`uncoalesced tensors <sparse-uncoalesced-coo-docs>`.\n"]
+    // Keep the method as METH_NOARGS with no embedded signature. CPython 3.13+
+    // derives `($self, /)` from that descriptor shape, while older runtimes
+    // leave `__text_signature__` unset; PyTorch follows the same split.
+    #[pyo3(text_signature = None)]
+    fn is_coalesced(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) =
+            dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "is_coalesced")?
+        {
+            return Ok(result);
+        }
+
+        Err(PyRuntimeError::new_err(
+            "is_coalesced expected sparse coordinate tensor layout but got Strided",
+        ))
+    }
+
     #[getter]
     fn is_mkldnn(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
         let tensor = slf.as_any().cast::<PyTensor>()?;
