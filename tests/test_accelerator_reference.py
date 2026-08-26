@@ -21,9 +21,12 @@ except ImportError:
 
 SUPPORTED = {
     "current_accelerator",
+    "current_device_index",
     "device_count",
     "is_available",
 }
+
+NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -43,6 +46,20 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
+
+    def current_device_index_error(self):
+        with self.assertRaises(RuntimeError) as raised:
+            torch.accelerator.current_device_index()
+        outcome = (
+            type(raised.exception),
+            str(raised.exception),
+            raised.exception.args,
+        )
+        self.assertEqual(
+            outcome,
+            (RuntimeError, NO_ACCELERATOR_ERROR, (NO_ACCELERATOR_ERROR,)),
+        )
+        return outcome
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -69,7 +86,12 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(sys.modules["torch.accelerator"], expected_module)
         self.assertEqual(actual_module.__doc__, expected_module.__doc__)
 
-        for name in ("current_accelerator", "device_count", "is_available"):
+        for name in (
+            "current_accelerator",
+            "current_device_index",
+            "device_count",
+            "is_available",
+        ):
             with self.subTest(name=name):
                 actual = getattr(actual_module, name)
                 expected = getattr(expected_module, name)
@@ -161,14 +183,19 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 self.assertNotIn(name, namespace)
 
     def test_cpu_only_values_bound_the_cuda_enabled_reference(self):
-        self.assertIs(torch.accelerator.current_accelerator(), None)
+        cpu_only_metadata = (
+            torch.accelerator.current_accelerator(),
+            torch.accelerator.is_available(),
+            torch.accelerator.device_count(),
+        )
+        self.assertEqual(cpu_only_metadata, (None, False, 0))
+        self.assertIs(cpu_only_metadata[0], None)
+        self.assertIs(cpu_only_metadata[1], False)
+        self.assertIs(type(cpu_only_metadata[2]), int)
+        cpu_only_index_error = self.current_device_index_error()
         self.assertIs(
             torch.accelerator.current_accelerator(check_available=True), None
         )
-        self.assertIs(torch.accelerator.is_available(), False)
-        count = torch.accelerator.device_count()
-        self.assertIs(type(count), int)
-        self.assertEqual(count, 0)
 
         if not reference_torch.cuda.is_available():
             self.skipTest("requires a CUDA-visible reference PyTorch build")
@@ -183,16 +210,33 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIsNone(reference_accelerator.index)
         self.assertIs(reference_torch.accelerator.is_available(), True)
         self.assertGreaterEqual(reference_torch.accelerator.device_count(), 1)
+        reference_index = reference_torch.accelerator.current_device_index()
+        self.assertIs(type(reference_index), int)
+        self.assertEqual(reference_index, reference_torch.cuda.current_device())
+        for _ in range(3):
+            self.assertEqual(
+                reference_torch.accelerator.current_device_index(),
+                reference_index,
+            )
+            self.assertEqual(
+                self.current_device_index_error(), cpu_only_index_error
+            )
 
         probe = reference_torch.ones(
-            1, device=reference_torch.device("cuda", 0)
+            1, device=reference_torch.device("cuda", reference_index)
         )
         self.assertEqual(probe.item(), 1.0)
-        reference_torch.cuda.synchronize(0)
+        reference_torch.cuda.synchronize(reference_index)
 
-        self.assertIs(torch.accelerator.current_accelerator(), None)
-        self.assertIs(torch.accelerator.is_available(), False)
-        self.assertEqual(torch.accelerator.device_count(), 0)
+        self.assertEqual(
+            (
+                torch.accelerator.current_accelerator(),
+                torch.accelerator.is_available(),
+                torch.accelerator.device_count(),
+            ),
+            cpu_only_metadata,
+        )
+        self.assertEqual(self.current_device_index_error(), cpu_only_index_error)
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertNotIn("torch_rs.cuda", sys.modules)
 
@@ -347,6 +391,18 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 lambda: expected.is_available(None),
             ),
             (
+                lambda: actual.current_device_index(None),
+                lambda: expected.current_device_index(None),
+            ),
+            (
+                lambda: actual.current_device_index(None, None),
+                lambda: expected.current_device_index(None, None),
+            ),
+            (
+                lambda: actual.current_device_index(device=True),
+                lambda: expected.current_device_index(device=True),
+            ),
+            (
                 lambda: actual.is_available(None, None),
                 lambda: expected.is_available(None, None),
             ),
@@ -378,7 +434,6 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertTrue(
             {
                 "Graph",
-                "current_device_index",
                 "current_stream",
                 "device_index",
                 "empty_cache",
