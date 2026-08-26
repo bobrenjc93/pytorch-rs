@@ -296,6 +296,42 @@ class TopLevelNumelReferenceTests(unittest.TestCase):
             self.dispatch_contract(reference_torch),
         )
 
+    def disabled_override_contract(self, module, disabled_type):
+        marker = object()
+
+        class Mode(module.overrides.TorchFunctionMode):
+            def __init__(self):
+                self.calls = []
+
+            def __torch_function__(self, func, dispatch_types, args=(), kwargs=None):
+                self.calls.append((func, dispatch_types, args, kwargs))
+                return marker
+
+        observations = []
+        for keyword in (None, "input", "x", "a", "x1"):
+            value = disabled_type()
+            mode = Mode()
+
+            def call():
+                if keyword is None:
+                    return module.numel(value)
+                return module.numel(**{keyword: value})
+
+            without_mode = self.error(call)
+            with mode:
+                with_mode = self.error(call)
+            observations.append((keyword, without_mode, with_mode, len(mode.calls)))
+        return observations
+
+    def test_disabled_torch_function_sentinel_is_not_dispatched(self):
+        class DisabledInput:
+            __torch_function__ = reference_torch._C._disabled_torch_function_impl
+
+        self.assertEqual(
+            self.disabled_override_contract(torch, DisabledInput),
+            self.disabled_override_contract(reference_torch, DisabledInput),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

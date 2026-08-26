@@ -29,10 +29,37 @@ fn is_disabled_torch_function_handler(handler: &Bound<'_, PyAny>) -> bool {
     module_matches && name_matches
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TorchFunctionHandlerProbe {
+    Missing,
+    Disabled,
+    Enabled,
+}
+
 #[allow(
     unsafe_code,
     reason = "PyTorch suppresses errors while probing the __torch_function__ descriptor"
 )]
+pub(crate) fn probe_torch_function_handler(value: &Bound<'_, PyAny>) -> TorchFunctionHandlerProbe {
+    // SAFETY: `value` is live for this call and the attribute name is a static,
+    // NUL-terminated string. A non-null result is a new owned reference.
+    let handler =
+        unsafe { ffi::PyObject_GetAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) };
+    if handler.is_null() {
+        // SAFETY: the GIL is held and clearing the descriptor lookup failure is
+        // the observable behavior of PyTorch's exception-suppressing probe.
+        unsafe { ffi::PyErr_Clear() };
+        return TorchFunctionHandlerProbe::Missing;
+    }
+    // SAFETY: PyObject_GetAttrString returned a new owned reference.
+    let handler = unsafe { Bound::<PyAny>::from_owned_ptr(value.py(), handler) };
+    if is_disabled_torch_function_handler(&handler) {
+        TorchFunctionHandlerProbe::Disabled
+    } else {
+        TorchFunctionHandlerProbe::Enabled
+    }
+}
+
 fn has_torch_function_unary(value: &Bound<'_, PyAny>) -> bool {
     if !python_torch_function_mode::is_empty() {
         return true;
@@ -44,21 +71,7 @@ fn has_torch_function_unary(value: &Bound<'_, PyAny>) -> bool {
         return true;
     }
 
-    // PyTorch's fast attribute probe clears failures from user-defined
-    // descriptors instead of surfacing them from this predicate.
-    // SAFETY: `value` is live for the call and the attribute name is a static,
-    // NUL-terminated string. A non-null result is a new owned reference.
-    let handler =
-        unsafe { ffi::PyObject_GetAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) };
-    if handler.is_null() {
-        // SAFETY: the GIL is held and clearing the descriptor lookup failure is
-        // the observable behavior of PyTorch's exception-suppressing probe.
-        unsafe { ffi::PyErr_Clear() };
-        return false;
-    }
-    // SAFETY: PyObject_GetAttrString returned a new owned reference.
-    let handler = unsafe { Bound::<PyAny>::from_owned_ptr(value.py(), handler) };
-    !is_disabled_torch_function_handler(&handler)
+    probe_torch_function_handler(value) == TorchFunctionHandlerProbe::Enabled
 }
 
 fn bind_has_torch_function_unary(

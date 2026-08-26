@@ -31,7 +31,9 @@ use crate::{
     python_tensor_errors::{item_error, permute_error, tensor_error, transpose_error},
     python_tensor_queries::add_tensor_queries,
     python_torch_function_mode as torch_function_mode_stack,
-    python_torch_function_probe::add_torch_function_probe,
+    python_torch_function_probe::{
+        TorchFunctionHandlerProbe, add_torch_function_probe, probe_torch_function_handler,
+    },
     python_variable_functions::{add_variable_functions, variable_function},
 };
 
@@ -2358,26 +2360,22 @@ enum TensorBaseModeTarget {
     GetSet(&'static str),
 }
 
-#[allow(
-    unsafe_code,
-    reason = "PyTorch binding parity requires CPython's exception-suppressing legacy attribute probe"
-)]
 fn probe_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
     // PyTorch's argument parser uses the legacy, exception-suppressing
-    // PyObject_HasAttr API here. If the initial probe fails, its tensor-type
-    // fallback retries once before rejecting the input. The actual callable is
-    // deliberately resolved only after the active mode has declined.
-    // SAFETY: `value` is live for this call and the attribute name is a static,
-    // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
-    let has_override =
-        unsafe { ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0 };
-    let has_override = has_override
-        || unsafe {
-            ffi::PyObject_HasAttrString(value.as_ptr(), c"__torch_function__".as_ptr()) != 0
-        };
-    if !has_override {
+    // attribute probe here. If the initial lookup fails, its tensor-type
+    // fallback retries once before rejecting the input. A handler explicitly
+    // set to PyTorch's disabled sentinel is a normal non-Tensor argument, not
+    // an override. The actual enabled callable remains deliberately unresolved
+    // until after the active mode has declined.
+    let probe = probe_torch_function_handler(value);
+    let probe = if probe == TorchFunctionHandlerProbe::Missing {
+        probe_torch_function_handler(value)
+    } else {
+        probe
+    };
+    if probe != TorchFunctionHandlerProbe::Enabled {
         return None;
     }
     Some(probed_torch_function_override(value))
