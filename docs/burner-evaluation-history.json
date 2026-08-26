@@ -6433,6 +6433,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 97
       }
+    },
+    {
+      "key": "pr:999",
+      "recordedAt": "2026-08-26T01:40:12.279Z",
+      "label": "PR #999",
+      "kind": "leaf",
+      "prNumber": 999,
+      "title": "Support scalar broadcasting in reduction-none MSE loss",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 93.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 75.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 97
+      }
     }
   ]
 }
