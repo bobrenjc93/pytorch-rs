@@ -78,6 +78,12 @@ FUNCTION_DOCS = {
     Returns:
         int: the index of a currently selected device.
     """,
+    "empty_cache": """Release all unoccupied cached memory currently held by the caching
+    allocator so that those can be used in other application.
+
+    .. note:: This function is a no-op if the memory allocator for the current
+        :ref:`accelerator <accelerators>` has not been initialized.
+    """,
 }
 
 
@@ -115,6 +121,7 @@ class AcceleratorTests(unittest.TestCase):
             self.assert_current_device_index_unavailable(
                 accelerator.current_device_index
             )
+            self.assertIs(accelerator.empty_cache(), None)
             self.assertIs(accelerator.is_available(), False)
             count = accelerator.device_count()
             self.assertIs(type(count), int)
@@ -132,6 +139,7 @@ class AcceleratorTests(unittest.TestCase):
             accelerator.current_device_index.__code__.co_names,
             ("_discover_accelerator", "RuntimeError"),
         )
+        self.assertEqual(accelerator.empty_cache.__code__.co_names, ())
 
         class ExplodingTruth:
             def __bool__(self):
@@ -159,6 +167,7 @@ class AcceleratorTests(unittest.TestCase):
                         self.assert_current_device_index_unavailable(
                             accelerator.current_device_index
                         )
+                        self.assertIs(accelerator.empty_cache(), None)
                         self.assertIs(accelerator.is_available(), False)
                         self.assertEqual(accelerator.device_count(), 0)
 
@@ -171,6 +180,20 @@ class AcceleratorTests(unittest.TestCase):
         ]
 
         self.assertEqual(len({id(error) for error in errors}), len(errors))
+
+    def test_empty_cache_is_a_repeatable_probe_free_no_op(self):
+        accelerator = torch.accelerator
+
+        with mock.patch.object(
+            accelerator,
+            "_discover_accelerator",
+            side_effect=AssertionError("accelerator discovery was attempted"),
+        ):
+            results = tuple(accelerator.empty_cache() for _ in range(16))
+
+        self.assertEqual(results, (None,) * 16)
+        for result in results:
+            self.assertIs(result, None)
 
     def test_signature_annotations_documentation_and_module_identity(self):
         accelerator = importlib.import_module("torch_rs.accelerator")
@@ -187,6 +210,7 @@ class AcceleratorTests(unittest.TestCase):
                 return_annotation=torch.device | None,
             ),
             "current_device_index": inspect.Signature(return_annotation=int),
+            "empty_cache": inspect.Signature(return_annotation=None),
             "is_available": inspect.Signature(return_annotation=bool),
             "device_count": inspect.Signature(return_annotation=int),
         }
@@ -196,8 +220,13 @@ class AcceleratorTests(unittest.TestCase):
                 "return": torch.device | None,
             },
             "current_device_index": {"return": int},
+            "empty_cache": {"return": None},
             "is_available": {"return": bool},
             "device_count": {"return": int},
+        }
+        expected_type_hints = {
+            **expected_annotations,
+            "empty_cache": {"return": type(None)},
         }
 
         self.assertIs(torch.accelerator, accelerator)
@@ -207,6 +236,7 @@ class AcceleratorTests(unittest.TestCase):
             "current_accelerator",
             "current_device_index",
             "device_count",
+            "empty_cache",
             "is_available",
         ):
             with self.subTest(name=name):
@@ -217,12 +247,15 @@ class AcceleratorTests(unittest.TestCase):
                     inspect.get_annotations(function), expected_annotations[name]
                 )
                 self.assertEqual(
-                    typing.get_type_hints(function), expected_annotations[name]
+                    typing.get_type_hints(function), expected_type_hints[name]
                 )
                 self.assertEqual(function.__name__, name)
                 self.assertEqual(function.__qualname__, name)
-                self.assertEqual(function.__module__, "torch_rs.accelerator")
-                self.assertIs(inspect.getmodule(function), accelerator)
+                defining_module = (
+                    accelerator.memory if name == "empty_cache" else accelerator
+                )
+                self.assertEqual(function.__module__, defining_module.__name__)
+                self.assertIs(inspect.getmodule(function), defining_module)
                 self.assertEqual(
                     inspect.cleandoc(function.__doc__),
                     inspect.cleandoc(FUNCTION_DOCS[name]),
@@ -246,8 +279,20 @@ class AcceleratorTests(unittest.TestCase):
             "current_accelerator",
             "current_device_index",
             "device_count",
+            "empty_cache",
             "is_available",
         }
+        memory = importlib.import_module("torch_rs.accelerator.memory")
+
+        self.assertIs(accelerator.memory, memory)
+        self.assertIs(accelerator.empty_cache, memory.empty_cache)
+        self.assertIs(sys.modules["torch_rs.accelerator.memory"], memory)
+        self.assertIsNone(memory.__doc__)
+        self.assertEqual(memory.__all__, ["empty_cache"])
+        self.assertEqual(
+            {name for name in vars(memory) if not name.startswith("_")},
+            {"empty_cache"},
+        )
 
         self.assertEqual(
             accelerator.__all__,
@@ -255,12 +300,13 @@ class AcceleratorTests(unittest.TestCase):
                 "current_accelerator",
                 "current_device_index",
                 "device_count",
+                "empty_cache",
                 "is_available",
             ],
         )
         self.assertEqual(
             {name for name in vars(accelerator) if not name.startswith("_")},
-            supported,
+            supported | {"memory"},
         )
 
         package_import = {}
@@ -268,7 +314,7 @@ class AcceleratorTests(unittest.TestCase):
         wildcard_import = {}
         exec("from torch_rs import accelerator", package_import)
         exec(
-            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, is_available",
+            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, empty_cache, is_available",
             direct_import,
         )
         exec("from torch_rs.accelerator import *", wildcard_import)
@@ -300,6 +346,8 @@ class AcceleratorTests(unittest.TestCase):
         accelerator = torch.accelerator
         old_all = accelerator.__all__
         old_discovery = accelerator._discover_accelerator
+        old_empty_cache = accelerator.empty_cache
+        memory = accelerator.memory
         old_functions = {
             name: getattr(accelerator, name)
             for name in (
@@ -317,6 +365,10 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(sys.modules["torch_rs.accelerator"], accelerator)
         self.assertIsNot(accelerator.__all__, old_all)
         self.assertIsNot(accelerator._discover_accelerator, old_discovery)
+        self.assertIs(accelerator.memory, memory)
+        self.assertIs(accelerator.empty_cache, old_empty_cache)
+        self.assertIs(accelerator.empty_cache, memory.empty_cache)
+        self.assertIs(accelerator.empty_cache(), None)
         self.assertEqual(
             accelerator._discover_accelerator(), (None, False, 0, None)
         )
@@ -336,6 +388,39 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertIs(pickle.loads(pickle.dumps(new_function)), new_function)
                 with self.assertRaises(pickle.PicklingError):
                     pickle.dumps(old_function)
+
+    def test_memory_reload_keeps_old_and_new_no_ops_usable(self):
+        accelerator = torch.accelerator
+        memory = accelerator.memory
+        old_all = memory.__all__
+        old_empty_cache = memory.empty_cache
+
+        reloaded = importlib.reload(memory)
+        new_empty_cache = memory.empty_cache
+
+        self.assertIs(reloaded, memory)
+        self.assertIs(accelerator.memory, memory)
+        self.assertIs(sys.modules["torch_rs.accelerator.memory"], memory)
+        self.assertIsNot(memory.__all__, old_all)
+        self.assertIsNot(new_empty_cache, old_empty_cache)
+        self.assertIs(accelerator.empty_cache, old_empty_cache)
+        self.assertIsNot(accelerator.empty_cache, new_empty_cache)
+        self.assertEqual(
+            tuple(function() for function in (old_empty_cache, new_empty_cache)),
+            (None, None),
+        )
+        self.assertIs(copy.copy(new_empty_cache), new_empty_cache)
+        self.assertIs(copy.deepcopy(new_empty_cache), new_empty_cache)
+        self.assertIs(
+            pickle.loads(pickle.dumps(new_empty_cache)), new_empty_cache
+        )
+        with self.assertRaises(pickle.PicklingError):
+            pickle.dumps(old_empty_cache)
+
+        self.assertIs(importlib.reload(accelerator), accelerator)
+        self.assertIs(accelerator.empty_cache, new_empty_cache)
+        self.assertIs(accelerator.empty_cache, memory.empty_cache)
+        self.assertIs(accelerator.empty_cache(), None)
 
     def test_argument_errors_match_python_3_binding_used_by_pytorch_2_13(self):
         accelerator = torch.accelerator
@@ -365,6 +450,18 @@ class AcceleratorTests(unittest.TestCase):
             (
                 lambda: accelerator.current_device_index(device=True),
                 "current_device_index() got an unexpected keyword argument 'device'",
+            ),
+            (
+                lambda: accelerator.empty_cache(None),
+                "empty_cache() takes 0 positional arguments but 1 was given",
+            ),
+            (
+                lambda: accelerator.empty_cache(None, None),
+                "empty_cache() takes 0 positional arguments but 2 were given",
+            ),
+            (
+                lambda: accelerator.empty_cache(device=True),
+                "empty_cache() got an unexpected keyword argument 'device'",
             ),
             (
                 lambda: accelerator.is_available(None),
@@ -422,6 +519,7 @@ class AcceleratorTests(unittest.TestCase):
                         torch.accelerator.current_accelerator(),
                         torch.accelerator.current_accelerator(True),
                         index_outcome,
+                        tuple(torch.accelerator.empty_cache() for _ in range(4)),
                         torch.accelerator.is_available(),
                         torch.accelerator.device_count(),
                         torch.is_grad_enabled(),
@@ -449,13 +547,14 @@ class AcceleratorTests(unittest.TestCase):
                     None,
                     None,
                     (RuntimeError, NO_ACCELERATOR_ERROR, (NO_ACCELERATOR_ERROR,)),
+                    (None,) * 4,
                     False,
                     0,
                     expected_grad_state,
                 ),
             )
-            self.assertIs(result[4], False)
-            self.assertIs(type(result[5]), int)
+            self.assertIs(result[5], False)
+            self.assertIs(type(result[6]), int)
 
     def test_selection_stream_memory_graph_and_execution_apis_stay_unsupported(self):
         accelerator = torch.accelerator
@@ -464,7 +563,6 @@ class AcceleratorTests(unittest.TestCase):
             "current_device_idx",
             "current_stream",
             "device_index",
-            "empty_cache",
             "empty_host_cache",
             "get_device_capability",
             "get_memory_info",
@@ -485,13 +583,16 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertFalse(hasattr(accelerator, name))
                 self.assertNotIn(name, accelerator.__all__)
 
-        for module_name in (
-            "torch_rs.accelerator.graphs",
-            "torch_rs.accelerator.memory",
-        ):
-            with self.subTest(module=module_name):
-                with self.assertRaises(ModuleNotFoundError):
-                    importlib.import_module(module_name)
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("torch_rs.accelerator.graphs")
+
+        memory = importlib.import_module("torch_rs.accelerator.memory")
+        self.assertIs(accelerator.memory, memory)
+        self.assertEqual(memory.__all__, ["empty_cache"])
+        for name in unsupported:
+            with self.subTest(memory_name=name):
+                self.assertFalse(hasattr(memory, name))
+                self.assertNotIn(name, memory.__all__)
 
         self.assertFalse(hasattr(torch, "cuda"))
         with self.assertRaises(ModuleNotFoundError):
@@ -536,8 +637,10 @@ os.environ.update(
     PYTORCH_NVML_BASED_CUDA_CHECK="1",
 )
 import torch_rs as torch
+from torch_rs.accelerator.memory import empty_cache
 
 modules_before_calls = set(sys.modules)
+assert torch.accelerator.empty_cache is empty_cache
 assert torch.accelerator._discover_accelerator() == (None, False, 0, None)
 assert torch.accelerator.current_accelerator() is None
 assert torch.accelerator.current_accelerator(check_available=True) is None
@@ -554,6 +657,9 @@ for _ in range(3):
 assert torch.accelerator.is_available() is False
 count = torch.accelerator.device_count()
 assert type(count) is int and count == 0
+for _ in range(8):
+    assert torch.accelerator.empty_cache() is None
+    assert empty_cache() is None
 assert set(sys.modules) == modules_before_calls
 assert not hasattr(torch, "cuda")
 assert not any(
