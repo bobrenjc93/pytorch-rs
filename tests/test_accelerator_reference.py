@@ -26,6 +26,8 @@ SUPPORTED = {
     "is_available",
 }
 
+NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
+
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class AcceleratorReferenceTests(unittest.TestCase):
@@ -44,6 +46,12 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
+
+    def assert_no_accelerator_error(self):
+        with self.assertRaises(RuntimeError) as raised:
+            torch.accelerator.current_device_index()
+        self.assertEqual(str(raised.exception), NO_ACCELERATOR_ERROR)
+        self.assertEqual(raised.exception.args, (NO_ACCELERATOR_ERROR,))
 
     def pickle_shape(self, function, protocol):
         shape = []
@@ -171,8 +179,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
         self.assertIs(
             torch.accelerator.current_accelerator(check_available=True), None
         )
-        self.assertIs(torch.accelerator.current_device_index(), None)
-        self.assertIs(torch.accelerator.current_device_index(), None)
+        self.assert_no_accelerator_error()
+        self.assert_no_accelerator_error()
         self.assertIs(torch.accelerator.is_available(), False)
         count = torch.accelerator.device_count()
         self.assertIs(type(count), int)
@@ -205,7 +213,7 @@ class AcceleratorReferenceTests(unittest.TestCase):
         reference_torch.cuda.synchronize(0)
 
         self.assertIs(torch.accelerator.current_accelerator(), None)
-        self.assertIs(torch.accelerator.current_device_index(), None)
+        self.assert_no_accelerator_error()
         self.assertIs(torch.accelerator.is_available(), False)
         self.assertEqual(torch.accelerator.device_count(), 0)
         self.assertFalse(hasattr(torch, "cuda"))
@@ -213,10 +221,22 @@ class AcceleratorReferenceTests(unittest.TestCase):
 
     def threaded_outcome(self, module):
         accelerator = module.accelerator
+
+        def current_device_index_outcome():
+            try:
+                return ("return", accelerator.current_device_index())
+            except Exception as error:
+                return (
+                    "raise",
+                    type(error).__name__,
+                    str(error),
+                    error.args,
+                )
+
         baseline = (
             accelerator.current_accelerator(),
             accelerator.current_accelerator(True),
-            accelerator.current_device_index(),
+            current_device_index_outcome(),
             accelerator.is_available(),
             accelerator.device_count(),
         )
@@ -234,7 +254,7 @@ class AcceleratorReferenceTests(unittest.TestCase):
                         module.is_grad_enabled(),
                         accelerator.current_accelerator(),
                         accelerator.current_accelerator(True),
-                        accelerator.current_device_index(),
+                        current_device_index_outcome(),
                         accelerator.is_available(),
                         accelerator.device_count(),
                         module.is_grad_enabled(),

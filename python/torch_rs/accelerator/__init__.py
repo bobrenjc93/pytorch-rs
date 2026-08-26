@@ -96,7 +96,9 @@ def current_device_index() -> int:
         int: the index of a currently selected device.
     """
     _, _, _, index = _discover_accelerator()
-    return index  # type: ignore[return-value]
+    if index is None:
+        raise RuntimeError("Cannot access accelerator device when none is available.")
+    return index
 
 
 # PyTorch's deprecated ``current_device_idx`` wrapper leaves this marker on

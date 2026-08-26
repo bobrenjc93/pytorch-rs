@@ -78,8 +78,16 @@ FUNCTION_DOCS = {
     """,
 }
 
+NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
+
 
 class AcceleratorTests(unittest.TestCase):
+    def assert_no_accelerator_error(self, call):
+        with self.assertRaises(RuntimeError) as raised:
+            call()
+        self.assertEqual(str(raised.exception), NO_ACCELERATOR_ERROR)
+        self.assertEqual(raised.exception.args, (NO_ACCELERATOR_ERROR,))
+
     def test_cpu_only_results_come_from_one_probe_without_hardware_discovery(self):
         accelerator = torch.accelerator
         discovery = accelerator._discover_accelerator
@@ -103,7 +111,7 @@ class AcceleratorTests(unittest.TestCase):
             self.assertIs(
                 accelerator.current_accelerator(check_available=True), None
             )
-            self.assertIs(accelerator.current_device_index(), None)
+            self.assert_no_accelerator_error(accelerator.current_device_index)
             self.assertIs(accelerator.is_available(), False)
             count = accelerator.device_count()
             self.assertIs(type(count), int)
@@ -117,7 +125,12 @@ class AcceleratorTests(unittest.TestCase):
             accelerator.is_available,
             accelerator.device_count,
         ):
-            self.assertEqual(function.__code__.co_names, ("_discover_accelerator",))
+            expected_names = (
+                ("_discover_accelerator", "RuntimeError")
+                if function is accelerator.current_device_index
+                else ("_discover_accelerator",)
+            )
+            self.assertEqual(function.__code__.co_names, expected_names)
 
         class ExplodingTruth:
             def __bool__(self):
@@ -142,7 +155,9 @@ class AcceleratorTests(unittest.TestCase):
                         side_effect=AssertionError("hardware was probed"),
                     ):
                         self.assertIs(accelerator.current_accelerator(), None)
-                        self.assertIs(accelerator.current_device_index(), None)
+                        self.assert_no_accelerator_error(
+                            accelerator.current_device_index
+                        )
                         self.assertIs(accelerator.is_available(), False)
                         self.assertEqual(accelerator.device_count(), 0)
 
@@ -298,7 +313,7 @@ class AcceleratorTests(unittest.TestCase):
             accelerator._discover_accelerator(), (None, False, 0, None)
         )
         self.assertIs(accelerator.current_accelerator(), None)
-        self.assertIs(accelerator.current_device_index(), None)
+        self.assert_no_accelerator_error(accelerator.current_device_index)
         self.assertIs(accelerator.is_available(), False)
         self.assertEqual(accelerator.device_count(), 0)
 
@@ -374,6 +389,17 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertEqual(raised.exception.args, (message,))
 
     def test_results_are_thread_safe_and_preserve_grad_mode(self):
+        def current_device_index_outcome():
+            try:
+                return ("return", torch.accelerator.current_device_index())
+            except Exception as error:
+                return (
+                    "raise",
+                    type(error),
+                    str(error),
+                    error.args,
+                )
+
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -388,7 +414,7 @@ class AcceleratorTests(unittest.TestCase):
                         torch.is_grad_enabled(),
                         torch.accelerator.current_accelerator(),
                         torch.accelerator.current_accelerator(True),
-                        torch.accelerator.current_device_index(),
+                        current_device_index_outcome(),
                         torch.accelerator.is_available(),
                         torch.accelerator.device_count(),
                         torch.is_grad_enabled(),
@@ -415,7 +441,12 @@ class AcceleratorTests(unittest.TestCase):
                     expected_grad_state,
                     None,
                     None,
-                    None,
+                    (
+                        "raise",
+                        RuntimeError,
+                        NO_ACCELERATOR_ERROR,
+                        (NO_ACCELERATOR_ERROR,),
+                    ),
                     False,
                     0,
                     expected_grad_state,
@@ -496,8 +527,15 @@ modules_before_calls = set(sys.modules)
 assert torch.accelerator._discover_accelerator() == (None, False, 0, None)
 assert torch.accelerator.current_accelerator() is None
 assert torch.accelerator.current_accelerator(check_available=True) is None
-assert torch.accelerator.current_device_index() is None
-assert torch.accelerator.current_device_index() is None
+for _ in range(2):
+    try:
+        torch.accelerator.current_device_index()
+    except RuntimeError as error:
+        expected = "Cannot access accelerator device when none is available."
+        assert str(error) == expected
+        assert error.args == (expected,)
+    else:
+        raise AssertionError("current_device_index() did not raise")
 assert torch.accelerator.is_available() is False
 count = torch.accelerator.device_count()
 assert type(count) is int and count == 0
