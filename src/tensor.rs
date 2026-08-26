@@ -4930,8 +4930,10 @@ fn sqrt_value(value: f32) -> f32 {
     }
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn tanh_value(value: f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
+    const CANCELLATION_MAGNITUDE_BITS: u32 = 0.01_f32.to_bits();
     const SATURATION_MAGNITUDE_BITS: u32 = 0x4110_2c67;
 
     let bits = value.to_bits();
@@ -4942,6 +4944,11 @@ fn tanh_value(value: f32) -> f32 {
     } else if magnitude > f32::INFINITY.to_bits() {
         // Quiet signaling NaNs while retaining their sign and payload.
         f32::from_bits(bits | QUIET_NAN_MASK)
+    } else if magnitude <= CANCELLATION_MAGNITUDE_BITS {
+        // Rust's platform tanhf can miss PyTorch's CPU result by one ULP for
+        // small normal inputs. That error is amplified by cancellation in
+        // composites such as tanhshrink, so round a double-precision result.
+        f64::from(value).tanh() as f32
     } else if magnitude >= SATURATION_MAGNITUDE_BITS {
         // PyTorch's float32 CPU kernel rounds every finite value from this
         // boundary outward to exactly +/-1.0.
@@ -5026,7 +5033,7 @@ mod tests {
     use super::{
         AutogradKind, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType,
         Device, F32_SIGN_MASK, GradFn, MemoryFormat, SavedTensor, Tensor, TensorError,
-        materialize_contiguous_trailing_broadcast, sqrt_value, try_result_vector,
+        materialize_contiguous_trailing_broadcast, sqrt_value, tanh_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -5091,6 +5098,41 @@ mod tests {
             inputs.map(|bits| sqrt_value(f32::from_bits(bits)).to_bits()),
             expected
         );
+    }
+
+    #[test]
+    fn tanh_and_tanhshrink_match_pytorch_near_zero_bits() {
+        let cases = [
+            (0x33d6_bf95, 0x33d6_bf95, 0x0000_0000),
+            (0xb3d6_bf95, 0xb3d6_bf95, 0x0000_0000),
+            (0x34a1_0fb0, 0x34a1_0fb0, 0x0000_0000),
+            (0xb4a1_0fb0, 0xb4a1_0fb0, 0x0000_0000),
+            (0x3586_37bd, 0x3586_37bd, 0x0000_0000),
+            (0xb586_37bd, 0xb586_37bd, 0x0000_0000),
+            (0x3727_c5ac, 0x3727_c5ac, 0x0000_0000),
+            (0xb727_c5ac, 0xb727_c5ac, 0x0000_0000),
+            (0x38d1_b717, 0x38d1_b717, 0x0000_0000),
+            (0xb8d1_b717, 0xb8d1_b717, 0x0000_0000),
+            (0x3951_b717, 0x3951_b717, 0x0000_0000),
+            (0xb951_b717, 0xb951_b717, 0x0000_0000),
+            (0x3a03_126f, 0x3a03_126e, 0x2e80_0000),
+            (0xba03_126f, 0xba03_126e, 0xae80_0000),
+            (0x3a83_126f, 0x3a83_126c, 0x2fc0_0000),
+            (0xba83_126f, 0xba83_126c, 0xafc0_0000),
+            (0x3b03_126f, 0x3b03_1264, 0x3130_0000),
+            (0xbb03_126f, 0xbb03_1264, 0xb130_0000),
+            (0x3ba3_d70a, 0x3ba3_d6b1, 0x3332_0000),
+            (0xbba3_d70a, 0xbba3_d6b1, 0xb332_0000),
+            (0x3c23_d70a, 0x3c23_d5a4, 0x34b3_0000),
+            (0xbc23_d70a, 0xbc23_d5a4, 0xb4b3_0000),
+        ];
+
+        for (input_bits, tanh_bits, tanhshrink_bits) in cases {
+            let input = f32::from_bits(input_bits);
+            let tanh = tanh_value(input);
+            assert_eq!(tanh.to_bits(), tanh_bits);
+            assert_eq!((input - tanh).to_bits(), tanhshrink_bits);
+        }
     }
 
     #[test]
