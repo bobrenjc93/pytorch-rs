@@ -26,6 +26,10 @@ SUPPORTED = {
     "is_available",
 }
 
+NO_ACCELERATOR_DEVICE_ERROR = (
+    "Cannot access accelerator device when none is available."
+)
+
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class AcceleratorReferenceTests(unittest.TestCase):
@@ -176,17 +180,32 @@ class AcceleratorReferenceTests(unittest.TestCase):
         torch_rs_build_metadata = (
             torch.accelerator.current_accelerator(),
             torch.accelerator.current_accelerator(check_available=True),
-            torch.accelerator.current_device_index(),
-            torch.accelerator.current_device_index(),
+            self.call_outcome(torch.accelerator.current_device_index),
+            self.call_outcome(torch.accelerator.current_device_index),
             torch.accelerator.is_available(),
             torch.accelerator.device_count(),
         )
         self.assertEqual(
             torch_rs_build_metadata,
-            (None, None, None, None, False, 0),
+            (
+                None,
+                None,
+                (
+                    "raise",
+                    RuntimeError,
+                    NO_ACCELERATOR_DEVICE_ERROR,
+                    (NO_ACCELERATOR_DEVICE_ERROR,),
+                ),
+                (
+                    "raise",
+                    RuntimeError,
+                    NO_ACCELERATOR_DEVICE_ERROR,
+                    (NO_ACCELERATOR_DEVICE_ERROR,),
+                ),
+                False,
+                0,
+            ),
         )
-        self.assertIs(torch_rs_build_metadata[2], None)
-        self.assertIs(torch_rs_build_metadata[3], None)
         self.assertIs(torch_rs_build_metadata[4], False)
         self.assertIs(type(torch_rs_build_metadata[5]), int)
 
@@ -227,8 +246,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
             (
                 torch.accelerator.current_accelerator(),
                 torch.accelerator.current_accelerator(check_available=True),
-                torch.accelerator.current_device_index(),
-                torch.accelerator.current_device_index(),
+                self.call_outcome(torch.accelerator.current_device_index),
+                self.call_outcome(torch.accelerator.current_device_index),
                 torch.accelerator.is_available(),
                 torch.accelerator.device_count(),
             ),
@@ -294,14 +313,41 @@ class AcceleratorReferenceTests(unittest.TestCase):
                     self.assertEqual(result[7], expected_grad_state)
                 self.assertEqual(baseline[2], baseline[3])
                 if module is torch:
-                    self.assertEqual(baseline[2], ("return", None))
+                    self.assertEqual(
+                        baseline[2],
+                        (
+                            "raise",
+                            RuntimeError,
+                            NO_ACCELERATOR_DEVICE_ERROR,
+                            (NO_ACCELERATOR_DEVICE_ERROR,),
+                        ),
+                    )
                 elif baseline[2][0] == "return":
                     if baseline[0] is None:
                         self.assertIs(baseline[2][1], None)
                     else:
                         self.assertIs(type(baseline[2][1]), int)
                 else:
+                    self.assertIs(baseline[2][1], RuntimeError)
                     self.assertIs(baseline[4], False)
+                    if baseline[0] is None:
+                        self.assertEqual(
+                            baseline[2][2],
+                            NO_ACCELERATOR_DEVICE_ERROR,
+                        )
+                        self.assertEqual(
+                            baseline[2][3],
+                            (NO_ACCELERATOR_DEVICE_ERROR,),
+                        )
+                    elif baseline[0] == reference_torch.device("cuda"):
+                        self.assertEqual(
+                            baseline[2][2],
+                            "No CUDA GPUs are available",
+                        )
+                        self.assertEqual(
+                            baseline[2][3],
+                            ("No CUDA GPUs are available",),
+                        )
                 self.assertIs(type(baseline[4]), bool)
                 self.assertIs(type(baseline[5]), int)
 
