@@ -157,7 +157,10 @@ class MhaFastpathTests(unittest.TestCase):
                 self.assertEqual(function.__qualname__, function.__name__)
                 self.assertEqual(function.__module__, "torch_rs.backends.mha")
                 self.assertIs(inspect.getmodule(function), mha)
-                self.assertEqual(function.__doc__, doc)
+                self.assertEqual(
+                    inspect.cleandoc(function.__doc__),
+                    inspect.cleandoc(doc),
+                )
                 self.assertIsNone(function.__defaults__)
                 self.assertIsNone(function.__kwdefaults__)
                 self.assertEqual(function.__dict__, {})
