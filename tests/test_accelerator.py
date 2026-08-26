@@ -10,6 +10,7 @@ import threading
 import types
 import typing
 import unittest
+from collections import OrderedDict
 from unittest import mock
 
 import torch_rs as torch
@@ -84,6 +85,66 @@ FUNCTION_DOCS = {
     .. note:: This function is a no-op if the memory allocator for the current
         :ref:`accelerator <accelerators>` has not been initialized.
     """,
+    "memory_stats": """Return a dictionary of accelerator device memory allocator statistics for a given device index.
+
+    The return value of this function is a dictionary of statistics, each of
+    which is a non-negative integer.
+
+    Core statistics:
+
+    - ``"allocated.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
+      number of allocation requests received by the memory allocator.
+    - ``"allocated_bytes.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
+      amount of allocated memory.
+    - ``"segment.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
+      number of reserved segments from device memory allocation.
+    - ``"reserved_bytes.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
+      amount of reserved memory.
+    - ``"active.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
+      number of active memory blocks.
+    - ``"active_bytes.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
+      amount of active memory.
+    - ``"inactive_split.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
+      number of inactive, non-releasable memory blocks.
+    - ``"inactive_split_bytes.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
+      amount of inactive, non-releasable memory.
+
+    For these core statistics, values are broken down as follows.
+
+    Pool type:
+
+    - ``all``: combined statistics across all memory pools.
+    - ``large_pool``: statistics for the large allocation pool
+      (as of June 2025, for size >= 1MB allocations).
+    - ``small_pool``: statistics for the small allocation pool
+      (as of June 2025, for size < 1MB allocations).
+
+    Metric type:
+
+    - ``current``: current value of this metric.
+    - ``peak``: maximum value of this metric.
+    - ``allocated``: historical total increase in this metric.
+    - ``freed``: historical total decrease in this metric.
+
+    In addition to the core statistics, we also provide some simple event
+    counters:
+
+    - ``"num_alloc_retries"``: number of failed device memory allocation calls that
+      result in a cache flush and retry.
+    - ``"num_ooms"``: number of out-of-memory errors thrown.
+    - ``"num_sync_all_streams"``: number of ``synchronize_and_free_events`` calls.
+    - ``"num_device_alloc"``: number of device memory allocation calls.
+    - ``"num_device_free"``: number of device memory free calls.
+
+    Args:
+        device_index (:class:`torch.device`, str, int, optional): the index of the device to target.
+            If not given, use :func:`torch.accelerator.current_device_index` by default.
+            If a :class:`torch.device` or str is provided, its type must match the current
+            :ref:`accelerator<accelerators>` device type.
+
+    Returns:
+        OrderedDict[str, Any]: an ordered dictionary mapping statistic names to their values.
+    """,
 }
 
 
@@ -122,6 +183,7 @@ class AcceleratorTests(unittest.TestCase):
                 accelerator.current_device_index
             )
             self.assertIs(accelerator.empty_cache(), None)
+            self.assertEqual(accelerator.memory_stats(), OrderedDict())
             self.assertIs(accelerator.is_available(), False)
             count = accelerator.device_count()
             self.assertIs(type(count), int)
@@ -140,6 +202,7 @@ class AcceleratorTests(unittest.TestCase):
             ("_discover_accelerator", "RuntimeError"),
         )
         self.assertEqual(accelerator.empty_cache.__code__.co_names, ())
+        self.assertEqual(accelerator.memory_stats.__code__.co_names, ("_OrderedDict",))
 
         class ExplodingTruth:
             def __bool__(self):
@@ -168,6 +231,7 @@ class AcceleratorTests(unittest.TestCase):
                             accelerator.current_device_index
                         )
                         self.assertIs(accelerator.empty_cache(), None)
+                        self.assertEqual(accelerator.memory_stats(), OrderedDict())
                         self.assertIs(accelerator.is_available(), False)
                         self.assertEqual(accelerator.device_count(), 0)
 
@@ -195,6 +259,51 @@ class AcceleratorTests(unittest.TestCase):
         for result in results:
             self.assertIs(result, None)
 
+    def test_memory_stats_is_fresh_probe_free_and_ignores_device_token(self):
+        accelerator = torch.accelerator
+
+        class ExplodingDeviceToken:
+            def __bool__(self):
+                raise AssertionError("device token truth value was inspected")
+
+            def __index__(self):
+                raise AssertionError("device token index was inspected")
+
+            def __int__(self):
+                raise AssertionError("device token integer value was inspected")
+
+            def __str__(self):
+                raise AssertionError("device token string value was inspected")
+
+        tokens = (
+            None,
+            0,
+            -1,
+            True,
+            1.5,
+            "cpu",
+            "cuda:0",
+            torch.device("cpu"),
+            object(),
+            [],
+            {},
+            ExplodingDeviceToken(),
+        )
+        with mock.patch.object(
+            accelerator,
+            "_discover_accelerator",
+            side_effect=AssertionError("accelerator discovery was attempted"),
+        ):
+            results = tuple(accelerator.memory_stats(token) for token in tokens)
+            results += tuple(accelerator.memory_stats() for _ in range(8))
+
+        self.assertTrue(all(type(result) is OrderedDict for result in results))
+        self.assertTrue(all(result == OrderedDict() for result in results))
+        self.assertEqual(len({id(result) for result in results}), len(results))
+        results[0]["mutated"] = 1
+        self.assertEqual(results[0], OrderedDict((("mutated", 1),)))
+        self.assertTrue(all(not result for result in results[1:]))
+
     def test_signature_annotations_documentation_and_module_identity(self):
         accelerator = importlib.import_module("torch_rs.accelerator")
         expected_signatures = {
@@ -213,6 +322,17 @@ class AcceleratorTests(unittest.TestCase):
             "empty_cache": inspect.Signature(return_annotation=None),
             "is_available": inspect.Signature(return_annotation=bool),
             "device_count": inspect.Signature(return_annotation=int),
+            "memory_stats": inspect.Signature(
+                parameters=(
+                    inspect.Parameter(
+                        "device_index",
+                        inspect.Parameter.POSITIONAL_ONLY,
+                        default=None,
+                        annotation=torch.device | str | int | None,
+                    ),
+                ),
+                return_annotation=OrderedDict[str, typing.Any],
+            ),
         }
         expected_annotations = {
             "current_accelerator": {
@@ -223,6 +343,10 @@ class AcceleratorTests(unittest.TestCase):
             "empty_cache": {"return": None},
             "is_available": {"return": bool},
             "device_count": {"return": int},
+            "memory_stats": {
+                "device_index": torch.device | str | int | None,
+                "return": OrderedDict[str, typing.Any],
+            },
         }
         expected_type_hints = {
             **expected_annotations,
@@ -238,6 +362,7 @@ class AcceleratorTests(unittest.TestCase):
             "device_count",
             "empty_cache",
             "is_available",
+            "memory_stats",
         ):
             with self.subTest(name=name):
                 function = getattr(accelerator, name)
@@ -252,7 +377,9 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertEqual(function.__name__, name)
                 self.assertEqual(function.__qualname__, name)
                 defining_module = (
-                    accelerator.memory if name == "empty_cache" else accelerator
+                    accelerator.memory
+                    if name in {"empty_cache", "memory_stats"}
+                    else accelerator
                 )
                 self.assertEqual(function.__module__, defining_module.__name__)
                 self.assertIs(inspect.getmodule(function), defining_module)
@@ -262,7 +389,11 @@ class AcceleratorTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     function.__defaults__,
-                    (False,) if name == "current_accelerator" else None,
+                    (False,)
+                    if name == "current_accelerator"
+                    else (None,)
+                    if name == "memory_stats"
+                    else None,
                 )
                 self.assertIsNone(function.__kwdefaults__)
                 self.assertEqual(
@@ -281,17 +412,19 @@ class AcceleratorTests(unittest.TestCase):
             "device_count",
             "empty_cache",
             "is_available",
+            "memory_stats",
         }
         memory = importlib.import_module("torch_rs.accelerator.memory")
 
         self.assertIs(accelerator.memory, memory)
         self.assertIs(accelerator.empty_cache, memory.empty_cache)
+        self.assertIs(accelerator.memory_stats, memory.memory_stats)
         self.assertIs(sys.modules["torch_rs.accelerator.memory"], memory)
         self.assertIsNone(memory.__doc__)
-        self.assertEqual(memory.__all__, ["empty_cache"])
+        self.assertEqual(memory.__all__, ["empty_cache", "memory_stats"])
         self.assertEqual(
             {name for name in vars(memory) if not name.startswith("_")},
-            {"empty_cache"},
+            {"empty_cache", "memory_stats"},
         )
 
         self.assertEqual(
@@ -302,6 +435,7 @@ class AcceleratorTests(unittest.TestCase):
                 "device_count",
                 "empty_cache",
                 "is_available",
+                "memory_stats",
             ],
         )
         self.assertEqual(
@@ -312,22 +446,34 @@ class AcceleratorTests(unittest.TestCase):
         package_import = {}
         direct_import = {}
         wildcard_import = {}
+        memory_wildcard_import = {}
         exec("from torch_rs import accelerator", package_import)
         exec(
-            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, empty_cache, is_available",
+            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, empty_cache, is_available, memory_stats",
             direct_import,
         )
         exec("from torch_rs.accelerator import *", wildcard_import)
+        exec("from torch_rs.accelerator.memory import *", memory_wildcard_import)
         self.assertIs(package_import["accelerator"], accelerator)
         self.assertEqual(
             {name for name in wildcard_import if not name.startswith("__")},
             supported,
+        )
+        self.assertEqual(
+            {
+                name
+                for name in memory_wildcard_import
+                if not name.startswith("__")
+            },
+            {"empty_cache", "memory_stats"},
         )
         for name in supported:
             function = getattr(accelerator, name)
             with self.subTest(name=name):
                 self.assertIs(direct_import[name], function)
                 self.assertIs(wildcard_import[name], function)
+                if name in {"empty_cache", "memory_stats"}:
+                    self.assertIs(memory_wildcard_import[name], function)
                 self.assertIs(copy.copy(function), function)
                 self.assertIs(copy.deepcopy(function), function)
                 for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
@@ -347,6 +493,7 @@ class AcceleratorTests(unittest.TestCase):
         old_all = accelerator.__all__
         old_discovery = accelerator._discover_accelerator
         old_empty_cache = accelerator.empty_cache
+        old_memory_stats = accelerator.memory_stats
         memory = accelerator.memory
         old_functions = {
             name: getattr(accelerator, name)
@@ -369,6 +516,9 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(accelerator.empty_cache, old_empty_cache)
         self.assertIs(accelerator.empty_cache, memory.empty_cache)
         self.assertIs(accelerator.empty_cache(), None)
+        self.assertIs(accelerator.memory_stats, old_memory_stats)
+        self.assertIs(accelerator.memory_stats, memory.memory_stats)
+        self.assertEqual(accelerator.memory_stats(), OrderedDict())
         self.assertEqual(
             accelerator._discover_accelerator(), (None, False, 0, None)
         )
@@ -389,38 +539,56 @@ class AcceleratorTests(unittest.TestCase):
                 with self.assertRaises(pickle.PicklingError):
                     pickle.dumps(old_function)
 
-    def test_memory_reload_keeps_old_and_new_no_ops_usable(self):
+    def test_memory_reload_keeps_old_and_new_cpu_build_functions_usable(self):
         accelerator = torch.accelerator
         memory = accelerator.memory
         old_all = memory.__all__
-        old_empty_cache = memory.empty_cache
+        old_functions = {
+            "empty_cache": memory.empty_cache,
+            "memory_stats": memory.memory_stats,
+        }
 
         reloaded = importlib.reload(memory)
-        new_empty_cache = memory.empty_cache
+        new_functions = {
+            "empty_cache": memory.empty_cache,
+            "memory_stats": memory.memory_stats,
+        }
 
         self.assertIs(reloaded, memory)
         self.assertIs(accelerator.memory, memory)
         self.assertIs(sys.modules["torch_rs.accelerator.memory"], memory)
         self.assertIsNot(memory.__all__, old_all)
-        self.assertIsNot(new_empty_cache, old_empty_cache)
-        self.assertIs(accelerator.empty_cache, old_empty_cache)
-        self.assertIsNot(accelerator.empty_cache, new_empty_cache)
+        for name in ("empty_cache", "memory_stats"):
+            with self.subTest(name=name):
+                old_function = old_functions[name]
+                new_function = new_functions[name]
+                self.assertIsNot(new_function, old_function)
+                self.assertIs(getattr(accelerator, name), old_function)
+                self.assertIsNot(getattr(accelerator, name), new_function)
+                self.assertIs(copy.copy(new_function), new_function)
+                self.assertIs(copy.deepcopy(new_function), new_function)
+                self.assertIs(pickle.loads(pickle.dumps(new_function)), new_function)
+                with self.assertRaises(pickle.PicklingError):
+                    pickle.dumps(old_function)
+
         self.assertEqual(
-            tuple(function() for function in (old_empty_cache, new_empty_cache)),
+            (old_functions["empty_cache"](), new_functions["empty_cache"]()),
             (None, None),
         )
-        self.assertIs(copy.copy(new_empty_cache), new_empty_cache)
-        self.assertIs(copy.deepcopy(new_empty_cache), new_empty_cache)
-        self.assertIs(
-            pickle.loads(pickle.dumps(new_empty_cache)), new_empty_cache
-        )
-        with self.assertRaises(pickle.PicklingError):
-            pickle.dumps(old_empty_cache)
+        old_stats = old_functions["memory_stats"](object())
+        new_stats = new_functions["memory_stats"](object())
+        self.assertIs(type(old_stats), OrderedDict)
+        self.assertIs(type(new_stats), OrderedDict)
+        self.assertEqual((old_stats, new_stats), (OrderedDict(), OrderedDict()))
+        self.assertIsNot(old_stats, new_stats)
 
         self.assertIs(importlib.reload(accelerator), accelerator)
-        self.assertIs(accelerator.empty_cache, new_empty_cache)
+        self.assertIs(accelerator.empty_cache, new_functions["empty_cache"])
         self.assertIs(accelerator.empty_cache, memory.empty_cache)
         self.assertIs(accelerator.empty_cache(), None)
+        self.assertIs(accelerator.memory_stats, new_functions["memory_stats"])
+        self.assertIs(accelerator.memory_stats, memory.memory_stats)
+        self.assertEqual(accelerator.memory_stats(), OrderedDict())
 
     def test_argument_errors_match_python_3_binding_used_by_pytorch_2_13(self):
         accelerator = torch.accelerator
@@ -462,6 +630,18 @@ class AcceleratorTests(unittest.TestCase):
             (
                 lambda: accelerator.empty_cache(device=True),
                 "empty_cache() got an unexpected keyword argument 'device'",
+            ),
+            (
+                lambda: accelerator.memory_stats(device_index=None),
+                "memory_stats() got some positional-only arguments passed as keyword arguments: 'device_index'",
+            ),
+            (
+                lambda: accelerator.memory_stats(None, None),
+                "memory_stats() takes from 0 to 1 positional arguments but 2 were given",
+            ),
+            (
+                lambda: accelerator.memory_stats(unexpected=True),
+                "memory_stats() got an unexpected keyword argument 'unexpected'",
             ),
             (
                 lambda: accelerator.is_available(None),
@@ -520,6 +700,7 @@ class AcceleratorTests(unittest.TestCase):
                         torch.accelerator.current_accelerator(True),
                         index_outcome,
                         tuple(torch.accelerator.empty_cache() for _ in range(4)),
+                        tuple(torch.accelerator.memory_stats(index) for _ in range(4)),
                         torch.accelerator.is_available(),
                         torch.accelerator.device_count(),
                         torch.is_grad_enabled(),
@@ -548,13 +729,19 @@ class AcceleratorTests(unittest.TestCase):
                     None,
                     (RuntimeError, NO_ACCELERATOR_ERROR, (NO_ACCELERATOR_ERROR,)),
                     (None,) * 4,
+                    (OrderedDict(),) * 4,
                     False,
                     0,
                     expected_grad_state,
                 ),
             )
-            self.assertIs(result[5], False)
-            self.assertIs(type(result[6]), int)
+            self.assertTrue(all(type(stats) is OrderedDict for stats in result[5]))
+            self.assertEqual(len({id(stats) for stats in result[5]}), 4)
+            self.assertIs(result[6], False)
+            self.assertIs(type(result[7]), int)
+
+        all_stats = [stats for result in results for stats in result[5]]
+        self.assertEqual(len({id(stats) for stats in all_stats}), len(all_stats))
 
     def test_selection_stream_memory_graph_and_execution_apis_stay_unsupported(self):
         accelerator = torch.accelerator
@@ -570,7 +757,6 @@ class AcceleratorTests(unittest.TestCase):
             "max_memory_reserved",
             "memory_allocated",
             "memory_reserved",
-            "memory_stats",
             "reset_accumulated_memory_stats",
             "reset_peak_memory_stats",
             "set_device_idx",
@@ -588,7 +774,7 @@ class AcceleratorTests(unittest.TestCase):
 
         memory = importlib.import_module("torch_rs.accelerator.memory")
         self.assertIs(accelerator.memory, memory)
-        self.assertEqual(memory.__all__, ["empty_cache"])
+        self.assertEqual(memory.__all__, ["empty_cache", "memory_stats"])
         for name in unsupported:
             with self.subTest(memory_name=name):
                 self.assertFalse(hasattr(memory, name))
@@ -612,6 +798,7 @@ class AcceleratorTests(unittest.TestCase):
         script = r'''
 import os
 import sys
+from collections import OrderedDict
 
 class RejectExternalRuntimeImport:
     blocked = {
@@ -637,10 +824,24 @@ os.environ.update(
     PYTORCH_NVML_BASED_CUDA_CHECK="1",
 )
 import torch_rs as torch
-from torch_rs.accelerator.memory import empty_cache
+from torch_rs.accelerator.memory import empty_cache, memory_stats
+
+class ExplodingDeviceToken:
+    def __bool__(self):
+        raise AssertionError("device token truth value was inspected")
+
+    def __index__(self):
+        raise AssertionError("device token index was inspected")
+
+    def __int__(self):
+        raise AssertionError("device token integer value was inspected")
+
+    def __str__(self):
+        raise AssertionError("device token string value was inspected")
 
 modules_before_calls = set(sys.modules)
 assert torch.accelerator.empty_cache is empty_cache
+assert torch.accelerator.memory_stats is memory_stats
 assert torch.accelerator._discover_accelerator() == (None, False, 0, None)
 assert torch.accelerator.current_accelerator() is None
 assert torch.accelerator.current_accelerator(check_available=True) is None
@@ -660,6 +861,13 @@ assert type(count) is int and count == 0
 for _ in range(8):
     assert torch.accelerator.empty_cache() is None
     assert empty_cache() is None
+stats = [
+    torch.accelerator.memory_stats(),
+    torch.accelerator.memory_stats("cuda:0"),
+    memory_stats(ExplodingDeviceToken()),
+]
+assert all(type(value) is OrderedDict and not value for value in stats)
+assert len({id(value) for value in stats}) == len(stats)
 assert set(sys.modules) == modules_before_calls
 assert not hasattr(torch, "cuda")
 assert not any(
