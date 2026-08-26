@@ -1747,14 +1747,7 @@ impl Tensor {
         let elements = self.elements;
         let shape = try_clone_result_shape(&self.shape, elements)?;
         let strides = match memory_format {
-            MemoryFormat::Preserve if elements == 0 || self.is_non_overlapping_and_dense() => {
-                try_clone_result_shape(&self.strides, elements)?
-            }
-            MemoryFormat::Preserve => elementwise_output_strides(
-                &shape,
-                &[ElementwiseLayout::from_tensor(self)],
-                elements,
-            )?,
+            MemoryFormat::Preserve => self.preserve_format_output_strides(&shape, elements)?,
             MemoryFormat::Contiguous => contiguous_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast => channels_last_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast3d => channels_last_3d_strides(&shape, elements)?,
@@ -2632,6 +2625,20 @@ impl Tensor {
         self.finish_saved_input_unary_vjp(output, AutogradNode::Relu, apply_relu_vjp)
     }
 
+    /// Clamps every element to the inclusive interval from zero through six.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    #[cfg(any(feature = "python-bindings", test))]
+    pub(crate) fn relu6(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "relu6" });
+        }
+        self.unary_map_preserve_format(relu6_value)
+    }
+
     /// Computes the sine of every element in radians.
     ///
     /// # Errors
@@ -3111,6 +3118,36 @@ impl Tensor {
             self.dtype(),
             self.device(),
         ))
+    }
+
+    #[cfg(any(feature = "python-bindings", test))]
+    fn unary_map_preserve_format(
+        &self,
+        operation: impl Fn(f32) -> f32,
+    ) -> Result<Self, TensorError> {
+        let elements = self.elements;
+        let shape = try_clone_result_shape(&self.shape, elements)?;
+        let strides = self.preserve_format_output_strides(&shape, elements)?;
+        let data = self.materialize_with_strides(&strides, operation)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            self.dtype(),
+            self.device(),
+        ))
+    }
+
+    fn preserve_format_output_strides(
+        &self,
+        shape: &[usize],
+        elements: usize,
+    ) -> Result<Vec<usize>, TensorError> {
+        if elements == 0 || self.is_non_overlapping_and_dense() {
+            try_clone_result_shape(&self.strides, elements)
+        } else {
+            elementwise_output_strides(shape, &[ElementwiseLayout::from_tensor(self)], elements)
+        }
     }
 
     fn unary_output_strides(
@@ -4884,6 +4921,26 @@ fn relu_value(value: f32) -> f32 {
     }
 }
 
+#[cfg(any(feature = "python-bindings", test))]
+fn relu6_value(value: f32) -> f32 {
+    const SIX_BITS: u32 = 6.0_f32.to_bits();
+
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    if magnitude > f32::INFINITY.to_bits() {
+        // PyTorch preserves both quiet and signaling NaN payloads unchanged.
+        value
+    } else if bits & F32_SIGN_MASK != 0 && magnitude != 0 {
+        // Negative finite values and negative infinity clamp to positive zero,
+        // while the exact negative-zero representation passes through.
+        0.0
+    } else if magnitude > SIX_BITS {
+        6.0
+    } else {
+        value
+    }
+}
+
 fn round_value(value: f32, operation: fn(f32) -> f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
 
@@ -5022,7 +5079,7 @@ mod tests {
     use super::{
         AutogradKind, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType,
         Device, F32_SIGN_MASK, GradFn, MemoryFormat, SavedTensor, Tensor, TensorError,
-        materialize_contiguous_trailing_broadcast, sqrt_value, try_result_vector,
+        materialize_contiguous_trailing_broadcast, relu6_value, sqrt_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -5086,6 +5143,99 @@ mod tests {
         assert_eq!(
             inputs.map(|bits| sqrt_value(f32::from_bits(bits)).to_bits()),
             expected
+        );
+    }
+
+    #[test]
+    fn relu6_matches_pytorch_float32_edge_bits() {
+        let inputs = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x007f_ffff,
+            0x807f_ffff,
+            0x0080_0000,
+            0x8080_0000,
+            0x40bf_fffe,
+            0x40bf_ffff,
+            0x40c0_0000,
+            0x40c0_0001,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xff81_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let expected = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x0000_0000,
+            0x007f_ffff,
+            0x0000_0000,
+            0x0080_0000,
+            0x0000_0000,
+            0x40bf_fffe,
+            0x40bf_ffff,
+            0x40c0_0000,
+            0x40c0_0000,
+            0x40c0_0000,
+            0x0000_0000,
+            0x40c0_0000,
+            0x0000_0000,
+            0x7f81_2345,
+            0xff81_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+
+        assert_eq!(
+            inputs.map(|bits| relu6_value(f32::from_bits(bits)).to_bits()),
+            expected
+        );
+    }
+
+    #[test]
+    fn relu6_uses_unary_layout_and_rejects_active_autograd() {
+        let input = Tensor::from_vec(vec![-1.0, -0.0, 0.5, 5.0, 6.0, 7.0], [3, 1, 2])
+            .unwrap()
+            .permute_axes([2, 1, 0])
+            .unwrap();
+        let output = input.relu6().unwrap();
+        assert_eq!(output.shape(), input.shape());
+        assert_eq!(output.stride(), input.stride());
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.shares_storage_with(&input));
+        assert!(output.logical_values().map(f32::to_bits).eq([
+            0x0000_0000,
+            0x3f00_0000,
+            0x40c0_0000,
+            0x8000_0000,
+            0x40a0_0000,
+            0x40c0_0000
+        ]));
+
+        let channels_last = Tensor::from_vec(
+            (0_u16..48).map(|value| f32::from(value) - 17.0).collect(),
+            [2, 3, 2, 4],
+        )
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+        let channels_last_output = channels_last.relu6().unwrap();
+        assert_eq!(channels_last_output.stride(), channels_last.stride());
+        assert!(!channels_last_output.shares_storage_with(&channels_last));
+
+        let tracked = Tensor::from_vec(vec![0.5], [])
+            .unwrap()
+            .with_requires_grad(true);
+        assert_eq!(
+            tracked.relu6(),
+            Err(TensorError::AutogradRecordingUnsupported { operation: "relu6" })
         );
     }
 
@@ -6444,7 +6594,7 @@ mod tests {
         // Failure injection deliberately bypasses the validated constructors:
         // no real tensor can own this many f32 values, so the kernel must fail
         // its output reservation before attempting to read the empty fixture.
-        let tensor = Tensor {
+        let invalid_tensor = || Tensor {
             storage: Arc::new(Storage::from_owned(Vec::new(), DType::Float32, Device::Cpu)),
             shape: vec![elements],
             strides: vec![1],
@@ -6454,6 +6604,12 @@ mod tests {
             view_requires_grad: false,
             autograd: None,
         };
+        let tracked = invalid_tensor().with_requires_grad(true);
+        assert_eq!(
+            tracked.relu6(),
+            Err(TensorError::AutogradRecordingUnsupported { operation: "relu6" })
+        );
+        let tensor = invalid_tensor();
 
         assert_eq!(
             tensor.exp(),
@@ -6461,6 +6617,10 @@ mod tests {
         );
         assert_eq!(
             tensor.abs(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.relu6(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
