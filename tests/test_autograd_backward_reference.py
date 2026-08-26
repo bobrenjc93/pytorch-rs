@@ -4,6 +4,7 @@ import inspect
 import pickle
 import types
 import unittest
+from collections.abc import Sequence
 
 import numpy as np
 import torch_rs as torch
@@ -12,6 +13,35 @@ try:
     import torch as reference_torch
 except ImportError:
     reference_torch = None
+
+
+class CustomSequence(Sequence):
+    def __init__(self, values):
+        self.values = values
+
+    def __getitem__(self, index):
+        return self.values[index]
+
+    def __len__(self):
+        return len(self.values)
+
+
+class MaterializationCountingSequence(CustomSequence):
+    def __init__(self, values):
+        super().__init__(values)
+        self.materializations = 0
+
+    def __iter__(self):
+        self.materializations += 1
+        return iter(self.values)
+
+
+class ListSubclass(list):
+    pass
+
+
+class TupleSubclass(tuple):
+    pass
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -43,6 +73,72 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
         if sequence_type is None:
             return None
         return sequence_type((None,))
+
+    @staticmethod
+    def run_custom_sequence_backward(module, roots, gradient_form):
+        if gradient_form == "omitted":
+            return module.autograd.backward(roots)
+        if gradient_form == "None":
+            return module.autograd.backward(roots, grad_tensors=None)
+        if gradient_form == "tuple":
+            return module.autograd.backward(
+                roots, grad_tensors=(None,) * len(roots)
+            )
+        if gradient_form == "list":
+            return module.autograd.backward(
+                roots, grad_tensors=[None] * len(roots)
+            )
+        if gradient_form == "singleton tuple":
+            return module.autograd.backward(roots, grad_tensors=(None,))
+        if gradient_form == "singleton list":
+            return module.autograd.backward(roots, grad_tensors=[None])
+        raise AssertionError(f"unknown gradient form: {gradient_form}")
+
+    def custom_sequence_outcome(
+        self, module, root_sequence_type, root_count, gradient_form
+    ):
+        leaf = module.tensor([2.0], requires_grad=True)
+        roots = root_sequence_type((leaf,) * root_count)
+        first_result = self.run_custom_sequence_backward(
+            module, roots, gradient_form
+        )
+
+        if root_count == 0:
+            untouched = leaf.grad is None
+            leaf.backward()
+            return first_result, untouched, np.asarray(leaf.grad).copy()
+
+        first_gradient = leaf.grad
+        first_values = np.asarray(first_gradient).copy()
+        second_result = self.run_custom_sequence_backward(
+            module, roots, gradient_form
+        )
+        return (
+            first_result,
+            second_result,
+            first_values,
+            leaf.grad is first_gradient,
+            np.asarray(leaf.grad).copy(),
+        )
+
+    @staticmethod
+    def materialization_outcome(module):
+        leaf = module.tensor([3.0], requires_grad=True)
+        roots = MaterializationCountingSequence((leaf, leaf, leaf))
+        first_result = module.autograd.backward(roots)
+        first_count = roots.materializations
+        first_gradient = leaf.grad
+        first_values = np.asarray(first_gradient).copy()
+        second_result = module.autograd.backward(roots)
+        return (
+            first_result,
+            first_count,
+            first_values,
+            second_result,
+            roots.materializations,
+            leaf.grad is first_gradient,
+            np.asarray(leaf.grad).copy(),
+        )
 
     def supported_outcome(self, module, form, sequence_type):
         leaf = module.tensor([2.0, -3.0], requires_grad=True)
@@ -1169,6 +1265,52 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                             actual_gradient, expected_gradient
                         )
 
+    def test_custom_root_sequences_match_pytorch_2_13(self):
+        for root_sequence_type in (
+            CustomSequence,
+            TupleSubclass,
+            ListSubclass,
+        ):
+            for root_count in range(11):
+                gradient_forms = ["omitted", "None", "tuple", "list"]
+                if root_count == 0:
+                    gradient_forms.extend(
+                        ("singleton tuple", "singleton list")
+                    )
+                for gradient_form in gradient_forms:
+                    with self.subTest(
+                        root_sequence_type=root_sequence_type,
+                        root_count=root_count,
+                        gradient_form=gradient_form,
+                    ):
+                        actual = self.custom_sequence_outcome(
+                            torch,
+                            root_sequence_type,
+                            root_count,
+                            gradient_form,
+                        )
+                        expected = self.custom_sequence_outcome(
+                            reference_torch,
+                            root_sequence_type,
+                            root_count,
+                            gradient_form,
+                        )
+                        self.assertEqual(actual[:2], expected[:2])
+                        np.testing.assert_array_equal(actual[2], expected[2])
+                        if root_count:
+                            self.assertEqual(actual[3], expected[3])
+                            np.testing.assert_array_equal(
+                                actual[4], expected[4]
+                            )
+
+    def test_custom_root_sequence_materialization_matches_pytorch_2_13(self):
+        actual = self.materialization_outcome(torch)
+        expected = self.materialization_outcome(reference_torch)
+        self.assertEqual(actual[:2], expected[:2])
+        np.testing.assert_array_equal(actual[2], expected[2])
+        self.assertEqual(actual[3:6], expected[3:6])
+        np.testing.assert_array_equal(actual[6], expected[6])
+
     def test_two_leaf_roots_match_pytorch_2_13(self):
         forms = (
             "omitted",
@@ -1985,7 +2127,14 @@ class AutogradBackwardReferenceTests(unittest.TestCase):
                         )
 
     def test_accumulation_graph_reuse_and_freeing_match_pytorch_2_13(self):
-        for root_sequence_type in (None, tuple, list):
+        for root_sequence_type in (
+            None,
+            tuple,
+            list,
+            CustomSequence,
+            TupleSubclass,
+            ListSubclass,
+        ):
             for grad_sequence_type in (None, tuple, list):
                 with self.subTest(
                     root_sequence_type=root_sequence_type,
