@@ -33,9 +33,38 @@ def _is_shared_implementation(input):
     return input._typed_storage()._is_shared()
 
 
+def _format_implementation(input, format_spec):
+    if input.dim() == 0 and not input.is_meta and type(input) is Tensor:
+        # Formatting is observational, so detach before extracting the scalar
+        # to avoid the requires-grad conversion warning without changing the
+        # original tensor or its graph.
+        return input.detach().item().__format__(format_spec)
+    try:
+        return object.__format__(input, format_spec)
+    except TypeError as error:
+        # The native class's CPython type name includes its module, whereas
+        # PyTorch's Python-owned Tensor class reports only ``Tensor`` here.
+        if type(input) is Tensor and str(error).startswith(
+            "unsupported format string passed to "
+        ):
+            raise TypeError(
+                "unsupported format string passed to Tensor.__format__"
+            ) from None
+        raise
+
+
 # Defining the method in a Python class gives it PyTorch's function metadata.
 # The module binding is replaced with the native class immediately afterward.
 class Tensor:
+    def __format__(self, format_spec):
+        return _dispatch_unary_torch_function(
+            Tensor.__format__,
+            _format_implementation,
+            self,
+            {},
+            positional_arguments=(self, format_spec),
+        )
+
     def backward(
         self, gradient=None, retain_graph=None, create_graph=False, inputs=None
     ):
@@ -113,10 +142,12 @@ class Tensor:
         )
 
 
+_format = Tensor.__format__
 _backward = Tensor.backward
 _is_shared = Tensor.is_shared
 Tensor = _NativeTensor
+Tensor.__format__ = _format
 Tensor.backward = _backward
 Tensor.is_shared = _is_shared
 
-del _backward, _is_shared, _NativeTensor
+del _format, _backward, _is_shared, _NativeTensor
