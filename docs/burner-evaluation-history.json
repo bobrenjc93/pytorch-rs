@@ -6785,6 +6785,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1073",
+      "recordedAt": "2026-08-26T20:41:33.546Z",
+      "label": "PR #1073",
+      "kind": "leaf",
+      "prNumber": 1073,
+      "title": "Accept the default torch.set_deterministic_debug_mode",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 95.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 78.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
