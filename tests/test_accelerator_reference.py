@@ -23,6 +23,7 @@ SUPPORTED = {
     "current_accelerator",
     "current_device_index",
     "device_count",
+    "empty_cache",
     "is_available",
 }
 
@@ -345,7 +346,8 @@ class AcceleratorReferenceTests(unittest.TestCase):
         }
 
         stale_pickle_errors = []
-        for old_function in old_functions.values():
+        for name in sorted(SUPPORTED - {"empty_cache"}):
+            old_function = old_functions[name]
             try:
                 pickle.dumps(old_function)
             except Exception as error:
@@ -475,7 +477,6 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 "Graph",
                 "current_stream",
                 "device_index",
-                "empty_cache",
                 "get_memory_info",
                 "memory_stats",
                 "set_device_index",
@@ -483,14 +484,11 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 "synchronize",
             }.issubset(unsupported)
         )
-        for name in unsupported | {"graphs", "memory"}:
+        for name in unsupported | {"graphs"}:
             with self.subTest(name=name):
                 self.assertFalse(hasattr(actual, name))
 
-        for module_name in (
-            "torch_rs.accelerator.graphs",
-            "torch_rs.accelerator.memory",
-        ):
+        for module_name in ("torch_rs.accelerator.graphs",):
             with self.subTest(module=module_name):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)

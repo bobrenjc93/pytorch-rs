@@ -246,6 +246,7 @@ class AcceleratorTests(unittest.TestCase):
             "current_accelerator",
             "current_device_index",
             "device_count",
+            "empty_cache",
             "is_available",
         }
 
@@ -255,12 +256,13 @@ class AcceleratorTests(unittest.TestCase):
                 "current_accelerator",
                 "current_device_index",
                 "device_count",
+                "empty_cache",
                 "is_available",
             ],
         )
         self.assertEqual(
             {name for name in vars(accelerator) if not name.startswith("_")},
-            supported,
+            supported | {"memory"},
         )
 
         package_import = {}
@@ -268,7 +270,7 @@ class AcceleratorTests(unittest.TestCase):
         wildcard_import = {}
         exec("from torch_rs import accelerator", package_import)
         exec(
-            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, is_available",
+            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, empty_cache, is_available",
             direct_import,
         )
         exec("from torch_rs.accelerator import *", wildcard_import)
@@ -464,7 +466,6 @@ class AcceleratorTests(unittest.TestCase):
             "current_device_idx",
             "current_stream",
             "device_index",
-            "empty_cache",
             "empty_host_cache",
             "get_device_capability",
             "get_memory_info",
@@ -485,10 +486,7 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertFalse(hasattr(accelerator, name))
                 self.assertNotIn(name, accelerator.__all__)
 
-        for module_name in (
-            "torch_rs.accelerator.graphs",
-            "torch_rs.accelerator.memory",
-        ):
+        for module_name in ("torch_rs.accelerator.graphs",):
             with self.subTest(module=module_name):
                 with self.assertRaises(ModuleNotFoundError):
                     importlib.import_module(module_name)
@@ -554,6 +552,9 @@ for _ in range(3):
 assert torch.accelerator.is_available() is False
 count = torch.accelerator.device_count()
 assert type(count) is int and count == 0
+for _ in range(3):
+    assert torch.accelerator.empty_cache() is None
+    assert torch.accelerator.memory.empty_cache() is None
 assert set(sys.modules) == modules_before_calls
 assert not hasattr(torch, "cuda")
 assert not any(
