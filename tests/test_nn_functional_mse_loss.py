@@ -3,6 +3,7 @@ import inspect
 import re
 import types
 import unittest
+import warnings
 
 import numpy as np
 import torch_rs as torch
@@ -122,6 +123,47 @@ class FunctionalMseLossTests(unittest.TestCase):
             ("same operand", same, same),
         )
 
+    def scalar_broadcast_cases(self):
+        scalar = torch.tensor(-0.0)
+        offset_scalar = torch.tensor([17.0, 0.5])[1]
+        contiguous = torch.tensor(
+            np.linspace(-3.0, 4.0, 24, dtype=np.float32)
+            .reshape(2, 3, 4)
+            .tolist()
+        )
+        offset_strided = torch.tensor(
+            np.arange(48, dtype=np.float32).reshape(2, 2, 4, 3).tolist()
+        )[1].transpose(1, 2)
+        channels_last = torch.tensor(
+            np.arange(48, dtype=np.float32).reshape(2, 2, 3, 4).tolist()
+        ).contiguous(memory_format=torch.channels_last)
+        singleton_strided = torch.tensor(
+            np.arange(6, dtype=np.float32).reshape(3, 1, 2).tolist()
+        ).permute(2, 1, 0)
+        empty_strided = torch.zeros((2, 0, 3)).transpose(0, 2)
+
+        return (
+            ("contiguous scalar input", scalar, contiguous),
+            ("contiguous scalar target", contiguous, scalar),
+            ("offset strided scalar input", offset_scalar, offset_strided),
+            ("offset strided scalar target", offset_strided, offset_scalar),
+            ("channels last scalar input", scalar, channels_last),
+            ("channels last scalar target", channels_last, scalar),
+            ("singleton strided scalar input", scalar, singleton_strided),
+            ("singleton strided scalar target", singleton_strided, scalar),
+            ("empty strided scalar input", scalar, empty_strided),
+            ("empty strided scalar target", empty_strided, scalar),
+        )
+
+    @staticmethod
+    def broadcast_warning(input, target):
+        return (
+            f"Using a target size (torch.Size({list(target.shape)})) that is "
+            f"different to the input size (torch.Size({list(input.shape)})). "
+            "This will likely lead to incorrect results due to broadcasting. "
+            "Please ensure they have the same size."
+        )
+
     @staticmethod
     def call(input, target, form):
         if form == "reduction keyword":
@@ -160,15 +202,17 @@ class FunctionalMseLossTests(unittest.TestCase):
         )
         normalized_doc = " ".join(mse_loss.__doc__.split())
         for documented_limit in (
-            "exact, same-shaped",
+            "exact ``torch_rs.Tensor`` operands",
             "CPU ``float32`` storage",
             "``reduction='none'``",
             "``size_average=None``",
             "``reduce=None``",
             "``weight=None``",
+            "exactly one operand may be rank zero",
             "fuses subtraction and square into one native pass",
             "fresh, independent tensor",
-            "Broadcasting",
+            "scalar-broadcast warning",
+            "Other broadcasting",
             "Tensor subclasses",
             "active ``TorchFunctionMode`` contexts",
             "active autograd recording",
@@ -233,6 +277,49 @@ class FunctionalMseLossTests(unittest.TestCase):
                     np.testing.assert_array_equal(
                         self.tensor_state(target)[-1], target_state[-1]
                     )
+
+    def test_scalar_broadcast_matches_composition_warning_and_storage(self):
+        for case, input, target in self.scalar_broadcast_cases():
+            difference = input - target
+            expected = difference.square()
+            input_state = self.tensor_state(input)
+            target_state = self.tensor_state(target)
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                warning_line = inspect.currentframe().f_lineno + 1
+                actual = functional.mse_loss(input, target, reduction="none")
+
+            with self.subTest(case=case, warning=True):
+                self.assertEqual(len(caught), 1)
+                self.assertIs(caught[0].category, UserWarning)
+                self.assertEqual(str(caught[0].message), self.broadcast_warning(input, target))
+                self.assertEqual(caught[0].filename, __file__)
+                self.assertEqual(caught[0].lineno, warning_line)
+
+            self.assert_matches_composition(actual, expected, case=case)
+            with self.subTest(case=case, storage=True):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    repeated = functional.mse_loss(input, target, reduction="none")
+                self.assertIsNot(actual, repeated)
+                self.assertFalse(actual.is_set_to(repeated))
+                self.assertFalse(actual.is_set_to(input))
+                self.assertFalse(actual.is_set_to(target))
+                if actual.numel() != 0:
+                    self.assertNotEqual(actual.data_ptr(), repeated.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), input.data_ptr())
+                    self.assertNotEqual(actual.data_ptr(), target.data_ptr())
+
+            with self.subTest(case=case, nonmutation=True):
+                self.assertEqual(self.tensor_state(input)[:-1], input_state[:-1])
+                self.assertEqual(self.tensor_state(target)[:-1], target_state[:-1])
+                np.testing.assert_array_equal(
+                    self.tensor_state(input)[-1], input_state[-1]
+                )
+                np.testing.assert_array_equal(
+                    self.tensor_state(target)[-1], target_state[-1]
+                )
 
     def test_mixed_layout_singleton_keeps_binary_tensoriterator_stride(self):
         input = torch.tensor(
@@ -339,6 +426,54 @@ class FunctionalMseLossTests(unittest.TestCase):
                     self.tensor_bits(expected),
                 )
 
+    def test_scalar_broadcast_float32_edges_match_kernel_composition_bits(self):
+        tensor_bits = np.asarray(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7F7F_FFFF,
+                0xFF7F_FFFF,
+                0x7F80_0000,
+                0xFF80_0000,
+                0x7FC1_2345,
+                0xFFC5_4321,
+                0x7F81_2345,
+                0xFF85_4321,
+            ],
+            dtype=np.uint32,
+        )
+        tensor = torch.tensor(memoryview(tensor_bits.view(np.float32))).view(3, 4)
+        tensor = tensor.transpose(0, 1)
+
+        for scalar_bits in (
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x7F80_0000,
+            0xFF80_0000,
+            0x7FC6_789A,
+            0x7F86_789A,
+        ):
+            scalar_values = np.asarray([scalar_bits], dtype=np.uint32).view(np.float32)
+            scalar = torch.tensor(memoryview(scalar_values))[0]
+            for scalar_on_left in (True, False):
+                input, target = (scalar, tensor) if scalar_on_left else (tensor, scalar)
+                difference = input - target
+                expected = difference.square()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    actual = functional.mse_loss(input, target, reduction="none")
+                with self.subTest(
+                    scalar_bits=hex(scalar_bits), scalar_on_left=scalar_on_left
+                ):
+                    self.assertEqual(actual.stride(), expected.stride())
+                    np.testing.assert_array_equal(
+                        self.tensor_bits(actual),
+                        self.tensor_bits(expected),
+                    )
+
     def test_requires_grad_operands_need_no_grad(self):
         for input_requires_grad, target_requires_grad in (
             (True, False),
@@ -373,6 +508,41 @@ class FunctionalMseLossTests(unittest.TestCase):
                     case="no_grad",
                     expected_stride=difference.stride(),
                 )
+                self.assertFalse(actual.requires_grad)
+                self.assertTrue(actual.is_leaf)
+                self.assertIsNone(input.grad)
+                self.assertIsNone(target.grad)
+
+    def test_scalar_broadcast_requires_grad_operands_need_no_grad(self):
+        for scalar_on_left, scalar_requires_grad, tensor_requires_grad in (
+            (True, True, False),
+            (True, False, True),
+            (False, True, False),
+            (False, False, True),
+        ):
+            scalar = torch.tensor(0.5, requires_grad=scalar_requires_grad)
+            tensor = torch.tensor(
+                [[1.0, -2.0], [3.0, -4.0]],
+                requires_grad=tensor_requires_grad,
+            )
+            input, target = (scalar, tensor) if scalar_on_left else (tensor, scalar)
+            with self.subTest(
+                scalar_on_left=scalar_on_left,
+                scalar_requires_grad=scalar_requires_grad,
+                tensor_requires_grad=tensor_requires_grad,
+            ):
+                with self.assertWarnsRegex(UserWarning, "Using a target size"):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        r"^mse_loss\(\): autograd recording is not supported$",
+                    ):
+                        functional.mse_loss(input, target, reduction="none")
+
+                with warnings.catch_warnings(), torch.no_grad():
+                    warnings.simplefilter("ignore")
+                    actual = functional.mse_loss(input, target, reduction="none")
+                    expected = (input - target).square()
+                self.assert_matches_composition(actual, expected, case="scalar no_grad")
                 self.assertFalse(actual.requires_grad)
                 self.assertTrue(actual.is_leaf)
                 self.assertIsNone(input.grad)
@@ -436,7 +606,6 @@ class FunctionalMseLossTests(unittest.TestCase):
         for other in (
             torch.zeros((3,)),
             torch.zeros((2, 1)),
-            torch.zeros(()),
             torch.zeros((2, 2)),
         ):
             with self.subTest(target_shape=other.shape):

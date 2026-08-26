@@ -2411,28 +2411,32 @@ impl Tensor {
         self.zip_map(other, |left, right| left - right)
     }
 
-    /// Computes a same-shaped squared difference in one binary elementwise pass.
+    /// Computes a squared difference in one binary elementwise pass.
     ///
-    /// This deliberately uses the binary output-layout planner so callers get
-    /// the same strides as subtraction followed by a stride-preserving square,
-    /// without materializing the intermediate difference tensor.
+    /// Same-shaped inputs retain the dedicated binary fast path. Broadcast
+    /// inputs reuse the shared planner, with empty results applying the final
+    /// unary-style restriding used by PyTorch MSE without materializing an
+    /// intermediate difference tensor.
     ///
     /// # Errors
     ///
-    /// Returns an error when the input shapes differ or when result metadata or
-    /// storage allocation fails.
+    /// Returns an error when the input shapes are not broadcastable or when
+    /// result metadata or storage allocation fails.
     #[cfg(any(feature = "python-bindings", test))]
-    pub(crate) fn squared_difference_same_shape(&self, other: &Self) -> Result<Self, TensorError> {
-        if self.shape != other.shape {
-            return Err(TensorError::ShapeMismatch {
-                left: try_clone_result_shape(&self.shape, self.elements)?,
-                right: try_clone_result_shape(&other.shape, other.elements)?,
-            });
-        }
-        self.zip_map_same_shape(other, |left, right| {
+    pub(crate) fn squared_difference(&self, other: &Self) -> Result<Self, TensorError> {
+        let shapes_match = self.shape == other.shape;
+        let mut output = self.zip_map(other, |left, right| {
             let difference = left - right;
             difference * difference
-        })
+        })?;
+        if !shapes_match && output.elements == 0 {
+            // The native MSE kernel receives already-expanded operands. For an
+            // empty broadcast, its output is restrided like the final square
+            // in `(input - target).square()`, even though no intermediate
+            // values need to be materialized.
+            output.strides = output.unary_output_strides(&output.shape, output.elements)?;
+        }
+        Ok(output)
     }
 
     /// Multiplies tensors element by element with trailing-dimension broadcasting.
@@ -5159,7 +5163,7 @@ mod tests {
         assert_eq!(difference.stride(), &[3, 6, 1]);
 
         let ordinary = difference.square().unwrap();
-        let fused = input.squared_difference_same_shape(&target).unwrap();
+        let fused = input.squared_difference(&target).unwrap();
         assert_eq!(ordinary.stride(), &[3, 3, 1]);
         assert_eq!(fused.stride(), difference.stride());
         assert!(
@@ -5379,7 +5383,7 @@ mod tests {
         let assert_matches = |left: &Tensor, right: &Tensor| {
             let difference = left.sub(right).unwrap();
             let expected = difference.square().unwrap();
-            let actual = left.squared_difference_same_shape(right).unwrap();
+            let actual = left.squared_difference(right).unwrap();
 
             assert_eq!(actual.shape(), expected.shape());
             assert_eq!(actual.stride(), difference.stride());
@@ -5474,6 +5478,59 @@ mod tests {
         let empty_left = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
         let empty_right = Tensor::ones([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
         assert_matches(&empty_left, &empty_right);
+    }
+
+    #[test]
+    fn squared_difference_broadcasts_rank_zero_in_both_operand_orders() {
+        let scalar = Tensor::from_vec(vec![13.0, -0.0], [2])
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        let strided = Tensor::from_vec(
+            [
+                0x0000_0000,
+                0x8000_0000,
+                0x0000_0001,
+                0x8000_0001,
+                0x7f80_0000,
+                0xff80_0000,
+                0x7fc1_2345,
+                0xffc5_4321,
+                0x7f81_2345,
+                0xff85_4321,
+                0x7f7f_ffff,
+                0xff7f_ffff,
+            ]
+            .map(f32::from_bits)
+            .to_vec(),
+            [3, 4],
+        )
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap();
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().transpose(0, 2).unwrap();
+
+        for (left, right) in [
+            (&scalar, &strided),
+            (&strided, &scalar),
+            (&scalar, &empty),
+            (&empty, &scalar),
+        ] {
+            let expected = left.sub(right).unwrap().square().unwrap();
+            let actual = left.squared_difference(right).unwrap();
+
+            assert_eq!(actual.shape(), expected.shape());
+            assert_eq!(actual.stride(), expected.stride());
+            assert_eq!(actual.storage_offset(), 0);
+            assert!(!actual.shares_storage_with(left));
+            assert!(!actual.shares_storage_with(right));
+            assert!(
+                actual
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(expected.logical_values().map(f32::to_bits))
+            );
+        }
     }
 
     #[test]
