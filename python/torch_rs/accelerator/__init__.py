@@ -6,6 +6,7 @@ from .. import device as _device
 from .memory import (
     empty_cache,
     max_memory_allocated,
+    max_memory_reserved,
     memory_allocated,
     memory_reserved,
     memory_stats,
@@ -19,6 +20,7 @@ __all__ = [
     "empty_cache",
     "is_available",
     "max_memory_allocated",
+    "max_memory_reserved",
     "memory_allocated",
     "memory_reserved",
     "memory_stats",
