@@ -60,7 +60,13 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_module.__all__
-                if name in {"is_built", "is_flash_attention_available"}
+                if name
+                in {
+                    "enable_flash_sdp",
+                    "flash_sdp_enabled",
+                    "is_built",
+                    "is_flash_attention_available",
+                }
             ],
         )
         self.assertIs(type(actual), types.FunctionType)
@@ -123,7 +129,13 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             {
                 name
                 for name in expected_child_wildcard
-                if name in {"is_built", "is_flash_attention_available"}
+                if name
+                in {
+                    "enable_flash_sdp",
+                    "flash_sdp_enabled",
+                    "is_built",
+                    "is_flash_attention_available",
+                }
             },
         )
 
@@ -239,14 +251,19 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_public,
-            {"is_built", "is_flash_attention_available", "torch"},
+            {
+                "enable_flash_sdp",
+                "flash_sdp_enabled",
+                "is_built",
+                "is_flash_attention_available",
+                "torch",
+            },
         )
         self.assertTrue(actual_public.issubset(expected_public))
         self.assertTrue(
             {
                 "SDPAParams",
                 "cufft_plan_cache",
-                "enable_flash_sdp",
                 "matmul",
             }.issubset(expected_public - actual_public)
         )
