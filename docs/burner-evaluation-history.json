@@ -7201,6 +7201,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1165",
+      "recordedAt": "2026-08-27T21:27:01.452Z",
+      "label": "PR #1165",
+      "kind": "leaf",
+      "prNumber": 1165,
+      "title": "Expose top-level torch.rsqrt through the unary-out bridge",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 98.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 81.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
