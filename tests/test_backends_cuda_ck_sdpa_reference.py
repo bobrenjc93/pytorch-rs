@@ -5,6 +5,7 @@ import pickle
 import pickletools
 import re
 import sys
+import threading
 import types
 import typing
 import unittest
@@ -18,12 +19,13 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CudaIsBuiltReferenceTests(unittest.TestCase):
+class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "backends.cuda.is_built differentials require pinned PyTorch 2.13.0"
+                "Composable Kernel SDPA availability differentials require pinned "
+                "PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
@@ -47,14 +49,47 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
+    def threaded_contract(self, root):
+        function = root.backends.cuda.is_ck_sdpa_available
+        native_function = root._C._is_ck_sdpa_available
+        worker_count = 16
+        barrier = threading.Barrier(worker_count)
+        results = [None] * worker_count
+        errors = []
+
+        def worker(index):
+            try:
+                barrier.wait(timeout=5)
+                results[index] = (
+                    function(),
+                    native_function(),
+                    function is root.backends.cuda.is_ck_sdpa_available,
+                    native_function is root._C._is_ck_sdpa_available,
+                )
+            except BaseException as error:
+                errors.append((type(error).__name__, str(error)))
+
+        threads = [
+            threading.Thread(target=worker, args=(index,))
+            for index in range(worker_count)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        return (
+            [thread.is_alive() for thread in threads],
+            errors,
+            results,
+        )
+
     def test_signature_documentation_and_identity_match_pytorch_2_13(self):
         actual_module = importlib.import_module("torch_rs.backends.cuda")
         expected_module = importlib.import_module("torch.backends.cuda")
-        actual = actual_module.is_built
-        expected = expected_module.is_built
+        actual = actual_module.is_ck_sdpa_available
+        expected = expected_module.is_ck_sdpa_available
 
-        self.assertIsNone(actual_module.__doc__)
-        self.assertEqual(actual_module.__doc__, expected_module.__doc__)
         self.assertEqual(
             actual_module.__all__,
             [
@@ -89,53 +124,38 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             hasattr(expected, "__text_signature__"),
         )
         self.assertEqual(actual.__code__.co_names, expected.__code__.co_names)
+        self.assertEqual(actual.__code__.co_freevars, expected.__code__.co_freevars)
+        self.assertEqual(actual.__code__.co_cellvars, expected.__code__.co_cellvars)
 
-    def test_imports_copying_and_pickling_match_the_supported_scope(self):
-        actual_backends = importlib.import_module("torch_rs.backends")
-        expected_backends = importlib.import_module("torch.backends")
+    def test_values_and_thread_behavior_match_pytorch_2_13(self):
+        actual = self.threaded_contract(torch)
+        expected = self.threaded_contract(reference_torch)
+
+        self.assertEqual(actual, expected)
+        self.assertEqual(
+            actual,
+            ([False] * 16, [], [(False, False, True, True)] * 16),
+        )
+
+    def test_imports_copying_and_pickling_match_pytorch_2_13(self):
         actual_module = importlib.import_module("torch_rs.backends.cuda")
         expected_module = importlib.import_module("torch.backends.cuda")
-        actual = actual_module.is_built
-        expected = expected_module.is_built
-
-        self.assertIs(torch.backends, actual_backends)
-        self.assertIs(reference_torch.backends, expected_backends)
-        self.assertIs(actual_backends.cuda, actual_module)
-        self.assertIs(expected_backends.cuda, expected_module)
-        self.assertIs(sys.modules["torch_rs.backends.cuda"], actual_module)
-        self.assertIs(sys.modules["torch.backends.cuda"], expected_module)
+        actual = actual_module.is_ck_sdpa_available
+        expected = expected_module.is_ck_sdpa_available
 
         for package_name, module, function in (
             ("torch_rs", actual_module, actual),
             ("torch", expected_module, expected),
         ):
-            backend_import = {}
             function_import = {}
-            exec(f"from {package_name}.backends import cuda", backend_import)
+            child_wildcard = {}
             exec(
-                f"from {package_name}.backends.cuda import is_built",
+                f"from {package_name}.backends.cuda import is_ck_sdpa_available",
                 function_import,
             )
-            self.assertIs(backend_import["cuda"], module)
-            self.assertIs(function_import["is_built"], function)
-
-        actual_child_wildcard = {}
-        expected_child_wildcard = {}
-        exec("from torch_rs.backends.cuda import *", actual_child_wildcard)
-        exec("from torch.backends.cuda import *", expected_child_wildcard)
-        self.assertEqual(
-            {name for name in actual_child_wildcard if not name.startswith("__")},
-            {
-                name
-                for name in expected_child_wildcard
-                if name
-                in {
-                    "is_built",
-                    "is_ck_sdpa_available",
-                    "is_flash_attention_available",
-                }
-            },
-        )
+            exec(f"from {package_name}.backends.cuda import *", child_wildcard)
+            self.assertIs(function_import["is_ck_sdpa_available"], function)
+            self.assertIs(child_wildcard["is_ck_sdpa_available"], function)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -153,10 +173,10 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
     def reload_contract(self, root):
         parent = root.backends
         module = parent.cuda
-        old_function = module.is_built
+        old_function = module.is_ck_sdpa_available
         namespace = module.__dict__
         reloaded = importlib.reload(module)
-        new_function = module.is_built
+        new_function = module.is_ck_sdpa_available
 
         try:
             pickle.dumps(old_function)
@@ -168,7 +188,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 ),
             )
         else:
-            self.fail("a stale CUDA build query remained pickleable")
+            self.fail("a stale Composable Kernel SDPA query remained pickleable")
 
         return (
             reloaded is module,
@@ -187,8 +207,8 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             self.reload_contract(torch),
             self.reload_contract(reference_torch),
         )
-        actual = torch.backends.cuda.is_built
-        expected = reference_torch.backends.cuda.is_built
+        actual = torch.backends.cuda.is_ck_sdpa_available
+        expected = reference_torch.backends.cuda.is_ck_sdpa_available
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             with self.subTest(protocol=protocol):
                 self.assertEqual(
@@ -197,8 +217,8 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual = torch.backends.cuda.is_built
-        expected = reference_torch.backends.cuda.is_built
+        actual = torch.backends.cuda.is_ck_sdpa_available
+        expected = reference_torch.backends.cuda.is_ck_sdpa_available
         cases = (
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(None, None), lambda: expected(None, None)),
@@ -212,7 +232,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_cuda_enabled_h100_exposes_build_runtime_and_execution_boundary(self):
+    def test_cuda_enabled_h100_reports_ck_unavailable_and_execution_boundary(self):
         if not reference_torch.backends.cuda.is_built():
             self.skipTest("requires a CUDA-built reference PyTorch")
         if not reference_torch.cuda.is_available():
@@ -222,51 +242,50 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
         if "H100" not in device_name:
             self.skipTest(f"requires an NVIDIA H100, found {device_name}")
 
-        self.assertIs(reference_torch.backends.cuda.is_built(), True)
+        self.assertIs(reference_torch.backends.cuda.is_ck_sdpa_available(), False)
+        self.assertIs(reference_torch._C._is_ck_sdpa_available(), False)
+        self.assertIs(torch.backends.cuda.is_ck_sdpa_available(), False)
+        self.assertIs(torch._C._is_ck_sdpa_available(), False)
         self.assertIs(torch.backends.cuda.is_built(), False)
-        self.assertGreaterEqual(reference_torch.cuda.device_count(), 1)
+
         device = reference_torch.device("cuda", 0)
-        source = reference_torch.tensor([2.0, 3.0], device=device)
-        result = source.square()
+        query = reference_torch.tensor(
+            [[[[1.0, 0.0], [0.0, 1.0]]]], device=device
+        )
+        key = query.clone()
+        value = reference_torch.tensor(
+            [[[[2.0, 4.0], [6.0, 8.0]]]], device=device
+        )
+        result = reference_torch.nn.functional.scaled_dot_product_attention(
+            query, key, value
+        )
+        expected = reference_torch.nn.functional.scaled_dot_product_attention(
+            query.cpu(), key.cpu(), value.cpu()
+        )
         reference_torch.cuda.synchronize(device)
-        self.assertEqual(result.cpu().tolist(), [4.0, 9.0])
+        reference_torch.testing.assert_close(result.cpu(), expected)
 
         self.assertFalse(hasattr(torch, "cuda"))
+        self.assertFalse(
+            hasattr(torch.nn.functional, "scaled_dot_product_attention")
+        )
+        for name in (
+            "SDPAParams",
+            "can_use_cudnn_attention",
+            "can_use_efficient_attention",
+            "can_use_flash_attention",
+            "enable_cudnn_sdp",
+            "enable_flash_sdp",
+            "enable_math_sdp",
+            "enable_mem_efficient_sdp",
+            "sdp_kernel",
+        ):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(torch.backends.cuda, name))
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "to"))
         with self.assertRaises(RuntimeError):
-            torch.tensor([2.0, 3.0], device="cuda:0")
-
-    def test_only_the_supported_cuda_build_queries_are_exposed(self):
-        actual_module = torch.backends.cuda
-        expected_module = reference_torch.backends.cuda
-        actual_public = {
-            name for name in vars(actual_module) if not name.startswith("_")
-        }
-        expected_public = {
-            name for name in vars(expected_module) if not name.startswith("_")
-        }
-
-        self.assertEqual(
-            actual_public,
-            {
-                "is_built",
-                "is_ck_sdpa_available",
-                "is_flash_attention_available",
-                "torch",
-            },
-        )
-        self.assertTrue(actual_public.issubset(expected_public))
-        self.assertTrue(
-            {
-                "SDPAParams",
-                "cufft_plan_cache",
-                "enable_flash_sdp",
-                "matmul",
-            }.issubset(expected_public - actual_public)
-        )
-        self.assertFalse(hasattr(torch, "cuda"))
-        self.assertTrue(hasattr(reference_torch, "cuda"))
+            torch.tensor([1.0], device="cuda:0")
 
 
 if __name__ == "__main__":
