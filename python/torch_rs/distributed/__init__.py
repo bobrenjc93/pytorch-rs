@@ -12,6 +12,7 @@ def is_available() -> bool:
     return False
 
 
+from .distributed_c10d import get_rank as get_rank
 from .distributed_c10d import get_world_size as get_world_size
 from .distributed_c10d import get_pg_count as get_pg_count
 from .distributed_c10d import get_node_local_rank as get_node_local_rank
