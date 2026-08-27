@@ -223,6 +223,7 @@ class DistributedGetWorldSizeReferenceTests(unittest.TestCase):
         actual = actual_distributed.get_world_size
         expected = expected_distributed.get_world_size
         supported = {
+            "destroy_process_group",
             "get_backend_config",
             "get_backend",
             "get_rank",
@@ -314,6 +315,7 @@ class DistributedGetWorldSizeReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -334,6 +336,7 @@ class DistributedGetWorldSizeReferenceTests(unittest.TestCase):
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
             {
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -359,7 +362,6 @@ class DistributedGetWorldSizeReferenceTests(unittest.TestCase):
             "GroupMember",
             "ProcessGroup",
             "all_reduce",
-            "destroy_process_group",
             "init_process_group",
             "new_group",
         ):

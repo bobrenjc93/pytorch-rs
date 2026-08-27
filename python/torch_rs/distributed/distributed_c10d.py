@@ -2,7 +2,10 @@
 
 import os as _os
 
+from ..torch_rs import Tensor as _Tensor
+
 __all__ = [
+    "destroy_process_group",
     "get_backend_config",
     "get_backend",
     "get_rank",
@@ -21,6 +24,29 @@ __all__ = [
 # Preserve PyTorch's annotation spelling without exporting unsupported types.
 _ProcessGroup = type("ProcessGroup", (), {"__module__": __name__})
 _Backend = type("Backend", (), {"__module__": __name__})
+
+
+def destroy_process_group(group: _ProcessGroup | None = None):
+    """
+    Destroy a given process group, and deinitialize the distributed package.
+
+    Args:
+        group (ProcessGroup, optional): The process group to be destroyed, if
+                                        group.WORLD is given, all process
+                                        groups including the default one will
+                                        be destroyed.
+    """
+    if type(group) is _Tensor:
+        if group.numel() != 1:
+            bool(group)
+        if group.item() == -100:
+            return
+    elif group == -100:
+        return
+    if group is None:
+        raise AssertionError("Process group cannot be None")
+    if {}.get(group, None) is None:
+        raise ValueError("Invalid process group specified")
 
 
 def get_backend_config(group: _ProcessGroup | None = None) -> str:

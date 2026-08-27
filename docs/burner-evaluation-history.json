@@ -7121,6 +7121,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1144",
+      "recordedAt": "2026-08-27T15:52:51.093Z",
+      "label": "PR #1144",
+      "kind": "leaf",
+      "prNumber": 1144,
+      "title": "Expose uninitialized torch.distributed.destroy_process_group",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 98.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 80.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
