@@ -236,6 +236,9 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
             ),
             "get_default_mmap_options": serialization.get_default_mmap_options,
             "set_default_mmap_options": serialization.set_default_mmap_options,
+            "clear_safe_globals": serialization.clear_safe_globals,
+            "get_safe_globals": serialization.get_safe_globals,
+            "add_safe_globals": serialization.add_safe_globals,
         }
 
         self.assertEqual(serialization.__all__, list(exports))
@@ -250,7 +253,8 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
             "LoadEndianness, get_crc32_options, set_crc32_options, "
             "get_default_load_endianness, set_default_load_endianness, "
             "get_default_mmap_options, "
-            "set_default_mmap_options",
+            "set_default_mmap_options, clear_safe_globals, "
+            "get_safe_globals, add_safe_globals",
             direct_import,
         )
         for name, value in exports.items():
@@ -390,6 +394,9 @@ class SerializationCrc32OptionsTests(unittest.TestCase):
                 "set_default_load_endianness",
                 "get_default_mmap_options",
                 "set_default_mmap_options",
+                "clear_safe_globals",
+                "get_safe_globals",
+                "add_safe_globals",
             },
         )
         for name in ("save", "load"):
@@ -458,6 +465,9 @@ assert serialization.__all__ == [
     "set_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
+    "clear_safe_globals",
+    "get_safe_globals",
+    "add_safe_globals",
 ]
 assert replacement.__all__ == [
     "LoadEndianness",
@@ -467,6 +477,9 @@ assert replacement.__all__ == [
     "set_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
+    "clear_safe_globals",
+    "get_safe_globals",
+    "add_safe_globals",
 ]
 assert replacement.get_default_load_endianness() is None
 assert hasattr(replacement, "set_default_load_endianness")

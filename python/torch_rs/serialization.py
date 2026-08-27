@@ -6,10 +6,14 @@ __all__ = [
     "set_default_load_endianness",
     "get_default_mmap_options",
     "set_default_mmap_options",
+    "clear_safe_globals",
+    "get_safe_globals",
+    "add_safe_globals",
 ]
 
 import mmap as _mmap
 import sys as _sys
+from collections.abc import Callable as _Callable
 from enum import Enum as _Enum
 from typing import Any as _Any
 
@@ -79,6 +83,60 @@ def set_crc32_options(compute_crc32: bool):
         compute_crc32 (bool): set crc32 computation flag
     """
     _state.compute_crc32 = compute_crc32
+
+
+def clear_safe_globals() -> None:
+    """
+    Clears the list of globals that are safe for ``weights_only`` load.
+    """
+    _state.marked_safe_globals = set()
+
+
+def get_safe_globals() -> list[_Callable | tuple[_Callable, str]]:
+    """
+    Returns the list of user-added globals that are safe for ``weights_only`` load.
+    """
+    return list(_state.marked_safe_globals)
+
+
+def add_safe_globals(
+    safe_globals: list[_Callable | tuple[_Callable, str]],
+) -> None:
+    """
+    Marks the given globals as safe for ``weights_only`` load. For example, functions
+    added to this list can be called during unpickling, classes could be instantiated
+    and have state set.
+
+    Each item in the list can either be a function/class or a tuple of the form
+    (function/class, string) where string is the full path of the function/class.
+
+    Within the serialized format, each function is identified with its full
+    path as ``{__module__}.{__qualname__}``. When calling this API, you can provide this
+    full path that should match the one in the checkpoint otherwise the default
+    ``{fn.__module__}.{fn.__qualname__}`` will be used.
+
+    Args:
+        safe_globals (List[Union[Callable, Tuple[Callable, str]]]): list of globals to mark as safe
+
+    Example:
+        >>> # xdoctest: +SKIP("Can't torch.save(t, ...) as doctest thinks MyTensor is defined on torch.serialization")
+        >>> import tempfile
+        >>> class MyTensor(torch.Tensor):
+        ...     pass
+        >>> t = MyTensor(torch.randn(2, 3))
+        >>> with tempfile.NamedTemporaryFile() as f:
+        ...     torch.save(t, f.name)
+        # Running `torch.load(f.name, weights_only=True)` will fail with
+        # Unsupported global: GLOBAL __main__.MyTensor was not an allowed global by default.
+        # Check the code and make sure MyTensor is safe to be used when loaded from an arbitrary checkpoint.
+        ...     torch.serialization.add_safe_globals([MyTensor])
+        ...     torch.load(f.name, weights_only=True)
+        # MyTensor([[-0.5024, -1.8152, -0.5455],
+        #          [-0.8234,  2.0500, -0.3657]])
+    """
+    _state.marked_safe_globals = _state.marked_safe_globals.union(
+        set(safe_globals)
+    )
 
 
 def get_default_mmap_options() -> int | None:
