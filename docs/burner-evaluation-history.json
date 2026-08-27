@@ -7217,6 +7217,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1170",
+      "recordedAt": "2026-08-27T22:09:28.363Z",
+      "label": "PR #1170",
+      "kind": "leaf",
+      "prNumber": 1170,
+      "title": "Expose Composable Kernel SDPA build availability",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 98.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 81.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
