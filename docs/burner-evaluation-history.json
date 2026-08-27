@@ -7073,6 +7073,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1134",
+      "recordedAt": "2026-08-27T12:54:39.095Z",
+      "label": "PR #1134",
+      "kind": "leaf",
+      "prNumber": 1134,
+      "title": "Add serialization safe-global registry primitives",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 97.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 80.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
