@@ -250,6 +250,7 @@ class DistributedGetNodeLocalRankTests(unittest.TestCase):
                 "is_nccl_available",
                 "is_ucc_available",
                 "is_xccl_available",
+                "get_group_rank",
                 "get_node_local_rank",
             ],
         )
@@ -289,6 +290,7 @@ class DistributedGetNodeLocalRankTests(unittest.TestCase):
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "get_group_rank",
                 "get_node_local_rank",
                 "is_available",
                 "is_gloo_available",
