@@ -111,9 +111,8 @@ class CpuStreamTests(unittest.TestCase):
         self.assertEqual(stream_type.__qualname__, "Stream")
         self.assertEqual(stream_type.__module__, "torch_rs.cpu")
         self.assertEqual(
-            stream_type.__doc__,
-            "\n    N.B. This class only exists to facilitate "
-            "device-agnostic code\n    ",
+            inspect.getdoc(stream_type),
+            "N.B. This class only exists to facilitate device-agnostic code",
         )
         self.assertEqual(stream_type.__annotations__, {})
         self.assertEqual(stream_type.__bases__, (object,))
