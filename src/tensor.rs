@@ -2610,6 +2610,20 @@ impl Tensor {
         self.unary_map(|value| 1.0 * value.recip())
     }
 
+    /// Computes the reciprocal square root of every element using unary output
+    /// layout planning.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn rsqrt(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "rsqrt" });
+        }
+        self.unary_map(rsqrt_value)
+    }
+
     fn scalar_div_with_output_layout(
         &self,
         scalar: f32,
@@ -4933,6 +4947,23 @@ fn sqrt_value(value: f32) -> f32 {
     }
 }
 
+fn rsqrt_value(value: f32) -> f32 {
+    const QUIET_NAN_MASK: u32 = 0x0040_0000;
+
+    let bits = value.to_bits();
+    let magnitude = bits & !F32_SIGN_MASK;
+    if magnitude > f32::INFINITY.to_bits() {
+        // Quiet NaN inputs while retaining their sign and payload.
+        return f32::from_bits(bits | QUIET_NAN_MASK);
+    }
+    if bits & F32_SIGN_MASK != 0 && magnitude != 0 {
+        // PyTorch's CPU rsqrt kernel returns a canonical negative quiet NaN
+        // for every negative nonzero finite value and negative infinity.
+        return f32::from_bits(F32_SIGN_MASK | f32::NAN.to_bits());
+    }
+    1.0 / value.sqrt()
+}
+
 fn tanh_value(value: f32) -> f32 {
     const QUIET_NAN_MASK: u32 = 0x0040_0000;
     const SATURATION_MAGNITUDE_BITS: u32 = 0x4110_2c67;
@@ -5029,7 +5060,7 @@ mod tests {
     use super::{
         AutogradKind, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType,
         Device, F32_SIGN_MASK, GradFn, MemoryFormat, SavedTensor, Tensor, TensorError,
-        materialize_contiguous_trailing_broadcast, sqrt_value, try_result_vector,
+        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -5092,6 +5123,63 @@ mod tests {
 
         assert_eq!(
             inputs.map(|bits| sqrt_value(f32::from_bits(bits)).to_bits()),
+            expected
+        );
+    }
+
+    #[test]
+    fn reciprocal_square_root_matches_pytorch_float32_edge_bits() {
+        let inputs = [
+            0x0000_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x007f_ffff,
+            0x807f_ffff,
+            0x0080_0000,
+            0x8080_0000,
+            0x3eaa_aaab,
+            0xbeaa_aaab,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x4080_0000,
+            0xc080_0000,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f81_2345,
+            0xff81_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+        let expected = [
+            0x7f80_0000,
+            0xff80_0000,
+            0x64b5_04f3,
+            0xffc0_0000,
+            0x5f00_0001,
+            0xffc0_0000,
+            0x5f00_0000,
+            0xffc0_0000,
+            0x3fdd_b3d8,
+            0xffc0_0000,
+            0x3f80_0000,
+            0xffc0_0000,
+            0x3f00_0000,
+            0xffc0_0000,
+            0x1f80_0001,
+            0xffc0_0000,
+            0x0000_0000,
+            0xffc0_0000,
+            0x7fc1_2345,
+            0xffc1_2345,
+            0x7fc1_2345,
+            0xffc5_4321,
+        ];
+
+        assert_eq!(
+            inputs.map(|bits| rsqrt_value(f32::from_bits(bits)).to_bits()),
             expected
         );
     }
@@ -6541,6 +6629,10 @@ mod tests {
         );
         assert_eq!(
             tensor.reciprocal(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.rsqrt(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
