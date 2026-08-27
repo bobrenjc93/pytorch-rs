@@ -44,9 +44,54 @@ class TensorSumTests(unittest.TestCase):
             ("dtype none", lambda: source.sum(dtype=None)),
             ("dtype float32", lambda: source.sum(dtype=torch.float32)),
             ("dtype float alias", lambda: source.sum(dtype=torch.float)),
+            ("positional dim none", lambda: source.sum(None)),
+            ("keyword dim none", lambda: source.sum(dim=None)),
+            ("positional dim none dtype none", lambda: source.sum(None, dtype=None)),
+            (
+                "keyword dim none dtype none",
+                lambda: source.sum(dim=None, dtype=None),
+            ),
+            (
+                "positional dim none dtype float32",
+                lambda: source.sum(None, dtype=torch.float32),
+            ),
+            (
+                "keyword dim none dtype float32",
+                lambda: source.sum(dim=None, dtype=torch.float32),
+            ),
+            ("positional keepdim false", lambda: source.sum(None, False)),
+            ("mixed keepdim false", lambda: source.sum(None, keepdim=False)),
+            (
+                "keyword keepdim false",
+                lambda: source.sum(dim=None, keepdim=False),
+            ),
+            (
+                "positional keepdim false dtype none",
+                lambda: source.sum(None, False, dtype=None),
+            ),
+            (
+                "mixed keepdim false dtype none",
+                lambda: source.sum(None, keepdim=False, dtype=None),
+            ),
+            (
+                "keyword keepdim false dtype none",
+                lambda: source.sum(dim=None, keepdim=False, dtype=None),
+            ),
+            (
+                "positional keepdim false dtype float32",
+                lambda: source.sum(None, False, dtype=torch.float32),
+            ),
+            (
+                "mixed keepdim false dtype float32",
+                lambda: source.sum(None, keepdim=False, dtype=torch.float32),
+            ),
+            (
+                "keyword keepdim false dtype float32",
+                lambda: source.sum(dim=None, keepdim=False, dtype=torch.float32),
+            ),
         )
 
-    def test_dtype_only_forms_reuse_full_reduction_values_and_metadata(self):
+    def test_none_dimension_forms_reuse_full_reduction_values_and_metadata(self):
         dense = torch.tensor(
             np.arange(24, dtype=np.float32).reshape(2, 3, 4).tolist()
         )
@@ -67,11 +112,11 @@ class TensorSumTests(unittest.TestCase):
             for form, call in self.supported_calls(source):
                 self.assert_scalar(call(), expected, case=(name, form))
 
-    def test_dtype_forms_preserve_autograd_accumulation_and_empty_gradients(self):
+    def test_none_dimension_forms_preserve_autograd_and_empty_gradients(self):
         leaf = torch.tensor(
             [[1.0, -2.0, 3.0], [4.0, 5.0, -6.0]], requires_grad=True
         )
-        loss = leaf.transpose(0, 1).sum(dtype=torch.float32)
+        loss = leaf.transpose(0, 1).sum(None, False, dtype=torch.float32)
         self.assertTrue(loss.requires_grad)
         self.assertFalse(loss.is_leaf)
         loss.backward()
@@ -79,15 +124,15 @@ class TensorSumTests(unittest.TestCase):
         self.assertEqual(leaf.grad.tolist(), [[2.0, 2.0, 2.0], [2.0, 2.0, 2.0]])
 
         empty = torch.zeros((2, 0, 3), requires_grad=True)
-        empty.transpose(0, 2).sum(dtype=None).backward()
+        empty.transpose(0, 2).sum(dim=None, keepdim=False, dtype=None).backward()
         self.assertEqual(empty.grad.shape, empty.shape)
         self.assertEqual(empty.grad.tolist(), [[], []])
 
         with torch.no_grad():
-            untracked = leaf.sum(dtype=torch.float)
+            untracked = leaf.sum(None, keepdim=False, dtype=torch.float)
         self.assertFalse(untracked.requires_grad)
         self.assertTrue(untracked.is_leaf)
-        self.assertTrue(leaf.sum(dtype=torch.float32).requires_grad)
+        self.assertTrue(leaf.sum(dim=None, dtype=torch.float32).requires_grad)
 
     def test_descriptor_documentation_and_unbound_dtype_calls(self):
         tensor = torch.tensor([1.0, 2.0])
@@ -106,6 +151,13 @@ class TensorSumTests(unittest.TestCase):
         self.assertEqual(descriptor(tensor).item(), 3.0)
         self.assertEqual(descriptor(tensor, dtype=None).item(), 3.0)
         self.assertEqual(descriptor(tensor, dtype=torch.float32).item(), 3.0)
+        self.assertEqual(descriptor(tensor, None).item(), 3.0)
+        self.assertEqual(descriptor(tensor, dim=None).item(), 3.0)
+        self.assertEqual(descriptor(tensor, None, False, dtype=None).item(), 3.0)
+        self.assertEqual(
+            descriptor(tensor, dim=None, keepdim=False, dtype=torch.float32).item(),
+            3.0,
+        )
 
     def test_invalid_dtype_and_argument_errors_match_the_pytorch_overload(self):
         tensor = torch.ones((2, 3))
@@ -131,6 +183,10 @@ class TensorSumTests(unittest.TestCase):
                 lambda: tensor.sum(0, False, torch.float32),
                 "sum() takes from 1 to 2 positional arguments but 3 were given",
             ),
+            (
+                lambda: tensor.sum(None, False, torch.float32),
+                "sum() takes from 1 to 2 positional arguments but 3 were given",
+            ),
         )
         for call, message in cases:
             with self.subTest(message=message):
@@ -141,12 +197,24 @@ class TensorSumTests(unittest.TestCase):
         tensor = torch.ones((2, 3))
         cases = (
             ("positional dim", lambda: tensor.sum(0)),
-            ("positional none dim", lambda: tensor.sum(None)),
             ("keyword dim", lambda: tensor.sum(dim=0)),
-            ("none dim", lambda: tensor.sum(dim=None)),
+            ("tuple dim", lambda: tensor.sum((0, 1))),
             ("positional keepdim", lambda: tensor.sum(0, False)),
+            ("keyword false keepdim", lambda: tensor.sum(dim=0, keepdim=False)),
             ("keyword keepdim", lambda: tensor.sum(dim=0, keepdim=True)),
+            ("none positional true keepdim", lambda: tensor.sum(None, True)),
+            (
+                "none mixed true keepdim",
+                lambda: tensor.sum(None, keepdim=True),
+            ),
+            (
+                "none keyword true keepdim",
+                lambda: tensor.sum(dim=None, keepdim=True),
+            ),
+            ("keepdim without dim", lambda: tensor.sum(keepdim=False)),
             ("out", lambda: tensor.sum(out=None)),
+            ("none positional out", lambda: tensor.sum(None, out=None)),
+            ("none keyword out", lambda: tensor.sum(dim=None, out=None)),
         )
         for case, call in cases:
             with self.subTest(case=case):

@@ -6704,27 +6704,74 @@ fn bind_method_sum_arguments(
         ));
     }
 
-    if positional.is_empty() {
-        match keywords {
-            None => return Ok(()),
-            Some(keywords) if keywords.is_empty() => return Ok(()),
-            Some(keywords) if keywords.len() == 1 => {
-                if let Some(dtype) = keywords.get_item("dtype")? {
-                    if dtype.is_none() {
-                        return Ok(());
-                    }
-                    if let Ok(dtype) = dtype.cast::<PyDType>()
-                        && dtype.try_borrow()?.inner() == DType::Float32
-                    {
-                        return Ok(());
-                    }
-                }
-            }
-            Some(_) => {}
-        }
+    if positional.len() > 2 {
+        return Err(sum_method_invalid_combination(positional, keywords)?);
     }
 
-    Err(sum_method_invalid_combination(positional, keywords)?)
+    let keyword_dimension = match keywords {
+        Some(keywords) => keywords.get_item("dim")?,
+        None => None,
+    };
+    let keyword_keepdim = match keywords {
+        Some(keywords) => keywords.get_item("keepdim")?,
+        None => None,
+    };
+    let keyword_dtype = match keywords {
+        Some(keywords) => keywords.get_item("dtype")?,
+        None => None,
+    };
+    let recognized_keywords = usize::from(keyword_dimension.is_some())
+        + usize::from(keyword_keepdim.is_some())
+        + usize::from(keyword_dtype.is_some());
+    if keywords.is_some_and(|keywords| keywords.len() != recognized_keywords)
+        || (!positional.is_empty() && keyword_dimension.is_some())
+        || (positional.len() == 2 && keyword_keepdim.is_some())
+    {
+        return Err(sum_method_invalid_combination(positional, keywords)?);
+    }
+
+    let dimension = if positional.is_empty() {
+        keyword_dimension
+    } else {
+        Some(positional.get_item(0)?)
+    };
+    if dimension
+        .as_ref()
+        .is_some_and(|dimension| !dimension.is_none())
+    {
+        return Err(sum_method_invalid_combination(positional, keywords)?);
+    }
+
+    let keepdim = if positional.len() < 2 {
+        keyword_keepdim
+    } else {
+        Some(positional.get_item(1)?)
+    };
+    if let Some(keepdim) = keepdim
+        && (dimension.is_none()
+            || !keepdim.is_exact_instance_of::<PyBool>()
+            || keepdim.is_truthy()?)
+    {
+        return Err(sum_method_invalid_combination(positional, keywords)?);
+    }
+
+    if let Some(dtype) = keyword_dtype
+        && !supported_sum_dtype(&dtype)?
+    {
+        return Err(sum_method_invalid_combination(positional, keywords)?);
+    }
+
+    Ok(())
+}
+
+fn supported_sum_dtype(dtype: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if dtype.is_none() {
+        return Ok(true);
+    }
+    let Ok(dtype) = dtype.cast::<PyDType>() else {
+        return Ok(false);
+    };
+    Ok(dtype.try_borrow()?.inner() == DType::Float32)
 }
 
 fn sum_method_invalid_combination(
