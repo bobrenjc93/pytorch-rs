@@ -419,6 +419,7 @@ class CompilerDisableReferenceTests(unittest.TestCase):
             "disable",
             "set_default_backend",
             "get_default_backend",
+            "cudagraph_mark_step_begin",
             "is_compiling",
             "is_dynamo_compiling",
             "is_exporting",
