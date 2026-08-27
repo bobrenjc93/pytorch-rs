@@ -6961,6 +6961,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1110",
+      "recordedAt": "2026-08-27T07:00:02.072Z",
+      "label": "PR #1110",
+      "kind": "leaf",
+      "prNumber": 1110,
+      "title": "Add torch.compiler.keep_portable_guards_unsafe",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 97.1,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 79.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
