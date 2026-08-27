@@ -140,6 +140,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "get_rank",
                 "get_world_size",
                 "get_pg_count",
                 "is_gloo_available",
@@ -178,6 +179,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_rank",
                 "get_world_size",
                 "get_pg_count",
                 "is_available",
@@ -203,6 +205,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
         self.assertEqual(
             {name for name in owner_namespace if not name.startswith("__")},
             {
+                "get_rank",
                 "get_world_size",
                 "get_pg_count",
                 "is_gloo_available",
@@ -275,6 +278,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
             {name for name in vars(distributed) if not name.startswith("_")},
             {
                 "distributed_c10d",
+                "get_rank",
                 "get_world_size",
                 "get_pg_count",
                 "is_available",
@@ -294,6 +298,7 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
                 if not name.startswith("_")
             },
             {
+                "get_rank",
                 "get_world_size",
                 "get_pg_count",
                 "is_gloo_available",
@@ -312,7 +317,6 @@ class DistributedIsMpiAvailableTests(unittest.TestCase):
             "ProcessGroupMPI",
             "all_reduce",
             "destroy_process_group",
-            "get_rank",
             "init_process_group",
             "new_group",
         ):
