@@ -15,6 +15,7 @@ def __allow_nonbracketed_mutation():
         __allow_nonbracketed_mutation_flag = old
 
 
+from . import cpu as cpu
 from . import cuda as cuda
 from . import cudnn as cudnn
 from . import mha as mha
