@@ -6,6 +6,7 @@ import pickle
 import unittest
 from collections.abc import Iterator
 from typing import get_args, get_origin
+from unittest import mock
 
 import torch_rs as torch
 
@@ -29,6 +30,16 @@ class SourceLengthError(Exception):
 class FailingSizedSource:
     def __len__(self):
         raise SourceLengthError("source length is unavailable")
+
+
+class OrderedSizedSource:
+    def __init__(self, size, events):
+        self.size = size
+        self.events = events
+
+    def __len__(self):
+        self.events.append("len")
+        return self.size
 
 
 class PickleDistributedSampler(DistributedSampler[int]):
@@ -246,35 +257,215 @@ class DistributedSamplerTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.args, ("source length is unavailable",))
 
-    def test_implicit_discovery_and_shuffling_are_explicitly_unsupported(self):
+    def test_implicit_discovery_matches_distributed_call_order(self):
+        distributed_module = importlib.import_module(
+            "torch_rs.utils.data.distributed"
+        )
+
+        for num_replicas, rank, expected_events in (
+            (
+                None,
+                None,
+                [
+                    "is_available",
+                    "get_world_size",
+                    "is_available",
+                    "get_rank",
+                    "len",
+                ],
+            ),
+            (None, 1, ["is_available", "get_world_size", "len"]),
+            (3, None, ["is_available", "get_rank", "len"]),
+            (3, 1, ["len"]),
+        ):
+            events = []
+            source = OrderedSizedSource(5, events)
+
+            def is_available():
+                events.append("is_available")
+                return True
+
+            def get_world_size():
+                events.append("get_world_size")
+                return 3
+
+            def get_rank():
+                events.append("get_rank")
+                return 1
+
+            with self.subTest(num_replicas=num_replicas, rank=rank):
+                with (
+                    mock.patch.object(
+                        distributed_module.dist,
+                        "is_available",
+                        side_effect=is_available,
+                    ),
+                    mock.patch.object(
+                        distributed_module.dist,
+                        "get_world_size",
+                        side_effect=get_world_size,
+                    ),
+                    mock.patch.object(
+                        distributed_module.dist,
+                        "get_rank",
+                        side_effect=get_rank,
+                    ),
+                ):
+                    sampler = DistributedSampler(
+                        source,
+                        num_replicas=num_replicas,
+                        rank=rank,
+                        shuffle=False,
+                        seed=17,
+                    )
+
+                self.assertEqual(events, expected_events)
+                self.assertEqual(sampler.num_replicas, 3)
+                self.assertEqual(sampler.rank, 1)
+                self.assertEqual(list(sampler), [1, 4])
+
+    def test_unavailable_discovery_errors_before_accessing_dataset(self):
+        distributed_module = importlib.import_module(
+            "torch_rs.utils.data.distributed"
+        )
+        for num_replicas, rank in ((None, None), (3, None)):
+            events = []
+            source = OrderedSizedSource(5, events)
+
+            def is_available():
+                events.append("is_available")
+                return False
+
+            with self.subTest(num_replicas=num_replicas, rank=rank):
+                with mock.patch.object(
+                    distributed_module.dist,
+                    "is_available",
+                    side_effect=is_available,
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        r"^Requires distributed package to be available$",
+                    ):
+                        DistributedSampler(
+                            source,
+                            num_replicas=num_replicas,
+                            rank=rank,
+                            shuffle=False,
+                        )
+                self.assertEqual(events, ["is_available"])
+
+    def test_discovered_values_preserve_validation_and_pickling(self):
+        distributed_module = importlib.import_module(
+            "torch_rs.utils.data.distributed"
+        )
+        dataset = list(range(8))
+        with (
+            mock.patch.object(
+                distributed_module.dist, "is_available", return_value=True
+            ),
+            mock.patch.object(
+                distributed_module.dist, "get_world_size", return_value=3
+            ),
+            mock.patch.object(distributed_module.dist, "get_rank", return_value=2),
+        ):
+            sampler = DistributedSampler(
+                dataset, shuffle=False, seed=23, drop_last=True
+            )
+
+        self.assertEqual(
+            sampler.__dict__,
+            {
+                "dataset": dataset,
+                "num_replicas": 3,
+                "rank": 2,
+                "epoch": 0,
+                "drop_last": True,
+                "num_samples": 2,
+                "total_size": 6,
+                "shuffle": False,
+                "seed": 23,
+            },
+        )
+        self.assertEqual(list(sampler), [2, 5])
+        restored = pickle.loads(pickle.dumps(sampler))
+        self.assertEqual(restored.__dict__, sampler.__dict__)
+        self.assertEqual(list(restored), [2, 5])
+
+        events = []
+        source = OrderedSizedSource(5, events)
+        with (
+            mock.patch.object(
+                distributed_module.dist,
+                "is_available",
+                side_effect=lambda: events.append("is_available") or True,
+            ),
+            mock.patch.object(
+                distributed_module.dist,
+                "get_world_size",
+                side_effect=lambda: events.append("get_world_size") or 2,
+            ),
+            mock.patch.object(
+                distributed_module.dist,
+                "get_rank",
+                side_effect=lambda: events.append("get_rank") or 2,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                r"^Invalid rank 2, rank should be in the interval \[0, 1\]$",
+            ):
+                DistributedSampler(source, shuffle=False)
+        self.assertEqual(
+            events,
+            ["is_available", "get_world_size", "is_available", "get_rank"],
+        )
+
+    def test_shuffling_remains_explicitly_unsupported(self):
         cases = (
-            (
-                lambda: DistributedSampler([], shuffle=False),
-                "DistributedSampler requires an explicit num_replicas",
-            ),
-            (
-                lambda: DistributedSampler(
-                    [], num_replicas=2, rank=None, shuffle=False
-                ),
-                "DistributedSampler requires an explicit rank",
-            ),
-            (
-                lambda: DistributedSampler([], num_replicas=2, rank=0),
-                "DistributedSampler only supports shuffle=False",
-            ),
-            (
-                lambda: DistributedSampler(
-                    [], num_replicas=2, rank=0, shuffle="yes"
-                ),
-                "DistributedSampler only supports shuffle=False",
+            lambda: DistributedSampler([], num_replicas=2, rank=0),
+            lambda: DistributedSampler(
+                [], num_replicas=2, rank=0, shuffle="yes"
             ),
         )
-        for call, message in cases:
-            with self.subTest(message=message):
+        for call in cases:
+            with self.subTest(call=call):
                 with self.assertRaisesRegex(
-                    NotImplementedError, rf"^{message}$"
+                    NotImplementedError,
+                    r"^DistributedSampler only supports shuffle=False$",
                 ):
                     call()
+
+        distributed_module = importlib.import_module(
+            "torch_rs.utils.data.distributed"
+        )
+        events = []
+        source = OrderedSizedSource(5, events)
+        with (
+            mock.patch.object(
+                distributed_module.dist,
+                "is_available",
+                side_effect=lambda: events.append("is_available") or True,
+            ),
+            mock.patch.object(
+                distributed_module.dist,
+                "get_world_size",
+                side_effect=lambda: events.append("get_world_size") or 2,
+            ),
+            mock.patch.object(
+                distributed_module.dist,
+                "get_rank",
+                side_effect=lambda: events.append("get_rank") or 0,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                NotImplementedError,
+                r"^DistributedSampler only supports shuffle=False$",
+            ):
+                DistributedSampler(source)
+        self.assertEqual(
+            events,
+            ["is_available", "get_world_size", "is_available", "get_rank"],
+        )
 
         sampler = DistributedSampler(
             range(4), num_replicas=2, rank=0, shuffle=False

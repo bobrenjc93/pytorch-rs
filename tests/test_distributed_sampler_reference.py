@@ -4,6 +4,7 @@ import operator
 import pickle
 import unittest
 from typing import get_args, get_origin
+from unittest import mock
 
 import torch_rs as torch
 
@@ -30,6 +31,16 @@ class SourceLengthError(Exception):
 class FailingSizedSource:
     def __len__(self):
         raise SourceLengthError("source length is unavailable")
+
+
+class OrderedSizedSource:
+    def __init__(self, size, events):
+        self.size = size
+        self.events = events
+
+    def __len__(self):
+        self.events.append("len")
+        return self.size
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -236,6 +247,102 @@ class DistributedSamplerReferenceTests(unittest.TestCase):
                     self.assert_state_matches(actual, expected)
                     self.assertEqual(list(actual), list(expected))
                     self.assertEqual(len(actual), len(expected))
+
+    def test_implicit_discovery_order_and_errors_match(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual_module = importlib.import_module("torch_rs.utils.data.distributed")
+        expected_module = importlib.import_module("torch.utils.data.distributed")
+
+        def construct(sampler_type, module, num_replicas, rank, available=True):
+            events = []
+            source = OrderedSizedSource(5, events)
+
+            def is_available():
+                events.append("is_available")
+                return available
+
+            def get_world_size():
+                events.append("get_world_size")
+                return 3
+
+            def get_rank():
+                events.append("get_rank")
+                return 1
+
+            with (
+                mock.patch.object(
+                    module.dist, "is_available", side_effect=is_available
+                ),
+                mock.patch.object(
+                    module.dist, "get_world_size", side_effect=get_world_size
+                ),
+                mock.patch.object(module.dist, "get_rank", side_effect=get_rank),
+            ):
+                try:
+                    sampler = sampler_type(
+                        source,
+                        num_replicas=num_replicas,
+                        rank=rank,
+                        shuffle=False,
+                        seed=17,
+                    )
+                except Exception as error:
+                    return events, None, error
+            return events, sampler, None
+
+        for num_replicas, rank in (
+            (None, None),
+            (None, 1),
+            (3, None),
+            (3, 1),
+        ):
+            with self.subTest(num_replicas=num_replicas, rank=rank):
+                actual_events, actual, actual_error = construct(
+                    torch.utils.data.DistributedSampler,
+                    actual_module,
+                    num_replicas,
+                    rank,
+                )
+                expected_events, expected, expected_error = construct(
+                    reference_torch.utils.data.DistributedSampler,
+                    expected_module,
+                    num_replicas,
+                    rank,
+                )
+                self.assertEqual(actual_events, expected_events)
+                self.assertIsNone(actual_error)
+                self.assertIsNone(expected_error)
+                actual_state = actual.__dict__.copy()
+                expected_state = expected.__dict__.copy()
+                actual_state.pop("dataset")
+                expected_state.pop("dataset")
+                self.assertEqual(actual_state, expected_state)
+                self.assertEqual(list(actual), list(expected))
+
+        for num_replicas, rank in ((None, None), (3, None)):
+            with self.subTest(
+                num_replicas=num_replicas, rank=rank, available=False
+            ):
+                actual_events, actual, actual_error = construct(
+                    torch.utils.data.DistributedSampler,
+                    actual_module,
+                    num_replicas,
+                    rank,
+                    available=False,
+                )
+                expected_events, expected, expected_error = construct(
+                    reference_torch.utils.data.DistributedSampler,
+                    expected_module,
+                    num_replicas,
+                    rank,
+                    available=False,
+                )
+                self.assertEqual(actual_events, expected_events)
+                self.assertIsNone(actual)
+                self.assertIsNone(expected)
+                self.assertEqual(type(actual_error), type(expected_error))
+                self.assertEqual(str(actual_error), str(expected_error))
+                self.assertEqual(actual_error.args, expected_error.args)
 
     def test_set_epoch_state_and_pickle_match(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
