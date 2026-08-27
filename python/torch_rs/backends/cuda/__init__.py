@@ -4,6 +4,7 @@ import torch_rs as torch
 
 __all__ = [
     "is_built",
+    "is_ck_sdpa_available",
     "enable_flash_sdp",
     "flash_sdp_enabled",
     "is_flash_attention_available",
@@ -18,6 +19,16 @@ def is_built():
     binary were run on a machine with working CUDA drivers and devices, we would be able to use it.
     """
     return torch._C._has_cuda
+
+
+def is_ck_sdpa_available() -> bool:
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    Returns whether composable_kernel may be used as the backend for
+    scaled-dot-product-attention.
+    """
+    return torch._C._is_ck_sdpa_available()
 
 
 def flash_sdp_enabled():

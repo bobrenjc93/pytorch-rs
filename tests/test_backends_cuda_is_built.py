@@ -61,6 +61,7 @@ class CudaIsBuiltTests(unittest.TestCase):
             cuda.__all__,
             [
                 "is_built",
+                "is_ck_sdpa_available",
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "is_flash_attention_available",
@@ -114,6 +115,7 @@ class CudaIsBuiltTests(unittest.TestCase):
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "is_built",
+                "is_ck_sdpa_available",
                 "is_flash_attention_available",
             },
         )

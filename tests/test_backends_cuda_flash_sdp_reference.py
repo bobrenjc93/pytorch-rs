@@ -271,6 +271,7 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
             "enable_flash_sdp",
             "flash_sdp_enabled",
             "is_built",
+            "is_ck_sdpa_available",
             "is_flash_attention_available",
         }
 
@@ -391,9 +392,11 @@ class CudaFlashSdpReferenceTests(unittest.TestCase):
     def test_preference_does_not_claim_flash_attention_or_execution_support(self):
         self.actual.enable_flash_sdp(False)
         self.assertIs(self.actual.flash_sdp_enabled(), False)
+        self.assertIs(self.actual.is_ck_sdpa_available(), False)
         self.assertIs(self.actual.is_flash_attention_available(), False)
         self.actual.enable_flash_sdp(True)
         self.assertIs(self.actual.flash_sdp_enabled(), True)
+        self.assertIs(self.actual.is_ck_sdpa_available(), False)
         self.assertIs(self.actual.is_flash_attention_available(), False)
 
         self.assertFalse(hasattr(torch.nn.functional, "scaled_dot_product_attention"))
