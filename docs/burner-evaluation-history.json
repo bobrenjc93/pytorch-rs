@@ -6865,6 +6865,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1090",
+      "recordedAt": "2026-08-27T01:21:46.840Z",
+      "label": "PR #1090",
+      "kind": "leaf",
+      "prNumber": 1090,
+      "title": "Add stateless torch.cpu.Stream compatibility",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 96.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 79,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
