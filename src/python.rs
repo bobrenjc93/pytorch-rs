@@ -61,6 +61,16 @@ const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 6] = [
     ("has_lapack", false),
     ("has_spectral", false),
 ];
+const NATIVE_FLASH_ATTENTION_AVAILABLE: bool = false;
+
+#[pyfunction(
+    name = "_is_flash_attention_available",
+    signature = (),
+    text_signature = None
+)]
+fn is_flash_attention_available_native() -> bool {
+    NATIVE_FLASH_ATTENTION_AVAILABLE
+}
 
 const IS_TENSOR_SOURCE: &CStr = cr#"
 import copy as _copy
@@ -11498,11 +11508,15 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     for (name, enabled) in NATIVE_BUILD_CAPABILITIES {
         module.add(name, enabled)?;
     }
-    // PyTorch keeps these private build flags on torch._C. Removing them from
+    module.add_function(wrap_pyfunction!(
+        is_flash_attention_available_native,
+        module
+    )?)?;
+    // PyTorch keeps these private build capabilities on torch._C. Removing them from
     // the extension's generated export list also prevents the package wildcard
     // import from copying them onto the public torch_rs module.
     let exports = module.getattr("__all__")?;
-    for name in ["_has_cudnn", "_has_cuda"] {
+    for name in ["_has_cudnn", "_has_cuda", "_is_flash_attention_available"] {
         exports.call_method1("remove", (name,))?;
     }
     module.add("Size", size_type_object(py)?.clone_ref(py))?;
