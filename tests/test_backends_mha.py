@@ -172,7 +172,7 @@ class MhaFastpathTests(unittest.TestCase):
         self.assertIs(backends.mha, mha)
         self.assertEqual(
             {name for name in vars(backends) if not name.startswith("_")},
-            {"cuda", "cudnn", "mha", "mkl", "nnpack", "openmp"},
+            {"cpu", "cuda", "cudnn", "mha", "mkl", "nnpack", "openmp"},
         )
 
         package_import = {}

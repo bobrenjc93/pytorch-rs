@@ -64,6 +64,7 @@ const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 7] = [
     ("has_lapack", false),
     ("has_spectral", false),
 ];
+pub(crate) const NATIVE_CPU_CAPABILITY: &str = "DEFAULT";
 const NATIVE_CK_SDPA_AVAILABLE: bool = false;
 const NATIVE_FLASH_ATTENTION_AVAILABLE: bool = false;
 

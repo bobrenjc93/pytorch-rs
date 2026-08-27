@@ -10,7 +10,7 @@ use pyo3::types::{PyAny, PyBool, PyCFunction, PyDict, PyModule, PyTuple};
 
 use crate::{
     DType, is_grad_enabled as core_is_grad_enabled,
-    python::python_type_name,
+    python::{NATIVE_CPU_CAPABILITY, python_type_name},
     python_dtype::{PyDType, dtype_object},
 };
 
@@ -78,6 +78,24 @@ fn is_multithreading_enabled(
     // Expose PyTorch's supported default without adding its setter or a
     // parallel backward scheduler to the native engine.
     Ok(true)
+}
+
+fn get_cpu_capability(
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<&'static str> {
+    if kwargs.is_some_and(|values| !values.is_empty()) {
+        return Err(PyTypeError::new_err(
+            "torch._C._get_cpu_capability() takes no keyword arguments",
+        ));
+    }
+    if !args.is_empty() {
+        return Err(PyTypeError::new_err(format!(
+            "torch._C._get_cpu_capability() takes no arguments ({} given)",
+            args.len()
+        )));
+    }
+    Ok(NATIVE_CPU_CAPABILITY)
 }
 
 fn is_autocast_cache_enabled(
@@ -278,6 +296,7 @@ const IS_MULTITHREADING_ENABLED_DOC: &CStr =
     c"Returns True if multithreading is currently enabled.";
 const IS_MULTITHREADING_ENABLED_SIGNATURE_DOC: &CStr =
     c"_is_multithreading_enabled($self, /)\n--\n\nReturns True if multithreading is currently enabled.";
+const GET_CPU_CAPABILITY_SIGNATURE_DOC: &CStr = c"_get_cpu_capability($self, /)\n--\n\n";
 const IS_VIEW_REPLAY_ENABLED_DOC: &CStr = c"Returns True if view-replay is currently enabled.";
 const IS_VIEW_REPLAY_ENABLED_SIGNATURE_DOC: &CStr =
     c"_is_view_replay_enabled($self, /)\n--\n\nReturns True if view-replay is currently enabled.";
@@ -366,6 +385,23 @@ unsafe fn is_multithreading_enabled_callback(
     // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
     let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
     is_multithreading_enabled(&args, kwargs.as_ref())?
+        .into_py_any(py)
+        .map(Py::into_ptr)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn get_cpu_capability_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    args: *mut ffi::PyObject,
+    kwargs: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: PyO3's trampoline forwards CPython's live call arguments.
+    let (args, kwargs) = unsafe { no_argument_builtin_arguments(py, args, kwargs) }?;
+    get_cpu_capability(&args, kwargs.as_ref())?
         .into_py_any(py)
         .map(Py::into_ptr)
 }
@@ -585,6 +621,29 @@ fn add_multithreading_builtin(
     Ok(())
 }
 
+fn add_cpu_capability_builtin(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
+    let doc = if py.version_info() >= (3, 13) {
+        GET_CPU_CAPABILITY_SIGNATURE_DOC
+    } else {
+        c""
+    };
+    module.add_function(PyCFunction::new_with_keywords(
+        py,
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            cfunction_with_keywords,
+            get_cpu_capability_callback
+        ),
+        c"_get_cpu_capability",
+        doc,
+        Some(module),
+    )?)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_get_cpu_capability",))?;
+    Ok(())
+}
+
 fn add_view_replay_builtin(
     module: &Bound<'_, PyModule>,
     is_view_replay_enabled_doc: &'static CStr,
@@ -694,6 +753,7 @@ pub(crate) fn add_no_argument_builtins(module: &Bound<'_, PyModule>) -> PyResult
     )?)?;
     add_autocast_cache_builtins(module)?;
     add_multithreading_builtin(module, is_multithreading_enabled_doc)?;
+    add_cpu_capability_builtin(module)?;
     add_view_replay_builtin(module, is_view_replay_enabled_doc)?;
     add_anomaly_builtins(
         module,
