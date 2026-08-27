@@ -85,6 +85,12 @@ FUNCTION_DOCS = {
     .. note:: This function is a no-op if the memory allocator for the current
         :ref:`accelerator <accelerators>` has not been initialized.
     """,
+    "empty_host_cache": """Release all unoccupied cached host (pinned) memory currently held by the host caching
+    allocator so that it can be used by other applications.
+
+    .. note:: This function is a no-op if the memory allocator for the current
+        :ref:`accelerator <accelerators>` has not been initialized.
+    """,
     "memory_allocated": """Return the current :ref:`accelerator<accelerators>` device memory occupied by tensors
     in bytes for a given device index.
 
@@ -251,6 +257,7 @@ class AcceleratorTests(unittest.TestCase):
                 accelerator.current_device_index
             )
             self.assertIs(accelerator.empty_cache(), None)
+            self.assertIs(accelerator.empty_host_cache(), None)
             self.assertIs(accelerator.reset_peak_memory_stats(), None)
             self.assertIs(type(accelerator.memory_allocated()), int)
             self.assertEqual(accelerator.memory_allocated(), 0)
@@ -279,6 +286,7 @@ class AcceleratorTests(unittest.TestCase):
             ("_discover_accelerator", "RuntimeError"),
         )
         self.assertEqual(accelerator.empty_cache.__code__.co_names, ())
+        self.assertEqual(accelerator.empty_host_cache.__code__.co_names, ())
         self.assertEqual(
             accelerator.reset_peak_memory_stats.__code__.co_names, ()
         )
@@ -327,6 +335,7 @@ class AcceleratorTests(unittest.TestCase):
                             accelerator.current_device_index
                         )
                         self.assertIs(accelerator.empty_cache(), None)
+                        self.assertIs(accelerator.empty_host_cache(), None)
                         self.assertIs(
                             accelerator.reset_peak_memory_stats("cuda:0"), None
                         )
@@ -348,19 +357,57 @@ class AcceleratorTests(unittest.TestCase):
 
         self.assertEqual(len({id(error) for error in errors}), len(errors))
 
-    def test_empty_cache_is_a_repeatable_probe_free_no_op(self):
+    def test_empty_caches_are_repeatable_probe_free_no_ops(self):
         accelerator = torch.accelerator
 
-        with mock.patch.object(
-            accelerator,
-            "_discover_accelerator",
-            side_effect=AssertionError("accelerator discovery was attempted"),
-        ):
-            results = tuple(accelerator.empty_cache() for _ in range(16))
+        for name in ("empty_cache", "empty_host_cache"):
+            with self.subTest(name=name):
+                function = getattr(accelerator, name)
+                self.assertEqual(function.__code__.co_names, ())
+                self.assertEqual(function.__code__.co_freevars, ())
+                self.assertEqual(function.__code__.co_cellvars, ())
+                with mock.patch.object(
+                    accelerator,
+                    "_discover_accelerator",
+                    side_effect=AssertionError(
+                        "accelerator discovery was attempted"
+                    ),
+                ):
+                    results = tuple(function() for _ in range(16))
 
-        self.assertEqual(results, (None,) * 16)
-        for result in results:
-            self.assertIs(result, None)
+                self.assertEqual(results, (None,) * 16)
+                for result in results:
+                    self.assertIs(result, None)
+
+    def test_empty_host_cache_preserves_tensor_and_autograd_state(self):
+        leaf = torch.tensor([[1.0, 2.0]], requires_grad=True)
+        result = (leaf * 3.0).transpose(0, 1)
+        metadata = (
+            result.shape,
+            result.stride(),
+            result.storage_offset(),
+            result.data_ptr(),
+            result.requires_grad,
+            result.is_leaf,
+        )
+
+        self.assertIs(torch.accelerator.empty_host_cache(), None)
+        self.assertEqual(
+            (
+                result.shape,
+                result.stride(),
+                result.storage_offset(),
+                result.data_ptr(),
+                result.requires_grad,
+                result.is_leaf,
+            ),
+            metadata,
+        )
+        self.assertEqual(result.tolist(), [[3.0], [6.0]])
+        self.assertIsNone(leaf.grad)
+
+        result.sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[3.0, 3.0]])
 
     def test_reset_peak_memory_stats_is_probe_free_and_preserves_zero_counters(self):
         accelerator = torch.accelerator
@@ -523,6 +570,7 @@ class AcceleratorTests(unittest.TestCase):
             ),
             "current_device_index": inspect.Signature(return_annotation=int),
             "empty_cache": inspect.Signature(return_annotation=None),
+            "empty_host_cache": inspect.Signature(return_annotation=None),
             "is_available": inspect.Signature(return_annotation=bool),
             "device_count": inspect.Signature(return_annotation=int),
             "memory_allocated": inspect.Signature(
@@ -599,6 +647,7 @@ class AcceleratorTests(unittest.TestCase):
             },
             "current_device_index": {"return": int},
             "empty_cache": {"return": None},
+            "empty_host_cache": {"return": None},
             "is_available": {"return": bool},
             "device_count": {"return": int},
             "memory_allocated": {
@@ -629,6 +678,7 @@ class AcceleratorTests(unittest.TestCase):
         expected_type_hints = {
             **expected_annotations,
             "empty_cache": {"return": type(None)},
+            "empty_host_cache": {"return": type(None)},
             "reset_peak_memory_stats": {
                 "device_index": torch.device | str | int | None,
                 "return": type(None),
@@ -643,6 +693,7 @@ class AcceleratorTests(unittest.TestCase):
             "current_device_index",
             "device_count",
             "empty_cache",
+            "empty_host_cache",
             "is_available",
             "max_memory_allocated",
             "max_memory_reserved",
@@ -668,6 +719,7 @@ class AcceleratorTests(unittest.TestCase):
                     if name
                     in {
                         "empty_cache",
+                        "empty_host_cache",
                         "max_memory_allocated",
                         "max_memory_reserved",
                         "memory_allocated",
@@ -715,6 +767,7 @@ class AcceleratorTests(unittest.TestCase):
             "current_device_index",
             "device_count",
             "empty_cache",
+            "empty_host_cache",
             "is_available",
             "max_memory_allocated",
             "max_memory_reserved",
@@ -727,6 +780,7 @@ class AcceleratorTests(unittest.TestCase):
 
         self.assertIs(accelerator.memory, memory)
         self.assertIs(accelerator.empty_cache, memory.empty_cache)
+        self.assertIs(accelerator.empty_host_cache, memory.empty_host_cache)
         self.assertIs(
             accelerator.max_memory_allocated,
             memory.max_memory_allocated,
@@ -748,6 +802,7 @@ class AcceleratorTests(unittest.TestCase):
             memory.__all__,
             [
                 "empty_cache",
+                "empty_host_cache",
                 "max_memory_allocated",
                 "max_memory_reserved",
                 "memory_allocated",
@@ -760,6 +815,7 @@ class AcceleratorTests(unittest.TestCase):
             {name for name in vars(memory) if not name.startswith("_")},
             {
                 "empty_cache",
+                "empty_host_cache",
                 "max_memory_allocated",
                 "max_memory_reserved",
                 "memory_allocated",
@@ -776,6 +832,7 @@ class AcceleratorTests(unittest.TestCase):
                 "current_device_index",
                 "device_count",
                 "empty_cache",
+                "empty_host_cache",
                 "is_available",
                 "max_memory_allocated",
                 "max_memory_reserved",
@@ -796,7 +853,7 @@ class AcceleratorTests(unittest.TestCase):
         memory_wildcard_import = {}
         exec("from torch_rs import accelerator", package_import)
         exec(
-            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, empty_cache, is_available, max_memory_allocated, max_memory_reserved, memory_allocated, memory_reserved, memory_stats, reset_peak_memory_stats",
+            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, empty_cache, empty_host_cache, is_available, max_memory_allocated, max_memory_reserved, memory_allocated, memory_reserved, memory_stats, reset_peak_memory_stats",
             direct_import,
         )
         exec("from torch_rs.accelerator import *", wildcard_import)
@@ -814,6 +871,7 @@ class AcceleratorTests(unittest.TestCase):
             },
             {
                 "empty_cache",
+                "empty_host_cache",
                 "max_memory_allocated",
                 "max_memory_reserved",
                 "memory_allocated",
@@ -829,6 +887,7 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertIs(wildcard_import[name], function)
                 if name in {
                     "empty_cache",
+                    "empty_host_cache",
                     "max_memory_allocated",
                     "max_memory_reserved",
                     "memory_allocated",
@@ -856,6 +915,7 @@ class AcceleratorTests(unittest.TestCase):
         old_all = accelerator.__all__
         old_discovery = accelerator._discover_accelerator
         old_empty_cache = accelerator.empty_cache
+        old_empty_host_cache = accelerator.empty_host_cache
         old_max_memory_allocated = accelerator.max_memory_allocated
         old_max_memory_reserved = accelerator.max_memory_reserved
         old_memory_allocated = accelerator.memory_allocated
@@ -884,6 +944,9 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(accelerator.empty_cache, old_empty_cache)
         self.assertIs(accelerator.empty_cache, memory.empty_cache)
         self.assertIs(accelerator.empty_cache(), None)
+        self.assertIs(accelerator.empty_host_cache, old_empty_host_cache)
+        self.assertIs(accelerator.empty_host_cache, memory.empty_host_cache)
+        self.assertIs(accelerator.empty_host_cache(), None)
         self.assertIs(
             accelerator.max_memory_allocated,
             old_max_memory_allocated,
@@ -946,6 +1009,7 @@ class AcceleratorTests(unittest.TestCase):
         old_all = memory.__all__
         old_functions = {
             "empty_cache": memory.empty_cache,
+            "empty_host_cache": memory.empty_host_cache,
             "max_memory_allocated": memory.max_memory_allocated,
             "max_memory_reserved": memory.max_memory_reserved,
             "memory_allocated": memory.memory_allocated,
@@ -957,6 +1021,7 @@ class AcceleratorTests(unittest.TestCase):
         reloaded = importlib.reload(memory)
         new_functions = {
             "empty_cache": memory.empty_cache,
+            "empty_host_cache": memory.empty_host_cache,
             "max_memory_allocated": memory.max_memory_allocated,
             "max_memory_reserved": memory.max_memory_reserved,
             "memory_allocated": memory.memory_allocated,
@@ -971,6 +1036,7 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIsNot(memory.__all__, old_all)
         for name in (
             "empty_cache",
+            "empty_host_cache",
             "max_memory_allocated",
             "max_memory_reserved",
             "memory_allocated",
@@ -992,6 +1058,13 @@ class AcceleratorTests(unittest.TestCase):
 
         self.assertEqual(
             (old_functions["empty_cache"](), new_functions["empty_cache"]()),
+            (None, None),
+        )
+        self.assertEqual(
+            (
+                old_functions["empty_host_cache"](),
+                new_functions["empty_host_cache"](),
+            ),
             (None, None),
         )
         self.assertEqual(
@@ -1040,6 +1113,12 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(accelerator.empty_cache, new_functions["empty_cache"])
         self.assertIs(accelerator.empty_cache, memory.empty_cache)
         self.assertIs(accelerator.empty_cache(), None)
+        self.assertIs(
+            accelerator.empty_host_cache,
+            new_functions["empty_host_cache"],
+        )
+        self.assertIs(accelerator.empty_host_cache, memory.empty_host_cache)
+        self.assertIs(accelerator.empty_host_cache(), None)
         self.assertIs(
             accelerator.max_memory_allocated,
             new_functions["max_memory_allocated"],
@@ -1123,6 +1202,18 @@ class AcceleratorTests(unittest.TestCase):
             (
                 lambda: accelerator.empty_cache(device=True),
                 "empty_cache() got an unexpected keyword argument 'device'",
+            ),
+            (
+                lambda: accelerator.empty_host_cache(None),
+                "empty_host_cache() takes 0 positional arguments but 1 was given",
+            ),
+            (
+                lambda: accelerator.empty_host_cache(None, None),
+                "empty_host_cache() takes 0 positional arguments but 2 were given",
+            ),
+            (
+                lambda: accelerator.empty_host_cache(device=True),
+                "empty_host_cache() got an unexpected keyword argument 'device'",
             ),
             (
                 lambda: accelerator.memory_allocated(device_index=None),
@@ -1254,6 +1345,10 @@ class AcceleratorTests(unittest.TestCase):
                         index_outcome,
                         tuple(torch.accelerator.empty_cache() for _ in range(4)),
                         tuple(
+                            torch.accelerator.empty_host_cache()
+                            for _ in range(4)
+                        ),
+                        tuple(
                             torch.accelerator.reset_peak_memory_stats(index)
                             for _ in range(4)
                         ),
@@ -1303,6 +1398,7 @@ class AcceleratorTests(unittest.TestCase):
                     (RuntimeError, NO_ACCELERATOR_ERROR, (NO_ACCELERATOR_ERROR,)),
                     (None,) * 4,
                     (None,) * 4,
+                    (None,) * 4,
                     (0,) * 4,
                     (0,) * 4,
                     (0,) * 4,
@@ -1313,16 +1409,16 @@ class AcceleratorTests(unittest.TestCase):
                     expected_grad_state,
                 ),
             )
-            self.assertTrue(all(type(value) is int for value in result[6]))
             self.assertTrue(all(type(value) is int for value in result[7]))
             self.assertTrue(all(type(value) is int for value in result[8]))
             self.assertTrue(all(type(value) is int for value in result[9]))
-            self.assertTrue(all(type(stats) is OrderedDict for stats in result[10]))
-            self.assertEqual(len({id(stats) for stats in result[10]}), 4)
-            self.assertIs(result[11], False)
-            self.assertIs(type(result[12]), int)
+            self.assertTrue(all(type(value) is int for value in result[10]))
+            self.assertTrue(all(type(stats) is OrderedDict for stats in result[11]))
+            self.assertEqual(len({id(stats) for stats in result[11]}), 4)
+            self.assertIs(result[12], False)
+            self.assertIs(type(result[13]), int)
 
-        all_stats = [stats for result in results for stats in result[10]]
+        all_stats = [stats for result in results for stats in result[11]]
         self.assertEqual(len({id(stats) for stats in all_stats}), len(all_stats))
 
     def test_selection_stream_memory_graph_and_execution_apis_stay_unsupported(self):
@@ -1332,7 +1428,6 @@ class AcceleratorTests(unittest.TestCase):
             "current_device_idx",
             "current_stream",
             "device_index",
-            "empty_host_cache",
             "get_device_capability",
             "get_memory_info",
             "reset_accumulated_memory_stats",
@@ -1355,6 +1450,7 @@ class AcceleratorTests(unittest.TestCase):
             memory.__all__,
             [
                 "empty_cache",
+                "empty_host_cache",
                 "max_memory_allocated",
                 "max_memory_reserved",
                 "memory_allocated",
@@ -1414,6 +1510,7 @@ os.environ.update(
 import torch_rs as torch
 from torch_rs.accelerator.memory import (
     empty_cache,
+    empty_host_cache,
     max_memory_allocated,
     max_memory_reserved,
     memory_allocated,
@@ -1437,6 +1534,7 @@ class ExplodingDeviceToken:
 
 modules_before_calls = set(sys.modules)
 assert torch.accelerator.empty_cache is empty_cache
+assert torch.accelerator.empty_host_cache is empty_host_cache
 assert torch.accelerator.max_memory_allocated is max_memory_allocated
 assert torch.accelerator.max_memory_reserved is max_memory_reserved
 assert torch.accelerator.memory_allocated is memory_allocated
@@ -1462,6 +1560,8 @@ assert type(count) is int and count == 0
 for _ in range(8):
     assert torch.accelerator.empty_cache() is None
     assert empty_cache() is None
+    assert torch.accelerator.empty_host_cache() is None
+    assert empty_host_cache() is None
 stats = [
     torch.accelerator.memory_stats(),
     torch.accelerator.memory_stats("cuda:0"),

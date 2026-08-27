@@ -6,6 +6,7 @@ from .. import device as _device
 
 __all__ = [
     "empty_cache",
+    "empty_host_cache",
     "max_memory_allocated",
     "max_memory_reserved",
     "memory_allocated",
@@ -18,6 +19,16 @@ __all__ = [
 def empty_cache() -> None:
     r"""Release all unoccupied cached memory currently held by the caching
     allocator so that those can be used in other application.
+
+    .. note:: This function is a no-op if the memory allocator for the current
+        :ref:`accelerator <accelerators>` has not been initialized.
+    """
+    return None
+
+
+def empty_host_cache() -> None:
+    r"""Release all unoccupied cached host (pinned) memory currently held by the host caching
+    allocator so that it can be used by other applications.
 
     .. note:: This function is a no-op if the memory allocator for the current
         :ref:`accelerator <accelerators>` has not been initialized.

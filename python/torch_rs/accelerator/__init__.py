@@ -5,6 +5,7 @@ This package introduces support for the current :ref:`accelerator<accelerators>`
 from .. import device as _device
 from .memory import (
     empty_cache,
+    empty_host_cache,
     max_memory_allocated,
     max_memory_reserved,
     memory_allocated,
@@ -19,6 +20,7 @@ __all__ = [
     "current_device_index",
     "device_count",
     "empty_cache",
+    "empty_host_cache",
     "is_available",
     "max_memory_allocated",
     "max_memory_reserved",
