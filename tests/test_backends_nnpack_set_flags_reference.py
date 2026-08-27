@@ -260,16 +260,20 @@ class NnpackSetFlagsReferenceTests(unittest.TestCase):
         self.assertIs(type(expected), types.ModuleType)
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(actual.__annotations__, expected.__annotations__)
-        self.assertEqual(
-            actual.__all__,
-            [name for name in expected.__all__ if name != "flags"],
-        )
+        self.assertEqual(actual.__all__, expected.__all__)
         self.assertEqual(
             {name for name in vars(actual) if not name.startswith("_")},
             {
                 name
                 for name in vars(expected)
-                if name in {"is_available", "set_flags", "torch"}
+                if name
+                in {
+                    "contextmanager",
+                    "flags",
+                    "is_available",
+                    "set_flags",
+                    "torch",
+                }
             },
         )
         self.assertIs(actual.torch, torch)
@@ -342,9 +346,12 @@ class NnpackSetFlagsReferenceTests(unittest.TestCase):
             supported = {
                 name
                 for name in wildcard
-                if name in {"is_available", "set_flags"}
+                if name in {"flags", "is_available", "set_flags"}
             }
-            self.assertEqual(supported, {"is_available", "set_flags"})
+            self.assertEqual(
+                supported,
+                {"flags", "is_available", "set_flags"},
+            )
 
         for function in (actual_function, expected_function):
             self.assertIs(copy.copy(function), function)
@@ -376,7 +383,7 @@ class NnpackSetFlagsReferenceTests(unittest.TestCase):
             self.assertEqual(module.set_flags(True), (False,))
 
         self.assertIs(self.actual.is_available(), False)
-        self.assertFalse(hasattr(self.actual, "flags"))
+        self.assertTrue(hasattr(self.actual, "flags"))
         self.assertTrue(hasattr(self.expected, "flags"))
         self.assertFalse(hasattr(torch, "_nnpack_spatial_convolution"))
         self.assertTrue(hasattr(reference_torch, "_nnpack_spatial_convolution"))

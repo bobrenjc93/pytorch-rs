@@ -66,7 +66,7 @@ print(json.dumps({
                 "enabled": True,
                 "first": [True],
                 "second": [False],
-                "flags": False,
+                "flags": True,
                 "execution": False,
             },
         )
@@ -199,10 +199,13 @@ print(json.dumps({
         self.assertIs(sys.modules["torch_rs.backends.nnpack"], nnpack)
         self.assertIs(type(nnpack), types.ModuleType)
         self.assertIsNone(nnpack.__doc__)
-        self.assertEqual(nnpack.__all__, ["is_available", "set_flags"])
+        self.assertEqual(
+            nnpack.__all__,
+            ["is_available", "flags", "set_flags"],
+        )
         self.assertEqual(
             {name for name in vars(nnpack) if not name.startswith("_")},
-            {"is_available", "set_flags", "torch"},
+            {"contextmanager", "flags", "is_available", "set_flags", "torch"},
         )
         self.assertEqual(nnpack.__annotations__, {})
         self.assertIs(nnpack.torch, torch)
@@ -245,7 +248,7 @@ print(json.dumps({
         self.assertIs(child_wildcard["set_flags"], function)
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
-            {"is_available", "set_flags"},
+            {"flags", "is_available", "set_flags"},
         )
 
         self.assertIs(copy.copy(function), function)
@@ -296,7 +299,7 @@ print(json.dumps({
         self.assertFalse(hasattr(torch, "_set_nnpack_enabled"))
         self.assertNotIn("_get_nnpack_enabled", torch._C.__all__)
         self.assertNotIn("_set_nnpack_enabled", torch._C.__all__)
-        self.assertFalse(hasattr(self.nnpack, "flags"))
+        self.assertTrue(hasattr(self.nnpack, "flags"))
         self.assertFalse(hasattr(torch, "_nnpack_spatial_convolution"))
         self.assertIs(self.nnpack.is_available(), False)
 

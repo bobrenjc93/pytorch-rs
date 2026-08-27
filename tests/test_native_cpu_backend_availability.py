@@ -27,7 +27,7 @@ BACKENDS = {
     "nnpack": (
         None,
         "Return whether PyTorch is built with NNPACK support.",
-        ["is_available", "set_flags"],
+        ["is_available", "flags", "set_flags"],
     ),
 }
 
@@ -174,7 +174,7 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
                 child_wildcard = {}
                 exec(f"from {module_name} import *", child_wildcard)
                 expected_child_names = (
-                    {"is_available", "set_flags"}
+                    {"flags", "is_available", "set_flags"}
                     if backend == "nnpack"
                     else {"is_available", "torch"}
                 )
@@ -278,10 +278,6 @@ class NativeCpuBackendAvailabilityTests(unittest.TestCase):
             with self.subTest(mkl_name=name):
                 self.assertFalse(hasattr(backends.mkl, name))
 
-        for name in ("flags",):
-            with self.subTest(nnpack_name=name):
-                self.assertFalse(hasattr(backends.nnpack, name))
-
         for name in (
             "cpu",
             "mkldnn",
@@ -327,6 +323,7 @@ import torch_rs as torch
 from torch_rs.backends import mkl, nnpack, openmp
 from torch_rs.backends.mkl import is_available as is_mkl_available
 from torch_rs.backends.nnpack import is_available as is_nnpack_available
+from torch_rs.backends.nnpack import flags as nnpack_flags
 from torch_rs.backends.nnpack import set_flags as set_nnpack_flags
 from torch_rs.backends.openmp import is_available as is_openmp_available
 
@@ -335,12 +332,17 @@ assert torch.backends.nnpack is nnpack
 assert torch.backends.openmp is openmp
 assert mkl.is_available is is_mkl_available
 assert nnpack.is_available is is_nnpack_available
+assert nnpack.flags is nnpack_flags
 assert nnpack.set_flags is set_nnpack_flags
 assert openmp.is_available is is_openmp_available
 assert mkl.is_available() is torch._C.has_mkl is False
 assert nnpack.is_available() is torch._nnpack_available() is False
 assert nnpack.set_flags(False) == (True,)
 assert nnpack.set_flags(True) == (False,)
+with nnpack.flags(False) as entered:
+    assert entered is None
+    assert torch._C._get_nnpack_enabled() is False
+assert torch._C._get_nnpack_enabled() is True
 assert openmp.is_available() is torch._C.has_openmp is False
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
