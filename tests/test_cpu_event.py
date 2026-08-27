@@ -191,6 +191,7 @@ class CpuEventTests(unittest.TestCase):
                 "is_initialized",
                 "synchronize",
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",

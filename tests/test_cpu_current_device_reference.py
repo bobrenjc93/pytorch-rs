@@ -168,6 +168,7 @@ class CpuCurrentDeviceReferenceTests(unittest.TestCase):
         expected = expected_cpu.current_device
         supported = {
             "current_device",
+            "current_stream",
             "device_count",
             "Stream",
             "Event",
@@ -262,6 +263,7 @@ class CpuCurrentDeviceReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",
@@ -274,7 +276,6 @@ class CpuCurrentDeviceReferenceTests(unittest.TestCase):
         self.assertTrue(
             {
                 "amp",
-                "current_stream",
                 "get_capabilities",
                 "set_device",
                 "StreamContext",

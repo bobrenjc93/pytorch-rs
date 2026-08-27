@@ -6897,6 +6897,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1096",
+      "recordedAt": "2026-08-27T03:06:10.102Z",
+      "label": "PR #1096",
+      "kind": "composite",
+      "prNumber": 1096,
+      "title": "YOLO generation 132: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 96.6,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 79.3,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }

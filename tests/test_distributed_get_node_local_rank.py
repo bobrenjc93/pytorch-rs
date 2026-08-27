@@ -238,6 +238,7 @@ class DistributedGetNodeLocalRankTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "get_rank",
                 "get_world_size",
                 "get_pg_count",
                 "is_gloo_available",
@@ -279,6 +280,7 @@ class DistributedGetNodeLocalRankTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_rank",
                 "get_world_size",
                 "get_pg_count",
                 "get_node_local_rank",
@@ -345,7 +347,7 @@ class DistributedGetNodeLocalRankTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_process_group_rank_and_collectives_remain_unsupported(self):
+    def test_process_group_initialization_and_collectives_remain_unsupported(self):
         distributed = torch.distributed
         distributed_c10d = distributed.distributed_c10d
 
@@ -356,7 +358,6 @@ class DistributedGetNodeLocalRankTests(unittest.TestCase):
             "ProcessGroup",
             "all_reduce",
             "destroy_process_group",
-            "get_rank",
             "init_process_group",
             "new_group",
         ):

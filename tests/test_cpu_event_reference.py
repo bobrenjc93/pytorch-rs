@@ -175,6 +175,7 @@ class CpuEventReferenceTests(unittest.TestCase):
         expected_cpu = reference_torch.cpu
         supported = {
             "current_device",
+            "current_stream",
             "device_count",
             "Stream",
             "Event",

@@ -3,6 +3,7 @@
 import os as _os
 
 __all__ = [
+    "get_rank",
     "get_world_size",
     "get_pg_count",
     "is_gloo_available",
@@ -17,6 +18,34 @@ __all__ = [
 
 # Preserve PyTorch's annotation spelling without exporting an unsupported type.
 _ProcessGroup = type("ProcessGroup", (), {"__module__": __name__})
+
+
+def get_rank(group: _ProcessGroup | None = None) -> int:
+    """
+    Return the rank of the current process in the provided ``group``, default otherwise.
+
+    Rank is a unique identifier assigned to each process within a distributed
+    process group. They are always consecutive integers ranging from 0 to
+    ``world_size``.
+
+    Args:
+        group (ProcessGroup, optional): The process group to work on. If None,
+            the default process group will be used.
+
+    Returns:
+        The rank of the process group
+        -1, if not part of the group
+
+    """
+    if group is not None:
+        raise NotImplementedError(
+            "torch_rs.distributed.get_rank() does not support non-None "
+            "process groups"
+        )
+    raise ValueError(
+        "Default process group has not been initialized, please make sure to "
+        "call init_process_group."
+    )
 
 
 def get_world_size(group: _ProcessGroup | None = None) -> int:

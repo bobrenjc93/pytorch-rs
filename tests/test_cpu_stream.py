@@ -219,6 +219,7 @@ class CpuStreamTests(unittest.TestCase):
                 "is_initialized",
                 "synchronize",
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",
@@ -235,6 +236,7 @@ class CpuStreamTests(unittest.TestCase):
             {name for name in cpu_namespace if not name.startswith("__")},
             {
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Event",
                 "is_available",
@@ -331,8 +333,8 @@ class CpuStreamTests(unittest.TestCase):
         with self.assertRaises(pickle.PicklingError):
             pickle.dumps(old_stream)
 
-    def test_stream_selection_and_context_apis_remain_unsupported(self):
-        for name in ("current_stream", "stream", "StreamContext"):
+    def test_stream_context_apis_remain_unsupported(self):
+        for name in ("stream", "StreamContext"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(torch.cpu, name))
 
@@ -360,7 +362,7 @@ assert stream.wait_event(argument) is None
 assert stream.wait_stream(stream=argument) is None
 assert vars(stream) == {}
 assert not hasattr(torch, "Stream")
-assert not hasattr(torch.cpu, "current_stream")
+assert torch.cpu.current_stream(argument) is torch.cpu.current_stream()
 assert not hasattr(torch.cpu, "stream")
 assert not hasattr(torch.cpu, "StreamContext")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
