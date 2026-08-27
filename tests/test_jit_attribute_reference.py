@@ -177,7 +177,12 @@ class JitAttributeReferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             {name for name in vars(actual_jit) if not name.startswith("_")},
-            {*wildcard_supported, "is_scripting", "is_tracing"},
+            {
+                *wildcard_supported,
+                "is_scripting",
+                "is_tracing",
+                "optimized_execution",
+            },
         )
         actual_namespace = {}
         expected_namespace = {}
@@ -262,6 +267,7 @@ class JitAttributeReferenceTests(unittest.TestCase):
                 "ignore",
                 "isinstance",
                 "onednn_fusion_enabled",
+                "optimized_execution",
                 "is_scripting",
                 "is_tracing",
                 "script_if_tracing",

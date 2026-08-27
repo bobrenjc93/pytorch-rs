@@ -326,6 +326,7 @@ class JitUnusedReferenceTests(unittest.TestCase):
                 "ignore",
                 "isinstance",
                 "onednn_fusion_enabled",
+                "optimized_execution",
                 "is_scripting",
                 "is_tracing",
                 "script_if_tracing",

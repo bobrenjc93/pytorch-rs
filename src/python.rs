@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -45,6 +46,11 @@ static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 static NNPACK_ENABLED: AtomicBool = AtomicBool::new(true);
+// Match the JIT executor preference's thread-local lifetime without coupling it
+// to the native eager tensor engine, which performs no TorchScript execution.
+thread_local! {
+    static GRAPH_EXECUTOR_OPTIMIZE: Cell<bool> = const { Cell::new(true) };
+}
 const BROADCAST_TENSORS_EXACT_TENSORS_ERROR: &str =
     "broadcast_tensors() only supports exact native Tensor inputs";
 const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
@@ -4971,6 +4977,78 @@ fn add_nnpack_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let exports = module.getattr("__all__")?;
     exports.call_method1("remove", ("_set_nnpack_enabled",))?;
     exports.call_method1("remove", ("_get_nnpack_enabled",))?;
+    Ok(())
+}
+
+fn graph_executor_optimize_argument(
+    value: &Bound<'_, PyAny>,
+    function_name: &str,
+    signature: &str,
+) -> PyResult<bool> {
+    if value.is_none() {
+        return Ok(false);
+    }
+    if value.is_exact_instance_of::<PyBool>() {
+        return value.is_truthy();
+    }
+    if value.get_type().hasattr("__bool__")?
+        && let Ok(value) = value.is_truthy()
+    {
+        return Ok(value);
+    }
+
+    let value_repr = value.repr()?;
+    let value = value_repr.to_string_lossy();
+    Err(PyTypeError::new_err(format!(
+        "{function_name}(): incompatible function arguments. The following argument types are supported:\n    1. {signature}\n\nInvoked with: {value}"
+    )))
+}
+
+#[pyfunction(
+    name = "_get_graph_executor_optimize",
+    signature = (new_settings=None),
+    text_signature = None
+)]
+fn get_graph_executor_optimize_native(new_settings: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let stored_flag = GRAPH_EXECUTOR_OPTIMIZE.get();
+    if let Some(new_settings) = new_settings {
+        let new_settings = graph_executor_optimize_argument(
+            new_settings,
+            "_get_graph_executor_optimize",
+            "(new_settings: bool | None = None) -> bool",
+        )?;
+        GRAPH_EXECUTOR_OPTIMIZE.set(new_settings);
+    }
+    Ok(stored_flag)
+}
+
+#[pyfunction(
+    name = "_set_graph_executor_optimize",
+    signature = (arg0, /),
+    text_signature = None
+)]
+fn set_graph_executor_optimize_native(arg0: &Bound<'_, PyAny>) -> PyResult<()> {
+    let should_optimize = graph_executor_optimize_argument(
+        arg0,
+        "_set_graph_executor_optimize",
+        "(arg0: bool) -> None",
+    )?;
+    GRAPH_EXECUTOR_OPTIMIZE.set(should_optimize);
+    Ok(())
+}
+
+fn add_graph_executor_optimize_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(
+        get_graph_executor_optimize_native,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        set_graph_executor_optimize_native,
+        module
+    )?)?;
+    let exports = module.getattr("__all__")?;
+    exports.call_method1("remove", ("_get_graph_executor_optimize",))?;
+    exports.call_method1("remove", ("_set_graph_executor_optimize",))?;
     Ok(())
 }
 
@@ -11525,6 +11603,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_default_dtype_validator(module)?;
     add_warn_always_builtins(module)?;
     add_nnpack_builtins(module)?;
+    add_graph_executor_optimize_builtins(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     add_no_grad(module)?;
