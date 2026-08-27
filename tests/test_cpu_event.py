@@ -192,6 +192,7 @@ class CpuEventTests(unittest.TestCase):
                 "synchronize",
                 "current_device",
                 "device_count",
+                "Stream",
                 "Event",
             ],
         )
@@ -302,7 +303,7 @@ assert event.record(object()) is None
 assert event.wait(stream=object()) is None
 assert event.synchronize() is None
 assert vars(event) == {}
-assert not hasattr(torch.cpu, "Stream")
+assert hasattr(torch.cpu, "Stream")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
