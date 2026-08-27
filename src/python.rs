@@ -4289,8 +4289,13 @@ impl PyTensor {
             .map_err(|error| tensor_error(&error))
     }
 
-    fn sum(&self) -> Self {
-        Self::new(self.inner.sum())
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
+    #[doc = "\nsum(dim=None, keepdim=False, dtype=None) -> Tensor\n\nSee :func:`torch.sum`\n"]
+    #[pyo3(signature = (*args, **kwargs), text_signature = None)]
+    fn sum(&self, args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        bind_method_sum_arguments(args, kwargs)?;
+        Ok(Self::new(self.inner.sum()))
     }
 
     fn __add__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
@@ -6686,6 +6691,51 @@ fn parse_flatten_dimension(
     let position = position.map_or_else(String::new, |position| format!(" (position {position})"));
     Err(PyTypeError::new_err(format!(
         "flatten(): argument '{argument}'{position} must be int, not {actual}"
+    )))
+}
+
+fn bind_method_sum_arguments(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<()> {
+    if positional.len() == 3 && keywords.is_none_or(PyDictMethods::is_empty) {
+        return Err(PyTypeError::new_err(
+            "sum() takes from 1 to 2 positional arguments but 3 were given",
+        ));
+    }
+
+    if positional.is_empty() {
+        match keywords {
+            None => return Ok(()),
+            Some(keywords) if keywords.is_empty() => return Ok(()),
+            Some(keywords) if keywords.len() == 1 => {
+                if let Some(dtype) = keywords.get_item("dtype")? {
+                    if dtype.is_none() {
+                        return Ok(());
+                    }
+                    if let Ok(dtype) = dtype.cast::<PyDType>()
+                        && dtype.try_borrow()?.inner() == DType::Float32
+                    {
+                        return Ok(());
+                    }
+                }
+            }
+            Some(_) => {}
+        }
+    }
+
+    Err(sum_method_invalid_combination(positional, keywords)?)
+}
+
+fn sum_method_invalid_combination(
+    positional: &Bound<'_, PyTuple>,
+    keywords: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyErr> {
+    let summary = call_type_summary(positional, keywords, CallKeywordOrder::PyTorchUnorderedMap)?;
+    Ok(PyTypeError::new_err(format!(
+        "sum() received an invalid combination of arguments - got ({summary}), but expected one of:\n \
+* (*, torch.dtype dtype = None)\n \
+* (tuple of ints dim, bool keepdim = False, *, torch.dtype dtype = None)\n"
     )))
 }
 
