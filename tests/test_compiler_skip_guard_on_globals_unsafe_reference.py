@@ -181,6 +181,21 @@ class _MissingGlobal:
     pass
 
 
+def _normalized_code_metadata(code):
+    return (
+        code.co_names,
+        code.co_varnames,
+        tuple(
+            _normalized_code_metadata(constant)
+            if isinstance(constant, types.CodeType)
+            else constant
+            for constant in code.co_consts
+        ),
+        code.co_freevars,
+        code.co_cellvars,
+    )
+
+
 class _InvalidIterator:
     def __iter__(self):
         return []
@@ -416,11 +431,10 @@ class CompilerSkipGuardOnGlobalsUnsafeReferenceTests(unittest.TestCase):
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
         )
-        self.assertEqual(actual.__code__.co_names, expected.__code__.co_names)
-        self.assertEqual(actual.__code__.co_varnames, expected.__code__.co_varnames)
-        self.assertEqual(actual.__code__.co_consts, expected.__code__.co_consts)
-        self.assertEqual(actual.__code__.co_freevars, expected.__code__.co_freevars)
-        self.assertEqual(actual.__code__.co_cellvars, expected.__code__.co_cellvars)
+        self.assertEqual(
+            _normalized_code_metadata(actual.__code__),
+            _normalized_code_metadata(expected.__code__),
+        )
 
     def test_exports_copying_and_pickling_match_pytorch_2_13(self):
         actual_compiler = torch.compiler
