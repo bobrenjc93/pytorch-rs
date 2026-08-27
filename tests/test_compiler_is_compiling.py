@@ -163,6 +163,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
                 "is_compiling",
                 "is_dynamo_compiling",
                 "is_exporting",
+                "skip_all_guards_unsafe",
             ],
         )
         compiler_namespace = {}
@@ -178,6 +179,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
                 "is_compiling",
                 "is_dynamo_compiling",
                 "is_exporting",
+                "skip_all_guards_unsafe",
             },
         )
         self.assertIs(
@@ -258,6 +260,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
                 "is_compiling",
                 "is_dynamo_compiling",
                 "is_exporting",
+                "skip_all_guards_unsafe",
             }:
                 with self.subTest(name=name):
                     self.assertFalse(hasattr(torch.compiler, name))

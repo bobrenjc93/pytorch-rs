@@ -6849,6 +6849,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1087",
+      "recordedAt": "2026-08-27T00:38:35.998Z",
+      "label": "PR #1087",
+      "kind": "composite",
+      "prNumber": 1087,
+      "title": "YOLO generation 130: 2 reviewed improvements",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 96.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 78.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
