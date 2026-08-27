@@ -204,6 +204,53 @@ fn reciprocal_rejects_recording_before_planning_and_honors_no_grad() {
 }
 
 #[test]
+fn reciprocal_square_root_rejects_recording_before_planning_and_honors_no_grad() {
+    let leaf = Tensor::from_vec(vec![-4.0, -0.0, 1.0, 4.0], [2, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(
+        leaf.rsqrt(),
+        Err(TensorError::AutogradRecordingUnsupported { operation: "rsqrt" })
+    );
+
+    let extreme = Tensor::zeros([0])
+        .unwrap()
+        .reshape([0, i64::MAX, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    assert_eq!(
+        extreme.rsqrt(),
+        Err(TensorError::AutogradRecordingUnsupported { operation: "rsqrt" })
+    );
+
+    let source_bits = leaf.logical_values().map(f32::to_bits).collect::<Vec<_>>();
+    {
+        let _guard = no_grad();
+        let output = leaf.transpose(0, 1).unwrap().rsqrt().unwrap();
+        assert_eq!(output.shape(), [2, 2]);
+        assert_eq!(output.stride(), [1, 2]);
+        assert_eq!(output.storage_offset(), 0);
+        assert!(!output.requires_grad());
+        assert!(!output.shares_storage_with(&leaf));
+        assert_eq!(
+            output
+                .logical_values()
+                .map(f32::to_bits)
+                .collect::<Vec<_>>(),
+            [0xffc0_0000, 0x3f80_0000, 0xff80_0000, 0x3f00_0000]
+        );
+        assert_eq!(extreme.rsqrt(), Err(TensorError::StrideCalculationOverflow));
+    }
+    assert_eq!(
+        leaf.logical_values().map(f32::to_bits).collect::<Vec<_>>(),
+        source_bits
+    );
+
+    let detached = leaf.detach().unwrap().rsqrt().unwrap();
+    assert!(!detached.requires_grad());
+}
+
+#[test]
 fn floor_records_reusable_zero_vjp_for_views_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-1.25, -0.0, 1.75, 4.5], [2, 2])
         .unwrap()
