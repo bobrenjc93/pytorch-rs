@@ -7233,6 +7233,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1171",
+      "recordedAt": "2026-08-27T23:09:36.489Z",
+      "label": "PR #1171",
+      "kind": "leaf",
+      "prNumber": 1171,
+      "title": "Add mutable torch.backends.cudnn.benchmark preference",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 98.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 81.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
