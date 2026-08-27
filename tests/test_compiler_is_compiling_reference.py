@@ -149,6 +149,7 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
                     "is_compiling",
                     "is_dynamo_compiling",
                     "is_exporting",
+                    "skip_guard_on_globals_unsafe",
                     "skip_all_guards_unsafe",
                 }
             ],
@@ -282,6 +283,7 @@ class CompilerIsCompilingReferenceTests(unittest.TestCase):
             "is_compiling",
             "is_dynamo_compiling",
             "is_exporting",
+            "skip_guard_on_globals_unsafe",
             "skip_all_guards_unsafe",
         }
         self.assertTrue(unsupported)
