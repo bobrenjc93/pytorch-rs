@@ -17,12 +17,12 @@ except ImportError:
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedGetGroupRankReferenceTests(unittest.TestCase):
+class DistributedGetGlobalRankReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.get_group_rank differentials require pinned "
+                "distributed.get_global_rank differentials require pinned "
                 "PyTorch 2.13.0"
             )
 
@@ -62,8 +62,8 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
         )
 
     def test_default_world_identity_matches_without_initialization_or_coercion(self):
-        actual = torch.distributed.get_group_rank
-        expected = reference_torch.distributed.get_group_rank
+        actual = torch.distributed.get_global_rank
+        expected = reference_torch.distributed.get_global_rank
         expected_c10d = reference_torch.distributed.distributed_c10d
 
         self.assertIs(expected_c10d.GroupMember.WORLD, None)
@@ -120,7 +120,7 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
                         rank = RankProbe()
                         self.assertIs(function(None, rank), rank)
                         self.assertIs(
-                            function(group=None, global_rank=rank), rank
+                            function(group=None, group_rank=rank), rank
                         )
                         self.assertEqual(rank.events, [])
 
@@ -132,7 +132,7 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
 
         for module in (torch, reference_torch):
             rank = module.tensor([1.0, 2.0])
-            self.assertIs(module.distributed.get_group_rank(None, rank), rank)
+            self.assertIs(module.distributed.get_global_rank(None, rank), rank)
         self.assert_zero_process_group_state()
 
     def test_reload_signature_annotations_documentation_and_identity_match(self):
@@ -148,16 +148,16 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
         for _ in range(3):
             actual_c10d = importlib.reload(actual_c10d)
             actual_distributed = importlib.reload(actual_distributed)
-            actual = actual_distributed.get_group_rank
-            expected = expected_distributed.get_group_rank
+            actual = actual_distributed.get_global_rank
+            expected = expected_distributed.get_global_rank
             rank = object()
 
             self.assertIs(torch.distributed, actual_distributed)
             self.assertIs(reference_torch.distributed, expected_distributed)
             self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
             self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-            self.assertIs(actual_c10d.get_group_rank, actual)
-            self.assertIs(expected_c10d.get_group_rank, expected)
+            self.assertIs(actual_c10d.get_global_rank, actual)
+            self.assertIs(expected_c10d.get_global_rank, expected)
             self.assertIs(actual(None, rank), rank)
             self.assertIs(type(actual), types.FunctionType)
             self.assertIs(type(expected), types.FunctionType)
@@ -172,8 +172,8 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
                 self.annotation_shape(actual.__annotations__["group"]),
                 self.annotation_shape(expected.__annotations__["group"]),
             )
-            self.assertIs(actual.__annotations__["global_rank"], int)
-            self.assertIs(expected.__annotations__["global_rank"], int)
+            self.assertIs(actual.__annotations__["group_rank"], int)
+            self.assertIs(expected.__annotations__["group_rank"], int)
             self.assertIs(actual.__annotations__["return"], int)
             self.assertIs(expected.__annotations__["return"], int)
             self.assertEqual(actual.__name__, expected.__name__)
@@ -200,8 +200,8 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.get_group_rank
-        expected = expected_distributed.get_group_rank
+        actual = actual_distributed.get_global_rank
+        expected = expected_distributed.get_global_rank
         supported = {
             "destroy_process_group",
             "get_backend_config",
@@ -229,8 +229,8 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
             [name for name in expected_c10d.__all__ if name in supported],
         )
         self.assertEqual(
-            torch.__all__.count("get_group_rank"),
-            reference_torch.__all__.count("get_group_rank"),
+            torch.__all__.count("get_global_rank"),
+            reference_torch.__all__.count("get_global_rank"),
         )
 
         for module, function in (
@@ -241,12 +241,12 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["get_group_rank"], function)
+            self.assertIs(namespace["get_global_rank"], function)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertNotIn("get_group_rank", namespace)
+            self.assertNotIn("get_global_rank", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -264,15 +264,15 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
                 )
 
     def test_argument_and_invalid_group_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.get_group_rank
-        expected = reference_torch.distributed.get_group_rank
+        actual = torch.distributed.get_global_rank
+        expected = reference_torch.distributed.get_global_rank
         calls = (
             lambda function: function(),
             lambda function: function(None),
             lambda function: function(None, 1, 2),
             lambda function: function(group=None, rank=1),
             lambda function: function(None, 1, group=None),
-            lambda function: function(None, 1, global_rank=2),
+            lambda function: function(None, 1, group_rank=2),
             lambda function: function(False, object()),
             lambda function: function(True, object()),
             lambda function: function(0, object()),
@@ -292,11 +292,12 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
                 )
 
         def traced_outcome(function, behavior):
-            events = []
+            group_events = []
+            rank_events = []
 
             class TracedGroup:
                 def __hash__(self):
-                    events.append(("hash",))
+                    group_events.append(("hash",))
                     if behavior == "hash_error":
                         raise RuntimeError("hash failed")
                     if behavior == "invalid_hash":
@@ -304,16 +305,44 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
                     return 123
 
                 def __eq__(self, other):
-                    events.append(("eq", other))
+                    group_events.append(("eq", other))
                     raise RuntimeError("equality failed")
 
                 def __format__(self, format_spec):
-                    events.append(("format", format_spec))
+                    group_events.append(("format", format_spec))
                     if behavior == "format_error":
                         raise RuntimeError("format failed")
                     return "traced-group"
 
-            return self.outcome(lambda: function(TracedGroup(), object())), events
+            class RankProbe:
+                def __bool__(self):
+                    rank_events.append(("bool",))
+                    raise RuntimeError("rank truth value was read")
+
+                def __eq__(self, other):
+                    rank_events.append(("eq", other))
+                    raise RuntimeError("rank equality was read")
+
+                def __hash__(self):
+                    rank_events.append(("hash",))
+                    raise RuntimeError("rank hash was read")
+
+                def __index__(self):
+                    rank_events.append(("index",))
+                    raise RuntimeError("rank index was read")
+
+                def __int__(self):
+                    rank_events.append(("int",))
+                    raise RuntimeError("rank integer value was read")
+
+                def __format__(self, format_spec):
+                    rank_events.append(("format", format_spec))
+                    raise RuntimeError("rank formatting was read")
+
+            outcome = self.outcome(
+                lambda: function(TracedGroup(), RankProbe())
+            )
+            return outcome, group_events, rank_events
 
         for behavior in ("normal", "hash_error", "invalid_hash", "format_error"):
             with self.subTest(behavior=behavior):
@@ -330,16 +359,16 @@ class DistributedGetGroupRankReferenceTests(unittest.TestCase):
         expected_c10d = expected_distributed.distributed_c10d
 
         self.assertIs(
-            actual_distributed.get_group_rank, actual_c10d.get_group_rank
-        )
-        self.assertIs(
-            expected_distributed.get_group_rank, expected_c10d.get_group_rank
-        )
-        self.assertIs(
             actual_distributed.get_global_rank, actual_c10d.get_global_rank
         )
         self.assertIs(
             expected_distributed.get_global_rank, expected_c10d.get_global_rank
+        )
+        self.assertIs(
+            actual_distributed.get_group_rank, actual_c10d.get_group_rank
+        )
+        self.assertIs(
+            expected_distributed.get_group_rank, expected_c10d.get_group_rank
         )
         for name in (
             "GroupMember",
