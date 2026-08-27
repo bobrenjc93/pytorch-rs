@@ -35,9 +35,12 @@ newaxis = None
 _nnpack_available = _native._VariableFunctionsClass._nnpack_available
 
 
+# Keep the public answer as the immutable build-time fact. Like PyTorch's
+# generated package function, it must not observe reassignment or deletion of
+# the writable compatibility metadata on ``torch._C``.
 def compiled_with_cxx11_abi() -> _builtins.bool:
     r"""Returns whether PyTorch was built with _GLIBCXX_USE_CXX11_ABI=1"""
-    return _C._GLIBCXX_USE_CXX11_ABI
+    return False
 
 
 def are_deterministic_algorithms_enabled() -> _builtins.bool:

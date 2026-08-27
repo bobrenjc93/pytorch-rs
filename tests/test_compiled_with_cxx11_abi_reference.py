@@ -130,6 +130,47 @@ class CompiledWithCxx11AbiReferenceTests(unittest.TestCase):
         self.assertIs(type(expected), bool)
         self.assertIs(actual, False)
 
+    def mutation_contract(self, module):
+        function = module.compiled_with_cxx11_abi
+        native = module._C
+        original = native._GLIBCXX_USE_CXX11_ABI
+        observations = []
+
+        try:
+            for replacement in (None, not original, 1, "cxx11", object()):
+                native._GLIBCXX_USE_CXX11_ABI = replacement
+                result = function()
+                observations.append(
+                    (
+                        type(result) is bool,
+                        result is original,
+                    )
+                )
+
+            del native._GLIBCXX_USE_CXX11_ABI
+            result = function()
+            observations.append(
+                (
+                    not hasattr(native, "_GLIBCXX_USE_CXX11_ABI"),
+                    type(result) is bool,
+                    result is original,
+                )
+            )
+        finally:
+            native._GLIBCXX_USE_CXX11_ABI = original
+
+        return observations
+
+    def test_native_flag_mutation_and_deletion_match_pytorch_2_13(self):
+        actual = self.mutation_contract(torch)
+        expected = self.mutation_contract(reference_torch)
+
+        self.assertEqual(actual, expected)
+        self.assertEqual(
+            actual,
+            [(True, True)] * 5 + [(True, True, True)],
+        )
+
     def test_copying_and_pickling_match_pytorch_2_13(self):
         actual = torch.compiled_with_cxx11_abi
         expected = reference_torch.compiled_with_cxx11_abi

@@ -40,10 +40,7 @@ class CompiledWithCxx11AbiTests(unittest.TestCase):
                     self.assertIs(result, False)
                     self.assertIs(result, torch._C._GLIBCXX_USE_CXX11_ABI)
 
-        self.assertEqual(
-            function.__code__.co_names,
-            ("_C", "_GLIBCXX_USE_CXX11_ABI"),
-        )
+        self.assertEqual(function.__code__.co_names, ())
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -98,6 +95,26 @@ class CompiledWithCxx11AbiTests(unittest.TestCase):
         self.assertNotIn("compiled_with_cxx11_abi", package_wildcard)
         self.assertNotIn("_GLIBCXX_USE_CXX11_ABI", package_wildcard)
         self.assertNotIn("_GLIBCXX_USE_CXX11_ABI", native_wildcard)
+
+    def test_public_query_ignores_native_flag_mutation_and_deletion(self):
+        function = torch.compiled_with_cxx11_abi
+        native = torch._C
+        original = native._GLIBCXX_USE_CXX11_ABI
+
+        try:
+            for replacement in (None, True, 1, "cxx11", object()):
+                with self.subTest(replacement=replacement):
+                    native._GLIBCXX_USE_CXX11_ABI = replacement
+                    self.assertIs(function(), False)
+
+            del native._GLIBCXX_USE_CXX11_ABI
+            self.assertFalse(hasattr(native, "_GLIBCXX_USE_CXX11_ABI"))
+            self.assertIs(function(), False)
+        finally:
+            native._GLIBCXX_USE_CXX11_ABI = original
+
+        self.assertIs(native._GLIBCXX_USE_CXX11_ABI, False)
+        self.assertIs(function(), False)
 
     def test_copying_and_pickling_are_canonical(self):
         function = torch.compiled_with_cxx11_abi
@@ -243,6 +260,11 @@ from torch_rs._C import _GLIBCXX_USE_CXX11_ABI
 assert compiled_with_cxx11_abi is torch.compiled_with_cxx11_abi
 assert compiled_with_cxx11_abi() is _GLIBCXX_USE_CXX11_ABI is False
 assert not hasattr(torch, "_GLIBCXX_USE_CXX11_ABI")
+torch._C._GLIBCXX_USE_CXX11_ABI = None
+assert compiled_with_cxx11_abi() is False
+del torch._C._GLIBCXX_USE_CXX11_ABI
+assert compiled_with_cxx11_abi() is False
+torch._C._GLIBCXX_USE_CXX11_ABI = False
 package_wildcard = {}
 native_wildcard = {}
 exec("from torch_rs import *", package_wildcard)
