@@ -6945,6 +6945,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1106",
+      "recordedAt": "2026-08-27T06:08:26.284Z",
+      "label": "PR #1106",
+      "kind": "leaf",
+      "prNumber": 1106,
+      "title": "Add torch.backends.nnpack.flags context management",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 97,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 79.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
