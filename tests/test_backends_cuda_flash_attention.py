@@ -99,7 +99,12 @@ class CudaFlashAttentionAvailabilityTests(unittest.TestCase):
         self.assertIs(child_wildcard["is_flash_attention_available"], function)
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
-            {"is_built", "is_flash_attention_available"},
+            {
+                "enable_flash_sdp",
+                "flash_sdp_enabled",
+                "is_built",
+                "is_flash_attention_available",
+            },
         )
 
         self.assertIs(copy.copy(function), function)
