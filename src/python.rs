@@ -1744,6 +1744,14 @@ pub(crate) fn reciprocal_variable_function(
     unary_out_variable_function(UnaryOutOperation::RECIPROCAL, py, args, kwargs)
 }
 
+pub(crate) fn rsqrt_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    unary_out_variable_function(UnaryOutOperation::RSQRT, py, args, kwargs)
+}
+
 pub(crate) fn exp_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2249,6 +2257,14 @@ impl UnaryOutOperation {
         dispatch_allocation_error: "unable to allocate reciprocal dispatch operands",
         out_unsupported_error: "reciprocal(): the 'out' argument is not supported",
         apply: CoreTensor::reciprocal,
+    };
+
+    const RSQRT: Self = Self {
+        name: "rsqrt",
+        qualified_name: "torch.rsqrt",
+        dispatch_allocation_error: "unable to allocate rsqrt dispatch operands",
+        out_unsupported_error: "rsqrt(): the 'out' argument is not supported",
+        apply: CoreTensor::rsqrt,
     };
 
     const SIN: Self = Self {
