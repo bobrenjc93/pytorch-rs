@@ -14,20 +14,11 @@ const NATIVE_AUTOGRAD_RECONSTRUCTION: &str =
     "__import__('importlib').import_module('torch_rs._C._autograd')";
 const KINETO_AVAILABLE_DOC: &std::ffi::CStr = c"kineto_available() -> bool\n";
 
-// PyTorch 2.13 exposes pybind11's internal function-record owner in the
-// metadata and repr of torch._C._autograd.kineto_available. Mirror the
-// platform ABI spelling without linking pybind11 or importing PyTorch.
-#[cfg(target_os = "linux")]
-const FUNCTION_RECORD_TYPE_NAME: &std::ffi::CStr = c"pybind11_builtins.pybind11_detail_function_record_v1_system_libstdcpp_gxx_abi_1xxx_use_cxx11_abi_1";
-#[cfg(target_os = "macos")]
-const FUNCTION_RECORD_TYPE_NAME: &std::ffi::CStr =
-    c"pybind11_builtins.pybind11_detail_function_record_v1_system_libcpp_abi1";
-#[cfg(target_os = "windows")]
-const FUNCTION_RECORD_TYPE_NAME: &std::ffi::CStr =
-    c"pybind11_builtins.pybind11_detail_function_record_v1_msvc_md_mscver19";
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-const FUNCTION_RECORD_TYPE_NAME: &std::ffi::CStr =
-    c"pybind11_builtins.pybind11_detail_function_record_v1_system_libstdcpp_gxx_abi_1xxx_use_cxx11_abi_1";
+// Keep the owner distinct from pybind11's private function-record type.
+// pybind11 recognizes its records by C type name and casts matching objects
+// to a larger private layout, so reusing that name would let another native
+// extension read beyond this zero-state object's allocation.
+const FUNCTION_RECORD_TYPE_NAME: &std::ffi::CStr = c"torch_rs._C._autograd._KinetoCapability";
 
 fn invocation_repr(
     args: &Bound<'_, PyTuple>,

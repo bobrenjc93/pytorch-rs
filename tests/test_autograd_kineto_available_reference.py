@@ -4,6 +4,7 @@ import inspect
 import pickle
 import pickletools
 import re
+import subprocess
 import sys
 import threading
 import types
@@ -64,7 +65,7 @@ class KinetoAvailableReferenceTests(unittest.TestCase):
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
         self.assertEqual(actual_raised.exception.args, expected_raised.exception.args)
 
-    def test_native_callable_metadata_matches_pytorch_2_13(self):
+    def test_native_callable_metadata_matches_except_for_the_safe_owner(self):
         actual_module = torch._C._autograd
         expected_module = reference_torch._C._autograd
         actual = torch.autograd.kineto_available
@@ -73,7 +74,11 @@ class KinetoAvailableReferenceTests(unittest.TestCase):
         self.assertIs(type(actual), types.BuiltinFunctionType)
         self.assertIs(type(expected), types.BuiltinFunctionType)
         self.assertEqual(actual.__name__, expected.__name__)
-        self.assertEqual(actual.__qualname__, expected.__qualname__)
+        # Reusing pybind11's private C type name would make pybind11 cast this
+        # smaller owner to its larger function-record layout. Keep the
+        # owner-derived qualname and repr explicitly distinct.
+        self.assertEqual(actual.__qualname__, "_KinetoCapability.kineto_available")
+        self.assertTrue(expected.__qualname__.endswith(".kineto_available"))
         self.assertEqual(self.normalize(actual.__module__), expected.__module__)
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(actual.__text_signature__, expected.__text_signature__)
@@ -82,20 +87,35 @@ class KinetoAvailableReferenceTests(unittest.TestCase):
             hasattr(expected, "__annotations__"),
         )
         self.assertEqual(hasattr(actual, "__dict__"), hasattr(expected, "__dict__"))
-        self.assertEqual(self.normalized_repr(actual), self.normalized_repr(expected))
         self.assertEqual(
-            type(actual.__self__).__module__, type(expected.__self__).__module__
+            self.normalized_repr(actual),
+            "<built-in method kineto_available of "
+            "torch._C._autograd._KinetoCapability object at 0x...>",
         )
-        self.assertEqual(type(actual.__self__).__name__, type(expected.__self__).__name__)
-        self.assertEqual(
-            type(actual.__self__).__qualname__,
-            type(expected.__self__).__qualname__,
+        self.assertRegex(
+            self.normalized_repr(expected),
+            r"^<built-in method kineto_available of pybind11_builtins\."
+            r"pybind11_detail_function_record_v1_.+ object at 0x\.\.\.>$",
+        )
+        self.assertEqual(type(actual.__self__).__module__, "torch_rs._C._autograd")
+        self.assertEqual(type(actual.__self__).__name__, "_KinetoCapability")
+        self.assertEqual(type(actual.__self__).__qualname__, "_KinetoCapability")
+        self.assertEqual(type(expected.__self__).__module__, "pybind11_builtins")
+        self.assertTrue(
+            type(expected.__self__).__name__.startswith(
+                "pybind11_detail_function_record_v1_"
+            )
         )
         self.assertIsNot(actual.__self__, actual_module)
         self.assertIsNot(expected.__self__, expected_module)
         self.assertIs(inspect.getmodule(actual), actual_module)
         self.assertIs(inspect.getmodule(expected), expected_module)
-        self.assertEqual(self.signature_outcome(actual), self.signature_outcome(expected))
+        actual_signature = self.signature_outcome(actual)
+        expected_signature = self.signature_outcome(expected)
+        self.assertEqual(actual_signature[:2], ("error", "ValueError"))
+        self.assertEqual(expected_signature[:2], ("error", "ValueError"))
+        self.assertIn("no signature found for builtin", actual_signature[2])
+        self.assertIn("no signature found for builtin", expected_signature[2])
         self.assertEqual(inspect.get_annotations(actual), inspect.get_annotations(expected))
 
         for function in (actual, expected):
@@ -257,6 +277,36 @@ class KinetoAvailableReferenceTests(unittest.TestCase):
             self.native_submodule_reload_error(torch),
             self.native_submodule_reload_error(reference_torch),
         )
+
+    def test_pybind11_interoperability_does_not_misclassify_the_owner(self):
+        script = r'''
+import torch
+import torch_rs
+
+for function in (
+    torch.autograd.kineto_available,
+    torch_rs.autograd.kineto_available,
+):
+    torch._C._jit_set_emit_hooks(function, function)
+    # Do not leave a deliberately no-argument callable installed as a JIT
+    # callback during interpreter shutdown.
+    torch._C._jit_set_emit_hooks(None, None)
+
+assert torch_rs.autograd.kineto_available() is False
+print("ok")
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+        self.assertEqual(completed.stdout, "ok\n")
 
     def test_profiler_surface_remains_deliberately_unsupported(self):
         unsupported = (

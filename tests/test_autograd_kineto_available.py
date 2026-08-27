@@ -3,7 +3,6 @@ import importlib
 import inspect
 import os
 import pickle
-import re
 import subprocess
 import sys
 import threading
@@ -12,16 +11,6 @@ import unittest
 from unittest import mock
 
 import torch_rs as torch
-
-
-PYBIND_FUNCTION_RECORD_NAMES = {
-    "linux": (
-        "pybind11_detail_function_record_v1_system_libstdcpp_gxx_abi_1xxx_"
-        "use_cxx11_abi_1"
-    ),
-    "darwin": "pybind11_detail_function_record_v1_system_libcpp_abi1",
-    "win32": "pybind11_detail_function_record_v1_msvc_md_mscver19",
-}
 
 
 class KinetoAvailableTests(unittest.TestCase):
@@ -56,20 +45,16 @@ class KinetoAvailableTests(unittest.TestCase):
         finally:
             native.kineto_available = function
 
-    def test_native_callable_metadata_matches_pytorch_2_13(self):
+    def test_native_callable_metadata_uses_a_safe_distinct_owner(self):
         function = torch.autograd.kineto_available
         native = torch._C._autograd
         function_record = function.__self__
         record_type = type(function_record)
-        expected_record_name = PYBIND_FUNCTION_RECORD_NAMES.get(
-            sys.platform,
-            PYBIND_FUNCTION_RECORD_NAMES["linux"],
-        )
 
         self.assertIs(type(function), types.BuiltinFunctionType)
         self.assertEqual(function.__name__, "kineto_available")
         self.assertEqual(
-            function.__qualname__, f"{expected_record_name}.kineto_available"
+            function.__qualname__, "_KinetoCapability.kineto_available"
         )
         self.assertEqual(function.__module__, "torch_rs._C._autograd")
         self.assertEqual(function.__doc__, "kineto_available() -> bool\n")
@@ -78,19 +63,21 @@ class KinetoAvailableTests(unittest.TestCase):
         self.assertFalse(hasattr(function, "__defaults__"))
         self.assertFalse(hasattr(function, "__kwdefaults__"))
         self.assertFalse(hasattr(function, "__dict__"))
-        self.assertEqual(record_type.__module__, "pybind11_builtins")
-        self.assertEqual(record_type.__name__, expected_record_name)
+        self.assertEqual(record_type.__module__, "torch_rs._C._autograd")
+        self.assertEqual(record_type.__name__, "_KinetoCapability")
+        self.assertFalse(record_type.__name__.startswith("pybind11_detail_"))
         self.assertIsNot(function_record, native)
         self.assertIs(inspect.getmodule(function), native)
         self.assertRegex(
             repr(function),
-            rf"^<built-in method kineto_available of pybind11_builtins\."
-            rf"{re.escape(expected_record_name)} object at 0x[0-9a-fA-F]+>$",
+            r"^<built-in method kineto_available of "
+            r"torch_rs\._C\._autograd\._KinetoCapability object at "
+            r"0x[0-9a-fA-F]+>$",
         )
         with self.assertRaisesRegex(
             ValueError,
             r"^no signature found for builtin <built-in method "
-            r"kineto_available of pybind11_builtins\.",
+            r"kineto_available of torch_rs\._C\._autograd\._KinetoCapability ",
         ):
             inspect.signature(function)
         self.assertEqual(inspect.get_annotations(function), {})
