@@ -10,6 +10,7 @@ from .memory import (
     memory_allocated,
     memory_reserved,
     memory_stats,
+    reset_peak_memory_stats,
 )
 
 
@@ -24,6 +25,7 @@ __all__ = [
     "memory_allocated",
     "memory_reserved",
     "memory_stats",
+    "reset_peak_memory_stats",
 ]
 
 
