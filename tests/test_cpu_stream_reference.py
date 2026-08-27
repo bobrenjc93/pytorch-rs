@@ -17,12 +17,22 @@ except ImportError:
     reference_torch = None
 
 
+class UnusableArgument:
+    def __getattribute__(self, name):
+        raise AssertionError(f"argument attribute was inspected: {name}")
+
+    def __repr__(self):
+        raise AssertionError("argument representation was inspected")
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CpuEventReferenceTests(unittest.TestCase):
+class CpuStreamReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
-            raise AssertionError("cpu.Event differentials require pinned PyTorch 2.13.0")
+            raise AssertionError(
+                "cpu.Stream differentials require pinned PyTorch 2.13.0"
+            )
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -45,23 +55,22 @@ class CpuEventReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def event_outcome(self, module):
-        event = module.cpu.Event()
-        stream = object()
+    def stream_outcome(self, module):
+        argument = UnusableArgument()
+        stream = module.cpu.Stream(argument)
+        keyword_stream = module.cpu.Stream(priority=argument)
         return (
-            event.query(),
-            event.record(),
-            event.record(None),
-            event.record(stream=stream),
-            event.wait(),
-            event.wait(None),
-            event.wait(stream=stream),
-            event.synchronize(),
-            vars(event),
+            stream.record_event(),
+            stream.wait_event(argument),
+            stream.wait_event(event=argument),
+            stream.wait_stream(argument),
+            stream.wait_stream(stream=argument),
+            vars(stream),
+            vars(keyword_stream),
         )
 
     def threaded_outcome(self, module):
-        event = module.cpu.Event()
+        stream = module.cpu.Stream()
         worker_count = 16
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -69,14 +78,15 @@ class CpuEventReferenceTests(unittest.TestCase):
 
         def worker(index):
             try:
-                stream = object()
+                argument = object()
+                local_stream = module.cpu.Stream(priority=argument)
                 barrier.wait(timeout=10)
                 results[index] = (
-                    event.query(),
-                    event.record(stream),
-                    event.wait(stream=stream),
-                    event.synchronize(),
-                    event.query(),
+                    stream.record_event(),
+                    stream.wait_event(argument),
+                    stream.wait_stream(local_stream),
+                    local_stream.wait_stream(stream),
+                    vars(local_stream),
                 )
             except BaseException as error:
                 errors.append((type(error).__name__, str(error)))
@@ -91,28 +101,42 @@ class CpuEventReferenceTests(unittest.TestCase):
             thread.join(timeout=10)
 
         self.assertFalse(any(thread.is_alive() for thread in threads))
-        return results, errors, vars(event)
+        return results, errors, vars(stream)
 
-    def test_stateless_operations_and_threading_match_pytorch_2_13(self):
-        actual = self.event_outcome(torch)
-        expected = self.event_outcome(reference_torch)
+    def test_stateless_probe_free_operations_and_threading_match_pytorch_2_13(self):
+        actual = self.stream_outcome(torch)
+        expected = self.stream_outcome(reference_torch)
         self.assertEqual(actual, expected)
-        self.assertEqual(actual, (True, None, None, None, None, None, None, None, {}))
-        self.assertIs(actual[0], True)
+        self.assertEqual(actual, (None, None, None, None, None, {}, {}))
 
         actual_threads = self.threaded_outcome(torch)
         expected_threads = self.threaded_outcome(reference_torch)
         self.assertEqual(actual_threads, expected_threads)
         self.assertEqual(actual_threads[1:], ([], {}))
 
-    def test_class_and_method_metadata_match_pytorch_2_13(self):
+        for module in (torch, reference_torch):
+            stream_type = module.cpu.Stream
+            for method in (
+                stream_type.__init__,
+                stream_type.record_event,
+                stream_type.wait_event,
+                stream_type.wait_stream,
+            ):
+                with self.subTest(module=module.__name__, method=method.__name__):
+                    self.assertEqual(method.__code__.co_names, ())
+                    self.assertEqual(method.__code__.co_freevars, ())
+                    self.assertEqual(method.__code__.co_cellvars, ())
+
+    def test_class_constructor_and_method_metadata_match_pytorch_2_13(self):
         actual_cpu = importlib.import_module("torch_rs.cpu")
         expected_cpu = importlib.import_module("torch.cpu")
-        actual = actual_cpu.Event
-        expected = expected_cpu.Event
+        actual = actual_cpu.Stream
+        expected = expected_cpu.Stream
 
         self.assertIs(type(actual), type(expected))
-        self.assertEqual(str(inspect.signature(actual)), str(inspect.signature(expected)))
+        self.assertEqual(
+            str(inspect.signature(actual)), str(inspect.signature(expected))
+        )
         self.assertEqual(actual.__name__, expected.__name__)
         self.assertEqual(actual.__qualname__, expected.__qualname__)
         self.assertEqual(
@@ -133,10 +157,10 @@ class CpuEventReferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             public_class_attributes,
-            {"query", "record", "synchronize", "wait"},
+            {"record_event", "wait_event", "wait_stream"},
         )
 
-        for name in sorted(public_class_attributes):
+        for name in ("__init__", *sorted(public_class_attributes)):
             with self.subTest(method=name):
                 actual_method = vars(actual)[name]
                 expected_method = vars(expected)[name]
@@ -154,13 +178,17 @@ class CpuEventReferenceTests(unittest.TestCase):
                     typing.get_type_hints(expected_method),
                 )
                 self.assertEqual(actual_method.__name__, expected_method.__name__)
-                self.assertEqual(actual_method.__qualname__, expected_method.__qualname__)
+                self.assertEqual(
+                    actual_method.__qualname__, expected_method.__qualname__
+                )
                 self.assertEqual(
                     actual_method.__module__.replace("torch_rs", "torch"),
                     expected_method.__module__,
                 )
                 self.assertEqual(actual_method.__doc__, expected_method.__doc__)
-                self.assertEqual(actual_method.__defaults__, expected_method.__defaults__)
+                self.assertEqual(
+                    actual_method.__defaults__, expected_method.__defaults__
+                )
                 self.assertEqual(
                     actual_method.__kwdefaults__, expected_method.__kwdefaults__
                 )
@@ -176,10 +204,10 @@ class CpuEventReferenceTests(unittest.TestCase):
         supported = {
             "current_device",
             "device_count",
-            "Stream",
             "Event",
             "is_available",
             "is_initialized",
+            "Stream",
             "synchronize",
         }
         self.assertEqual(
@@ -189,10 +217,10 @@ class CpuEventReferenceTests(unittest.TestCase):
 
         actual_direct = {}
         expected_direct = {}
-        exec("from torch_rs.cpu import Event", actual_direct)
-        exec("from torch.cpu import Event", expected_direct)
-        self.assertIs(actual_direct["Event"], actual_cpu.Event)
-        self.assertIs(expected_direct["Event"], expected_cpu.Event)
+        exec("from torch_rs.cpu import Stream", actual_direct)
+        exec("from torch.cpu import Stream", expected_direct)
+        self.assertIs(actual_direct["Stream"], actual_cpu.Stream)
+        self.assertIs(expected_direct["Stream"], expected_cpu.Stream)
 
         actual_namespace = {}
         expected_namespace = {}
@@ -202,28 +230,33 @@ class CpuEventReferenceTests(unittest.TestCase):
             {name for name in actual_namespace if not name.startswith("__")},
             supported,
         )
-        self.assertIs(actual_namespace["Event"], actual_cpu.Event)
-        self.assertIs(expected_namespace["Event"], expected_cpu.Event)
+        self.assertIs(actual_namespace["Stream"], actual_cpu.Stream)
+        self.assertIs(expected_namespace["Stream"], expected_cpu.Stream)
 
-        self.assertNotIn("Event", torch.__all__)
-        self.assertFalse(hasattr(torch, "Event"))
-        self.assertIn("Event", reference_torch.__all__)
-        self.assertIsNot(reference_torch.Event, expected_cpu.Event)
+        self.assertNotIn("Stream", torch.__all__)
+        self.assertFalse(hasattr(torch, "Stream"))
+        self.assertIn("Stream", reference_torch.__all__)
+        self.assertIsNot(reference_torch.Stream, expected_cpu.Stream)
 
     def test_copy_and_pickle_match_pytorch_2_13(self):
-        actual_type = torch.cpu.Event
-        expected_type = reference_torch.cpu.Event
+        actual_type = torch.cpu.Stream
+        expected_type = reference_torch.cpu.Stream
 
-        for event_type in (actual_type, expected_type):
-            self.assertIs(copy.copy(event_type), event_type)
-            self.assertIs(copy.deepcopy(event_type), event_type)
-            for name in ("query", "record", "synchronize", "wait"):
-                method = getattr(event_type, name)
+        for stream_type in (actual_type, expected_type):
+            self.assertIs(copy.copy(stream_type), stream_type)
+            self.assertIs(copy.deepcopy(stream_type), stream_type)
+            for name in (
+                "__init__",
+                "record_event",
+                "wait_event",
+                "wait_stream",
+            ):
+                method = getattr(stream_type, name)
                 self.assertIs(copy.copy(method), method)
                 self.assertIs(copy.deepcopy(method), method)
 
-        actual = actual_type()
-        expected = expected_type()
+        actual = actual_type(priority=object())
+        expected = expected_type(priority=object())
         actual.payload = [1, 2, 3]
         expected.payload = [1, 2, 3]
         for copier in (copy.copy, copy.deepcopy):
@@ -238,25 +271,16 @@ class CpuEventReferenceTests(unittest.TestCase):
                     expected_copy.payload is expected.payload,
                 )
 
+        method_names = ("__init__", "record_event", "wait_event", "wait_stream")
         actual_objects = (
             actual_type,
             actual,
-            *(getattr(actual_type, name) for name in (
-                "query",
-                "record",
-                "synchronize",
-                "wait",
-            )),
+            *(getattr(actual_type, name) for name in method_names),
         )
         expected_objects = (
             expected_type,
             expected,
-            *(getattr(expected_type, name) for name in (
-                "query",
-                "record",
-                "synchronize",
-                "wait",
-            )),
+            *(getattr(expected_type, name) for name in method_names),
         )
         for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
             for index, (actual_value, expected_value) in enumerate(
@@ -286,33 +310,36 @@ class CpuEventReferenceTests(unittest.TestCase):
                         )
 
     def test_argument_errors_match_pytorch_2_13(self):
-        actual_type = torch.cpu.Event
-        expected_type = reference_torch.cpu.Event
+        actual_type = torch.cpu.Stream
+        expected_type = reference_torch.cpu.Stream
         actual = actual_type()
         expected = expected_type()
         cases = (
-            (lambda: actual_type(None), lambda: expected_type(None)),
-            (lambda: actual_type(stream=None), lambda: expected_type(stream=None)),
-            (lambda: actual.query(None), lambda: expected.query(None)),
+            (lambda: actual_type(None, None), lambda: expected_type(None, None)),
             (
-                lambda: actual.query(stream=None),
-                lambda: expected.query(stream=None),
+                lambda: actual_type(1, priority=2),
+                lambda: expected_type(1, priority=2),
             ),
             (
-                lambda: actual.record(None, None),
-                lambda: expected.record(None, None),
+                lambda: actual_type(unexpected=1),
+                lambda: expected_type(unexpected=1),
             ),
             (
-                lambda: actual.record(None, stream=None),
-                lambda: expected.record(None, stream=None),
+                lambda: actual.record_event(None),
+                lambda: expected.record_event(None),
             ),
             (
-                lambda: actual.wait(unexpected=None),
-                lambda: expected.wait(unexpected=None),
+                lambda: actual.record_event(event=None),
+                lambda: expected.record_event(event=None),
+            ),
+            (lambda: actual.wait_event(), lambda: expected.wait_event()),
+            (
+                lambda: actual.wait_event(None, event=None),
+                lambda: expected.wait_event(None, event=None),
             ),
             (
-                lambda: actual.synchronize(None),
-                lambda: expected.synchronize(None),
+                lambda: actual.wait_stream(unexpected=None),
+                lambda: expected.wait_stream(unexpected=None),
             ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
@@ -321,34 +348,33 @@ class CpuEventReferenceTests(unittest.TestCase):
 
     def reload_outcome(self, module):
         cpu = module.cpu
-        old_type = cpu.Event
-        old_event = old_type()
+        old_type = cpu.Stream
+        old_stream = old_type()
         type_payload = pickle.dumps(old_type)
-        event_payload = pickle.dumps(old_event)
+        stream_payload = pickle.dumps(old_stream)
 
         reloaded = importlib.reload(cpu)
-        new_type = reloaded.Event
-        restored_event = pickle.loads(event_payload)
+        new_type = reloaded.Stream
+        restored_stream = pickle.loads(stream_payload)
         outcome = (
             reloaded is cpu,
             module.cpu is cpu,
             sys.modules[cpu.__name__] is cpu,
             new_type is old_type,
-            type(old_event) is old_type,
-            isinstance(old_event, new_type),
-            old_event.query(),
-            old_event.record(),
-            old_event.wait(),
-            old_event.synchronize(),
+            type(old_stream) is old_type,
+            isinstance(old_stream, new_type),
+            old_stream.record_event(),
+            old_stream.wait_event(object()),
+            old_stream.wait_stream(object()),
             pickle.loads(type_payload) is new_type,
-            type(restored_event) is new_type,
-            restored_event.query(),
+            type(restored_stream) is new_type,
+            restored_stream.record_event(),
             pickle.loads(pickle.dumps(new_type)) is new_type,
             type(pickle.loads(pickle.dumps(new_type()))) is new_type,
         )
 
         errors = []
-        for value in (old_type, old_event):
+        for value in (old_type, old_stream):
             try:
                 pickle.dumps(value)
             except BaseException as error:
@@ -381,18 +407,23 @@ class CpuEventReferenceTests(unittest.TestCase):
                 False,
                 True,
                 False,
-                True,
                 None,
                 None,
                 None,
                 True,
                 True,
-                True,
+                None,
                 True,
                 True,
             ),
         )
         self.assertTrue(all(error[0] == "PicklingError" for error in actual[1]))
+
+    def test_stream_selection_and_context_apis_remain_unsupported(self):
+        for name in ("current_stream", "stream", "StreamContext"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(torch.cpu, name))
+                self.assertTrue(hasattr(reference_torch.cpu, name))
 
 
 if __name__ == "__main__":
