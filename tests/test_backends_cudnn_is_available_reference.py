@@ -356,7 +356,6 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             "conv",
             "depthwise_kernel",
             "deterministic",
-            "enabled",
             "flags",
             "fp32_precision",
             "is_acceptable",
@@ -366,6 +365,9 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(actual, name))
                 self.assertTrue(hasattr(expected, name))
+
+        self.assertIs(type(actual.enabled), bool)
+        self.assertIs(type(expected.enabled), bool)
 
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertTrue(hasattr(reference_torch, "cuda"))
