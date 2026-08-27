@@ -12,6 +12,7 @@ __all__ = [
     "disable",
     "set_default_backend",
     "get_default_backend",
+    "set_enable_guard_collectives",
     "is_compiling",
     "is_dynamo_compiling",
     "is_exporting",
@@ -137,6 +138,30 @@ def get_default_backend() -> str | Callable[..., Any]:
         The current default backend (string or callable). Initially ``"inductor"``.
     """
     return _state.default_backend
+
+
+def set_enable_guard_collectives(enabled: bool):
+    """
+    Enables use of collectives *during* guard evaluation to synchronize behavior
+    across ranks.  This is expensive: we have to issue a collective every time
+    we enter a compiled code region, even if no rank actually would need to
+    compile.  This can help prevent NCCL hangs by ensuring that we never have a
+    situation where one rank starts recompiling while other ranks don't compile;
+    it is especially useful in conjunction with enable_compiler_collectives
+    where such a situation would immediately cause a hang (as it is necessary
+    for all ranks to compile at the same time to run compiler collectives).  Like
+    compiler collectives, you can only run this on SPMD programs; you will hang
+    otherwise.  Note that a guard collective is only issued if there is any
+    compiled code to guard on; if this the first time we encounter a frame or
+    the frame is skipped, we don't issue collectives.
+
+    Returns the previous setting of enabled.
+    """
+    next_enabled = bool(enabled)
+    return _state.exchange_enable_guard_collectives(next_enabled)
+
+
+set_enable_guard_collectives._dynamo_forbidden = True
 
 
 def is_compiling() -> bool:
