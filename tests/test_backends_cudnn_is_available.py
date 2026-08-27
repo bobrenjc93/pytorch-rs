@@ -6,15 +6,23 @@ import pickle
 import re
 import subprocess
 import sys
+import threading
 import types
 import unittest
 from unittest import mock
+
+import numpy as np
 
 import torch_rs as torch
 
 
 IS_AVAILABLE_DOC = "Return a bool indicating if CUDNN is currently available."
 VERSION_DOC = "Return the version of cuDNN."
+
+
+class _RejectTruthiness:
+    def __bool__(self):
+        raise AssertionError("enabled assignment must not request truthiness")
 
 
 def fresh_cudnn_module():
@@ -28,6 +36,158 @@ def fresh_cudnn_module():
 
 
 class CudnnIsAvailableTests(unittest.TestCase):
+    def setUp(self):
+        self.cudnn = importlib.import_module("torch_rs.backends.cudnn")
+        self.original_enabled = self.cudnn.enabled
+        self.cudnn.enabled = True
+
+    def tearDown(self):
+        torch._C._set_cudnn_enabled(self.original_enabled)
+
+    def test_enabled_defaults_to_exact_true_in_a_fresh_process(self):
+        script = r'''
+import torch_rs as torch
+
+cudnn = torch.backends.cudnn
+assert cudnn.enabled is True
+assert torch._C._get_cudnn_enabled() is True
+assert cudnn.is_available() is False
+assert cudnn.version() is None
+cudnn.enabled = False
+assert cudnn.enabled is torch._C._get_cudnn_enabled() is False
+assert cudnn.is_available() is False
+assert cudnn.version() is None
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
+    def test_enabled_accepts_exact_booleans_and_is_independent_of_availability(self):
+        for enabled in (False, True, True, False, False, True):
+            with self.subTest(enabled=enabled):
+                self.cudnn.enabled = enabled
+                self.assertIs(type(self.cudnn.enabled), bool)
+                self.assertIs(self.cudnn.enabled, enabled)
+                self.assertIs(torch._C._get_cudnn_enabled(), enabled)
+                self.assertIs(self.cudnn.is_available(), False)
+                self.assertIs(self.cudnn.version(), None)
+
+        self.assertIsNone(torch._C._set_cudnn_enabled(False))
+        self.assertIs(self.cudnn.enabled, False)
+        self.assertIsNone(torch._C._set_cudnn_enabled(True))
+        self.assertIs(self.cudnn.enabled, True)
+
+    def test_enabled_rejects_non_bools_without_coercion_or_state_change(self):
+        invalid_values = (
+            (None, "NoneType"),
+            (0, "int"),
+            (1, "int"),
+            (0.0, "float"),
+            (np.bool_(True), "numpy.bool"),
+            ("", "str"),
+            ([], "list"),
+            (object(), "object"),
+            (_RejectTruthiness(), "_RejectTruthiness"),
+            (torch.tensor(True), "Tensor"),
+            (torch.float32, "torch.dtype"),
+            (torch.device("cpu"), "torch.device"),
+            (torch.strided, "torch.layout"),
+            (torch.Size([1]), "torch.Size"),
+            (torch.finfo(torch.float32), "torch.finfo"),
+        )
+        for state in (False, True):
+            self.cudnn.enabled = state
+            for value, type_name in invalid_values:
+                with self.subTest(state=state, value_type=type_name):
+                    message = (
+                        "set_enabled_cudnn expects a bool, but got "
+                        f"{type_name}"
+                    )
+                    with self.assertRaises(RuntimeError) as raised:
+                        self.cudnn.enabled = value
+                    self.assertEqual(str(raised.exception), message)
+                    self.assertEqual(raised.exception.args, (message,))
+                    self.assertIs(self.cudnn.enabled, state)
+                    self.assertIs(torch._C._get_cudnn_enabled(), state)
+                    self.assertIs(self.cudnn.is_available(), False)
+                    self.assertIs(self.cudnn.version(), None)
+
+    def test_enabled_state_is_process_global_across_threads(self):
+        cudnn = self.cudnn
+        worker_changed = threading.Event()
+        main_changed = threading.Event()
+        observations = []
+        errors = []
+
+        def worker():
+            try:
+                observations.append(("worker-initial", cudnn.enabled))
+                cudnn.enabled = False
+                worker_changed.set()
+                if not main_changed.wait(timeout=10):
+                    raise RuntimeError("timed out waiting for main-thread update")
+                observations.append(("worker-after-main", cudnn.enabled))
+                cudnn.enabled = False
+            except BaseException as error:
+                errors.append(error)
+                worker_changed.set()
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        self.assertTrue(worker_changed.wait(timeout=10))
+        self.assertEqual(errors, [])
+        self.assertIs(cudnn.enabled, False)
+        cudnn.enabled = True
+        main_changed.set()
+        thread.join(timeout=10)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(
+            observations,
+            [("worker-initial", True), ("worker-after-main", True)],
+        )
+        self.assertIs(cudnn.enabled, False)
+
+    def test_enabled_descriptor_metadata_and_imports_are_canonical(self):
+        cudnn = self.cudnn
+        descriptor = vars(type(cudnn))["enabled"]
+
+        self.assertEqual(type(descriptor).__name__, "ContextProp")
+        self.assertIs(descriptor.getter, torch._C._get_cudnn_enabled)
+        self.assertIs(descriptor.setter, torch._C._set_cudnn_enabled)
+        self.assertNotIn("enabled", vars(cudnn))
+        self.assertNotIn("enabled", vars(cudnn.m))
+        self.assertIs(cudnn.m.__annotations__["enabled"], bool)
+
+        imported = {}
+        exec("from torch_rs.backends.cudnn import enabled", imported)
+        self.assertIs(imported["enabled"], True)
+        cudnn.enabled = False
+        self.assertIs(imported["enabled"], True)
+        self.assertIs(cudnn.enabled, False)
+
+        with self.assertRaises(AttributeError) as raised:
+            del cudnn.enabled
+        self.assertEqual(str(raised.exception), "__delete__")
+        self.assertEqual(raised.exception.args, ("__delete__",))
+        self.assertIs(cudnn.enabled, False)
+
+        self.assertTrue(hasattr(torch._C, "_get_cudnn_enabled"))
+        self.assertTrue(hasattr(torch._C, "_set_cudnn_enabled"))
+        self.assertFalse(hasattr(torch, "_get_cudnn_enabled"))
+        self.assertFalse(hasattr(torch, "_set_cudnn_enabled"))
+        self.assertNotIn("_get_cudnn_enabled", torch._C.__all__)
+        self.assertNotIn("_set_cudnn_enabled", torch._C.__all__)
+
     def test_returns_cpu_build_metadata_without_runtime_probes(self):
         cudnn = torch.backends.cudnn
         is_available = cudnn.is_available
@@ -180,6 +340,7 @@ class CudnnIsAvailableTests(unittest.TestCase):
         namespace = cudnn.__dict__
 
         try:
+            cudnn.enabled = False
             reloaded = importlib.reload(cudnn)
 
             self.assertIsNot(reloaded, cudnn)
@@ -208,6 +369,12 @@ class CudnnIsAvailableTests(unittest.TestCase):
                 )
             self.assertIs(cudnn.is_available(), False)
             self.assertIs(cudnn.version(), None)
+            self.assertIs(cudnn.enabled, False)
+            self.assertIs(reloaded.enabled, False)
+            reloaded.enabled = True
+            self.assertIs(cudnn.enabled, True)
+            cudnn.enabled = False
+            self.assertIs(reloaded.enabled, False)
         finally:
             fresh_cudnn_module()
 
@@ -250,7 +417,6 @@ class CudnnIsAvailableTests(unittest.TestCase):
             "conv",
             "depthwise_kernel",
             "deterministic",
-            "enabled",
             "flags",
             "fp32_precision",
             "is_acceptable",
@@ -260,13 +426,11 @@ class CudnnIsAvailableTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cudnn, name))
 
-        for name in (
-            "_cudnn",
-            "_get_cudnn_enabled",
-            "_set_cudnn_enabled",
-            "_get_cudnn_benchmark",
-            "_set_cudnn_benchmark",
-        ):
+        self.assertIs(cudnn.enabled, True)
+        for name in ("_get_cudnn_enabled", "_set_cudnn_enabled"):
+            with self.subTest(native_name=name):
+                self.assertTrue(hasattr(torch._C, name))
+        for name in ("_cudnn", "_get_cudnn_benchmark", "_set_cudnn_benchmark"):
             with self.subTest(native_name=name):
                 self.assertFalse(hasattr(torch._C, name))
 
@@ -301,16 +465,23 @@ os.environ.update(
 )
 import torch_rs as torch
 from torch_rs.backends import cudnn
-from torch_rs.backends.cudnn import is_available, version
+from torch_rs.backends.cudnn import enabled, is_available, version
 
 assert torch.backends.cudnn is cudnn
 assert cudnn.is_available is is_available
 assert cudnn.version is version
+assert enabled is cudnn.enabled is True
 assert is_available.__code__.co_names == ("torch", "_C", "_has_cudnn")
 assert version.__code__.co_names == ("_init", "__cudnn_version")
 assert cudnn._init.__code__.co_names == ("torch", "_C", "_has_cudnn")
 assert is_available() is torch._C._has_cudnn is False
 assert version() is None
+cudnn.enabled = False
+assert cudnn.enabled is torch._C._get_cudnn_enabled() is False
+assert is_available() is False
+assert version() is None
+cudnn.enabled = True
+assert cudnn.enabled is torch._C._get_cudnn_enabled() is True
 assert not hasattr(torch, "_has_cudnn")
 assert not hasattr(torch, "cuda")
 assert not hasattr(cudnn, "flags")

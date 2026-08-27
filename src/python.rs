@@ -44,6 +44,7 @@ static MH_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
+static CUDNN_ENABLED: AtomicBool = AtomicBool::new(true);
 static NNPACK_ENABLED: AtomicBool = AtomicBool::new(true);
 const BROADCAST_TENSORS_EXACT_TENSORS_ERROR: &str =
     "broadcast_tensors() only supports exact native Tensor inputs";
@@ -4961,6 +4962,32 @@ fn add_warn_always_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let exports = module.getattr("__all__")?;
     exports.call_method1("remove", ("_set_warnAlways",))?;
     exports.call_method1("remove", ("_get_warnAlways",))?;
+    Ok(())
+}
+
+#[pyfunction(name = "_set_cudnn_enabled", signature = (enabled, /), text_signature = None)]
+fn set_cudnn_enabled_native(enabled: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !enabled.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(enabled)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "set_enabled_cudnn expects a bool, but got {type_name}"
+        )));
+    }
+    CUDNN_ENABLED.store(enabled.is_truthy()?, Ordering::SeqCst);
+    Ok(())
+}
+
+#[pyfunction(name = "_get_cudnn_enabled", signature = (), text_signature = None)]
+fn get_cudnn_enabled_native() -> bool {
+    CUDNN_ENABLED.load(Ordering::SeqCst)
+}
+
+fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(set_cudnn_enabled_native, module)?)?;
+    module.add_function(wrap_pyfunction!(get_cudnn_enabled_native, module)?)?;
+    let exports = module.getattr("__all__")?;
+    exports.call_method1("remove", ("_set_cudnn_enabled",))?;
+    exports.call_method1("remove", ("_get_cudnn_enabled",))?;
     Ok(())
 }
 
@@ -11594,6 +11621,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("finfo", finfo_type_object(py)?.clone_ref(py))?;
     add_default_dtype_validator(module)?;
     add_warn_always_builtins(module)?;
+    add_cudnn_builtins(module)?;
     add_nnpack_builtins(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;

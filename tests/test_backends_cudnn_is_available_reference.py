@@ -5,9 +5,12 @@ import pickle
 import pickletools
 import re
 import sys
+import threading
 import types
 import typing
 import unittest
+
+import numpy as np
 
 import torch_rs as torch
 
@@ -26,6 +29,18 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
                 "backends.cudnn differentials require pinned "
                 "PyTorch 2.13.0"
             )
+
+    def setUp(self):
+        self.actual = importlib.import_module("torch_rs.backends.cudnn")
+        self.expected = importlib.import_module("torch.backends.cudnn")
+        self.original_actual_enabled = self.actual.enabled
+        self.original_expected_enabled = self.expected.enabled
+        self.actual.enabled = True
+        self.expected.enabled = True
+
+    def tearDown(self):
+        torch._C._set_cudnn_enabled(self.original_actual_enabled)
+        reference_torch._C._set_cudnn_enabled(self.original_expected_enabled)
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:
@@ -82,6 +97,24 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         )
         self.assertIs(type(actual_module.m), types.ModuleType)
         self.assertIs(type(expected_module.m), types.ModuleType)
+        actual_descriptor = vars(type(actual_module))["enabled"]
+        expected_descriptor = vars(type(expected_module))["enabled"]
+        self.assertEqual(
+            type(actual_descriptor).__name__,
+            type(expected_descriptor).__name__,
+        )
+        self.assertIs(actual_descriptor.getter, torch._C._get_cudnn_enabled)
+        self.assertIs(actual_descriptor.setter, torch._C._set_cudnn_enabled)
+        self.assertIs(
+            expected_descriptor.getter,
+            reference_torch._C._get_cudnn_enabled,
+        )
+        self.assertIs(
+            expected_descriptor.setter,
+            reference_torch._C._set_cudnn_enabled,
+        )
+        self.assertIs(actual_module.m.__annotations__["enabled"], bool)
+        self.assertIs(expected_module.m.__annotations__["enabled"], bool)
         for name in ("is_available", "version"):
             with self.subTest(function=name):
                 actual = getattr(actual_module, name)
@@ -153,6 +186,12 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
                     function_import,
                 )
                 self.assertIs(function_import[name], getattr(module, name))
+            enabled_import = {}
+            exec(
+                f"from {package_name}.backends.cudnn import enabled",
+                enabled_import,
+            )
+            self.assertIs(enabled_import["enabled"], module.enabled)
 
         actual_parent_wildcard = {}
         expected_parent_wildcard = {}
@@ -212,11 +251,17 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
     def reload_contract(self, root):
         parent = root.backends
         module = parent.cudnn
+        module.enabled = False
         old_functions = {
             name: getattr(module, name) for name in ("is_available", "version")
         }
         namespace = module.__dict__
         reloaded = importlib.reload(module)
+        enabled_reload_state = (module.enabled, reloaded.enabled)
+        reloaded.enabled = True
+        new_proxy_update = module.enabled
+        module.enabled = False
+        old_proxy_update = reloaded.enabled
         new_functions = {
             name: getattr(module, name) for name in ("is_available", "version")
         }
@@ -243,6 +288,9 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             sys.modules[module.__name__] is module,
             sys.modules[module.__name__] is reloaded,
             reloaded.m is module,
+            enabled_reload_state,
+            new_proxy_update,
+            old_proxy_update,
             tuple(
                 old_functions[name] is not new_functions[name]
                 for name in old_functions
@@ -264,6 +312,98 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         )
         self.fresh_cudnn_module(root)
         return contract
+
+    def test_enabled_assignment_matches_pytorch_2_13(self):
+        for enabled in (False, True, True, False, False, True):
+            with self.subTest(enabled=enabled):
+                self.actual.enabled = enabled
+                self.expected.enabled = enabled
+                self.assertIs(type(self.actual.enabled), bool)
+                self.assertIs(type(self.expected.enabled), bool)
+                self.assertIs(self.actual.enabled, self.expected.enabled)
+                self.assertIs(
+                    torch._C._get_cudnn_enabled(),
+                    reference_torch._C._get_cudnn_enabled(),
+                )
+                self.assertIs(torch.backends.cudnn.is_available(), False)
+                self.assertIs(torch.backends.cudnn.version(), None)
+
+    def test_enabled_invalid_assignments_match_pytorch_2_13(self):
+        class RejectTruthiness:
+            def __bool__(self):
+                raise AssertionError("enabled assignment must not request truthiness")
+
+        invalid_pairs = (
+            (None, None),
+            (0, 0),
+            (1, 1),
+            (0.0, 0.0),
+            (np.bool_(True), np.bool_(True)),
+            ("", ""),
+            ([], []),
+            (object(), object()),
+            (RejectTruthiness(), RejectTruthiness()),
+            (torch.tensor(True), reference_torch.tensor(True)),
+            (torch.float32, reference_torch.float32),
+            (torch.device("cpu"), reference_torch.device("cpu")),
+            (torch.strided, reference_torch.strided),
+            (torch.Size([1]), reference_torch.Size([1])),
+            (torch.finfo(torch.float32), reference_torch.finfo(reference_torch.float32)),
+        )
+        for state in (False, True):
+            self.actual.enabled = state
+            self.expected.enabled = state
+            for case, (actual_value, expected_value) in enumerate(invalid_pairs):
+                with self.subTest(state=state, case=case):
+                    self.assert_error_matches(
+                        lambda: setattr(self.actual, "enabled", actual_value),
+                        lambda: setattr(self.expected, "enabled", expected_value),
+                    )
+                    self.assertIs(self.actual.enabled, state)
+                    self.assertIs(self.expected.enabled, state)
+
+    def enabled_thread_contract(self, root):
+        module = root.backends.cudnn
+        module.enabled = True
+        worker_changed = threading.Event()
+        main_changed = threading.Event()
+        observations = []
+        errors = []
+
+        def worker():
+            try:
+                observations.append(("worker-initial", module.enabled))
+                module.enabled = False
+                worker_changed.set()
+                if not main_changed.wait(timeout=10):
+                    raise RuntimeError("timed out waiting for main-thread update")
+                observations.append(("worker-after-main", module.enabled))
+                module.enabled = False
+            except BaseException as error:
+                errors.append((type(error).__name__, str(error)))
+                worker_changed.set()
+
+        thread = threading.Thread(target=worker)
+        thread.start()
+        worker_ready = worker_changed.wait(timeout=10)
+        main_observation = module.enabled
+        module.enabled = True
+        main_changed.set()
+        thread.join(timeout=10)
+        return (
+            worker_ready,
+            thread.is_alive(),
+            tuple(errors),
+            main_observation,
+            tuple(observations),
+            module.enabled,
+        )
+
+    def test_enabled_thread_visibility_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.enabled_thread_contract(torch),
+            self.enabled_thread_contract(reference_torch),
+        )
 
     def test_reload_behavior_matches_pytorch_2_13(self):
         self.assertEqual(
@@ -328,6 +468,10 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         self.assertEqual(result.cpu().tolist(), [[[[54.0, 63.0], [90.0, 99.0]]]])
 
         self.assertFalse(hasattr(torch.backends.cudnn, "flags"))
+        torch.backends.cudnn.enabled = False
+        self.assertIs(torch.backends.cudnn.enabled, False)
+        self.assertIs(torch.backends.cudnn.is_available(), False)
+        self.assertIs(torch.backends.cudnn.version(), None)
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "to"))
@@ -356,7 +500,6 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             "conv",
             "depthwise_kernel",
             "deterministic",
-            "enabled",
             "flags",
             "fp32_precision",
             "is_acceptable",
@@ -366,6 +509,14 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(actual, name))
                 self.assertTrue(hasattr(expected, name))
+
+        self.assertTrue(hasattr(actual, "enabled"))
+        self.assertTrue(hasattr(expected, "enabled"))
+        actual.enabled = False
+        expected.enabled = False
+        self.assertIs(actual.enabled, expected.enabled)
+        self.assertIs(actual.is_available(), False)
+        self.assertIs(actual.version(), None)
 
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertTrue(hasattr(reference_torch, "cuda"))
