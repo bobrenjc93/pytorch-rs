@@ -2731,7 +2731,10 @@ impl Tensor {
     #[must_use]
     pub fn sum(&self) -> Self {
         let mut output = Self::from_owned_parts(
-            vec![self.logical_values().sum()],
+            vec![
+                self.logical_values()
+                    .fold(0.0_f32, |total, value| total + value),
+            ],
             Vec::new(),
             Vec::new(),
             self.dtype(),
