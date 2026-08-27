@@ -20,18 +20,18 @@ DEFAULT_GROUP_ERROR = (
     "init_process_group."
 )
 NON_NONE_GROUP_ERROR = (
-    "torch_rs.distributed.get_world_size() does not support non-None process "
+    "torch_rs.distributed.get_backend_config() does not support non-None process "
     "groups"
 )
-FUNCTION_DOC = """Return the number of processes in the current process group.
+FUNCTION_DOC = """Return the backend configuration of the given process group.
 
 Args:
-    group (ProcessGroup, optional): The process group to work on. If None,
-        the default process group will be used.
+    group (ProcessGroup, optional): The process group to work on. The
+        default is the general main process group. If another specific group
+        is specified, the calling process must be part of :attr:`group`.
 
 Returns:
-    The world size of the process group
-    -1, if not part of the group"""
+    The backend configuration of the given process group as a lower case string."""
 
 
 class UnreadableEnvironment:
@@ -45,7 +45,15 @@ class UnreadableEnvironment:
         raise AssertionError(f"environment value was read: {key}")
 
 
-class DistributedGetWorldSizeTests(unittest.TestCase):
+class OpaqueProcessGroup:
+    def __bool__(self):
+        raise AssertionError("process-group truthiness must not be read")
+
+    def __getattr__(self, name):
+        raise AssertionError(f"process-group attribute was read: {name}")
+
+
+class DistributedGetBackendConfigTests(unittest.TestCase):
     def assert_default_group_error(self, call):
         with self.assertRaises(ValueError) as raised:
             call()
@@ -53,16 +61,25 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
         self.assertEqual(raised.exception.args, (DEFAULT_GROUP_ERROR,))
 
     def test_default_group_forms_repeat_without_runtime_or_environment_probes(self):
-        function = torch.distributed.get_world_size
+        function = torch.distributed.get_backend_config
         distributed_c10d = importlib.import_module(
             "torch_rs.distributed.distributed_c10d"
         )
 
-        self.assertNotIn("_os", function.__code__.co_names)
-        self.assertNotIn("environ", function.__code__.co_names)
-        self.assertNotIn("is_initialized", function.__code__.co_names)
+        self.assertTrue(
+            {
+                "_os",
+                "environ",
+                "is_initialized",
+                "device",
+                "cuda",
+                "_get_default_group",
+                "_world",
+            }.isdisjoint(function.__code__.co_names)
+        )
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
+        self.assertFalse(hasattr(distributed_c10d, "Backend"))
         self.assertFalse(hasattr(distributed_c10d, "GroupMember"))
         self.assertFalse(hasattr(distributed_c10d, "ProcessGroup"))
 
@@ -95,14 +112,14 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
             self.assert_default_group_error(function)
             self.assert_default_group_error(lambda: function(group=None))
             with self.assertRaises(NotImplementedError) as raised:
-                function(object())
+                function(OpaqueProcessGroup())
             self.assertEqual(str(raised.exception), NON_NONE_GROUP_ERROR)
 
         self.assertIs(torch.distributed.is_initialized(), False)
         self.assertEqual(torch.distributed.get_pg_count(), 0)
 
     def test_error_is_stable_across_threads_and_grad_modes(self):
-        function = torch.distributed.get_world_size
+        function = torch.distributed.get_backend_config
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -159,11 +176,11 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
         for _ in range(3):
             distributed_c10d = importlib.reload(distributed_c10d)
             distributed = importlib.reload(distributed)
-            function = distributed.get_world_size
+            function = distributed.get_backend_config
 
             self.assertIs(torch.distributed, distributed)
             self.assertIs(distributed.distributed_c10d, distributed_c10d)
-            self.assertIs(distributed_c10d.get_world_size, function)
+            self.assertIs(distributed_c10d.get_backend_config, function)
             self.assert_default_group_error(function)
             self.assert_default_group_error(lambda: function(None))
             self.assert_default_group_error(lambda: function(group=None))
@@ -175,11 +192,11 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
         distributed_c10d = importlib.import_module(
             "torch_rs.distributed.distributed_c10d"
         )
-        function = distributed.get_world_size
+        function = distributed.get_backend_config
 
         self.assertIs(torch.distributed, distributed)
         self.assertIs(distributed.distributed_c10d, distributed_c10d)
-        self.assertIs(distributed_c10d.get_world_size, function)
+        self.assertIs(distributed_c10d.get_backend_config, function)
         self.assertIs(sys.modules["torch_rs.distributed"], distributed)
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"],
@@ -189,10 +206,9 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
         self.assertEqual(
             str(inspect.signature(function)),
             "(group: torch_rs.distributed.distributed_c10d.ProcessGroup | "
-            "None = None) -> int",
+            "None = None) -> str",
         )
         self.assertEqual(set(function.__annotations__), {"group", "return"})
-        self.assertIs(function.__annotations__["return"], int)
         group_annotation = function.__annotations__["group"]
         process_group, none_type = typing.get_args(group_annotation)
         self.assertEqual(process_group.__name__, "ProcessGroup")
@@ -202,9 +218,10 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
             "torch_rs.distributed.distributed_c10d",
         )
         self.assertIs(none_type, type(None))
+        self.assertIs(function.__annotations__["return"], str)
         self.assertEqual(typing.get_type_hints(function), function.__annotations__)
-        self.assertEqual(function.__name__, "get_world_size")
-        self.assertEqual(function.__qualname__, "get_world_size")
+        self.assertEqual(function.__name__, "get_backend_config")
+        self.assertEqual(function.__qualname__, "get_backend_config")
         self.assertEqual(
             function.__module__, "torch_rs.distributed.distributed_c10d"
         )
@@ -214,12 +231,13 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
+        self.assertFalse(hasattr(distributed_c10d, "Backend"))
         self.assertFalse(hasattr(distributed_c10d, "ProcessGroup"))
 
     def test_imports_copy_and_pickle_use_the_canonical_module(self):
         distributed = torch.distributed
         distributed_c10d = distributed.distributed_c10d
-        function = distributed.get_world_size
+        function = distributed.get_backend_config
 
         self.assertFalse(hasattr(distributed, "__all__"))
         self.assertEqual(
@@ -245,15 +263,15 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
         self.assertIs(package_import["distributed"], distributed)
 
         direct_import = {}
-        exec("from torch_rs.distributed import get_world_size", direct_import)
-        self.assertIs(direct_import["get_world_size"], function)
+        exec("from torch_rs.distributed import get_backend_config", direct_import)
+        self.assertIs(direct_import["get_backend_config"], function)
 
         owner_import = {}
         exec(
-            "from torch_rs.distributed.distributed_c10d import get_world_size",
+            "from torch_rs.distributed.distributed_c10d import get_backend_config",
             owner_import,
         )
-        self.assertIs(owner_import["get_world_size"], function)
+        self.assertIs(owner_import["get_backend_config"], function)
 
         distributed_namespace = {}
         exec("from torch_rs.distributed import *", distributed_namespace)
@@ -280,7 +298,7 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
                 "get_node_local_rank",
             },
         )
-        self.assertIs(distributed_namespace["get_world_size"], function)
+        self.assertIs(distributed_namespace["get_backend_config"], function)
 
         owner_namespace = {}
         exec(
@@ -291,15 +309,15 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
             {name for name in owner_namespace if not name.startswith("__")},
             set(distributed_c10d.__all__),
         )
-        self.assertIs(owner_namespace["get_world_size"], function)
+        self.assertIs(owner_namespace["get_backend_config"], function)
 
         self.assertNotIn("distributed", torch.__all__)
-        self.assertNotIn("get_world_size", torch.__all__)
-        self.assertFalse(hasattr(torch, "get_world_size"))
+        self.assertNotIn("get_backend_config", torch.__all__)
+        self.assertFalse(hasattr(torch, "get_backend_config"))
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("distributed", top_level_namespace)
-        self.assertNotIn("get_world_size", top_level_namespace)
+        self.assertNotIn("get_backend_config", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -312,7 +330,7 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_argument_errors_and_non_none_groups_are_explicitly_unsupported(self):
-        function = torch.distributed.get_world_size
+        function = torch.distributed.get_backend_config
 
         for call in (
             function,
@@ -324,16 +342,16 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
         cases = (
             (
                 lambda: function(None, None),
-                "get_world_size() takes from 0 to 1 positional arguments but "
+                "get_backend_config() takes from 0 to 1 positional arguments but "
                 "2 were given",
             ),
             (
                 lambda: function(enabled=True),
-                "get_world_size() got an unexpected keyword argument 'enabled'",
+                "get_backend_config() got an unexpected keyword argument 'enabled'",
             ),
             (
                 lambda: function(None, group=None),
-                "get_world_size() got multiple values for argument 'group'",
+                "get_backend_config() got multiple values for argument 'group'",
             ),
         )
         for call, message in cases:
@@ -343,11 +361,6 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-        class FakeProcessGroup:
-            @property
-            def size(self):
-                raise AssertionError("process-group methods must not be read")
-
         process_group_annotation = typing.get_args(
             function.__annotations__["group"]
         )[0]
@@ -356,7 +369,7 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
             False,
             0,
             "",
-            FakeProcessGroup(),
+            OpaqueProcessGroup(),
             process_group_annotation(),
         ):
             with self.subTest(group=type(group).__name__):
@@ -364,25 +377,6 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
                     function(group)
                 self.assertEqual(str(raised.exception), NON_NONE_GROUP_ERROR)
                 self.assertEqual(raised.exception.args, (NON_NONE_GROUP_ERROR,))
-
-    def test_initialization_and_collectives_remain_unsupported(self):
-        distributed = torch.distributed
-        distributed_c10d = distributed.distributed_c10d
-
-        self.assertIs(distributed.is_available(), False)
-        self.assertIs(distributed.is_initialized(), False)
-        self.assertEqual(distributed.get_pg_count(), 0)
-        for name in (
-            "GroupMember",
-            "ProcessGroup",
-            "all_reduce",
-            "destroy_process_group",
-            "init_process_group",
-            "new_group",
-        ):
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(distributed, name))
-                self.assertFalse(hasattr(distributed_c10d, name))
 
     def test_importing_and_calling_does_not_import_pytorch(self):
         script = rf"""
@@ -406,7 +400,7 @@ os.environ.update(
 )
 import torch_rs as torch
 
-function = torch.distributed.get_world_size
+function = torch.distributed.get_backend_config
 for call in (function, lambda: function(None), lambda: function(group=None)):
     try:
         call()
@@ -414,15 +408,16 @@ for call in (function, lambda: function(None), lambda: function(group=None)):
         assert str(error) == {DEFAULT_GROUP_ERROR!r}
         assert error.args == ({DEFAULT_GROUP_ERROR!r},)
     else:
-        raise AssertionError("get_world_size did not reject the missing group")
+        raise AssertionError("get_backend_config did not reject the missing group")
 try:
     function(object())
 except NotImplementedError as error:
     assert str(error) == {NON_NONE_GROUP_ERROR!r}
 else:
-    raise AssertionError("get_world_size accepted a non-None group")
+    raise AssertionError("get_backend_config accepted a non-None group")
 assert torch.distributed.is_initialized() is False
 assert torch.distributed.get_pg_count() == 0
+assert not hasattr(torch.distributed, "Backend")
 assert not hasattr(torch.distributed, "ProcessGroup")
 assert not hasattr(torch.distributed, "init_process_group")
 assert not hasattr(torch.distributed, "all_reduce")

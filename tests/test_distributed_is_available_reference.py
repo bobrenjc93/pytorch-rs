@@ -215,6 +215,7 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",

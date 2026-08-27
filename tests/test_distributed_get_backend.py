@@ -248,6 +248,7 @@ class DistributedGetBackendTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
@@ -287,6 +288,7 @@ class DistributedGetBackendTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
