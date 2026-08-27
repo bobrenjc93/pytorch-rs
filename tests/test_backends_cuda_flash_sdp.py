@@ -233,6 +233,7 @@ print(json.dumps({
             cuda.__all__,
             [
                 "is_built",
+                "is_ck_sdpa_available",
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "is_flash_attention_available",
@@ -244,6 +245,7 @@ print(json.dumps({
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "is_built",
+                "is_ck_sdpa_available",
                 "is_flash_attention_available",
                 "torch",
             },
@@ -315,6 +317,7 @@ print(json.dumps({
                 "enable_flash_sdp",
                 "flash_sdp_enabled",
                 "is_built",
+                "is_ck_sdpa_available",
                 "is_flash_attention_available",
             },
         )
