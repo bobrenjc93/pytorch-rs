@@ -223,6 +223,7 @@ class DistributedGetWorldSizeReferenceTests(unittest.TestCase):
         actual = actual_distributed.get_world_size
         expected = expected_distributed.get_world_size
         supported = {
+            "get_backend",
             "get_rank",
             "get_world_size",
             "get_pg_count",
@@ -312,6 +313,7 @@ class DistributedGetWorldSizeReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
@@ -330,6 +332,7 @@ class DistributedGetWorldSizeReferenceTests(unittest.TestCase):
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
             {
+                "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",

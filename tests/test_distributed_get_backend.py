@@ -20,22 +20,18 @@ DEFAULT_GROUP_ERROR = (
     "init_process_group."
 )
 NON_NONE_GROUP_ERROR = (
-    "torch_rs.distributed.get_rank() does not support non-None process "
+    "torch_rs.distributed.get_backend() does not support non-None process "
     "groups"
 )
-FUNCTION_DOC = """Return the rank of the current process in the provided ``group``, default otherwise.
-
-Rank is a unique identifier assigned to each process within a distributed
-process group. They are always consecutive integers ranging from 0 to
-``world_size``.
+FUNCTION_DOC = """Return the backend of the given process group.
 
 Args:
-    group (ProcessGroup, optional): The process group to work on. If None,
-        the default process group will be used.
+    group (ProcessGroup, optional): The process group to work on. The
+        default is the general main process group. If another specific group
+        is specified, the calling process must be part of :attr:`group`.
 
 Returns:
-    The rank of the process group
-    -1, if not part of the group"""
+    The backend of the given process group as a lower case string."""
 
 
 class UnreadableEnvironment:
@@ -49,7 +45,7 @@ class UnreadableEnvironment:
         raise AssertionError(f"environment value was read: {key}")
 
 
-class DistributedGetRankTests(unittest.TestCase):
+class DistributedGetBackendTests(unittest.TestCase):
     def assert_default_group_error(self, call):
         with self.assertRaises(ValueError) as raised:
             call()
@@ -57,7 +53,7 @@ class DistributedGetRankTests(unittest.TestCase):
         self.assertEqual(raised.exception.args, (DEFAULT_GROUP_ERROR,))
 
     def test_default_group_forms_repeat_without_runtime_or_environment_probes(self):
-        function = torch.distributed.get_rank
+        function = torch.distributed.get_backend
         distributed_c10d = importlib.import_module(
             "torch_rs.distributed.distributed_c10d"
         )
@@ -67,6 +63,7 @@ class DistributedGetRankTests(unittest.TestCase):
         self.assertNotIn("is_initialized", function.__code__.co_names)
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
+        self.assertFalse(hasattr(distributed_c10d, "Backend"))
         self.assertFalse(hasattr(distributed_c10d, "GroupMember"))
         self.assertFalse(hasattr(distributed_c10d, "ProcessGroup"))
 
@@ -106,7 +103,7 @@ class DistributedGetRankTests(unittest.TestCase):
         self.assertEqual(torch.distributed.get_pg_count(), 0)
 
     def test_error_is_stable_across_threads_and_grad_modes(self):
-        function = torch.distributed.get_rank
+        function = torch.distributed.get_backend
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         results = [None] * worker_count
@@ -163,11 +160,11 @@ class DistributedGetRankTests(unittest.TestCase):
         for _ in range(3):
             distributed_c10d = importlib.reload(distributed_c10d)
             distributed = importlib.reload(distributed)
-            function = distributed.get_rank
+            function = distributed.get_backend
 
             self.assertIs(torch.distributed, distributed)
             self.assertIs(distributed.distributed_c10d, distributed_c10d)
-            self.assertIs(distributed_c10d.get_rank, function)
+            self.assertIs(distributed_c10d.get_backend, function)
             self.assert_default_group_error(function)
             self.assert_default_group_error(lambda: function(None))
             self.assert_default_group_error(lambda: function(group=None))
@@ -179,11 +176,11 @@ class DistributedGetRankTests(unittest.TestCase):
         distributed_c10d = importlib.import_module(
             "torch_rs.distributed.distributed_c10d"
         )
-        function = distributed.get_rank
+        function = distributed.get_backend
 
         self.assertIs(torch.distributed, distributed)
         self.assertIs(distributed.distributed_c10d, distributed_c10d)
-        self.assertIs(distributed_c10d.get_rank, function)
+        self.assertIs(distributed_c10d.get_backend, function)
         self.assertIs(sys.modules["torch_rs.distributed"], distributed)
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"],
@@ -193,10 +190,17 @@ class DistributedGetRankTests(unittest.TestCase):
         self.assertEqual(
             str(inspect.signature(function)),
             "(group: torch_rs.distributed.distributed_c10d.ProcessGroup | "
-            "None = None) -> int",
+            "None = None) -> torch_rs.distributed.distributed_c10d.Backend",
         )
         self.assertEqual(set(function.__annotations__), {"group", "return"})
-        self.assertIs(function.__annotations__["return"], int)
+        backend_annotation = function.__annotations__["return"]
+        self.assertEqual(backend_annotation.__name__, "Backend")
+        self.assertEqual(backend_annotation.__qualname__, "Backend")
+        self.assertEqual(
+            backend_annotation.__module__,
+            "torch_rs.distributed.distributed_c10d",
+        )
+        self.assertTrue(issubclass(backend_annotation, str))
         group_annotation = function.__annotations__["group"]
         process_group, none_type = typing.get_args(group_annotation)
         self.assertEqual(process_group.__name__, "ProcessGroup")
@@ -207,8 +211,8 @@ class DistributedGetRankTests(unittest.TestCase):
         )
         self.assertIs(none_type, type(None))
         self.assertEqual(typing.get_type_hints(function), function.__annotations__)
-        self.assertEqual(function.__name__, "get_rank")
-        self.assertEqual(function.__qualname__, "get_rank")
+        self.assertEqual(function.__name__, "get_backend")
+        self.assertEqual(function.__qualname__, "get_backend")
         self.assertEqual(
             function.__module__, "torch_rs.distributed.distributed_c10d"
         )
@@ -218,12 +222,13 @@ class DistributedGetRankTests(unittest.TestCase):
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
+        self.assertFalse(hasattr(distributed_c10d, "Backend"))
         self.assertFalse(hasattr(distributed_c10d, "ProcessGroup"))
 
     def test_imports_copy_and_pickle_use_the_canonical_module(self):
         distributed = torch.distributed
         distributed_c10d = distributed.distributed_c10d
-        function = distributed.get_rank
+        function = distributed.get_backend
 
         self.assertFalse(hasattr(distributed, "__all__"))
         self.assertEqual(
@@ -248,15 +253,15 @@ class DistributedGetRankTests(unittest.TestCase):
         self.assertIs(package_import["distributed"], distributed)
 
         direct_import = {}
-        exec("from torch_rs.distributed import get_rank", direct_import)
-        self.assertIs(direct_import["get_rank"], function)
+        exec("from torch_rs.distributed import get_backend", direct_import)
+        self.assertIs(direct_import["get_backend"], function)
 
         owner_import = {}
         exec(
-            "from torch_rs.distributed.distributed_c10d import get_rank",
+            "from torch_rs.distributed.distributed_c10d import get_backend",
             owner_import,
         )
-        self.assertIs(owner_import["get_rank"], function)
+        self.assertIs(owner_import["get_backend"], function)
 
         distributed_namespace = {}
         exec("from torch_rs.distributed import *", distributed_namespace)
@@ -282,7 +287,7 @@ class DistributedGetRankTests(unittest.TestCase):
                 "get_node_local_rank",
             },
         )
-        self.assertIs(distributed_namespace["get_rank"], function)
+        self.assertIs(distributed_namespace["get_backend"], function)
 
         owner_namespace = {}
         exec(
@@ -293,15 +298,15 @@ class DistributedGetRankTests(unittest.TestCase):
             {name for name in owner_namespace if not name.startswith("__")},
             set(distributed_c10d.__all__),
         )
-        self.assertIs(owner_namespace["get_rank"], function)
+        self.assertIs(owner_namespace["get_backend"], function)
 
         self.assertNotIn("distributed", torch.__all__)
-        self.assertNotIn("get_rank", torch.__all__)
-        self.assertFalse(hasattr(torch, "get_rank"))
+        self.assertNotIn("get_backend", torch.__all__)
+        self.assertFalse(hasattr(torch, "get_backend"))
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("distributed", top_level_namespace)
-        self.assertNotIn("get_rank", top_level_namespace)
+        self.assertNotIn("get_backend", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -314,7 +319,7 @@ class DistributedGetRankTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_argument_errors_and_non_none_groups_are_explicitly_unsupported(self):
-        function = torch.distributed.get_rank
+        function = torch.distributed.get_backend
 
         for call in (
             function,
@@ -326,16 +331,16 @@ class DistributedGetRankTests(unittest.TestCase):
         cases = (
             (
                 lambda: function(None, None),
-                "get_rank() takes from 0 to 1 positional arguments but "
+                "get_backend() takes from 0 to 1 positional arguments but "
                 "2 were given",
             ),
             (
                 lambda: function(enabled=True),
-                "get_rank() got an unexpected keyword argument 'enabled'",
+                "get_backend() got an unexpected keyword argument 'enabled'",
             ),
             (
                 lambda: function(None, group=None),
-                "get_rank() got multiple values for argument 'group'",
+                "get_backend() got multiple values for argument 'group'",
             ),
         )
         for call, message in cases:
@@ -346,8 +351,11 @@ class DistributedGetRankTests(unittest.TestCase):
                 self.assertEqual(raised.exception.args, (message,))
 
         class FakeProcessGroup:
+            def __bool__(self):
+                raise AssertionError("process-group truth value must not be read")
+
             @property
-            def rank(self):
+            def backend(self):
                 raise AssertionError("process-group methods must not be read")
 
         process_group_annotation = typing.get_args(
@@ -408,7 +416,7 @@ os.environ.update(
 )
 import torch_rs as torch
 
-function = torch.distributed.get_rank
+function = torch.distributed.get_backend
 for call in (function, lambda: function(None), lambda: function(group=None)):
     try:
         call()
@@ -416,13 +424,13 @@ for call in (function, lambda: function(None), lambda: function(group=None)):
         assert str(error) == {DEFAULT_GROUP_ERROR!r}
         assert error.args == ({DEFAULT_GROUP_ERROR!r},)
     else:
-        raise AssertionError("get_rank did not reject the missing group")
+        raise AssertionError("get_backend did not reject the missing group")
 try:
     function(object())
 except NotImplementedError as error:
     assert str(error) == {NON_NONE_GROUP_ERROR!r}
 else:
-    raise AssertionError("get_rank accepted a non-None group")
+    raise AssertionError("get_backend accepted a non-None group")
 assert torch.distributed.is_initialized() is False
 assert torch.distributed.get_pg_count() == 0
 assert not hasattr(torch.distributed, "ProcessGroup")
