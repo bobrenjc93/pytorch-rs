@@ -242,6 +242,7 @@ class DistributedGetBackendReferenceTests(unittest.TestCase):
         actual = actual_distributed.get_backend
         expected = expected_distributed.get_backend
         supported = {
+            "get_backend_config",
             "get_backend",
             "get_rank",
             "get_world_size",
@@ -332,6 +333,7 @@ class DistributedGetBackendReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
@@ -351,6 +353,7 @@ class DistributedGetBackendReferenceTests(unittest.TestCase):
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
             {
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",

@@ -138,6 +138,7 @@ class DistributedIsUccAvailableTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
@@ -178,6 +179,7 @@ class DistributedIsUccAvailableTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
@@ -205,6 +207,7 @@ class DistributedIsUccAvailableTests(unittest.TestCase):
         self.assertEqual(
             {name for name in owner_namespace if not name.startswith("__")},
             {
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
@@ -274,6 +277,7 @@ class DistributedIsUccAvailableTests(unittest.TestCase):
             {name for name in vars(distributed) if not name.startswith("_")},
             {
                 "distributed_c10d",
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
@@ -295,6 +299,7 @@ class DistributedIsUccAvailableTests(unittest.TestCase):
                 if not name.startswith("_")
             },
             {
+                "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
