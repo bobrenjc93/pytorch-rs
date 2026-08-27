@@ -7089,6 +7089,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1138",
+      "recordedAt": "2026-08-27T14:03:39.654Z",
+      "label": "PR #1138",
+      "kind": "leaf",
+      "prNumber": 1138,
+      "title": "Resolve DistributedSampler defaults through torch.distributed",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 97.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 80.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
