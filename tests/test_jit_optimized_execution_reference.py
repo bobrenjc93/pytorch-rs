@@ -1,4 +1,5 @@
 import copy
+import enum
 import importlib
 import inspect
 import pickle
@@ -26,11 +27,57 @@ class _RejectTruthiness:
         raise AssertionError("truth-value error should be replaced")
 
 
+class _PlainEnum(enum.Enum):
+    ITEM = 1
+
+
+class _FailingRepr:
+    def __repr__(self):
+        raise RuntimeError("repr exploded")
+
+
+class _FailingBoolAndRepr:
+    def __bool__(self):
+        raise RuntimeError("bool exploded")
+
+    def __repr__(self):
+        raise LookupError("repr exploded")
+
+
+class _HideBoolMeta(type):
+    def __getattribute__(cls, name):
+        if name == "__bool__":
+            raise AttributeError(name)
+        return super().__getattribute__(name)
+
+
 class _TruthValue:
     def __init__(self, value):
         self.value = value
 
     def __bool__(self):
+        return self.value
+
+
+class _MetaclassHiddenTruthValue(_TruthValue, metaclass=_HideBoolMeta):
+    pass
+
+
+class _InstanceHiddenTruthValue(_TruthValue):
+    def __getattribute__(self, name):
+        if name == "__bool__":
+            raise AttributeError(name)
+        return super().__getattribute__(name)
+
+
+class _StateChangingTruthValue:
+    def __init__(self, root, intermediate, value):
+        self.root = root
+        self.intermediate = intermediate
+        self.value = value
+
+    def __bool__(self):
+        self.root._C._set_graph_executor_optimize(self.intermediate)
         return self.value
 
 
@@ -163,7 +210,16 @@ class OptimizedExecutionReferenceTests(unittest.TestCase):
 
     def validation_contract(self, root, module):
         outcomes = []
-        invalid_values = ("", "enabled", [], object(), _RejectTruthiness())
+        invalid_values = (
+            "",
+            "enabled",
+            [],
+            object(),
+            _PlainEnum.ITEM,
+            _FailingRepr(),
+            _FailingBoolAndRepr(),
+            _RejectTruthiness(),
+        )
         for state in (False, True):
             for value in invalid_values:
                 root._C._set_graph_executor_optimize(state)
@@ -183,6 +239,10 @@ class OptimizedExecutionReferenceTests(unittest.TestCase):
             range(1),
             _TruthValue(False),
             _TruthValue(True),
+            _MetaclassHiddenTruthValue(False),
+            _MetaclassHiddenTruthValue(True),
+            _InstanceHiddenTruthValue(False),
+            _InstanceHiddenTruthValue(True),
         ):
             root._C._set_graph_executor_optimize(True)
             with module.optimized_execution(value) as entered:
@@ -207,6 +267,12 @@ class OptimizedExecutionReferenceTests(unittest.TestCase):
                 )
             )
         return outcomes
+
+    def accessor_conversion_order_contract(self, root):
+        root._C._set_graph_executor_optimize(True)
+        value = _StateChangingTruthValue(root, False, True)
+        previous = root._C._get_graph_executor_optimize(value)
+        return previous, root._C._get_graph_executor_optimize()
 
     def thread_contract(self, root, module):
         root._C._set_graph_executor_optimize(False)
@@ -374,6 +440,10 @@ class OptimizedExecutionReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.validation_contract(torch, self.actual),
             self.validation_contract(reference_torch, self.expected),
+        )
+        self.assertEqual(
+            self.accessor_conversion_order_contract(torch),
+            self.accessor_conversion_order_contract(reference_torch),
         )
 
     def test_thread_local_state_matches_pytorch_2_13(self):

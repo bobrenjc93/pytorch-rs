@@ -1,4 +1,5 @@
 import copy
+import enum
 import importlib
 import inspect
 import pickle
@@ -31,6 +32,30 @@ class _RejectTruthiness:
         raise AssertionError("truth-value error should be replaced")
 
 
+class _PlainEnum(enum.Enum):
+    ITEM = 1
+
+
+class _FailingRepr:
+    def __repr__(self):
+        raise RuntimeError("repr exploded")
+
+
+class _FailingBoolAndRepr:
+    def __bool__(self):
+        raise RuntimeError("bool exploded")
+
+    def __repr__(self):
+        raise LookupError("repr exploded")
+
+
+class _HideBoolMeta(type):
+    def __getattribute__(cls, name):
+        if name == "__bool__":
+            raise AttributeError(name)
+        return super().__getattribute__(name)
+
+
 class _TruthValue:
     def __init__(self, value):
         self.value = value
@@ -38,6 +63,28 @@ class _TruthValue:
 
     def __bool__(self):
         self.calls += 1
+        return self.value
+
+
+class _MetaclassHiddenTruthValue(_TruthValue, metaclass=_HideBoolMeta):
+    pass
+
+
+class _InstanceHiddenTruthValue(_TruthValue):
+    def __getattribute__(self, name):
+        if name == "__bool__":
+            raise AttributeError(name)
+        return super().__getattribute__(name)
+
+
+class _StateChangingTruthValue:
+    def __init__(self, root, intermediate, value):
+        self.root = root
+        self.intermediate = intermediate
+        self.value = value
+
+    def __bool__(self):
+        self.root._C._set_graph_executor_optimize(self.intermediate)
         return self.value
 
 
@@ -92,7 +139,17 @@ class OptimizedExecutionTests(unittest.TestCase):
 
     def test_argument_validation_is_deferred_until_context_entry(self):
         optimized_execution = self.fuser.optimized_execution
-        invalid_values = ("", "enabled", [], object(), _RejectTruthiness())
+        rejected = _RejectTruthiness()
+        invalid_values = (
+            "",
+            "enabled",
+            [],
+            object(),
+            _PlainEnum.ITEM,
+            _FailingRepr(),
+            _FailingBoolAndRepr(),
+            rejected,
+        )
 
         for state in (False, True):
             for value in invalid_values:
@@ -107,7 +164,11 @@ class OptimizedExecutionTests(unittest.TestCase):
                     message = re.sub(
                         r"0x[0-9a-fA-F]+", "0x...", str(raised.exception)
                     )
-                    rendered = re.sub(r"0x[0-9a-fA-F]+", "0x...", repr(value))
+                    try:
+                        rendered = repr(value)
+                    except Exception:
+                        rendered = "<repr raised Error>"
+                    rendered = re.sub(r"0x[0-9a-fA-F]+", "0x...", rendered)
                     self.assertEqual(
                         message,
                         "_set_graph_executor_optimize(): incompatible function "
@@ -120,7 +181,6 @@ class OptimizedExecutionTests(unittest.TestCase):
                         torch._C._get_graph_executor_optimize(), state
                     )
 
-        rejected = invalid_values[-1]
         self.assertEqual(rejected.calls, 2)
 
         for value, expected in (
@@ -130,6 +190,10 @@ class OptimizedExecutionTests(unittest.TestCase):
             (range(1), True),
             (_TruthValue(False), False),
             (_TruthValue(True), True),
+            (_MetaclassHiddenTruthValue(False), False),
+            (_MetaclassHiddenTruthValue(True), True),
+            (_InstanceHiddenTruthValue(False), False),
+            (_InstanceHiddenTruthValue(True), True),
         ):
             with self.subTest(coerced_type=type(value).__name__, expected=expected):
                 torch._C._set_graph_executor_optimize(not expected)
@@ -397,6 +461,12 @@ class OptimizedExecutionTests(unittest.TestCase):
         self.assertIs(torch._C._get_graph_executor_optimize(False), True)
         self.assertIs(torch._C._get_graph_executor_optimize(), False)
         self.assertIs(torch._C._get_graph_executor_optimize(True), False)
+        self.assertIs(torch._C._get_graph_executor_optimize(), True)
+
+        changing_value = _StateChangingTruthValue(torch, False, True)
+        self.assertIs(
+            torch._C._get_graph_executor_optimize(changing_value), False
+        )
         self.assertIs(torch._C._get_graph_executor_optimize(), True)
 
         for should_optimize in (False, True):

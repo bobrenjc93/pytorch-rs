@@ -4991,14 +4991,30 @@ fn graph_executor_optimize_argument(
     if value.is_exact_instance_of::<PyBool>() {
         return value.is_truthy();
     }
-    if value.get_type().hasattr("__bool__")?
-        && let Ok(value) = value.is_truthy()
-    {
+    // Boolean special methods are resolved from the instance type's MRO, not
+    // through normal class or instance attribute lookup.
+    let py = value.py();
+    let type_getattribute = py.get_type::<PyType>().getattr("__getattribute__")?;
+    let value_type = value.get_type();
+    let mro = type_getattribute
+        .call1((&value_type, "__mro__"))?
+        .cast_into::<PyTuple>()?;
+    let mut has_bool_slot = false;
+    for base in mro.iter() {
+        let namespace = type_getattribute.call1((&base, "__dict__"))?;
+        if namespace.contains("__bool__")? {
+            has_bool_slot = true;
+            break;
+        }
+    }
+    if has_bool_slot && let Ok(value) = value.is_truthy() {
         return Ok(value);
     }
 
-    let value_repr = value.repr()?;
-    let value = value_repr.to_string_lossy();
+    let value = value.repr().map_or_else(
+        |_| "<repr raised Error>".to_owned(),
+        |value| value.to_string_lossy().into_owned(),
+    );
     Err(PyTypeError::new_err(format!(
         "{function_name}(): incompatible function arguments. The following argument types are supported:\n    1. {signature}\n\nInvoked with: {value}"
     )))
@@ -5010,13 +5026,17 @@ fn graph_executor_optimize_argument(
     text_signature = None
 )]
 fn get_graph_executor_optimize_native(new_settings: Option<&Bound<'_, PyAny>>) -> PyResult<bool> {
+    let new_settings = new_settings
+        .map(|new_settings| {
+            graph_executor_optimize_argument(
+                new_settings,
+                "_get_graph_executor_optimize",
+                "(new_settings: bool | None = None) -> bool",
+            )
+        })
+        .transpose()?;
     let stored_flag = GRAPH_EXECUTOR_OPTIMIZE.get();
     if let Some(new_settings) = new_settings {
-        let new_settings = graph_executor_optimize_argument(
-            new_settings,
-            "_get_graph_executor_optimize",
-            "(new_settings: bool | None = None) -> bool",
-        )?;
         GRAPH_EXECUTOR_OPTIMIZE.set(new_settings);
     }
     Ok(stored_flag)
