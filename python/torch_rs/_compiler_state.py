@@ -2,3 +2,4 @@
 
 
 default_backend = "inductor"
+enable_guard_collectives = False
