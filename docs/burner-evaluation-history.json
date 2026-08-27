@@ -7185,6 +7185,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1161",
+      "recordedAt": "2026-08-27T20:14:54.442Z",
+      "label": "PR #1161",
+      "kind": "leaf",
+      "prNumber": 1161,
+      "title": "Add torch.compiler.set_enable_guard_collectives state",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 98.5,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 81.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
