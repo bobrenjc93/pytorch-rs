@@ -247,6 +247,7 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
         actual = actual_distributed.get_node_local_rank
         expected = expected_distributed.get_node_local_rank
         supported = {
+            "get_rank",
             "get_world_size",
             "get_pg_count",
             "is_gloo_available",
@@ -319,7 +320,7 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_no_process_group_or_global_rank_surface_was_added(self):
+    def test_process_group_initialization_and_execution_remain_unsupported(self):
         actual_distributed = torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_distributed = reference_torch.distributed
@@ -331,7 +332,6 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
             "ProcessGroup",
             "all_reduce",
             "destroy_process_group",
-            "get_rank",
             "init_process_group",
             "new_group",
         ):
