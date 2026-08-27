@@ -171,6 +171,50 @@ class CompilerSetEnableGuardCollectivesTests(unittest.TestCase):
         self.assertEqual(results, [False, False])
         self.assertIs(function(False), True)
 
+    def test_overlapping_calls_exchange_state_atomically(self):
+        compiler = torch.compiler
+        function = compiler.set_enable_guard_collectives
+        state = compiler._state
+        read_barrier = threading.Barrier(2)
+        results = []
+        errors = []
+
+        class InterleavingState:
+            def __getattr__(self, name):
+                if name == "enable_guard_collectives":
+                    value = state.enable_guard_collectives
+                    read_barrier.wait(timeout=10)
+                    return value
+                return getattr(state, name)
+
+            def __setattr__(self, name, value):
+                setattr(state, name, value)
+
+        function(False)
+        compiler._state = InterleavingState()
+
+        def worker():
+            try:
+                results.append(function(True))
+            except BaseException as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        try:
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+        finally:
+            compiler._state = state
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(errors, [])
+        self.assertEqual(results.count(False), 1)
+        self.assertEqual(results.count(True), 1)
+        self.assertTrue(all(type(result) is bool for result in results))
+        self.assertIs(function(False), True)
+
     def test_reset_preserves_state_and_grad_mode(self):
         function = torch.compiler.set_enable_guard_collectives
 

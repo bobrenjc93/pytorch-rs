@@ -227,6 +227,56 @@ class CompilerSetEnableGuardCollectivesReferenceTests(unittest.TestCase):
             self.threaded_outcome(reference_torch),
         )
 
+    def overlapping_outcome(self, module):
+        function = module.compiler.set_enable_guard_collectives
+        truth_barrier = threading.Barrier(3)
+        results = []
+        errors = []
+
+        class OverlappingTruth:
+            def __init__(self):
+                self.calls = 0
+
+            def __bool__(self):
+                self.calls += 1
+                truth_barrier.wait(timeout=10)
+                return True
+
+        tokens = [OverlappingTruth(), OverlappingTruth()]
+        function(False)
+
+        def worker(token):
+            try:
+                results.append(function(token))
+            except BaseException as error:
+                errors.append((type(error).__name__, str(error)))
+
+        threads = [
+            threading.Thread(target=worker, args=(token,)) for token in tokens
+        ]
+        for thread in threads:
+            thread.start()
+        truth_barrier.wait(timeout=10)
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        final_result = function(False)
+        return (
+            results.count(False),
+            results.count(True),
+            all(type(result) is bool for result in results),
+            errors,
+            [token.calls for token in tokens],
+            final_result,
+        )
+
+    def test_overlapping_exchange_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.overlapping_outcome(torch),
+            self.overlapping_outcome(reference_torch),
+        )
+
     def reload_outcome(self, package, module_name):
         original_module = package.compiler
         old_function = original_module.set_enable_guard_collectives

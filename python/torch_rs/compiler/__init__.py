@@ -158,9 +158,7 @@ def set_enable_guard_collectives(enabled: bool):
     Returns the previous setting of enabled.
     """
     next_enabled = bool(enabled)
-    previous_enabled = _state.enable_guard_collectives
-    _state.enable_guard_collectives = next_enabled
-    return previous_enabled
+    return _state.exchange_enable_guard_collectives(next_enabled)
 
 
 set_enable_guard_collectives._dynamo_forbidden = True
