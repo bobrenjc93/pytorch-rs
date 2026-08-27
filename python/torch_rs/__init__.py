@@ -35,6 +35,11 @@ newaxis = None
 _nnpack_available = _native._VariableFunctionsClass._nnpack_available
 
 
+def compiled_with_cxx11_abi() -> _builtins.bool:
+    r"""Returns whether PyTorch was built with _GLIBCXX_USE_CXX11_ABI=1"""
+    return False
+
+
 def are_deterministic_algorithms_enabled() -> _builtins.bool:
     r"""Returns True if the global deterministic flag is turned on. Refer to
     :func:`torch.use_deterministic_algorithms` documentation for more details.
