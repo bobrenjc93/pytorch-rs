@@ -22,7 +22,6 @@ class TensorFormatTests(unittest.TestCase):
             (1.23456789, "+08.2f", "+0001.23"),
             (-0.0, "", "-0.0"),
             (-0.0, "+08.2f", "-0000.00"),
-            (-0.0, " z", " 0.0"),
             (math.inf, ".2f", "inf"),
             (-math.inf, "+08.2f", "-0000inf"),
             (math.nan, "", "nan"),
@@ -32,6 +31,16 @@ class TensorFormatTests(unittest.TestCase):
             tensor = torch.tensor(value, dtype=torch.float32, requires_grad=True)
             with self.subTest(value=value, format_spec=format_spec):
                 self.assertEqual(format(tensor, format_spec), expected)
+
+        tensor = torch.tensor(-0.0, dtype=torch.float32, requires_grad=True)
+        if sys.version_info >= (3, 11):
+            self.assertEqual(format(tensor, " z"), " 0.0")
+        else:
+            with self.assertRaisesRegex(
+                ValueError,
+                "^Unknown format code 'z' for object of type 'float'$",
+            ):
+                format(tensor, " z")
 
         tensor = torch.tensor(1.25)
         with self.assertRaisesRegex(
