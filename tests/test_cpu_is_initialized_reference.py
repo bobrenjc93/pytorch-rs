@@ -164,6 +164,7 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
         expected = expected_cpu.is_initialized
         supported = {
             "current_device",
+            "current_stream",
             "device_count",
             "Stream",
             "Event",
@@ -258,6 +259,7 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",
@@ -270,7 +272,6 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
         self.assertTrue(
             {
                 "amp",
-                "current_stream",
                 "get_capabilities",
                 "set_device",
                 "StreamContext",
