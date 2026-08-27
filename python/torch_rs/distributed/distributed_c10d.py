@@ -3,6 +3,7 @@
 import os as _os
 
 __all__ = [
+    "get_backend_config",
     "get_backend",
     "get_rank",
     "get_world_size",
@@ -20,6 +21,30 @@ __all__ = [
 # Preserve PyTorch's annotation spelling without exporting unsupported types.
 _ProcessGroup = type("ProcessGroup", (), {"__module__": __name__})
 _Backend = type("Backend", (), {"__module__": __name__})
+
+
+def get_backend_config(group: _ProcessGroup | None = None) -> str:
+    """
+    Return the backend configuration of the given process group.
+
+    Args:
+        group (ProcessGroup, optional): The process group to work on. The
+            default is the general main process group. If another specific group
+            is specified, the calling process must be part of :attr:`group`.
+
+    Returns:
+        The backend configuration of the given process group as a lower case string.
+
+    """
+    if group is not None:
+        raise NotImplementedError(
+            "torch_rs.distributed.get_backend_config() does not support "
+            "non-None process groups"
+        )
+    raise ValueError(
+        "Default process group has not been initialized, please make sure to "
+        "call init_process_group."
+    )
 
 
 def get_backend(group: _ProcessGroup | None = None) -> _Backend:

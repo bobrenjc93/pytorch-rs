@@ -7057,6 +7057,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1127",
+      "recordedAt": "2026-08-27T11:52:04.315Z",
+      "label": "PR #1127",
+      "kind": "leaf",
+      "prNumber": 1127,
+      "title": "Expose uninitialized torch.distributed.get_backend_config",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 97.7,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 80.4,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
