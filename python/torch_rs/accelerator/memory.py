@@ -11,6 +11,7 @@ __all__ = [
     "memory_allocated",
     "memory_reserved",
     "memory_stats",
+    "reset_accumulated_memory_stats",
     "reset_peak_memory_stats",
 ]
 
@@ -89,6 +90,24 @@ def memory_stats(
         OrderedDict[str, Any]: an ordered dictionary mapping statistic names to their values.
     """
     return _OrderedDict()
+
+
+def reset_accumulated_memory_stats(
+    device_index: _device | str | int | None = None, /
+) -> None:
+    r"""Reset the "accumulated" (historical) stats tracked by the current :ref:`accelerator<accelerators>`
+    memory allocator for a given device index.
+
+    Args:
+        device_index (:class:`torch.device`, str, int, optional): the index of the device to target.
+            If not given, use :func:`torch.accelerator.current_device_index` by default.
+            If a :class:`torch.device` or str is provided, its type must match the current
+            :ref:`accelerator<accelerators>` device type.
+
+    .. note:: This function is a no-op if the memory allocator for the current
+        :ref:`accelerator <accelerators>` has not been initialized.
+    """
+    return None
 
 
 def reset_peak_memory_stats(
