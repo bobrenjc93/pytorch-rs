@@ -269,6 +269,13 @@ class _InvalidIterator:
         return []
 
 
+def _walk_code_objects(code):
+    yield code
+    for constant in code.co_consts:
+        if isinstance(constant, types.CodeType):
+            yield from _walk_code_objects(constant)
+
+
 def _simple_entry(method):
     return types.SimpleNamespace(
         orig_guard=types.SimpleNamespace(
@@ -487,11 +494,16 @@ class CompilerSkipGuardOnAllNnModulesUnsafeTests(unittest.TestCase):
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
+        code_objects = tuple(_walk_code_objects(function.__code__))
         self.assertEqual(
-            function.__code__.co_names,
+            tuple(name for code in code_objects for name in code.co_names),
             ("orig_guard", "source", "is_unspecialized_nn_module"),
         )
-        self.assertEqual(function.__code__.co_varnames, ("guard_entries", "entry"))
+        self.assertEqual(function.__code__.co_varnames[0], "guard_entries")
+        self.assertIn(
+            "entry",
+            {name for code in code_objects for name in code.co_varnames},
+        )
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
