@@ -58,7 +58,12 @@ class CudaIsBuiltTests(unittest.TestCase):
         self.assertIs(sys.modules["torch_rs.backends.cuda"], cuda)
         self.assertIsNone(cuda.__doc__)
         self.assertEqual(
-            cuda.__all__, ["is_built", "is_flash_attention_available"]
+            cuda.__all__,
+            [
+                "is_built",
+                "is_ck_sdpa_available",
+                "is_flash_attention_available",
+            ],
         )
         self.assertIs(type(function), types.FunctionType)
         self.assertEqual(str(inspect.signature(function)), "()")
@@ -104,7 +109,11 @@ class CudaIsBuiltTests(unittest.TestCase):
         self.assertIs(parent_wildcard["cuda"], cuda)
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
-            {"is_built", "is_flash_attention_available"},
+            {
+                "is_built",
+                "is_ck_sdpa_available",
+                "is_flash_attention_available",
+            },
         )
         self.assertIs(child_wildcard["is_built"], function)
 
