@@ -395,7 +395,20 @@ class CompilerSkipGuardOnGlobalsUnsafeReferenceTests(unittest.TestCase):
         )
         self.assertEqual(actual.__code__.co_names, expected.__code__.co_names)
         self.assertEqual(actual.__code__.co_varnames, expected.__code__.co_varnames)
-        self.assertEqual(actual.__code__.co_consts, expected.__code__.co_consts)
+        # Before Python 3.12, list comprehensions contribute nested code objects
+        # whose source locations necessarily differ between these two modules.
+        self.assertEqual(
+            tuple(
+                constant
+                for constant in actual.__code__.co_consts
+                if not isinstance(constant, types.CodeType)
+            ),
+            tuple(
+                constant
+                for constant in expected.__code__.co_consts
+                if not isinstance(constant, types.CodeType)
+            ),
+        )
         self.assertEqual(actual.__code__.co_freevars, expected.__code__.co_freevars)
         self.assertEqual(actual.__code__.co_cellvars, expected.__code__.co_cellvars)
 

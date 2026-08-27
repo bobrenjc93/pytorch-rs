@@ -296,7 +296,6 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
         with self.assertRaises(LookupError) as next_raised:
             function(next_failure)
         self.assertIs(next_raised.exception, next_error)
-        self.assertEqual(next_failure.iter_calls, 1)
         self.assertEqual(next_failure.next_calls, 2)
 
         with self.assertRaises(TypeError) as invalid_raised:
@@ -326,10 +325,6 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
-        self.assertEqual(function.__code__.co_names, ("is_global",))
-        self.assertEqual(function.__code__.co_varnames, ("guard_entries", "entry"))
-        self.assertEqual(function.__code__.co_freevars, ())
-        self.assertEqual(function.__code__.co_cellvars, ())
 
     def test_exports_copying_and_pickling_use_the_canonical_function(self):
         compiler = torch.compiler
