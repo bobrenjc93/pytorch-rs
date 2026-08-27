@@ -7105,6 +7105,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1140",
+      "recordedAt": "2026-08-27T14:56:45.438Z",
+      "label": "PR #1140",
+      "kind": "leaf",
+      "prNumber": 1140,
+      "title": "Expose Rust-build torch.compiled_with_cxx11_abi",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 98,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 80.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
