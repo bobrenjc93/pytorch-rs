@@ -29,7 +29,39 @@ SUPPORTED_COMPILER_EXPORTS = {
 }
 
 
-class _OpaqueEntry:
+class _TruthProbe:
+    def __init__(self, label, result, events):
+        self.label = label
+        self.result = result
+        self.events = events
+
+    def __bool__(self):
+        self.events.append(("bool", self.label))
+        return self.result
+
+
+class _LengthTruthProbe:
+    def __init__(self, label, result, events):
+        self.label = label
+        self.result = result
+        self.events = events
+
+    def __len__(self):
+        self.events.append(("len", self.label))
+        return self.result
+
+
+class _GuardEntry:
+    def __init__(self, label, is_global, events):
+        self.label = label
+        self._is_global = is_global
+        self.events = events
+
+    @property
+    def is_global(self):
+        self.events.append(("attribute", self.label))
+        return self._is_global
+
     def _fail(self, operation):
         raise AssertionError(f"guard entry was inspected through {operation}")
 
@@ -91,7 +123,17 @@ class _CountingIterable:
         raise AssertionError("iterable was indexed")
 
 
-class _IterationFailure:
+class _IterFailure:
+    def __init__(self, error):
+        self.error = error
+        self.iter_calls = 0
+
+    def __iter__(self):
+        self.iter_calls += 1
+        raise self.error
+
+
+class _NextFailure:
     def __init__(self, first_entry, error):
         self.first_entry = first_entry
         self.error = error
@@ -109,25 +151,70 @@ class _IterationFailure:
         raise self.error
 
 
+class _AttributeFailureEntry:
+    def __init__(self, error):
+        self.error = error
+        self.attribute_calls = 0
+
+    @property
+    def is_global(self):
+        self.attribute_calls += 1
+        raise self.error
+
+
+class _TruthFailure:
+    def __init__(self, error):
+        self.error = error
+        self.bool_calls = 0
+
+    def __bool__(self):
+        self.bool_calls += 1
+        raise self.error
+
+
+class _InvalidTruth:
+    def __bool__(self):
+        return 1
+
+
+class _MissingGlobal:
+    pass
+
+
+def _normalized_code_metadata(code):
+    return (
+        code.co_names,
+        code.co_varnames,
+        tuple(
+            _normalized_code_metadata(constant)
+            if isinstance(constant, types.CodeType)
+            else constant
+            for constant in code.co_consts
+        ),
+        code.co_freevars,
+        code.co_cellvars,
+    )
+
+
 class _InvalidIterator:
     def __iter__(self):
         return []
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
+class CompilerSkipGuardOnGlobalsUnsafeReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "compiler.skip_all_guards_unsafe differentials require pinned "
-                "PyTorch 2.13.0"
+                "compiler.skip_guard_on_globals_unsafe differentials require "
+                "pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
-        with self.assertRaises(Exception) as actual_raised:
+        with self.assertRaises(BaseException) as actual_raised:
             actual_call()
-        with self.assertRaises(Exception) as expected_raised:
+        with self.assertRaises(BaseException) as expected_raised:
             expected_call()
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
@@ -146,9 +233,29 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
         return shape
 
     def behavior_outcome(self, function):
-        entries = [_OpaqueEntry(), _OpaqueEntry(), _OpaqueEntry()]
+        events = []
+        entries = [
+            _GuardEntry("true", True, events),
+            _GuardEntry("false", False, events),
+            _GuardEntry("one", 1, events),
+            _GuardEntry("zero", 0, events),
+            _GuardEntry("none", None, events),
+            _GuardEntry("object", object(), events),
+            _GuardEntry(
+                "custom-true", _TruthProbe("custom-true", True, events), events
+            ),
+            _GuardEntry(
+                "custom-false", _TruthProbe("custom-false", False, events), events
+            ),
+            _GuardEntry(
+                "length-true", _LengthTruthProbe("length-true", 2, events), events
+            ),
+            _GuardEntry(
+                "length-false", _LengthTruthProbe("length-false", 0, events), events
+            ),
+        ]
+        original_entries = tuple(entries)
         list_result = function(entries)
-        second_list_result = function(entries)
         tuple_result = function(tuple(entries))
         first_empty = function([])
         second_empty = function(())
@@ -156,13 +263,17 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
         iterable = _CountingIterable(entries)
         iterable_result = function(iterable)
 
-        events = []
+        generator_events = []
+        generator_entries = [
+            _GuardEntry("generator-true", True, generator_events),
+            _GuardEntry("generator-false", False, generator_events),
+        ]
 
         def generated_entries():
-            for index, entry in enumerate(entries):
-                events.append(("yield", index))
+            for index, entry in enumerate(generator_entries):
+                generator_events.append(("yield", index))
                 yield entry
-            events.append(("finished", len(entries)))
+            generator_events.append(("finished", len(generator_entries)))
 
         generator = generated_entries()
         generator_result = function(generator)
@@ -175,7 +286,6 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
 
         results = (
             list_result,
-            second_list_result,
             tuple_result,
             first_empty,
             second_empty,
@@ -185,48 +295,92 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
         return {
             "results": results,
             "result_types": tuple(type(result).__name__ for result in results),
-            "all_exact_false": tuple(
-                all(value is False for value in result) for result in results
+            "exact_bools": tuple(
+                tuple(value is True if value else value is False for value in result)
+                for result in results
             ),
             "fresh": (
-                list_result is not second_list_result,
                 list_result is not entries,
+                list_result is not tuple_result,
                 first_empty is not second_empty,
             ),
-            "source_length": len(entries),
+            "source_preserved": all(
+                actual is original
+                for actual, original in zip(entries, original_entries)
+            ),
+            "events": events,
             "iter_calls": iterable.iter_calls,
             "next_calls": iterable.next_calls,
-            "events": events,
+            "generator_events": generator_events,
             "generator_exhausted": generator_exhausted,
         }
 
-    def exception_outcome(self, function):
-        error = LookupError("next failure")
-        iterable = _IterationFailure(_OpaqueEntry(), error)
+    def captured_error(self, call, expected_error=None):
         try:
-            function(iterable)
-        except BaseException as raised:
+            call()
+        except BaseException as error:
             return (
-                type(raised).__name__,
-                str(raised),
-                raised.args,
-                raised is error,
-                iterable.iter_calls,
-                iterable.next_calls,
+                type(error).__name__,
+                str(error),
+                error.args,
+                error is expected_error,
             )
-        self.fail("iteration exception was swallowed")
+        self.fail("expected an exception")
 
-    def test_all_iterable_forms_and_non_inspection_match_pytorch_2_13(self):
+    def exception_outcome(self, function):
+        iter_error = RuntimeError("iter failure")
+        iter_failure = _IterFailure(iter_error)
+        iter_outcome = self.captured_error(
+            lambda: function(iter_failure), iter_error
+        ) + (iter_failure.iter_calls,)
+
+        next_error = LookupError("next failure")
+        next_failure = _NextFailure(
+            types.SimpleNamespace(is_global=False), next_error
+        )
+        next_outcome = self.captured_error(
+            lambda: function(next_failure), next_error
+        ) + (next_failure.iter_calls, next_failure.next_calls)
+
+        attribute_error = KeyError("attribute failure")
+        attribute_failure = _AttributeFailureEntry(attribute_error)
+        untouched = _AttributeFailureEntry(AssertionError("should not be reached"))
+        attribute_outcome = self.captured_error(
+            lambda: function((attribute_failure, untouched)), attribute_error
+        ) + (attribute_failure.attribute_calls, untouched.attribute_calls)
+
+        truth_error = ValueError("truth failure")
+        truth_failure = _TruthFailure(truth_error)
+        truth_entry = types.SimpleNamespace(is_global=truth_failure)
+        truth_outcome = self.captured_error(
+            lambda: function((truth_entry,)), truth_error
+        ) + (truth_failure.bool_calls,)
+
+        return (
+            iter_outcome,
+            next_outcome,
+            attribute_outcome,
+            truth_outcome,
+            self.captured_error(lambda: function((_MissingGlobal(),))),
+            self.captured_error(
+                lambda: function(
+                    (types.SimpleNamespace(is_global=_InvalidTruth()),)
+                )
+            ),
+            self.captured_error(lambda: function(_InvalidIterator())),
+        )
+
+    def test_values_iteration_and_object_preservation_match_pytorch_2_13(self):
         self.assertEqual(
-            self.behavior_outcome(torch.compiler.skip_all_guards_unsafe),
+            self.behavior_outcome(torch.compiler.skip_guard_on_globals_unsafe),
             self.behavior_outcome(
-                reference_torch.compiler.skip_all_guards_unsafe
+                reference_torch.compiler.skip_guard_on_globals_unsafe
             ),
         )
 
-    def test_iteration_and_argument_errors_match_pytorch_2_13(self):
-        actual = torch.compiler.skip_all_guards_unsafe
-        expected = reference_torch.compiler.skip_all_guards_unsafe
+    def test_attribute_truth_and_iteration_errors_match_pytorch_2_13(self):
+        actual = torch.compiler.skip_guard_on_globals_unsafe
+        expected = reference_torch.compiler.skip_guard_on_globals_unsafe
 
         self.assertEqual(
             self.exception_outcome(actual),
@@ -242,10 +396,6 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             (lambda: actual(entries=[]), lambda: expected(entries=[])),
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(1), lambda: expected(1)),
-            (
-                lambda: actual(_InvalidIterator()),
-                lambda: expected(_InvalidIterator()),
-            ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
@@ -254,8 +404,8 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
     def test_signature_documentation_and_metadata_match_pytorch_2_13(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")
         expected_compiler = importlib.import_module("torch.compiler")
-        actual = actual_compiler.skip_all_guards_unsafe
-        expected = expected_compiler.skip_all_guards_unsafe
+        actual = actual_compiler.skip_guard_on_globals_unsafe
+        expected = expected_compiler.skip_guard_on_globals_unsafe
 
         self.assertIs(torch.compiler, actual_compiler)
         self.assertIs(reference_torch.compiler, expected_compiler)
@@ -281,15 +431,16 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
         )
-        self.assertEqual(actual.__code__.co_names, expected.__code__.co_names)
-        self.assertEqual(actual.__code__.co_varnames, expected.__code__.co_varnames)
-        self.assertEqual(actual.__code__.co_consts, expected.__code__.co_consts)
+        self.assertEqual(
+            _normalized_code_metadata(actual.__code__),
+            _normalized_code_metadata(expected.__code__),
+        )
 
     def test_exports_copying_and_pickling_match_pytorch_2_13(self):
         actual_compiler = torch.compiler
         expected_compiler = reference_torch.compiler
-        actual = actual_compiler.skip_all_guards_unsafe
-        expected = expected_compiler.skip_all_guards_unsafe
+        actual = actual_compiler.skip_guard_on_globals_unsafe
+        expected = expected_compiler.skip_guard_on_globals_unsafe
 
         self.assertEqual(
             actual_compiler.__all__,
@@ -304,8 +455,8 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("compiler"),
         )
         self.assertEqual(
-            torch.__all__.count("skip_all_guards_unsafe"),
-            reference_torch.__all__.count("skip_all_guards_unsafe"),
+            torch.__all__.count("skip_guard_on_globals_unsafe"),
+            reference_torch.__all__.count("skip_guard_on_globals_unsafe"),
         )
 
         for module in (actual_compiler, expected_compiler):
@@ -318,7 +469,7 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
-            self.assertNotIn("skip_all_guards_unsafe", namespace)
+            self.assertNotIn("skip_guard_on_globals_unsafe", namespace)
 
         for function in (actual, expected):
             self.assertIs(copy.copy(function), function)
@@ -347,9 +498,11 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
                 compiler.is_exporting(),
             )
             before_grad = module.is_grad_enabled()
-            result = compiler.skip_all_guards_unsafe(
-                _OpaqueEntry() for _ in range(2)
+            entries = (
+                types.SimpleNamespace(is_global=True),
+                types.SimpleNamespace(is_global=False),
             )
+            result = compiler.skip_guard_on_globals_unsafe(iter(entries))
             after_grad = module.is_grad_enabled()
             after_queries = (
                 compiler.is_compiling(),
@@ -358,7 +511,7 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             )
             return (
                 result,
-                all(value is False for value in result),
+                tuple(value is True if value else value is False for value in result),
                 compiler.get_default_backend() is backend,
                 before_grad,
                 after_grad,
@@ -383,10 +536,10 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
 
         try:
             compiler.set_default_backend(backend)
-            old_function = compiler.skip_all_guards_unsafe
+            old_function = compiler.skip_guard_on_globals_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
-            new_function = reloaded.skip_all_guards_unsafe
+            new_function = reloaded.skip_guard_on_globals_unsafe
 
             try:
                 pickle.dumps(old_function)
@@ -402,13 +555,14 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
                 pickle.loads(pickle.dumps(new_function, protocol)) is new_function
                 for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
             )
+            entry = types.SimpleNamespace(is_global=True)
             return (
                 reloaded is compiler,
                 module.compiler is compiler,
                 old_function is new_function,
                 old_exports is compiler.__all__,
                 compiler.get_default_backend() is backend,
-                new_function((_OpaqueEntry(),)),
+                new_function((entry,)),
                 copy.copy(old_function) is old_function,
                 copy.deepcopy(old_function) is old_function,
                 old_pickle_error,
