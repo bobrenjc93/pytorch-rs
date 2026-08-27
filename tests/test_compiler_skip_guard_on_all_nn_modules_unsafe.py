@@ -13,13 +13,17 @@ import torch_rs as torch
 
 
 FUNCTION_DOC = """
-    A common function to skip guards on all globals. This is unsafe to use by
-    default. But if you don't expect any changes in the globals, you can just
-    keep the tensor guards.
+    A common function to skip guards on all nn modules, both user defined as
+    well inbuilt nn modules (like torch.nn.Linear). This is unsafe to use by
+    default. But for majority of torch.compile users, the model code does not
+    modify the nn module attributes. They can benefit from reduction in guard
+    latency overhead using this API.
+
+    To use this API, use guard_filter_fn argument while calling torch.compile
 
     >> opt_mod = torch.compile(
     >>     mod,
-    >>     options={"guard_filter_fn": torch.compiler.skip_guard_on_globals},
+    >>     options={"guard_filter_fn": torch.compiler.skip_guard_on_all_nn_modules_unsafe},
     >> )
     """
 
@@ -61,16 +65,53 @@ class _LengthTruthProbe:
         return self.result
 
 
-class _GuardEntry:
-    def __init__(self, label, is_global, events):
+class _MethodProbe:
+    def __init__(self, label, result, events):
         self.label = label
-        self._is_global = is_global
+        self.result = result
+        self.events = events
+
+    def __call__(self):
+        self.events.append(("call", self.label))
+        return self.result
+
+
+class _Source:
+    def __init__(self, label, method, events):
+        self.label = label
+        self.method = method
         self.events = events
 
     @property
-    def is_global(self):
-        self.events.append(("attribute", self.label))
-        return self._is_global
+    def is_unspecialized_nn_module(self):
+        self.events.append(("method", self.label))
+        return self.method
+
+
+class _OrigGuard:
+    def __init__(self, label, source, events):
+        self.label = label
+        self._source = source
+        self.events = events
+
+    @property
+    def source(self):
+        self.events.append(("source", self.label))
+        return self._source
+
+
+class _GuardEntry:
+    def __init__(self, label, result, events):
+        self.label = label
+        method = _MethodProbe(label, result, events)
+        source = _Source(label, method, events)
+        self._orig_guard = _OrigGuard(label, source, events)
+        self.events = events
+
+    @property
+    def orig_guard(self):
+        self.events.append(("orig_guard", self.label))
+        return self._orig_guard
 
     def _fail(self, operation):
         raise AssertionError(f"guard entry was inspected through {operation}")
@@ -161,24 +202,56 @@ class _NextFailure:
         raise self.error
 
 
-class _AttributeFailureEntry:
+class _OrigGuardFailure:
     def __init__(self, error):
         self.error = error
-        self.attribute_calls = 0
+        self.calls = 0
 
     @property
-    def is_global(self):
-        self.attribute_calls += 1
+    def orig_guard(self):
+        self.calls += 1
+        raise self.error
+
+
+class _SourceFailure:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    @property
+    def source(self):
+        self.calls += 1
+        raise self.error
+
+
+class _MethodLookupFailure:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    @property
+    def is_unspecialized_nn_module(self):
+        self.calls += 1
+        raise self.error
+
+
+class _CallFailure:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    def __call__(self):
+        self.calls += 1
         raise self.error
 
 
 class _TruthFailure:
     def __init__(self, error):
         self.error = error
-        self.bool_calls = 0
+        self.calls = 0
 
     def __bool__(self):
-        self.bool_calls += 1
+        self.calls += 1
         raise self.error
 
 
@@ -187,15 +260,8 @@ class _InvalidTruth:
         return 1
 
 
-class _MissingGlobal:
+class _MissingOrigGuard:
     pass
-
-
-def _walk_code_objects(code):
-    yield code
-    for constant in code.co_consts:
-        if isinstance(constant, types.CodeType):
-            yield from _walk_code_objects(constant)
 
 
 class _InvalidIterator:
@@ -203,14 +269,24 @@ class _InvalidIterator:
         return []
 
 
-class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
+def _simple_entry(method):
+    return types.SimpleNamespace(
+        orig_guard=types.SimpleNamespace(
+            source=types.SimpleNamespace(
+                is_unspecialized_nn_module=method
+            )
+        )
+    )
+
+
+class CompilerSkipGuardOnAllNnModulesUnsafeTests(unittest.TestCase):
     def assert_exact_bool_list(self, result, expected):
         self.assertIs(type(result), list)
         self.assertEqual(len(result), len(expected))
         for actual, expected_value in zip(result, expected):
             self.assertIs(actual, expected_value)
 
-    def test_exact_booleans_come_from_each_is_global_truth_value(self):
+    def test_exact_booleans_follow_the_full_attribute_and_call_chain(self):
         events = []
         entries = [
             _GuardEntry("true", True, events),
@@ -232,115 +308,91 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
                 "length-false", _LengthTruthProbe("length-false", 0, events), events
             ),
         ]
-        original_entries = entries.copy()
+        original_entries = tuple(entries)
 
-        result = torch.compiler.skip_guard_on_globals_unsafe(entries)
+        result = torch.compiler.skip_guard_on_all_nn_modules_unsafe(entries)
 
         self.assert_exact_bool_list(
             result,
             [False, True, False, True, True, False, False, True, False, True],
         )
         self.assertIsNot(result, entries)
-        self.assertEqual(len(entries), len(original_entries))
-        for actual, original in zip(entries, original_entries):
-            self.assertIs(actual, original)
-        self.assertEqual(
-            events,
-            [
-                ("attribute", "true"),
-                ("attribute", "false"),
-                ("attribute", "one"),
-                ("attribute", "zero"),
-                ("attribute", "none"),
-                ("attribute", "object"),
-                ("attribute", "custom-true"),
-                ("bool", "custom-true"),
-                ("attribute", "custom-false"),
-                ("bool", "custom-false"),
-                ("attribute", "length-true"),
-                ("len", "length-true"),
-                ("attribute", "length-false"),
-                ("len", "length-false"),
-            ],
+        self.assertTrue(
+            all(
+                actual is original
+                for actual, original in zip(entries, original_entries)
+            )
         )
+        expected_events = []
+        for label in ("true", "false", "one", "zero", "none", "object"):
+            expected_events.extend(
+                [
+                    ("orig_guard", label),
+                    ("source", label),
+                    ("method", label),
+                    ("call", label),
+                ]
+            )
+        for label, truth_operation in (
+            ("custom-true", "bool"),
+            ("custom-false", "bool"),
+            ("length-true", "len"),
+            ("length-false", "len"),
+        ):
+            expected_events.extend(
+                [
+                    ("orig_guard", label),
+                    ("source", label),
+                    ("method", label),
+                    ("call", label),
+                    (truth_operation, label),
+                ]
+            )
+        self.assertEqual(events, expected_events)
 
-    def test_lists_tuples_and_empty_inputs_produce_fresh_lists(self):
-        events = []
-        entries = [
-            _GuardEntry("first", True, events),
-            _GuardEntry("second", False, events),
-        ]
-
-        first = torch.compiler.skip_guard_on_globals_unsafe(entries)
-        second = torch.compiler.skip_guard_on_globals_unsafe(tuple(entries))
-        first_empty = torch.compiler.skip_guard_on_globals_unsafe([])
-        second_empty = torch.compiler.skip_guard_on_globals_unsafe(())
-
-        self.assert_exact_bool_list(first, [False, True])
-        self.assert_exact_bool_list(second, [False, True])
-        self.assert_exact_bool_list(first_empty, [])
-        self.assert_exact_bool_list(second_empty, [])
-        self.assertIsNot(first, second)
-        self.assertIsNot(first_empty, second_empty)
-
-    def test_custom_iterable_is_consumed_once_without_length_or_indexing(self):
-        events = []
-        entries = [
-            _GuardEntry("first", True, events),
-            _GuardEntry("second", False, events),
-            _GuardEntry("third", "global", events),
-        ]
-        iterable = _CountingIterable(entries)
-
-        result = torch.compiler.skip_guard_on_globals_unsafe(iterable)
-
-        self.assert_exact_bool_list(result, [False, True, False])
-        self.assertEqual(iterable.iter_calls, 1)
-        self.assertEqual(iterable.next_calls, len(entries) + 1)
-        self.assertEqual(
-            events,
-            [
-                ("attribute", "first"),
-                ("attribute", "second"),
-                ("attribute", "third"),
-            ],
-        )
-
-    def test_generator_is_fully_consumed_once_in_order(self):
+    def test_arbitrary_iterables_are_consumed_once_in_order(self):
         events = []
         entries = [
             _GuardEntry("first", True, events),
             _GuardEntry("second", False, events),
             _GuardEntry("third", None, events),
         ]
+        iterable = _CountingIterable(entries)
+
+        result = torch.compiler.skip_guard_on_all_nn_modules_unsafe(iterable)
+
+        self.assert_exact_bool_list(result, [False, True, True])
+        self.assertEqual(iterable.iter_calls, 1)
+        self.assertEqual(iterable.next_calls, len(entries) + 1)
+
+        generator_events = []
 
         def guard_entries():
             for index, entry in enumerate(entries):
-                events.append(("yield", index))
+                generator_events.append(("yield", index))
                 yield entry
-            events.append(("finished", len(entries)))
+            generator_events.append(("finished", len(entries)))
 
         generator = guard_entries()
-        result = torch.compiler.skip_guard_on_globals_unsafe(generator)
-
-        self.assert_exact_bool_list(result, [False, True, True])
+        self.assert_exact_bool_list(
+            torch.compiler.skip_guard_on_all_nn_modules_unsafe(generator),
+            [False, True, True],
+        )
         self.assertEqual(
-            events,
-            [
-                ("yield", 0),
-                ("attribute", "first"),
-                ("yield", 1),
-                ("attribute", "second"),
-                ("yield", 2),
-                ("attribute", "third"),
-                ("finished", 3),
-            ],
+            generator_events,
+            [("yield", 0), ("yield", 1), ("yield", 2), ("finished", 3)],
         )
         with self.assertRaises(StopIteration):
             next(generator)
 
-    def test_iteration_attribute_and_truth_exceptions_propagate_unchanged(self):
-        function = torch.compiler.skip_guard_on_globals_unsafe
+        first_empty = torch.compiler.skip_guard_on_all_nn_modules_unsafe([])
+        second_empty = torch.compiler.skip_guard_on_all_nn_modules_unsafe(())
+        self.assertEqual(first_empty, [])
+        self.assertEqual(second_empty, [])
+        self.assertIsNot(first_empty, second_empty)
+
+    def test_iteration_attribute_call_and_truth_exceptions_propagate(self):
+        function = torch.compiler.skip_guard_on_all_nn_modules_unsafe
 
         iter_error = RuntimeError("iter failure")
         iter_failure = _IterFailure(iter_error)
@@ -355,59 +407,68 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
         with self.assertRaises(LookupError) as next_raised:
             function(next_failure)
         self.assertIs(next_raised.exception, next_error)
-        # Python may call iter() again on an object that is already its own
-        # iterator when entering an inlined comprehension. The iteration is
-        # still a single pass, as shown by the exact __next__ sequence below.
         self.assertGreaterEqual(next_failure.iter_calls, 1)
         self.assertEqual(next_failure.next_calls, 2)
-        self.assertEqual(events, [("attribute", "first")])
 
-        attribute_error = KeyError("attribute failure")
-        attribute_failure = _AttributeFailureEntry(attribute_error)
-        untouched = _AttributeFailureEntry(AssertionError("should not be reached"))
-        with self.assertRaises(KeyError) as attribute_raised:
-            function((attribute_failure, untouched))
-        self.assertIs(attribute_raised.exception, attribute_error)
-        self.assertEqual(attribute_failure.attribute_calls, 1)
-        self.assertEqual(untouched.attribute_calls, 0)
+        orig_guard_error = KeyError("orig_guard failure")
+        orig_guard_failure = _OrigGuardFailure(orig_guard_error)
+        with self.assertRaises(KeyError) as orig_guard_raised:
+            function((orig_guard_failure, _MissingOrigGuard()))
+        self.assertIs(orig_guard_raised.exception, orig_guard_error)
+        self.assertEqual(orig_guard_failure.calls, 1)
+
+        source_error = IndexError("source failure")
+        source_failure = _SourceFailure(source_error)
+        with self.assertRaises(IndexError) as source_raised:
+            function((types.SimpleNamespace(orig_guard=source_failure),))
+        self.assertIs(source_raised.exception, source_error)
+        self.assertEqual(source_failure.calls, 1)
+
+        method_error = OSError("method lookup failure")
+        method_failure = _MethodLookupFailure(method_error)
+        method_entry = types.SimpleNamespace(
+            orig_guard=types.SimpleNamespace(source=method_failure)
+        )
+        with self.assertRaises(OSError) as method_raised:
+            function((method_entry,))
+        self.assertIs(method_raised.exception, method_error)
+        self.assertEqual(method_failure.calls, 1)
+
+        call_error = ArithmeticError("call failure")
+        call_failure = _CallFailure(call_error)
+        with self.assertRaises(ArithmeticError) as call_raised:
+            function((_simple_entry(call_failure),))
+        self.assertIs(call_raised.exception, call_error)
+        self.assertEqual(call_failure.calls, 1)
 
         truth_error = ValueError("truth failure")
         truth_failure = _TruthFailure(truth_error)
-        truth_entry = _GuardEntry("truth", truth_failure, [])
         with self.assertRaises(ValueError) as truth_raised:
-            function((truth_entry,))
+            function((_simple_entry(lambda: truth_failure),))
         self.assertIs(truth_raised.exception, truth_error)
-        self.assertEqual(truth_failure.bool_calls, 1)
+        self.assertEqual(truth_failure.calls, 1)
 
+        with self.assertRaises(AttributeError):
+            function((_MissingOrigGuard(),))
+        with self.assertRaises(TypeError) as noncallable_raised:
+            function((_simple_entry(object()),))
+        self.assertEqual(
+            str(noncallable_raised.exception), "'object' object is not callable"
+        )
+        with self.assertRaises(TypeError) as invalid_truth_raised:
+            function((_simple_entry(lambda: _InvalidTruth()),))
+        invalid_truth_message = "__bool__ should return bool, returned int"
+        self.assertEqual(str(invalid_truth_raised.exception), invalid_truth_message)
         with self.assertRaises(TypeError) as invalid_iterator_raised:
             function(_InvalidIterator())
         invalid_iterator_message = "iter() returned non-iterator of type 'list'"
         self.assertEqual(
             str(invalid_iterator_raised.exception), invalid_iterator_message
         )
-        self.assertEqual(
-            invalid_iterator_raised.exception.args, (invalid_iterator_message,)
-        )
-
-    def test_attribute_and_truth_value_errors_match_pytorch_2_13(self):
-        function = torch.compiler.skip_guard_on_globals_unsafe
-
-        with self.assertRaises(AttributeError) as missing_raised:
-            function((_MissingGlobal(),))
-        missing_message = "'_MissingGlobal' object has no attribute 'is_global'"
-        self.assertEqual(str(missing_raised.exception), missing_message)
-        self.assertEqual(missing_raised.exception.args, (missing_message,))
-
-        invalid_entry = types.SimpleNamespace(is_global=_InvalidTruth())
-        with self.assertRaises(TypeError) as truth_raised:
-            function((invalid_entry,))
-        truth_message = "__bool__ should return bool, returned int"
-        self.assertEqual(str(truth_raised.exception), truth_message)
-        self.assertEqual(truth_raised.exception.args, (truth_message,))
 
     def test_signature_documentation_and_function_metadata(self):
         compiler = importlib.import_module("torch_rs.compiler")
-        function = compiler.skip_guard_on_globals_unsafe
+        function = compiler.skip_guard_on_all_nn_modules_unsafe
 
         self.assertIs(torch.compiler, compiler)
         self.assertIs(sys.modules["torch_rs.compiler"], compiler)
@@ -415,8 +476,8 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
         self.assertEqual(str(inspect.signature(function)), "(guard_entries)")
         self.assertEqual(function.__annotations__, {})
         self.assertEqual(typing.get_type_hints(function), {})
-        self.assertEqual(function.__name__, "skip_guard_on_globals_unsafe")
-        self.assertEqual(function.__qualname__, "skip_guard_on_globals_unsafe")
+        self.assertEqual(function.__name__, "skip_guard_on_all_nn_modules_unsafe")
+        self.assertEqual(function.__qualname__, "skip_guard_on_all_nn_modules_unsafe")
         self.assertEqual(function.__module__, "torch_rs.compiler")
         self.assertIs(inspect.getmodule(function), compiler)
         self.assertEqual(
@@ -426,22 +487,17 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
-        code_objects = tuple(_walk_code_objects(function.__code__))
         self.assertEqual(
-            tuple(name for code in code_objects for name in code.co_names),
-            ("is_global",),
+            function.__code__.co_names,
+            ("orig_guard", "source", "is_unspecialized_nn_module"),
         )
-        self.assertEqual(function.__code__.co_varnames[0], "guard_entries")
-        self.assertIn(
-            "entry",
-            {name for code in code_objects for name in code.co_varnames},
-        )
+        self.assertEqual(function.__code__.co_varnames, ("guard_entries", "entry"))
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
     def test_exports_copying_and_pickling_use_the_canonical_function(self):
         compiler = torch.compiler
-        function = compiler.skip_guard_on_globals_unsafe
+        function = compiler.skip_guard_on_all_nn_modules_unsafe
 
         self.assertEqual(compiler.__all__, COMPILER_EXPORTS)
         compiler_namespace = {}
@@ -454,12 +510,12 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
             self.assertIs(compiler_namespace[name], getattr(compiler, name))
 
         self.assertNotIn("compiler", torch.__all__)
-        self.assertNotIn("skip_guard_on_globals_unsafe", torch.__all__)
-        self.assertFalse(hasattr(torch, "skip_guard_on_globals_unsafe"))
+        self.assertNotIn("skip_guard_on_all_nn_modules_unsafe", torch.__all__)
+        self.assertFalse(hasattr(torch, "skip_guard_on_all_nn_modules_unsafe"))
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("compiler", top_level_namespace)
-        self.assertNotIn("skip_guard_on_globals_unsafe", top_level_namespace)
+        self.assertNotIn("skip_guard_on_all_nn_modules_unsafe", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -470,27 +526,27 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_argument_errors_match_pytorch_2_13(self):
-        function = torch.compiler.skip_guard_on_globals_unsafe
+        function = torch.compiler.skip_guard_on_all_nn_modules_unsafe
         cases = (
             (
                 lambda: function(),
-                "skip_guard_on_globals_unsafe() missing 1 required positional "
-                "argument: 'guard_entries'",
+                "skip_guard_on_all_nn_modules_unsafe() missing 1 required "
+                "positional argument: 'guard_entries'",
             ),
             (
                 lambda: function([], []),
-                "skip_guard_on_globals_unsafe() takes 1 positional argument but 2 "
-                "were given",
+                "skip_guard_on_all_nn_modules_unsafe() takes 1 positional "
+                "argument but 2 were given",
             ),
             (
                 lambda: function([], guard_entries=[]),
-                "skip_guard_on_globals_unsafe() got multiple values for argument "
-                "'guard_entries'",
+                "skip_guard_on_all_nn_modules_unsafe() got multiple values for "
+                "argument 'guard_entries'",
             ),
             (
                 lambda: function(entries=[]),
-                "skip_guard_on_globals_unsafe() got an unexpected keyword argument "
-                "'entries'",
+                "skip_guard_on_all_nn_modules_unsafe() got an unexpected "
+                "keyword argument 'entries'",
             ),
             (lambda: function(None), "'NoneType' object is not iterable"),
             (lambda: function(1), "'int' object is not iterable"),
@@ -523,11 +579,15 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
             ):
                 with context:
                     self.assertIs(torch.is_grad_enabled(), expected_grad_state)
-                    entry = types.SimpleNamespace(is_global=False)
-                    self.assertEqual(
-                        compiler.skip_guard_on_globals_unsafe(iter((entry,))),
-                        [True],
+                    result = compiler.skip_guard_on_all_nn_modules_unsafe(
+                        iter(
+                            (
+                                _simple_entry(lambda: True),
+                                _simple_entry(lambda: False),
+                            )
+                        )
                     )
+                    self.assert_exact_bool_list(result, [False, True])
                     self.assertIs(torch.is_grad_enabled(), expected_grad_state)
                     self.assertIs(compiler.get_default_backend(), backend)
                     self.assertEqual(
@@ -539,10 +599,10 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
                         expected_queries,
                     )
 
-            old_function = compiler.skip_guard_on_globals_unsafe
+            old_function = compiler.skip_guard_on_all_nn_modules_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
-            new_function = reloaded.skip_guard_on_globals_unsafe
+            new_function = reloaded.skip_guard_on_all_nn_modules_unsafe
 
             self.assertIs(reloaded, compiler)
             self.assertIs(torch.compiler, compiler)
@@ -551,8 +611,7 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
             self.assertIsNot(compiler.__all__, old_exports)
             self.assertEqual(compiler.__all__, COMPILER_EXPORTS)
             self.assertIs(compiler.get_default_backend(), backend)
-            entry = types.SimpleNamespace(is_global=True)
-            self.assertEqual(new_function((entry,)), [False])
+            self.assertEqual(new_function((_simple_entry(lambda: True),)), [False])
             self.assertIs(copy.copy(old_function), old_function)
             self.assertIs(copy.deepcopy(old_function), old_function)
             with self.assertRaises(pickle.PicklingError):
@@ -581,12 +640,19 @@ import torch_rs as torch
 
 modules_before_call = set(sys.modules)
 guard_entries = (
-    types.SimpleNamespace(is_global=True),
-    types.SimpleNamespace(is_global=False),
-    types.SimpleNamespace(is_global=None),
+    types.SimpleNamespace(
+        orig_guard=types.SimpleNamespace(
+            source=types.SimpleNamespace(is_unspecialized_nn_module=lambda: True)
+        )
+    ),
+    types.SimpleNamespace(
+        orig_guard=types.SimpleNamespace(
+            source=types.SimpleNamespace(is_unspecialized_nn_module=lambda: False)
+        )
+    ),
 )
-result = torch.compiler.skip_guard_on_globals_unsafe(iter(guard_entries))
-assert result == [False, True, True]
+result = torch.compiler.skip_guard_on_all_nn_modules_unsafe(iter(guard_entries))
+assert result == [False, True]
 assert set(sys.modules) == modules_before_call
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """

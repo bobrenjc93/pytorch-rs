@@ -31,7 +31,76 @@ SUPPORTED_COMPILER_EXPORTS = {
 }
 
 
-class _OpaqueEntry:
+class _TruthProbe:
+    def __init__(self, label, result, events):
+        self.label = label
+        self.result = result
+        self.events = events
+
+    def __bool__(self):
+        self.events.append(("bool", self.label))
+        return self.result
+
+
+class _LengthTruthProbe:
+    def __init__(self, label, result, events):
+        self.label = label
+        self.result = result
+        self.events = events
+
+    def __len__(self):
+        self.events.append(("len", self.label))
+        return self.result
+
+
+class _MethodProbe:
+    def __init__(self, label, result, events):
+        self.label = label
+        self.result = result
+        self.events = events
+
+    def __call__(self):
+        self.events.append(("call", self.label))
+        return self.result
+
+
+class _Source:
+    def __init__(self, label, method, events):
+        self.label = label
+        self.method = method
+        self.events = events
+
+    @property
+    def is_unspecialized_nn_module(self):
+        self.events.append(("method", self.label))
+        return self.method
+
+
+class _OrigGuard:
+    def __init__(self, label, source, events):
+        self.label = label
+        self._source = source
+        self.events = events
+
+    @property
+    def source(self):
+        self.events.append(("source", self.label))
+        return self._source
+
+
+class _GuardEntry:
+    def __init__(self, label, result, events):
+        method = _MethodProbe(label, result, events)
+        source = _Source(label, method, events)
+        self.label = label
+        self._orig_guard = _OrigGuard(label, source, events)
+        self.events = events
+
+    @property
+    def orig_guard(self):
+        self.events.append(("orig_guard", self.label))
+        return self._orig_guard
+
     def _fail(self, operation):
         raise AssertionError(f"guard entry was inspected through {operation}")
 
@@ -93,7 +162,17 @@ class _CountingIterable:
         raise AssertionError("iterable was indexed")
 
 
-class _IterationFailure:
+class _IterFailure:
+    def __init__(self, error):
+        self.error = error
+        self.iter_calls = 0
+
+    def __iter__(self):
+        self.iter_calls += 1
+        raise self.error
+
+
+class _NextFailure:
     def __init__(self, first_entry, error):
         self.first_entry = first_entry
         self.error = error
@@ -111,25 +190,112 @@ class _IterationFailure:
         raise self.error
 
 
+class _OrigGuardFailure:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    @property
+    def orig_guard(self):
+        self.calls += 1
+        raise self.error
+
+
+class _SourceFailure:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    @property
+    def source(self):
+        self.calls += 1
+        raise self.error
+
+
+class _MethodLookupFailure:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    @property
+    def is_unspecialized_nn_module(self):
+        self.calls += 1
+        raise self.error
+
+
+class _CallFailure:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    def __call__(self):
+        self.calls += 1
+        raise self.error
+
+
+class _TruthFailure:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    def __bool__(self):
+        self.calls += 1
+        raise self.error
+
+
+class _InvalidTruth:
+    def __bool__(self):
+        return 1
+
+
+class _MissingOrigGuard:
+    pass
+
+
 class _InvalidIterator:
     def __iter__(self):
         return []
 
 
+def _simple_entry(method):
+    return types.SimpleNamespace(
+        orig_guard=types.SimpleNamespace(
+            source=types.SimpleNamespace(
+                is_unspecialized_nn_module=method
+            )
+        )
+    )
+
+
+def _normalized_code_metadata(code):
+    return (
+        code.co_names,
+        code.co_varnames,
+        tuple(
+            _normalized_code_metadata(constant)
+            if isinstance(constant, types.CodeType)
+            else constant
+            for constant in code.co_consts
+        ),
+        code.co_freevars,
+        code.co_cellvars,
+    )
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
+class CompilerSkipGuardOnAllNnModulesUnsafeReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "compiler.skip_all_guards_unsafe differentials require pinned "
-                "PyTorch 2.13.0"
+                "compiler.skip_guard_on_all_nn_modules_unsafe differentials "
+                "require pinned PyTorch 2.13.0"
             )
 
     def assert_error_matches(self, actual_call, expected_call):
-        with self.assertRaises(Exception) as actual_raised:
+        with self.assertRaises(BaseException) as actual_raised:
             actual_call()
-        with self.assertRaises(Exception) as expected_raised:
+        with self.assertRaises(BaseException) as expected_raised:
             expected_call()
         self.assertIs(type(actual_raised.exception), type(expected_raised.exception))
         self.assertEqual(str(actual_raised.exception), str(expected_raised.exception))
@@ -148,9 +314,27 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
         return shape
 
     def behavior_outcome(self, function):
-        entries = [_OpaqueEntry(), _OpaqueEntry(), _OpaqueEntry()]
+        events = []
+        entries = [
+            _GuardEntry("true", True, events),
+            _GuardEntry("false", False, events),
+            _GuardEntry("none", None, events),
+            _GuardEntry("object", object(), events),
+            _GuardEntry(
+                "custom-true", _TruthProbe("custom-true", True, events), events
+            ),
+            _GuardEntry(
+                "custom-false", _TruthProbe("custom-false", False, events), events
+            ),
+            _GuardEntry(
+                "length-true", _LengthTruthProbe("length-true", 2, events), events
+            ),
+            _GuardEntry(
+                "length-false", _LengthTruthProbe("length-false", 0, events), events
+            ),
+        ]
+        original_entries = tuple(entries)
         list_result = function(entries)
-        second_list_result = function(entries)
         tuple_result = function(tuple(entries))
         first_empty = function([])
         second_empty = function(())
@@ -158,13 +342,13 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
         iterable = _CountingIterable(entries)
         iterable_result = function(iterable)
 
-        events = []
+        generator_events = []
 
         def generated_entries():
-            for index, entry in enumerate(entries):
-                events.append(("yield", index))
+            for index, entry in enumerate(entries[:2]):
+                generator_events.append(("yield", index))
                 yield entry
-            events.append(("finished", len(entries)))
+            generator_events.append(("finished", 2))
 
         generator = generated_entries()
         generator_result = function(generator)
@@ -177,7 +361,6 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
 
         results = (
             list_result,
-            second_list_result,
             tuple_result,
             first_empty,
             second_empty,
@@ -187,52 +370,121 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
         return {
             "results": results,
             "result_types": tuple(type(result).__name__ for result in results),
-            "all_exact_false": tuple(
-                all(value is False for value in result) for result in results
+            "exact_bools": tuple(
+                tuple(value is True if value else value is False for value in result)
+                for result in results
             ),
             "fresh": (
-                list_result is not second_list_result,
                 list_result is not entries,
+                list_result is not tuple_result,
                 first_empty is not second_empty,
             ),
-            "source_length": len(entries),
+            "source_preserved": all(
+                actual is original
+                for actual, original in zip(entries, original_entries)
+            ),
+            "events": events,
             "iter_calls": iterable.iter_calls,
             "next_calls": iterable.next_calls,
-            "events": events,
+            "generator_events": generator_events,
             "generator_exhausted": generator_exhausted,
         }
 
-    def exception_outcome(self, function):
-        error = LookupError("next failure")
-        iterable = _IterationFailure(_OpaqueEntry(), error)
+    def captured_error(self, call, expected_error=None):
         try:
-            function(iterable)
-        except BaseException as raised:
+            call()
+        except BaseException as error:
             return (
-                type(raised).__name__,
-                str(raised),
-                raised.args,
-                raised is error,
-                iterable.iter_calls,
-                iterable.next_calls,
+                type(error).__name__,
+                str(error),
+                error.args,
+                error is expected_error,
             )
-        self.fail("iteration exception was swallowed")
+        self.fail("expected an exception")
 
-    def test_all_iterable_forms_and_non_inspection_match_pytorch_2_13(self):
+    def exception_outcome(self, function):
+        iter_error = RuntimeError("iter failure")
+        iter_failure = _IterFailure(iter_error)
+        iter_outcome = self.captured_error(
+            lambda: function(iter_failure), iter_error
+        ) + (iter_failure.iter_calls,)
+
+        next_error = LookupError("next failure")
+        next_failure = _NextFailure(_simple_entry(lambda: False), next_error)
+        next_outcome = self.captured_error(
+            lambda: function(next_failure), next_error
+        ) + (next_failure.iter_calls, next_failure.next_calls)
+
+        orig_error = KeyError("orig_guard failure")
+        orig_failure = _OrigGuardFailure(orig_error)
+        orig_outcome = self.captured_error(
+            lambda: function((orig_failure,)), orig_error
+        ) + (orig_failure.calls,)
+
+        source_error = IndexError("source failure")
+        source_failure = _SourceFailure(source_error)
+        source_outcome = self.captured_error(
+            lambda: function((types.SimpleNamespace(orig_guard=source_failure),)),
+            source_error,
+        ) + (source_failure.calls,)
+
+        method_error = OSError("method lookup failure")
+        method_failure = _MethodLookupFailure(method_error)
+        method_outcome = self.captured_error(
+            lambda: function(
+                (
+                    types.SimpleNamespace(
+                        orig_guard=types.SimpleNamespace(source=method_failure)
+                    ),
+                )
+            ),
+            method_error,
+        ) + (method_failure.calls,)
+
+        call_error = ArithmeticError("call failure")
+        call_failure = _CallFailure(call_error)
+        call_outcome = self.captured_error(
+            lambda: function((_simple_entry(call_failure),)), call_error
+        ) + (call_failure.calls,)
+
+        truth_error = ValueError("truth failure")
+        truth_failure = _TruthFailure(truth_error)
+        truth_outcome = self.captured_error(
+            lambda: function((_simple_entry(lambda: truth_failure),)), truth_error
+        ) + (truth_failure.calls,)
+
+        return (
+            iter_outcome,
+            next_outcome,
+            orig_outcome,
+            source_outcome,
+            method_outcome,
+            call_outcome,
+            truth_outcome,
+            self.captured_error(lambda: function((_MissingOrigGuard(),))),
+            self.captured_error(lambda: function((_simple_entry(object()),))),
+            self.captured_error(
+                lambda: function((_simple_entry(lambda: _InvalidTruth()),))
+            ),
+            self.captured_error(lambda: function(_InvalidIterator())),
+        )
+
+    def test_values_access_order_and_iterables_match_pytorch_2_13(self):
         self.assertEqual(
-            self.behavior_outcome(torch.compiler.skip_all_guards_unsafe),
             self.behavior_outcome(
-                reference_torch.compiler.skip_all_guards_unsafe
+                torch.compiler.skip_guard_on_all_nn_modules_unsafe
+            ),
+            self.behavior_outcome(
+                reference_torch.compiler.skip_guard_on_all_nn_modules_unsafe
             ),
         )
 
-    def test_iteration_and_argument_errors_match_pytorch_2_13(self):
-        actual = torch.compiler.skip_all_guards_unsafe
-        expected = reference_torch.compiler.skip_all_guards_unsafe
+    def test_attribute_call_truth_and_iteration_errors_match_pytorch_2_13(self):
+        actual = torch.compiler.skip_guard_on_all_nn_modules_unsafe
+        expected = reference_torch.compiler.skip_guard_on_all_nn_modules_unsafe
 
         self.assertEqual(
-            self.exception_outcome(actual),
-            self.exception_outcome(expected),
+            self.exception_outcome(actual), self.exception_outcome(expected)
         )
         cases = (
             (lambda: actual(), lambda: expected()),
@@ -244,10 +496,6 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             (lambda: actual(entries=[]), lambda: expected(entries=[])),
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(1), lambda: expected(1)),
-            (
-                lambda: actual(_InvalidIterator()),
-                lambda: expected(_InvalidIterator()),
-            ),
         )
         for case, (actual_call, expected_call) in enumerate(cases):
             with self.subTest(case=case):
@@ -256,8 +504,8 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
     def test_signature_documentation_and_metadata_match_pytorch_2_13(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")
         expected_compiler = importlib.import_module("torch.compiler")
-        actual = actual_compiler.skip_all_guards_unsafe
-        expected = expected_compiler.skip_all_guards_unsafe
+        actual = actual_compiler.skip_guard_on_all_nn_modules_unsafe
+        expected = expected_compiler.skip_guard_on_all_nn_modules_unsafe
 
         self.assertIs(torch.compiler, actual_compiler)
         self.assertIs(reference_torch.compiler, expected_compiler)
@@ -283,15 +531,16 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
         )
-        self.assertEqual(actual.__code__.co_names, expected.__code__.co_names)
-        self.assertEqual(actual.__code__.co_varnames, expected.__code__.co_varnames)
-        self.assertEqual(actual.__code__.co_consts, expected.__code__.co_consts)
+        self.assertEqual(
+            _normalized_code_metadata(actual.__code__),
+            _normalized_code_metadata(expected.__code__),
+        )
 
     def test_exports_copying_and_pickling_match_pytorch_2_13(self):
         actual_compiler = torch.compiler
         expected_compiler = reference_torch.compiler
-        actual = actual_compiler.skip_all_guards_unsafe
-        expected = expected_compiler.skip_all_guards_unsafe
+        actual = actual_compiler.skip_guard_on_all_nn_modules_unsafe
+        expected = expected_compiler.skip_guard_on_all_nn_modules_unsafe
 
         self.assertEqual(
             actual_compiler.__all__,
@@ -306,8 +555,8 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             reference_torch.__all__.count("compiler"),
         )
         self.assertEqual(
-            torch.__all__.count("skip_all_guards_unsafe"),
-            reference_torch.__all__.count("skip_all_guards_unsafe"),
+            torch.__all__.count("skip_guard_on_all_nn_modules_unsafe"),
+            reference_torch.__all__.count("skip_guard_on_all_nn_modules_unsafe"),
         )
 
         for module in (actual_compiler, expected_compiler):
@@ -320,7 +569,7 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
-            self.assertNotIn("skip_all_guards_unsafe", namespace)
+            self.assertNotIn("skip_guard_on_all_nn_modules_unsafe", namespace)
 
         for function in (actual, expected):
             self.assertIs(copy.copy(function), function)
@@ -349,10 +598,16 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
                 compiler.is_exporting(),
             )
             before_grad = module.is_grad_enabled()
-            result = compiler.skip_all_guards_unsafe(
-                _OpaqueEntry() for _ in range(2)
+            result = compiler.skip_guard_on_all_nn_modules_unsafe(
+                iter((_simple_entry(lambda: True), _simple_entry(lambda: False)))
             )
             after_grad = module.is_grad_enabled()
+            with module.no_grad():
+                no_grad_before = module.is_grad_enabled()
+                no_grad_result = compiler.skip_guard_on_all_nn_modules_unsafe(
+                    (_simple_entry(lambda: True),)
+                )
+                no_grad_after = module.is_grad_enabled()
             after_queries = (
                 compiler.is_compiling(),
                 compiler.is_dynamo_compiling(),
@@ -360,21 +615,21 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
             )
             return (
                 result,
-                all(value is False for value in result),
+                tuple(value is True if value else value is False for value in result),
+                no_grad_result,
                 compiler.get_default_backend() is backend,
                 before_grad,
                 after_grad,
+                no_grad_before,
+                no_grad_after,
                 before_queries,
                 after_queries,
             )
         finally:
             compiler.set_default_backend(original_backend)
 
-    def test_calls_preserve_compiler_state_like_pytorch_2_13(self):
-        self.assertEqual(
-            self.state_outcome(torch),
-            self.state_outcome(reference_torch),
-        )
+    def test_calls_preserve_compiler_and_grad_state_like_pytorch_2_13(self):
+        self.assertEqual(self.state_outcome(torch), self.state_outcome(reference_torch))
 
     def reload_outcome(self, module, compiler_module_name):
         compiler = importlib.import_module(compiler_module_name)
@@ -385,10 +640,10 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
 
         try:
             compiler.set_default_backend(backend)
-            old_function = compiler.skip_all_guards_unsafe
+            old_function = compiler.skip_guard_on_all_nn_modules_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
-            new_function = reloaded.skip_all_guards_unsafe
+            new_function = reloaded.skip_guard_on_all_nn_modules_unsafe
 
             try:
                 pickle.dumps(old_function)
@@ -410,7 +665,7 @@ class CompilerSkipAllGuardsUnsafeReferenceTests(unittest.TestCase):
                 old_function is new_function,
                 old_exports is compiler.__all__,
                 compiler.get_default_backend() is backend,
-                new_function((_OpaqueEntry(),)),
+                new_function((_simple_entry(lambda: True),)),
                 copy.copy(old_function) is old_function,
                 copy.deepcopy(old_function) is old_function,
                 old_pickle_error,
