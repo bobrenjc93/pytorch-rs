@@ -197,6 +197,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                     "is_nccl_available",
                     "is_ucc_available",
                     "is_xccl_available",
+                    "get_group_rank",
                     "get_node_local_rank",
                 }
             ],
@@ -291,6 +292,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                 "is_nccl_available",
                 "is_ucc_available",
                 "is_xccl_available",
+                "get_group_rank",
                 "get_node_local_rank",
             },
         )
@@ -311,6 +313,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                 "is_nccl_available",
                 "is_ucc_available",
                 "is_xccl_available",
+                "get_group_rank",
                 "get_node_local_rank",
             },
         )

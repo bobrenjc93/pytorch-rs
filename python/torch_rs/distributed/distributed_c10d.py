@@ -17,6 +17,7 @@ __all__ = [
     "is_nccl_available",
     "is_ucc_available",
     "is_xccl_available",
+    "get_group_rank",
     "get_node_local_rank",
 ]
 
@@ -123,6 +124,30 @@ def get_rank(group: _ProcessGroup | None = None) -> int:
         "Default process group has not been initialized, please make sure to "
         "call init_process_group."
     )
+
+
+def get_group_rank(group: _ProcessGroup, global_rank: int) -> int:
+    """
+    Translate a global rank into a group rank.
+
+    ``global_rank`` must be part of ``group`` otherwise this raises RuntimeError.
+
+    Args:
+        group (ProcessGroup): ProcessGroup to find the relative rank.
+        global_rank (int): Global rank to query.
+
+    Returns:
+        Group rank of ``global_rank`` relative to ``group``
+
+    N.B. calling this function on the default process group returns identity
+    """
+    if group is None:
+        return global_rank
+    if group not in {}:
+        raise ValueError(
+            f"Group {group} is not registered, please create group with "
+            "torch.distributed.new_group API"
+        )
 
 
 def get_world_size(group: _ProcessGroup | None = None) -> int:
