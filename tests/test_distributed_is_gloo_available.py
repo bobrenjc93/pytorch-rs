@@ -138,6 +138,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -179,6 +180,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -207,6 +209,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         self.assertEqual(
             {name for name in owner_namespace if not name.startswith("__")},
             {
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -282,6 +285,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
             {name for name in vars(distributed) if not name.startswith("_")},
             {
                 "distributed_c10d",
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -304,6 +308,7 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
                 if not name.startswith("_")
             },
             {
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -324,7 +329,6 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
             "ProcessGroup",
             "ProcessGroupGloo",
             "all_reduce",
-            "destroy_process_group",
             "init_process_group",
             "new_group",
         ):

@@ -12,6 +12,7 @@ def is_available() -> bool:
     return False
 
 
+from .distributed_c10d import destroy_process_group as destroy_process_group
 from .distributed_c10d import get_backend_config as get_backend_config
 from .distributed_c10d import get_backend as get_backend
 from .distributed_c10d import get_rank as get_rank

@@ -190,6 +190,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 for name in expected_c10d.__all__
                 if name
                 in {
+                    "destroy_process_group",
                     "get_backend_config",
                     "get_backend",
                     "get_rank",
@@ -282,6 +283,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -302,6 +304,7 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
             {
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -341,7 +344,6 @@ class DistributedGetPgCountReferenceTests(unittest.TestCase):
             "GroupMember",
             "ProcessGroup",
             "all_reduce",
-            "destroy_process_group",
             "init_process_group",
             "new_group",
         ):

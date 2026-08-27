@@ -19,37 +19,34 @@ except ImportError:
     reference_torch = None
 
 
-NON_NONE_GROUP_ERROR = (
-    "torch_rs.distributed.get_rank() does not support non-None process "
-    "groups"
-)
-
-
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class DistributedGetRankReferenceTests(unittest.TestCase):
+class DistributedDestroyProcessGroupReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "distributed.get_rank differentials require pinned "
-                "PyTorch 2.13.0"
+                "distributed.destroy_process_group differentials require "
+                "pinned PyTorch 2.13.0"
             )
 
-    def error_outcome(self, call):
+    def outcome(self, call):
         try:
-            call()
+            result = call()
         except BaseException as error:
-            return type(error), str(error), error.args
-        self.fail("expected the call to raise")
+            return "error", type(error), str(error), error.args
+        return "return", type(result), result
 
-    def assert_error_matches(self, actual_call, expected_call):
-        self.assertEqual(
-            self.error_outcome(actual_call),
-            self.error_outcome(expected_call),
-        )
+    def assert_call_matches(self, actual_call, expected_call):
+        self.assertEqual(self.outcome(actual_call), self.outcome(expected_call))
+
+    def assert_zero_process_group_state(self):
+        self.assertIs(torch.distributed.is_initialized(), False)
+        self.assertEqual(torch.distributed.get_pg_count(), 0)
+        self.assertIs(reference_torch.distributed.is_initialized(), False)
+        self.assertEqual(reference_torch.distributed.get_pg_count(), 0)
 
     def threaded_outcome(self, module):
-        function = module.distributed.get_rank
+        function = module.distributed.destroy_process_group
         worker_count = 8
         barrier = threading.Barrier(worker_count)
         worker_states = [None] * worker_count
@@ -61,12 +58,13 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
                 with context:
                     barrier.wait(timeout=10)
                     before = module.is_grad_enabled()
-                    outcomes = []
-                    for call in (function, lambda: function(group=None)):
-                        outcomes.append(self.error_outcome(call))
                     worker_states[index] = (
                         before,
-                        tuple(outcomes),
+                        self.outcome(lambda: function(-100)),
+                        self.outcome(function),
+                        self.outcome(lambda: function(index)),
+                        module.distributed.get_pg_count(),
+                        module.distributed.is_initialized(),
                         module.is_grad_enabled(),
                     )
             except BaseException as error:
@@ -106,14 +104,13 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
             none_type,
         )
 
-    def test_uninitialized_errors_match_across_environments_threads_and_reloads(self):
-        actual = torch.distributed.get_rank
-        expected = reference_torch.distributed.get_rank
-        expected_c10d = importlib.import_module(
-            "torch.distributed.distributed_c10d"
-        )
+    def test_uninitialized_behavior_matches_across_environment_threads_and_reload(self):
+        actual = torch.distributed.destroy_process_group
+        expected = reference_torch.distributed.destroy_process_group
+        expected_c10d = reference_torch.distributed.distributed_c10d
 
         self.assertIs(expected_c10d.GroupMember.WORLD, None)
+        self.assertEqual(expected_c10d.GroupMember.NON_GROUP_MEMBER, -100)
         environments = (
             {},
             {"USE_DISTRIBUTED": "0"},
@@ -123,21 +120,30 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
                 "MASTER_ADDR": "127.0.0.1",
                 "MASTER_PORT": "29500",
                 "RANK": "0",
-                "WORLD_SIZE": "123",
+                "WORLD_SIZE": "1",
             },
+        )
+        calls = (
+            (lambda function: function()),
+            (lambda function: function(None)),
+            (lambda function: function(group=None)),
+            (lambda function: function(-100)),
+            (lambda function: function(group=-100)),
+            (lambda function: function(-100.0)),
+            (lambda function: function(object())),
+            (lambda function: function(0)),
+            (lambda function: function("group")),
         )
         for environment in environments:
             with self.subTest(environment=environment):
                 with mock.patch.dict(os.environ, environment, clear=True):
                     for _ in range(3):
-                        self.assert_error_matches(actual, expected)
-                        self.assert_error_matches(
-                            lambda: actual(None), lambda: expected(None)
-                        )
-                        self.assert_error_matches(
-                            lambda: actual(group=None),
-                            lambda: expected(group=None),
-                        )
+                        for call in calls:
+                            self.assert_call_matches(
+                                lambda call=call: call(actual),
+                                lambda call=call: call(expected),
+                            )
+                        self.assert_zero_process_group_state()
 
         self.assertEqual(
             self.threaded_outcome(torch),
@@ -146,22 +152,20 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
 
         actual_distributed = torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
-        expected_outcome = self.error_outcome(expected)
+        expected_outcomes = tuple(
+            self.outcome(lambda call=call: call(expected)) for call in calls
+        )
         for _ in range(3):
             actual_c10d = importlib.reload(actual_c10d)
             actual_distributed = importlib.reload(actual_distributed)
-            actual = actual_distributed.get_rank
+            actual = actual_distributed.destroy_process_group
             self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
-            self.assertIs(actual_c10d.get_rank, actual)
-            self.assertEqual(self.error_outcome(actual), expected_outcome)
+            self.assertIs(actual_c10d.destroy_process_group, actual)
             self.assertEqual(
-                self.error_outcome(lambda: actual(group=None)),
-                expected_outcome,
+                tuple(self.outcome(lambda call=call: call(actual)) for call in calls),
+                expected_outcomes,
             )
-
-        self.assertIs(expected_c10d.GroupMember.WORLD, None)
-        self.assertIs(torch.distributed.is_initialized(), False)
-        self.assertIs(reference_torch.distributed.is_initialized(), False)
+            self.assert_zero_process_group_state()
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_distributed = importlib.import_module("torch_rs.distributed")
@@ -172,15 +176,15 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
         expected_c10d = importlib.import_module(
             "torch.distributed.distributed_c10d"
         )
-        actual = actual_distributed.get_rank
-        expected = expected_distributed.get_rank
+        actual = actual_distributed.destroy_process_group
+        expected = expected_distributed.destroy_process_group
 
         self.assertIs(torch.distributed, actual_distributed)
         self.assertIs(reference_torch.distributed, expected_distributed)
         self.assertIs(actual_distributed.distributed_c10d, actual_c10d)
         self.assertIs(expected_distributed.distributed_c10d, expected_c10d)
-        self.assertIs(actual_c10d.get_rank, actual)
-        self.assertIs(expected_c10d.get_rank, expected)
+        self.assertIs(actual_c10d.destroy_process_group, actual)
+        self.assertIs(expected_c10d.destroy_process_group, expected)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -188,8 +192,6 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
             str(inspect.signature(expected)),
         )
         self.assertEqual(set(actual.__annotations__), set(expected.__annotations__))
-        self.assertIs(actual.__annotations__["return"], int)
-        self.assertIs(expected.__annotations__["return"], int)
         self.assertEqual(
             self.annotation_shape(actual.__annotations__["group"]),
             self.annotation_shape(expected.__annotations__["group"]),
@@ -215,13 +217,13 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
         )
         self.assertFalse(hasattr(actual_c10d, "ProcessGroup"))
 
-    def test_imports_copy_wildcards_and_pickle_match_the_supported_scope(self):
+    def test_imports_copy_wildcards_and_pickle_match_supported_scope(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
         expected_c10d = expected_distributed.distributed_c10d
-        actual = actual_distributed.get_rank
-        expected = expected_distributed.get_rank
+        actual = actual_distributed.destroy_process_group
+        expected = expected_distributed.destroy_process_group
         supported = {
             "destroy_process_group",
             "get_backend_config",
@@ -247,8 +249,8 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
             [name for name in expected_c10d.__all__ if name in supported],
         )
         self.assertEqual(
-            torch.__all__.count("get_rank"),
-            reference_torch.__all__.count("get_rank"),
+            torch.__all__.count("destroy_process_group"),
+            reference_torch.__all__.count("destroy_process_group"),
         )
 
         for module, function in (
@@ -259,12 +261,12 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
         ):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertIs(namespace["get_rank"], function)
+            self.assertIs(namespace["destroy_process_group"], function)
 
         for module in (torch, reference_torch):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
-            self.assertNotIn("get_rank", namespace)
+            self.assertNotIn("destroy_process_group", namespace)
 
         self.assertIs(copy.copy(actual), actual)
         self.assertIs(copy.copy(expected), expected)
@@ -281,25 +283,38 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
                     self.pickle_shape(expected, protocol),
                 )
 
-    def test_default_and_argument_errors_match_pytorch_2_13(self):
-        actual = torch.distributed.get_rank
-        expected = reference_torch.distributed.get_rank
-        cases = (
-            (actual, expected),
-            (lambda: actual(None), lambda: expected(None)),
-            (lambda: actual(group=None), lambda: expected(group=None)),
-            (lambda: actual(None, None), lambda: expected(None, None)),
-            (lambda: actual(enabled=True), lambda: expected(enabled=True)),
-            (
-                lambda: actual(None, group=None),
-                lambda: expected(None, group=None),
-            ),
-        )
-        for case, (actual_call, expected_call) in enumerate(cases):
-            with self.subTest(case=case):
-                self.assert_error_matches(actual_call, expected_call)
+    def test_argument_and_equality_behavior_matches_pytorch_2_13(self):
+        actual = torch.distributed.destroy_process_group
+        expected = reference_torch.distributed.destroy_process_group
 
-    def test_non_none_groups_and_distributed_execution_remain_unsupported(self):
+        class SentinelEquivalent:
+            def __eq__(self, other):
+                return other == -100
+
+        class BrokenEquality:
+            def __eq__(self, other):
+                raise RuntimeError("equality failed")
+
+        cases = (
+            (lambda function: function(None, None)),
+            (lambda function: function(enabled=True)),
+            (lambda function: function(None, group=None)),
+            (lambda function: function(False)),
+            (lambda function: function(True)),
+            (lambda function: function(-1)),
+            (lambda function: function("")),
+            (lambda function: function(SentinelEquivalent())),
+            (lambda function: function(BrokenEquality())),
+        )
+        for case, call in enumerate(cases):
+            with self.subTest(case=case):
+                self.assert_call_matches(
+                    lambda call=call: call(actual),
+                    lambda call=call: call(expected),
+                )
+        self.assert_zero_process_group_state()
+
+    def test_only_the_independent_lifecycle_api_is_added(self):
         actual_distributed = torch.distributed
         expected_distributed = reference_torch.distributed
         actual_c10d = actual_distributed.distributed_c10d
@@ -311,47 +326,11 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
             name for name in vars(expected_distributed) if not name.startswith("_")
         }
 
-        self.assertEqual(
-            actual_public,
-            {
-                "distributed_c10d",
-                "destroy_process_group",
-                "get_backend_config",
-                "get_backend",
-                "get_rank",
-                "get_world_size",
-                "get_pg_count",
-                "is_available",
-                "is_gloo_available",
-                "is_initialized",
-                "is_mpi_available",
-                "is_nccl_available",
-                "is_ucc_available",
-                "is_xccl_available",
-                "get_node_local_rank",
-            },
+        self.assertIn("destroy_process_group", actual_public)
+        self.assertIs(
+            actual_distributed.destroy_process_group,
+            actual_c10d.destroy_process_group,
         )
-        self.assertEqual(
-            {
-                name for name in vars(actual_c10d) if not name.startswith("_")
-            },
-            {
-                "destroy_process_group",
-                "get_backend_config",
-                "get_backend",
-                "get_rank",
-                "get_world_size",
-                "get_pg_count",
-                "is_gloo_available",
-                "is_initialized",
-                "is_mpi_available",
-                "is_nccl_available",
-                "is_ucc_available",
-                "is_xccl_available",
-                "get_node_local_rank",
-            },
-        )
-
         unsupported = expected_public - actual_public
         self.assertTrue(unsupported)
         for name in unsupported:
@@ -370,12 +349,7 @@ class DistributedGetRankReferenceTests(unittest.TestCase):
                 self.assertTrue(hasattr(expected_c10d, name))
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
-
-        for group in (object(), 0, False, "group"):
-            with self.subTest(group=type(group).__name__):
-                with self.assertRaises(NotImplementedError) as raised:
-                    actual_distributed.get_rank(group)
-                self.assertEqual(str(raised.exception), NON_NONE_GROUP_ERROR)
+        self.assert_zero_process_group_state()
 
 
 if __name__ == "__main__":

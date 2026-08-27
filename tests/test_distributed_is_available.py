@@ -147,6 +147,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -223,6 +224,7 @@ class DistributedIsAvailableTests(unittest.TestCase):
             {name for name in vars(distributed) if not name.startswith("_")},
             {
                 "distributed_c10d",
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",

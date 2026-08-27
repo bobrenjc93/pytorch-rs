@@ -215,6 +215,7 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
@@ -241,7 +242,6 @@ class DistributedIsAvailableReferenceTests(unittest.TestCase):
                 {
                     "ProcessGroup",
                     "all_reduce",
-                    "destroy_process_group",
                     "init_process_group",
                 }.issubset(unsupported)
             )

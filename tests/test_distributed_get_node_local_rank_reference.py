@@ -247,6 +247,7 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
         actual = actual_distributed.get_node_local_rank
         expected = expected_distributed.get_node_local_rank
         supported = {
+            "destroy_process_group",
             "get_backend_config",
             "get_backend",
             "get_rank",
@@ -333,7 +334,6 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
         for name in (
             "ProcessGroup",
             "all_reduce",
-            "destroy_process_group",
             "init_process_group",
             "new_group",
         ):
