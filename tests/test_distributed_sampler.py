@@ -6,6 +6,7 @@ import pickle
 import unittest
 from collections.abc import Iterator
 from typing import get_args, get_origin
+from unittest import mock
 
 import torch_rs as torch
 
@@ -246,35 +247,139 @@ class DistributedSamplerTests(unittest.TestCase):
             )
         self.assertEqual(raised.exception.args, ("source length is unavailable",))
 
-    def test_implicit_discovery_and_shuffling_are_explicitly_unsupported(self):
+    def test_implicit_discovery_uses_distributed_queries_in_order(self):
+        module = importlib.import_module("torch_rs.utils.data.distributed")
         cases = (
-            (
-                lambda: DistributedSampler([], shuffle=False),
-                "DistributedSampler requires an explicit num_replicas",
-            ),
-            (
-                lambda: DistributedSampler(
-                    [], num_replicas=2, rank=None, shuffle=False
-                ),
-                "DistributedSampler requires an explicit rank",
-            ),
-            (
-                lambda: DistributedSampler([], num_replicas=2, rank=0),
-                "DistributedSampler only supports shuffle=False",
-            ),
-            (
-                lambda: DistributedSampler(
-                    [], num_replicas=2, rank=0, shuffle="yes"
-                ),
-                "DistributedSampler only supports shuffle=False",
-            ),
+            (None, None, ["available", "world_size", "available", "rank", "len"]),
+            (None, 2, ["available", "world_size", "len"]),
+            (4, None, ["available", "rank", "len"]),
+            (4, 2, ["len"]),
         )
-        for call, message in cases:
-            with self.subTest(message=message):
+        for num_replicas, rank, expected_events in cases:
+            events = []
+
+            class RecordingSource:
+                def __len__(self):
+                    events.append("len")
+                    return 7
+
+            def is_available():
+                events.append("available")
+                return True
+
+            def get_world_size():
+                events.append("world_size")
+                return 4
+
+            def get_rank():
+                events.append("rank")
+                return 2
+
+            with (
+                mock.patch.object(module.dist, "is_available", is_available),
+                mock.patch.object(module.dist, "get_world_size", get_world_size),
+                mock.patch.object(module.dist, "get_rank", get_rank),
+            ):
+                source = RecordingSource()
+                sampler = DistributedSampler(
+                    source,
+                    num_replicas=num_replicas,
+                    rank=rank,
+                    shuffle=False,
+                    seed=13,
+                )
+
+            with self.subTest(num_replicas=num_replicas, rank=rank):
+                self.assertEqual(events, expected_events)
+                self.assertIs(sampler.dataset, source)
+                self.assertEqual(sampler.num_replicas, 4)
+                self.assertEqual(sampler.rank, 2)
+                self.assertEqual(sampler.num_samples, 2)
+                self.assertEqual(sampler.total_size, 8)
+                self.assertEqual(sampler.seed, 13)
+
+    def test_implicit_discovery_errors_precede_dataset_access(self):
+        module = importlib.import_module("torch_rs.utils.data.distributed")
+        for num_replicas, expected_events in (
+            (None, ["available"]),
+            (3, ["available"]),
+        ):
+            events = []
+
+            class RecordingSource:
+                def __len__(self):
+                    events.append("len")
+                    return 5
+
+            def is_available():
+                events.append("available")
+                return False
+
+            def unexpected_query():
+                events.append("query")
+                raise AssertionError("discovery query should not run")
+
+            with (
+                mock.patch.object(module.dist, "is_available", is_available),
+                mock.patch.object(module.dist, "get_world_size", unexpected_query),
+                mock.patch.object(module.dist, "get_rank", unexpected_query),
+            ):
+                with self.subTest(num_replicas=num_replicas):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        r"^Requires distributed package to be available$",
+                    ):
+                        DistributedSampler(
+                            RecordingSource(),
+                            num_replicas=num_replicas,
+                            rank=None,
+                            shuffle=False,
+                        )
+                    self.assertEqual(events, expected_events)
+
+        events = []
+
+        class RecordingSource:
+            def __len__(self):
+                events.append("len")
+                return 5
+
+        def is_available():
+            events.append("available")
+            return True
+
+        def get_world_size():
+            events.append("world_size")
+            return 0
+
+        def get_rank():
+            events.append("rank")
+            return 0
+
+        with (
+            mock.patch.object(module.dist, "is_available", is_available),
+            mock.patch.object(module.dist, "get_world_size", get_world_size),
+            mock.patch.object(module.dist, "get_rank", get_rank),
+        ):
+            with self.assertRaisesRegex(
+                ValueError,
+                r"^Invalid rank 0, rank should be in the interval \[0, -1\]$",
+            ):
+                DistributedSampler(RecordingSource(), shuffle=False)
+        self.assertEqual(
+            events, ["available", "world_size", "available", "rank"]
+        )
+
+    def test_shuffling_is_explicitly_unsupported(self):
+        for shuffle in (True, "yes"):
+            with self.subTest(shuffle=shuffle):
                 with self.assertRaisesRegex(
-                    NotImplementedError, rf"^{message}$"
+                    NotImplementedError,
+                    r"^DistributedSampler only supports shuffle=False$",
                 ):
-                    call()
+                    DistributedSampler(
+                        [], num_replicas=2, rank=0, shuffle=shuffle
+                    )
 
         sampler = DistributedSampler(
             range(4), num_replicas=2, rank=0, shuffle=False

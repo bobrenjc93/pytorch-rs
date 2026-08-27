@@ -4,6 +4,7 @@ import operator
 import pickle
 import unittest
 from typing import get_args, get_origin
+from unittest import mock
 
 import torch_rs as torch
 
@@ -148,6 +149,72 @@ class DistributedSamplerReferenceTests(unittest.TestCase):
         actual_source.size = 3
         expected_source.size = 3
         self.assert_error_matches(lambda: iter(actual), lambda: iter(expected))
+
+    def test_implicit_discovery_and_unavailable_errors_match(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+
+        def construct(root, num_replicas, rank, available, world_size=4):
+            module = importlib.import_module(f"{root.__name__}.utils.data.distributed")
+            events = []
+
+            class RecordingSource:
+                def __len__(self):
+                    events.append("len")
+                    return 7
+
+            def is_available():
+                events.append("available")
+                return available
+
+            def get_world_size():
+                events.append("world_size")
+                return world_size
+
+            def get_rank():
+                events.append("rank")
+                return 2
+
+            with (
+                mock.patch.object(module.dist, "is_available", is_available),
+                mock.patch.object(module.dist, "get_world_size", get_world_size),
+                mock.patch.object(module.dist, "get_rank", get_rank),
+            ):
+                try:
+                    sampler = root.utils.data.DistributedSampler(
+                        RecordingSource(),
+                        num_replicas=num_replicas,
+                        rank=rank,
+                        shuffle=False,
+                        seed=31,
+                    )
+                except Exception as error:
+                    return events, type(error).__name__, str(error), error.args
+            state = sampler.__dict__.copy()
+            state.pop("dataset")
+            return events, state
+
+        for num_replicas, rank, available, world_size in (
+            (None, None, True, 4),
+            (None, 2, True, 4),
+            (4, None, True, 4),
+            (4, 2, True, 4),
+            (None, None, False, 4),
+            (4, None, False, 4),
+            (None, None, True, 0),
+        ):
+            with self.subTest(
+                num_replicas=num_replicas,
+                rank=rank,
+                available=available,
+                world_size=world_size,
+            ):
+                actual = construct(
+                    torch, num_replicas, rank, available, world_size
+                )
+                expected = construct(
+                    reference_torch, num_replicas, rank, available, world_size
+                )
+                self.assertEqual(actual, expected)
 
     def test_validation_call_forms_and_falsey_shuffle_match(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")

@@ -2,6 +2,7 @@ import math
 from collections.abc import Iterator
 from typing import TypeVar
 
+from ... import distributed as dist
 from .dataset import Dataset
 from .sampler import Sampler
 
@@ -71,11 +72,13 @@ class DistributedSampler(Sampler[_T_co]):
         drop_last: bool = False,
     ) -> None:
         if num_replicas is None:
-            raise NotImplementedError(
-                "DistributedSampler requires an explicit num_replicas"
-            )
+            if not dist.is_available():
+                raise RuntimeError("Requires distributed package to be available")
+            num_replicas = dist.get_world_size()
         if rank is None:
-            raise NotImplementedError("DistributedSampler requires an explicit rank")
+            if not dist.is_available():
+                raise RuntimeError("Requires distributed package to be available")
+            rank = dist.get_rank()
         if rank >= num_replicas or rank < 0:
             raise ValueError(
                 f"Invalid rank {rank}, rank should be in the interval [0, {num_replicas - 1}]"
