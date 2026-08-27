@@ -53,7 +53,8 @@ const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
 // tensor runtime to infer capabilities.
-const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 6] = [
+const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 7] = [
+    ("_GLIBCXX_USE_CXX11_ABI", false),
     ("_has_cudnn", false),
     ("_has_cuda", false),
     ("has_openmp", false),
@@ -11516,7 +11517,12 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // the extension's generated export list also prevents the package wildcard
     // import from copying them onto the public torch_rs module.
     let exports = module.getattr("__all__")?;
-    for name in ["_has_cudnn", "_has_cuda", "_is_flash_attention_available"] {
+    for name in [
+        "_GLIBCXX_USE_CXX11_ABI",
+        "_has_cudnn",
+        "_has_cuda",
+        "_is_flash_attention_available",
+    ] {
         exports.call_method1("remove", (name,))?;
     }
     module.add("Size", size_type_object(py)?.clone_ref(py))?;
