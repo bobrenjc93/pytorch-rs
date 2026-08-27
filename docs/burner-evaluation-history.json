@@ -7073,6 +7073,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1133",
+      "recordedAt": "2026-08-27T13:04:34.460Z",
+      "label": "PR #1133",
+      "kind": "leaf",
+      "prNumber": 1133,
+      "title": "Accept the dtype-only Tensor.sum overload",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 97.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 80.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
