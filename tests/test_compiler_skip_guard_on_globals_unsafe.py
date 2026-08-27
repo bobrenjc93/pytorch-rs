@@ -32,6 +32,7 @@ COMPILER_EXPORTS = [
     "is_compiling",
     "is_dynamo_compiling",
     "is_exporting",
+    "keep_portable_guards_unsafe",
     "skip_guard_on_globals_unsafe",
     "skip_all_guards_unsafe",
 ]
