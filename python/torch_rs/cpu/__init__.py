@@ -3,6 +3,9 @@ This package implements abstractions found in ``torch.cuda``
 to facilitate writing device-agnostic code.
 """
 
+from contextlib import AbstractContextManager as _AbstractContextManager
+from typing import Any as _Any
+
 from .. import device as _device
 
 __all__ = [
@@ -11,8 +14,10 @@ __all__ = [
     "synchronize",
     "current_device",
     "current_stream",
+    "stream",
     "device_count",
     "Stream",
+    "StreamContext",
     "Event",
 ]
 
@@ -90,6 +95,46 @@ def current_stream(device: _device | str | int | None = None) -> Stream:
 
     """
     return _current_stream
+
+
+class StreamContext(_AbstractContextManager):
+    r"""Context-manager that selects a given stream.
+
+    N.B. This class only exists to facilitate device-agnostic code
+
+    """
+
+    cur_stream: Stream | None
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.prev_stream = _default_cpu_stream
+
+    def __enter__(self):
+        cur_stream = self.stream
+        if cur_stream is None:
+            return
+
+        global _current_stream
+        self.prev_stream = _current_stream
+        _current_stream = cur_stream
+
+    def __exit__(self, type: _Any, value: _Any, traceback: _Any) -> None:
+        cur_stream = self.stream
+        if cur_stream is None:
+            return
+
+        global _current_stream
+        _current_stream = self.prev_stream
+
+
+def stream(stream: Stream) -> _AbstractContextManager:
+    r"""Wrapper around the Context-manager StreamContext that
+    selects a given stream.
+
+    N.B. This function only exists to facilitate device-agnostic code
+    """
+    return StreamContext(stream)
 
 
 def current_device() -> str:

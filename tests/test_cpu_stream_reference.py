@@ -204,11 +204,13 @@ class CpuStreamReferenceTests(unittest.TestCase):
         supported = {
             "current_device",
             "current_stream",
+            "stream",
             "device_count",
             "Event",
             "is_available",
             "is_initialized",
             "Stream",
+            "StreamContext",
             "synchronize",
         }
         self.assertEqual(
@@ -420,10 +422,10 @@ class CpuStreamReferenceTests(unittest.TestCase):
         )
         self.assertTrue(all(error[0] == "PicklingError" for error in actual[1]))
 
-    def test_stream_context_apis_remain_unsupported(self):
+    def test_stream_context_apis_are_available(self):
         for name in ("stream", "StreamContext"):
             with self.subTest(name=name):
-                self.assertFalse(hasattr(torch.cpu, name))
+                self.assertTrue(hasattr(torch.cpu, name))
                 self.assertTrue(hasattr(reference_torch.cpu, name))
 
 

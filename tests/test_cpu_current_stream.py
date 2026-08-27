@@ -189,8 +189,10 @@ class CpuCurrentStreamTests(unittest.TestCase):
                 "synchronize",
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Stream",
+                "StreamContext",
                 "Event",
             ],
         )
@@ -317,11 +319,11 @@ class CpuCurrentStreamTests(unittest.TestCase):
                 with self.assertRaises(pickle.PicklingError):
                     pickle.dumps(value)
 
-    def test_stream_context_apis_remain_unsupported(self):
+    def test_stream_context_apis_are_available(self):
         self.assertTrue(hasattr(torch.cpu, "current_stream"))
         for name in ("stream", "StreamContext"):
             with self.subTest(name=name):
-                self.assertFalse(hasattr(torch.cpu, name))
+                self.assertTrue(hasattr(torch.cpu, name))
 
     def test_importing_and_calling_does_not_import_pytorch(self):
         script = r"""
@@ -346,8 +348,8 @@ assert function.__code__.co_names == ("_current_stream",)
 assert type(stream) is torch.cpu.Stream
 assert function(UnusableDevice()) is stream
 assert function(device="cuda:0") is stream
-assert not hasattr(torch.cpu, "stream")
-assert not hasattr(torch.cpu, "StreamContext")
+with torch.cpu.stream(stream):
+    assert function() is stream
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

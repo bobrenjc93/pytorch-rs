@@ -220,8 +220,10 @@ class CpuStreamTests(unittest.TestCase):
                 "synchronize",
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Stream",
+                "StreamContext",
                 "Event",
             ],
         )
@@ -237,11 +239,13 @@ class CpuStreamTests(unittest.TestCase):
             {
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Event",
                 "is_available",
                 "is_initialized",
                 "Stream",
+                "StreamContext",
                 "synchronize",
             },
         )
@@ -333,10 +337,10 @@ class CpuStreamTests(unittest.TestCase):
         with self.assertRaises(pickle.PicklingError):
             pickle.dumps(old_stream)
 
-    def test_stream_context_apis_remain_unsupported(self):
+    def test_stream_context_apis_are_available(self):
         for name in ("stream", "StreamContext"):
             with self.subTest(name=name):
-                self.assertFalse(hasattr(torch.cpu, name))
+                self.assertTrue(hasattr(torch.cpu, name))
 
     def test_importing_and_using_stream_does_not_import_pytorch(self):
         script = r"""
@@ -363,8 +367,8 @@ assert stream.wait_stream(stream=argument) is None
 assert vars(stream) == {}
 assert not hasattr(torch, "Stream")
 assert torch.cpu.current_stream(argument) is torch.cpu.current_stream()
-assert not hasattr(torch.cpu, "stream")
-assert not hasattr(torch.cpu, "StreamContext")
+with torch.cpu.stream(stream):
+    assert torch.cpu.current_stream() is stream
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(

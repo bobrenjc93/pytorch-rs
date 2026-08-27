@@ -133,8 +133,10 @@ class CpuIsAvailableTests(unittest.TestCase):
                 "synchronize",
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Stream",
+                "StreamContext",
                 "Event",
             ],
         )
@@ -154,8 +156,10 @@ class CpuIsAvailableTests(unittest.TestCase):
             {
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Stream",
+                "StreamContext",
                 "Event",
                 "is_available",
                 "is_initialized",
@@ -220,8 +224,10 @@ class CpuIsAvailableTests(unittest.TestCase):
             {
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Stream",
+                "StreamContext",
                 "Event",
                 "is_available",
                 "is_initialized",
@@ -232,8 +238,6 @@ class CpuIsAvailableTests(unittest.TestCase):
             "amp",
             "get_capabilities",
             "set_device",
-            "StreamContext",
-            "stream",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cpu, name))

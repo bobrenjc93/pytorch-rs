@@ -192,8 +192,10 @@ class CpuEventTests(unittest.TestCase):
                 "synchronize",
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Stream",
+                "StreamContext",
                 "Event",
             ],
         )

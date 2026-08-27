@@ -176,8 +176,10 @@ class CpuEventReferenceTests(unittest.TestCase):
         supported = {
             "current_device",
             "current_stream",
+            "stream",
             "device_count",
             "Stream",
+            "StreamContext",
             "Event",
             "is_available",
             "is_initialized",
