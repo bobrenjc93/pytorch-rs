@@ -60,7 +60,13 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             [
                 name
                 for name in expected_module.__all__
-                if name in {"is_built", "is_flash_attention_available"}
+                if name
+                in {
+                    "enable_flash_sdp",
+                    "flash_sdp_enabled",
+                    "is_built",
+                    "is_flash_attention_available",
+                }
             ],
         )
         self.assertIs(type(actual), types.FunctionType)
@@ -123,7 +129,13 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             {
                 name
                 for name in expected_child_wildcard
-                if name in {"is_built", "is_flash_attention_available"}
+                if name
+                in {
+                    "enable_flash_sdp",
+                    "flash_sdp_enabled",
+                    "is_built",
+                    "is_flash_attention_available",
+                }
             },
         )
 
@@ -227,7 +239,7 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             torch.tensor([2.0, 3.0], device="cuda:0")
 
-    def test_only_the_supported_cuda_build_queries_are_exposed(self):
+    def test_only_the_supported_cuda_metadata_and_preference_are_exposed(self):
         actual_module = torch.backends.cuda
         expected_module = reference_torch.backends.cuda
         actual_public = {
@@ -239,15 +251,21 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             actual_public,
-            {"is_built", "is_flash_attention_available", "torch"},
+            {
+                "enable_flash_sdp",
+                "flash_sdp_enabled",
+                "is_built",
+                "is_flash_attention_available",
+                "torch",
+            },
         )
         self.assertTrue(actual_public.issubset(expected_public))
         self.assertTrue(
             {
                 "SDPAParams",
                 "cufft_plan_cache",
-                "enable_flash_sdp",
                 "matmul",
+                "sdp_kernel",
             }.issubset(expected_public - actual_public)
         )
         self.assertFalse(hasattr(torch, "cuda"))
