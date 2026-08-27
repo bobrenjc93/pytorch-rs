@@ -38,7 +38,8 @@ def destroy_process_group(group: _ProcessGroup | None = None):
         return
     if group is None:
         raise AssertionError("Process group cannot be None")
-    raise ValueError("Invalid process group specified")
+    if {}.get(group, None) is None:
+        raise ValueError("Invalid process group specified")
 
 
 def get_backend_config(group: _ProcessGroup | None = None) -> str:

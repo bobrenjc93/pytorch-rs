@@ -364,12 +364,57 @@ class DistributedDestroyProcessGroupTests(unittest.TestCase):
             def __eq__(self, other):
                 raise RuntimeError("equality failed")
 
+        class BrokenHash:
+            def __eq__(self, other):
+                return False
+
+            def __hash__(self):
+                raise RuntimeError("hash failed")
+
+        class TracedHash:
+            def __init__(self):
+                self.events = []
+
+            def __eq__(self, other):
+                self.events.append(("eq", other))
+                return False
+
+            def __hash__(self):
+                self.events.append(("hash",))
+                return 123
+
         self.assertIsNone(function(SentinelEquivalent()))
         self.assert_error(
             RuntimeError,
             "equality failed",
             lambda: function(BrokenEquality()),
         )
+        for group in ([], {}, set(), bytearray()):
+            with self.subTest(unhashable=type(group).__name__):
+                with self.assertRaises(TypeError) as expected_raised:
+                    {}.get(group, None)
+                with self.assertRaises(TypeError) as actual_raised:
+                    function(group)
+                self.assertEqual(
+                    str(actual_raised.exception),
+                    str(expected_raised.exception),
+                )
+                self.assertEqual(
+                    actual_raised.exception.args,
+                    expected_raised.exception.args,
+                )
+        self.assert_error(
+            RuntimeError,
+            "hash failed",
+            lambda: function(BrokenHash()),
+        )
+        traced_group = TracedHash()
+        self.assert_error(
+            ValueError,
+            INVALID_ERROR,
+            lambda: function(traced_group),
+        )
+        self.assertEqual(traced_group.events, [("eq", -100), ("hash",)])
         self.assert_zero_process_group_state()
 
     def test_initialization_and_collectives_remain_unsupported(self):

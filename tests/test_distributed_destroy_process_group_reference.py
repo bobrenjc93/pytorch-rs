@@ -295,6 +295,13 @@ class DistributedDestroyProcessGroupReferenceTests(unittest.TestCase):
             def __eq__(self, other):
                 raise RuntimeError("equality failed")
 
+        class BrokenHash:
+            def __eq__(self, other):
+                return False
+
+            def __hash__(self):
+                raise RuntimeError("hash failed")
+
         cases = (
             (lambda function: function(None, None)),
             (lambda function: function(enabled=True)),
@@ -305,6 +312,11 @@ class DistributedDestroyProcessGroupReferenceTests(unittest.TestCase):
             (lambda function: function("")),
             (lambda function: function(SentinelEquivalent())),
             (lambda function: function(BrokenEquality())),
+            (lambda function: function([])),
+            (lambda function: function({})),
+            (lambda function: function(set())),
+            (lambda function: function(bytearray())),
+            (lambda function: function(BrokenHash())),
         )
         for case, call in enumerate(cases):
             with self.subTest(case=case):
@@ -312,6 +324,22 @@ class DistributedDestroyProcessGroupReferenceTests(unittest.TestCase):
                     lambda call=call: call(actual),
                     lambda call=call: call(expected),
                 )
+
+        def traced_hash_outcome(function):
+            events = []
+
+            class TracedHash:
+                def __eq__(self, other):
+                    events.append(("eq", other))
+                    return False
+
+                def __hash__(self):
+                    events.append(("hash",))
+                    return 123
+
+            return self.outcome(lambda: function(TracedHash())), events
+
+        self.assertEqual(traced_hash_outcome(actual), traced_hash_outcome(expected))
         self.assert_zero_process_group_state()
 
     def test_only_the_independent_lifecycle_api_is_added(self):
