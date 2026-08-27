@@ -45,6 +45,7 @@ static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 static CUDNN_ENABLED: AtomicBool = AtomicBool::new(true);
+static CUDNN_BENCHMARK: AtomicBool = AtomicBool::new(false);
 static NNPACK_ENABLED: AtomicBool = AtomicBool::new(true);
 static GUARD_COLLECTIVES_ENABLED: AtomicBool = AtomicBool::new(false);
 const BROADCAST_TENSORS_EXACT_TENSORS_ERROR: &str =
@@ -5017,12 +5018,41 @@ fn get_cudnn_enabled_native() -> bool {
     CUDNN_ENABLED.load(Ordering::SeqCst)
 }
 
+#[pyfunction(
+    name = "_set_cudnn_benchmark",
+    signature = (benchmark, /),
+    text_signature = None
+)]
+fn set_cudnn_benchmark_native(benchmark: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !benchmark.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(benchmark)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "set_benchmark_cudnn expects a bool, but got {type_name}"
+        )));
+    }
+    CUDNN_BENCHMARK.store(benchmark.is_truthy()?, Ordering::SeqCst);
+    Ok(())
+}
+
+#[pyfunction(name = "_get_cudnn_benchmark", signature = (), text_signature = None)]
+fn get_cudnn_benchmark_native() -> bool {
+    CUDNN_BENCHMARK.load(Ordering::SeqCst)
+}
+
 fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(set_cudnn_enabled_native, module)?)?;
     module.add_function(wrap_pyfunction!(get_cudnn_enabled_native, module)?)?;
+    module.add_function(wrap_pyfunction!(set_cudnn_benchmark_native, module)?)?;
+    module.add_function(wrap_pyfunction!(get_cudnn_benchmark_native, module)?)?;
     let exports = module.getattr("__all__")?;
-    exports.call_method1("remove", ("_set_cudnn_enabled",))?;
-    exports.call_method1("remove", ("_get_cudnn_enabled",))?;
+    for name in [
+        "_set_cudnn_enabled",
+        "_get_cudnn_enabled",
+        "_set_cudnn_benchmark",
+        "_get_cudnn_benchmark",
+    ] {
+        exports.call_method1("remove", (name,))?;
+    }
     Ok(())
 }
 
