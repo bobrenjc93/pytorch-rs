@@ -351,7 +351,6 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         for name in (
             "CUDNN_TENSOR_DTYPES",
             "allow_tf32",
-            "benchmark",
             "benchmark_limit",
             "conv",
             "depthwise_kernel",
@@ -368,6 +367,8 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
 
         self.assertIs(type(actual.enabled), bool)
         self.assertIs(type(expected.enabled), bool)
+        self.assertIs(type(actual.benchmark), bool)
+        self.assertIs(type(expected.benchmark), bool)
 
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertTrue(hasattr(reference_torch, "cuda"))

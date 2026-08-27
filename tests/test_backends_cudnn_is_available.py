@@ -245,7 +245,6 @@ class CudnnIsAvailableTests(unittest.TestCase):
         for name in (
             "CUDNN_TENSOR_DTYPES",
             "allow_tf32",
-            "benchmark",
             "benchmark_limit",
             "conv",
             "depthwise_kernel",
@@ -260,13 +259,12 @@ class CudnnIsAvailableTests(unittest.TestCase):
                 self.assertFalse(hasattr(cudnn, name))
 
         self.assertIs(type(cudnn.enabled), bool)
+        self.assertIs(type(cudnn.benchmark), bool)
         self.assertTrue(hasattr(torch._C, "_get_cudnn_enabled"))
         self.assertTrue(hasattr(torch._C, "_set_cudnn_enabled"))
-        for name in (
-            "_cudnn",
-            "_get_cudnn_benchmark",
-            "_set_cudnn_benchmark",
-        ):
+        self.assertTrue(hasattr(torch._C, "_get_cudnn_benchmark"))
+        self.assertTrue(hasattr(torch._C, "_set_cudnn_benchmark"))
+        for name in ("_cudnn",):
             with self.subTest(native_name=name):
                 self.assertFalse(hasattr(torch._C, name))
 
@@ -312,11 +310,15 @@ assert cudnn._init.__code__.co_names == ("torch", "_C", "_has_cudnn")
 assert is_available() is torch._C._has_cudnn is False
 assert version() is None
 assert cudnn.enabled is True
+assert cudnn.benchmark is False
 cudnn.enabled = False
 assert cudnn.enabled is False
+cudnn.benchmark = True
+assert cudnn.benchmark is True
 assert is_available() is False
 assert version() is None
 cudnn.enabled = True
+cudnn.benchmark = False
 assert not hasattr(torch, "_has_cudnn")
 assert not hasattr(torch, "cuda")
 assert not hasattr(cudnn, "flags")
