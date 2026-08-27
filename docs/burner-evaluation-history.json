@@ -7009,6 +7009,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1120",
+      "recordedAt": "2026-08-27T09:40:31.490Z",
+      "label": "PR #1120",
+      "kind": "leaf",
+      "prNumber": 1120,
+      "title": "Add torch.compiler.skip_guard_on_all_nn_modules_unsafe",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 97.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 80.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
