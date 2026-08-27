@@ -16,6 +16,7 @@ from .torch_rs import *
 # owners remain importable without creating or modifying a top-level ``torch``.
 _C = _native
 _sys.modules[f"{__name__}._C"] = _C
+_sys.modules[f"{__name__}._C._autograd"] = _C._autograd
 # TensorBase reports PyTorch's ``torch._C`` metadata, so retain its actual
 # native class privately for package-local descriptor reconstruction.
 _TensorBase = Tensor.__base__

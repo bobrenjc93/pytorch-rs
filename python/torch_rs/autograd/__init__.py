@@ -196,6 +196,7 @@ def backward(
 
 is_multithreading_enabled = _C._is_multithreading_enabled
 is_view_replay_enabled = _C._is_view_replay_enabled
+kineto_available = _C._autograd.kineto_available
 
 __all__ = ["backward", "grad_mode", "no_grad"]
 

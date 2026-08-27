@@ -17,6 +17,7 @@ use pyo3::types::{
 
 use crate::{
     DType, Device, MemoryFormat, Tensor as CoreTensor, TensorError,
+    python_autograd::add_autograd_capabilities,
     python_cpython_compat as cpython_compat,
     python_device::{PyDevice, device_argument_type_error, parse_device_value},
     python_dtype::{PyDType, add_default_dtype_validator, dtype_object},
@@ -11720,6 +11721,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     add_no_grad(module)?;
+    add_autograd_capabilities(module)?;
     // Define this public Python helper outside the partially initialized package.
     // A package import binds it to the live public module; direct native module
     // initialization (including Rust tests) falls back to the module being built.
