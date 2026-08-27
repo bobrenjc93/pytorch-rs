@@ -11,6 +11,7 @@ __all__ = [
     "memory_allocated",
     "memory_reserved",
     "memory_stats",
+    "reset_peak_memory_stats",
 ]
 
 
@@ -160,3 +161,21 @@ def memory_reserved(device_index: _device | str | int | None = None, /) -> int:
         int: the current memory reserved by PyTorch (in bytes) within the current process.
     """
     return memory_stats(device_index).get("reserved_bytes.all.current", 0)
+
+
+def reset_peak_memory_stats(
+    device_index: _device | str | int | None = None, /
+) -> None:
+    r"""Reset the "peak" stats tracked by the current :ref:`accelerator<accelerators>`
+    memory allocator for a given device index.
+
+    Args:
+        device_index (:class:`torch.device`, str, int, optional): the index of the device to target.
+            If not given, use :func:`torch.accelerator.current_device_index` by default.
+            If a :class:`torch.device` or str is provided, its type must match the current
+            :ref:`accelerator<accelerators>` device type.
+
+    .. note:: This function is a no-op if the memory allocator for the current
+        :ref:`accelerator <accelerators>` has not been initialized.
+    """
+    return None

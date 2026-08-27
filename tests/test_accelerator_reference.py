@@ -32,6 +32,7 @@ SUPPORTED = {
     "memory_allocated",
     "memory_reserved",
     "memory_stats",
+    "reset_peak_memory_stats",
 }
 
 MEMORY_LOCAL = {
@@ -41,6 +42,7 @@ MEMORY_LOCAL = {
     "memory_allocated",
     "memory_reserved",
     "memory_stats",
+    "reset_peak_memory_stats",
 }
 ACCELERATOR_LOCAL = SUPPORTED - MEMORY_LOCAL
 
@@ -115,6 +117,7 @@ class AcceleratorReferenceTests(unittest.TestCase):
             "memory_allocated",
             "memory_reserved",
             "memory_stats",
+            "reset_peak_memory_stats",
         ):
             with self.subTest(name=name):
                 actual = getattr(actual_module, name)
@@ -205,6 +208,14 @@ class AcceleratorReferenceTests(unittest.TestCase):
         )
         self.assertIs(actual_module.memory_stats, actual_memory.memory_stats)
         self.assertIs(expected_module.memory_stats, expected_memory.memory_stats)
+        self.assertIs(
+            actual_module.reset_peak_memory_stats,
+            actual_memory.reset_peak_memory_stats,
+        )
+        self.assertIs(
+            expected_module.reset_peak_memory_stats,
+            expected_memory.reset_peak_memory_stats,
+        )
         for name in ("accelerator", *SUPPORTED):
             with self.subTest(top_level_export=name):
                 self.assertEqual(
@@ -310,6 +321,14 @@ assert (
     reference_torch.accelerator.memory_stats
     is reference_torch.accelerator.memory.memory_stats
 )
+assert (
+    torch.accelerator.reset_peak_memory_stats
+    is torch.accelerator.memory.reset_peak_memory_stats
+)
+assert (
+    reference_torch.accelerator.reset_peak_memory_stats
+    is reference_torch.accelerator.memory.reset_peak_memory_stats
+)
 
 class ExplodingDeviceToken:
     def __bool__(self):
@@ -413,6 +432,27 @@ expected_reserved = [
 assert actual_reserved == expected_reserved == [0, 0, 0, 0, 0]
 assert all(type(result) is int for result in actual_reserved)
 assert all(type(result) is int for result in expected_reserved)
+actual_reset = [
+    torch.accelerator.reset_peak_memory_stats(),
+    torch.accelerator.reset_peak_memory_stats(None),
+    torch.accelerator.reset_peak_memory_stats("cuda:0"),
+    torch.accelerator.reset_peak_memory_stats(torch.device("cpu")),
+    torch.accelerator.reset_peak_memory_stats(ExplodingDeviceToken()),
+]
+expected_reset = [
+    reference_torch.accelerator.reset_peak_memory_stats(),
+    reference_torch.accelerator.reset_peak_memory_stats(None),
+    reference_torch.accelerator.reset_peak_memory_stats("cuda:0"),
+    reference_torch.accelerator.reset_peak_memory_stats(
+        reference_torch.device("cpu")
+    ),
+    reference_torch.accelerator.reset_peak_memory_stats(ExplodingDeviceToken()),
+]
+assert actual_reset == expected_reset == [None, None, None, None, None]
+assert torch.accelerator.memory_allocated() == 0
+assert torch.accelerator.max_memory_allocated() == 0
+assert torch.accelerator.memory_reserved() == 0
+assert torch.accelerator.max_memory_reserved() == 0
 assert not reference_torch._C._accelerator_isAllocatorInitialized()
 '''
         completed = subprocess.run(
@@ -616,7 +656,7 @@ assert not hasattr(torch, "cuda")
             msg=completed.stdout + completed.stderr,
         )
 
-    def test_memory_queries_h100_allocation_differential(self):
+    def test_memory_queries_and_peak_reset_h100_allocation_differential(self):
         if not reference_torch.cuda.is_available():
             self.skipTest("requires a CUDA-visible reference PyTorch build")
 
@@ -644,6 +684,9 @@ assert torch.accelerator.memory_reserved is torch.accelerator.memory.memory_rese
 assert torch.accelerator.memory_reserved.__code__.co_names == ("memory_stats", "get")
 assert torch.accelerator.memory_stats is torch.accelerator.memory.memory_stats
 assert torch.accelerator.memory_stats.__code__.co_names == ("_OrderedDict",)
+assert torch.accelerator.reset_peak_memory_stats is torch.accelerator.memory.reset_peak_memory_stats
+assert torch.accelerator.reset_peak_memory_stats.__code__.co_names == ()
+assert reference_torch.accelerator.reset_peak_memory_stats is reference_torch.accelerator.memory.reset_peak_memory_stats
 
 class ExplodingDeviceToken:
     def __bool__(self):
@@ -662,6 +705,12 @@ def reject_discovery():
     raise AssertionError("torch-rs accelerator discovery was attempted")
 
 torch.accelerator._discover_accelerator = reject_discovery
+torch_rs_reset_before = [
+    torch.accelerator.reset_peak_memory_stats(),
+    torch.accelerator.reset_peak_memory_stats("cuda:0"),
+    torch.accelerator.reset_peak_memory_stats(ExplodingDeviceToken()),
+]
+assert torch_rs_reset_before == [None, None, None]
 torch_rs_before = [
     torch.accelerator.memory_stats(),
     torch.accelerator.memory_stats("cuda:0"),
@@ -723,6 +772,10 @@ reference_reserved_before = reference_torch.accelerator.memory_reserved(
 )
 assert type(reference_reserved_before) is int
 assert reference_reserved_before == 0
+assert (
+    reference_torch.accelerator.reset_peak_memory_stats(ExplodingDeviceToken())
+    is None
+)
 assert not reference_torch._C._accelerator_isAllocatorInitialized()
 
 device_index = 0
@@ -829,6 +882,11 @@ torch_rs_reserved_after = [
 ]
 assert torch_rs_reserved_after == [0, 0, 0]
 assert all(type(value) is int for value in torch_rs_reserved_after)
+assert torch.accelerator.reset_peak_memory_stats(ExplodingDeviceToken()) is None
+assert torch.accelerator.memory_allocated() == 0
+assert torch.accelerator.max_memory_allocated() == 0
+assert torch.accelerator.memory_reserved() == 0
+assert torch.accelerator.max_memory_reserved() == 0
 
 del probe
 gc.collect()
@@ -852,11 +910,37 @@ reference_max_allocated_released = (
 )
 assert type(reference_max_allocated_released) is int
 assert reference_max_allocated_released == reference_max_allocated_after
+assert (
+    reference_max_allocated_released
+    > reference_torch.accelerator.memory_allocated(device_index)
+)
 reference_max_reserved_released = (
     reference_torch.accelerator.max_memory_reserved(device_index)
 )
 assert type(reference_max_reserved_released) is int
 assert reference_max_reserved_released == reference_max_reserved_after
+assert reference_torch.accelerator.reset_peak_memory_stats(device_index) is None
+reference_reset = reference_torch.accelerator.memory_stats(device_index)
+assert (
+    reference_reset["allocated_bytes.all.peak"]
+    == reference_reset["allocated_bytes.all.current"]
+)
+assert (
+    reference_reset["reserved_bytes.all.peak"]
+    == reference_reset["reserved_bytes.all.current"]
+)
+assert reference_torch.accelerator.max_memory_allocated(device_index) == (
+    reference_torch.accelerator.memory_allocated(device_index)
+)
+assert reference_torch.accelerator.max_memory_reserved(device_index) == (
+    reference_torch.accelerator.memory_reserved(device_index)
+)
+torch_rs_reset_released = [
+    torch.accelerator.reset_peak_memory_stats(),
+    torch.accelerator.reset_peak_memory_stats(device_index),
+    torch.accelerator.reset_peak_memory_stats(ExplodingDeviceToken()),
+]
+assert torch_rs_reset_released == [None, None, None]
 torch_rs_max_allocated_released = [
     torch.accelerator.max_memory_allocated(),
     torch.accelerator.max_memory_allocated(device_index),
@@ -871,6 +955,16 @@ torch_rs_max_reserved_released = [
 ]
 assert torch_rs_max_reserved_released == [0, 0, 0]
 assert all(type(value) is int for value in torch_rs_max_reserved_released)
+torch_rs_released = (
+    torch.accelerator.memory_allocated(ExplodingDeviceToken()),
+    torch.accelerator.max_memory_allocated(ExplodingDeviceToken()),
+    torch.accelerator.memory_reserved(ExplodingDeviceToken()),
+    torch.accelerator.max_memory_reserved(ExplodingDeviceToken()),
+)
+assert torch_rs_released == (0, 0, 0, 0)
+torch_rs_released_stats = torch.accelerator.memory_stats(ExplodingDeviceToken())
+assert type(torch_rs_released_stats) is OrderedDict
+assert not torch_rs_released_stats
 assert not hasattr(torch, "cuda")
 assert torch._C._has_cuda is False
 assert torch.version.cuda is None
@@ -1017,6 +1111,7 @@ assert torch.version.cuda is None
         old_memory_allocated = accelerator.memory_allocated
         old_memory_reserved = accelerator.memory_reserved
         old_memory_stats = accelerator.memory_stats
+        old_reset_peak_memory_stats = accelerator.reset_peak_memory_stats
         old_functions = {
             name: getattr(accelerator, name) for name in ACCELERATOR_LOCAL
         }
@@ -1068,6 +1163,10 @@ assert torch.version.cuda is None
             accelerator.memory_stats is old_memory_stats,
             accelerator.memory_stats is memory.memory_stats,
             type(accelerator.memory_stats()) is OrderedDict,
+            accelerator.reset_peak_memory_stats is old_reset_peak_memory_stats,
+            accelerator.reset_peak_memory_stats
+            is memory.reset_peak_memory_stats,
+            accelerator.reset_peak_memory_stats() is None,
             tuple(
                 old_functions[name] is not new_functions[name]
                 for name in sorted(ACCELERATOR_LOCAL)
@@ -1112,6 +1211,8 @@ assert torch.version.cuda is None
             else:
                 self.fail("a stale memory function unexpectedly remained pickleable")
 
+        old_reset = old_functions["reset_peak_memory_stats"]()
+        new_reset = new_functions["reset_peak_memory_stats"]()
         old_stats = old_functions["memory_stats"]()
         new_stats = new_functions["memory_stats"]()
         old_max_allocated = old_functions["max_memory_allocated"]()
@@ -1122,7 +1223,6 @@ assert torch.version.cuda is None
         new_allocated = new_functions["memory_allocated"]()
         old_reserved = old_functions["memory_reserved"]()
         new_reserved = new_functions["memory_reserved"]()
-
         result = (
             reloaded is memory,
             accelerator.memory is memory,
@@ -1159,6 +1259,8 @@ assert torch.version.cuda is None
             type(new_reserved) is int,
             old_reserved,
             new_reserved,
+            old_reset is None,
+            new_reset is None,
             tuple(
                 copy.copy(new_functions[name]) is new_functions[name]
                 for name in sorted(MEMORY_LOCAL)
@@ -1199,6 +1301,11 @@ assert torch.version.cuda is None
             accelerator.memory_stats is new_functions["memory_stats"],
             accelerator.memory_stats is memory.memory_stats,
             type(accelerator.memory_stats()) is OrderedDict,
+            accelerator.reset_peak_memory_stats
+            is new_functions["reset_peak_memory_stats"],
+            accelerator.reset_peak_memory_stats
+            is memory.reset_peak_memory_stats,
+            accelerator.reset_peak_memory_stats() is None,
         )
 
     def test_reload_behavior_matches_pytorch_2_13(self):
@@ -1332,6 +1439,18 @@ assert torch.version.cuda is None
             (
                 lambda: actual.memory_stats(unexpected=True),
                 lambda: expected.memory_stats(unexpected=True),
+            ),
+            (
+                lambda: actual.reset_peak_memory_stats(device_index=None),
+                lambda: expected.reset_peak_memory_stats(device_index=None),
+            ),
+            (
+                lambda: actual.reset_peak_memory_stats(None, None),
+                lambda: expected.reset_peak_memory_stats(None, None),
+            ),
+            (
+                lambda: actual.reset_peak_memory_stats(unexpected=True),
+                lambda: expected.reset_peak_memory_stats(unexpected=True),
             ),
             (
                 lambda: actual.is_available(None),
