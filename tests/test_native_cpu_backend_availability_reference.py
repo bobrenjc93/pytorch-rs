@@ -200,7 +200,7 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
                 expected_supported_child_names = {
                     name
                     for name in expected_child_wildcard
-                    if name in {"is_available", "set_flags", "torch"}
+                    if name in {"flags", "is_available", "set_flags", "torch"}
                 }
                 self.assertEqual(
                     actual_child_names,
@@ -322,20 +322,18 @@ class NativeCpuBackendAvailabilityReferenceTests(unittest.TestCase):
 
         self.assertEqual(
             torch.backends.nnpack.__all__,
-            ["is_available", "set_flags"],
+            ["is_available", "flags", "set_flags"],
         )
         self.assertEqual(
             torch.backends.nnpack.__all__,
             [
                 name
                 for name in reference_torch.backends.nnpack.__all__
-                if name in {"is_available", "set_flags"}
+                if name in {"flags", "is_available", "set_flags"}
             ],
         )
-        for name in ("flags",):
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(torch.backends.nnpack, name))
-                self.assertTrue(hasattr(reference_torch.backends.nnpack, name))
+        self.assertTrue(hasattr(torch.backends.nnpack, "flags"))
+        self.assertTrue(hasattr(reference_torch.backends.nnpack, "flags"))
 
 
 if __name__ == "__main__":
