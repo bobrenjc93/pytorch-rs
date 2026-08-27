@@ -132,8 +132,10 @@ class CpuDeviceCountTests(unittest.TestCase):
                 "synchronize",
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Stream",
+                "StreamContext",
                 "Event",
             ],
         )
@@ -153,8 +155,10 @@ class CpuDeviceCountTests(unittest.TestCase):
             {
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Stream",
+                "StreamContext",
                 "Event",
                 "is_available",
                 "is_initialized",
@@ -209,7 +213,7 @@ class CpuDeviceCountTests(unittest.TestCase):
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))
 
-    def test_stream_selection_device_mutation_and_other_apis_are_unsupported(self):
+    def test_remaining_device_mutation_and_other_apis_are_unsupported(self):
         cpu = torch.cpu
 
         self.assertEqual(
@@ -217,8 +221,10 @@ class CpuDeviceCountTests(unittest.TestCase):
             {
                 "current_device",
                 "current_stream",
+                "stream",
                 "device_count",
                 "Stream",
+                "StreamContext",
                 "Event",
                 "is_available",
                 "is_initialized",
@@ -229,8 +235,6 @@ class CpuDeviceCountTests(unittest.TestCase):
             "amp",
             "get_capabilities",
             "set_device",
-            "StreamContext",
-            "stream",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(cpu, name))
