@@ -1,7 +1,9 @@
 import copy
 import importlib
 import inspect
+import os
 import pickle
+import signal
 import subprocess
 import sys
 import threading
@@ -215,6 +217,147 @@ class CompilerSetEnableGuardCollectivesTests(unittest.TestCase):
         self.assertTrue(all(type(result) is bool for result in results))
         self.assertIs(function(False), True)
 
+    @unittest.skipUnless(hasattr(signal, "SIGUSR1"), "requires SIGUSR1")
+    def test_signal_handler_can_reenter_an_exchange_without_deadlock(self):
+        script = r"""
+import inspect
+import signal
+import sys
+
+import torch_rs as torch
+
+compiler = torch.compiler
+function = compiler.set_enable_guard_collectives
+exchange = compiler._state.exchange_enable_guard_collectives
+if hasattr(exchange, "__code__"):
+    target = exchange
+    line_marker = "previous_enabled ="
+else:
+    target = function
+    line_marker = "return _state.exchange_enable_guard_collectives"
+source, first_line = inspect.getsourcelines(target)
+target_line = first_line + next(
+    index for index, line in enumerate(source) if line_marker in line
+)
+handler_results = []
+
+def handler(signum, frame):
+    handler_results.append(function(False))
+
+def tracer(frame, event, arg):
+    if (
+        frame.f_code is target.__code__
+        and event == "line"
+        and frame.f_lineno == target_line
+    ):
+        sys.settrace(None)
+        signal.raise_signal(signal.SIGUSR1)
+    return tracer
+
+signal.signal(signal.SIGUSR1, handler)
+function(True)
+sys.settrace(tracer)
+outer_result = function(True)
+sys.settrace(None)
+final_result = function(False)
+assert handler_results == [True], handler_results
+assert outer_result is False, outer_result
+assert final_result is True, final_result
+"""
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-c", script],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            self.fail("signal-handler re-entry deadlocked the state exchange")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
+    @unittest.skipUnless(hasattr(os, "fork"), "requires os.fork")
+    def test_forked_child_can_exchange_state_without_inherited_lock_deadlock(self):
+        script = r"""
+import os
+import signal
+import threading
+import time
+
+import torch_rs as torch
+
+compiler = torch.compiler
+function = compiler.set_enable_guard_collectives
+function(True)
+state = compiler._state
+lock = getattr(state, "_enable_guard_collectives_lock", None)
+release = None
+holder = None
+
+if lock is not None:
+    locked = threading.Event()
+    release = threading.Event()
+
+    def hold_lock():
+        with lock:
+            locked.set()
+            release.wait(timeout=10)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    assert locked.wait(timeout=10)
+
+read_fd, write_fd = os.pipe()
+child = os.fork()
+if child == 0:
+    os.close(read_fd)
+    try:
+        outcome = (function(False), function(False))
+        os.write(write_fd, repr(outcome).encode())
+        os._exit(0)
+    except BaseException:
+        os._exit(1)
+
+os.close(write_fd)
+if release is not None:
+    release.set()
+    holder.join(timeout=10)
+deadline = time.monotonic() + 5
+while True:
+    waited, status = os.waitpid(child, os.WNOHANG)
+    if waited == child:
+        break
+    if time.monotonic() >= deadline:
+        os.kill(child, signal.SIGKILL)
+        os.waitpid(child, 0)
+        raise RuntimeError("forked child deadlocked on inherited synchronization")
+    time.sleep(0.01)
+payload = os.read(read_fd, 128)
+os.close(read_fd)
+assert os.waitstatus_to_exitcode(status) == 0, status
+assert payload == b"(True, False)", payload
+assert function(False) is True
+"""
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-c", script],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except subprocess.TimeoutExpired:
+            self.fail("a forked child deadlocked on inherited state synchronization")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+
     def test_reset_preserves_state_and_grad_mode(self):
         function = torch.compiler.set_enable_guard_collectives
 
@@ -306,6 +449,9 @@ class CompilerSetEnableGuardCollectivesTests(unittest.TestCase):
         self.assertIs(namespace[function.__name__], function)
 
         self.assertNotIn("set_enable_guard_collectives", torch.__all__)
+        self.assertTrue(hasattr(torch._C, "_exchange_enable_guard_collectives"))
+        self.assertNotIn("_exchange_enable_guard_collectives", torch._C.__all__)
+        self.assertFalse(hasattr(torch, "_exchange_enable_guard_collectives"))
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
         self.assertNotIn("set_enable_guard_collectives", top_level_namespace)

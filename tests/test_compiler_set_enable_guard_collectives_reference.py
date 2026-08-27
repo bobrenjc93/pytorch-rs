@@ -3,6 +3,8 @@ import importlib
 import inspect
 import pickle
 import pickletools
+import signal
+import subprocess
 import sys
 import threading
 import types
@@ -275,6 +277,76 @@ class CompilerSetEnableGuardCollectivesReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.overlapping_outcome(torch),
             self.overlapping_outcome(reference_torch),
+        )
+
+    def signal_reentry_outcome(self, module_name):
+        script = r"""
+import inspect
+import signal
+import sys
+
+module = __import__(sys.argv[1])
+function = module.compiler.set_enable_guard_collectives
+if module.__name__ == "torch_rs":
+    exchange = module.compiler._state.exchange_enable_guard_collectives
+    if hasattr(exchange, "__code__"):
+        target = exchange
+        line_marker = "previous_enabled ="
+    else:
+        target = function
+        line_marker = "return _state.exchange_enable_guard_collectives"
+else:
+    target = function
+    line_marker = "return set_guard_complete_hook(guard_collectives_hook)"
+source, first_line = inspect.getsourcelines(target)
+target_line = first_line + next(
+    index for index, line in enumerate(source) if line_marker in line
+)
+handler_results = []
+
+def handler(signum, frame):
+    handler_results.append(function(False))
+
+def tracer(frame, event, arg):
+    if (
+        frame.f_code is target.__code__
+        and event == "line"
+        and frame.f_lineno == target_line
+    ):
+        sys.settrace(None)
+        signal.raise_signal(signal.SIGUSR1)
+    return tracer
+
+signal.signal(signal.SIGUSR1, handler)
+function(True)
+sys.settrace(tracer)
+outer_result = function(True)
+sys.settrace(None)
+final_result = function(False)
+print(repr((handler_results, outer_result, final_result)))
+"""
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-c", script, module_name],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except subprocess.TimeoutExpired:
+            self.fail(f"{module_name} deadlocked during signal-handler re-entry")
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=completed.stdout + completed.stderr,
+        )
+        return completed.stdout.strip()
+
+    @unittest.skipUnless(hasattr(signal, "SIGUSR1"), "requires SIGUSR1")
+    def test_signal_handler_reentry_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.signal_reentry_outcome("torch_rs"),
+            self.signal_reentry_outcome("torch"),
         )
 
     def reload_outcome(self, package, module_name):

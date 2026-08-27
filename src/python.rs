@@ -45,6 +45,7 @@ static ADJOINT_SCALAR_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new(false);
 static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 static NNPACK_ENABLED: AtomicBool = AtomicBool::new(true);
+static GUARD_COLLECTIVES_ENABLED: AtomicBool = AtomicBool::new(false);
 const BROADCAST_TENSORS_EXACT_TENSORS_ERROR: &str =
     "broadcast_tensors() only supports exact native Tensor inputs";
 const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
@@ -5005,6 +5006,26 @@ fn add_nnpack_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let exports = module.getattr("__all__")?;
     exports.call_method1("remove", ("_set_nnpack_enabled",))?;
     exports.call_method1("remove", ("_get_nnpack_enabled",))?;
+    Ok(())
+}
+
+#[pyfunction(
+    name = "_exchange_enable_guard_collectives",
+    signature = (enabled, /),
+    text_signature = None
+)]
+fn exchange_enable_guard_collectives_native(enabled: bool) -> bool {
+    GUARD_COLLECTIVES_ENABLED.swap(enabled, Ordering::SeqCst)
+}
+
+fn add_compiler_state_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(
+        exchange_enable_guard_collectives_native,
+        module
+    )?)?;
+    module
+        .getattr("__all__")?
+        .call_method1("remove", ("_exchange_enable_guard_collectives",))?;
     Ok(())
 }
 
@@ -11613,6 +11634,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_default_dtype_validator(module)?;
     add_warn_always_builtins(module)?;
     add_nnpack_builtins(module)?;
+    add_compiler_state_builtins(module)?;
     module.add_class::<PyDevice>()?;
     module.add_class::<PyMemoryFormat>()?;
     add_no_grad(module)?;
