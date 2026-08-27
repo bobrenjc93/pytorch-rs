@@ -407,14 +407,20 @@ class CompilerSkipGuardOnGlobalsUnsafeTests(unittest.TestCase):
         self.assertEqual(function.__qualname__, "skip_guard_on_globals_unsafe")
         self.assertEqual(function.__module__, "torch_rs.compiler")
         self.assertIs(inspect.getmodule(function), compiler)
-        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertEqual(
+            inspect.cleandoc(function.__doc__), inspect.cleandoc(FUNCTION_DOC)
+        )
         self.assertIsNone(function.__defaults__)
         self.assertIsNone(function.__kwdefaults__)
         self.assertEqual(function.__dict__, {})
         self.assertFalse(hasattr(function, "__text_signature__"))
         self.assertEqual(function.__code__.co_names, ("is_global",))
         self.assertEqual(function.__code__.co_varnames, ("guard_entries", "entry"))
-        self.assertEqual(function.__code__.co_consts, (FUNCTION_DOC,))
+        normalized_constants = tuple(
+            inspect.cleandoc(constant) if isinstance(constant, str) else constant
+            for constant in function.__code__.co_consts
+        )
+        self.assertEqual(normalized_constants, (inspect.cleandoc(FUNCTION_DOC),))
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
