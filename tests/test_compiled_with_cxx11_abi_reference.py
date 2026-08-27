@@ -8,6 +8,7 @@ import threading
 import types
 import typing
 import unittest
+from unittest import mock
 
 import torch_rs as torch
 
@@ -101,6 +102,23 @@ class CompiledWithCxx11AbiReferenceTests(unittest.TestCase):
             type(reference_torch._C._GLIBCXX_USE_CXX11_ABI),
             bool,
         )
+
+    def test_public_query_ignores_native_module_attribute_mutation(self):
+        for module in (torch, reference_torch):
+            function = module.compiled_with_cxx11_abi
+            build_value = function()
+            self.assertIs(type(build_value), bool)
+
+            for replacement in (not build_value, None, object()):
+                with self.subTest(module=module.__name__, replacement=replacement):
+                    with mock.patch.object(
+                        module._C,
+                        "_GLIBCXX_USE_CXX11_ABI",
+                        replacement,
+                    ):
+                        result = function()
+                        self.assertIs(type(result), bool)
+                        self.assertIs(result, build_value)
 
     def assert_error_matches(self, actual_call, expected_call):
         with self.assertRaises(Exception) as actual_raised:

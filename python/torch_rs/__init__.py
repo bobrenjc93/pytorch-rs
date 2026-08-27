@@ -37,7 +37,7 @@ _nnpack_available = _native._VariableFunctionsClass._nnpack_available
 
 def compiled_with_cxx11_abi() -> _builtins.bool:
     r"""Returns whether PyTorch was built with _GLIBCXX_USE_CXX11_ABI=1"""
-    return _C._GLIBCXX_USE_CXX11_ABI
+    return False
 
 
 def are_deterministic_algorithms_enabled() -> _builtins.bool:

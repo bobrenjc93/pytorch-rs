@@ -43,8 +43,12 @@ class CompiledWithCxx11AbiTests(unittest.TestCase):
                     self.assertIs(native, False)
                     self.assertIs(result, native)
 
-        with mock.patch.object(torch._C, flag_name, True):
-            self.assertIs(function(), True)
+        for replacement in (True, None, object()):
+            with self.subTest(replacement=replacement):
+                with mock.patch.object(torch._C, flag_name, replacement):
+                    result = function()
+                    self.assertIs(type(result), bool)
+                    self.assertIs(result, False)
         self.assertIs(function(), False)
 
     def test_function_metadata_matches_pytorch_2_13(self):
@@ -64,10 +68,8 @@ class CompiledWithCxx11AbiTests(unittest.TestCase):
         self.assertEqual(function.__dict__, {})
         self.assertEqual(function.__annotations__, {"return": bool})
         self.assertFalse(hasattr(function, "__text_signature__"))
-        self.assertEqual(
-            function.__code__.co_names,
-            ("_C", "_GLIBCXX_USE_CXX11_ABI"),
-        )
+        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(function.__code__.co_consts, (FUNCTION_DOC, False))
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
@@ -275,13 +277,14 @@ from torch_rs import compiled_with_cxx11_abi
 from torch_rs._C import _GLIBCXX_USE_CXX11_ABI
 
 assert compiled_with_cxx11_abi is torch.compiled_with_cxx11_abi
-assert compiled_with_cxx11_abi.__code__.co_names == (
-    "_C",
-    "_GLIBCXX_USE_CXX11_ABI",
-)
+assert compiled_with_cxx11_abi.__code__.co_names == ()
 assert compiled_with_cxx11_abi() is _GLIBCXX_USE_CXX11_ABI is False
 assert not hasattr(torch, "_GLIBCXX_USE_CXX11_ABI")
 assert not hasattr(torch._C, "compiled_with_cxx11_abi")
+
+torch._C._GLIBCXX_USE_CXX11_ABI = object()
+assert compiled_with_cxx11_abi() is False
+torch._C._GLIBCXX_USE_CXX11_ABI = _GLIBCXX_USE_CXX11_ABI
 
 package_wildcard = {}
 native_wildcard = {}
