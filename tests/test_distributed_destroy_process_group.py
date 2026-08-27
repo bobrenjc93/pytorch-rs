@@ -17,6 +17,10 @@ import torch_rs as torch
 
 NONE_ERROR = "Process group cannot be None"
 INVALID_ERROR = "Invalid process group specified"
+EMPTY_TENSOR_ERROR = "Boolean value of Tensor with no values is ambiguous"
+MULTI_TENSOR_ERROR = (
+    "Boolean value of Tensor with more than one value is ambiguous"
+)
 FUNCTION_DOC = """Destroy a given process group, and deinitialize the distributed package.
 
 Args:
@@ -174,6 +178,62 @@ class DistributedDestroyProcessGroupTests(unittest.TestCase):
                 ),
             )
         self.assert_zero_process_group_state()
+
+    def test_native_tensor_groups_follow_sentinel_truthiness(self):
+        function = torch.distributed.destroy_process_group
+
+        for no_grad in (False, True):
+            context = torch.no_grad() if no_grad else contextlib.nullcontext()
+            with self.subTest(no_grad=no_grad), context:
+                grad_enabled = not no_grad
+                for values in (-100.0, [-100.0], [[-100.0]]):
+                    with self.subTest(values=values):
+                        group = torch.tensor(values, requires_grad=True)
+                        before = (
+                            group.tolist(),
+                            group.shape,
+                            group.requires_grad,
+                            group.is_leaf,
+                        )
+                        for _ in range(3):
+                            self.assertIsNone(function(group))
+                        self.assertEqual(
+                            (
+                                group.tolist(),
+                                group.shape,
+                                group.requires_grad,
+                                group.is_leaf,
+                            ),
+                            before,
+                        )
+                        self.assertIs(torch.is_grad_enabled(), grad_enabled)
+                        self.assert_zero_process_group_state()
+
+                for values in (-99.0, [0.0], [[1.0]]):
+                    with self.subTest(values=values):
+                        group = torch.tensor(values)
+                        self.assert_error(
+                            ValueError,
+                            INVALID_ERROR,
+                            lambda: function(group),
+                        )
+                        self.assertIs(torch.is_grad_enabled(), grad_enabled)
+                        self.assert_zero_process_group_state()
+
+                for values, message in (
+                    ([], EMPTY_TENSOR_ERROR),
+                    ([-100.0, 0.0], MULTI_TENSOR_ERROR),
+                    ([[1.0, 2.0]], MULTI_TENSOR_ERROR),
+                ):
+                    with self.subTest(values=values):
+                        group = torch.tensor(values)
+                        self.assert_error(
+                            RuntimeError,
+                            message,
+                            lambda: function(group),
+                        )
+                        self.assertIs(torch.is_grad_enabled(), grad_enabled)
+                        self.assert_zero_process_group_state()
 
     def test_reload_preserves_the_uninitialized_contract(self):
         distributed = torch.distributed

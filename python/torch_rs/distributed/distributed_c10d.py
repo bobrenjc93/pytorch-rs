@@ -2,6 +2,8 @@
 
 import os as _os
 
+from ..torch_rs import Tensor as _Tensor
+
 __all__ = [
     "destroy_process_group",
     "get_backend_config",
@@ -34,7 +36,12 @@ def destroy_process_group(group: _ProcessGroup | None = None):
                                         groups including the default one will
                                         be destroyed.
     """
-    if group == -100:
+    if type(group) is _Tensor:
+        if group.numel() != 1:
+            bool(group)
+        if group.item() == -100:
+            return
+    elif group == -100:
         return
     if group is None:
         raise AssertionError("Process group cannot be None")

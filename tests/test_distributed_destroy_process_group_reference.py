@@ -83,6 +83,38 @@ class DistributedDestroyProcessGroupReferenceTests(unittest.TestCase):
         self.assertEqual(errors, [])
         return worker_states
 
+    def native_tensor_outcome(self, module, values, no_grad):
+        context = module.no_grad() if no_grad else contextlib.nullcontext()
+        with context:
+            group = module.tensor(values, requires_grad=True)
+            before = (
+                group.tolist(),
+                tuple(group.shape),
+                group.requires_grad,
+                group.is_leaf,
+                module.is_grad_enabled(),
+            )
+            outcomes = tuple(
+                self.outcome(
+                    lambda: module.distributed.destroy_process_group(group)
+                )
+                for _ in range(3)
+            )
+            after = (
+                group.tolist(),
+                tuple(group.shape),
+                group.requires_grad,
+                group.is_leaf,
+                module.is_grad_enabled(),
+            )
+            return (
+                before,
+                outcomes,
+                after,
+                module.distributed.get_pg_count(),
+                module.distributed.is_initialized(),
+            )
+
     def pickle_shape(self, function, protocol):
         shape = []
         for opcode, argument, _ in pickletools.genops(
@@ -166,6 +198,31 @@ class DistributedDestroyProcessGroupReferenceTests(unittest.TestCase):
                 expected_outcomes,
             )
             self.assert_zero_process_group_state()
+
+    def test_native_tensor_group_behavior_matches_pytorch_2_13(self):
+        values_cases = (
+            -100.0,
+            [-100.0],
+            [[-100.0]],
+            -99.0,
+            [0.0],
+            [[1.0]],
+            [],
+            [-100.0, 0.0],
+            [[1.0, 2.0]],
+        )
+        for no_grad in (False, True):
+            for values in values_cases:
+                with self.subTest(no_grad=no_grad, values=values):
+                    self.assertEqual(
+                        self.native_tensor_outcome(torch, values, no_grad),
+                        self.native_tensor_outcome(
+                            reference_torch,
+                            values,
+                            no_grad,
+                        ),
+                    )
+        self.assert_zero_process_group_state()
 
     def test_signature_annotations_documentation_and_identity_match(self):
         actual_distributed = importlib.import_module("torch_rs.distributed")
