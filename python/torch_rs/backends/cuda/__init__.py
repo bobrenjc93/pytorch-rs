@@ -2,7 +2,12 @@
 import torch_rs as torch
 
 
-__all__ = ["is_built", "is_flash_attention_available"]
+__all__ = [
+    "is_built",
+    "enable_flash_sdp",
+    "flash_sdp_enabled",
+    "is_flash_attention_available",
+]
 
 
 def is_built():
@@ -13,6 +18,24 @@ def is_built():
     binary were run on a machine with working CUDA drivers and devices, we would be able to use it.
     """
     return torch._C._has_cuda
+
+
+def flash_sdp_enabled():
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    Returns whether flash scaled dot product attention is enabled or not.
+    """
+    return torch._C._get_flash_sdp_enabled()
+
+
+def enable_flash_sdp(enabled: bool):
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    Enables or disables flash scaled dot product attention.
+    """
+    torch._C._set_sdp_use_flash(enabled)
 
 
 def is_flash_attention_available() -> bool:
