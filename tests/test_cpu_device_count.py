@@ -131,6 +131,7 @@ class CpuDeviceCountTests(unittest.TestCase):
                 "is_initialized",
                 "synchronize",
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",
@@ -151,6 +152,7 @@ class CpuDeviceCountTests(unittest.TestCase):
             {name for name in cpu_namespace if not name.startswith("__")},
             {
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",
@@ -214,6 +216,7 @@ class CpuDeviceCountTests(unittest.TestCase):
             {name for name in vars(cpu) if not name.startswith("_")},
             {
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",
@@ -224,7 +227,6 @@ class CpuDeviceCountTests(unittest.TestCase):
         )
         for name in (
             "amp",
-            "current_stream",
             "get_capabilities",
             "set_device",
             "StreamContext",

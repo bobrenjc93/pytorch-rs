@@ -175,6 +175,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "current_device",
+                    "current_stream",
                     "device_count",
                     "Stream",
                     "Event",
@@ -214,6 +215,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             {name for name in actual_cpu_namespace if not name.startswith("__")},
             {
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",
@@ -278,6 +280,7 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",
@@ -290,7 +293,6 @@ class CpuDeviceCountReferenceTests(unittest.TestCase):
         self.assertTrue(
             {
                 "amp",
-                "current_stream",
                 "StreamContext",
                 "stream",
             }.issubset(unsupported)

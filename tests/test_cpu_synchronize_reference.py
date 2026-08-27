@@ -204,6 +204,7 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
         expected = expected_cpu.synchronize
         supported = {
             "current_device",
+            "current_stream",
             "device_count",
             "Stream",
             "Event",
@@ -310,6 +311,7 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "current_device",
+                "current_stream",
                 "device_count",
                 "Stream",
                 "Event",
@@ -322,7 +324,6 @@ class CpuSynchronizeReferenceTests(unittest.TestCase):
         self.assertTrue(
             {
                 "amp",
-                "current_stream",
                 "get_capabilities",
                 "set_device",
                 "StreamContext",
