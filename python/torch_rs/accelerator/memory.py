@@ -33,7 +33,7 @@ def empty_host_cache() -> None:
     .. note:: This function is a no-op if the memory allocator for the current
         :ref:`accelerator <accelerators>` has not been initialized.
     """
-    return None
+    raise RuntimeError("Cannot access accelerator device when none is available.")
 
 
 def memory_stats(

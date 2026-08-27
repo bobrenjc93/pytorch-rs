@@ -223,12 +223,18 @@ FUNCTION_DOCS = {
 
 
 class AcceleratorTests(unittest.TestCase):
-    def assert_current_device_index_unavailable(self, call):
+    def assert_no_accelerator_error(self, call):
         with self.assertRaises(RuntimeError) as raised:
             call()
         self.assertEqual(str(raised.exception), NO_ACCELERATOR_ERROR)
         self.assertEqual(raised.exception.args, (NO_ACCELERATOR_ERROR,))
         return raised.exception
+
+    def call_outcome(self, call):
+        try:
+            return ("return", call())
+        except Exception as error:
+            return ("raise", type(error), str(error), error.args)
 
     def test_cpu_only_results_come_from_one_probe_without_hardware_discovery(self):
         accelerator = torch.accelerator
@@ -253,11 +259,11 @@ class AcceleratorTests(unittest.TestCase):
             self.assertIs(
                 accelerator.current_accelerator(check_available=True), None
             )
-            self.assert_current_device_index_unavailable(
+            self.assert_no_accelerator_error(
                 accelerator.current_device_index
             )
             self.assertIs(accelerator.empty_cache(), None)
-            self.assertIs(accelerator.empty_host_cache(), None)
+            self.assert_no_accelerator_error(accelerator.empty_host_cache)
             self.assertIs(accelerator.reset_peak_memory_stats(), None)
             self.assertIs(type(accelerator.memory_allocated()), int)
             self.assertEqual(accelerator.memory_allocated(), 0)
@@ -286,7 +292,10 @@ class AcceleratorTests(unittest.TestCase):
             ("_discover_accelerator", "RuntimeError"),
         )
         self.assertEqual(accelerator.empty_cache.__code__.co_names, ())
-        self.assertEqual(accelerator.empty_host_cache.__code__.co_names, ())
+        self.assertEqual(
+            accelerator.empty_host_cache.__code__.co_names,
+            ("RuntimeError",),
+        )
         self.assertEqual(
             accelerator.reset_peak_memory_stats.__code__.co_names, ()
         )
@@ -331,11 +340,13 @@ class AcceleratorTests(unittest.TestCase):
                         side_effect=AssertionError("hardware was probed"),
                     ):
                         self.assertIs(accelerator.current_accelerator(), None)
-                        self.assert_current_device_index_unavailable(
+                        self.assert_no_accelerator_error(
                             accelerator.current_device_index
                         )
                         self.assertIs(accelerator.empty_cache(), None)
-                        self.assertIs(accelerator.empty_host_cache(), None)
+                        self.assert_no_accelerator_error(
+                            accelerator.empty_host_cache
+                        )
                         self.assertIs(
                             accelerator.reset_peak_memory_stats("cuda:0"), None
                         )
@@ -349,7 +360,7 @@ class AcceleratorTests(unittest.TestCase):
 
     def test_current_device_index_repeated_calls_raise_fresh_exact_errors(self):
         errors = [
-            self.assert_current_device_index_unavailable(
+            self.assert_no_accelerator_error(
                 torch.accelerator.current_device_index
             )
             for _ in range(8)
@@ -357,27 +368,35 @@ class AcceleratorTests(unittest.TestCase):
 
         self.assertEqual(len({id(error) for error in errors}), len(errors))
 
-    def test_empty_caches_are_repeatable_probe_free_no_ops(self):
+    def test_empty_cache_is_a_repeatable_probe_free_no_op(self):
         accelerator = torch.accelerator
 
-        for name in ("empty_cache", "empty_host_cache"):
-            with self.subTest(name=name):
-                function = getattr(accelerator, name)
-                self.assertEqual(function.__code__.co_names, ())
-                self.assertEqual(function.__code__.co_freevars, ())
-                self.assertEqual(function.__code__.co_cellvars, ())
-                with mock.patch.object(
-                    accelerator,
-                    "_discover_accelerator",
-                    side_effect=AssertionError(
-                        "accelerator discovery was attempted"
-                    ),
-                ):
-                    results = tuple(function() for _ in range(16))
+        with mock.patch.object(
+            accelerator,
+            "_discover_accelerator",
+            side_effect=AssertionError("accelerator discovery was attempted"),
+        ):
+            results = tuple(accelerator.empty_cache() for _ in range(16))
 
-                self.assertEqual(results, (None,) * 16)
-                for result in results:
-                    self.assertIs(result, None)
+        self.assertEqual(results, (None,) * 16)
+        for result in results:
+            self.assertIs(result, None)
+
+    def test_empty_host_cache_raises_repeatable_probe_free_errors(self):
+        accelerator = torch.accelerator
+        function = accelerator.empty_host_cache
+
+        self.assertEqual(function.__code__.co_names, ("RuntimeError",))
+        self.assertEqual(function.__code__.co_freevars, ())
+        self.assertEqual(function.__code__.co_cellvars, ())
+        with mock.patch.object(
+            accelerator,
+            "_discover_accelerator",
+            side_effect=AssertionError("accelerator discovery was attempted"),
+        ):
+            errors = [self.assert_no_accelerator_error(function) for _ in range(16)]
+
+        self.assertEqual(len({id(error) for error in errors}), len(errors))
 
     def test_empty_host_cache_preserves_tensor_and_autograd_state(self):
         leaf = torch.tensor([[1.0, 2.0]], requires_grad=True)
@@ -391,7 +410,7 @@ class AcceleratorTests(unittest.TestCase):
             result.is_leaf,
         )
 
-        self.assertIs(torch.accelerator.empty_host_cache(), None)
+        self.assert_no_accelerator_error(torch.accelerator.empty_host_cache)
         self.assertEqual(
             (
                 result.shape,
@@ -946,7 +965,7 @@ class AcceleratorTests(unittest.TestCase):
         self.assertIs(accelerator.empty_cache(), None)
         self.assertIs(accelerator.empty_host_cache, old_empty_host_cache)
         self.assertIs(accelerator.empty_host_cache, memory.empty_host_cache)
-        self.assertIs(accelerator.empty_host_cache(), None)
+        self.assert_no_accelerator_error(accelerator.empty_host_cache)
         self.assertIs(
             accelerator.max_memory_allocated,
             old_max_memory_allocated,
@@ -987,7 +1006,7 @@ class AcceleratorTests(unittest.TestCase):
             accelerator._discover_accelerator(), (None, False, 0, None)
         )
         self.assertIs(accelerator.current_accelerator(), None)
-        self.assert_current_device_index_unavailable(
+        self.assert_no_accelerator_error(
             accelerator.current_device_index
         )
         self.assertIs(accelerator.is_available(), False)
@@ -1060,13 +1079,8 @@ class AcceleratorTests(unittest.TestCase):
             (old_functions["empty_cache"](), new_functions["empty_cache"]()),
             (None, None),
         )
-        self.assertEqual(
-            (
-                old_functions["empty_host_cache"](),
-                new_functions["empty_host_cache"](),
-            ),
-            (None, None),
-        )
+        self.assert_no_accelerator_error(old_functions["empty_host_cache"])
+        self.assert_no_accelerator_error(new_functions["empty_host_cache"])
         self.assertEqual(
             (
                 old_functions["reset_peak_memory_stats"](object()),
@@ -1118,7 +1132,7 @@ class AcceleratorTests(unittest.TestCase):
             new_functions["empty_host_cache"],
         )
         self.assertIs(accelerator.empty_host_cache, memory.empty_host_cache)
-        self.assertIs(accelerator.empty_host_cache(), None)
+        self.assert_no_accelerator_error(accelerator.empty_host_cache)
         self.assertIs(
             accelerator.max_memory_allocated,
             new_functions["max_memory_allocated"],
@@ -1345,7 +1359,9 @@ class AcceleratorTests(unittest.TestCase):
                         index_outcome,
                         tuple(torch.accelerator.empty_cache() for _ in range(4)),
                         tuple(
-                            torch.accelerator.empty_host_cache()
+                            self.call_outcome(
+                                torch.accelerator.empty_host_cache
+                            )
                             for _ in range(4)
                         ),
                         tuple(
@@ -1397,7 +1413,15 @@ class AcceleratorTests(unittest.TestCase):
                     None,
                     (RuntimeError, NO_ACCELERATOR_ERROR, (NO_ACCELERATOR_ERROR,)),
                     (None,) * 4,
-                    (None,) * 4,
+                    (
+                        (
+                            "raise",
+                            RuntimeError,
+                            NO_ACCELERATOR_ERROR,
+                            (NO_ACCELERATOR_ERROR,),
+                        ),
+                    )
+                    * 4,
                     (None,) * 4,
                     (0,) * 4,
                     (0,) * 4,
@@ -1560,8 +1584,18 @@ assert type(count) is int and count == 0
 for _ in range(8):
     assert torch.accelerator.empty_cache() is None
     assert empty_cache() is None
-    assert torch.accelerator.empty_host_cache() is None
-    assert empty_host_cache() is None
+    for function in (torch.accelerator.empty_host_cache, empty_host_cache):
+        try:
+            function()
+        except RuntimeError as error:
+            assert str(error) == (
+                "Cannot access accelerator device when none is available."
+            )
+            assert error.args == (
+                "Cannot access accelerator device when none is available.",
+            )
+        else:
+            raise AssertionError("empty_host_cache() unexpectedly returned")
 stats = [
     torch.accelerator.memory_stats(),
     torch.accelerator.memory_stats("cuda:0"),

@@ -49,6 +49,15 @@ MEMORY_LOCAL = {
 ACCELERATOR_LOCAL = SUPPORTED - MEMORY_LOCAL
 
 NO_ACCELERATOR_ERROR = "Cannot access accelerator device when none is available."
+# Hermetic golden captured from the official
+# torch-2.13.0+cpu-cp312-cp312-manylinux_2_28_x86_64 wheel
+# (sha256: 4ca4a9394b0c771238a4f73590fdbbc4debad85ed0fa63d026ae1b085da7d6e2).
+PYTORCH_2_13_CPU_EMPTY_HOST_CACHE_OUTCOME = (
+    "raise",
+    RuntimeError,
+    NO_ACCELERATOR_ERROR,
+    (NO_ACCELERATOR_ERROR,),
+)
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -303,8 +312,6 @@ assert (
     reference_torch.accelerator.empty_host_cache
     is reference_torch.accelerator.memory.empty_host_cache
 )
-assert torch.accelerator.empty_host_cache.__code__.co_names == ()
-assert tuple(torch.accelerator.empty_host_cache() for _ in range(8)) == (None,) * 8
 assert (
     tuple(reference_torch.accelerator.empty_host_cache() for _ in range(8))
     == (None,) * 8
@@ -490,6 +497,45 @@ assert not reference_torch._C._accelerator_isAllocatorInitialized()
             0,
             msg=completed.stdout + completed.stderr,
         )
+
+    def test_empty_host_cache_matches_pytorch_2_13_cpu_build_fixture(self):
+        function = torch.accelerator.empty_host_cache
+        leaf = torch.tensor([[1.0, 2.0]], requires_grad=True)
+        result = (leaf * 3.0).transpose(0, 1)
+        before = (
+            result.shape,
+            result.stride(),
+            result.storage_offset(),
+            result.data_ptr(),
+            result.requires_grad,
+            result.is_leaf,
+            result.tolist(),
+            leaf.grad,
+            torch.is_grad_enabled(),
+        )
+
+        self.assertEqual(function.__code__.co_names, ("RuntimeError",))
+        self.assertEqual(
+            tuple(self.call_outcome(function) for _ in range(8)),
+            (PYTORCH_2_13_CPU_EMPTY_HOST_CACHE_OUTCOME,) * 8,
+        )
+        self.assertEqual(
+            (
+                result.shape,
+                result.stride(),
+                result.storage_offset(),
+                result.data_ptr(),
+                result.requires_grad,
+                result.is_leaf,
+                result.tolist(),
+                leaf.grad,
+                torch.is_grad_enabled(),
+            ),
+            before,
+        )
+
+        result.sum().backward()
+        self.assertEqual(leaf.grad.tolist(), [[3.0, 3.0]])
 
     def test_cpu_only_values_bound_the_cuda_enabled_reference(self):
         torch_rs_build_metadata = (
@@ -697,7 +743,7 @@ assert (
     reference_torch.accelerator.empty_host_cache
     is reference_torch.accelerator.memory.empty_host_cache
 )
-assert torch.accelerator.empty_host_cache.__code__.co_names == ()
+assert torch.accelerator.empty_host_cache.__code__.co_names == ("RuntimeError",)
 
 torch_rs_state = (
     torch.accelerator.current_accelerator(),
@@ -744,7 +790,16 @@ actual_before = state(actual_leaf, actual_result)
 expected_before = state(expected_leaf, expected_result)
 assert actual_before == expected_before
 
-assert tuple(torch.accelerator.empty_host_cache() for _ in range(8)) == (None,) * 8
+for _ in range(8):
+    try:
+        torch.accelerator.empty_host_cache()
+    except RuntimeError as error:
+        assert str(error) == "Cannot access accelerator device when none is available."
+        assert error.args == (
+            "Cannot access accelerator device when none is available.",
+        )
+    else:
+        raise AssertionError("torch-rs empty_host_cache() unexpectedly returned")
 assert (
     tuple(reference_torch.accelerator.empty_host_cache() for _ in range(8))
     == (None,) * 8
@@ -1195,9 +1250,6 @@ assert torch.version.cuda is None
         reset_results = tuple(
             accelerator.reset_peak_memory_stats() for _ in range(2)
         )
-        empty_host_results = tuple(
-            accelerator.empty_host_cache() for _ in range(2)
-        )
         baseline = (
             accelerator.current_accelerator(),
             accelerator.current_accelerator(True),
@@ -1206,7 +1258,6 @@ assert torch.version.cuda is None
             accelerator.is_available(),
             accelerator.device_count(),
             reset_results,
-            empty_host_results,
             accelerator.memory_allocated(),
             accelerator.memory_allocated(),
             accelerator.max_memory_allocated(),
@@ -1232,9 +1283,6 @@ assert torch.version.cuda is None
                         accelerator.reset_peak_memory_stats()
                         for _ in range(2)
                     )
-                    empty_host_results = tuple(
-                        accelerator.empty_host_cache() for _ in range(2)
-                    )
                     results[index] = (
                         module.is_grad_enabled(),
                         accelerator.current_accelerator(),
@@ -1244,7 +1292,6 @@ assert torch.version.cuda is None
                         accelerator.is_available(),
                         accelerator.device_count(),
                         reset_results,
-                        empty_host_results,
                         accelerator.memory_allocated(),
                         accelerator.memory_allocated(),
                         accelerator.max_memory_allocated(),
@@ -1280,10 +1327,10 @@ assert torch.version.cuda is None
                 for index, result in enumerate(results):
                     expected_grad_state = index % 2 == 0
                     self.assertEqual(result[0], expected_grad_state)
-                    self.assertEqual(result[1:19], baseline)
-                    self.assertEqual(result[19], expected_grad_state)
+                    self.assertEqual(result[1:18], baseline)
+                    self.assertEqual(result[18], expected_grad_state)
                     self.assertEqual(result[7], (None, None))
-                    self.assertEqual(result[8], (None, None))
+                    self.assertIs(type(result[8]), int)
                     self.assertIs(type(result[9]), int)
                     self.assertIs(type(result[10]), int)
                     self.assertIs(type(result[11]), int)
@@ -1291,13 +1338,12 @@ assert torch.version.cuda is None
                     self.assertIs(type(result[13]), int)
                     self.assertIs(type(result[14]), int)
                     self.assertIs(type(result[15]), int)
-                    self.assertIs(type(result[16]), int)
+                    self.assertIs(type(result[16]), OrderedDict)
                     self.assertIs(type(result[17]), OrderedDict)
-                    self.assertIs(type(result[18]), OrderedDict)
-                    self.assertIsNot(result[17], result[18])
+                    self.assertIsNot(result[16], result[17])
                 self.assertEqual(baseline[2], baseline[3])
                 self.assertEqual(baseline[6], (None, None))
-                self.assertEqual(baseline[7], (None, None))
+                self.assertIs(type(baseline[7]), int)
                 self.assertIs(type(baseline[8]), int)
                 self.assertIs(type(baseline[9]), int)
                 self.assertIs(type(baseline[10]), int)
@@ -1305,10 +1351,9 @@ assert torch.version.cuda is None
                 self.assertIs(type(baseline[12]), int)
                 self.assertIs(type(baseline[13]), int)
                 self.assertIs(type(baseline[14]), int)
-                self.assertIs(type(baseline[15]), int)
+                self.assertIs(type(baseline[15]), OrderedDict)
                 self.assertIs(type(baseline[16]), OrderedDict)
-                self.assertIs(type(baseline[17]), OrderedDict)
-                self.assertIsNot(baseline[16], baseline[17])
+                self.assertIsNot(baseline[15], baseline[16])
                 if module is torch:
                     self.assertEqual(
                         baseline[2],
@@ -1321,9 +1366,9 @@ assert torch.version.cuda is None
                     )
                 self.assertIs(type(baseline[4]), bool)
                 self.assertIs(type(baseline[5]), int)
-                all_stats = [baseline[16], baseline[17]]
+                all_stats = [baseline[15], baseline[16]]
+                all_stats.extend(result[16] for result in results)
                 all_stats.extend(result[17] for result in results)
-                all_stats.extend(result[18] for result in results)
                 self.assertEqual(
                     len({id(stats) for stats in all_stats}), len(all_stats)
                 )
@@ -1342,6 +1387,11 @@ assert torch.version.cuda is None
         old_memory_reserved = accelerator.memory_reserved
         old_memory_stats = accelerator.memory_stats
         old_reset_peak_memory_stats = accelerator.reset_peak_memory_stats
+        expected_empty_host_outcome = (
+            PYTORCH_2_13_CPU_EMPTY_HOST_CACHE_OUTCOME
+            if module is torch
+            else ("return", None)
+        )
         old_functions = {
             name: getattr(accelerator, name) for name in ACCELERATOR_LOCAL
         }
@@ -1378,7 +1428,8 @@ assert torch.version.cuda is None
             accelerator.empty_cache() is None,
             accelerator.empty_host_cache is old_empty_host_cache,
             accelerator.empty_host_cache is memory.empty_host_cache,
-            accelerator.empty_host_cache() is None,
+            self.call_outcome(accelerator.empty_host_cache)
+            == expected_empty_host_outcome,
             accelerator.max_memory_allocated is old_max_memory_allocated,
             accelerator.max_memory_allocated is memory.max_memory_allocated,
             type(max_memory_allocated_after) is int,
@@ -1457,6 +1508,11 @@ assert torch.version.cuda is None
         new_reserved = new_functions["memory_reserved"]()
         old_reset = old_functions["reset_peak_memory_stats"]()
         new_reset = new_functions["reset_peak_memory_stats"]()
+        expected_empty_host_outcome = (
+            PYTORCH_2_13_CPU_EMPTY_HOST_CACHE_OUTCOME
+            if module is torch
+            else ("return", None)
+        )
 
         result = (
             reloaded is memory,
@@ -1477,8 +1533,10 @@ assert torch.version.cuda is None
             ),
             old_functions["empty_cache"]() is None,
             new_functions["empty_cache"]() is None,
-            old_functions["empty_host_cache"]() is None,
-            new_functions["empty_host_cache"]() is None,
+            self.call_outcome(old_functions["empty_host_cache"])
+            == expected_empty_host_outcome,
+            self.call_outcome(new_functions["empty_host_cache"])
+            == expected_empty_host_outcome,
             type(old_stats) is OrderedDict,
             type(new_stats) is OrderedDict,
             old_stats is not new_stats,
@@ -1522,7 +1580,8 @@ assert torch.version.cuda is None
             accelerator.empty_host_cache
             is new_functions["empty_host_cache"],
             accelerator.empty_host_cache is memory.empty_host_cache,
-            accelerator.empty_host_cache() is None,
+            self.call_outcome(accelerator.empty_host_cache)
+            == expected_empty_host_outcome,
             accelerator.max_memory_allocated
             is new_functions["max_memory_allocated"],
             accelerator.max_memory_allocated is memory.max_memory_allocated,
