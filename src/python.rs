@@ -1000,6 +1000,23 @@ impl PyTensorBase {
 
     // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
     #[allow(clippy::doc_markdown)]
+    #[doc = "\nrsqrt() -> Tensor\n\nSee :func:`torch.rsqrt`\n"]
+    #[pyo3(text_signature = None)]
+    fn rsqrt(slf: &Bound<'_, Self>) -> PyResult<Py<PyAny>> {
+        let tensor = slf.as_any().cast::<PyTensor>()?;
+        if let Some(result) = dispatch_tensorbase_no_argument_mode(slf.py(), tensor, "rsqrt")? {
+            return Ok(result);
+        }
+
+        let output = {
+            let tensor = tensor.try_borrow()?;
+            tensor.inner.rsqrt().map_err(|error| tensor_error(&error))?
+        };
+        Ok(Py::new(slf.py(), PyTensor::new(output))?.into_any())
+    }
+
+    // Preserve PyTorch's public docstring exactly rather than adding Rust Markdown markup.
+    #[allow(clippy::doc_markdown)]
     #[doc = "\npositive() -> Tensor\n\nSee :func:`torch.positive`\n"]
     #[pyo3(text_signature = None)]
     fn positive(slf: &Bound<'_, Self>) -> PyResult<Py<PyTensor>> {
@@ -2523,6 +2540,7 @@ fn dispatch_tensorbase_mode(
                     | "fix"
                     | "floor"
                     | "reciprocal"
+                    | "rsqrt"
                     | "sigmoid"
                     | "sin"
                     | "sqrt"
