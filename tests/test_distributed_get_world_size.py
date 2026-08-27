@@ -225,6 +225,7 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
@@ -263,6 +264,7 @@ class DistributedGetWorldSizeTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",

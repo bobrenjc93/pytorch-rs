@@ -185,6 +185,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                 for name in expected_c10d.__all__
                 if name
                 in {
+                    "get_backend",
                     "get_rank",
                     "get_world_size",
                     "get_pg_count",
@@ -275,6 +276,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
@@ -293,6 +295,7 @@ class DistributedIsInitializedReferenceTests(unittest.TestCase):
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
             {
+                "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",

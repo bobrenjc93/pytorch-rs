@@ -247,6 +247,7 @@ class DistributedGetNodeLocalRankReferenceTests(unittest.TestCase):
         actual = actual_distributed.get_node_local_rank
         expected = expected_distributed.get_node_local_rank
         supported = {
+            "get_backend",
             "get_rank",
             "get_world_size",
             "get_pg_count",
