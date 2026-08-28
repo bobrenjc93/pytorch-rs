@@ -241,6 +241,41 @@ class AutogradKinetoAvailableTests(unittest.TestCase):
 
         self.assertIs(function(**{}), False)
 
+    def test_invalid_call_repr_failures_use_pytorch_placeholder(self):
+        class RaisingRepr:
+            def __init__(self, error):
+                self.error = error
+
+            def __repr__(self):
+                raise self.error
+
+        class NonStringRepr:
+            def __repr__(self):
+                return 1
+
+        cases = (
+            ((RaisingRepr(RuntimeError("boom")),), {}),
+            ((RaisingRepr(KeyboardInterrupt()),), {}),
+            ((RaisingRepr(SystemExit(7)),), {}),
+            ((NonStringRepr(),), {}),
+            ((), {"enabled": RaisingRepr(RuntimeError("boom"))}),
+            ((), {"enabled": RaisingRepr(KeyboardInterrupt())}),
+            ((), {"enabled": RaisingRepr(SystemExit(7))}),
+            ((), {"enabled": NonStringRepr()}),
+        )
+        prefix = (
+            "kineto_available(): incompatible function arguments. The following "
+            "argument types are supported:\n    1. () -> bool\n\nInvoked with: "
+        )
+        for args, kwargs in cases:
+            with self.subTest(args_type=type(args[0]).__name__ if args else None):
+                with self.assertRaises(TypeError) as raised:
+                    torch.autograd.kineto_available(*args, **kwargs)
+                location = "" if args else "kwargs: enabled="
+                message = f"{prefix}{location}<repr raised Error>"
+                self.assertEqual(str(raised.exception), message)
+                self.assertEqual(raised.exception.args, (message,))
+
     def test_profiler_surface_remains_unsupported(self):
         public = torch.autograd
         native = torch._C._autograd

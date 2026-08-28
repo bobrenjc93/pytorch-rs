@@ -65,19 +65,32 @@ impl KinetoAvailableFunctionRecord {
     }
 }
 
+fn safe_repr(value: &Bound<'_, PyAny>) -> String {
+    value.repr().map_or_else(
+        |_| "<repr raised Error>".to_owned(),
+        |representation| representation.to_string(),
+    )
+}
+
 fn format_invocation(
     args: &Bound<'_, PyTuple>,
     kwargs: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<String> {
     let positional = args
         .iter()
-        .map(|value| Ok(value.repr()?.to_string()))
-        .collect::<PyResult<Vec<_>>>()?
+        .map(|value| safe_repr(&value))
+        .collect::<Vec<_>>()
         .join(", ");
     let keywords = if let Some(kwargs) = kwargs {
         kwargs
             .iter()
-            .map(|(name, value)| Ok(format!("{}={}", name.extract::<String>()?, value.repr()?)))
+            .map(|(name, value)| {
+                Ok(format!(
+                    "{}={}",
+                    name.extract::<String>()?,
+                    safe_repr(&value)
+                ))
+            })
             .collect::<PyResult<Vec<_>>>()?
             .join(", ")
     } else {

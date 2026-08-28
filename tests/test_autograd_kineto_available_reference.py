@@ -150,6 +150,43 @@ class AutogradKinetoAvailableReferenceTests(unittest.TestCase):
         self.assertIs(actual(**{}), False)
         self.assertIs(type(expected(**{})), bool)
 
+    def test_hostile_argument_representations_match_pytorch_2_13(self):
+        class RaisingRepr:
+            def __init__(self, error):
+                self.error = error
+
+            def __repr__(self):
+                raise self.error
+
+        class NonStringRepr:
+            def __repr__(self):
+                return 1
+
+        factories = (
+            lambda: ((RaisingRepr(RuntimeError("boom")),), {}),
+            lambda: ((RaisingRepr(KeyboardInterrupt()),), {}),
+            lambda: ((RaisingRepr(SystemExit(7)),), {}),
+            lambda: ((NonStringRepr(),), {}),
+            lambda: ((), {"enabled": RaisingRepr(RuntimeError("boom"))}),
+            lambda: ((), {"enabled": RaisingRepr(KeyboardInterrupt())}),
+            lambda: ((), {"enabled": RaisingRepr(SystemExit(7))}),
+            lambda: ((), {"enabled": NonStringRepr()}),
+            lambda: (
+                (RaisingRepr(RuntimeError("first")), NonStringRepr()),
+                {"enabled": RaisingRepr(SystemExit(7))},
+            ),
+        )
+        actual = torch.autograd.kineto_available
+        expected = reference_torch.autograd.kineto_available
+        for case, factory in enumerate(factories):
+            with self.subTest(case=case):
+                actual_args, actual_kwargs = factory()
+                expected_args, expected_kwargs = factory()
+                self.assert_error_matches(
+                    lambda: actual(*actual_args, **actual_kwargs),
+                    lambda: expected(*expected_args, **expected_kwargs),
+                )
+
     def test_import_wildcard_copy_and_pickle_rules_match_pytorch_2_13(self):
         actual = torch.autograd.kineto_available
         expected = reference_torch.autograd.kineto_available
