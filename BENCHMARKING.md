@@ -2,6 +2,9 @@
 
 The benchmark program measures useful PyTorch-like behavior, not isolated loops chosen because this implementation happens to win them.
 
+The workloads are bounded by the [supported-surface contract](docs/supported-surface.md)
+and the weighted coverage areas in [FEATURES.md](FEATURES.md).
+
 ## Gates and aggregation
 
 1. Run formatting, linting, unit, integration, documentation, and differential correctness checks.
