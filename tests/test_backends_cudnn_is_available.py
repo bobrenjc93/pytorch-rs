@@ -244,7 +244,6 @@ class CudnnIsAvailableTests(unittest.TestCase):
         self.assertIs(cudnn.version(), None)
         for name in (
             "CUDNN_TENSOR_DTYPES",
-            "allow_tf32",
             "benchmark_limit",
             "conv",
             "depthwise_kernel",
@@ -260,12 +259,15 @@ class CudnnIsAvailableTests(unittest.TestCase):
         self.assertIs(type(cudnn.enabled), bool)
         self.assertIs(type(cudnn.benchmark), bool)
         self.assertIs(type(cudnn.deterministic), bool)
+        self.assertIs(type(cudnn.allow_tf32), bool)
         self.assertTrue(hasattr(torch._C, "_get_cudnn_enabled"))
         self.assertTrue(hasattr(torch._C, "_set_cudnn_enabled"))
         self.assertTrue(hasattr(torch._C, "_get_cudnn_benchmark"))
         self.assertTrue(hasattr(torch._C, "_set_cudnn_benchmark"))
         self.assertTrue(hasattr(torch._C, "_get_cudnn_deterministic"))
         self.assertTrue(hasattr(torch._C, "_set_cudnn_deterministic"))
+        self.assertTrue(hasattr(torch._C, "_get_cudnn_allow_tf32"))
+        self.assertTrue(hasattr(torch._C, "_set_cudnn_allow_tf32"))
         for name in ("_cudnn",):
             with self.subTest(native_name=name):
                 self.assertFalse(hasattr(torch._C, name))
@@ -314,23 +316,33 @@ assert version() is None
 assert cudnn.enabled is True
 assert cudnn.benchmark is False
 assert cudnn.deterministic is False
+assert cudnn.allow_tf32 is True
 cudnn.enabled = False
 assert cudnn.enabled is False
 assert cudnn.benchmark is False
 assert cudnn.deterministic is False
+assert cudnn.allow_tf32 is True
 cudnn.benchmark = True
 assert cudnn.enabled is False
 assert cudnn.benchmark is True
 assert cudnn.deterministic is False
+assert cudnn.allow_tf32 is True
 cudnn.deterministic = True
 assert cudnn.enabled is False
 assert cudnn.benchmark is True
 assert cudnn.deterministic is True
+assert cudnn.allow_tf32 is True
+assert torch._C._set_cudnn_allow_tf32(False) is None
+assert cudnn.enabled is False
+assert cudnn.benchmark is True
+assert cudnn.deterministic is True
+assert cudnn.allow_tf32 is False
 assert is_available() is False
 assert version() is None
 cudnn.enabled = True
 cudnn.benchmark = False
 cudnn.deterministic = False
+cudnn.allow_tf32 = True
 assert not hasattr(torch, "_has_cudnn")
 assert not hasattr(torch, "cuda")
 assert not hasattr(cudnn, "flags")
