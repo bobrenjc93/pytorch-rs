@@ -2670,6 +2670,19 @@ impl Tensor {
         self.finish_saved_output_unary_vjp(output, AutogradNode::Exp, apply_exp_vjp)
     }
 
+    /// Computes two raised to every element using unary output layout planning.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when gradient recording is enabled for this tensor, or
+    /// when result metadata or storage allocation fails.
+    pub fn exp2(&self) -> Result<Self, TensorError> {
+        if self.records_grad() {
+            return Err(TensorError::AutogradRecordingUnsupported { operation: "exp2" });
+        }
+        self.unary_map(f32::exp2)
+    }
+
     /// Rounds every element down to the nearest integer.
     ///
     /// # Errors
@@ -6605,6 +6618,10 @@ mod tests {
 
         assert_eq!(
             tensor.exp(),
+            Err(TensorError::AllocationFailed { elements })
+        );
+        assert_eq!(
+            tensor.exp2(),
             Err(TensorError::AllocationFailed { elements })
         );
         assert_eq!(
