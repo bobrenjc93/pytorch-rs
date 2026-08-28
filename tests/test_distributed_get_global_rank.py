@@ -17,16 +17,16 @@ import torch_rs as torch
 INVALID_GROUP_SUFFIX = (
     " is not registered, please create group with torch.distributed.new_group API"
 )
-FUNCTION_DOC = """Translate a global rank into a group rank.
+FUNCTION_DOC = """Translate a group rank into a global rank.
 
-``global_rank`` must be part of ``group`` otherwise this raises RuntimeError.
+``group_rank`` must be part of `group` otherwise this raises RuntimeError.
 
 Args:
-    group (ProcessGroup): ProcessGroup to find the relative rank.
-    global_rank (int): Global rank to query.
+    group (ProcessGroup): ProcessGroup to find the global rank from.
+    group_rank (int): Group rank to query.
 
 Returns:
-    Group rank of ``global_rank`` relative to ``group``
+    Global rank of ``group_rank`` relative to ``group``
 
 N.B. calling this function on the default process group returns identity"""
 
@@ -42,7 +42,7 @@ class UnreadableEnvironment:
         raise AssertionError(f"environment value was read: {key}")
 
 
-class DistributedGetGroupRankTests(unittest.TestCase):
+class DistributedGetGlobalRankTests(unittest.TestCase):
     def assert_error(self, error_type, message, call):
         with self.assertRaises(error_type) as raised:
             call()
@@ -56,7 +56,7 @@ class DistributedGetGroupRankTests(unittest.TestCase):
         self.assertEqual(count, 0)
 
     def test_default_world_returns_the_supplied_rank_without_coercion(self):
-        function = torch.distributed.get_group_rank
+        function = torch.distributed.get_global_rank
         distributed_c10d = importlib.import_module(
             "torch_rs.distributed.distributed_c10d"
         )
@@ -125,8 +125,8 @@ class DistributedGetGroupRankTests(unittest.TestCase):
                     rank = RankProbe()
                     for call in (
                         lambda: function(None, rank),
-                        lambda: function(group=None, global_rank=rank),
-                        lambda: function(global_rank=rank, group=None),
+                        lambda: function(group=None, group_rank=rank),
+                        lambda: function(group_rank=rank, group=None),
                     ):
                         self.assertIs(call(), rank)
                     self.assertEqual(rank.events, [])
@@ -164,7 +164,9 @@ class DistributedGetGroupRankTests(unittest.TestCase):
         def worker(index):
             try:
                 barrier.wait(timeout=10)
-                results[index] = distributed.get_group_rank(None, ranks[index])
+                results[index] = distributed.get_global_rank(
+                    None, ranks[index]
+                )
             except BaseException as error:
                 errors.append(error)
 
@@ -185,11 +187,11 @@ class DistributedGetGroupRankTests(unittest.TestCase):
         for _ in range(3):
             distributed_c10d = importlib.reload(distributed_c10d)
             distributed = importlib.reload(distributed)
-            function = distributed.get_group_rank
+            function = distributed.get_global_rank
             rank = object()
             self.assertIs(torch.distributed, distributed)
             self.assertIs(distributed.distributed_c10d, distributed_c10d)
-            self.assertIs(distributed_c10d.get_group_rank, function)
+            self.assertIs(distributed_c10d.get_global_rank, function)
             self.assertIs(function(None, rank), rank)
             self.assert_zero_process_group_state()
 
@@ -198,11 +200,11 @@ class DistributedGetGroupRankTests(unittest.TestCase):
         distributed_c10d = importlib.import_module(
             "torch_rs.distributed.distributed_c10d"
         )
-        function = distributed.get_group_rank
+        function = distributed.get_global_rank
 
         self.assertIs(torch.distributed, distributed)
         self.assertIs(distributed.distributed_c10d, distributed_c10d)
-        self.assertIs(distributed_c10d.get_group_rank, function)
+        self.assertIs(distributed_c10d.get_global_rank, function)
         self.assertIs(sys.modules["torch_rs.distributed"], distributed)
         self.assertIs(
             sys.modules["torch_rs.distributed.distributed_c10d"],
@@ -212,10 +214,10 @@ class DistributedGetGroupRankTests(unittest.TestCase):
         self.assertEqual(
             str(inspect.signature(function)),
             "(group: torch_rs.distributed.distributed_c10d.ProcessGroup, "
-            "global_rank: int) -> int",
+            "group_rank: int) -> int",
         )
         self.assertEqual(
-            set(function.__annotations__), {"group", "global_rank", "return"}
+            set(function.__annotations__), {"group", "group_rank", "return"}
         )
         group_annotation = function.__annotations__["group"]
         self.assertEqual(group_annotation.__name__, "ProcessGroup")
@@ -224,11 +226,11 @@ class DistributedGetGroupRankTests(unittest.TestCase):
             group_annotation.__module__,
             "torch_rs.distributed.distributed_c10d",
         )
-        self.assertIs(function.__annotations__["global_rank"], int)
+        self.assertIs(function.__annotations__["group_rank"], int)
         self.assertIs(function.__annotations__["return"], int)
         self.assertEqual(typing.get_type_hints(function), function.__annotations__)
-        self.assertEqual(function.__name__, "get_group_rank")
-        self.assertEqual(function.__qualname__, "get_group_rank")
+        self.assertEqual(function.__name__, "get_global_rank")
+        self.assertEqual(function.__qualname__, "get_global_rank")
         self.assertEqual(
             function.__module__, "torch_rs.distributed.distributed_c10d"
         )
@@ -243,7 +245,7 @@ class DistributedGetGroupRankTests(unittest.TestCase):
     def test_imports_copy_and_pickle_use_the_canonical_module(self):
         distributed = torch.distributed
         distributed_c10d = distributed.distributed_c10d
-        function = distributed.get_group_rank
+        function = distributed.get_global_rank
 
         self.assertFalse(hasattr(distributed, "__all__"))
         self.assertEqual(
@@ -267,24 +269,20 @@ class DistributedGetGroupRankTests(unittest.TestCase):
             ],
         )
 
-        package_import = {}
-        exec("from torch_rs import distributed", package_import)
-        self.assertIs(package_import["distributed"], distributed)
-
         direct_import = {}
-        exec("from torch_rs.distributed import get_group_rank", direct_import)
-        self.assertIs(direct_import["get_group_rank"], function)
+        exec("from torch_rs.distributed import get_global_rank", direct_import)
+        self.assertIs(direct_import["get_global_rank"], function)
 
         owner_import = {}
         exec(
-            "from torch_rs.distributed.distributed_c10d import get_group_rank",
+            "from torch_rs.distributed.distributed_c10d import get_global_rank",
             owner_import,
         )
-        self.assertIs(owner_import["get_group_rank"], function)
+        self.assertIs(owner_import["get_global_rank"], function)
 
         distributed_namespace = {}
         exec("from torch_rs.distributed import *", distributed_namespace)
-        self.assertIs(distributed_namespace["get_group_rank"], function)
+        self.assertIs(distributed_namespace["get_global_rank"], function)
         self.assertIs(
             distributed_namespace["distributed_c10d"], distributed_c10d
         )
@@ -298,13 +296,13 @@ class DistributedGetGroupRankTests(unittest.TestCase):
             {name for name in owner_namespace if not name.startswith("__")},
             set(distributed_c10d.__all__),
         )
-        self.assertIs(owner_namespace["get_group_rank"], function)
+        self.assertIs(owner_namespace["get_global_rank"], function)
 
-        self.assertNotIn("get_group_rank", torch.__all__)
-        self.assertFalse(hasattr(torch, "get_group_rank"))
+        self.assertNotIn("get_global_rank", torch.__all__)
+        self.assertFalse(hasattr(torch, "get_global_rank"))
         top_level_namespace = {}
         exec("from torch_rs import *", top_level_namespace)
-        self.assertNotIn("get_group_rank", top_level_namespace)
+        self.assertNotIn("get_global_rank", top_level_namespace)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -317,60 +315,84 @@ class DistributedGetGroupRankTests(unittest.TestCase):
                 self.assertIs(pickle.loads(payload), function)
 
     def test_argument_errors_and_invalid_group_lookup_order(self):
-        function = torch.distributed.get_group_rank
+        function = torch.distributed.get_global_rank
 
         cases = (
             (
                 function,
-                "get_group_rank() missing 2 required positional arguments: "
-                "'group' and 'global_rank'",
+                "get_global_rank() missing 2 required positional arguments: "
+                "'group' and 'group_rank'",
             ),
             (
                 lambda: function(None),
-                "get_group_rank() missing 1 required positional argument: "
-                "'global_rank'",
+                "get_global_rank() missing 1 required positional argument: "
+                "'group_rank'",
             ),
             (
                 lambda: function(None, 1, 2),
-                "get_group_rank() takes 2 positional arguments but 3 were given",
+                "get_global_rank() takes 2 positional arguments but 3 were given",
             ),
             (
                 lambda: function(group=None, rank=1),
-                "get_group_rank() got an unexpected keyword argument 'rank'",
+                "get_global_rank() got an unexpected keyword argument 'rank'",
             ),
             (
                 lambda: function(None, 1, group=None),
-                "get_group_rank() got multiple values for argument 'group'",
+                "get_global_rank() got multiple values for argument 'group'",
             ),
             (
-                lambda: function(None, 1, global_rank=2),
-                "get_group_rank() got multiple values for argument 'global_rank'",
+                lambda: function(None, 1, group_rank=2),
+                "get_global_rank() got multiple values for argument 'group_rank'",
             ),
         )
         for call, message in cases:
             with self.subTest(message=message):
                 self.assert_error(TypeError, message, call)
 
+        class RankProbe:
+            def __init__(self):
+                self.events = []
+
+            def __bool__(self):
+                self.events.append("bool")
+                raise AssertionError("rank truth value was read")
+
+            def __eq__(self, other):
+                self.events.append(("eq", other))
+                raise AssertionError("rank equality was read")
+
+            def __hash__(self):
+                self.events.append("hash")
+                raise AssertionError("rank hash was read")
+
+            def __format__(self, format_spec):
+                self.events.append(("format", format_spec))
+                raise AssertionError("rank formatting was read")
+
         for group in (False, True, 0, -100, "", "group"):
             with self.subTest(group=group):
+                rank = RankProbe()
                 self.assert_error(
                     ValueError,
                     f"Group {group}{INVALID_GROUP_SUFFIX}",
-                    lambda group=group: function(group, object()),
+                    lambda group=group, rank=rank: function(group, rank),
                 )
+                self.assertEqual(rank.events, [])
 
         for group in ([], {}, set(), bytearray()):
             with self.subTest(unhashable=type(group).__name__):
+                rank = RankProbe()
                 with self.assertRaises(TypeError) as expected_raised:
                     group in {}
                 with self.assertRaises(TypeError) as actual_raised:
-                    function(group, object())
+                    function(group, rank)
                 self.assertEqual(
                     str(actual_raised.exception), str(expected_raised.exception)
                 )
                 self.assertEqual(
                     actual_raised.exception.args, expected_raised.exception.args
                 )
+                self.assertEqual(rank.events, [])
 
         events = []
 
@@ -387,13 +409,14 @@ class DistributedGetGroupRankTests(unittest.TestCase):
                 events.append(("format", format_spec))
                 return "traced-group"
 
-        rank = object()
+        rank = RankProbe()
         self.assert_error(
             ValueError,
             f"Group traced-group{INVALID_GROUP_SUFFIX}",
             lambda: function(TracedGroup(), rank),
         )
         self.assertEqual(events, [("hash",), ("format", "")])
+        self.assertEqual(rank.events, [])
 
         events.clear()
 
@@ -401,10 +424,6 @@ class DistributedGetGroupRankTests(unittest.TestCase):
             def __hash__(self):
                 events.append(("hash",))
                 raise RuntimeError("hash failed")
-
-            def __eq__(self, other):
-                events.append(("eq", other))
-                raise AssertionError("group equality was read")
 
             def __format__(self, format_spec):
                 events.append(("format", format_spec))
@@ -416,6 +435,7 @@ class DistributedGetGroupRankTests(unittest.TestCase):
             lambda: function(BrokenHash(), rank),
         )
         self.assertEqual(events, [("hash",)])
+        self.assertEqual(rank.events, [])
 
         events.clear()
 
@@ -423,10 +443,6 @@ class DistributedGetGroupRankTests(unittest.TestCase):
             def __hash__(self):
                 events.append(("hash",))
                 return 456
-
-            def __eq__(self, other):
-                events.append(("eq", other))
-                raise AssertionError("group equality was read")
 
             def __format__(self, format_spec):
                 events.append(("format", format_spec))
@@ -438,18 +454,19 @@ class DistributedGetGroupRankTests(unittest.TestCase):
             lambda: function(BrokenFormat(), rank),
         )
         self.assertEqual(events, [("hash",), ("format", "")])
+        self.assertEqual(rank.events, [])
         self.assert_zero_process_group_state()
 
     def test_registered_groups_and_distributed_execution_remain_unsupported(self):
         distributed = torch.distributed
         distributed_c10d = distributed.distributed_c10d
-        process_group_annotation = distributed.get_group_rank.__annotations__[
+        process_group_annotation = distributed.get_global_rank.__annotations__[
             "group"
         ]
         group = process_group_annotation()
 
         with self.assertRaises(ValueError) as raised:
-            distributed.get_group_rank(group, 0)
+            distributed.get_global_rank(group, 0)
         self.assertTrue(str(raised.exception).startswith("Group <"))
         self.assertTrue(str(raised.exception).endswith(INVALID_GROUP_SUFFIX))
 
@@ -503,10 +520,10 @@ os.environ.update(
 )
 import torch_rs as torch
 
-function = torch.distributed.get_group_rank
+function = torch.distributed.get_global_rank
 rank = RankProbe()
 assert function(None, rank) is rank
-assert function(group=None, global_rank=rank) is rank
+assert function(group=None, group_rank=rank) is rank
 try:
     function(GroupProbe(), rank)
 except ValueError as error:
@@ -514,7 +531,7 @@ except ValueError as error:
     assert str(error) == expected
     assert error.args == (expected,)
 else:
-    raise AssertionError("get_group_rank accepted an unregistered group")
+    raise AssertionError("get_global_rank accepted an unregistered group")
 assert torch.distributed.is_initialized() is False
 assert torch.distributed.get_pg_count() == 0
 assert not hasattr(torch.distributed, "ProcessGroup")

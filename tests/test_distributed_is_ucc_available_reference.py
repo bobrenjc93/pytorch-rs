@@ -186,6 +186,7 @@ class DistributedIsUccAvailableReferenceTests(unittest.TestCase):
                     "is_ucc_available",
                     "is_xccl_available",
                     "get_group_rank",
+                    "get_global_rank",
                     "get_node_local_rank",
                 }
             ],
@@ -281,6 +282,7 @@ class DistributedIsUccAvailableReferenceTests(unittest.TestCase):
                 "is_ucc_available",
                 "is_xccl_available",
                 "get_group_rank",
+                "get_global_rank",
                 "get_node_local_rank",
             },
         )
@@ -302,6 +304,7 @@ class DistributedIsUccAvailableReferenceTests(unittest.TestCase):
                 "is_ucc_available",
                 "is_xccl_available",
                 "get_group_rank",
+                "get_global_rank",
                 "get_node_local_rank",
             },
         )
