@@ -140,7 +140,16 @@ class CpuCapabilityTests(unittest.TestCase):
         self.assertIsNot(torch.cpu, cpu)
         self.assertEqual(
             {name for name in vars(backends) if not name.startswith("_")},
-            {"cpu", "cuda", "cudnn", "mha", "mkl", "nnpack", "openmp"},
+            {
+                "cpu",
+                "cuda",
+                "cudnn",
+                "kleidiai",
+                "mha",
+                "mkl",
+                "nnpack",
+                "openmp",
+            },
         )
 
         package_import = {}
