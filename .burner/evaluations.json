@@ -54,6 +54,33 @@
       "id": "eval_c8a1bfb9",
       "createdAt": "2026-08-07T16:22:36.605Z",
       "definitionVersion": "evaldef_repo_c8a1bfb9_v2"
+    },
+    {
+      "name": "torch.compile program coverage parity",
+      "prompt": "Score torch.compile program coverage parity from 0 to 100 as the weighted percentage of stable Python programs accepted and correctly executed by reference PyTorch torch.compile that are also compiled and correctly executed by the torch-rs-based torch.compile path. Use a versioned representative corpus spanning tensor arithmetic and broadcasting, modules with parameters and buffers, inference and training/autograd, Python control flow, graph breaks and fullgraph mode, dynamic shapes and symbolic values, mutation/aliasing/views, containers and pytrees, decompositions, custom functions, recompilation and guards, and dtype/device transitions. The denominator contains only cases that stock PyTorch 2.13 torch.compile compiles and runs correctly under the declared backend, mode, and options. A candidate case earns credit only when it produces matching outputs and observable semantics without forwarding execution to installed PyTorch, silently falling back to eager, stubbing the compiled path, weakening the reference case, or skipping a supported case. Require executable differential tests, explicit category weights, and held-out programs resistant to case-specific specialization; report the weighted passed/eligible percentage. Missing or untested categories remain zero. A score of 100 means the torch-rs path compiles and correctly runs the entire reference-compilable corpus. Use the latest applicable point in docs/burner-evaluation-history.json as numeric calibration for the code revision it measured: preserve that credit when relevant code and evidence are unchanged, and move it only for concrete changes since that revision.",
+      "weight": 4,
+      "enabled": true,
+      "id": "eval_a61c0e71",
+      "createdAt": "2026-08-28T21:17:58.000Z",
+      "definitionVersion": "evaldef_repo_a61c0e71_v1"
+    },
+    {
+      "name": "torch.compile CUDA performance parity",
+      "prompt": "Score CUDA torch.compile performance parity from 0 to 100 using real NVIDIA GPU execution on this machine. Use a versioned representative workload corpus for which stock PyTorch 2.13 torch.compile with the declared CUDA backend, mode, and options compiles and produces correct outputs. Run the torch-rs-based torch.compile path on the same visible H100, inputs, shapes, dtypes, modes, and synchronization policy. For each workload, award min(1, reference steady-state latency / torch-rs steady-state latency) when the torch-rs path genuinely compiles, executes on CUDA, and matches outputs and required gradients; award zero for compile failures, runtime failures, incorrect results, CPU execution, eager fallback, forwarding to installed PyTorch, skipped cases, or missing reproducible evidence. Aggregate using documented fixed workload weights and report both the common-success geometric-mean speed ratio and the coverage-adjusted overall percentage used as the score. Use isolated warmup, torch.cuda.synchronize around timing, enough samples for stable medians, separate cold compile time from steady-state latency, and disclose GPU model, software versions, memory pressure, and variance. A score of 100 means parity or better on every reference-compilable workload; absent native CUDA compile execution evidence scores zero. Use the latest applicable point in docs/burner-evaluation-history.json as numeric calibration for the code revision it measured: preserve that credit when relevant code and evidence are unchanged, and move it only for concrete changes since that revision.",
+      "weight": 4,
+      "enabled": true,
+      "id": "eval_6f98c42d",
+      "createdAt": "2026-08-28T21:17:58.000Z",
+      "definitionVersion": "evaldef_repo_6f98c42d_v1"
+    },
+    {
+      "name": "Repository polish",
+      "prompt": "Score repository polish from 0 to 100 from the perspective of a new contributor or adopter. Inspect top-level organization, README.md, focused documentation, navigation, installation and first-success instructions, architecture explanation, supported-versus-unsupported scope, testing and benchmarking guidance, contribution workflow, examples, naming consistency, generated artifacts, and general repository hygiene. Reward concise progressive disclosure, a short useful README that routes readers to focused documents, accurate runnable examples, clear ownership boundaries, discoverable tooling, and maintained documentation that matches executable behavior. Penalize README sprawl that reads like an exhaustive changelog or API dump, repetitive or generated-looking prose, stale or contradictory claims, weak information hierarchy, undocumented setup assumptions, scattered guidance, noisy tracked artifacts, and cosmetic reshuffling without improved comprehension. Do not reward documentation volume; preserve necessary compatibility contracts while moving detail to the right durable location. Ground the score in concrete repository evidence and usability checks. A score of 100 means the repository feels deliberate, concise, navigable, and release-quality to an external engineer. Use the latest applicable point in docs/burner-evaluation-history.json as numeric calibration for the code revision it measured: preserve that credit when relevant files and evidence are unchanged, and move it only for concrete changes since that revision.",
+      "weight": 2,
+      "enabled": true,
+      "id": "eval_d4c0b71e",
+      "createdAt": "2026-08-28T21:17:58.000Z",
+      "definitionVersion": "evaldef_repo_d4c0b71e_v1"
     }
   ]
 }
