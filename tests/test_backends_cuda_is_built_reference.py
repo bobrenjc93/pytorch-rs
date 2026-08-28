@@ -63,10 +63,12 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "enable_math_sdp",
+                    "enable_mem_efficient_sdp",
                     "is_built",
                     "is_ck_sdpa_available",
                     "is_flash_attention_available",
                     "math_sdp_enabled",
+                    "mem_efficient_sdp_enabled",
                 }
             ],
         )
@@ -133,10 +135,12 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "enable_math_sdp",
+                    "enable_mem_efficient_sdp",
                     "is_built",
                     "is_ck_sdpa_available",
                     "is_flash_attention_available",
                     "math_sdp_enabled",
+                    "mem_efficient_sdp_enabled",
                 }
             },
         )
@@ -255,10 +259,12 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "enable_math_sdp",
+                "enable_mem_efficient_sdp",
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
                 "math_sdp_enabled",
+                "mem_efficient_sdp_enabled",
                 "torch",
             },
         )
