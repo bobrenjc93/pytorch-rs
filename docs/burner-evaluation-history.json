@@ -7313,6 +7313,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1193",
+      "recordedAt": "2026-08-28T03:55:27.363Z",
+      "label": "PR #1193",
+      "kind": "leaf",
+      "prNumber": 1193,
+      "title": "Add CUDA math-SDPA preference control",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 99.3,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 82,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
