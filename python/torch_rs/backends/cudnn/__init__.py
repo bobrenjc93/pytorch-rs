@@ -42,14 +42,14 @@ def _is_default_fp32_precision(value):
     return _is_default_mode(value, "none")
 
 
-def _set_flags(
+def set_flags(
     _enabled=None,
     _benchmark=None,
     _benchmark_limit=None,
     _deterministic=None,
     _allow_tf32=None,
     _fp32_precision="none",
-    _depthwise_kernel="auto",
+    _depthwise_kernel=None,
 ):
     orig_flags = (
         torch._C._get_cudnn_enabled(),
@@ -57,6 +57,8 @@ def _set_flags(
         torch._C._cuda_get_cudnn_benchmark_limit(),
         torch._C._get_cudnn_deterministic(),
         torch._C._get_cudnn_allow_tf32(),
+        "none",
+        "auto",
     )
     if _enabled is not None:
         torch._C._set_cudnn_enabled(_enabled)
@@ -98,7 +100,7 @@ def flags(
     depthwise_kernel="auto",
 ):
     with __allow_nonbracketed_mutation():
-        orig_flags = _set_flags(
+        orig_flags = set_flags(
             enabled,
             benchmark,
             benchmark_limit,
@@ -111,7 +113,7 @@ def flags(
         yield
     finally:
         with __allow_nonbracketed_mutation():
-            _set_flags(*orig_flags)
+            set_flags(*orig_flags)
 
 
 class _ContextProp:
