@@ -28,6 +28,12 @@ ENABLE_MATH_SDP_DOC = """
     Enables or disables math scaled dot product attention.
     """
 
+if sys.version_info >= (3, 13):
+    # CPython 3.13+ cleans function docstring indentation while preserving
+    # the leading and terminating newlines.
+    MATH_SDP_ENABLED_DOC = "\n" + inspect.cleandoc(MATH_SDP_ENABLED_DOC) + "\n"
+    ENABLE_MATH_SDP_DOC = "\n" + inspect.cleandoc(ENABLE_MATH_SDP_DOC) + "\n"
+
 
 class _RejectTruthiness:
     def __bool__(self):
@@ -342,6 +348,11 @@ print(json.dumps({
     def test_binding_errors_leave_state_unchanged(self):
         cuda = self.cuda
         cuda.enable_math_sdp(True)
+        unexpected_keyword = (
+            "enable_math_sdp() got an unexpected keyword argument '_enabled'"
+        )
+        if sys.version_info >= (3, 13):
+            unexpected_keyword += ". Did you mean 'enabled'?"
         cases = (
             (
                 lambda: cuda.math_sdp_enabled(None),
@@ -361,7 +372,7 @@ print(json.dumps({
             ),
             (
                 lambda: cuda.enable_math_sdp(_enabled=False),
-                "enable_math_sdp() got an unexpected keyword argument '_enabled'",
+                unexpected_keyword,
             ),
             (
                 lambda: cuda.enable_math_sdp(True, enabled=False),
@@ -411,4 +422,3 @@ print(json.dumps({
 
 if __name__ == "__main__":
     unittest.main()
-
