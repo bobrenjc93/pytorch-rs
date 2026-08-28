@@ -289,6 +289,53 @@ class ZerosLikeTests(unittest.TestCase):
         self.assertEqual(args, (source,))
         self.assertEqual(tuple(kwargs), ("dtype",))
 
+    def test_torch_function_override_ordering_propagates_subclasscheck_errors(self):
+        class RaisingMeta(type):
+            def __subclasscheck__(cls, subclass):
+                raise RuntimeError("subclass check failed")
+
+        class FirstOption(metaclass=RaisingMeta):
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return "first"
+
+        class SecondOption:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return "second"
+
+        with self.assertRaisesRegex(RuntimeError, "subclass check failed"):
+            torch.zeros_like(
+                torch.zeros((1,)),
+                dtype=FirstOption(),
+                layout=SecondOption(),
+            )
+
+    def test_option_torch_function_probe_is_not_retried_after_failure(self):
+        class FlakyOption:
+            probes = 0
+            dispatched = False
+
+            def __getattribute__(self, name):
+                if name == "__torch_function__":
+                    type(self).probes += 1
+                    if type(self).probes == 1:
+                        raise RuntimeError("hidden probe failure")
+                return object.__getattribute__(self, name)
+
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                cls.dispatched = True
+                return object()
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"zeros_like\(\): argument 'dtype' must be torch.dtype, not FlakyOption",
+        ):
+            torch.zeros_like(torch.zeros((1,)), dtype=FlakyOption())
+        self.assertEqual(FlakyOption.probes, 1)
+        self.assertFalse(FlakyOption.dispatched)
+
     def test_callable_metadata_exports_and_pickling(self):
         function = torch.zeros_like
         owner = function.__reduce__()[1][0]

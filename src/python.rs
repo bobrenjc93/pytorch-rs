@@ -2440,12 +2440,12 @@ fn probe_torch_function_override<'py>(
 
 #[allow(
     unsafe_code,
-    reason = "dtype argument parity requires CPython's one-shot exception-suppressing attribute probe"
+    reason = "non-tensor argument parity requires CPython's one-shot exception-suppressing attribute probe"
 )]
-fn probe_dtype_torch_function_override<'py>(
+fn probe_one_shot_torch_function_override<'py>(
     value: &Bound<'py, PyAny>,
 ) -> Option<ProbedTorchFunctionOverride<'py>> {
-    // Unlike tensor arguments, PyTorch's dtype parser does not retry a failed
+    // Unlike tensor arguments, PyTorch's option parsers do not retry a failed
     // __torch_function__ lookup through a tensor-type fallback.
     // SAFETY: `value` is live for this call and the attribute name is a static,
     // NUL-terminated string. PyObject_HasAttrString always returns zero or one.
@@ -3751,16 +3751,17 @@ fn push_ordered_torch_function_override<'py>(
         return Ok(());
     }
 
-    let insertion = overrides.iter().position(|existing| {
+    let mut insertion = None;
+    for (index, existing) in overrides.iter().enumerate() {
         let existing_type = existing
             .dispatch_type
             .cast::<PyType>()
             .expect("a torch-function dispatch type is a Python type");
-        probed
-            .precedence_type
-            .is_subclass(existing_type.as_any())
-            .unwrap_or(false)
-    });
+        if probed.precedence_type.is_subclass(existing_type.as_any())? {
+            insertion = Some(index);
+            break;
+        }
+    }
     if let Some(index) = insertion {
         overrides.insert(index, probed.clone());
     } else {
@@ -4006,30 +4007,134 @@ struct ZerosLikeCallArguments<'py> {
     option_overrides: Vec<ProbedTorchFunctionOverride<'py>>,
 }
 
+struct ZerosLikeArgumentSelection<'py> {
+    input: Option<ParsedCallArgument<'py>>,
+    dtype: Option<Bound<'py, PyAny>>,
+    layout: Option<Bound<'py, PyAny>>,
+    device: Option<Bound<'py, PyAny>>,
+    requires_grad: Option<Bound<'py, PyAny>>,
+    memory_format: Option<Bound<'py, PyAny>>,
+    options: ZerosLikeOptions,
+    keyword_error: Option<PyErr>,
+}
+
+impl<'py> ZerosLikeArgumentSelection<'py> {
+    fn new(input: Option<ParsedCallArgument<'py>>) -> Self {
+        Self {
+            input,
+            dtype: None,
+            layout: None,
+            device: None,
+            requires_grad: None,
+            memory_format: None,
+            options: ZerosLikeOptions::default(),
+            keyword_error: None,
+        }
+    }
+
+    fn record_keyword(&mut self, key: &str, value: Bound<'py, PyAny>) {
+        match key {
+            "input" => {
+                if self.input.is_some() {
+                    self.keyword_error.get_or_insert_with(|| {
+                        PyTypeError::new_err(
+                            "zeros_like() got multiple values for argument 'input'",
+                        )
+                    });
+                } else {
+                    self.input = Some(ParsedCallArgument {
+                        value,
+                        position: None,
+                    });
+                }
+            }
+            "dtype" => {
+                self.options.insert(ZerosLikeOption::DType);
+                self.dtype = Some(value);
+            }
+            "layout" => {
+                self.options.insert(ZerosLikeOption::Layout);
+                self.layout = Some(value);
+            }
+            "device" => {
+                self.options.insert(ZerosLikeOption::Device);
+                self.device = Some(value);
+            }
+            "requires_grad" => {
+                self.options.insert(ZerosLikeOption::RequiresGrad);
+                self.requires_grad = Some(value);
+            }
+            "memory_format" => {
+                self.options.insert(ZerosLikeOption::MemoryFormat);
+                self.memory_format = Some(value);
+            }
+            _ => {
+                self.keyword_error.get_or_insert_with(|| {
+                    PyTypeError::new_err(format!(
+                        "zeros_like() got an unexpected keyword argument '{key}'"
+                    ))
+                });
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ZerosLikeOption {
+    DType,
+    Layout,
+    Device,
+    RequiresGrad,
+    MemoryFormat,
+}
+
+impl ZerosLikeOption {
+    const fn bit(self) -> u8 {
+        match self {
+            Self::DType => 1 << 0,
+            Self::Layout => 1 << 1,
+            Self::Device => 1 << 2,
+            Self::RequiresGrad => 1 << 3,
+            Self::MemoryFormat => 1 << 4,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::DType => "dtype",
+            Self::Layout => "layout",
+            Self::Device => "device",
+            Self::RequiresGrad => "requires_grad",
+            Self::MemoryFormat => "memory_format",
+        }
+    }
+}
+
 #[derive(Default)]
 struct ZerosLikeOptions {
-    dtype: bool,
-    layout: bool,
-    device: bool,
-    requires_grad: bool,
-    memory_format: bool,
+    explicit: u8,
 }
 
 impl ZerosLikeOptions {
+    fn insert(&mut self, option: ZerosLikeOption) {
+        self.explicit |= option.bit();
+    }
+
+    fn contains(&self, option: ZerosLikeOption) -> bool {
+        self.explicit & option.bit() != 0
+    }
+
     fn first_explicit(&self) -> Option<&'static str> {
-        if self.dtype {
-            Some("dtype")
-        } else if self.layout {
-            Some("layout")
-        } else if self.device {
-            Some("device")
-        } else if self.requires_grad {
-            Some("requires_grad")
-        } else if self.memory_format {
-            Some("memory_format")
-        } else {
-            None
-        }
+        [
+            ZerosLikeOption::DType,
+            ZerosLikeOption::Layout,
+            ZerosLikeOption::Device,
+            ZerosLikeOption::RequiresGrad,
+            ZerosLikeOption::MemoryFormat,
+        ]
+        .into_iter()
+        .find(|option| self.contains(*option))
+        .map(ZerosLikeOption::name)
     }
 }
 
@@ -5763,7 +5868,7 @@ fn bind_zeros_like_arguments<'py>(
         )));
     }
 
-    let mut input = if positional.is_empty() {
+    let input = if positional.is_empty() {
         None
     } else {
         Some(ParsedCallArgument {
@@ -5771,79 +5876,44 @@ fn bind_zeros_like_arguments<'py>(
             position: Some(1),
         })
     };
-    let mut options = ZerosLikeOptions::default();
-    let mut dtype = None;
-    let mut layout = None;
-    let mut device = None;
-    let mut requires_grad = None;
-    let mut memory_format = None;
-    let mut keyword_error = None;
+    let mut selection = ZerosLikeArgumentSelection::new(input);
 
     if let Some(keywords) = keywords {
         for (key, value) in keywords {
             let key = key.extract::<String>()?;
-            match key.as_str() {
-                "input" => {
-                    if input.is_some() {
-                        keyword_error.get_or_insert_with(|| {
-                            PyTypeError::new_err(
-                                "zeros_like() got multiple values for argument 'input'",
-                            )
-                        });
-                    } else {
-                        input = Some(ParsedCallArgument {
-                            value,
-                            position: None,
-                        });
-                    }
-                }
-                "dtype" => {
-                    options.dtype = true;
-                    dtype = Some(value);
-                }
-                "layout" => {
-                    options.layout = true;
-                    layout = Some(value);
-                }
-                "device" => {
-                    options.device = true;
-                    device = Some(value);
-                }
-                "requires_grad" => {
-                    options.requires_grad = true;
-                    requires_grad = Some(value);
-                }
-                "memory_format" => {
-                    options.memory_format = true;
-                    memory_format = Some(value);
-                }
-                _ => {
-                    keyword_error.get_or_insert_with(|| {
-                        PyTypeError::new_err(format!(
-                            "zeros_like() got an unexpected keyword argument '{key}'"
-                        ))
-                    });
-                }
-            }
+            selection.record_keyword(&key, value);
         }
     }
 
-    let Some(input) = input else {
+    let Some(input) = &selection.input else {
         return Err(PyTypeError::new_err(
             "zeros_like() missing 1 required positional arguments: \"input\"",
         ));
     };
-    let input = parse_exact_tensor_or_torch_function_argument("zeros_like", &input)?;
+    let input = parse_exact_tensor_or_torch_function_argument("zeros_like", input)?;
+    let option_overrides = validate_zeros_like_options(&selection)?;
 
-    let memory_format_override = validate_zeros_like_memory_format(memory_format.as_ref())?;
-    let dtype_override = validate_zeros_like_dtype(dtype.as_ref())?;
-    let layout_override = validate_zeros_like_layout(layout.as_ref())?;
-    let requires_grad_override = validate_zeros_like_requires_grad(requires_grad.as_ref())?;
-    let device_override = validate_zeros_like_device(device.as_ref())?;
-
-    if let Some(error) = keyword_error {
+    if let Some(error) = selection.keyword_error {
         return Err(error);
     }
+
+    Ok(ZerosLikeCallArguments {
+        input,
+        options: selection.options,
+        option_overrides,
+    })
+}
+
+fn validate_zeros_like_options<'py>(
+    selection: &ZerosLikeArgumentSelection<'py>,
+) -> PyResult<Vec<ProbedTorchFunctionOverride<'py>>> {
+    let memory_format_override =
+        validate_zeros_like_memory_format(selection.memory_format.as_ref())?;
+    let dtype_override = validate_zeros_like_dtype(selection.dtype.as_ref())?;
+    let layout_override = validate_zeros_like_layout(selection.layout.as_ref())?;
+    let requires_grad_override =
+        validate_zeros_like_requires_grad(selection.requires_grad.as_ref())?;
+    let device_override = validate_zeros_like_device(selection.device.as_ref())?;
 
     let mut option_overrides = Vec::new();
     option_overrides
@@ -5861,12 +5931,7 @@ fn bind_zeros_like_arguments<'py>(
     {
         option_overrides.push(probed);
     }
-
-    Ok(ZerosLikeCallArguments {
-        input,
-        options,
-        option_overrides,
-    })
+    Ok(option_overrides)
 }
 
 fn validate_zeros_like_dtype<'py>(
@@ -5878,7 +5943,7 @@ fn validate_zeros_like_dtype<'py>(
     if dtype.is_none() || dtype.cast::<PyDType>().is_ok() || is_builtin_dtype_alias(dtype)? {
         return Ok(None);
     }
-    if let Some(probed) = probe_torch_function_override(dtype) {
+    if let Some(probed) = probe_one_shot_torch_function_override(dtype) {
         return Ok(Some(probed));
     }
 
@@ -5912,7 +5977,7 @@ fn validate_zeros_like_layout<'py>(
     {
         return Ok(None);
     }
-    if let Some(probed) = probe_torch_function_override(layout) {
+    if let Some(probed) = probe_one_shot_torch_function_override(layout) {
         return Ok(Some(probed));
     }
 
@@ -5936,7 +6001,7 @@ fn validate_zeros_like_device<'py>(
     {
         return Ok(None);
     }
-    if let Some(probed) = probe_torch_function_override(device) {
+    if let Some(probed) = probe_one_shot_torch_function_override(device) {
         return Ok(Some(probed));
     }
 
@@ -5955,7 +6020,7 @@ fn validate_zeros_like_requires_grad<'py>(
     if requires_grad.is_none() || requires_grad.is_exact_instance_of::<PyBool>() {
         return Ok(None);
     }
-    if let Some(probed) = probe_torch_function_override(requires_grad) {
+    if let Some(probed) = probe_one_shot_torch_function_override(requires_grad) {
         return Ok(Some(probed));
     }
 
@@ -5974,7 +6039,7 @@ fn validate_zeros_like_memory_format<'py>(
     if memory_format.is_none() || memory_format.cast::<PyMemoryFormat>().is_ok() {
         return Ok(None);
     }
-    if let Some(probed) = probe_torch_function_override(memory_format) {
+    if let Some(probed) = probe_one_shot_torch_function_override(memory_format) {
         return Ok(Some(probed));
     }
 
@@ -9542,7 +9607,7 @@ fn parse_dtype_operand<'py>(
     if let Ok(dtype) = argument.value.cast::<PyDType>() {
         return Ok(BoundDTypeOperand::DType(dtype.try_borrow()?.inner()));
     }
-    if let Some(probed) = probe_dtype_torch_function_override(&argument.value) {
+    if let Some(probed) = probe_one_shot_torch_function_override(&argument.value) {
         return Ok(BoundDTypeOperand::Override(probed));
     }
 

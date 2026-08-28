@@ -2005,7 +2005,7 @@ impl Tensor {
     }
 
     /// Creates an independent float32 CPU tensor of positive zeros with this
-    /// tensor's shape and PyTorch preserve-format output strides.
+    /// tensor's shape and `PyTorch` preserve-format output strides.
     ///
     /// # Errors
     ///
