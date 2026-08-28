@@ -7297,6 +7297,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1190",
+      "recordedAt": "2026-08-28T02:52:34.179Z",
+      "label": "PR #1190",
+      "kind": "leaf",
+      "prNumber": 1190,
+      "title": "Add mutable torch.backends.cudnn.deterministic preference",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 99.2,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 81.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
