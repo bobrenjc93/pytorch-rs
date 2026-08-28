@@ -31,6 +31,18 @@
     "eval_c8a1bfb9": {
       "name": "Sustainable architecture",
       "color": "#2589bd"
+    },
+    "eval_a61c0e71": {
+      "name": "torch.compile program coverage parity",
+      "color": "#5b8c36"
+    },
+    "eval_6f98c42d": {
+      "name": "torch.compile CUDA performance parity",
+      "color": "#9c6644"
+    },
+    "eval_d4c0b71e": {
+      "name": "Repository polish",
+      "color": "#6c757d"
     }
   },
   "points": [
@@ -7568,6 +7580,44 @@
         "eval_39340456": 83.2,
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 100
+      }
+    },
+    {
+      "key": "base:ede6ca7bb1e22617377544bf33bc4281d88e5f31",
+      "commit": "ede6ca7bb1e22617377544bf33bc4281d88e5f31",
+      "recordedAt": "2026-08-28T22:31:16.443Z",
+      "label": "base ede6ca7",
+      "kind": "baseline",
+      "title": "main",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 83.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 58
+      }
+    },
+    {
+      "key": "pr:1247",
+      "recordedAt": "2026-08-28T22:31:16.443Z",
+      "label": "PR #1247",
+      "kind": "leaf",
+      "prNumber": 1247,
+      "title": "Replace the README feature dump with a tested quickstart",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 83.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100,
+        "eval_a61c0e71": 0,
+        "eval_6f98c42d": 0,
+        "eval_d4c0b71e": 77
       }
     }
   ]
