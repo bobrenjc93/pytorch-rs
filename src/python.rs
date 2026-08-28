@@ -62,10 +62,11 @@ const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
 // tensor runtime to infer capabilities.
-const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 7] = [
+const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 8] = [
     ("_GLIBCXX_USE_CXX11_ABI", false),
     ("_has_cudnn", false),
     ("_has_cuda", false),
+    ("_has_kleidiai", false),
     ("has_openmp", false),
     ("has_mkl", false),
     ("has_lapack", false),
@@ -12091,6 +12092,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "_get_cpu_capability",
         "_has_cudnn",
         "_has_cuda",
+        "_has_kleidiai",
         "_is_ck_sdpa_available",
         "_is_flash_attention_available",
     ] {
