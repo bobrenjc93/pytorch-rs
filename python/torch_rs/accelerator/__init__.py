@@ -2,6 +2,8 @@ r"""
 This package introduces support for the current :ref:`accelerator<accelerators>` in python.
 """
 
+from typing_extensions import deprecated as _deprecated
+
 from .. import device as _device
 from .memory import (
     empty_cache,
@@ -17,6 +19,7 @@ from .memory import (
 
 __all__ = [
     "current_accelerator",
+    "current_device_idx",
     "current_device_index",
     "device_count",
     "empty_cache",
@@ -119,7 +122,19 @@ def current_device_index() -> int:
     return device_index
 
 
-# PyTorch 2.13's deprecated ``current_device_idx`` wrapper also annotates the
-# canonical wrapped function. Preserve that observable metadata without
-# exposing the unsupported alias.
-current_device_index.__deprecated__ = "Use `current_device_index` instead."
+current_device_idx = _deprecated(
+    "Use `current_device_index` instead.",
+    category=FutureWarning,
+)(current_device_index)
+
+current_device_idx.__doc__ = r"""
+    (Deprecated) Return the index of a currently selected device for the current :ref:`accelerator<accelerators>`.
+
+    Returns:
+        int: the index of a currently selected device.
+
+    .. warning::
+
+        :func:`torch.accelerator.current_device_idx` is deprecated in favor of :func:`torch.accelerator.current_device_index`
+        and will be removed in a future PyTorch release.
+    """
