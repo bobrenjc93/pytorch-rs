@@ -252,15 +252,59 @@ pub struct Tensor {
 ///
 /// The iterator follows tensor strides and storage offsets, so it is suitable
 /// for both contiguous tensors and metadata-only views. Contiguous tensors use
-/// a direct slice iterator.
+/// a direct slice iterator, while owned rank-two views advance their two
+/// strides directly.
 pub struct LogicalValues<'a> {
     inner: LogicalValuesInner<'a>,
 }
 
 enum LogicalValuesInner<'a> {
     Contiguous(std::iter::Copied<std::slice::Iter<'a, f32>>),
+    OwnedRank2(OwnedRank2LogicalValues<'a>),
     Strided { tensor: &'a Tensor, next: usize },
 }
+
+struct OwnedRank2LogicalValues<'a> {
+    values: &'a [f32],
+    next_offset: usize,
+    next_row_offset: usize,
+    row_stride: usize,
+    column_stride: usize,
+    columns: usize,
+    column: usize,
+    remaining: usize,
+}
+
+impl Iterator for OwnedRank2LogicalValues<'_> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+
+        let value = self.values[self.next_offset];
+        self.remaining -= 1;
+        if self.remaining != 0 {
+            self.column += 1;
+            if self.column == self.columns {
+                self.column = 0;
+                self.next_row_offset += self.row_stride;
+                self.next_offset = self.next_row_offset;
+            } else {
+                self.next_offset += self.column_stride;
+            }
+        }
+        Some(value)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+impl ExactSizeIterator for OwnedRank2LogicalValues<'_> {}
+impl FusedIterator for OwnedRank2LogicalValues<'_> {}
 
 impl Iterator for LogicalValues<'_> {
     type Item = f32;
@@ -268,6 +312,7 @@ impl Iterator for LogicalValues<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.inner {
             LogicalValuesInner::Contiguous(values) => values.next(),
+            LogicalValuesInner::OwnedRank2(values) => values.next(),
             LogicalValuesInner::Strided { tensor, next } => {
                 if *next == tensor.elements {
                     return None;
@@ -282,9 +327,29 @@ impl Iterator for LogicalValues<'_> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         let remaining = match &self.inner {
             LogicalValuesInner::Contiguous(values) => values.len(),
+            LogicalValuesInner::OwnedRank2(values) => values.len(),
             LogicalValuesInner::Strided { tensor, next } => tensor.elements - next,
         };
         (remaining, Some(remaining))
+    }
+
+    fn fold<Accumulator, Function>(
+        self,
+        initial: Accumulator,
+        mut function: Function,
+    ) -> Accumulator
+    where
+        Function: FnMut(Accumulator, Self::Item) -> Accumulator,
+    {
+        match self.inner {
+            LogicalValuesInner::Contiguous(values) => values.fold(initial, function),
+            LogicalValuesInner::OwnedRank2(values) => values.fold(initial, function),
+            LogicalValuesInner::Strided { tensor, next } => {
+                (next..tensor.elements).fold(initial, |accumulator, index| {
+                    function(accumulator, tensor.value_at_strided_linear_index(index))
+                })
+            }
+        }
     }
 }
 
@@ -1312,13 +1377,30 @@ impl Tensor {
         &'a self,
         values: Option<&'a [f32]>,
     ) -> LogicalValues<'a> {
-        let inner = values.map_or_else(
-            || LogicalValuesInner::Strided {
+        let inner = if let Some(values) = values {
+            LogicalValuesInner::Contiguous(values.iter().copied())
+        } else if let ([rows, columns], [row_stride, column_stride], Some(values)) = (
+            self.shape.as_slice(),
+            self.strides.as_slice(),
+            self.storage.owned_values(),
+        ) {
+            debug_assert_eq!(self.elements, rows * columns);
+            LogicalValuesInner::OwnedRank2(OwnedRank2LogicalValues {
+                values,
+                next_offset: self.offset,
+                next_row_offset: self.offset,
+                row_stride: *row_stride,
+                column_stride: *column_stride,
+                columns: *columns,
+                column: 0,
+                remaining: self.elements,
+            })
+        } else {
+            LogicalValuesInner::Strided {
                 tensor: self,
                 next: 0,
-            },
-            |values| LogicalValuesInner::Contiguous(values.iter().copied()),
-        );
+            }
+        };
         LogicalValues { inner }
     }
 
@@ -2817,6 +2899,9 @@ impl Tensor {
         // iterator while arbitrary views retain the stride-aware iterator.
         let total = match self.logical_values().inner {
             LogicalValuesInner::Contiguous(values) => {
+                values.fold(0.0_f32, |total, value| total + value)
+            }
+            LogicalValuesInner::OwnedRank2(values) => {
                 values.fold(0.0_f32, |total, value| total + value)
             }
             inner @ LogicalValuesInner::Strided { .. } => {
@@ -5129,9 +5214,9 @@ mod tests {
 
     use super::{
         AutogradKind, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType,
-        Device, F32_SIGN_MASK, GradFn, MemoryFormat, SavedTensor, Tensor, TensorError,
-        contiguous_values_equal, materialize_contiguous_trailing_broadcast, rsqrt_value,
-        sqrt_value, try_result_vector,
+        Device, F32_SIGN_MASK, GradFn, LogicalValuesInner, MemoryFormat, SavedTensor, Tensor,
+        TensorError, contiguous_values_equal, materialize_contiguous_trailing_broadcast,
+        rsqrt_value, sqrt_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -5359,6 +5444,120 @@ mod tests {
         assert!(shared.is_contiguous());
         assert!(shared.contiguous_slice().is_none());
         assert_matches_logical_fold(&shared);
+    }
+
+    #[test]
+    fn owned_rank_2_logical_values_match_shared_gradient_fallback_bitwise() {
+        let bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let offset = offset_contiguous_tensor(&bits, &[3, 4]);
+        assert!(matches!(
+            offset.logical_values().inner,
+            LogicalValuesInner::Contiguous(_)
+        ));
+        let owned = offset.transpose(0, 1).unwrap();
+        let shared = shared_gradient_copy(&owned);
+
+        assert_eq!(owned.shape(), [4, 3]);
+        assert_eq!(owned.stride(), [1, 4]);
+        assert_ne!(owned.storage_offset(), 0);
+        assert!(!owned.is_contiguous());
+        assert!(matches!(
+            owned.logical_values().inner,
+            LogicalValuesInner::OwnedRank2(_)
+        ));
+        assert!(matches!(
+            shared.logical_values().inner,
+            LogicalValuesInner::Strided { .. }
+        ));
+        assert!(
+            owned
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(shared.logical_values().map(f32::to_bits))
+        );
+        assert_eq!(
+            owned.sum().item().unwrap().to_bits(),
+            shared.sum().item().unwrap().to_bits()
+        );
+        assert!(
+            owned
+                .try_contiguous(MemoryFormat::Contiguous)
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(shared
+                    .try_contiguous(MemoryFormat::Contiguous)
+                    .unwrap()
+                    .logical_values()
+                    .map(f32::to_bits))
+        );
+
+        let singleton = Tensor::from_vec((0_u8..6).map(f32::from).collect(), [2, 3, 1])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap()
+            .index_integer(1)
+            .unwrap();
+        assert_eq!(singleton.shape(), [2, 1]);
+        assert_eq!(singleton.stride(), [3, 1]);
+        assert!(!singleton.is_contiguous());
+        assert!(matches!(
+            singleton.logical_values().inner,
+            LogicalValuesInner::OwnedRank2(_)
+        ));
+        assert_eq!(singleton.logical_values().collect::<Vec<_>>(), [1.0, 4.0]);
+
+        let contiguous_singleton = Tensor::from_vec((0_u8..4).map(f32::from).collect(), [1, 4])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let empty = Tensor::zeros([3, 0]).unwrap().transpose(0, 1).unwrap();
+        for tensor in [&contiguous_singleton, &empty] {
+            assert!(tensor.is_contiguous());
+            assert!(matches!(
+                tensor.logical_values().inner,
+                LogicalValuesInner::Contiguous(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn owned_rank_2_logical_values_preserve_view_autograd() {
+        let source = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = source.index_integer(1).unwrap().transpose(0, 1).unwrap();
+        assert!(matches!(
+            view.logical_values().inner,
+            LogicalValuesInner::OwnedRank2(_)
+        ));
+
+        view.sum().backward().unwrap();
+        view.try_contiguous(MemoryFormat::Contiguous)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        assert_eq!(
+            source.grad().unwrap().unwrap().as_slice(),
+            [
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0,
+                2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0,
+            ]
+        );
     }
 
     #[test]
