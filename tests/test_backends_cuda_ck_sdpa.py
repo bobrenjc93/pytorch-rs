@@ -132,7 +132,9 @@ class CudaCkSdpaAvailabilityTests(unittest.TestCase):
             cuda.__all__,
             [
                 "is_built",
+                "cuBLASModule",
                 "is_ck_sdpa_available",
+                "matmul",
                 "enable_mem_efficient_sdp",
                 "mem_efficient_sdp_enabled",
                 "math_sdp_enabled",
@@ -146,6 +148,7 @@ class CudaCkSdpaAvailabilityTests(unittest.TestCase):
             {name for name in child_wildcard if not name.startswith("__")},
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "cuBLASModule",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
                 "fp16_bf16_reduction_math_sdp_allowed",
@@ -153,6 +156,7 @@ class CudaCkSdpaAvailabilityTests(unittest.TestCase):
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
                 "math_sdp_enabled",
+                "matmul",
                 "mem_efficient_sdp_enabled",
             },
         )

@@ -49,6 +49,7 @@ static CUDNN_BENCHMARK: AtomicBool = AtomicBool::new(false);
 static CUDNN_BENCHMARK_LIMIT: AtomicI32 = AtomicI32::new(10);
 static CUDNN_DETERMINISTIC: AtomicBool = AtomicBool::new(false);
 static CUDNN_ALLOW_TF32: AtomicBool = AtomicBool::new(true);
+static CUBLAS_ALLOW_TF32: AtomicBool = AtomicBool::new(false);
 static MEM_EFFICIENT_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ALLOW_FP16_BF16_REDUCTION: AtomicBool = AtomicBool::new(false);
@@ -5190,6 +5191,44 @@ fn get_cudnn_allow_tf32_native(_module: &Bound<'_, PyModule>) -> bool {
     CUDNN_ALLOW_TF32.load(Ordering::SeqCst)
 }
 
+// PyTorch publishes the cuBLAS preference through module-bound private
+// built-ins even when callers reach it through the Python matmul proxy.
+fn set_cublas_allow_tf32_native(object: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !object.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(object)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "set_allow_tf32_cublas expects a bool, but got {type_name}"
+        )));
+    }
+    CUBLAS_ALLOW_TF32.store(object.is_truthy()?, Ordering::SeqCst);
+    Ok(())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_cublas_allow_tf32_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    object: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: CPython supplies a live borrowed object to a METH_O callback.
+    let object = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, object) };
+    set_cublas_allow_tf32_native(&object)?;
+    Ok(py.None().into_ptr())
+}
+
+#[pyfunction(
+    name = "_get_cublas_allow_tf32",
+    signature = (),
+    text_signature = None
+)]
+#[pyo3(pass_module)]
+fn get_cublas_allow_tf32_native(_module: &Bound<'_, PyModule>) -> bool {
+    CUBLAS_ALLOW_TF32.load(Ordering::SeqCst)
+}
+
 #[allow(
     unsafe_code,
     reason = "PyCFunction_NewEx requires an audited stable-ABI raw-pointer call"
@@ -5231,6 +5270,36 @@ fn add_cudnn_allow_tf32_setter(module: &Bound<'_, PyModule>) -> PyResult<()> {
         pyo3::impl_::trampoline::get_trampoline_function!(
             binaryfunc,
             set_cudnn_allow_tf32_callback
+        ),
+        c"",
+    )
+    .into_raw();
+    definition.ml_flags = ffi::METH_O;
+    let definition = Box::leak(Box::new(definition));
+    let module_name = module.name()?;
+    // SAFETY: the leaked method definition, module, and module name all remain
+    // live for the duration required by the newly owned built-in function.
+    let function = unsafe {
+        Bound::<PyAny>::from_owned_ptr_or_err(
+            py,
+            ffi::PyCFunction_NewEx(definition, module.as_ptr(), module_name.as_ptr()),
+        )?
+        .cast_into::<PyCFunction>()?
+    };
+    module.add_function(function)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyCFunction_NewEx requires an audited stable-ABI raw-pointer call"
+)]
+fn add_cublas_allow_tf32_setter(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
+    let mut definition = pyo3::impl_::pymethods::PyMethodDef::noargs(
+        c"_set_cublas_allow_tf32",
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            binaryfunc,
+            set_cublas_allow_tf32_callback
         ),
         c"",
     )
@@ -5306,6 +5375,15 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     ] {
         exports.call_method1("remove", (name,))?;
     }
+    Ok(())
+}
+
+fn add_cublas_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    add_cublas_allow_tf32_setter(module)?;
+    module.add_function(wrap_pyfunction!(get_cublas_allow_tf32_native, module)?)?;
+    let exports = module.getattr("__all__")?;
+    exports.call_method1("remove", ("_set_cublas_allow_tf32",))?;
+    exports.call_method1("remove", ("_get_cublas_allow_tf32",))?;
     Ok(())
 }
 
@@ -12116,6 +12194,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_default_dtype_validator(module)?;
     add_warn_always_builtins(module)?;
     add_cudnn_builtins(module)?;
+    add_cublas_builtins(module)?;
     add_mem_efficient_sdp_builtins(module)?;
     add_math_sdp_builtins(module)?;
     add_math_sdp_reduction_builtins(module)?;
