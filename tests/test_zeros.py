@@ -60,6 +60,123 @@ class ZerosTests(unittest.TestCase):
                 )
         self.assertGreater(custom.calls, 0)
 
+    def test_two_positional_dimensions_use_the_existing_creation_path(self):
+        class IntSubclass(int):
+            pass
+
+        class IndexDimension:
+            def __init__(self, value):
+                self.value = value
+
+            def __index__(self):
+                return self.value
+
+        cases = (
+            (2, 3),
+            (0, 3),
+            (2, 0),
+            (IntSubclass(2), np.int64(3)),
+            (IndexDimension(2), np.uint32(3)),
+            (2, True),
+            (2, False),
+        )
+        metadata = (
+            {},
+            {"dtype": torch.float32},
+            {"device": "cpu"},
+            {"device": torch.device("cpu")},
+            {
+                "dtype": torch.float32,
+                "device": torch.device("cpu"),
+                "requires_grad": True,
+            },
+        )
+        for dimensions in cases:
+            for keywords in metadata:
+                with self.subTest(dimensions=dimensions, keywords=keywords):
+                    self.assert_tensor_matches(
+                        torch.zeros(*dimensions, **keywords),
+                        torch.zeros(tuple(map(int, dimensions)), **keywords),
+                    )
+
+    def test_two_positional_dimension_errors_and_ordering(self):
+        class IndexDimension:
+            def __init__(self, value):
+                self.value = value
+
+            def __index__(self):
+                return self.value
+
+        for dimensions in ((-1, 2), (2, -1), (IndexDimension(-1), 2)):
+            with self.subTest(dimensions=dimensions), self.assertRaisesRegex(
+                RuntimeError,
+                re.escape("zeros: Dimension size must be non-negative."),
+            ):
+                torch.zeros(*dimensions)
+
+        for first in (True, False, np.bool_(True), 2.0, (2,)):
+            with self.subTest(first=first), self.assertRaisesRegex(
+                TypeError,
+                re.escape("zeros() takes 1 positional argument but 2 were given"),
+            ):
+                torch.zeros(first, 2)
+
+        with self.assertRaisesRegex(
+            TypeError,
+            r"failed to unpack the object at pos 2 .*numpy\.bool",
+        ):
+            torch.zeros(2, np.bool_(True))
+
+        overflow_cases = (
+            ((2**63, 2), 1),
+            ((2, 2**63), 2),
+            ((-1, 2**63), 2),
+            ((2, IndexDimension(2**63)), 2),
+        )
+        for dimensions, position in overflow_cases:
+            with self.subTest(dimensions=dimensions), self.assertRaisesRegex(
+                TypeError,
+                rf"failed to unpack the object at pos {position} .*Overflow when unpacking long long",
+            ):
+                torch.zeros(*dimensions)
+
+        ordered_errors = (
+            (
+                lambda: torch.zeros(-1, 2, dtype=object()),
+                "argument 'dtype' must be torch.dtype, not object",
+            ),
+            (
+                lambda: torch.zeros(2, 2**63, device=object()),
+                "argument 'device' must be torch.device or str, not object",
+            ),
+            (
+                lambda: torch.zeros(2, -1, requires_grad=1),
+                "argument 'requires_grad' must be bool, not int",
+            ),
+            (
+                lambda: torch.zeros(2, -1, size=(2, 3)),
+                "zeros() got multiple values for argument 'size'",
+            ),
+            (
+                lambda: torch.zeros(2, 2.0, unexpected=True),
+                "zeros() got an unexpected keyword argument 'unexpected'",
+            ),
+        )
+        for call, message in ordered_errors:
+            with self.subTest(message=message), self.assertRaisesRegex(
+                TypeError, re.escape(message)
+            ):
+                call()
+
+        for dimensions in ((sys.maxsize, 1), (1, sys.maxsize)):
+            with self.subTest(dimensions=dimensions), self.assertRaisesRegex(
+                RuntimeError,
+                re.escape(
+                    f"Storage size calculation overflowed with sizes={list(dimensions)}"
+                ),
+            ):
+                torch.zeros(*dimensions)
+
     def test_zero_negative_boolean_and_overflowing_dimensions(self):
         class IndexDimension:
             def __init__(self, value):
@@ -160,7 +277,10 @@ class ZerosTests(unittest.TestCase):
 
         for call in (
             lambda: torch.zeros(size=2),
-            lambda: torch.zeros(2, 3),
+            lambda: torch.zeros(1, 2, 3),
+            lambda: torch.zeros(2, 3, layout=None),
+            lambda: torch.zeros(2, 3, out=None),
+            lambda: torch.zeros(2, 3, pin_memory=False),
         ):
             with self.subTest(call=call):
                 with self.assertRaises(TypeError):
