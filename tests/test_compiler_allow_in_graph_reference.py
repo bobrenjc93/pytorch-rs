@@ -1,13 +1,16 @@
 import copy
+import gc
 import importlib
 import inspect
 import json
+import operator
 import pickle
 import pickletools
 import subprocess
 import sys
 import types
 import unittest
+import weakref
 
 import torch_rs as torch
 
@@ -99,6 +102,36 @@ class _LookupProbe:
                 raise outcome
             return outcome
         return object.__getattribute__(self, name)
+
+
+class _BuiltinLookupProbe(_LookupProbe):
+    __hash__ = _LookupProbe.__hash__
+
+    def __eq__(self, other):
+        self.events.append(("eq", self.label, other is dict))
+        return other is dict
+
+
+class _BaseModuleProbe:
+    def __init__(self, events, outcome):
+        self.events = events
+        self.outcome = outcome
+
+    def __hash__(self):
+        self.events.append(("base_hash",))
+        if isinstance(self.outcome, BaseException):
+            raise self.outcome
+        return self.outcome
+
+
+class _ModuleNameProbe:
+    def __init__(self, events, base_module):
+        self.events = events
+        self.base_module = base_module
+
+    def split(self, separator):
+        self.events.append(("split", separator))
+        return [self.base_module]
 
 
 class _ObservedList(list):
@@ -279,6 +312,125 @@ class CompilerAllowInGraphReferenceTests(unittest.TestCase):
             outcome = None
         return events, outcome
 
+    def builtin_lookup_outcome(self, module):
+        events = []
+        target = _BuiltinLookupProbe(
+            "builtin",
+            (hash(dict), hash(dict), RuntimeError("third hash")),
+            ("sample.module", "sample.module"),
+            events,
+        )
+        try:
+            module.compiler.allow_in_graph(target)
+        except BaseException as error:
+            outcome = (type(error).__name__, str(error), error.args)
+        else:
+            outcome = None
+        return events, outcome
+
+    def lazy_module_lookup_outcome(self, module):
+        sentinel = "__torch_rs_allow_in_graph_test__"
+        if module is torch:
+            state = importlib.import_module("torch_rs._compiler_state")
+            lazy_modules = state.allow_in_graph_lazy_modules
+        else:
+            trace_rules = importlib.import_module("torch._dynamo.trace_rules")
+            lazy_modules = trace_rules._lazy_module_init
+
+        lazy_modules[sentinel] = []
+        try:
+            events = []
+            base_module = _BaseModuleProbe(events, RuntimeError("base module hash"))
+            module_name = _ModuleNameProbe(events, base_module)
+            target = _LookupProbe("module", (101,), (module_name,), events)
+            try:
+                module.compiler.allow_in_graph(target)
+            except BaseException as error:
+                outcome = (type(error).__name__, str(error), error.args)
+            else:
+                outcome = None
+            return events, outcome
+        finally:
+            lazy_modules.pop(sentinel, None)
+
+    def repeated_lookup_outcome(self, module, use_collection):
+        events = []
+        target = _LookupProbe(
+            "target",
+            (101, 101, 101, RuntimeError("fourth hash")),
+            (
+                "sample.module",
+                "sample.module",
+                "sample.module",
+                "sample.module",
+            ),
+            events,
+        )
+        try:
+            if use_collection:
+                result = module.compiler.allow_in_graph([target, target])
+                identities = (result[0] is target, result[1] is target)
+            else:
+                first = module.compiler.allow_in_graph(target)
+                second = module.compiler.allow_in_graph(target)
+                identities = (first is target, second is target)
+        except BaseException as error:
+            outcome = (type(error).__name__, str(error), error.args)
+        else:
+            outcome = ("ok", identities)
+        return events, outcome
+
+    def allowed_registry(self, module):
+        if module is torch:
+            state = importlib.import_module("torch_rs._compiler_state")
+            return state.allow_in_graph_callable_ids
+        trace_rules = importlib.import_module("torch._dynamo.trace_rules")
+        return trace_rules._allowed_callable_ids
+
+    def nonweakrefable_repeat_outcome(self, module):
+        target = operator.methodcaller("upper")
+        target_id = id(target)
+        registry = self.allowed_registry(module)
+        if module is torch:
+            registry.discard(target_id)
+        else:
+            registry.remove(target_id)
+        try:
+            try:
+                module.compiler.allow_in_graph(target)
+            except BaseException as error:
+                first = (type(error).__name__, str(error), error.args)
+            else:
+                first = None
+            registered_after_failure = target_id in registry
+            second = module.compiler.allow_in_graph(target)
+            return (
+                first,
+                registered_after_failure,
+                second is target,
+                target("value"),
+            )
+        finally:
+            if module is torch:
+                registry.discard(target_id)
+            else:
+                registry.remove(target_id)
+
+    def weak_lifecycle_outcome(self, module):
+        target = _CallableTarget()
+        target_id = id(target)
+        target_ref = weakref.ref(target)
+        registry = self.allowed_registry(module)
+        result = module.compiler.allow_in_graph(target)
+        registered = target_id in registry
+        same = result is target
+
+        del result
+        del target
+        gc.collect()
+
+        return same, registered, target_ref() is None, target_id in registry
+
     def test_function_method_callable_and_sequence_semantics_match(self):
         self.assertEqual(
             self.function_outcome(torch),
@@ -325,6 +477,33 @@ class CompilerAllowInGraphReferenceTests(unittest.TestCase):
             self.collection_lookup_outcome(reference_torch),
         )
 
+    def test_lookup_hit_paths_match_pytorch_2_13(self):
+        self.assertEqual(
+            self.builtin_lookup_outcome(torch),
+            self.builtin_lookup_outcome(reference_torch),
+        )
+        self.assertEqual(
+            self.lazy_module_lookup_outcome(torch),
+            self.lazy_module_lookup_outcome(reference_torch),
+        )
+
+    def test_repeated_duplicate_and_lifetime_behavior_match_pytorch_2_13(self):
+        for use_collection in (False, True):
+            with self.subTest(use_collection=use_collection):
+                self.assertEqual(
+                    self.repeated_lookup_outcome(torch, use_collection),
+                    self.repeated_lookup_outcome(reference_torch, use_collection),
+                )
+
+        self.assertEqual(
+            self.nonweakrefable_repeat_outcome(torch),
+            self.nonweakrefable_repeat_outcome(reference_torch),
+        )
+        self.assertEqual(
+            self.weak_lifecycle_outcome(torch),
+            self.weak_lifecycle_outcome(reference_torch),
+        )
+
     def test_invalid_targets_error_order_and_call_shapes_match(self):
         direct_slot = _SlotCallable()
         list_slot = _SlotCallable()
@@ -346,12 +525,21 @@ class CompilerAllowInGraphReferenceTests(unittest.TestCase):
             lambda function: function((first_slot, None)),
             lambda function: function((None, second_slot)),
         )
-        for case, call in enumerate(cases):
-            with self.subTest(case=case):
-                self.assert_error_matches(
-                    lambda: call(torch.compiler.allow_in_graph),
-                    lambda: call(reference_torch.compiler.allow_in_graph),
-                )
+        try:
+            for case, call in enumerate(cases):
+                with self.subTest(case=case):
+                    self.assert_error_matches(
+                        lambda: call(torch.compiler.allow_in_graph),
+                        lambda: call(reference_torch.compiler.allow_in_graph),
+                    )
+        finally:
+            for module in (torch, reference_torch):
+                registry = self.allowed_registry(module)
+                for target in (direct_slot, list_slot, first_slot, second_slot):
+                    if module is torch:
+                        registry.discard(id(target))
+                    else:
+                        registry.remove(id(target))
 
         for module in (torch, reference_torch):
             events = []

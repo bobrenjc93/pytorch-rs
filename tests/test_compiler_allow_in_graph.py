@@ -1,11 +1,14 @@
 import copy
+import gc
 import importlib
 import inspect
+import operator
 import pickle
 import subprocess
 import sys
 import types
 import unittest
+import weakref
 
 import torch_rs as torch
 
@@ -161,6 +164,36 @@ class _LookupProbe:
         return object.__getattribute__(self, name)
 
 
+class _BuiltinLookupProbe(_LookupProbe):
+    __hash__ = _LookupProbe.__hash__
+
+    def __eq__(self, other):
+        self.events.append(("eq", self.label, other is dict))
+        return other is dict
+
+
+class _BaseModuleProbe:
+    def __init__(self, events, outcome):
+        self.events = events
+        self.outcome = outcome
+
+    def __hash__(self):
+        self.events.append(("base_hash",))
+        if isinstance(self.outcome, BaseException):
+            raise self.outcome
+        return self.outcome
+
+
+class _ModuleNameProbe:
+    def __init__(self, events, base_module):
+        self.events = events
+        self.base_module = base_module
+
+    def split(self, separator):
+        self.events.append(("split", separator))
+        return [self.base_module]
+
+
 class _ObservedList(list):
     def __init__(self, values, events):
         super().__init__(values)
@@ -278,10 +311,15 @@ class CompilerAllowInGraphTests(unittest.TestCase):
             torch.compiler.allow_in_graph(values)
         self.assertEqual(events, [("yield", 0), ("yield", 1)])
 
-        with self.assertRaisesRegex(
-            TypeError, "^cannot create weak reference to '_SlotCallable' object$"
-        ):
-            torch.compiler.allow_in_graph((_SlotCallable(), None))
+        state = importlib.import_module("torch_rs._compiler_state")
+        slot_target = _SlotCallable()
+        try:
+            with self.assertRaisesRegex(
+                TypeError, "^cannot create weak reference to '_SlotCallable' object$"
+            ):
+                torch.compiler.allow_in_graph((slot_target, None))
+        finally:
+            state.allow_in_graph_callable_ids.discard(id(slot_target))
         with self.assertRaisesRegex(
             AssertionError, "^allow_in_graph expects a callable$"
         ):
@@ -377,6 +415,125 @@ class CompilerAllowInGraphTests(unittest.TestCase):
                 self.assertEqual(outcome[1], message)
                 self.assertEqual(outcome[2], (message,))
 
+    def test_builtin_hit_and_lazy_module_key_lookups_are_observable(self):
+        builtin_events = []
+        builtin_target = _BuiltinLookupProbe(
+            "builtin",
+            (hash(dict), hash(dict), RuntimeError("third hash")),
+            ("sample.module", "sample.module"),
+            builtin_events,
+        )
+        with self.assertRaisesRegex(RuntimeError, "^third hash$"):
+            torch.compiler.allow_in_graph(builtin_target)
+        self.assertEqual(
+            builtin_events,
+            [
+                ("hash", "builtin", 0),
+                ("module", "builtin", 0),
+                ("module", "builtin", 1),
+                ("hash", "builtin", 1),
+                ("eq", "builtin", True),
+                ("hash", "builtin", 2),
+            ],
+        )
+
+        state = importlib.import_module("torch_rs._compiler_state")
+        sentinel = "__torch_rs_allow_in_graph_test__"
+        state.allow_in_graph_lazy_modules[sentinel] = None
+        try:
+            module_events = []
+            base_module = _BaseModuleProbe(
+                module_events, RuntimeError("base module hash")
+            )
+            module_name = _ModuleNameProbe(module_events, base_module)
+            module_target = _LookupProbe(
+                "module", (101,), (module_name,), module_events
+            )
+            with self.assertRaisesRegex(RuntimeError, "^base module hash$"):
+                torch.compiler.allow_in_graph(module_target)
+            self.assertEqual(
+                module_events,
+                [
+                    ("hash", "module", 0),
+                    ("module", "module", 0),
+                    ("split", "."),
+                    ("base_hash",),
+                ],
+            )
+        finally:
+            state.allow_in_graph_lazy_modules.pop(sentinel, None)
+
+    def test_repeated_and_duplicate_callables_skip_completed_lookup(self):
+        for use_collection in (False, True):
+            with self.subTest(use_collection=use_collection):
+                events = []
+                target = _LookupProbe(
+                    "target",
+                    (101, 101, 101, RuntimeError("fourth hash")),
+                    (
+                        "sample.module",
+                        "sample.module",
+                        "sample.module",
+                        "sample.module",
+                    ),
+                    events,
+                )
+                if use_collection:
+                    result = torch.compiler.allow_in_graph([target, target])
+                    self.assertEqual(len(result), 2)
+                    self.assertIs(result[0], target)
+                    self.assertIs(result[1], target)
+                else:
+                    self.assertIs(torch.compiler.allow_in_graph(target), target)
+                    self.assertIs(torch.compiler.allow_in_graph(target), target)
+
+                self.assertEqual(
+                    events,
+                    [
+                        ("hash", "target", 0),
+                        ("module", "target", 0),
+                        ("module", "target", 1),
+                        ("hash", "target", 1),
+                        ("hash", "target", 2),
+                        ("module", "target", 2),
+                        ("module", "target", 3),
+                    ],
+                )
+
+    def test_nonweakrefable_callable_registration_matches_pytorch_lifecycle(self):
+        state = importlib.import_module("torch_rs._compiler_state")
+        target = operator.methodcaller("upper")
+        target_id = id(target)
+        state.allow_in_graph_callable_ids.discard(target_id)
+        try:
+            with self.assertRaisesRegex(
+                TypeError,
+                "^cannot create weak reference to 'operator.methodcaller' object$",
+            ):
+                torch.compiler.allow_in_graph(target)
+            self.assertIn(target_id, state.allow_in_graph_callable_ids)
+            self.assertIs(torch.compiler.allow_in_graph(target), target)
+            self.assertEqual(target("value"), "VALUE")
+        finally:
+            state.allow_in_graph_callable_ids.discard(target_id)
+
+    def test_weak_identity_registration_is_removed_after_collection(self):
+        state = importlib.import_module("torch_rs._compiler_state")
+        target = _CallableTarget()
+        target_id = id(target)
+        target_ref = weakref.ref(target)
+
+        result = torch.compiler.allow_in_graph(target)
+        self.assertIs(result, target)
+        self.assertIn(target_id, state.allow_in_graph_callable_ids)
+
+        del result
+        del target
+        gc.collect()
+
+        self.assertIsNone(target_ref())
+        self.assertNotIn(target_id, state.allow_in_graph_callable_ids)
+
     def test_collection_lookup_failures_stop_before_later_entries(self):
         events = []
         accepted = _LookupProbe(
@@ -421,11 +578,16 @@ class CompilerAllowInGraphTests(unittest.TestCase):
         ):
             function(generator)
 
-        with self.assertRaises(TypeError) as raised:
-            function(_SlotCallable())
-        message = "cannot create weak reference to '_SlotCallable' object"
-        self.assertEqual(str(raised.exception), message)
-        self.assertEqual(raised.exception.args, (message,))
+        state = importlib.import_module("torch_rs._compiler_state")
+        slot_target = _SlotCallable()
+        try:
+            with self.assertRaises(TypeError) as raised:
+                function(slot_target)
+            message = "cannot create weak reference to '_SlotCallable' object"
+            self.assertEqual(str(raised.exception), message)
+            self.assertEqual(raised.exception.args, (message,))
+        finally:
+            state.allow_in_graph_callable_ids.discard(id(slot_target))
 
         target = lambda: None
         cases = (

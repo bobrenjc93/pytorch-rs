@@ -68,20 +68,29 @@ def _validate_allow_in_graph_lookup(fn):
     try:
         hash(fn)
     except (TypeError, ValueError):
-        return
+        return False
 
     # Dynamo checks its disallowed and allowed registries in this order. Each
     # lookup consults ``__module__`` to initialize any lazily registered module
     # rules before it examines object identity.
-    for _ in range(2):
-        module = getattr(fn, "__module__", None)
-        if module is not None:
-            module.split(".")[0]
+    module = getattr(fn, "__module__", None)
+    if module is not None:
+        base_module = module.split(".")[0]
+        _state.allow_in_graph_lazy_modules.pop(base_module, None)
+
+    module = getattr(fn, "__module__", None)
+    if module is not None:
+        base_module = module.split(".")[0]
+        _state.allow_in_graph_lazy_modules.pop(base_module, None)
+
+    if id(fn) in _state.allow_in_graph_callable_ids:
+        return True
 
     # The final built-in-callable table lookup hashes an otherwise unclassified
-    # callable a second time. Keep that observable validation, but no table or
-    # compiler registration state, at this eager-only boundary.
-    _ = fn in _ALLOW_IN_GRAPH_BUILTIN_CALLABLES
+    # callable for membership, then again for indexing on a hit.
+    if fn in _ALLOW_IN_GRAPH_BUILTIN_CALLABLES:
+        _ALLOW_IN_GRAPH_BUILTIN_CALLABLES[fn]
+    return False
 
 
 def allow_in_graph(fn):
@@ -167,12 +176,18 @@ def allow_in_graph(fn):
     if not callable(fn):
         raise AssertionError("allow_in_graph expects a callable")
 
-    _validate_allow_in_graph_lookup(fn)
+    if _validate_allow_in_graph_lookup(fn):
+        return fn
 
-    # Dynamo keeps weak references to newly allowed callables. Preserve that
-    # observable validation without creating a compiler registry or retaining
-    # any state in this eager-only implementation.
-    _weakref.ref(fn)
+    fn_id = id(fn)
+    _state.allow_in_graph_callable_ids.add(fn_id)
+
+    # Keep the registration only for the callable's lifetime, preventing a
+    # recycled object id from inheriting the compatibility state.
+    def deregister():
+        _state.allow_in_graph_callable_ids.discard(fn_id)
+
+    _weakref.finalize(fn, deregister)
     return fn
 
 

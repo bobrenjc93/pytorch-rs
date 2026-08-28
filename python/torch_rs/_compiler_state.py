@@ -6,3 +6,10 @@ from .torch_rs import (
 
 
 default_backend = "inductor"
+
+# These compatibility-only tables preserve the observable eager lifecycle of
+# ``torch.compiler.allow_in_graph`` without providing a compiler or graph
+# execution engine. They intentionally live outside ``torch_rs.compiler`` so
+# module reloads do not discard registrations.
+allow_in_graph_callable_ids: set[int] = set()
+allow_in_graph_lazy_modules = {"einops": None}
