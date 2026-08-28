@@ -7489,6 +7489,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1230",
+      "recordedAt": "2026-08-28T17:16:19.774Z",
+      "label": "PR #1230",
+      "kind": "leaf",
+      "prNumber": 1230,
+      "title": "Expose KleidiAI build availability",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 83,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
