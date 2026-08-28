@@ -103,6 +103,61 @@ fn square_sum_records_shared_leaf_once_and_accumulates_gradients() {
 }
 
 #[test]
+fn tensor_subtraction_unbroadcasts_signed_reusable_gradients() {
+    let left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let right = Tensor::from_vec(vec![10.0, 20.0], [1, 2])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [3, 2]).unwrap();
+    let output = left.transpose(0, 1).unwrap().sub(&right).unwrap();
+
+    assert!(output.requires_grad());
+    assert_eq!(output.shape(), [3, 2]);
+    assert_eq!(output.stride(), [1, 3]);
+    output.mul(&weights).unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&left.grad().unwrap().unwrap()),
+        [1.0, 3.0, 5.0, 2.0, 4.0, 6.0]
+    );
+    assert_eq!(values(&right.grad().unwrap().unwrap()), [-9.0, -12.0]);
+
+    let shared = Tensor::from_vec(vec![2.0, -3.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let shared_loss = shared.sub(&shared).unwrap().sum();
+    shared_loss.backward().unwrap();
+    shared_loss.backward().unwrap();
+    assert_eq!(values(&shared.grad().unwrap().unwrap()), [0.0, 0.0]);
+
+    let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+    let broadcast = Tensor::ones([1, 1, 3]).unwrap().with_requires_grad(true);
+    empty.sub(&broadcast).unwrap().sum().backward().unwrap();
+    assert!(values(&empty.grad().unwrap().unwrap()).is_empty());
+    assert_eq!(values(&broadcast.grad().unwrap().unwrap()), [0.0, 0.0, 0.0]);
+
+    {
+        let _guard = no_grad();
+        assert!(
+            !left
+                .transpose(0, 1)
+                .unwrap()
+                .sub(&right)
+                .unwrap()
+                .requires_grad()
+        );
+    }
+    assert!(
+        left.transpose(0, 1)
+            .unwrap()
+            .sub(&right)
+            .unwrap()
+            .requires_grad()
+    );
+}
+
+#[test]
 fn absolute_value_rejects_recording_before_planning_and_honors_no_grad() {
     let leaf = Tensor::from_vec(vec![-2.0, -0.0, 1.0, 4.0], [2, 2])
         .unwrap()
