@@ -263,14 +263,18 @@ print(json.dumps({
                 "mem_efficient_sdp_enabled",
                 "math_sdp_enabled",
                 "enable_math_sdp",
+                "allow_fp16_bf16_reduction_math_sdp",
+                "fp16_bf16_reduction_math_sdp_allowed",
                 "is_flash_attention_available",
             ],
         )
         self.assertEqual(
             {name for name in vars(cuda) if not name.startswith("_")},
             {
+                "allow_fp16_bf16_reduction_math_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
+                "fp16_bf16_reduction_math_sdp_allowed",
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
@@ -343,8 +347,10 @@ print(json.dumps({
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
             {
+                "allow_fp16_bf16_reduction_math_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
+                "fp16_bf16_reduction_math_sdp_allowed",
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
