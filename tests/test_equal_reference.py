@@ -34,6 +34,13 @@ class TensorEqualReferenceTests(unittest.TestCase):
 
     def test_contiguous_strided_offset_and_empty_tensors_match_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+        actual_contiguous_offset = torch.tensor(
+            [[10.0, 11.0, 12.0], [1.0, 2.0, 3.0]]
+        )[1]
+        expected_contiguous_offset = reference_torch.tensor(
+            [[10.0, 11.0, 12.0], [1.0, 2.0, 3.0]],
+            dtype=reference_torch.float32,
+        )[1]
         actual_strided = torch.tensor(
             [[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]]
         ).transpose(0, 1)
@@ -60,6 +67,22 @@ class TensorEqualReferenceTests(unittest.TestCase):
                 ),
                 reference_torch.tensor(
                     [[1.0, 2.0], [3.0, 4.0]], dtype=reference_torch.float32
+                ),
+            ),
+            (
+                actual_contiguous_offset,
+                torch.tensor([1.0, 2.0, 3.0]),
+                expected_contiguous_offset,
+                reference_torch.tensor(
+                    [1.0, 2.0, 3.0], dtype=reference_torch.float32
+                ),
+            ),
+            (
+                actual_contiguous_offset,
+                torch.tensor([1.0, 2.0, 4.0]),
+                expected_contiguous_offset,
+                reference_torch.tensor(
+                    [1.0, 2.0, 4.0], dtype=reference_torch.float32
                 ),
             ),
             (
