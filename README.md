@@ -89,6 +89,7 @@ assert torch.has_mkl is False
 assert torch.has_lapack is False
 assert torch.has_spectral is False
 assert torch.compiled_with_cxx11_abi() is False
+assert torch.backends.cpu.get_cpu_capability() == "DEFAULT"
 assert torch.backends.openmp.is_available() is False
 assert torch.backends.mkl.is_available() is False
 assert torch.backends.nnpack.is_available() is False
@@ -322,6 +323,8 @@ The CPU core provides `float32` tensors, checked construction including copied o
 `torch.set_deterministic_debug_mode(debug_mode)` accepts the default-equivalent `0`, `False`, and `"default"` forms as idempotent no-ops. `torch.get_deterministic_debug_mode()`, `torch.are_deterministic_algorithms_enabled()`, and `torch.is_deterministic_algorithms_warn_only_enabled()` remain coherently fixed at `0`, `False`, and `False` across threads, package reloads, and grad modes. Warn and error modes remain explicitly unsupported and are rejected before any state can change; `torch.use_deterministic_algorithms` is not exposed.
 
 `torch.set_warn_always(b)` and `torch.is_warn_always_enabled()` expose PyTorch's process-global native warning policy. The default once-only mode consumes each native warning site's marker on its first attempted emission, always mode emits from native warn-once sites on every call without consuming unused markers, and returning to once-only mode preserves markers consumed earlier. The state is shared across threads and package reloads, while ordinary Python `warnings.warn` sites retain Python's standard filtering behavior.
+
+`torch.backends.cpu.get_cpu_capability()` returns the invariant string `"DEFAULT"`, truthfully identifying the engine's unspecialized CPU dispatch without probing host instruction sets or environment overrides.
 
 `torch.__future__.get_overwrite_module_params_on_conversion()` and `torch.__future__.set_overwrite_module_params_on_conversion(value)` expose PyTorch 2.13's process-global module-conversion overwrite preference. The state starts as the exact `False` singleton, the setter stores the supplied object without coercion and returns `None`, threads observe the same value, and reloading `torch.__future__` resets it to `False`. The swap policy, `torch.nn.Module`, and actual module conversion remain unsupported.
 

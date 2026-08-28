@@ -65,8 +65,14 @@ const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 7] = [
     ("has_lapack", false),
     ("has_spectral", false),
 ];
+const NATIVE_CPU_CAPABILITY: &str = "DEFAULT";
 const NATIVE_CK_SDPA_AVAILABLE: bool = false;
 const NATIVE_FLASH_ATTENTION_AVAILABLE: bool = false;
+
+#[pyfunction(name = "_get_cpu_capability", signature = (), text_signature = None)]
+fn get_cpu_capability_native() -> &'static str {
+    NATIVE_CPU_CAPABILITY
+}
 
 #[pyfunction(name = "_is_ck_sdpa_available", signature = (), text_signature = None)]
 fn is_ck_sdpa_available_native() -> bool {
@@ -11677,6 +11683,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     for (name, enabled) in NATIVE_BUILD_CAPABILITIES {
         module.add(name, enabled)?;
     }
+    module.add_function(wrap_pyfunction!(get_cpu_capability_native, module)?)?;
     module.add_function(wrap_pyfunction!(is_ck_sdpa_available_native, module)?)?;
     module.add_function(wrap_pyfunction!(
         is_flash_attention_available_native,
@@ -11688,6 +11695,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let exports = module.getattr("__all__")?;
     for name in [
         "_GLIBCXX_USE_CXX11_ABI",
+        "_get_cpu_capability",
         "_has_cudnn",
         "_has_cuda",
         "_is_ck_sdpa_available",
