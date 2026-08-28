@@ -4,6 +4,8 @@
 
 The project is improved through [Burner](https://github.com/bobrenjc93/burner): each increment is developed in an isolated branch, independently reviewed, and measured against the same base revision before it can merge.
 
+Contributor references: [architecture](ARCHITECTURE.md), [feature coverage](FEATURES.md), and [benchmark policy](BENCHMARKING.md).
+
 ## Current baseline
 
 Python package names may contain a hyphen, but Python identifiers may not. The package is therefore installed as `torch-rs` and imported as `torch_rs`, conventionally aliased to `torch` for drop-in-style code:
