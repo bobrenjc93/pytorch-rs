@@ -7473,6 +7473,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1229",
+      "recordedAt": "2026-08-28T16:09:40.101Z",
+      "label": "PR #1229",
+      "kind": "leaf",
+      "prNumber": 1229,
+      "title": "Fast-path owned rank-2 logical iteration",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 82.9,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
