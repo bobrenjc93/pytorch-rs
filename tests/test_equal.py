@@ -16,6 +16,9 @@ class TensorEqualTests(unittest.TestCase):
         self.assertIs(function_result, expected)
 
     def test_contiguous_strided_offset_and_empty_tensors(self):
+        contiguous_offset = torch.tensor(
+            [[10.0, 11.0, 12.0], [20.0, 3.0, 4.0]]
+        )[1]
         strided = torch.tensor([[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]]).transpose(
             0, 1
         )
@@ -25,6 +28,8 @@ class TensorEqualTests(unittest.TestCase):
         strided_empty = torch.zeros((2, 0, 3)).transpose(0, 2)
         offset_empty = strided_empty[1]
 
+        self.assertEqual(contiguous_offset.stride(), (1,))
+        self.assertEqual(contiguous_offset.storage_offset(), 3)
         self.assertEqual(strided.stride(), (1, 2))
         self.assertEqual(offset.stride(), (2,))
         self.assertEqual(offset.storage_offset(), 1)
@@ -37,6 +42,8 @@ class TensorEqualTests(unittest.TestCase):
                 torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
                 True,
             ),
+            (contiguous_offset, torch.tensor([20.0, 3.0, 4.0]), True),
+            (contiguous_offset, torch.tensor([10.0, 11.0, 12.0]), False),
             (strided, torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]), True),
             (strided, torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 7.0]]), False),
             (offset, torch.tensor([20.0, 3.0, 4.0]), True),

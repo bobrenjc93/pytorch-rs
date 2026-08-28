@@ -311,12 +311,43 @@ impl std::fmt::Debug for Tensor {
     }
 }
 
+#[allow(clippy::float_cmp)] // Tensor equality intentionally uses exact IEEE comparisons.
+fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    let (left_chunks, left_remainder) = left.as_chunks::<16>();
+    let (right_chunks, right_remainder) = right.as_chunks::<16>();
+    for (left, right) in left_chunks.iter().zip(right_chunks) {
+        // A fixed-width, branch-free block lets LLVM vectorize the common
+        // all-equal case while retaining ordinary `f32` equality semantics.
+        let mut equal = true;
+        for (left, right) in left.iter().zip(right) {
+            equal &= left == right;
+        }
+        if !equal {
+            return false;
+        }
+    }
+    left_remainder == right_remainder
+}
+
 impl PartialEq for Tensor {
     fn eq(&self, other: &Self) -> bool {
-        self.shape == other.shape
-            && self.dtype() == other.dtype()
-            && self.device() == other.device()
-            && self.logical_values().eq(other.logical_values())
+        if self.shape != other.shape
+            || self.dtype() != other.dtype()
+            || self.device() != other.device()
+        {
+            return false;
+        }
+        let left = self.contiguous_slice();
+        let right = other.contiguous_slice();
+        if let (Some(left), Some(right)) = (left, right) {
+            return contiguous_values_equal(left, right);
+        }
+        self.logical_values_with_contiguous_slice(left)
+            .eq(other.logical_values_with_contiguous_slice(right))
     }
 }
 
@@ -1256,7 +1287,14 @@ impl Tensor {
     /// Returns logical values in row-major index order.
     #[must_use]
     pub fn logical_values(&self) -> LogicalValues<'_> {
-        let inner = self.contiguous_slice().map_or_else(
+        self.logical_values_with_contiguous_slice(self.contiguous_slice())
+    }
+
+    fn logical_values_with_contiguous_slice<'a>(
+        &'a self,
+        contiguous: Option<&'a [f32]>,
+    ) -> LogicalValues<'a> {
+        let inner = contiguous.map_or_else(
             || LogicalValuesInner::Strided {
                 tensor: self,
                 next: 0,
@@ -5092,6 +5130,69 @@ mod tests {
             view_requires_grad: false,
             autograd: None,
         }
+    }
+
+    #[test]
+    fn equality_preserves_contiguous_slice_and_iterator_semantics() {
+        let mut values = vec![1.0; 33];
+        let mut equal_values = values.clone();
+        values[0] = 0.0;
+        equal_values[0] = -0.0;
+        values[15] = -0.0;
+        equal_values[15] = 0.0;
+        values[16] = f32::INFINITY;
+        equal_values[16] = f32::INFINITY;
+        values[31] = f32::NEG_INFINITY;
+        equal_values[31] = f32::NEG_INFINITY;
+        values[32] = -0.0;
+        equal_values[32] = 0.0;
+        let contiguous = Tensor::from_vec(values, [3, 11]).unwrap();
+        let contiguous_equal = Tensor::from_vec(equal_values.clone(), [3, 11]).unwrap();
+        assert!(contiguous.contiguous_slice().is_some());
+        assert!(contiguous_equal.contiguous_slice().is_some());
+        assert_eq!(contiguous, contiguous_equal);
+
+        equal_values[31] = f32::INFINITY;
+        let contiguous_mismatch = Tensor::from_vec(equal_values, [3, 11]).unwrap();
+        assert_ne!(contiguous, contiguous_mismatch);
+        assert_ne!(
+            Tensor::zeros([0, 2]).unwrap(),
+            Tensor::ones([2, 0]).unwrap()
+        );
+        assert_eq!(
+            Tensor::zeros([0, 2]).unwrap(),
+            Tensor::ones([0, 2]).unwrap()
+        );
+
+        for nan_index in [0, 15, 16, 31, 32] {
+            let mut nan_values = vec![1.0; 33];
+            nan_values[nan_index] = f32::from_bits(0x7fc1_2345);
+            let nan = Tensor::from_vec(nan_values, [3, 11]).unwrap();
+            assert_ne!(nan, nan);
+        }
+
+        let left_source = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [3, 4]).unwrap();
+        let right_source =
+            Tensor::from_vec(vec![20.0, 21.0, 22.0, 23.0, 4.0, 5.0, 6.0, 7.0], [2, 4]).unwrap();
+        let left_offset = left_source.index_integer(1).unwrap();
+        let right_offset = right_source.index_integer(1).unwrap();
+        assert_eq!(left_offset.storage_offset(), 4);
+        assert_eq!(right_offset.storage_offset(), 4);
+        assert!(left_offset.contiguous_slice().is_some());
+        assert_eq!(left_offset, right_offset);
+
+        let noncontiguous = Tensor::from_vec(vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0], [3, 2])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let logical = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
+        assert!(noncontiguous.contiguous_slice().is_none());
+        assert_eq!(noncontiguous, logical);
+
+        let shared = shared_gradient_copy(&logical);
+        assert!(shared.is_contiguous());
+        assert!(shared.contiguous_slice().is_none());
+        assert_eq!(shared, logical);
     }
 
     #[test]
