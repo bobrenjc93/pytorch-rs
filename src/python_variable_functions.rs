@@ -18,7 +18,7 @@ use crate::python::{
     adjoint_variable_function, arange_variable_function, atleast_1d_variable_function,
     atleast_2d_variable_function, atleast_3d_variable_function,
     broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
-    detach_variable_function, exp_variable_function, fix_variable_function,
+    detach_variable_function, div_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, is_conj_variable_function,
     is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
     movedim_variable_function, mul_variable_function, multiply_variable_function,
@@ -32,7 +32,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 39] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 40] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -68,6 +68,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 39] = [
     "movedim",
     "moveaxis",
     "matmul",
+    "div",
     "mul",
     "multiply",
     "can_cast",
@@ -431,6 +432,71 @@ Example::
     tensor([ 0.7156, -0.6218,  0.8257,  0.2553])
 ";
 
+const DIV_DOC: &std::ffi::CStr = cr#"
+div(input, other, *, rounding_mode=None, out=None) -> Tensor
+
+Divides each element of the input ``input`` by the corresponding element of
+:attr:`other`.
+
+.. math::
+    \text{out}_i = \frac{\text{input}_i}{\text{other}_i}
+
+.. note::
+    By default, this performs a "true" division like Python 3.
+    See the :attr:`rounding_mode` argument for floor division.
+
+Supports :ref:`broadcasting to a common shape <broadcasting-semantics>`,
+:ref:`type promotion <type-promotion-doc>`, and integer, float, and complex inputs.
+Always promotes integer types to the default scalar type.
+
+Args:
+    input (Tensor): the dividend
+    other (Tensor or Number): the divisor
+
+Keyword args:
+    rounding_mode (str, optional): Type of rounding applied to the result:
+
+        * None - default behavior. Performs no rounding and, if both :attr:`input` and
+          :attr:`other` are integer types, promotes the inputs to the default scalar type.
+          Equivalent to true division in Python (the ``/`` operator) and NumPy's ``np.true_divide``.
+        * ``"trunc"`` - rounds the results of the division towards zero.
+          Equivalent to C-style integer division.
+        * ``"floor"`` - rounds the results of the division down.
+          Equivalent to floor division in Python (the ``//`` operator) and NumPy's ``np.floor_divide``.
+
+    out (Tensor, optional): the output tensor.
+
+Examples::
+
+    >>> x = torch.tensor([ 0.3810,  1.2774, -0.2972, -0.3719,  0.4637])
+    >>> torch.div(x, 0.5)
+    tensor([ 0.7620,  2.5548, -0.5944, -0.7438,  0.9274])
+
+    >>> a = torch.tensor([[-0.3711, -1.9353, -0.4605, -0.2917],
+    ...                   [ 0.1815, -1.0111,  0.9805, -1.5923],
+    ...                   [ 0.1062,  1.4581,  0.7759, -1.2344],
+    ...                   [-0.1830, -0.0313,  1.1908, -1.4757]])
+    >>> b = torch.tensor([ 0.8032,  0.2930, -0.8113, -0.2308])
+    >>> torch.div(a, b)
+    tensor([[-0.4620, -6.6051,  0.5676,  1.2639],
+            [ 0.2260, -3.4509, -1.2086,  6.8990],
+            [ 0.1322,  4.9764, -0.9564,  5.3484],
+            [-0.2278, -0.1068, -1.4678,  6.3938]])
+
+    >>> torch.div(a, b, rounding_mode='trunc')
+    tensor([[-0., -6.,  0.,  1.],
+            [ 0., -3., -1.,  6.],
+            [ 0.,  4., -0.,  5.],
+            [-0., -0., -1.,  6.]])
+
+    >>> torch.div(a, b, rounding_mode='floor')
+    tensor([[-1., -7.,  0.,  1.],
+            [ 0., -4., -2.,  6.],
+            [ 0.,  4., -1.,  5.],
+            [-1., -1., -2.,  6.]])
+
+"#;
+
 const MUL_DOC: &std::ffi::CStr = cr"
 mul(input, other, *, out=None) -> Tensor
 
@@ -784,6 +850,7 @@ variable_function_callback!(sin_callback, sin_variable_function);
 variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
+variable_function_callback!(div_callback, div_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
 variable_function_callback!(
@@ -851,6 +918,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"sqrt", sqrt_callback, SQRT_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
+        variable_function_method!(c"div", div_callback, DIV_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
         variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
