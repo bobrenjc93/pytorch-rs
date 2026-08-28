@@ -62,10 +62,11 @@ const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
 // tensor runtime to infer capabilities.
-const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 8] = [
+const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 9] = [
     ("_GLIBCXX_USE_CXX11_ABI", false),
     ("_has_cudnn", false),
     ("_has_cuda", false),
+    ("_has_cusparselt", false),
     ("_has_kleidiai", false),
     ("has_openmp", false),
     ("has_mkl", false),
@@ -93,6 +94,35 @@ fn is_ck_sdpa_available_native() -> bool {
 )]
 fn is_flash_attention_available_native() -> bool {
     NATIVE_FLASH_ATTENTION_AVAILABLE
+}
+
+fn add_native_build_metadata(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    for (name, enabled) in NATIVE_BUILD_CAPABILITIES {
+        module.add(name, enabled)?;
+    }
+    module.add_function(wrap_pyfunction!(get_cpu_capability_native, module)?)?;
+    module.add_function(wrap_pyfunction!(is_ck_sdpa_available_native, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        is_flash_attention_available_native,
+        module
+    )?)?;
+    // PyTorch keeps these private build capabilities on torch._C. Removing them from
+    // the extension's generated export list also prevents the package wildcard
+    // import from copying them onto the public torch_rs module.
+    let exports = module.getattr("__all__")?;
+    for name in [
+        "_GLIBCXX_USE_CXX11_ABI",
+        "_get_cpu_capability",
+        "_has_cudnn",
+        "_has_cuda",
+        "_has_cusparselt",
+        "_has_kleidiai",
+        "_is_ck_sdpa_available",
+        "_is_flash_attention_available",
+    ] {
+        exports.call_method1("remove", (name,))?;
+    }
+    Ok(())
 }
 
 const IS_TENSOR_SOURCE: &CStr = cr#"
@@ -12074,30 +12104,7 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     cpython_compat::initialize_torch_function_descriptor_caller(py)?;
-    for (name, enabled) in NATIVE_BUILD_CAPABILITIES {
-        module.add(name, enabled)?;
-    }
-    module.add_function(wrap_pyfunction!(get_cpu_capability_native, module)?)?;
-    module.add_function(wrap_pyfunction!(is_ck_sdpa_available_native, module)?)?;
-    module.add_function(wrap_pyfunction!(
-        is_flash_attention_available_native,
-        module
-    )?)?;
-    // PyTorch keeps these private build capabilities on torch._C. Removing them from
-    // the extension's generated export list also prevents the package wildcard
-    // import from copying them onto the public torch_rs module.
-    let exports = module.getattr("__all__")?;
-    for name in [
-        "_GLIBCXX_USE_CXX11_ABI",
-        "_get_cpu_capability",
-        "_has_cudnn",
-        "_has_cuda",
-        "_has_kleidiai",
-        "_is_ck_sdpa_available",
-        "_is_flash_attention_available",
-    ] {
-        exports.call_method1("remove", (name,))?;
-    }
+    add_native_build_metadata(module)?;
     module.add("Size", size_type_object(py)?.clone_ref(py))?;
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();
