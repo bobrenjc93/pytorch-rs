@@ -45,6 +45,10 @@ class CudnnModule(_types.ModuleType):
         torch._C._get_cudnn_benchmark,
         torch._C._set_cudnn_benchmark,
     )
+    benchmark_limit = _ContextProp(
+        torch._C._cuda_get_cudnn_benchmark_limit,
+        torch._C._cuda_set_cudnn_benchmark_limit,
+    )
     deterministic = _ContextProp(
         torch._C._get_cudnn_deterministic,
         torch._C._set_cudnn_deterministic,
@@ -68,5 +72,6 @@ _sys.modules[__name__] = CudnnModule(_sys.modules[__name__], __name__)
 
 enabled: bool
 benchmark: bool
+benchmark_limit: int
 deterministic: bool
 allow_tf32: bool
