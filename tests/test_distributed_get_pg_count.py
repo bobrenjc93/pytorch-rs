@@ -151,6 +151,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_nccl_available",
                 "is_ucc_available",
                 "is_xccl_available",
+                "default_pg_timeout",
                 "get_group_rank",
                 "get_global_rank",
                 "get_process_group_ranks",
@@ -182,6 +183,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 if not name.startswith("__")
             },
             {
+                "constants",
                 "distributed_c10d",
                 "destroy_process_group",
                 "get_backend_config",
@@ -196,6 +198,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_nccl_available",
                 "is_ucc_available",
                 "is_xccl_available",
+                "default_pg_timeout",
                 "get_group_rank",
                 "get_global_rank",
                 "get_process_group_ranks",
@@ -227,6 +230,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_nccl_available",
                 "is_ucc_available",
                 "is_xccl_available",
+                "default_pg_timeout",
                 "get_group_rank",
                 "get_global_rank",
                 "get_process_group_ranks",
@@ -291,6 +295,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
         self.assertEqual(
             {name for name in vars(distributed) if not name.startswith("_")},
             {
+                "constants",
                 "distributed_c10d",
                 "destroy_process_group",
                 "get_backend_config",
@@ -305,6 +310,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_nccl_available",
                 "is_ucc_available",
                 "is_xccl_available",
+                "default_pg_timeout",
                 "get_group_rank",
                 "get_global_rank",
                 "get_process_group_ranks",
@@ -330,6 +336,7 @@ class DistributedGetPgCountTests(unittest.TestCase):
                 "is_nccl_available",
                 "is_ucc_available",
                 "is_xccl_available",
+                "default_pg_timeout",
                 "get_group_rank",
                 "get_global_rank",
                 "get_process_group_ranks",

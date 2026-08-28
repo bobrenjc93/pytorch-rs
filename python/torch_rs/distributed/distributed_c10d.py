@@ -3,6 +3,7 @@
 import os as _os
 
 from ..torch_rs import Tensor as _Tensor
+from .constants import default_pg_timeout
 
 __all__ = [
     "destroy_process_group",
@@ -17,6 +18,7 @@ __all__ = [
     "is_nccl_available",
     "is_ucc_available",
     "is_xccl_available",
+    "default_pg_timeout",
     "get_group_rank",
     "get_global_rank",
     "get_process_group_ranks",
