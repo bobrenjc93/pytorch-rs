@@ -21,8 +21,9 @@ Within the distributed-execution area, `torch.distributed.GroupMember` and
 `torch.distributed.group` now expose PyTorch 2.13's canonical uninitialized
 group sentinels, including shared `WORLD is None` state,
 `GroupMember.NON_GROUP_MEMBER == -100`, matching class/import/copy/pickle/reload
-behavior, and the corresponding uninitialized rank, world-size, backend, and
-destroy-process-group results. Process-group initialization and collectives
+behavior, setter-visible initialization state and default-world rank
+translations, and the corresponding uninitialized rank, world-size, backend,
+and destroy-process-group results. Process-group initialization and collectives
 remain unsupported.
 
 Within an area, coverage includes ordinary use plus error behavior, empty tensors, numerical edge cases, non-contiguous layouts, and interactions with autograd and device/dtype dispatch. Newly supported cells are added to permanent regression and performance matrices; existing cells are not retired to improve a score.

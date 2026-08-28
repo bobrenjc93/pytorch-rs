@@ -184,6 +184,37 @@ class DistributedGroupMemberReferenceTests(unittest.TestCase):
             self.assertIs(namespace["GroupMember"], c10d.GroupMember)
             self.assertIs(namespace["group"], c10d.group)
 
+    def test_mutated_world_state_matches_pytorch_2_13(self):
+        def mutated_state(module, owner_name):
+            distributed = module.distributed
+            owner = getattr(distributed, owner_name)
+            marker = object()
+            previous = owner.WORLD
+            try:
+                owner.WORLD = marker
+                return (
+                    distributed.GroupMember.WORLD is marker,
+                    distributed.group.WORLD is marker,
+                    distributed.is_initialized(),
+                    distributed.get_group_rank(marker, 7),
+                    distributed.get_global_rank(marker, 11),
+                )
+            finally:
+                owner.WORLD = previous
+
+        for owner_name in ("GroupMember", "group"):
+            with self.subTest(owner=owner_name):
+                self.assertEqual(
+                    mutated_state(torch, owner_name),
+                    mutated_state(reference_torch, owner_name),
+                )
+        self.assertIs(torch.distributed.GroupMember.WORLD, None)
+        self.assertIs(torch.distributed.group.WORLD, None)
+        self.assertIs(torch.distributed.is_initialized(), False)
+        self.assertIs(reference_torch.distributed.GroupMember.WORLD, None)
+        self.assertIs(reference_torch.distributed.group.WORLD, None)
+        self.assertIs(reference_torch.distributed.is_initialized(), False)
+
     def test_uninitialized_api_outcomes_match(self):
         actual = torch.distributed
         expected = reference_torch.distributed

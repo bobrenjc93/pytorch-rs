@@ -107,13 +107,20 @@ class DistributedGroupMemberTests(unittest.TestCase):
             group_member.WORLD = first
             self.assertIs(group_member.WORLD, first)
             self.assertIs(group.WORLD, first)
+            self.assertIs(torch.distributed.is_initialized(), True)
+            self.assertEqual(torch.distributed.get_group_rank(first, 7), 7)
+            self.assertEqual(torch.distributed.get_global_rank(first, 11), 11)
             group.WORLD = second
             self.assertIs(group_member.WORLD, second)
             self.assertIs(group.WORLD, second)
+            self.assertIs(torch.distributed.is_initialized(), True)
+            self.assertEqual(torch.distributed.get_group_rank(second, 13), 13)
+            self.assertEqual(torch.distributed.get_global_rank(second, 17), 17)
         finally:
             group_member.WORLD = None
         self.assertIs(group_member.WORLD, None)
         self.assertIs(group.WORLD, None)
+        self.assertIs(torch.distributed.is_initialized(), False)
 
     def test_imports_copy_and_pickle_are_canonical(self):
         distributed = torch.distributed

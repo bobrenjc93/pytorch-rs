@@ -201,7 +201,7 @@ def get_group_rank(group: _ProcessGroup, global_rank: int) -> int:
 
     N.B. calling this function on the default process group returns identity
     """
-    if group is None:
+    if group is GroupMember.WORLD:
         return global_rank
     if group not in {}:
         raise ValueError(
@@ -225,7 +225,7 @@ def get_global_rank(group: _ProcessGroup, group_rank: int) -> int:
 
     N.B. calling this function on the default process group returns identity
     """
-    if group is None:
+    if group is GroupMember.WORLD:
         return group_rank
     if group not in {}:
         raise ValueError(
@@ -294,7 +294,7 @@ def is_gloo_available() -> bool:
 
 def is_initialized() -> bool:
     """Check if the default process group has been initialized."""
-    return False
+    return GroupMember.WORLD is not None
 
 
 def is_mpi_available() -> bool:

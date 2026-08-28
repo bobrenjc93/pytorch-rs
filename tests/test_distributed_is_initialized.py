@@ -25,7 +25,7 @@ class DistributedIsInitializedTests(unittest.TestCase):
             "torch_rs.distributed.distributed_c10d"
         )
 
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(function.__code__.co_names, ("GroupMember", "WORLD"))
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
         self.assertIs(distributed_c10d.GroupMember.WORLD, None)
@@ -384,7 +384,7 @@ os.environ.update(
 import torch_rs as torch
 
 function = torch.distributed.is_initialized
-assert function.__code__.co_names == ()
+assert function.__code__.co_names == ("GroupMember", "WORLD")
 assert function() is False
 assert torch.distributed.is_available() is False
 assert torch.distributed.get_pg_count() == 0
