@@ -252,8 +252,8 @@ pub struct Tensor {
 ///
 /// The iterator follows tensor strides and storage offsets, so it is suitable
 /// for both contiguous tensors and metadata-only views. Contiguous tensors use
-/// a direct slice iterator, while owned rank-two and rank-three views share an
-/// allocation-free wrapper around fixed-rank stride odometers.
+/// a direct slice iterator, while owned rank-two through rank-four views share
+/// an allocation-free wrapper around fixed-rank stride odometers.
 pub struct LogicalValues<'a> {
     inner: LogicalValuesInner<'a>,
 }
@@ -397,6 +397,7 @@ impl<const RANK: usize> FusedIterator for OwnedStridedLogicalValues<'_, RANK> {}
 enum OwnedSmallRankLogicalValues<'a> {
     Rank2(OwnedStridedLogicalValues<'a, 2>),
     Rank3(OwnedStridedLogicalValues<'a, 3>),
+    Rank4(OwnedStridedLogicalValues<'a, 4>),
 }
 
 impl Iterator for OwnedSmallRankLogicalValues<'_> {
@@ -407,6 +408,7 @@ impl Iterator for OwnedSmallRankLogicalValues<'_> {
         match self {
             Self::Rank2(values) => values.next(),
             Self::Rank3(values) => values.next(),
+            Self::Rank4(values) => values.next(),
         }
     }
 
@@ -414,6 +416,7 @@ impl Iterator for OwnedSmallRankLogicalValues<'_> {
         match self {
             Self::Rank2(values) => values.size_hint(),
             Self::Rank3(values) => values.size_hint(),
+            Self::Rank4(values) => values.size_hint(),
         }
     }
 
@@ -425,6 +428,7 @@ impl Iterator for OwnedSmallRankLogicalValues<'_> {
         match self {
             Self::Rank2(values) => values.fold(initial, function),
             Self::Rank3(values) => values.fold(initial, function),
+            Self::Rank4(values) => values.fold(initial, function),
         }
     }
 }
@@ -1537,6 +1541,30 @@ impl Tensor {
                     offsets: StridedOffsetOdometer::new(
                         [*dimension_0, *dimension_1, *dimension_2],
                         [*stride_0, *stride_1, *stride_2],
+                        self.offset,
+                        self.elements,
+                    ),
+                },
+            ))
+        } else if let (
+            [dimension_0, dimension_1, dimension_2, dimension_3],
+            [stride_0, stride_1, stride_2, stride_3],
+            Some(values),
+        ) = (
+            self.shape.as_slice(),
+            self.strides.as_slice(),
+            self.storage.owned_values(),
+        ) {
+            debug_assert_eq!(
+                self.elements,
+                dimension_0 * dimension_1 * dimension_2 * dimension_3
+            );
+            LogicalValuesInner::OwnedSmallRank(OwnedSmallRankLogicalValues::Rank4(
+                OwnedStridedLogicalValues {
+                    values,
+                    offsets: StridedOffsetOdometer::new(
+                        [*dimension_0, *dimension_1, *dimension_2, *dimension_3],
+                        [*stride_0, *stride_1, *stride_2, *stride_3],
                         self.offset,
                         self.elements,
                     ),
@@ -5733,38 +5761,10 @@ mod tests {
         for permutation in [[0, 1], [1, 0]] {
             let shape = permutation.map(|axis| rank_2_shape[axis]);
             let strides = permutation.map(|axis| rank_2_strides[axis]);
-            let expected = (0..12)
-                .map(|index| logical_offset_for_linear_index(&shape, &strides, 7, index).unwrap())
-                .collect::<Vec<_>>();
-            assert_eq!(
-                StridedOffsetOdometer::<2>::new(shape, strides, 7, 12).collect::<Vec<_>>(),
-                expected
-            );
+            assert_stride_odometer_matches_decoded_offsets(shape, strides, 7, 12);
         }
 
-        let rank_2_singleton_shape = [3, 1];
-        let rank_2_singleton_strides = [1, usize::MAX];
-        let expected = (0..3)
-            .map(|index| {
-                logical_offset_for_linear_index(
-                    &rank_2_singleton_shape,
-                    &rank_2_singleton_strides,
-                    5,
-                    index,
-                )
-                .unwrap()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            StridedOffsetOdometer::<2>::new(
-                rank_2_singleton_shape,
-                rank_2_singleton_strides,
-                5,
-                3,
-            )
-            .collect::<Vec<_>>(),
-            expected
-        );
+        assert_stride_odometer_matches_decoded_offsets([3, 1], [1, usize::MAX], 5, 3);
 
         let source_shape = [2, 3, 4];
         let source_strides = [12, 4, 1];
@@ -5780,38 +5780,28 @@ mod tests {
         for permutation in permutations {
             let shape = permutation.map(|axis| source_shape[axis]);
             let strides = permutation.map(|axis| source_strides[axis]);
-            let expected = (0..24)
-                .map(|index| logical_offset_for_linear_index(&shape, &strides, 7, index).unwrap())
-                .collect::<Vec<_>>();
-            assert_eq!(
-                StridedOffsetOdometer::<3>::new(shape, strides, 7, 24).collect::<Vec<_>>(),
-                expected
-            );
+            assert_stride_odometer_matches_decoded_offsets(shape, strides, 7, 24);
         }
 
-        let singleton_shape = [3, 1, 2];
-        let singleton_strides = [1, 97, 3];
-        let expected = (0..6)
-            .map(|index| {
-                logical_offset_for_linear_index(&singleton_shape, &singleton_strides, 5, index)
-                    .unwrap()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            StridedOffsetOdometer::<3>::new(singleton_shape, singleton_strides, 5, 6,)
-                .collect::<Vec<_>>(),
-            expected
+        assert_stride_odometer_matches_decoded_offsets([3, 1, 2], [1, 97, 3], 5, 6);
+        assert_empty_stride_odometer_is_fused([2, 0, 3], [3, usize::MAX, 1]);
+
+        let source_shape = [2, 3, 4, 5];
+        let source_strides = [60, 20, 5, 1];
+        for permutation in rank_4_permutations() {
+            let shape = permutation.map(|axis| source_shape[axis]);
+            let strides = permutation.map(|axis| source_strides[axis]);
+            assert_stride_odometer_matches_decoded_offsets(shape, strides, 7, 120);
+        }
+
+        assert_stride_odometer_matches_decoded_offsets(
+            [3, 1, 2, 1],
+            [1, usize::MAX, 3, usize::MAX],
+            5,
+            6,
         );
-
-        let mut empty = StridedOffsetOdometer::<3>::new([2, 0, 3], [3, usize::MAX, 1], 0, 0);
-        assert_eq!(empty.len(), 0);
-        assert_eq!(empty.next(), None);
-        assert_eq!(empty.next(), None);
-
-        let mut empty = StridedOffsetOdometer::<2>::new([0, 3], [usize::MAX, 1], 0, 0);
-        assert_eq!(empty.len(), 0);
-        assert_eq!(empty.next(), None);
-        assert_eq!(empty.next(), None);
+        assert_empty_stride_odometer_is_fused([2, 0, 3, 4], [12, usize::MAX, 4, 1]);
+        assert_empty_stride_odometer_is_fused([0, 3], [usize::MAX, 1]);
     }
 
     #[test]
@@ -6056,6 +6046,273 @@ mod tests {
         let gradient = source.grad().unwrap().unwrap();
         assert_eq!(&gradient.as_slice()[..24], &[0.0; 24]);
         assert_eq!(&gradient.as_slice()[24..], &[1.0; 24]);
+    }
+
+    #[test]
+    fn small_rank_logical_values_match_rank_4_fallback_for_every_permutation() {
+        let edge_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0000_0001,
+            0x8000_0001,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+        ];
+        let bits = (0..120)
+            .map(|index| edge_bits[index % edge_bits.len()])
+            .collect::<Vec<_>>();
+        let offset = offset_contiguous_tensor(&bits, &[2, 3, 4, 5]);
+
+        for permutation in rank_4_permutations() {
+            if permutation == [0, 1, 2, 3] {
+                continue;
+            }
+            let owned = offset.permute_axes(permutation).unwrap();
+            let shared = shared_gradient_copy(&owned);
+            assert_ne!(owned.storage_offset(), 0);
+            assert!(!owned.is_contiguous());
+            assert!(matches!(
+                owned.logical_values().inner,
+                LogicalValuesInner::OwnedSmallRank(OwnedSmallRankLogicalValues::Rank4(_))
+            ));
+            assert!(matches!(
+                shared.logical_values().inner,
+                LogicalValuesInner::Strided { .. }
+            ));
+            assert!(
+                owned
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(shared.logical_values().map(f32::to_bits))
+            );
+            assert_eq!(
+                owned.sum().item().unwrap().to_bits(),
+                shared.sum().item().unwrap().to_bits()
+            );
+
+            let owned_contiguous = owned.try_contiguous(MemoryFormat::Contiguous).unwrap();
+            let shared_contiguous = shared.try_contiguous(MemoryFormat::Contiguous).unwrap();
+            assert_eq!(owned_contiguous.stride(), shared_contiguous.stride());
+            assert!(
+                owned_contiguous
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(shared_contiguous.logical_values().map(f32::to_bits))
+            );
+        }
+    }
+
+    #[test]
+    fn small_rank_logical_values_preserve_rank_4_partial_and_edge_iteration() {
+        let bits = (0_u32..120)
+            .map(|value| value + 0x3f00_0000)
+            .collect::<Vec<_>>();
+        let owned = offset_contiguous_tensor(&bits, &[2, 3, 4, 5])
+            .permute_axes([2, 0, 3, 1])
+            .unwrap();
+        let shared = shared_gradient_copy(&owned);
+        let mut fast = owned.logical_values();
+        let mut fallback = shared.logical_values();
+
+        assert_eq!(fast.len(), fallback.len());
+        assert_eq!(
+            fast.next().map(f32::to_bits),
+            fallback.next().map(f32::to_bits)
+        );
+        assert_eq!(
+            fast.nth(17).map(f32::to_bits),
+            fallback.nth(17).map(f32::to_bits)
+        );
+        assert_eq!(fast.len(), fallback.len());
+        assert!(fast.map(f32::to_bits).eq(fallback.map(f32::to_bits)));
+
+        let singleton = offset_contiguous_tensor(
+            &[
+                0x0000_0000,
+                0x8000_0000,
+                0x7fc1_2345,
+                0xffc5_4321,
+                0x3f80_0000,
+                0xbf80_0000,
+                0x4000_0000,
+                0xc000_0000,
+                0x4080_0000,
+                0xc080_0000,
+                0x40a0_0000,
+                0xc0a0_0000,
+            ],
+            &[2, 1, 3, 2],
+        )
+        .permute_axes([2, 0, 3, 1])
+        .unwrap();
+        let shared_singleton = shared_gradient_copy(&singleton);
+        assert_eq!(singleton.shape(), [3, 2, 2, 1]);
+        assert!(!singleton.is_contiguous());
+        assert!(matches!(
+            singleton.logical_values().inner,
+            LogicalValuesInner::OwnedSmallRank(OwnedSmallRankLogicalValues::Rank4(_))
+        ));
+        assert!(
+            singleton
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(shared_singleton.logical_values().map(f32::to_bits))
+        );
+
+        let empty = Tensor::zeros([2, 0, 3, 4])
+            .unwrap()
+            .permute_axes([2, 0, 3, 1])
+            .unwrap();
+        let shared_empty = shared_gradient_copy(&empty);
+        for tensor in [&empty, &shared_empty] {
+            assert!(tensor.is_contiguous());
+            assert!(matches!(
+                tensor.logical_values().inner,
+                LogicalValuesInner::Contiguous(_)
+            ));
+            assert_eq!(tensor.logical_values().count(), 0);
+        }
+
+        let contiguous = Tensor::zeros([2, 3, 4, 5]).unwrap();
+        let rank_3 = Tensor::zeros([2, 3, 4])
+            .unwrap()
+            .permute_axes([2, 0, 1])
+            .unwrap();
+        let rank_5 = Tensor::zeros([2, 3, 4, 5, 6])
+            .unwrap()
+            .permute_axes([4, 3, 2, 1, 0])
+            .unwrap();
+        assert!(matches!(
+            contiguous.logical_values().inner,
+            LogicalValuesInner::Contiguous(_)
+        ));
+        assert!(matches!(
+            rank_3.logical_values().inner,
+            LogicalValuesInner::OwnedSmallRank(OwnedSmallRankLogicalValues::Rank3(_))
+        ));
+        assert!(matches!(
+            rank_5.logical_values().inner,
+            LogicalValuesInner::Strided { .. }
+        ));
+    }
+
+    #[test]
+    fn small_rank_logical_values_match_rank_4_fallback_for_unary_autograd() {
+        let edge_bits = [
+            0x4120_0000,
+            0x8000_0000,
+            0x0000_0001,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x7fc1_2345,
+            0xffc5_4321,
+            0x4080_0000,
+            0x41a0_0000,
+            0x8000_0001,
+            0x7f80_0000,
+            0xff80_0000,
+            0x4000_0000,
+            0xc000_0000,
+            0x0000_0000,
+            0x41f0_0000,
+        ];
+        let storage_bits = (0..64)
+            .map(|index| edge_bits[index % edge_bits.len()])
+            .collect::<Vec<_>>();
+        let owned = owned_strided_rank_4_tensor(&storage_bits, [2, 2, 3, 4], [24, 2, 8, 1], 3);
+        let shared = shared_gradient_copy(&owned);
+        assert!(matches!(
+            owned.logical_values().inner,
+            LogicalValuesInner::OwnedSmallRank(OwnedSmallRankLogicalValues::Rank4(_))
+        ));
+        assert!(matches!(
+            shared.logical_values().inner,
+            LogicalValuesInner::Strided { .. }
+        ));
+
+        let owned_outputs = [
+            owned.negate().unwrap(),
+            owned.abs().unwrap(),
+            owned.sqrt().unwrap(),
+        ];
+        let shared_outputs = [
+            shared.negate().unwrap(),
+            shared.abs().unwrap(),
+            shared.sqrt().unwrap(),
+        ];
+        for (owned_output, shared_output) in owned_outputs.iter().zip(&shared_outputs) {
+            assert_eq!(owned_output.shape(), shared_output.shape());
+            assert_eq!(owned_output.stride(), shared_output.stride());
+            assert!(
+                owned_output
+                    .logical_values()
+                    .map(f32::to_bits)
+                    .eq(shared_output.logical_values().map(f32::to_bits))
+            );
+        }
+
+        let owned_leaf = owned.with_requires_grad(true);
+        let shared_leaf = shared.with_requires_grad(true);
+        let owned_negated = owned_leaf.negate().unwrap();
+        let shared_negated = shared_leaf.negate().unwrap();
+        assert!(
+            owned_negated
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(shared_negated.logical_values().map(f32::to_bits))
+        );
+        owned_negated.sum().backward().unwrap();
+        shared_negated.sum().backward().unwrap();
+        assert!(
+            owned_leaf
+                .grad()
+                .unwrap()
+                .unwrap()
+                .logical_values()
+                .map(f32::to_bits)
+                .eq(shared_leaf
+                    .grad()
+                    .unwrap()
+                    .unwrap()
+                    .logical_values()
+                    .map(f32::to_bits))
+        );
+    }
+
+    #[test]
+    fn small_rank_logical_values_preserve_rank_4_view_autograd() {
+        let source = Tensor::from_vec((0_u8..240).map(f32::from).collect(), [2, 2, 3, 4, 5])
+            .unwrap()
+            .with_requires_grad(true);
+        let view = source
+            .index_integer(1)
+            .unwrap()
+            .permute_axes([3, 1, 0, 2])
+            .unwrap();
+        assert_eq!(view.shape(), [5, 3, 2, 4]);
+        assert_ne!(view.storage_offset(), 0);
+        assert!(matches!(
+            view.logical_values().inner,
+            LogicalValuesInner::OwnedSmallRank(OwnedSmallRankLogicalValues::Rank4(_))
+        ));
+
+        view.sum().backward().unwrap();
+        view.try_contiguous(MemoryFormat::Contiguous)
+            .unwrap()
+            .sum()
+            .backward()
+            .unwrap();
+        view.negate().unwrap().sum().backward().unwrap();
+
+        let gradient = source.grad().unwrap().unwrap();
+        assert_eq!(&gradient.as_slice()[..120], &[0.0; 120]);
+        assert_eq!(&gradient.as_slice()[120..], &[1.0; 120]);
     }
 
     #[test]
@@ -6447,6 +6704,32 @@ mod tests {
             .unwrap()
     }
 
+    fn assert_stride_odometer_matches_decoded_offsets<const RANK: usize>(
+        shape: [usize; RANK],
+        strides: [usize; RANK],
+        offset: usize,
+        elements: usize,
+    ) {
+        let expected = (0..elements)
+            .map(|index| logical_offset_for_linear_index(&shape, &strides, offset, index).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            StridedOffsetOdometer::<RANK>::new(shape, strides, offset, elements)
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+
+    fn assert_empty_stride_odometer_is_fused<const RANK: usize>(
+        shape: [usize; RANK],
+        strides: [usize; RANK],
+    ) {
+        let mut empty = StridedOffsetOdometer::<RANK>::new(shape, strides, 0, 0);
+        assert_eq!(empty.len(), 0);
+        assert_eq!(empty.next(), None);
+        assert_eq!(empty.next(), None);
+    }
+
     fn owned_strided_rank_3_tensor(
         storage_bits: &[u32],
         shape: [usize; 3],
@@ -6469,6 +6752,59 @@ mod tests {
             view_requires_grad: false,
             autograd: None,
         }
+    }
+
+    fn owned_strided_rank_4_tensor(
+        storage_bits: &[u32],
+        shape: [usize; 4],
+        strides: [usize; 4],
+        offset: usize,
+    ) -> Tensor {
+        let elements = shape.iter().product::<usize>();
+        validate_view_bounds(&shape, &strides, offset, elements, storage_bits.len()).unwrap();
+        Tensor {
+            storage: Arc::new(Storage::from_owned(
+                storage_bits.iter().copied().map(f32::from_bits).collect(),
+                DType::Float32,
+                Device::Cpu,
+            )),
+            shape: shape.to_vec(),
+            strides: strides.to_vec(),
+            offset,
+            elements,
+            output_nr: 0,
+            view_requires_grad: false,
+            autograd: None,
+        }
+    }
+
+    fn rank_4_permutations() -> [[usize; 4]; 24] {
+        [
+            [0, 1, 2, 3],
+            [0, 1, 3, 2],
+            [0, 2, 1, 3],
+            [0, 2, 3, 1],
+            [0, 3, 1, 2],
+            [0, 3, 2, 1],
+            [1, 0, 2, 3],
+            [1, 0, 3, 2],
+            [1, 2, 0, 3],
+            [1, 2, 3, 0],
+            [1, 3, 0, 2],
+            [1, 3, 2, 0],
+            [2, 0, 1, 3],
+            [2, 0, 3, 1],
+            [2, 1, 0, 3],
+            [2, 1, 3, 0],
+            [2, 3, 0, 1],
+            [2, 3, 1, 0],
+            [3, 0, 1, 2],
+            [3, 0, 2, 1],
+            [3, 1, 0, 2],
+            [3, 1, 2, 0],
+            [3, 2, 0, 1],
+            [3, 2, 1, 0],
+        ]
     }
 
     fn offset_strided_matrix(bits: [u32; 9]) -> Tensor {
