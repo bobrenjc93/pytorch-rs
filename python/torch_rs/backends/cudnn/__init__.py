@@ -36,6 +36,12 @@ def _is_default_mode(value, default):
     return False
 
 
+def _is_default_fp32_precision(value):
+    if isinstance(value, bytearray):
+        return bytearray.decode(value, "utf-8") == "none"
+    return _is_default_mode(value, "none")
+
+
 def _set_flags(
     _enabled=None,
     _benchmark=None,
@@ -62,10 +68,16 @@ def _set_flags(
         torch._C._set_cudnn_deterministic(_deterministic)
     if _allow_tf32 is not None:
         torch._C._set_cudnn_allow_tf32(_allow_tf32)
-    if not _is_default_mode(_fp32_precision, "none"):
+    if not _is_default_fp32_precision(_fp32_precision):
         raise NotImplementedError(
             "torch.backends.cudnn.flags() only supports "
             "fp32_precision='none'"
+        )
+    if isinstance(_depthwise_kernel, bytearray):
+        type_name = type(_depthwise_kernel).__name__
+        raise RuntimeError(
+            "set_cudnn_depthwise_kernel expects a string, but got "
+            f"{type_name}"
         )
     if not _is_default_mode(_depthwise_kernel, "auto"):
         raise NotImplementedError(

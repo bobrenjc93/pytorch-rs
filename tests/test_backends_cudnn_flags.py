@@ -40,6 +40,14 @@ class _BytesMode(bytes):
         raise AssertionError("mode validation must not dispatch byte decoding")
 
 
+class _BytearrayMode(bytearray):
+    def __eq__(self, other):
+        raise AssertionError("mode validation must not dispatch equality")
+
+    def decode(self, *args, **kwargs):
+        raise AssertionError("mode validation must not dispatch byte decoding")
+
+
 def fresh_cudnn_module():
     module_name = "torch_rs.backends.cudnn"
     sys.modules.pop(module_name, None)
@@ -210,6 +218,8 @@ class CudnnFlagsTests(unittest.TestCase):
             (b"none", b"auto"),
             (_StringMode("none"), _StringMode("auto")),
             (_BytesMode(b"none"), _BytesMode(b"auto")),
+            (bytearray(b"none"), "auto"),
+            (_BytearrayMode(b"none"), "auto"),
             (None, None),
         )
         for fp32_precision, depthwise_kernel in default_modes:
@@ -244,6 +254,16 @@ class CudnnFlagsTests(unittest.TestCase):
                 DEPTHWISE_ERROR,
             ),
             (
+                {"depthwise_kernel": bytearray(b"auto")},
+                "set_cudnn_depthwise_kernel expects a string, but got "
+                "bytearray",
+            ),
+            (
+                {"depthwise_kernel": _BytearrayMode(b"auto")},
+                "set_cudnn_depthwise_kernel expects a string, but got "
+                "_BytearrayMode",
+            ),
+            (
                 {
                     "fp32_precision": "ieee",
                     "depthwise_kernel": "cudnn",
@@ -256,7 +276,12 @@ class CudnnFlagsTests(unittest.TestCase):
                 self.set_states(self.cudnn, DEFAULT_STATE)
                 context = self.cudnn.flags(*TARGET_STATE, **keywords)
                 self.assertEqual(self.states(self.cudnn), DEFAULT_STATE)
-                with self.assertRaises(NotImplementedError) as raised:
+                error_type = (
+                    RuntimeError
+                    if isinstance(keywords.get("depthwise_kernel"), bytearray)
+                    else NotImplementedError
+                )
+                with self.assertRaises(error_type) as raised:
                     context.__enter__()
                 self.assertEqual(str(raised.exception), message)
                 self.assertEqual(raised.exception.args, (message,))

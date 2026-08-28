@@ -40,6 +40,14 @@ class _BytesMode(bytes):
         raise AssertionError("mode validation must not dispatch byte decoding")
 
 
+class _BytearrayMode(bytearray):
+    def __eq__(self, other):
+        raise AssertionError("mode validation must not dispatch equality")
+
+    def decode(self, *args, **kwargs):
+        raise AssertionError("mode validation must not dispatch byte decoding")
+
+
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
 class CudnnFlagsReferenceTests(unittest.TestCase):
     @classmethod
@@ -510,6 +518,53 @@ class CudnnFlagsReferenceTests(unittest.TestCase):
             depthwise_kernel="cudnn",
         ):
             self.assertEqual(self.expected.depthwise_kernel, "cudnn")
+
+    def test_fp32_bytearray_defaults_restore_like_pytorch_2_13(self):
+        def contract(module, fp32_precision):
+            self.set_states(module, DEFAULT_STATE)
+            context = module.flags(
+                *TARGET_STATE,
+                fp32_precision=fp32_precision,
+                depthwise_kernel="auto",
+            )
+            before_entry = self.states(module)
+            entered = context.__enter__()
+            inside = self.states(module)
+            exit_result = context.__exit__(None, None, None)
+            return (
+                before_entry,
+                entered,
+                inside,
+                exit_result,
+                self.states(module),
+            )
+
+        for value in (bytearray(b"none"), _BytearrayMode(b"none")):
+            with self.subTest(value_type=type(value).__name__):
+                self.assertEqual(
+                    contract(self.actual, value),
+                    contract(self.expected, value),
+                )
+
+    def test_depthwise_bytearray_rejection_matches_pytorch_2_13(self):
+        for value in (bytearray(b"auto"), _BytearrayMode(b"auto")):
+            with self.subTest(value_type=type(value).__name__):
+                self.set_states(self.actual, DEFAULT_STATE)
+                self.set_states(self.expected, DEFAULT_STATE)
+                actual_context = self.actual.flags(
+                    *TARGET_STATE,
+                    depthwise_kernel=value,
+                )
+                expected_context = self.expected.flags(
+                    *TARGET_STATE,
+                    depthwise_kernel=value,
+                )
+                self.assertEqual(
+                    self.capture_error(actual_context.__enter__),
+                    self.capture_error(expected_context.__enter__),
+                )
+                self.assertEqual(self.states(self.actual), TARGET_STATE)
+                self.assertEqual(self.states(self.expected), TARGET_STATE)
 
 
 if __name__ == "__main__":
