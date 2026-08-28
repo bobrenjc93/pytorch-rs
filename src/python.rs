@@ -1,6 +1,6 @@
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
@@ -46,6 +46,7 @@ static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new
 static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 static CUDNN_ENABLED: AtomicBool = AtomicBool::new(true);
 static CUDNN_BENCHMARK: AtomicBool = AtomicBool::new(false);
+static CUDNN_BENCHMARK_LIMIT: AtomicI32 = AtomicI32::new(10);
 static CUDNN_DETERMINISTIC: AtomicBool = AtomicBool::new(false);
 static CUDNN_ALLOW_TF32: AtomicBool = AtomicBool::new(true);
 static MEM_EFFICIENT_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -5055,6 +5056,57 @@ fn get_cudnn_benchmark_native() -> bool {
     CUDNN_BENCHMARK.load(Ordering::SeqCst)
 }
 
+fn is_cudnn_benchmark_limit_integer(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    if value.is_instance_of::<PyBool>() {
+        return Ok(false);
+    }
+    if value.is_instance_of::<PyInt>() {
+        return Ok(true);
+    }
+    is_numpy_scalar_of_types(value, &["integer"])
+}
+
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "PyTorch narrows the signed 64-bit input to its signed 32-bit native setting"
+)]
+fn set_cudnn_benchmark_limit_native(object: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !is_cudnn_benchmark_limit_integer(object)? {
+        let type_name = python_type_name(object)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "set_benchmark_limit_cudnn expects an int, but got {type_name}"
+        )));
+    }
+    let benchmark_limit = extract_dimension_swap_dimension(object)? as i32;
+    CUDNN_BENCHMARK_LIMIT.store(benchmark_limit, Ordering::SeqCst);
+    Ok(())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_cudnn_benchmark_limit_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    object: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: CPython supplies a live borrowed object to a METH_O callback.
+    let object = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, object) };
+    set_cudnn_benchmark_limit_native(&object)?;
+    Ok(py.None().into_ptr())
+}
+
+#[pyfunction(
+    name = "_cuda_get_cudnn_benchmark_limit",
+    signature = (),
+    text_signature = None
+)]
+#[pyo3(pass_module)]
+fn get_cudnn_benchmark_limit_native(_module: &Bound<'_, PyModule>) -> i32 {
+    CUDNN_BENCHMARK_LIMIT.load(Ordering::SeqCst)
+}
+
 // PyTorch publishes this private setter as a module-bound METH_O built-in.
 // Keep validation separate from its CPython wrapper so assignment through the
 // proxy and direct native calls share one atomic state transition.
@@ -5166,6 +5218,36 @@ fn add_cudnn_deterministic_setter(module: &Bound<'_, PyModule>) -> PyResult<()> 
     unsafe_code,
     reason = "PyCFunction_NewEx requires an audited stable-ABI raw-pointer call"
 )]
+fn add_cudnn_benchmark_limit_setter(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
+    let mut definition = pyo3::impl_::pymethods::PyMethodDef::noargs(
+        c"_cuda_set_cudnn_benchmark_limit",
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            binaryfunc,
+            set_cudnn_benchmark_limit_callback
+        ),
+        c"",
+    )
+    .into_raw();
+    definition.ml_flags = ffi::METH_O;
+    let definition = Box::leak(Box::new(definition));
+    let module_name = module.name()?;
+    // SAFETY: the leaked method definition, module, and module name all remain
+    // live for the duration required by the newly owned built-in function.
+    let function = unsafe {
+        Bound::<PyAny>::from_owned_ptr_or_err(
+            py,
+            ffi::PyCFunction_NewEx(definition, module.as_ptr(), module_name.as_ptr()),
+        )?
+        .cast_into::<PyCFunction>()?
+    };
+    module.add_function(function)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyCFunction_NewEx requires an audited stable-ABI raw-pointer call"
+)]
 fn add_cudnn_allow_tf32_setter(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     let mut definition = pyo3::impl_::pymethods::PyMethodDef::noargs(
@@ -5197,6 +5279,8 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(get_cudnn_enabled_native, module)?)?;
     module.add_function(wrap_pyfunction!(set_cudnn_benchmark_native, module)?)?;
     module.add_function(wrap_pyfunction!(get_cudnn_benchmark_native, module)?)?;
+    add_cudnn_benchmark_limit_setter(module)?;
+    module.add_function(wrap_pyfunction!(get_cudnn_benchmark_limit_native, module)?)?;
     add_cudnn_deterministic_setter(module)?;
     module.add_function(wrap_pyfunction!(get_cudnn_deterministic_native, module)?)?;
     add_cudnn_allow_tf32_setter(module)?;
@@ -5207,6 +5291,8 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "_get_cudnn_enabled",
         "_set_cudnn_benchmark",
         "_get_cudnn_benchmark",
+        "_cuda_set_cudnn_benchmark_limit",
+        "_cuda_get_cudnn_benchmark_limit",
         "_set_cudnn_deterministic",
         "_get_cudnn_deterministic",
         "_set_cudnn_allow_tf32",
