@@ -200,6 +200,95 @@ class TensorEqualReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_equal_calls_match(*values)
 
+    def test_matching_dense_strides_match_pytorch_2_13(self):
+        self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
+
+        def make_cases(module):
+            offset_left = module.tensor(
+                [
+                    [[99.0, 98.0, 97.0, 96.0], [95.0, 94.0, 93.0, 92.0]],
+                    [
+                        [0.0, -0.0, float("inf"), -float("inf")],
+                        [1.0, -1.0, 0.0, -0.0],
+                    ],
+                ]
+            )[1].transpose(0, 1)
+            offset_right = module.tensor(
+                [
+                    [[91.0, 90.0, 89.0, 88.0], [87.0, 86.0, 85.0, 84.0]],
+                    [
+                        [-0.0, 0.0, float("inf"), -float("inf")],
+                        [1.0, -1.0, -0.0, 0.0],
+                    ],
+                ]
+            )[1].transpose(0, 1)
+            permuted_left = module.tensor(
+                [
+                    [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]],
+                    [[6.0, 7.0, 8.0], [9.0, 10.0, 11.0]],
+                ]
+            ).permute(2, 0, 1)
+            channels_last_left = module.tensor(
+                [
+                    [
+                        [[0.0, 1.0], [2.0, 3.0]],
+                        [[4.0, 5.0], [6.0, 7.0]],
+                    ],
+                    [
+                        [[8.0, 9.0], [10.0, 11.0]],
+                        [[12.0, 13.0], [14.0, 15.0]],
+                    ],
+                ]
+            ).contiguous(memory_format=module.channels_last)
+            nan_left = module.tensor(
+                [[1.0, float("nan")], [2.0, 3.0]]
+            ).transpose(0, 1)
+            nan_right = module.tensor(
+                [[1.0, float("nan")], [2.0, 3.0]]
+            ).transpose(0, 1)
+
+            left_leaf = module.tensor(
+                [[0.0, 0.0], [0.0, 0.0]], requires_grad=True
+            )
+            right_leaf = module.tensor(
+                [[0.0, 0.0], [0.0, 0.0]], requires_grad=True
+            )
+            unequal_leaf = module.tensor(
+                [[0.0, 0.0], [0.0, 0.0]], requires_grad=True
+            )
+            weights = module.tensor([[1.0, 2.0], [3.0, 4.0]])
+            (left_leaf * weights).sum().backward()
+            (right_leaf * weights).sum().backward()
+            (
+                unequal_leaf * module.tensor([[1.0, 2.0], [3.0, 5.0]])
+            ).sum().backward()
+
+            return (
+                (offset_left, offset_right),
+                (permuted_left, permuted_left.clone()),
+                (channels_last_left, channels_last_left.clone()),
+                (nan_left, nan_right),
+                (left_leaf.grad.transpose(0, 1), right_leaf.grad.transpose(0, 1)),
+                (left_leaf.grad.transpose(0, 1), unequal_leaf.grad.transpose(0, 1)),
+            )
+
+        actual_cases = make_cases(torch)
+        expected_cases = make_cases(reference_torch)
+        for case, ((actual_left, actual_right), (expected_left, expected_right)) in enumerate(
+            zip(actual_cases, expected_cases)
+        ):
+            with self.subTest(case=case):
+                self.assertEqual(actual_left.shape, expected_left.shape)
+                self.assertEqual(actual_left.stride(), expected_left.stride())
+                self.assertEqual(
+                    actual_left.storage_offset(), expected_left.storage_offset()
+                )
+                self.assertEqual(actual_right.shape, expected_right.shape)
+                self.assertEqual(actual_right.stride(), expected_right.stride())
+                self.assert_equal_calls_match(
+                    actual_left, actual_right, expected_left, expected_right
+                )
+
     def test_callable_metadata_matches_pytorch_2_13(self):
         self.assertEqual(reference_torch.__version__.split("+")[0], "2.13.0")
         actual = torch.tensor([1.0])

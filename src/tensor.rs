@@ -316,11 +316,22 @@ impl PartialEq for Tensor {
         self.shape == other.shape
             && self.dtype() == other.dtype()
             && self.device() == other.device()
-            && match (self.contiguous_slice(), other.contiguous_slice()) {
-                (Some(left), Some(right)) => contiguous_values_equal(left, right),
-                (left, right) => self
-                    .logical_values_from_contiguous_slice(left)
-                    .eq(other.logical_values_from_contiguous_slice(right)),
+            && {
+                let left_contiguous = self.contiguous_slice();
+                let right_contiguous = other.contiguous_slice();
+                if let (Some(left), Some(right)) = (left_contiguous, right_contiguous) {
+                    contiguous_values_equal(left, right)
+                } else if self.strides == other.strides
+                    && let (Some(left), Some(right)) =
+                        (self.dense_physical_slice(), other.dense_physical_slice())
+                {
+                    // Identical dense strides map each logical index to the
+                    // same position within both physical storage intervals.
+                    contiguous_values_equal(left, right)
+                } else {
+                    self.logical_values_from_contiguous_slice(left_contiguous)
+                        .eq(other.logical_values_from_contiguous_slice(right_contiguous))
+                }
             }
     }
 }
@@ -5424,7 +5435,85 @@ mod tests {
             .unwrap();
         let contiguous = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
         assert!(strided.contiguous_slice().is_none());
+        assert!(strided.is_non_overlapping_and_dense());
+        assert!(contiguous.is_non_overlapping_and_dense());
+        assert_ne!(strided.stride(), contiguous.stride());
         assert_eq!(strided, contiguous);
+    }
+
+    #[test]
+    fn equality_fast_path_compares_matching_dense_edge_values_and_mismatches() {
+        let (edge_left, edge_right) = matching_offset_transposed_edge_tensors();
+        assert_ne!(edge_left.storage_offset(), 0);
+        assert_ne!(edge_right.storage_offset(), 0);
+        assert_matching_dense_equality(&edge_left, &edge_right, true);
+
+        let values = [1.0_f32.to_bits(); 18];
+        let left = offset_contiguous_tensor(&values, &[3, 6])
+            .transpose(0, 1)
+            .unwrap();
+        for mismatch in 0..values.len() {
+            let mut right_values = values;
+            right_values[mismatch] = 2.0_f32.to_bits();
+            let right = offset_contiguous_tensor(&right_values, &[3, 6])
+                .transpose(0, 1)
+                .unwrap();
+            assert_matching_dense_equality(&left, &right, false);
+        }
+
+        let nan = offset_contiguous_tensor(
+            &[0x3f80_0000, 0x4000_0000, 0x7fc1_2345, 0x4080_0000],
+            &[2, 2],
+        )
+        .transpose(0, 1)
+        .unwrap();
+        assert_matching_dense_equality(&nan, &nan, false);
+    }
+
+    #[test]
+    fn equality_fast_path_compares_permuted_and_channels_last_layouts() {
+        let permuted_left = Tensor::from_vec((0_u8..24).map(f32::from).collect(), [2, 3, 4])
+            .unwrap()
+            .permute_axes([2, 0, 1])
+            .unwrap();
+        let permuted_right = permuted_left.try_clone().unwrap();
+        assert_matching_dense_equality(&permuted_left, &permuted_right, true);
+
+        let channels_last_left =
+            Tensor::from_vec((0_u8..48).map(f32::from).collect(), [2, 3, 2, 4])
+                .unwrap()
+                .try_contiguous(MemoryFormat::ChannelsLast)
+                .unwrap();
+        let channels_last_right = channels_last_left.try_clone().unwrap();
+        assert!(channels_last_left.is_channels_last_contiguous());
+        assert_matching_dense_equality(&channels_last_left, &channels_last_right, true);
+
+        let (edge_left, edge_right) = matching_offset_transposed_edge_tensors();
+        let shared_left = shared_gradient_copy(&edge_left);
+        let shared_right = shared_gradient_copy(&edge_right);
+        assert!(shared_left.is_non_overlapping_and_dense());
+        assert!(shared_right.is_non_overlapping_and_dense());
+        assert_eq!(shared_left.stride(), shared_right.stride());
+        assert!(shared_left.dense_physical_slice().is_none());
+        assert!(shared_right.dense_physical_slice().is_none());
+        assert_eq!(shared_left, shared_right);
+        assert_eq!(edge_left, shared_right);
+        assert_eq!(shared_left, edge_right);
+        let mut unequal_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+            0x0000_0000,
+            0x8000_0000,
+        ];
+        unequal_bits[5] = 0x4000_0000;
+        let unequal = offset_contiguous_tensor(&unequal_bits, &[2, 4])
+            .transpose(0, 1)
+            .unwrap();
+        assert_ne!(shared_left, shared_gradient_copy(&unequal));
     }
 
     #[test]
@@ -5670,6 +5759,55 @@ mod tests {
             .unwrap()
             .transpose(0, 1)
             .unwrap()
+    }
+
+    fn matching_offset_transposed_edge_tensors() -> (Tensor, Tensor) {
+        let left = offset_contiguous_tensor(
+            &[
+                0x0000_0000,
+                0x8000_0000,
+                0x7f80_0000,
+                0xff80_0000,
+                0x3f80_0000,
+                0xbf80_0000,
+                0x0000_0000,
+                0x8000_0000,
+            ],
+            &[2, 4],
+        )
+        .transpose(0, 1)
+        .unwrap();
+        let right = offset_contiguous_tensor(
+            &[
+                0x8000_0000,
+                0x0000_0000,
+                0x7f80_0000,
+                0xff80_0000,
+                0x3f80_0000,
+                0xbf80_0000,
+                0x8000_0000,
+                0x0000_0000,
+            ],
+            &[2, 4],
+        )
+        .transpose(0, 1)
+        .unwrap();
+        (left, right)
+    }
+
+    fn assert_matching_dense_equality(left: &Tensor, right: &Tensor, expected: bool) {
+        assert_eq!(left.shape(), right.shape());
+        assert_eq!(left.stride(), right.stride());
+        assert!(!left.is_contiguous());
+        assert!(!right.is_contiguous());
+        assert!(left.is_non_overlapping_and_dense());
+        assert!(right.is_non_overlapping_and_dense());
+        assert!(left.contiguous_slice().is_none());
+        assert!(right.contiguous_slice().is_none());
+        assert!(left.dense_physical_slice().is_some());
+        assert!(right.dense_physical_slice().is_some());
+        assert_eq!(left.logical_values().eq(right.logical_values()), expected);
+        assert_eq!(left == right, expected);
     }
 
     #[test]
