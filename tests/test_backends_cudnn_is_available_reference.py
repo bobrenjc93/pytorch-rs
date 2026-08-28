@@ -355,7 +355,6 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             "benchmark_limit",
             "conv",
             "depthwise_kernel",
-            "deterministic",
             "flags",
             "fp32_precision",
             "is_acceptable",
@@ -370,6 +369,8 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         self.assertIs(type(expected.enabled), bool)
         self.assertIs(type(actual.benchmark), bool)
         self.assertIs(type(expected.benchmark), bool)
+        self.assertIs(type(actual.deterministic), bool)
+        self.assertIs(type(expected.deterministic), bool)
 
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertTrue(hasattr(reference_torch, "cuda"))
