@@ -246,7 +246,6 @@ class CudnnIsAvailableTests(unittest.TestCase):
             "CUDNN_TENSOR_DTYPES",
             "conv",
             "depthwise_kernel",
-            "flags",
             "fp32_precision",
             "is_acceptable",
             "rnn",
@@ -305,9 +304,10 @@ os.environ.update(
 )
 import torch_rs as torch
 from torch_rs.backends import cudnn
-from torch_rs.backends.cudnn import is_available, version
+from torch_rs.backends.cudnn import flags, is_available, version
 
 assert torch.backends.cudnn is cudnn
+assert cudnn.flags is flags
 assert cudnn.is_available is is_available
 assert cudnn.version is version
 assert is_available.__code__.co_names == ("torch", "_C", "_has_cudnn")
@@ -359,7 +359,17 @@ cudnn.deterministic = False
 cudnn.allow_tf32 = True
 assert not hasattr(torch, "_has_cudnn")
 assert not hasattr(torch, "cuda")
-assert not hasattr(cudnn, "flags")
+with flags(False, True, 11, True, False):
+    assert cudnn.enabled is False
+    assert cudnn.benchmark is True
+    assert cudnn.benchmark_limit == 11
+    assert cudnn.deterministic is True
+    assert cudnn.allow_tf32 is False
+assert cudnn.enabled is True
+assert cudnn.benchmark is False
+assert cudnn.benchmark_limit == 10
+assert cudnn.deterministic is False
+assert cudnn.allow_tf32 is True
 assert not any(
     name.split(".", 1)[0] in RejectExternalRuntimeImport.blocked
     for name in sys.modules
