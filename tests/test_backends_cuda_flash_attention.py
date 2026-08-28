@@ -100,8 +100,10 @@ class CudaFlashAttentionAvailabilityTests(unittest.TestCase):
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
             {
+                "allow_fp16_bf16_reduction_math_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
+                "fp16_bf16_reduction_math_sdp_allowed",
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",

@@ -7361,6 +7361,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1205",
+      "recordedAt": "2026-08-28T07:24:06.407Z",
+      "label": "PR #1205",
+      "kind": "leaf",
+      "prNumber": 1205,
+      "title": "Add reduced-precision math-SDPA reduction preference",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 99.8,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 82.5,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
