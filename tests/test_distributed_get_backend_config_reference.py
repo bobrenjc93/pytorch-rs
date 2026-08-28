@@ -227,6 +227,7 @@ class DistributedGetBackendConfigReferenceTests(unittest.TestCase):
             "is_nccl_available",
             "is_ucc_available",
             "is_xccl_available",
+            "default_pg_timeout",
             "get_group_rank",
             "get_global_rank",
             "get_process_group_ranks",
