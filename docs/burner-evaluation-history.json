@@ -7329,6 +7329,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1196",
+      "recordedAt": "2026-08-28T04:57:56.233Z",
+      "label": "PR #1196",
+      "kind": "leaf",
+      "prNumber": 1196,
+      "title": "Add CUDA memory-efficient SDP preference control",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 99.4,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 82.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
