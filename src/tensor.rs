@@ -505,6 +505,19 @@ impl Tensor {
         }
     }
 
+    fn from_scalar(value: f32, dtype: DType, device: Device) -> Self {
+        Self {
+            storage: Arc::new(Storage::from_scalar(value, dtype, device)),
+            shape: Vec::new(),
+            strides: Vec::new(),
+            offset: 0,
+            elements: 1,
+            output_nr: 0,
+            view_requires_grad: false,
+            autograd: None,
+        }
+    }
+
     #[must_use]
     pub fn shape(&self) -> &[usize] {
         &self.shape
@@ -2744,16 +2757,17 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        let mut output = Self::from_owned_parts(
-            vec![
-                self.logical_values()
-                    .fold(0.0_f32, |total, value| total + value),
-            ],
-            Vec::new(),
-            Vec::new(),
-            self.dtype(),
-            self.device(),
-        );
+        // Select the layout once so contiguous values stay on the slice
+        // iterator while arbitrary views retain the stride-aware iterator.
+        let total = match self.logical_values().inner {
+            LogicalValuesInner::Contiguous(values) => {
+                values.fold(0.0_f32, |total, value| total + value)
+            }
+            inner @ LogicalValuesInner::Strided { .. } => {
+                LogicalValues { inner }.fold(0.0_f32, |total, value| total + value)
+            }
+        };
+        let mut output = Self::from_scalar(total, self.dtype(), self.device());
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
@@ -5237,6 +5251,72 @@ mod tests {
                 .logical_values()
                 .map(f32::to_bits)
                 .eq(expected)
+        );
+    }
+
+    #[test]
+    fn sum_preserves_sequential_bits_for_contiguous_and_fallback_layouts() {
+        let assert_matches_logical_fold = |tensor: &Tensor| {
+            let expected = tensor
+                .logical_values()
+                .fold(0.0_f32, |total, value| total + value);
+            assert_eq!(tensor.sum().item().unwrap().to_bits(), expected.to_bits());
+        };
+
+        for tensor in [
+            Tensor::from_vec(Vec::new(), [0]).unwrap(),
+            Tensor::from_vec(vec![-0.0], [1]).unwrap(),
+            Tensor::from_vec(vec![f32::INFINITY], [1]).unwrap(),
+            Tensor::from_vec(vec![f32::NEG_INFINITY], [1]).unwrap(),
+            Tensor::from_vec(vec![f32::INFINITY, f32::NEG_INFINITY], [2]).unwrap(),
+            Tensor::from_vec(vec![f32::from_bits(0x7fc1_2345), 1.0], [2]).unwrap(),
+            Tensor::from_vec(vec![1.0e20, -1.0e20, 3.0], [3]).unwrap(),
+        ] {
+            assert!(tensor.is_contiguous());
+            assert_matches_logical_fold(&tensor);
+        }
+
+        let source = Tensor::from_vec(
+            vec![
+                99.0, 98.0, 97.0, 96.0, 1.0e20, -1.0e20, 3.0, -0.0, 95.0, 94.0, 93.0, 92.0,
+            ],
+            [3, 4],
+        )
+        .unwrap();
+        let offset = source.index_integer(1).unwrap();
+        assert!(offset.is_contiguous());
+        assert_eq!(offset.storage_offset(), 4);
+        assert_eq!(offset.sum().item().unwrap().to_bits(), 3.0_f32.to_bits());
+        assert_matches_logical_fold(&offset);
+
+        let noncontiguous =
+            Tensor::from_vec(vec![1.0e20, 3.0, -1.0e20, -1.0e20, 4.0, 1.0e20], [2, 3])
+                .unwrap()
+                .transpose(0, 1)
+                .unwrap();
+        assert!(!noncontiguous.is_contiguous());
+        assert_matches_logical_fold(&noncontiguous);
+
+        let shared =
+            shared_gradient_copy(&Tensor::from_vec(vec![1.0e20, -1.0e20, 3.0, -0.0], [4]).unwrap());
+        assert!(shared.is_contiguous());
+        assert!(shared.contiguous_slice().is_none());
+        assert_matches_logical_fold(&shared);
+    }
+
+    #[test]
+    fn sum_of_contiguous_offset_view_preserves_autograd_mapping() {
+        let source = Tensor::from_vec((0_u8..12).map(f32::from).collect(), [3, 4])
+            .unwrap()
+            .with_requires_grad(true);
+        let offset = source.index_integer(1).unwrap();
+
+        assert!(offset.is_contiguous());
+        assert_eq!(offset.storage_offset(), 4);
+        offset.sum().backward().unwrap();
+        assert_eq!(
+            source.grad().unwrap().unwrap().as_slice(),
+            [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
         );
     }
 

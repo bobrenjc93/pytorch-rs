@@ -59,6 +59,7 @@ class TensorSumTests(unittest.TestCase):
                 torch.zeros((2, 0, 3)).transpose(0, 2)[1],
                 np.float32(0.0),
             ),
+            ("contiguous offset", dense[1], np.float32(210.0)),
             ("offset", noncontiguous[1], np.float32(66.0)),
             ("noncontiguous", noncontiguous, np.float32(276.0)),
         )

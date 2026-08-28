@@ -13,6 +13,8 @@ enum StoragePayload {
 }
 
 enum StorageData<T> {
+    // Scalar reductions can share the Storage allocation with their payload.
+    Inline(T),
     Owned(Vec<T>),
     SharedGradient(Mutex<Vec<T>>),
 }
@@ -31,6 +33,7 @@ impl StorageData<f32> {
 
     fn owned_values(&self) -> Option<&[f32]> {
         match self {
+            Self::Inline(value) => Some(std::slice::from_ref(value)),
             Self::Owned(values) => Some(values),
             Self::SharedGradient(_) => None,
         }
@@ -53,6 +56,7 @@ impl StorageData<f32> {
 
     fn into_range(self, start: usize, end: usize) -> Vec<f32> {
         let values = match self {
+            Self::Inline(value) => return std::slice::from_ref(&value)[start..end].to_vec(),
             Self::Owned(values) => values,
             Self::SharedGradient(values) => values
                 .into_inner()
@@ -72,7 +76,7 @@ impl StorageData<f32> {
         from_snapshot: impl FnOnce(Vec<f32>) -> S,
     ) -> Result<S, E> {
         match self {
-            Self::Owned(_) => Ok(reuse()),
+            Self::Inline(_) | Self::Owned(_) => Ok(reuse()),
             Self::SharedGradient(values) => {
                 let values = values
                     .lock()
@@ -84,7 +88,7 @@ impl StorageData<f32> {
 
     fn accumulate_shared_gradient(&self, contribution: Vec<f32>) {
         match self {
-            Self::Owned(_) => {
+            Self::Inline(_) | Self::Owned(_) => {
                 unreachable!("leaf gradients always use shared gradient storage");
             }
             Self::SharedGradient(existing) => {
@@ -101,6 +105,7 @@ impl StorageData<f32> {
 
     fn with_values<R>(&self, read: impl FnOnce(&[f32]) -> R) -> R {
         match self {
+            Self::Inline(value) => read(std::slice::from_ref(value)),
             Self::Owned(values) => read(values),
             Self::SharedGradient(values) => {
                 let values = values
@@ -113,6 +118,16 @@ impl StorageData<f32> {
 }
 
 impl Storage {
+    pub(crate) fn from_scalar(value: f32, dtype: DType, device: Device) -> Self {
+        Self {
+            payload: match (device, dtype) {
+                (Device::Cpu, DType::Float32) => {
+                    StoragePayload::CpuFloat32(StorageData::Inline(value))
+                }
+            },
+        }
+    }
+
     pub(crate) fn from_owned(data: Vec<f32>, dtype: DType, device: Device) -> Self {
         Self {
             payload: match (device, dtype) {
@@ -266,6 +281,34 @@ mod tests {
         let values = Storage::from_owned(values, DType::Float32, Device::Cpu).into_range(0, 3);
         assert_eq!(values.as_ptr(), pointer);
         assert_eq!(values, [5.0, 6.0, 7.0]);
+    }
+
+    #[test]
+    fn inline_float32_payload_preserves_pointer_and_copy_paths() {
+        let storage = Storage::from_scalar(-0.0, DType::Float32, Device::Cpu);
+        let pointer = storage.data_ptr();
+
+        assert_eq!(storage.dtype(), DType::Float32);
+        assert_eq!(storage.device(), Device::Cpu);
+        assert_eq!(storage.len(), 1);
+        assert_eq!(
+            storage.owned_values().unwrap()[0].to_bits(),
+            (-0.0_f32).to_bits()
+        );
+        assert_eq!(storage.value(0).unwrap().to_bits(), (-0.0_f32).to_bits());
+        assert_eq!(storage.value(1), None);
+        assert_eq!(
+            storage
+                .try_copy_values(|values| Ok::<_, Infallible>(values.to_vec()))
+                .unwrap()[0]
+                .to_bits(),
+            (-0.0_f32).to_bits()
+        );
+        assert_eq!(storage.data_ptr(), pointer);
+        assert_eq!(storage.copy_range(0, 1)[0].to_bits(), (-0.0_f32).to_bits());
+
+        let values = Storage::from_scalar(-0.0, DType::Float32, Device::Cpu).into_range(0, 1);
+        assert_eq!(values[0].to_bits(), (-0.0_f32).to_bits());
     }
 
     #[test]
