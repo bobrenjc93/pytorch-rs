@@ -1,6 +1,6 @@
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{
@@ -46,6 +46,7 @@ static TORCH_FUNCTION_PLAIN_METHOD_WARNING_EMITTED: AtomicBool = AtomicBool::new
 static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 static CUDNN_ENABLED: AtomicBool = AtomicBool::new(true);
 static CUDNN_BENCHMARK: AtomicBool = AtomicBool::new(false);
+static CUDNN_BENCHMARK_LIMIT: AtomicI32 = AtomicI32::new(10);
 static CUDNN_DETERMINISTIC: AtomicBool = AtomicBool::new(false);
 static CUDNN_ALLOW_TF32: AtomicBool = AtomicBool::new(true);
 static MEM_EFFICIENT_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
@@ -5056,6 +5057,62 @@ fn get_cudnn_benchmark_native() -> bool {
     CUDNN_BENCHMARK.load(Ordering::SeqCst)
 }
 
+#[allow(
+    unsafe_code,
+    clippy::cast_possible_truncation,
+    reason = "PyTorch accepts int64 values and deliberately narrows them to C int"
+)]
+fn set_cudnn_benchmark_limit_native(object: &Bound<'_, PyAny>) -> PyResult<()> {
+    let is_integer = !object.is_instance_of::<PyBool>()
+        && (object.is_instance_of::<PyInt>() || has_numpy_integer_ancestry(object)?);
+    if !is_integer {
+        let type_name = python_type_name(object)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "set_benchmark_limit_cudnn expects an int, but got {type_name}"
+        )));
+    }
+
+    let mut overflow = 0;
+    // SAFETY: validation above accepts only Python int instances and NumPy
+    // integer scalars. The object remains live and overflow is writable.
+    let value = unsafe { ffi::PyLong_AsLongLongAndOverflow(object.as_ptr(), &raw mut overflow) };
+    if PyErr::occurred(object.py()) {
+        return Err(PyErr::fetch(object.py()));
+    }
+    if overflow != 0 {
+        return Err(PyValueError::new_err("Overflow when unpacking long long"));
+    }
+
+    // PyTorch first unpacks to int64_t and then narrows with a C++ cast to int.
+    CUDNN_BENCHMARK_LIMIT.store(value as i32, Ordering::SeqCst);
+    Ok(())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_cudnn_benchmark_limit_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    object: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: CPython supplies a live borrowed object to a METH_O callback.
+    let object = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, object) };
+    set_cudnn_benchmark_limit_native(&object)?;
+    Ok(py.None().into_ptr())
+}
+
+#[pyfunction(
+    name = "_cuda_get_cudnn_benchmark_limit",
+    signature = (),
+    text_signature = None
+)]
+#[pyo3(pass_module)]
+fn get_cudnn_benchmark_limit_native(_module: &Bound<'_, PyModule>) -> i32 {
+    CUDNN_BENCHMARK_LIMIT.load(Ordering::SeqCst)
+}
+
 // PyTorch publishes this private setter as a module-bound METH_O built-in.
 // Keep validation separate from its CPython wrapper so assignment through the
 // proxy and direct native calls share one atomic state transition.
@@ -5193,11 +5250,43 @@ fn add_cudnn_allow_tf32_setter(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(function)
 }
 
+#[allow(
+    unsafe_code,
+    reason = "PyCFunction_NewEx requires an audited stable-ABI raw-pointer call"
+)]
+fn add_cudnn_benchmark_limit_setter(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
+    let mut definition = pyo3::impl_::pymethods::PyMethodDef::noargs(
+        c"_cuda_set_cudnn_benchmark_limit",
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            binaryfunc,
+            set_cudnn_benchmark_limit_callback
+        ),
+        c"",
+    )
+    .into_raw();
+    definition.ml_flags = ffi::METH_O;
+    let definition = Box::leak(Box::new(definition));
+    let module_name = module.name()?;
+    // SAFETY: the leaked method definition, module, and module name all remain
+    // live for the duration required by the newly owned built-in function.
+    let function = unsafe {
+        Bound::<PyAny>::from_owned_ptr_or_err(
+            py,
+            ffi::PyCFunction_NewEx(definition, module.as_ptr(), module_name.as_ptr()),
+        )?
+        .cast_into::<PyCFunction>()?
+    };
+    module.add_function(function)
+}
+
 fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(set_cudnn_enabled_native, module)?)?;
     module.add_function(wrap_pyfunction!(get_cudnn_enabled_native, module)?)?;
     module.add_function(wrap_pyfunction!(set_cudnn_benchmark_native, module)?)?;
     module.add_function(wrap_pyfunction!(get_cudnn_benchmark_native, module)?)?;
+    add_cudnn_benchmark_limit_setter(module)?;
+    module.add_function(wrap_pyfunction!(get_cudnn_benchmark_limit_native, module)?)?;
     add_cudnn_deterministic_setter(module)?;
     module.add_function(wrap_pyfunction!(get_cudnn_deterministic_native, module)?)?;
     add_cudnn_allow_tf32_setter(module)?;
@@ -5208,6 +5297,8 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "_get_cudnn_enabled",
         "_set_cudnn_benchmark",
         "_get_cudnn_benchmark",
+        "_cuda_set_cudnn_benchmark_limit",
+        "_cuda_get_cudnn_benchmark_limit",
         "_set_cudnn_deterministic",
         "_get_cudnn_deterministic",
         "_set_cudnn_allow_tf32",
@@ -10938,6 +11029,53 @@ fn validate_dimension_swap_argument_prefix<const N: usize>(
 struct PyTypeObjectNamePrefix {
     _ob_base: ffi::PyVarObject,
     tp_name: *const c_char,
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyType_GetFlags reads immutable flags from a live type through the stable ABI"
+)]
+fn is_native_immutable_python_type(value_type: &Bound<'_, PyType>) -> bool {
+    // SAFETY: value_type is a live Python type object for the duration of the call.
+    let flags = unsafe { ffi::PyType_GetFlags(value_type.as_type_ptr()) };
+    flags & ffi::Py_TPFLAGS_IMMUTABLETYPE != 0 && flags & ffi::Py_TPFLAGS_HEAPTYPE == 0
+}
+
+#[allow(
+    unsafe_code,
+    reason = "CPython exposes the non-overridable tp_name in every live type-object prefix"
+)]
+fn cpython_type_object_name<'a>(value_type: &'a Bound<'_, PyType>) -> PyResult<&'a CStr> {
+    let prefix = value_type.as_type_ptr().cast::<PyTypeObjectNamePrefix>();
+    // SAFETY: every classic CPython type object starts with PyVarObject and
+    // tp_name, which remains live while value_type is borrowed.
+    let name = unsafe { (*prefix).tp_name };
+    if name.is_null() {
+        return Err(PyRuntimeError::new_err("Python type has no tp_name"));
+    }
+    // SAFETY: CPython requires tp_name to remain NUL-terminated for the
+    // lifetime of the live type object.
+    Ok(unsafe { CStr::from_ptr(name) })
+}
+
+fn has_numpy_integer_ancestry(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    let py = value.py();
+    // Calling type's descriptor directly bypasses metaclass overrides, while
+    // __mro__ itself is immutable for the duration of this check.
+    let mro = py
+        .get_type::<PyType>()
+        .getattr("__getattribute__")?
+        .call1((value.get_type(), "__mro__"))?
+        .cast_into::<PyTuple>()?;
+    for base in mro.iter() {
+        let base = base.cast_into::<PyType>()?;
+        if is_native_immutable_python_type(&base)
+            && cpython_type_object_name(&base)? == c"numpy.integer"
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[allow(

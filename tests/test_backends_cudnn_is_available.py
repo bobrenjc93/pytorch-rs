@@ -244,7 +244,6 @@ class CudnnIsAvailableTests(unittest.TestCase):
         self.assertIs(cudnn.version(), None)
         for name in (
             "CUDNN_TENSOR_DTYPES",
-            "benchmark_limit",
             "conv",
             "depthwise_kernel",
             "flags",
@@ -258,12 +257,15 @@ class CudnnIsAvailableTests(unittest.TestCase):
 
         self.assertIs(type(cudnn.enabled), bool)
         self.assertIs(type(cudnn.benchmark), bool)
+        self.assertIs(type(cudnn.benchmark_limit), int)
         self.assertIs(type(cudnn.deterministic), bool)
         self.assertIs(type(cudnn.allow_tf32), bool)
         self.assertTrue(hasattr(torch._C, "_get_cudnn_enabled"))
         self.assertTrue(hasattr(torch._C, "_set_cudnn_enabled"))
         self.assertTrue(hasattr(torch._C, "_get_cudnn_benchmark"))
         self.assertTrue(hasattr(torch._C, "_set_cudnn_benchmark"))
+        self.assertTrue(hasattr(torch._C, "_cuda_get_cudnn_benchmark_limit"))
+        self.assertTrue(hasattr(torch._C, "_cuda_set_cudnn_benchmark_limit"))
         self.assertTrue(hasattr(torch._C, "_get_cudnn_deterministic"))
         self.assertTrue(hasattr(torch._C, "_set_cudnn_deterministic"))
         self.assertTrue(hasattr(torch._C, "_get_cudnn_allow_tf32"))
@@ -315,32 +317,44 @@ assert is_available() is torch._C._has_cudnn is False
 assert version() is None
 assert cudnn.enabled is True
 assert cudnn.benchmark is False
+assert cudnn.benchmark_limit == 10
 assert cudnn.deterministic is False
 assert cudnn.allow_tf32 is True
 cudnn.enabled = False
 assert cudnn.enabled is False
 assert cudnn.benchmark is False
+assert cudnn.benchmark_limit == 10
 assert cudnn.deterministic is False
 assert cudnn.allow_tf32 is True
 cudnn.benchmark = True
 assert cudnn.enabled is False
 assert cudnn.benchmark is True
+assert cudnn.benchmark_limit == 10
+assert cudnn.deterministic is False
+assert cudnn.allow_tf32 is True
+cudnn.benchmark_limit = 2**31
+assert cudnn.enabled is False
+assert cudnn.benchmark is True
+assert cudnn.benchmark_limit == -(2**31)
 assert cudnn.deterministic is False
 assert cudnn.allow_tf32 is True
 cudnn.deterministic = True
 assert cudnn.enabled is False
 assert cudnn.benchmark is True
+assert cudnn.benchmark_limit == -(2**31)
 assert cudnn.deterministic is True
 assert cudnn.allow_tf32 is True
 cudnn.allow_tf32 = False
 assert cudnn.enabled is False
 assert cudnn.benchmark is True
+assert cudnn.benchmark_limit == -(2**31)
 assert cudnn.deterministic is True
 assert cudnn.allow_tf32 is False
 assert is_available() is False
 assert version() is None
 cudnn.enabled = True
 cudnn.benchmark = False
+cudnn.benchmark_limit = 10
 cudnn.deterministic = False
 cudnn.allow_tf32 = True
 assert not hasattr(torch, "_has_cudnn")
