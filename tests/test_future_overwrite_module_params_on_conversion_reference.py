@@ -20,7 +20,7 @@ except ImportError:
 
 class _RejectTruthiness:
     def __bool__(self):
-        raise AssertionError("the overwrite policy must not request truthiness")
+        raise AssertionError("the future policy must not request truthiness")
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -29,7 +29,7 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "torch.__future__ overwrite-policy differentials require "
+                "torch.__future__ policy differentials require "
                 "pinned PyTorch 2.13.0"
             )
 
@@ -66,32 +66,49 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def state_contract(self, module):
+    def state_contract(self, module, policy):
+        getter = getattr(module, f"get_{policy}_module_params_on_conversion")
+        setter = getattr(module, f"set_{policy}_module_params_on_conversion")
+        storage_name = f"_{policy}_module_params_on_conversion"
         outcomes = [
-            module.get_overwrite_module_params_on_conversion() is False,
-            module._overwrite_module_params_on_conversion is False,
+            getter() is False,
+            getattr(module, storage_name) is False,
         ]
         for value in (True, False, None, 0, 1, 0.0, "", [], object(), _RejectTruthiness()):
-            outcomes.append(
-                module.set_overwrite_module_params_on_conversion(value) is None
-            )
-            outcomes.append(module._overwrite_module_params_on_conversion is value)
-            outcomes.append(
-                module.get_overwrite_module_params_on_conversion() is value
-            )
+            outcomes.append(setter(value) is None)
+            outcomes.append(getattr(module, storage_name) is value)
+            outcomes.append(getter() is value)
         keyword_value = object()
+        outcomes.append(setter(value=keyword_value) is None)
+        outcomes.append(getter() is keyword_value)
+        return outcomes
+
+    def independence_contract(self, module):
+        overwrite_value = object()
+        swap_value = object()
+        next_overwrite_value = object()
+        outcomes = [
+            module.set_overwrite_module_params_on_conversion(overwrite_value) is None,
+            module.set_swap_module_params_on_conversion(swap_value) is None,
+            module.get_overwrite_module_params_on_conversion() is overwrite_value,
+            module.get_swap_module_params_on_conversion() is swap_value,
+        ]
         outcomes.append(
-            module.set_overwrite_module_params_on_conversion(
-                value=keyword_value
-            )
+            module.set_overwrite_module_params_on_conversion(next_overwrite_value)
             is None
         )
-        outcomes.append(
-            module.get_overwrite_module_params_on_conversion() is keyword_value
+        outcomes.extend(
+            (
+                module.get_overwrite_module_params_on_conversion()
+                is next_overwrite_value,
+                module.get_swap_module_params_on_conversion() is swap_value,
+            )
         )
         return outcomes
 
-    def thread_contract(self, module):
+    def thread_contract(self, module, policy):
+        getter = getattr(module, f"get_{policy}_module_params_on_conversion")
+        setter = getattr(module, f"set_{policy}_module_params_on_conversion")
         initial = object()
         worker_value = object()
         main_value = object()
@@ -100,24 +117,16 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
         outcomes = {}
         errors = []
 
-        module.set_overwrite_module_params_on_conversion(initial)
+        setter(initial)
 
         def worker():
             try:
-                outcomes["initial"] = (
-                    module.get_overwrite_module_params_on_conversion() is initial
-                )
-                outcomes["setter"] = (
-                    module.set_overwrite_module_params_on_conversion(worker_value)
-                    is None
-                )
+                outcomes["initial"] = getter() is initial
+                outcomes["setter"] = setter(worker_value) is None
                 worker_written.set()
                 if not main_written.wait(timeout=10):
                     raise TimeoutError("main thread did not publish its state")
-                outcomes["final"] = (
-                    module.get_overwrite_module_params_on_conversion()
-                    is main_value
-                )
+                outcomes["final"] = getter() is main_value
             except BaseException as error:
                 errors.append((type(error).__name__, str(error)))
                 worker_written.set()
@@ -125,12 +134,8 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
         thread = threading.Thread(target=worker)
         thread.start()
         worker_ready = worker_written.wait(timeout=10)
-        main_saw_worker = (
-            module.get_overwrite_module_params_on_conversion() is worker_value
-        )
-        main_setter = (
-            module.set_overwrite_module_params_on_conversion(main_value) is None
-        )
+        main_saw_worker = getter() is worker_value
+        main_setter = setter(main_value) is None
         main_written.set()
         thread.join(timeout=10)
         return (
@@ -142,9 +147,12 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
             outcomes,
         )
 
-    def reload_contract(self, root, module):
-        old_getter = module.get_overwrite_module_params_on_conversion
-        old_setter = module.set_overwrite_module_params_on_conversion
+    def reload_contract(self, root, module, policy):
+        getter_name = f"get_{policy}_module_params_on_conversion"
+        setter_name = f"set_{policy}_module_params_on_conversion"
+        storage_name = f"_{policy}_module_params_on_conversion"
+        old_getter = getattr(module, getter_name)
+        old_setter = getattr(module, setter_name)
         namespace = module.__dict__
         annotations = module.__annotations__
         old_setter(object())
@@ -156,23 +164,21 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
             module.__annotations__ is annotations,
             root.__future__ is module,
             sys.modules[module.__name__] is module,
-            module._overwrite_module_params_on_conversion is False,
-            module.get_overwrite_module_params_on_conversion() is False,
+            getattr(module, storage_name) is False,
+            getattr(module, getter_name)() is False,
             old_getter() is False,
-            module.get_overwrite_module_params_on_conversion is not old_getter,
-            module.set_overwrite_module_params_on_conversion is not old_setter,
+            getattr(module, getter_name) is not old_getter,
+            getattr(module, setter_name) is not old_setter,
         )
 
         replacement = object()
         old_setter(replacement)
-        old_function_state = (
-            module.get_overwrite_module_params_on_conversion() is replacement
-        )
+        old_function_state = getattr(module, getter_name)() is replacement
 
         function_outcomes = []
         for name, old_function in (
-            ("get_overwrite_module_params_on_conversion", old_getter),
-            ("set_overwrite_module_params_on_conversion", old_setter),
+            (getter_name, old_getter),
+            (setter_name, old_setter),
         ):
             new_function = getattr(module, name)
             try:
@@ -205,13 +211,21 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
         return initial, old_function_state, function_outcomes
 
     def test_state_identity_and_thread_visibility_match_pytorch_2_13(self):
+        for policy in ("overwrite", "swap"):
+            with self.subTest(policy=policy, contract="state"):
+                self.assertEqual(
+                    self.state_contract(self.actual, policy),
+                    self.state_contract(self.expected, policy),
+                )
+            with self.subTest(policy=policy, contract="thread"):
+                self.assertEqual(
+                    self.thread_contract(self.actual, policy),
+                    self.thread_contract(self.expected, policy),
+                )
+
         self.assertEqual(
-            self.state_contract(self.actual),
-            self.state_contract(self.expected),
-        )
-        self.assertEqual(
-            self.thread_contract(self.actual),
-            self.thread_contract(self.expected),
+            self.independence_contract(self.actual),
+            self.independence_contract(self.expected),
         )
 
     def test_signature_annotations_documentation_and_identity_match(self):
@@ -219,7 +233,9 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
         expected = self.expected
         supported = {
             "get_overwrite_module_params_on_conversion",
+            "get_swap_module_params_on_conversion",
             "set_overwrite_module_params_on_conversion",
+            "set_swap_module_params_on_conversion",
         }
 
         self.assertIs(torch.__future__, actual)
@@ -232,17 +248,16 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
         self.assertEqual(hasattr(actual, "__all__"), hasattr(expected, "__all__"))
         self.assertEqual(
             actual.__annotations__,
-            {
-                name: annotation
-                for name, annotation in expected.__annotations__.items()
-                if name == "_overwrite_module_params_on_conversion"
-            },
+            expected.__annotations__,
         )
         self.assertEqual(
             {name for name in vars(actual) if not name.startswith("_")},
             supported,
         )
-        self.assertTrue(supported.issubset(vars(expected)))
+        self.assertEqual(
+            {name for name in vars(expected) if not name.startswith("_")},
+            supported,
+        )
 
         for name in supported:
             with self.subTest(function=name):
@@ -302,7 +317,9 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
         expected = self.expected
         supported = {
             "get_overwrite_module_params_on_conversion",
+            "get_swap_module_params_on_conversion",
             "set_overwrite_module_params_on_conversion",
+            "set_swap_module_params_on_conversion",
         }
 
         for package, module in ((torch, actual), (reference_torch, expected)):
@@ -327,7 +344,7 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
                 {
                     name
                     for name in child_wildcard
-                    if not name.startswith("__") and name in supported
+                    if not name.startswith("__")
                 },
                 supported,
             )
@@ -365,85 +382,78 @@ class FutureOverwriteModuleParamsReferenceTests(unittest.TestCase):
                     )
 
     def test_reload_reset_and_replaced_function_behavior_match_pytorch_2_13(self):
-        self.assertEqual(
-            self.reload_contract(torch, self.actual),
-            self.reload_contract(reference_torch, self.expected),
-        )
+        for policy in ("overwrite", "swap"):
+            with self.subTest(policy=policy):
+                self.assertEqual(
+                    self.reload_contract(torch, self.actual, policy),
+                    self.reload_contract(reference_torch, self.expected, policy),
+                )
 
     def test_argument_forms_and_errors_match_pytorch_2_13(self):
         actual = self.actual
         expected = self.expected
-        actual_value = object()
-        expected_value = object()
-        self.assertIsNone(
-            actual.set_overwrite_module_params_on_conversion(value=actual_value)
-        )
-        self.assertIsNone(
-            expected.set_overwrite_module_params_on_conversion(value=expected_value)
-        )
-        self.assertIs(
-            actual.get_overwrite_module_params_on_conversion(), actual_value
-        )
-        self.assertIs(
-            expected.get_overwrite_module_params_on_conversion(), expected_value
-        )
+        for policy in ("overwrite", "swap"):
+            actual_getter = getattr(
+                actual, f"get_{policy}_module_params_on_conversion"
+            )
+            expected_getter = getattr(
+                expected, f"get_{policy}_module_params_on_conversion"
+            )
+            actual_setter = getattr(
+                actual, f"set_{policy}_module_params_on_conversion"
+            )
+            expected_setter = getattr(
+                expected, f"set_{policy}_module_params_on_conversion"
+            )
+            actual_value = object()
+            expected_value = object()
+            self.assertIsNone(actual_setter(value=actual_value))
+            self.assertIsNone(expected_setter(value=expected_value))
+            self.assertIs(actual_getter(), actual_value)
+            self.assertIs(expected_getter(), expected_value)
 
-        cases = (
-            (
-                lambda: actual.get_overwrite_module_params_on_conversion(None),
-                lambda: expected.get_overwrite_module_params_on_conversion(None),
-            ),
-            (
-                lambda: actual.get_overwrite_module_params_on_conversion(None, None),
-                lambda: expected.get_overwrite_module_params_on_conversion(None, None),
-            ),
-            (
-                lambda: actual.get_overwrite_module_params_on_conversion(value=True),
-                lambda: expected.get_overwrite_module_params_on_conversion(value=True),
-            ),
-            (
-                lambda: actual.set_overwrite_module_params_on_conversion(),
-                lambda: expected.set_overwrite_module_params_on_conversion(),
-            ),
-            (
-                lambda: actual.set_overwrite_module_params_on_conversion(True, False),
-                lambda: expected.set_overwrite_module_params_on_conversion(True, False),
-            ),
-            (
-                lambda: actual.set_overwrite_module_params_on_conversion(enabled=True),
-                lambda: expected.set_overwrite_module_params_on_conversion(enabled=True),
-            ),
-            (
-                lambda: actual.set_overwrite_module_params_on_conversion(
-                    True, value=False
+            cases = (
+                (
+                    lambda: actual_getter(None),
+                    lambda: expected_getter(None),
                 ),
-                lambda: expected.set_overwrite_module_params_on_conversion(
-                    True, value=False
+                (
+                    lambda: actual_getter(None, None),
+                    lambda: expected_getter(None, None),
                 ),
-            ),
-        )
-        for case, (actual_call, expected_call) in enumerate(cases):
-            with self.subTest(case=case):
-                self.assert_error_matches(actual_call, expected_call)
-                self.assertIs(
-                    actual.get_overwrite_module_params_on_conversion(), actual_value
-                )
-                self.assertIs(
-                    expected.get_overwrite_module_params_on_conversion(), expected_value
-                )
+                (
+                    lambda: actual_getter(value=True),
+                    lambda: expected_getter(value=True),
+                ),
+                (
+                    lambda: actual_setter(),
+                    lambda: expected_setter(),
+                ),
+                (
+                    lambda: actual_setter(True, False),
+                    lambda: expected_setter(True, False),
+                ),
+                (
+                    lambda: actual_setter(enabled=True),
+                    lambda: expected_setter(enabled=True),
+                ),
+                (
+                    lambda: actual_setter(True, value=False),
+                    lambda: expected_setter(True, value=False),
+                ),
+            )
+            for case, (actual_call, expected_call) in enumerate(cases):
+                with self.subTest(policy=policy, case=case):
+                    self.assert_error_matches(actual_call, expected_call)
+                    self.assertIs(actual_getter(), actual_value)
+                    self.assertIs(expected_getter(), expected_value)
 
-    def test_swap_policy_and_module_conversion_support_boundary(self):
-        for name in (
-            "_swap_module_params_on_conversion",
-            "get_swap_module_params_on_conversion",
-            "set_swap_module_params_on_conversion",
-        ):
-            with self.subTest(name=name):
-                self.assertFalse(hasattr(self.actual, name))
-                self.assertTrue(hasattr(self.expected, name))
-
+    def test_swap_execution_and_module_conversion_support_boundary(self):
+        self.assertFalse(hasattr(torch.utils, "swap_tensors"))
+        self.assertTrue(hasattr(reference_torch.utils, "swap_tensors"))
         self.assertFalse(hasattr(torch.nn, "Module"))
         self.assertTrue(hasattr(reference_torch.nn, "Module"))
+        self.assertTrue(hasattr(reference_torch.nn.Module, "load_state_dict"))
         with self.assertRaises(ModuleNotFoundError):
             importlib.import_module("torch_rs.nn.modules.module")
         self.assertIsNotNone(importlib.import_module("torch.nn.modules.module"))
