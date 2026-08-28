@@ -65,6 +65,42 @@ class _SlotCallable:
         return "called"
 
 
+class _LookupProbe:
+    def __init__(self, label, hash_outcomes, module_outcomes, events):
+        self.label = label
+        self.hash_outcomes = list(hash_outcomes)
+        self.module_outcomes = list(module_outcomes)
+        self.events = events
+        self.hash_index = 0
+        self.module_index = 0
+
+    def __call__(self):
+        return self.label
+
+    def __hash__(self):
+        index = self.hash_index
+        self.hash_index += 1
+        self.events.append(("hash", self.label, index))
+        outcome = self.hash_outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    def __getattribute__(self, name):
+        if name == "__module__":
+            index = object.__getattribute__(self, "module_index")
+            object.__setattr__(self, "module_index", index + 1)
+            label = object.__getattribute__(self, "label")
+            events = object.__getattribute__(self, "events")
+            events.append(("module", label, index))
+            outcomes = object.__getattribute__(self, "module_outcomes")
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+        return object.__getattribute__(self, name)
+
+
 class _ObservedList(list):
     def __init__(self, values, events):
         super().__init__(values)
@@ -214,6 +250,35 @@ class CompilerAllowInGraphReferenceTests(unittest.TestCase):
             converted_empty_tuple is empty_tuple,
         )
 
+    def lookup_outcome(self, module, hash_outcomes, module_outcomes):
+        events = []
+        target = _LookupProbe("target", hash_outcomes, module_outcomes, events)
+        try:
+            result = module.compiler.allow_in_graph(target)
+        except BaseException as error:
+            outcome = (type(error).__name__, str(error), error.args)
+        else:
+            outcome = ("ok", result is target)
+        return events, outcome
+
+    def collection_lookup_outcome(self, module):
+        events = []
+        accepted = _LookupProbe(
+            "accepted", (101, 101), ("sample.module", "sample.module"), events
+        )
+        failing = _LookupProbe("failing", (RuntimeError("hash failed"),), (), events)
+        unreached = _LookupProbe(
+            "unreached", (101, 101), ("sample.module", "sample.module"), events
+        )
+        values = _ObservedList((accepted, failing, unreached), events)
+        try:
+            module.compiler.allow_in_graph(values)
+        except BaseException as error:
+            outcome = (type(error).__name__, str(error), error.args)
+        else:
+            outcome = None
+        return events, outcome
+
     def test_function_method_callable_and_sequence_semantics_match(self):
         self.assertEqual(
             self.function_outcome(torch),
@@ -226,6 +291,38 @@ class CompilerAllowInGraphReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.sequence_outcome(torch),
             self.sequence_outcome(reference_torch),
+        )
+
+    def test_lookup_validation_errors_and_side_effects_match_pytorch_2_13(self):
+        cases = (
+            ((101, 101), ("sample.module", "sample.module")),
+            ((RuntimeError("first hash"),), ()),
+            ((TypeError("unhashable"),), ()),
+            ((ValueError("unhashable"),), ()),
+            ((101,), (RuntimeError("first module"),)),
+            ((101,), ("sample.module", RuntimeError("second module"))),
+            (
+                (101, RuntimeError("second hash")),
+                ("sample.module", "sample.module"),
+            ),
+            (
+                (101, TypeError("second hash")),
+                ("sample.module", "sample.module"),
+            ),
+            ((101,), (42,)),
+        )
+        for case, (hash_outcomes, module_outcomes) in enumerate(cases):
+            with self.subTest(case=case):
+                self.assertEqual(
+                    self.lookup_outcome(torch, hash_outcomes, module_outcomes),
+                    self.lookup_outcome(
+                        reference_torch, hash_outcomes, module_outcomes
+                    ),
+                )
+
+        self.assertEqual(
+            self.collection_lookup_outcome(torch),
+            self.collection_lookup_outcome(reference_torch),
         )
 
     def test_invalid_targets_error_order_and_call_shapes_match(self):

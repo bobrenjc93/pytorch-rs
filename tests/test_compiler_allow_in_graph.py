@@ -125,6 +125,42 @@ class _SlotCallable:
         return "called"
 
 
+class _LookupProbe:
+    def __init__(self, label, hash_outcomes, module_outcomes, events):
+        self.label = label
+        self.hash_outcomes = list(hash_outcomes)
+        self.module_outcomes = list(module_outcomes)
+        self.events = events
+        self.hash_index = 0
+        self.module_index = 0
+
+    def __call__(self):
+        return self.label
+
+    def __hash__(self):
+        index = self.hash_index
+        self.hash_index += 1
+        self.events.append(("hash", self.label, index))
+        outcome = self.hash_outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    def __getattribute__(self, name):
+        if name == "__module__":
+            index = object.__getattribute__(self, "module_index")
+            object.__setattr__(self, "module_index", index + 1)
+            label = object.__getattribute__(self, "label")
+            events = object.__getattribute__(self, "events")
+            events.append(("module", label, index))
+            outcomes = object.__getattribute__(self, "module_outcomes")
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+        return object.__getattribute__(self, name)
+
+
 class _ObservedList(list):
     def __init__(self, values, events):
         super().__init__(values)
@@ -138,6 +174,17 @@ class _ObservedList(list):
 
 
 class CompilerAllowInGraphTests(unittest.TestCase):
+    def lookup_outcome(self, hash_outcomes, module_outcomes):
+        events = []
+        target = _LookupProbe("target", hash_outcomes, module_outcomes, events)
+        try:
+            result = torch.compiler.allow_in_graph(target)
+        except BaseException as error:
+            outcome = (type(error), str(error), error.args)
+        else:
+            outcome = ("ok", result is target)
+        return events, outcome
+
     def test_decorator_preserves_function_identity_metadata_and_eager_calls(self):
         calls = []
         sentinel = object()
@@ -239,6 +286,123 @@ class CompilerAllowInGraphTests(unittest.TestCase):
             AssertionError, "^allow_in_graph expects a callable$"
         ):
             torch.compiler.allow_in_graph((None, _SlotCallable()))
+
+    def test_lookup_validation_preserves_hash_and_module_side_effects(self):
+        self.assertEqual(
+            self.lookup_outcome((101, 101), ("sample.module", "sample.module")),
+            (
+                [
+                    ("hash", "target", 0),
+                    ("module", "target", 0),
+                    ("module", "target", 1),
+                    ("hash", "target", 1),
+                ],
+                ("ok", True),
+            ),
+        )
+
+        for error_type in (TypeError, ValueError):
+            with self.subTest(error_type=error_type.__name__):
+                self.assertEqual(
+                    self.lookup_outcome((error_type("unhashable"),), ()),
+                    ([("hash", "target", 0)], ("ok", True)),
+                )
+
+    def test_lookup_validation_propagates_hash_and_module_errors(self):
+        cases = (
+            (
+                (RuntimeError("first hash"),),
+                (),
+                [("hash", "target", 0)],
+                RuntimeError,
+                "first hash",
+            ),
+            (
+                (101,),
+                (RuntimeError("first module"),),
+                [("hash", "target", 0), ("module", "target", 0)],
+                RuntimeError,
+                "first module",
+            ),
+            (
+                (101,),
+                ("sample.module", RuntimeError("second module")),
+                [
+                    ("hash", "target", 0),
+                    ("module", "target", 0),
+                    ("module", "target", 1),
+                ],
+                RuntimeError,
+                "second module",
+            ),
+            (
+                (101, RuntimeError("second hash")),
+                ("sample.module", "sample.module"),
+                [
+                    ("hash", "target", 0),
+                    ("module", "target", 0),
+                    ("module", "target", 1),
+                    ("hash", "target", 1),
+                ],
+                RuntimeError,
+                "second hash",
+            ),
+            (
+                (101, TypeError("second hash")),
+                ("sample.module", "sample.module"),
+                [
+                    ("hash", "target", 0),
+                    ("module", "target", 0),
+                    ("module", "target", 1),
+                    ("hash", "target", 1),
+                ],
+                TypeError,
+                "second hash",
+            ),
+            (
+                (101,),
+                (42,),
+                [("hash", "target", 0), ("module", "target", 0)],
+                AttributeError,
+                "'int' object has no attribute 'split'",
+            ),
+        )
+        for hash_outcomes, module_outcomes, events, error_type, message in cases:
+            with self.subTest(message=message):
+                actual_events, outcome = self.lookup_outcome(
+                    hash_outcomes, module_outcomes
+                )
+                self.assertEqual(actual_events, events)
+                self.assertIs(outcome[0], error_type)
+                self.assertEqual(outcome[1], message)
+                self.assertEqual(outcome[2], (message,))
+
+    def test_collection_lookup_failures_stop_before_later_entries(self):
+        events = []
+        accepted = _LookupProbe(
+            "accepted", (101, 101), ("sample.module", "sample.module"), events
+        )
+        failing = _LookupProbe("failing", (RuntimeError("hash failed"),), (), events)
+        unreached = _LookupProbe(
+            "unreached", (101, 101), ("sample.module", "sample.module"), events
+        )
+        values = _ObservedList((accepted, failing, unreached), events)
+
+        with self.assertRaisesRegex(RuntimeError, "^hash failed$"):
+            torch.compiler.allow_in_graph(values)
+
+        self.assertEqual(
+            events,
+            [
+                ("yield", 0),
+                ("hash", "accepted", 0),
+                ("module", "accepted", 0),
+                ("module", "accepted", 1),
+                ("hash", "accepted", 1),
+                ("yield", 1),
+                ("hash", "failing", 0),
+            ],
+        )
 
     def test_invalid_targets_and_call_shapes_match_pytorch_2_13(self):
         function = torch.compiler.allow_in_graph

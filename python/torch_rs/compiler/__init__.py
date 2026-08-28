@@ -7,6 +7,16 @@ import weakref as _weakref
 from .. import _compiler_state as _state
 
 
+_ALLOW_IN_GRAPH_BUILTIN_CALLABLES = {
+    dict: None,
+    getattr: None,
+    hasattr: None,
+    iter: None,
+    list: None,
+    setattr: None,
+}
+
+
 __all__ = [
     "assume_constant_result",
     "reset",
@@ -52,6 +62,26 @@ def reset() -> None:
     process-local state used by :func:`torch.compile`. It does not delete
     filesystem caches, such as Inductor's disk cache.
     """
+
+
+def _validate_allow_in_graph_lookup(fn):
+    try:
+        hash(fn)
+    except (TypeError, ValueError):
+        return
+
+    # Dynamo checks its disallowed and allowed registries in this order. Each
+    # lookup consults ``__module__`` to initialize any lazily registered module
+    # rules before it examines object identity.
+    for _ in range(2):
+        module = getattr(fn, "__module__", None)
+        if module is not None:
+            module.split(".")[0]
+
+    # The final built-in-callable table lookup hashes an otherwise unclassified
+    # callable a second time. Keep that observable validation, but no table or
+    # compiler registration state, at this eager-only boundary.
+    _ = fn in _ALLOW_IN_GRAPH_BUILTIN_CALLABLES
 
 
 def allow_in_graph(fn):
@@ -136,6 +166,8 @@ def allow_in_graph(fn):
         return [allow_in_graph(item) for item in fn]
     if not callable(fn):
         raise AssertionError("allow_in_graph expects a callable")
+
+    _validate_allow_in_graph_lookup(fn)
 
     # Dynamo keeps weak references to newly allowed callables. Preserve that
     # observable validation without creating a compiler registry or retaining
