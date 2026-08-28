@@ -62,9 +62,11 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 for name in expected_module.__all__
                 if name
                 in {
+                    "enable_math_sdp",
                     "is_built",
                     "is_ck_sdpa_available",
                     "is_flash_attention_available",
+                    "math_sdp_enabled",
                 }
             ],
         )
@@ -130,9 +132,11 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
                 for name in expected_child_wildcard
                 if name
                 in {
+                    "enable_math_sdp",
                     "is_built",
                     "is_ck_sdpa_available",
                     "is_flash_attention_available",
+                    "math_sdp_enabled",
                 }
             },
         )
@@ -250,9 +254,11 @@ class CudaIsBuiltReferenceTests(unittest.TestCase):
         self.assertEqual(
             actual_public,
             {
+                "enable_math_sdp",
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
+                "math_sdp_enabled",
                 "torch",
             },
         )
