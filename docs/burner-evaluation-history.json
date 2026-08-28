@@ -7521,6 +7521,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 99
       }
+    },
+    {
+      "key": "pr:1235",
+      "recordedAt": "2026-08-28T19:00:47.384Z",
+      "label": "PR #1235",
+      "kind": "leaf",
+      "prNumber": 1235,
+      "title": "Expose torch.nn.factory_kwargs",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 83.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 99
+      }
     }
   ]
 }
