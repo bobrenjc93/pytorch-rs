@@ -505,6 +505,19 @@ impl Tensor {
         }
     }
 
+    fn from_owned_scalar(value: f32, dtype: DType, device: Device) -> Self {
+        Self {
+            storage: Arc::new(Storage::from_scalar(value, dtype, device)),
+            shape: Vec::new(),
+            strides: Vec::new(),
+            offset: 0,
+            elements: 1,
+            output_nr: 0,
+            view_requires_grad: false,
+            autograd: None,
+        }
+    }
+
     #[must_use]
     pub fn shape(&self) -> &[usize] {
         &self.shape
@@ -1243,14 +1256,21 @@ impl Tensor {
     /// Returns logical values in row-major index order.
     #[must_use]
     pub fn logical_values(&self) -> LogicalValues<'_> {
-        let inner = self.contiguous_slice().map_or_else(
-            || LogicalValuesInner::Strided {
+        if let Some(values) = self.contiguous_slice() {
+            return LogicalValues {
+                inner: LogicalValuesInner::Contiguous(values.iter().copied()),
+            };
+        }
+        self.strided_logical_values()
+    }
+
+    fn strided_logical_values(&self) -> LogicalValues<'_> {
+        LogicalValues {
+            inner: LogicalValuesInner::Strided {
                 tensor: self,
                 next: 0,
             },
-            |values| LogicalValuesInner::Contiguous(values.iter().copied()),
-        );
-        LogicalValues { inner }
+        }
     }
 
     /// Reorders every dimension without copying storage.
@@ -1988,6 +2008,13 @@ impl Tensor {
         self.storage
             .value(offset)
             .expect("validated tensor logical offset must address storage")
+    }
+
+    #[inline]
+    fn value_at_storage_offset(&self) -> f32 {
+        self.storage
+            .value(self.offset)
+            .expect("validated tensor storage offset must address storage")
     }
 
     fn materialize_with_strides(
@@ -2744,16 +2771,8 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        let mut output = Self::from_owned_parts(
-            vec![
-                self.logical_values()
-                    .fold(0.0_f32, |total, value| total + value),
-            ],
-            Vec::new(),
-            Vec::new(),
-            self.dtype(),
-            self.device(),
-        );
+        let value = self.sum_value();
+        let mut output = Self::from_owned_scalar(value, self.dtype(), self.device());
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
@@ -2764,6 +2783,21 @@ impl Tensor {
             }));
         }
         output
+    }
+
+    // Keep the hot ordered reduction separate from scalar-result construction
+    // and autograd bookkeeping.
+    #[inline(never)]
+    fn sum_value(&self) -> f32 {
+        match self.contiguous_slice() {
+            Some(values) => values
+                .iter()
+                .copied()
+                .fold(0.0_f32, |total, value| total + value),
+            None => self
+                .strided_logical_values()
+                .fold(0.0_f32, |total, value| total + value),
+        }
     }
 
     /// Extracts the value of a one-element tensor.
@@ -2777,7 +2811,7 @@ impl Tensor {
                 elements: self.elements,
             });
         }
-        Ok(self.value_at_linear_index(0))
+        Ok(self.value_at_storage_offset())
     }
 
     /// Multiplies two rank-2 matrices.

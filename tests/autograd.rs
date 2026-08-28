@@ -3155,6 +3155,41 @@ fn scalar_and_empty_reductions_produce_correct_leaf_gradients() {
 }
 
 #[test]
+fn sum_of_contiguous_offset_view_preserves_autograd_mapping() {
+    let leaf = Tensor::from_vec(
+        vec![
+            100.0,
+            200.0,
+            300.0,
+            400.0,
+            16_777_216.0,
+            1.0,
+            -16_777_216.0,
+            -0.0,
+            500.0,
+            600.0,
+            700.0,
+            800.0,
+        ],
+        [3, 4],
+    )
+    .unwrap()
+    .with_requires_grad(true);
+    let view = leaf.index_integer(1).unwrap();
+
+    assert!(view.is_contiguous());
+    assert_eq!(view.storage_offset(), 4);
+    let output = view.sum();
+    assert_eq!(output.item().unwrap().to_bits(), 0.0_f32.to_bits());
+    output.backward().unwrap();
+
+    assert_eq!(
+        values(&leaf.grad().unwrap().unwrap()),
+        [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+    );
+}
+
+#[test]
 fn relu_vjp_selects_upstream_for_positives_and_nans() {
     let input_bits = [
         0x3f80_0000,

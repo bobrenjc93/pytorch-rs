@@ -2015,6 +2015,61 @@ fn reductions_handle_ordinary_and_empty_tensors() {
 }
 
 #[test]
+fn sum_preserves_sequential_float32_behavior_across_contiguous_and_strided_views() {
+    let cases = [
+        vec![],
+        vec![-0.0],
+        vec![16_777_216.0, 1.0, -16_777_216.0],
+        vec![f32::INFINITY, f32::NEG_INFINITY],
+        vec![f32::from_bits(0x7fc1_2345), 1.0, -2.0],
+    ];
+
+    for values in cases {
+        let expected = values
+            .iter()
+            .copied()
+            .fold(0.0_f32, |total, value| total + value);
+        let view = if values.is_empty() {
+            Tensor::zeros([2, 0]).unwrap().index_integer(1).unwrap()
+        } else {
+            let elements = values.len();
+            let mut storage = vec![123.0; elements];
+            storage.extend_from_slice(&values);
+            storage.extend(std::iter::repeat_n(-456.0, elements));
+            Tensor::from_vec(storage, [3, elements])
+                .unwrap()
+                .index_integer(1)
+                .unwrap()
+        };
+
+        assert!(view.is_contiguous());
+        let sum = view.sum();
+        assert_eq!(sum.as_slice()[0].to_bits(), expected.to_bits());
+        assert_eq!(sum.item().unwrap().to_bits(), expected.to_bits());
+    }
+
+    let source = Tensor::from_vec(
+        vec![
+            16_777_216.0,
+            -16_777_216.0,
+            f32::INFINITY,
+            1.0,
+            -0.0,
+            f32::NEG_INFINITY,
+        ],
+        [2, 3],
+    )
+    .unwrap();
+    let strided = source.transpose(0, 1).unwrap();
+    let expected = strided
+        .logical_values()
+        .fold(0.0_f32, |total, value| total + value);
+
+    assert!(!strided.is_contiguous());
+    assert_eq!(strided.sum().item().unwrap().to_bits(), expected.to_bits());
+}
+
+#[test]
 fn matrix_multiplication_matches_known_result() {
     let left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
     let right = Tensor::from_vec(vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0], [3, 2]).unwrap();

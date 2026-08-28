@@ -14,6 +14,8 @@ enum StoragePayload {
 
 enum StorageData<T> {
     Owned(Vec<T>),
+    // Scalar-producing kernels avoid a second allocation for a one-element Vec.
+    Scalar(T),
     SharedGradient(Mutex<Vec<T>>),
 }
 
@@ -32,6 +34,7 @@ impl StorageData<f32> {
     fn owned_values(&self) -> Option<&[f32]> {
         match self {
             Self::Owned(values) => Some(values),
+            Self::Scalar(value) => Some(std::slice::from_ref(value)),
             Self::SharedGradient(_) => None,
         }
     }
@@ -54,6 +57,7 @@ impl StorageData<f32> {
     fn into_range(self, start: usize, end: usize) -> Vec<f32> {
         let values = match self {
             Self::Owned(values) => values,
+            Self::Scalar(value) => vec![value],
             Self::SharedGradient(values) => values
                 .into_inner()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
@@ -72,7 +76,7 @@ impl StorageData<f32> {
         from_snapshot: impl FnOnce(Vec<f32>) -> S,
     ) -> Result<S, E> {
         match self {
-            Self::Owned(_) => Ok(reuse()),
+            Self::Owned(_) | Self::Scalar(_) => Ok(reuse()),
             Self::SharedGradient(values) => {
                 let values = values
                     .lock()
@@ -84,7 +88,7 @@ impl StorageData<f32> {
 
     fn accumulate_shared_gradient(&self, contribution: Vec<f32>) {
         match self {
-            Self::Owned(_) => {
+            Self::Owned(_) | Self::Scalar(_) => {
                 unreachable!("leaf gradients always use shared gradient storage");
             }
             Self::SharedGradient(existing) => {
@@ -102,6 +106,7 @@ impl StorageData<f32> {
     fn with_values<R>(&self, read: impl FnOnce(&[f32]) -> R) -> R {
         match self {
             Self::Owned(values) => read(values),
+            Self::Scalar(value) => read(std::slice::from_ref(value)),
             Self::SharedGradient(values) => {
                 let values = values
                     .lock()
@@ -118,6 +123,16 @@ impl Storage {
             payload: match (device, dtype) {
                 (Device::Cpu, DType::Float32) => {
                     StoragePayload::CpuFloat32(StorageData::Owned(data))
+                }
+            },
+        }
+    }
+
+    pub(crate) fn from_scalar(value: f32, dtype: DType, device: Device) -> Self {
+        Self {
+            payload: match (device, dtype) {
+                (Device::Cpu, DType::Float32) => {
+                    StoragePayload::CpuFloat32(StorageData::Scalar(value))
                 }
             },
         }
@@ -266,6 +281,30 @@ mod tests {
         let values = Storage::from_owned(values, DType::Float32, Device::Cpu).into_range(0, 3);
         assert_eq!(values.as_ptr(), pointer);
         assert_eq!(values, [5.0, 6.0, 7.0]);
+    }
+
+    #[test]
+    fn scalar_float32_payload_preserves_values_and_reuses_saved_storage() {
+        let storage = Arc::new(Storage::from_scalar(
+            f32::from_bits(0x7fc1_2345),
+            DType::Float32,
+            Device::Cpu,
+        ));
+
+        assert_eq!(storage.len(), 1);
+        assert_eq!(storage.owned_values().unwrap()[0].to_bits(), 0x7fc1_2345);
+        assert_eq!(storage.value(0).unwrap().to_bits(), 0x7fc1_2345);
+        assert_eq!(storage.value(1), None);
+        assert_eq!(storage.copy_range(0, 1)[0].to_bits(), 0x7fc1_2345);
+
+        let saved = Storage::try_clone_for_saved(&storage, |_| {
+            Err::<Vec<f32>, _>("scalar storage must be reusable")
+        })
+        .unwrap();
+        assert!(Arc::ptr_eq(&storage, &saved));
+
+        let values = Storage::from_scalar(-0.0, DType::Float32, Device::Cpu).into_range(0, 1);
+        assert_eq!(values[0].to_bits(), (-0.0_f32).to_bits());
     }
 
     #[test]
