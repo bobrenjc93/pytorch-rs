@@ -10,6 +10,7 @@ import threading
 import types
 import typing
 import unittest
+import warnings
 from collections import OrderedDict
 from unittest import mock
 
@@ -78,6 +79,17 @@ FUNCTION_DOCS = {
 
     Returns:
         int: the index of a currently selected device.
+    """,
+    "current_device_idx": """
+    (Deprecated) Return the index of a currently selected device for the current :ref:`accelerator<accelerators>`.
+
+    Returns:
+        int: the index of a currently selected device.
+
+    .. warning::
+
+        :func:`torch.accelerator.current_device_idx` is deprecated in favor of :func:`torch.accelerator.current_device_index`
+        and will be removed in a future PyTorch release.
     """,
     "empty_cache": """Release all unoccupied cached memory currently held by the caching
     allocator so that those can be used in other application.
@@ -262,6 +274,17 @@ class AcceleratorTests(unittest.TestCase):
             self.assert_current_device_index_unavailable(
                 accelerator.current_device_index
             )
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                self.assert_current_device_index_unavailable(
+                    accelerator.current_device_idx
+                )
+            self.assertEqual(len(caught), 1)
+            self.assertIs(caught[0].category, FutureWarning)
+            self.assertEqual(
+                str(caught[0].message),
+                "Use `current_device_index` instead.",
+            )
             self.assertIs(accelerator.empty_cache(), None)
             self.assertIs(accelerator.reset_accumulated_memory_stats(), None)
             self.assertIs(accelerator.reset_peak_memory_stats(), None)
@@ -279,8 +302,8 @@ class AcceleratorTests(unittest.TestCase):
             self.assertIs(type(count), int)
             self.assertEqual(count, 0)
 
-        self.assertEqual(shared_discovery.call_count, 5)
-        self.assertEqual(shared_discovery.call_args_list, [mock.call()] * 5)
+        self.assertEqual(shared_discovery.call_count, 6)
+        self.assertEqual(shared_discovery.call_args_list, [mock.call()] * 6)
         for function in (
             accelerator.current_accelerator,
             accelerator.is_available,
@@ -342,6 +365,12 @@ class AcceleratorTests(unittest.TestCase):
                         self.assert_current_device_index_unavailable(
                             accelerator.current_device_index
                         )
+                        with warnings.catch_warnings(record=True) as caught:
+                            warnings.simplefilter("always")
+                            self.assert_current_device_index_unavailable(
+                                accelerator.current_device_idx
+                            )
+                        self.assertEqual(len(caught), 1)
                         self.assertIs(accelerator.empty_cache(), None)
                         self.assertIs(
                             accelerator.reset_accumulated_memory_stats("cuda:0"),
@@ -367,6 +396,95 @@ class AcceleratorTests(unittest.TestCase):
         ]
 
         self.assertEqual(len({id(error) for error in errors}), len(errors))
+
+    def test_current_device_idx_warns_before_delegating_and_binding_errors(self):
+        accelerator = torch.accelerator
+        message = "Use `current_device_index` instead."
+        events = []
+
+        def record_warning(*args, **kwargs):
+            events.append(("warning", args, kwargs))
+
+        def discover():
+            events.append(("delegate",))
+            return None, False, 0, None
+
+        with mock.patch.object(warnings, "warn", side_effect=record_warning):
+            with mock.patch.object(
+                accelerator,
+                "_discover_accelerator",
+                side_effect=discover,
+            ):
+                self.assert_current_device_index_unavailable(
+                    accelerator.current_device_idx
+                )
+
+        self.assertEqual(
+            events,
+            [
+                (
+                    "warning",
+                    (message,),
+                    {"category": FutureWarning, "stacklevel": 2},
+                ),
+                ("delegate",),
+            ],
+        )
+
+        invalid_calls = (
+            (
+                lambda: accelerator.current_device_idx(None),
+                "current_device_index() takes 0 positional arguments but 1 was given",
+            ),
+            (
+                lambda: accelerator.current_device_idx(None, None),
+                "current_device_index() takes 0 positional arguments but 2 were given",
+            ),
+            (
+                lambda: accelerator.current_device_idx(device=True),
+                "current_device_index() got an unexpected keyword argument 'device'",
+            ),
+        )
+        for call, expected_error in invalid_calls:
+            events = []
+            with self.subTest(expected_error=expected_error):
+                with mock.patch.object(
+                    warnings,
+                    "warn",
+                    side_effect=record_warning,
+                ):
+                    with mock.patch.object(
+                        accelerator,
+                        "_discover_accelerator",
+                        side_effect=AssertionError(
+                            "argument binding reached accelerator discovery"
+                        ),
+                    ):
+                        with self.assertRaises(TypeError) as raised:
+                            call()
+                self.assertEqual(str(raised.exception), expected_error)
+                self.assertEqual(raised.exception.args, (expected_error,))
+                self.assertEqual(
+                    events,
+                    [
+                        (
+                            "warning",
+                            (message,),
+                            {"category": FutureWarning, "stacklevel": 2},
+                        )
+                    ],
+                )
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.assert_current_device_index_unavailable(
+                accelerator.current_device_idx
+            )
+        self.assertEqual(len(caught), 1)
+        self.assertIs(type(caught[0].message), FutureWarning)
+        self.assertIs(caught[0].category, FutureWarning)
+        self.assertEqual(str(caught[0].message), message)
+        self.assertEqual(caught[0].filename, __file__)
 
     def test_empty_cache_is_a_repeatable_probe_free_no_op(self):
         accelerator = torch.accelerator
@@ -546,6 +664,7 @@ class AcceleratorTests(unittest.TestCase):
                 ),
                 return_annotation=torch.device | None,
             ),
+            "current_device_idx": inspect.Signature(return_annotation=int),
             "current_device_index": inspect.Signature(return_annotation=int),
             "empty_cache": inspect.Signature(return_annotation=None),
             "is_available": inspect.Signature(return_annotation=bool),
@@ -633,6 +752,7 @@ class AcceleratorTests(unittest.TestCase):
                 "check_available": bool,
                 "return": torch.device | None,
             },
+            "current_device_idx": {"return": int},
             "current_device_index": {"return": int},
             "empty_cache": {"return": None},
             "is_available": {"return": bool},
@@ -684,6 +804,7 @@ class AcceleratorTests(unittest.TestCase):
         self.assertEqual(accelerator.__doc__, MODULE_DOC)
         for name in (
             "current_accelerator",
+            "current_device_idx",
             "current_device_index",
             "device_count",
             "empty_cache",
@@ -706,8 +827,13 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertEqual(
                     typing.get_type_hints(function), expected_type_hints[name]
                 )
-                self.assertEqual(function.__name__, name)
-                self.assertEqual(function.__qualname__, name)
+                expected_name = (
+                    "current_device_index"
+                    if name == "current_device_idx"
+                    else name
+                )
+                self.assertEqual(function.__name__, expected_name)
+                self.assertEqual(function.__qualname__, expected_name)
                 defining_module = (
                     accelerator.memory
                     if name
@@ -747,18 +873,44 @@ class AcceleratorTests(unittest.TestCase):
                     else None,
                 )
                 self.assertIsNone(function.__kwdefaults__)
-                self.assertEqual(
-                    function.__dict__,
-                    {"__deprecated__": "Use `current_device_index` instead."}
-                    if name == "current_device_index"
-                    else {},
-                )
+                if name == "current_device_idx":
+                    self.assertEqual(
+                        set(function.__dict__),
+                        {"__wrapped__", "__deprecated__"},
+                    )
+                    self.assertIs(
+                        function.__wrapped__, accelerator.current_device_index
+                    )
+                    self.assertIs(
+                        inspect.unwrap(function),
+                        accelerator.current_device_index,
+                    )
+                    self.assertEqual(
+                        function.__deprecated__,
+                        "Use `current_device_index` instead.",
+                    )
+                    self.assertEqual(function.__code__.co_name, "wrapper")
+                    self.assertEqual(
+                        function.__code__.co_varnames[:2], ("args", "kwargs")
+                    )
+                else:
+                    self.assertEqual(
+                        function.__dict__,
+                        {
+                            "__deprecated__": (
+                                "Use `current_device_index` instead."
+                            )
+                        }
+                        if name == "current_device_index"
+                        else {},
+                    )
                 self.assertFalse(hasattr(function, "__text_signature__"))
 
     def test_imports_exports_copy_and_pickle_use_the_canonical_module(self):
         accelerator = torch.accelerator
         supported = {
             "current_accelerator",
+            "current_device_idx",
             "current_device_index",
             "device_count",
             "empty_cache",
@@ -827,6 +979,7 @@ class AcceleratorTests(unittest.TestCase):
             accelerator.__all__,
             [
                 "current_accelerator",
+                "current_device_idx",
                 "current_device_index",
                 "device_count",
                 "empty_cache",
@@ -851,7 +1004,7 @@ class AcceleratorTests(unittest.TestCase):
         memory_wildcard_import = {}
         exec("from torch_rs import accelerator", package_import)
         exec(
-            "from torch_rs.accelerator import current_accelerator, current_device_index, device_count, empty_cache, is_available, max_memory_allocated, max_memory_reserved, memory_allocated, memory_reserved, memory_stats, reset_accumulated_memory_stats, reset_peak_memory_stats",
+            "from torch_rs.accelerator import current_accelerator, current_device_idx, current_device_index, device_count, empty_cache, is_available, max_memory_allocated, max_memory_reserved, memory_allocated, memory_reserved, memory_stats, reset_accumulated_memory_stats, reset_peak_memory_stats",
             direct_import,
         )
         exec("from torch_rs.accelerator import *", wildcard_import)
@@ -897,9 +1050,18 @@ class AcceleratorTests(unittest.TestCase):
                 self.assertIs(copy.copy(function), function)
                 self.assertIs(copy.deepcopy(function), function)
                 for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-                    payload = pickle.dumps(function, protocol=protocol)
-                    self.assertIn(b"torch_rs.accelerator", payload)
-                    self.assertIs(pickle.loads(payload), function)
+                    if name == "current_device_idx":
+                        with self.assertRaises(pickle.PicklingError) as raised:
+                            pickle.dumps(function, protocol=protocol)
+                        self.assertIn(
+                            "it's not the same object as "
+                            "torch_rs.accelerator.current_device_index",
+                            str(raised.exception),
+                        )
+                    else:
+                        payload = pickle.dumps(function, protocol=protocol)
+                        self.assertIn(b"torch_rs.accelerator", payload)
+                        self.assertIs(pickle.loads(payload), function)
 
         for name in ("accelerator", *supported):
             self.assertNotIn(name, torch.__all__)
@@ -923,6 +1085,11 @@ class AcceleratorTests(unittest.TestCase):
         )
         old_reset_peak_memory_stats = accelerator.reset_peak_memory_stats
         memory = accelerator.memory
+        old_current_device_idx = accelerator.current_device_idx
+        old_current_device_index = accelerator.current_device_index
+        self.assertIs(
+            old_current_device_idx.__wrapped__, old_current_device_index
+        )
         old_functions = {
             name: getattr(accelerator, name)
             for name in (
@@ -998,6 +1165,36 @@ class AcceleratorTests(unittest.TestCase):
         self.assert_current_device_index_unavailable(
             accelerator.current_device_index
         )
+        self.assertIsNot(accelerator.current_device_idx, old_current_device_idx)
+        self.assertIsNot(
+            accelerator.current_device_index, old_current_device_index
+        )
+        self.assertIs(
+            accelerator.current_device_idx.__wrapped__,
+            accelerator.current_device_index,
+        )
+        self.assertIs(
+            old_current_device_idx.__wrapped__, old_current_device_index
+        )
+        for function in (
+            old_current_device_idx,
+            accelerator.current_device_idx,
+        ):
+            with self.subTest(alias=function):
+                self.assertIs(copy.copy(function), function)
+                self.assertIs(copy.deepcopy(function), function)
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    self.assert_current_device_index_unavailable(function)
+                self.assertEqual(len(caught), 1)
+                self.assertIs(caught[0].category, FutureWarning)
+                self.assertEqual(
+                    str(caught[0].message),
+                    "Use `current_device_index` instead.",
+                )
+                for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+                    with self.assertRaises(pickle.PicklingError):
+                        pickle.dumps(function, protocol=protocol)
         self.assertIs(accelerator.is_available(), False)
         self.assertEqual(accelerator.device_count(), 0)
 
@@ -1442,7 +1639,6 @@ class AcceleratorTests(unittest.TestCase):
         accelerator = torch.accelerator
         unsupported = {
             "Graph",
-            "current_device_idx",
             "current_stream",
             "device_index",
             "empty_host_cache",
@@ -1499,6 +1695,7 @@ class AcceleratorTests(unittest.TestCase):
         script = r'''
 import os
 import sys
+import warnings
 from collections import OrderedDict
 
 class RejectExternalRuntimeImport:
@@ -1525,6 +1722,7 @@ os.environ.update(
     PYTORCH_NVML_BASED_CUDA_CHECK="1",
 )
 import torch_rs as torch
+from torch_rs.accelerator import current_device_idx, current_device_index
 from torch_rs.accelerator.memory import (
     empty_cache,
     max_memory_allocated,
@@ -1561,6 +1759,9 @@ assert (
     is reset_accumulated_memory_stats
 )
 assert torch.accelerator.reset_peak_memory_stats is reset_peak_memory_stats
+assert torch.accelerator.current_device_idx is current_device_idx
+assert torch.accelerator.current_device_index is current_device_index
+assert current_device_idx.__wrapped__ is current_device_index
 assert torch.accelerator._discover_accelerator() == (None, False, 0, None)
 assert torch.accelerator.current_accelerator() is None
 assert torch.accelerator.current_accelerator(check_available=True) is None
@@ -1574,6 +1775,20 @@ for _ in range(3):
         )
     else:
         raise AssertionError("current_device_index() unexpectedly returned")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            current_device_idx()
+        except RuntimeError as error:
+            assert str(error) == "Cannot access accelerator device when none is available."
+            assert error.args == (
+                "Cannot access accelerator device when none is available.",
+            )
+        else:
+            raise AssertionError("current_device_idx() unexpectedly returned")
+    assert len(caught) == 1
+    assert caught[0].category is FutureWarning
+    assert str(caught[0].message) == "Use `current_device_index` instead."
 assert torch.accelerator.is_available() is False
 count = torch.accelerator.device_count()
 assert type(count) is int and count == 0
