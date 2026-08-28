@@ -7537,6 +7537,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 99
       }
+    },
+    {
+      "key": "pr:1242",
+      "recordedAt": "2026-08-28T19:46:06.871Z",
+      "label": "PR #1242",
+      "kind": "leaf",
+      "prNumber": 1242,
+      "title": "Collapse small-rank logical iterator dispatch",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 83.1,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100
+      }
     }
   ]
 }
