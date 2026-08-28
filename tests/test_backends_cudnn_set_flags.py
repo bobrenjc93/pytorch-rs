@@ -351,7 +351,9 @@ print(json.dumps({
         self.assertEqual(
             {name for name in vars(cudnn.m) if not name.startswith("_")},
             {
+                "ContextProp",
                 "CudnnModule",
+                "PropModule",
                 "contextmanager",
                 "flags",
                 "is_available",

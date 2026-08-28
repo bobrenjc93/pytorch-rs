@@ -270,7 +270,9 @@ class CudnnSetFlagsReferenceTests(unittest.TestCase):
                 for name in vars(expected.m)
                 if name
                 in {
+                    "ContextProp",
                     "CudnnModule",
+                    "PropModule",
                     "contextmanager",
                     "flags",
                     "is_available",

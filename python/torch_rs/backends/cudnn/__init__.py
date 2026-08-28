@@ -1,10 +1,9 @@
 # mypy: allow-untyped-defs
 import sys as _sys
-import types as _types
 from contextlib import contextmanager
 
 import torch_rs as torch
-from torch_rs.backends import __allow_nonbracketed_mutation
+from torch_rs.backends import ContextProp, PropModule, __allow_nonbracketed_mutation
 
 
 __cudnn_version: int | None = None
@@ -72,19 +71,16 @@ def set_flags(
         torch._C._set_cudnn_allow_tf32(_allow_tf32)
     if not _is_default_fp32_precision(_fp32_precision):
         raise NotImplementedError(
-            "torch.backends.cudnn.flags() only supports "
-            "fp32_precision='none'"
+            "torch.backends.cudnn.flags() only supports " "fp32_precision='none'"
         )
     if isinstance(_depthwise_kernel, bytearray):
         type_name = type(_depthwise_kernel).__name__
         raise RuntimeError(
-            "set_cudnn_depthwise_kernel expects a string, but got "
-            f"{type_name}"
+            "set_cudnn_depthwise_kernel expects a string, but got " f"{type_name}"
         )
     if not _is_default_mode(_depthwise_kernel, "auto"):
         raise NotImplementedError(
-            "torch.backends.cudnn.flags() only supports "
-            "depthwise_kernel='auto'"
+            "torch.backends.cudnn.flags() only supports " "depthwise_kernel='auto'"
         )
     return orig_flags
 
@@ -116,46 +112,27 @@ def flags(
             set_flags(*orig_flags)
 
 
-class _ContextProp:
-    def __init__(self, getter, setter):
-        self.getter = getter
-        self.setter = setter
-
-    def __get__(self, obj, objtype):
-        return self.getter()
-
-    def __set__(self, obj, value):
-        self.setter(value)
-
-
-class CudnnModule(_types.ModuleType):
-    enabled = _ContextProp(
+class CudnnModule(PropModule):
+    enabled = ContextProp(
         torch._C._get_cudnn_enabled,
         torch._C._set_cudnn_enabled,
     )
-    benchmark = _ContextProp(
+    benchmark = ContextProp(
         torch._C._get_cudnn_benchmark,
         torch._C._set_cudnn_benchmark,
     )
-    benchmark_limit = _ContextProp(
+    benchmark_limit = ContextProp(
         torch._C._cuda_get_cudnn_benchmark_limit,
         torch._C._cuda_set_cudnn_benchmark_limit,
     )
-    deterministic = _ContextProp(
+    deterministic = ContextProp(
         torch._C._get_cudnn_deterministic,
         torch._C._set_cudnn_deterministic,
     )
-    allow_tf32 = _ContextProp(
+    allow_tf32 = ContextProp(
         torch._C._get_cudnn_allow_tf32,
         torch._C._set_cudnn_allow_tf32,
     )
-
-    def __init__(self, module, name):
-        super().__init__(name)
-        self.m = module
-
-    def __getattr__(self, attr):
-        return self.m.__getattribute__(attr)
 
 
 # Match PyTorch's module-proxy identity and reload behavior without exposing

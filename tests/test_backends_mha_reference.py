@@ -230,6 +230,7 @@ class MhaFastpathReferenceTests(unittest.TestCase):
             "cuda",
             "cudnn",
             "kleidiai",
+            "m",
             "mha",
             "mkl",
             "nnpack",
