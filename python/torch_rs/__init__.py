@@ -438,6 +438,7 @@ __all__ = [
 if "matmul" in _native.__all__:
     __all__.insert(0, "matmul")
 
+from . import __future__ as __future__
 from . import accelerator as accelerator
 from . import autograd as autograd
 from . import backends as backends

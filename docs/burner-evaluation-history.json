@@ -7249,6 +7249,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1176",
+      "recordedAt": "2026-08-28T00:08:13.977Z",
+      "label": "PR #1176",
+      "kind": "leaf",
+      "prNumber": 1176,
+      "title": "Add torch.__future__ overwrite-module-parameter policy",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 98.9,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 81.6,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
