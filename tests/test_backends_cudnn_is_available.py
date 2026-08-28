@@ -121,7 +121,7 @@ class CudnnIsAvailableTests(unittest.TestCase):
         self.assertIs(backends.cudnn, cudnn)
         self.assertEqual(
             {name for name in vars(backends) if not name.startswith("_")},
-            {"cuda", "cudnn", "mha", "mkl", "nnpack", "openmp"},
+            {"cpu", "cuda", "cudnn", "mha", "mkl", "nnpack", "openmp"},
         )
 
         package_import = {}

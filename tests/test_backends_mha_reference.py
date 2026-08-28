@@ -225,7 +225,15 @@ class MhaFastpathReferenceTests(unittest.TestCase):
         expected_backends = importlib.import_module("torch.backends")
         actual = self.actual
         expected = self.expected
-        supported_backends = {"cuda", "cudnn", "mha", "mkl", "nnpack", "openmp"}
+        supported_backends = {
+            "cpu",
+            "cuda",
+            "cudnn",
+            "mha",
+            "mkl",
+            "nnpack",
+            "openmp",
+        }
 
         for package_name, module in (("torch_rs", actual), ("torch", expected)):
             backend_import = {}

@@ -86,7 +86,7 @@ class CudaIsBuiltTests(unittest.TestCase):
         self.assertIs(cuda.torch, torch)
         self.assertEqual(
             {name for name in vars(backends) if not name.startswith("_")},
-            {"cuda", "cudnn", "mha", "mkl", "nnpack", "openmp"},
+            {"cpu", "cuda", "cudnn", "mha", "mkl", "nnpack", "openmp"},
         )
 
         package_import = {}
