@@ -7553,6 +7553,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 100
       }
+    },
+    {
+      "key": "pr:1244",
+      "recordedAt": "2026-08-28T20:40:21.551Z",
+      "label": "PR #1244",
+      "kind": "leaf",
+      "prNumber": 1244,
+      "title": "Add torch.backends global flag freezing",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 83.2,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 100
+      }
     }
   ]
 }
