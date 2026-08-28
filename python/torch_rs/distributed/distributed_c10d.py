@@ -29,7 +29,6 @@ __all__ = [
 # Preserve PyTorch's annotation spelling without exporting unsupported types.
 _ProcessGroup = type("ProcessGroup", (), {"__module__": __name__})
 _Backend = type("Backend", (), {"__module__": __name__})
-_default_pg = None
 
 
 class _WorldMeta(type):
@@ -41,12 +40,15 @@ class _WorldMeta(type):
 
     @property
     def WORLD(cls) -> _ProcessGroup | None:
-        return _default_pg
+        return None
 
     @WORLD.setter
     def WORLD(cls, pg: _ProcessGroup | None):
-        global _default_pg
-        _default_pg = pg
+        if pg is not None:
+            raise NotImplementedError(
+                "torch_rs.distributed.WORLD does not support non-None "
+                "process groups"
+            )
 
 
 class GroupMember(metaclass=_WorldMeta):

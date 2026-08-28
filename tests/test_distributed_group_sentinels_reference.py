@@ -267,6 +267,73 @@ class DistributedGroupSentinelReferenceTests(unittest.TestCase):
                 self.assertFalse(hasattr(actual_distributed, name))
                 self.assertFalse(hasattr(actual_c10d, name))
 
+    def test_world_setter_keeps_initialization_outside_supported_scope(self):
+        actual_distributed = torch.distributed
+        expected_distributed = reference_torch.distributed
+        actual_c10d = actual_distributed.distributed_c10d
+        expected_c10d = expected_distributed.distributed_c10d
+
+        class FakeProcessGroup:
+            def __init__(self):
+                self.events = []
+
+            def rank(self):
+                self.events.append("rank")
+                return 4
+
+            def size(self):
+                self.events.append("size")
+                return 8
+
+        self.assertEqual(
+            self.outcome(lambda: setattr(actual_c10d.GroupMember, "WORLD", None)),
+            self.outcome(lambda: setattr(expected_c10d.GroupMember, "WORLD", None)),
+        )
+        actual_candidate = FakeProcessGroup()
+        expected_candidate = FakeProcessGroup()
+        try:
+            self.assertIsNone(
+                setattr(expected_c10d.GroupMember, "WORLD", expected_candidate)
+            )
+            self.assertIs(expected_c10d.GroupMember.WORLD, expected_candidate)
+            self.assertIs(expected_c10d.group.WORLD, expected_candidate)
+            self.assertIs(expected_distributed.is_initialized(), True)
+            self.assertEqual(expected_distributed.get_rank(), 4)
+            self.assertEqual(expected_distributed.get_world_size(), 8)
+            self.assertEqual(expected_candidate.events, ["rank", "size"])
+
+            with self.assertRaises(NotImplementedError) as raised:
+                setattr(actual_c10d.GroupMember, "WORLD", actual_candidate)
+            self.assertEqual(
+                str(raised.exception),
+                "torch_rs.distributed.WORLD does not support non-None "
+                "process groups",
+            )
+            self.assertEqual(actual_candidate.events, [])
+            self.assertIs(actual_c10d.GroupMember.WORLD, None)
+            self.assertIs(actual_c10d.group.WORLD, None)
+            self.assertIs(actual_distributed.is_initialized(), False)
+            self.assertEqual(actual_distributed.get_pg_count(), 0)
+            self.assertEqual(
+                self.outcome(actual_distributed.get_rank),
+                (
+                    "error",
+                    ValueError,
+                    "Default process group has not been initialized, please "
+                    "make sure to call init_process_group.",
+                    (
+                        "Default process group has not been initialized, please "
+                        "make sure to call init_process_group.",
+                    ),
+                ),
+            )
+        finally:
+            setattr(expected_c10d.group, "WORLD", None)
+            setattr(actual_c10d.group, "WORLD", None)
+
+        self.assertIs(expected_distributed.is_initialized(), False)
+        self.assertIs(actual_distributed.is_initialized(), False)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,9 @@ DEFAULT_GROUP_ERROR = (
     "call init_process_group."
 )
 INVALID_GROUP_ERROR = "Invalid process group specified"
+WORLD_ASSIGNMENT_ERROR = (
+    "torch_rs.distributed.WORLD does not support non-None process groups"
+)
 EXPECTED_C10D_ALL = [
     "GroupMember",
     "destroy_process_group",
@@ -265,6 +268,43 @@ class DistributedGroupSentinelTests(unittest.TestCase):
             )
         finally:
             importlib.reload(distributed)
+
+    def test_world_setter_rejects_non_none_groups_without_lifecycle_changes(self):
+        distributed = torch.distributed
+        distributed_c10d = distributed.distributed_c10d
+
+        class UnreadableProcessGroup:
+            def __getattribute__(self, name):
+                if name.startswith("__"):
+                    return object.__getattribute__(self, name)
+                raise AssertionError(f"process group was inspected: {name}")
+
+        candidate = UnreadableProcessGroup()
+        for cls in (distributed_c10d.GroupMember, distributed_c10d.group):
+            with self.subTest(cls=cls.__name__):
+                self.assertIsNone(setattr(cls, "WORLD", None))
+                self.assertIs(cls.WORLD, None)
+                with self.assertRaises(NotImplementedError) as raised:
+                    setattr(cls, "WORLD", candidate)
+                self.assertEqual(str(raised.exception), WORLD_ASSIGNMENT_ERROR)
+                self.assertEqual(
+                    raised.exception.args,
+                    (WORLD_ASSIGNMENT_ERROR,),
+                )
+                self.assertIs(distributed_c10d.GroupMember.WORLD, None)
+                self.assertIs(distributed_c10d.group.WORLD, None)
+                self.assertIs(distributed.is_initialized(), False)
+                self.assertEqual(distributed.get_pg_count(), 0)
+                self.assert_error(
+                    ValueError,
+                    DEFAULT_GROUP_ERROR,
+                    distributed.get_rank,
+                )
+                self.assert_error(
+                    ValueError,
+                    DEFAULT_GROUP_ERROR,
+                    distributed.get_world_size,
+                )
 
 
 if __name__ == "__main__":
