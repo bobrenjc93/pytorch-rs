@@ -7409,6 +7409,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1215",
+      "recordedAt": "2026-08-28T11:56:28.028Z",
+      "label": "PR #1215",
+      "kind": "leaf",
+      "prNumber": 1215,
+      "title": "Fast-path contiguous Tensor.sum reductions",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 82.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
