@@ -7,6 +7,7 @@ import pickletools
 import types
 import typing
 import unittest
+from unittest import mock
 
 import torch_rs as torch
 
@@ -48,54 +49,39 @@ class _TruthProbe:
         return self.result
 
 
-class _GuardEntry:
-    def __init__(self, label, guard_type, is_global, events):
-        self.label = label
-        self._guard_type = guard_type
-        self._is_global = is_global
-        self.events = events
-
-    @property
-    def guard_type(self):
-        self.events.append(("guard_type", self.label))
-        return self._guard_type
-
-    @property
-    def is_global(self):
-        self.events.append(("is_global", self.label))
-        return self._is_global
-
-
-class _ChangingGuardEntry:
-    def __init__(self, label, guard_types, is_global, events):
-        self.label = label
-        self.guard_types = iter(guard_types)
-        self._is_global = is_global
-        self.events = events
-
-    @property
-    def guard_type(self):
-        self.events.append(("guard_type", self.label))
-        return next(self.guard_types)
-
-    @property
-    def is_global(self):
-        self.events.append(("is_global", self.label))
-        return self._is_global
-
-
 class _EqualityProbe:
-    def __init__(self, label, results, events):
+    def __init__(self, label, result, events):
         self.label = label
-        self.results = iter(results)
+        self.result = result
         self.events = events
 
     def __eq__(self, other):
         self.events.append(("eq", self.label, other))
-        result = next(self.results)
-        if isinstance(result, BaseException):
-            raise result
-        return result
+        if isinstance(self.result, BaseException):
+            raise self.result
+        return self.result
+
+
+class _GuardEntry:
+    def __init__(self, label, guard_type, value, events):
+        self.label = label
+        self._guard_type = guard_type
+        self._value = value
+        self.events = events
+
+    @property
+    def guard_type(self):
+        self.events.append(("guard_type", self.label))
+        if isinstance(self._guard_type, BaseException):
+            raise self._guard_type
+        return self._guard_type
+
+    @property
+    def value(self):
+        self.events.append(("value", self.label))
+        if isinstance(self._value, BaseException):
+            raise self._value
+        return self._value
 
 
 class _CountingIterator:
@@ -162,79 +148,22 @@ class _NextFailure:
         raise self.error
 
 
-class _GuardTypeFailureEntry:
-    def __init__(self, error, fail_on_call=1):
-        self.error = error
-        self.fail_on_call = fail_on_call
-        self.guard_type_calls = 0
-        self.is_global_calls = 0
-
-    @property
-    def guard_type(self):
-        self.guard_type_calls += 1
-        if self.guard_type_calls == self.fail_on_call:
-            raise self.error
-        return "OTHER"
-
-    @property
-    def is_global(self):
-        self.is_global_calls += 1
-        raise AssertionError("is_global should not be accessed")
-
-
-class _GlobalFailureEntry:
-    def __init__(self, error):
-        self.error = error
-        self.guard_type_calls = 0
-        self.is_global_calls = 0
-
-    @property
-    def guard_type(self):
-        self.guard_type_calls += 1
-        return "TENSOR_MATCH"
-
-    @property
-    def is_global(self):
-        self.is_global_calls += 1
-        raise self.error
-
-
-class _InvalidTruth:
-    def __bool__(self):
-        return 1
-
-
-class _MissingGuardType:
-    pass
-
-
 class _InvalidIterator:
     def __iter__(self):
         return []
 
 
-def _normalized_code_metadata(code):
-    return (
-        code.co_names,
-        code.co_varnames,
-        tuple(
-            _normalized_code_metadata(constant)
-            if isinstance(constant, types.CodeType)
-            else constant
-            for constant in code.co_consts
-        ),
-        code.co_freevars,
-        code.co_cellvars,
-    )
+class _Parameter:
+    pass
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
-class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
+class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if reference_torch.__version__.split("+")[0] != "2.13.0":
             raise AssertionError(
-                "compiler.keep_portable_guards_unsafe differentials require "
+                "compiler.keep_tensor_guards_unsafe differentials require "
                 "pinned PyTorch 2.13.0"
             )
 
@@ -274,59 +203,50 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
     def behavior_outcome(self, function):
         events = []
         entries = [
-            _GuardEntry("global", "GLOBAL_STATE", object(), events),
-            _GuardEntry("shape", "SHAPE_ENV", object(), events),
-            _GuardEntry("local-tensor", "TENSOR_MATCH", False, events),
-            _GuardEntry("global-tensor", "TENSOR_MATCH", True, events),
-            _GuardEntry("none-tensor", "TENSOR_MATCH", None, events),
+            _GuardEntry("tensor", "TENSOR_MATCH", object(), events),
             _GuardEntry("other", "OTHER", object(), events),
+            _GuardEntry("tensor-two", "TENSOR_MATCH", object(), events),
         ]
         original_entries = tuple(entries)
         list_result = function(entries)
-        tuple_result = function(tuple(entries))
+        tuple_result = function(tuple(entries), True)
+        keep_probe_events = []
+        keep_probe = _TruthProbe(
+            "keep-parameters",
+            AssertionError("must not be evaluated for non-parameters"),
+            keep_probe_events,
+        )
+        probe_result = function(tuple(entries), keep_probe)
         first_empty = function([])
-        second_empty = function(())
+        second_empty = function((), True)
 
         iterable_events = []
         iterable_entries = [
-            _GuardEntry("iter-global", "GLOBAL_STATE", object(), iterable_events),
-            _GuardEntry("iter-tensor", "TENSOR_MATCH", False, iterable_events),
+            _GuardEntry("iter-tensor", "TENSOR_MATCH", object(), iterable_events),
             _GuardEntry("iter-other", "OTHER", object(), iterable_events),
         ]
         iterable = _CountingIterable(iterable_entries)
         iterable_result = function(iterable)
 
-        generator_events = []
-
-        def generated_entries():
-            for index, entry in enumerate(iterable_entries):
-                generator_events.append(("yield", index))
-                yield entry
-            generator_events.append(("finished", len(iterable_entries)))
-
-        generator = generated_entries()
-        generator_result = function(generator)
-        try:
-            next(generator)
-        except StopIteration:
-            generator_exhausted = True
-        else:
-            generator_exhausted = False
-
-        results = (
-            list_result,
-            tuple_result,
-            first_empty,
-            second_empty,
-            iterable_result,
-            generator_result,
-        )
         return {
-            "results": results,
-            "result_types": tuple(type(result).__name__ for result in results),
-            "exact_bools": tuple(
-                tuple(value is True if value else value is False for value in result)
-                for result in results
+            "results": (
+                list_result,
+                tuple_result,
+                probe_result,
+                first_empty,
+                second_empty,
+                iterable_result,
+            ),
+            "result_types": tuple(
+                type(result).__name__
+                for result in (
+                    list_result,
+                    tuple_result,
+                    probe_result,
+                    first_empty,
+                    second_empty,
+                    iterable_result,
+                )
             ),
             "fresh": (
                 list_result is not entries,
@@ -338,56 +258,31 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
                 for actual, original in zip(entries, original_entries)
             ),
             "events": events,
+            "keep_probe_events": keep_probe_events,
             "iterable_events": iterable_events,
             "iter_calls": iterable.iter_calls,
             "next_calls": iterable.next_calls,
-            "generator_events": generator_events,
-            "generator_exhausted": generator_exhausted,
         }
 
-    def access_and_truth_outcome(self, function):
-        changing_events = []
-        changing = _ChangingGuardEntry(
-            "changing", ("OTHER", "TENSOR_MATCH"), False, changing_events
+    def comparison_outcome(self, function):
+        false_events = []
+        false_result = _TruthProbe("false", False, false_events)
+        false_type = _EqualityProbe("other", false_result, false_events)
+        false_entry = _GuardEntry(
+            "other", false_type, AssertionError("unused"), false_events
         )
-        changing_result = function((changing,))
 
-        comparison_events = []
-        global_result = _TruthProbe("global-comparison", False, comparison_events)
-        shape_result = _TruthProbe("shape-comparison", False, comparison_events)
-        tensor_result = _TruthProbe("tensor-comparison", False, comparison_events)
-        guard_type = _EqualityProbe(
-            "custom",
-            (global_result, shape_result, tensor_result),
-            comparison_events,
-        )
-        comparison_entry = _GuardEntry(
-            "custom", guard_type, False, comparison_events
-        )
-        comparison_result = function((comparison_entry,))
+        true_events = []
+        true_result = _TruthProbe("true", True, true_events)
+        true_type = _EqualityProbe("tensor", true_result, true_events)
+        true_entry = _GuardEntry("tensor", true_type, object(), true_events)
 
-        short_circuit_events = []
-        membership_result = _TruthProbe(
-            "membership", True, short_circuit_events
+        return (
+            function((false_entry,)),
+            false_events,
+            function((true_entry,)),
+            true_events,
         )
-        guard_type = _EqualityProbe(
-            "short-circuit", (membership_result,), short_circuit_events
-        )
-        short_circuit_entry = _GuardEntry(
-            "short-circuit", guard_type, object(), short_circuit_events
-        )
-        short_circuit_result = function((short_circuit_entry,))
-
-        return {
-            "changing_result": changing_result,
-            "changing_events": changing_events,
-            "comparison_result_type": type(comparison_result[0]).__name__,
-            "returned_tensor_result": comparison_result[0] is tensor_result,
-            "comparison_events": comparison_events,
-            "short_circuit_result": short_circuit_result,
-            "short_circuit_exact_true": short_circuit_result[0] is True,
-            "short_circuit_events": short_circuit_events,
-        }
 
     def exception_outcome(self, function):
         iter_error = RuntimeError("iter failure")
@@ -398,37 +293,22 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
 
         next_error = LookupError("next failure")
         next_failure = _NextFailure(
-            types.SimpleNamespace(guard_type="GLOBAL_STATE"), next_error
+            types.SimpleNamespace(guard_type="OTHER"), next_error
         )
         next_outcome = self.captured_error(
             lambda: function(next_failure), next_error
         ) + (next_failure.iter_calls, next_failure.next_calls)
 
-        first_attribute_error = KeyError("first guard_type failure")
-        first_attribute_failure = _GuardTypeFailureEntry(first_attribute_error)
-        untouched = _GuardTypeFailureEntry(AssertionError("should not be reached"))
-        first_attribute_outcome = self.captured_error(
-            lambda: function((first_attribute_failure, untouched)),
-            first_attribute_error,
-        ) + (
-            first_attribute_failure.guard_type_calls,
-            first_attribute_failure.is_global_calls,
-            untouched.guard_type_calls,
+        guard_type_error = KeyError("guard_type failure")
+        guard_type_entry = _GuardEntry(
+            "guard", guard_type_error, object(), []
         )
-
-        second_attribute_error = IndexError("second guard_type failure")
-        second_attribute_failure = _GuardTypeFailureEntry(
-            second_attribute_error, fail_on_call=2
-        )
-        second_attribute_outcome = self.captured_error(
-            lambda: function((second_attribute_failure,)), second_attribute_error
-        ) + (
-            second_attribute_failure.guard_type_calls,
-            second_attribute_failure.is_global_calls,
+        guard_type_outcome = self.captured_error(
+            lambda: function((guard_type_entry,)), guard_type_error
         )
 
         comparison_error = ZeroDivisionError("comparison failure")
-        comparison_value = _EqualityProbe("comparison", (comparison_error,), [])
+        comparison_value = _EqualityProbe("comparison", comparison_error, [])
         comparison_outcome = self.captured_error(
             lambda: function(
                 (types.SimpleNamespace(guard_type=comparison_value),)
@@ -437,88 +317,97 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
         )
 
         comparison_truth_error = ValueError("comparison truth failure")
-        comparison_truth_events = []
         comparison_truth = _TruthProbe(
-            "comparison", comparison_truth_error, comparison_truth_events
+            "comparison", comparison_truth_error, []
         )
-        comparison_value = _EqualityProbe(
-            "comparison", (comparison_truth,), comparison_truth_events
-        )
+        comparison_value = _EqualityProbe("comparison", comparison_truth, [])
         comparison_truth_outcome = self.captured_error(
             lambda: function(
                 (types.SimpleNamespace(guard_type=comparison_value),)
             ),
             comparison_truth_error,
-        ) + (comparison_truth_events,)
-
-        global_error = OSError("is_global failure")
-        global_failure = _GlobalFailureEntry(global_error)
-        global_outcome = self.captured_error(
-            lambda: function((global_failure,)), global_error
-        ) + (global_failure.guard_type_calls, global_failure.is_global_calls)
-
-        global_truth_error = ArithmeticError("is_global truth failure")
-        global_truth_events = []
-        global_truth = _TruthProbe(
-            "is_global", global_truth_error, global_truth_events
         )
-        global_truth_outcome = self.captured_error(
-            lambda: function(
-                (
-                    types.SimpleNamespace(
-                        guard_type="TENSOR_MATCH", is_global=global_truth
-                    ),
-                )
-            ),
-            global_truth_error,
-        ) + (global_truth_events,)
+
+        value_error = OSError("value failure")
+        value_entry = _GuardEntry("tensor", "TENSOR_MATCH", value_error, [])
+        value_outcome = self.captured_error(
+            lambda: function((value_entry,)), value_error
+        )
 
         return (
             iter_outcome,
             next_outcome,
-            first_attribute_outcome,
-            second_attribute_outcome,
+            guard_type_outcome,
             comparison_outcome,
             comparison_truth_outcome,
-            global_outcome,
-            global_truth_outcome,
-            self.captured_error(lambda: function((_MissingGuardType(),))),
+            value_outcome,
+            self.captured_error(lambda: function((object(),))),
             self.captured_error(
                 lambda: function(
-                    (
-                        types.SimpleNamespace(
-                            guard_type="TENSOR_MATCH", is_global=_InvalidTruth()
-                        ),
-                    )
+                    (types.SimpleNamespace(guard_type="TENSOR_MATCH"),)
                 )
             ),
             self.captured_error(lambda: function(_InvalidIterator())),
         )
 
-    def test_values_iteration_and_access_order_match_pytorch_2_13(self):
-        actual = torch.compiler.keep_portable_guards_unsafe
-        expected = reference_torch.compiler.keep_portable_guards_unsafe
+    def parameter_outcome(self, module):
+        function = module.compiler.keep_tensor_guards_unsafe
+        events = []
+        entries = (
+            _GuardEntry("parameter", "TENSOR_MATCH", _Parameter(), events),
+            _GuardEntry("object", "TENSOR_MATCH", object(), events),
+            _GuardEntry("other", "OTHER", object(), events),
+        )
+        true_probe = _TruthProbe("true", True, events)
+        false_probe = _TruthProbe("false", False, events)
+        with mock.patch.object(module.nn, "Parameter", _Parameter, create=True):
+            results = (
+                function(entries),
+                function(entries, True),
+                function(entries, keep_parameters=true_probe),
+                function(entries, keep_parameters=false_probe),
+            )
+        return results, events
+
+    def test_behavior_and_access_order_match_pytorch_2_13(self):
+        actual = torch.compiler.keep_tensor_guards_unsafe
+        expected = reference_torch.compiler.keep_tensor_guards_unsafe
         self.assertEqual(self.behavior_outcome(actual), self.behavior_outcome(expected))
         self.assertEqual(
-            self.access_and_truth_outcome(actual),
-            self.access_and_truth_outcome(expected),
+            self.comparison_outcome(actual), self.comparison_outcome(expected)
         )
 
+    def test_parameter_branch_matches_when_parameter_type_is_available(self):
+        original_reference_parameter = reference_torch.nn.Parameter
+        self.assertFalse(hasattr(torch.nn, "Parameter"))
+        self.assertEqual(
+            self.parameter_outcome(torch), self.parameter_outcome(reference_torch)
+        )
+        self.assertFalse(hasattr(torch.nn, "Parameter"))
+        self.assertIs(reference_torch.nn.Parameter, original_reference_parameter)
+
     def test_exceptions_and_argument_errors_match_pytorch_2_13(self):
-        actual = torch.compiler.keep_portable_guards_unsafe
-        expected = reference_torch.compiler.keep_portable_guards_unsafe
+        actual = torch.compiler.keep_tensor_guards_unsafe
+        expected = reference_torch.compiler.keep_tensor_guards_unsafe
         self.assertEqual(
             self.exception_outcome(actual), self.exception_outcome(expected)
         )
 
         cases = (
             (lambda: actual(), lambda: expected()),
-            (lambda: actual([], []), lambda: expected([], [])),
+            (lambda: actual([], False, True), lambda: expected([], False, True)),
             (
                 lambda: actual([], guard_entries=[]),
                 lambda: expected([], guard_entries=[]),
             ),
-            (lambda: actual(entries=[]), lambda: expected(entries=[])),
+            (
+                lambda: actual([], False, keep_parameters=True),
+                lambda: expected([], False, keep_parameters=True),
+            ),
+            (
+                lambda: actual([], keep_parameter=True),
+                lambda: expected([], keep_parameter=True),
+            ),
             (lambda: actual(None), lambda: expected(None)),
             (lambda: actual(1), lambda: expected(1)),
         )
@@ -529,11 +418,13 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
     def test_signature_documentation_and_metadata_match_pytorch_2_13(self):
         actual_compiler = importlib.import_module("torch_rs.compiler")
         expected_compiler = importlib.import_module("torch.compiler")
-        actual = actual_compiler.keep_portable_guards_unsafe
-        expected = expected_compiler.keep_portable_guards_unsafe
+        actual = actual_compiler.keep_tensor_guards_unsafe
+        expected = expected_compiler.keep_tensor_guards_unsafe
 
         self.assertIs(torch.compiler, actual_compiler)
         self.assertIs(reference_torch.compiler, expected_compiler)
+        self.assertIs(actual_compiler.torch, torch)
+        self.assertIs(expected_compiler.torch, reference_torch)
         self.assertIs(type(actual), types.FunctionType)
         self.assertIs(type(expected), types.FunctionType)
         self.assertEqual(
@@ -556,16 +447,24 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
         )
+        self.assertEqual(actual.__code__.co_argcount, expected.__code__.co_argcount)
         self.assertEqual(
-            _normalized_code_metadata(actual.__code__),
-            _normalized_code_metadata(expected.__code__),
+            actual.__code__.co_posonlyargcount,
+            expected.__code__.co_posonlyargcount,
         )
+        self.assertEqual(
+            actual.__code__.co_kwonlyargcount,
+            expected.__code__.co_kwonlyargcount,
+        )
+        self.assertEqual(actual.__code__.co_varnames, expected.__code__.co_varnames)
+        self.assertEqual(actual.__code__.co_freevars, expected.__code__.co_freevars)
+        self.assertEqual(actual.__code__.co_cellvars, expected.__code__.co_cellvars)
 
     def test_exports_copying_and_pickling_match_pytorch_2_13(self):
         actual_compiler = torch.compiler
         expected_compiler = reference_torch.compiler
-        actual = actual_compiler.keep_portable_guards_unsafe
-        expected = expected_compiler.keep_portable_guards_unsafe
+        actual = actual_compiler.keep_tensor_guards_unsafe
+        expected = expected_compiler.keep_tensor_guards_unsafe
 
         self.assertEqual(
             actual_compiler.__all__,
@@ -576,12 +475,8 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            torch.__all__.count("compiler"),
-            reference_torch.__all__.count("compiler"),
-        )
-        self.assertEqual(
-            torch.__all__.count("keep_portable_guards_unsafe"),
-            reference_torch.__all__.count("keep_portable_guards_unsafe"),
+            torch.__all__.count("keep_tensor_guards_unsafe"),
+            reference_torch.__all__.count("keep_tensor_guards_unsafe"),
         )
 
         for module in (actual_compiler, expected_compiler):
@@ -594,7 +489,7 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
             namespace = {}
             exec(f"from {module.__name__} import *", namespace)
             self.assertNotIn("compiler", namespace)
-            self.assertNotIn("keep_portable_guards_unsafe", namespace)
+            self.assertNotIn("keep_tensor_guards_unsafe", namespace)
 
         for function in (actual, expected):
             self.assertIs(copy.copy(function), function)
@@ -627,16 +522,15 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
                         compiler.is_exporting(),
                     )
                     entries = (
-                        types.SimpleNamespace(guard_type="GLOBAL_STATE"),
                         types.SimpleNamespace(
-                            guard_type="TENSOR_MATCH", is_global=False
+                            guard_type="TENSOR_MATCH", value=object()
                         ),
+                        types.SimpleNamespace(guard_type="OTHER"),
                     )
-                    result = compiler.keep_portable_guards_unsafe(iter(entries))
+                    result = compiler.keep_tensor_guards_unsafe(iter(entries))
                     results.append(
                         (
                             result,
-                            tuple(value is True for value in result),
                             before_grad,
                             module.is_grad_enabled(),
                             before_queries,
@@ -664,10 +558,10 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
 
         try:
             compiler.set_default_backend(backend)
-            old_function = compiler.keep_portable_guards_unsafe
+            old_function = compiler.keep_tensor_guards_unsafe
             old_exports = compiler.__all__
             reloaded = importlib.reload(compiler)
-            new_function = reloaded.keep_portable_guards_unsafe
+            new_function = reloaded.keep_tensor_guards_unsafe
 
             try:
                 pickle.dumps(old_function)
@@ -683,7 +577,9 @@ class CompilerKeepPortableGuardsUnsafeReferenceTests(unittest.TestCase):
                 pickle.loads(pickle.dumps(new_function, protocol)) is new_function
                 for protocol in range(pickle.HIGHEST_PROTOCOL + 1)
             )
-            entry = types.SimpleNamespace(guard_type="SHAPE_ENV")
+            entry = types.SimpleNamespace(
+                guard_type="TENSOR_MATCH", value=object()
+            )
             return (
                 reloaded is compiler,
                 module.compiler is compiler,
