@@ -3279,6 +3279,75 @@ fn clone_handles_scalars_and_extreme_empty_view_offsets() {
 }
 
 #[test]
+fn zeros_like_returns_positive_zero_preserve_format_leaf_storage() {
+    let transposed = Tensor::from_vec(vec![-1.0, -0.0, 2.0, 3.0, 4.0, 5.0], [2, 3])
+        .unwrap()
+        .transpose(0, 1)
+        .unwrap()
+        .with_requires_grad(true);
+    let transposed_zero = transposed.zeros_like().unwrap();
+    assert_eq!(transposed_zero.shape(), transposed.shape());
+    assert_eq!(transposed_zero.stride(), transposed.stride());
+    assert_eq!(transposed_zero.storage_offset(), 0);
+    assert_eq!(transposed_zero.dtype(), DType::Float32);
+    assert_eq!(transposed_zero.device(), Device::Cpu);
+    assert!(!transposed_zero.requires_grad());
+    assert!(transposed_zero.is_leaf());
+    assert!(!transposed_zero.shares_storage_with(&transposed));
+    assert!(
+        transposed_zero
+            .logical_values()
+            .all(|value| value.to_bits() == 0.0_f32.to_bits())
+    );
+
+    let channels_last = Tensor::zeros([2, 3, 4, 5])
+        .unwrap()
+        .try_contiguous(MemoryFormat::ChannelsLast)
+        .unwrap();
+    let channels_last_zero = channels_last.zeros_like().unwrap();
+    assert_eq!(channels_last_zero.shape(), channels_last.shape());
+    assert_eq!(channels_last_zero.stride(), [60, 1, 15, 3]);
+    assert_eq!(channels_last_zero.storage_offset(), 0);
+    assert!(!channels_last_zero.shares_storage_with(&channels_last));
+
+    let offset = Tensor::ones([3, 2, 3])
+        .unwrap()
+        .index_integer(1)
+        .unwrap()
+        .with_requires_grad(true);
+    let offset_zero = offset.zeros_like().unwrap();
+    assert_eq!(offset_zero.shape(), [2, 3]);
+    assert_eq!(offset_zero.stride(), [3, 1]);
+    assert_eq!(offset_zero.storage_offset(), 0);
+    assert!(!offset_zero.requires_grad());
+    assert!(!offset_zero.shares_storage_with(&offset));
+
+    let scalar = Tensor::from_vec(vec![-0.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+    let scalar_zero = scalar.zeros_like().unwrap();
+    assert!(scalar_zero.shape().is_empty());
+    assert!(scalar_zero.stride().is_empty());
+    assert_eq!(scalar_zero.item().unwrap().to_bits(), 0.0_f32.to_bits());
+    assert!(!scalar_zero.requires_grad());
+    assert!(scalar_zero.is_leaf());
+
+    let empty = Tensor::zeros([2, 0, 3])
+        .unwrap()
+        .transpose(0, 2)
+        .unwrap()
+        .index_integer(1)
+        .unwrap();
+    let empty_zero = empty.zeros_like().unwrap();
+    assert_eq!(empty_zero.shape(), [0, 2]);
+    assert_eq!(empty_zero.stride(), [3, 3]);
+    assert_eq!(empty_zero.storage_offset(), 0);
+    assert_eq!(empty_zero.numel(), 0);
+    assert!(empty_zero.as_slice().is_empty());
+    assert!(!empty_zero.shares_storage_with(&empty));
+}
+
+#[test]
 fn clone_materializes_explicit_channels_last_storage() {
     let bit_patterns = [
         0x0000_0000,

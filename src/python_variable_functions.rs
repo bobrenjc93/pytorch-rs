@@ -28,14 +28,16 @@ use crate::python::{
     rsqrt_variable_function, scalar_tensor_variable_function, select_variable_function,
     sin_variable_function, sqrt_variable_function, square_variable_function,
     tanh_variable_function, trunc_variable_function, unbind_variable_function,
+    zeros_like_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 39] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 40] = [
     "get_device",
     "scalar_tensor",
     "arange",
+    "zeros_like",
     "atleast_1d",
     "atleast_2d",
     "atleast_3d",
@@ -149,6 +151,8 @@ Example::
     >>> torch.arange(1, 2.5, 0.5)
     tensor([ 1.0000,  1.5000,  2.0000])
 ";
+
+const ZEROS_LIKE_DOC: &std::ffi::CStr = c"\nzeros_like(input, *, dtype=None, layout=None, device=None, requires_grad=False, memory_format=torch.preserve_format) -> Tensor\n\nReturns a tensor filled with the scalar value `0`, with the same size as\n:attr:`input`. ``torch.zeros_like(input)`` is equivalent to\n``torch.zeros(input.size(), dtype=input.dtype, layout=input.layout, device=input.device)``.\n\n.. warning::\n    As of 0.4, this function does not support an :attr:`out` keyword. As an alternative,\n    the old ``torch.zeros_like(input, out=output)`` is equivalent to\n    ``torch.zeros(input.size(), out=output)``.\n\nArgs:\n    input (Tensor): the size of :attr:`input` will determine size of the output tensor.\n\nKeyword args:\n    dtype (:class:`torch.dtype`, optional): the desired data type of returned Tensor.\n        Default: if ``None``, defaults to the dtype of :attr:`input`.\n    layout (:class:`torch.layout`, optional): the desired layout of returned tensor.\n        Default: if ``None``, defaults to the layout of :attr:`input`.\n    device (:class:`torch.device`, optional): the desired device of returned tensor.\n        Default: if ``None``, defaults to the device of :attr:`input`.\n    requires_grad (bool, optional): If autograd should record operations on the\n        returned tensor. Default: ``False``.\n    memory_format (:class:`torch.memory_format`, optional): the desired memory format of\n        returned Tensor. Default: ``torch.preserve_format``.\n\nExample::\n\n    >>> input = torch.empty(2, 3)\n    >>> torch.zeros_like(input)\n    tensor([[ 0.,  0.,  0.],\n            [ 0.,  0.,  0.]])\n";
 
 const POSITIVE_DOC: &std::ffi::CStr = c"\npositive(input) -> Tensor\n\nReturns :attr:`input`.\nThrows a runtime error if :attr:`input` is a bool tensor.\n\nArgs:\n    input (Tensor): the input tensor.\n\nExample::\n\n    >>> t = torch.randn(5)\n    >>> t\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n    >>> torch.positive(t)\n    tensor([ 0.0090, -0.2262, -0.0682, -0.2866,  0.3940])\n";
 
@@ -760,6 +764,7 @@ macro_rules! variable_function_callback {
 variable_function_callback!(get_device_callback, get_device_variable_function);
 variable_function_callback!(scalar_tensor_callback, scalar_tensor_variable_function);
 variable_function_callback!(arange_callback, arange_variable_function);
+variable_function_callback!(zeros_like_callback, zeros_like_variable_function);
 variable_function_callback!(atleast_1d_callback, atleast_1d_variable_function);
 variable_function_callback!(atleast_2d_callback, atleast_2d_variable_function);
 variable_function_callback!(atleast_3d_callback, atleast_3d_variable_function);
@@ -830,6 +835,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"get_device", get_device_callback, c""),
         variable_function_method!(c"scalar_tensor", scalar_tensor_callback, c""),
         variable_function_method!(c"arange", arange_callback, ARANGE_DOC),
+        variable_function_method!(c"zeros_like", zeros_like_callback, ZEROS_LIKE_DOC),
         variable_function_method!(c"atleast_1d", atleast_1d_callback, c""),
         variable_function_method!(c"atleast_2d", atleast_2d_callback, c""),
         variable_function_method!(c"atleast_3d", atleast_3d_callback, c""),

@@ -2004,6 +2004,24 @@ impl Tensor {
         self.try_clone_with_memory_format(MemoryFormat::Preserve)
     }
 
+    /// Creates an independent float32 CPU tensor of positive zeros with this
+    /// tensor's shape and PyTorch preserve-format output strides.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when result metadata or storage allocation fails.
+    pub fn zeros_like(&self) -> Result<Self, TensorError> {
+        let (shape, strides) = self.shape_and_strides_with_memory_format(MemoryFormat::Preserve)?;
+        let data = filled_storage(self.elements, 0.0)?;
+        Ok(Self::from_owned_parts(
+            data,
+            shape,
+            strides,
+            DType::Float32,
+            Device::Cpu,
+        ))
+    }
+
     /// Creates an independent copy using the requested storage layout.
     ///
     /// [`MemoryFormat::Preserve`] retains dense strides and packs non-dense
@@ -2022,6 +2040,17 @@ impl Tensor {
         &self,
         memory_format: MemoryFormat,
     ) -> Result<Self, TensorError> {
+        let (shape, strides) = self.shape_and_strides_with_memory_format(memory_format)?;
+        let data = self.materialize_with_strides(&strides, |value| value)?;
+        let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
+        self.record_transform(&mut output, TransformMapping::Identity, AutogradNode::Clone)?;
+        Ok(output)
+    }
+
+    fn shape_and_strides_with_memory_format(
+        &self,
+        memory_format: MemoryFormat,
+    ) -> Result<(Vec<usize>, Vec<usize>), TensorError> {
         let expected_rank = match memory_format {
             MemoryFormat::ChannelsLast => Some(4),
             MemoryFormat::ChannelsLast3d => Some(5),
@@ -2057,10 +2086,7 @@ impl Tensor {
             MemoryFormat::ChannelsLast => channels_last_strides(&shape, elements)?,
             MemoryFormat::ChannelsLast3d => channels_last_3d_strides(&shape, elements)?,
         };
-        let data = self.materialize_with_strides(&strides, |value| value)?;
-        let mut output = Self::from_owned_parts(data, shape, strides, self.dtype(), self.device());
-        self.record_transform(&mut output, TransformMapping::Identity, AutogradNode::Clone)?;
-        Ok(output)
+        Ok((shape, strides))
     }
 
     /// Returns a tensor contiguous in the requested storage layout.
