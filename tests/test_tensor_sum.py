@@ -90,6 +90,19 @@ class TensorSumTests(unittest.TestCase):
         self.assertTrue(untracked.is_leaf)
         self.assertTrue(leaf.sum(dtype=torch.float32).requires_grad)
 
+    def test_live_gradient_sum_preserves_accumulated_sequential_bits(self):
+        weights = torch.tensor([1.0e20, -1.0e20, 3.0, -0.0])
+        leaf = torch.ones((4,), requires_grad=True)
+
+        (leaf * weights).sum().backward()
+        live_grad = leaf.grad
+        self.assertIs(live_grad, leaf.grad)
+        self.assert_scalar(live_grad.sum(), np.float32(3.0), case="first")
+
+        (leaf * weights).sum().backward()
+        self.assertIs(live_grad, leaf.grad)
+        self.assert_scalar(live_grad.sum(), np.float32(6.0), case="accumulated")
+
     def test_descriptor_documentation_and_unbound_dtype_calls(self):
         tensor = torch.tensor([1.0, 2.0])
         descriptor = inspect.getattr_static(torch.Tensor, "sum")

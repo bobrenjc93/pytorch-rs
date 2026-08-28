@@ -54,6 +54,10 @@ impl StorageData<f32> {
         self.with_values(|values| values[start..end].to_vec())
     }
 
+    fn with_range<R>(&self, start: usize, end: usize, read: impl FnOnce(&[f32]) -> R) -> Option<R> {
+        self.with_values(|values| values.get(start..end).map(read))
+    }
+
     fn into_range(self, start: usize, end: usize) -> Vec<f32> {
         let values = match self {
             Self::Inline(value) => return std::slice::from_ref(&value)[start..end].to_vec(),
@@ -196,6 +200,17 @@ impl Storage {
     pub(crate) fn copy_range(&self, start: usize, end: usize) -> Vec<f32> {
         match &self.payload {
             StoragePayload::CpuFloat32(data) => data.copy_range(start, end),
+        }
+    }
+
+    pub(crate) fn with_range<R>(
+        &self,
+        start: usize,
+        end: usize,
+        read: impl FnOnce(&[f32]) -> R,
+    ) -> Option<R> {
+        match &self.payload {
+            StoragePayload::CpuFloat32(data) => data.with_range(start, end, read),
         }
     }
 
@@ -396,6 +411,15 @@ mod tests {
         assert_eq!(storage.data_ptr(), pointer.cast());
         assert_eq!(storage.value(1), Some(2.0));
         assert_eq!(storage.copy_range(1, 3), [2.0, 3.0]);
+        assert_eq!(
+            storage.with_range(0, 3, |values| values.iter().copied().sum::<f32>()),
+            Some(6.0)
+        );
+        assert_eq!(
+            storage.with_range(1, 3, |values| values.iter().copied().sum::<f32>()),
+            Some(5.0)
+        );
+        assert_eq!(storage.with_range(2, 4, <[f32]>::len), None);
         assert_eq!(
             storage
                 .try_copy_values(|values| Ok::<_, Infallible>(values.to_vec()))
