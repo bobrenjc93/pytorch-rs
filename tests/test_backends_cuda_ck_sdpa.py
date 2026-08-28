@@ -130,11 +130,23 @@ class CudaCkSdpaAvailabilityTests(unittest.TestCase):
         self.assertIs(child_wildcard["is_ck_sdpa_available"], function)
         self.assertEqual(
             cuda.__all__,
-            ["is_built", "is_ck_sdpa_available", "is_flash_attention_available"],
+            [
+                "is_built",
+                "is_ck_sdpa_available",
+                "enable_mem_efficient_sdp",
+                "mem_efficient_sdp_enabled",
+                "is_flash_attention_available",
+            ],
         )
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
-            {"is_built", "is_ck_sdpa_available", "is_flash_attention_available"},
+            {
+                "enable_mem_efficient_sdp",
+                "is_built",
+                "is_ck_sdpa_available",
+                "is_flash_attention_available",
+                "mem_efficient_sdp_enabled",
+            },
         )
 
         self.assertIs(copy.copy(function), function)

@@ -59,7 +59,13 @@ class CudaIsBuiltTests(unittest.TestCase):
         self.assertIsNone(cuda.__doc__)
         self.assertEqual(
             cuda.__all__,
-            ["is_built", "is_ck_sdpa_available", "is_flash_attention_available"],
+            [
+                "is_built",
+                "is_ck_sdpa_available",
+                "enable_mem_efficient_sdp",
+                "mem_efficient_sdp_enabled",
+                "is_flash_attention_available",
+            ],
         )
         self.assertIs(type(function), types.FunctionType)
         self.assertEqual(str(inspect.signature(function)), "()")
@@ -105,7 +111,13 @@ class CudaIsBuiltTests(unittest.TestCase):
         self.assertIs(parent_wildcard["cuda"], cuda)
         self.assertEqual(
             {name for name in child_wildcard if not name.startswith("__")},
-            {"is_built", "is_ck_sdpa_available", "is_flash_attention_available"},
+            {
+                "enable_mem_efficient_sdp",
+                "is_built",
+                "is_ck_sdpa_available",
+                "is_flash_attention_available",
+                "mem_efficient_sdp_enabled",
+            },
         )
         self.assertIs(child_wildcard["is_built"], function)
 

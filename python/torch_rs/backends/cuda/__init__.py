@@ -2,7 +2,13 @@
 import torch_rs as torch
 
 
-__all__ = ["is_built", "is_ck_sdpa_available", "is_flash_attention_available"]
+__all__ = [
+    "is_built",
+    "is_ck_sdpa_available",
+    "enable_mem_efficient_sdp",
+    "mem_efficient_sdp_enabled",
+    "is_flash_attention_available",
+]
 
 
 def is_built():
@@ -24,6 +30,24 @@ def is_ck_sdpa_available() -> bool:
     """
     # pyrefly: ignore [missing-attribute]
     return torch._C._is_ck_sdpa_available()
+
+
+def mem_efficient_sdp_enabled():
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    Returns whether memory efficient scaled dot product attention is enabled or not.
+    """
+    return torch._C._get_mem_efficient_sdp_enabled()
+
+
+def enable_mem_efficient_sdp(enabled: bool):
+    r"""
+    .. warning:: This flag is beta and subject to change.
+
+    Enables or disables memory efficient scaled dot product attention.
+    """
+    torch._C._set_sdp_use_mem_efficient(enabled)
 
 
 def is_flash_attention_available() -> bool:
