@@ -98,10 +98,12 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
                 if name
                 in {
                     "enable_math_sdp",
+                    "enable_mem_efficient_sdp",
                     "is_built",
                     "is_ck_sdpa_available",
                     "is_flash_attention_available",
                     "math_sdp_enabled",
+                    "mem_efficient_sdp_enabled",
                 }
             ],
         )
@@ -278,7 +280,6 @@ class CudaCkSdpaAvailabilityReferenceTests(unittest.TestCase):
             "can_use_flash_attention",
             "enable_cudnn_sdp",
             "enable_flash_sdp",
-            "enable_mem_efficient_sdp",
             "sdp_kernel",
         ):
             with self.subTest(name=name):

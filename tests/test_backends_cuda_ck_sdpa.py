@@ -133,6 +133,8 @@ class CudaCkSdpaAvailabilityTests(unittest.TestCase):
             [
                 "is_built",
                 "is_ck_sdpa_available",
+                "enable_mem_efficient_sdp",
+                "mem_efficient_sdp_enabled",
                 "math_sdp_enabled",
                 "enable_math_sdp",
                 "is_flash_attention_available",
@@ -142,10 +144,12 @@ class CudaCkSdpaAvailabilityTests(unittest.TestCase):
             {name for name in child_wildcard if not name.startswith("__")},
             {
                 "enable_math_sdp",
+                "enable_mem_efficient_sdp",
                 "is_built",
                 "is_ck_sdpa_available",
                 "is_flash_attention_available",
                 "math_sdp_enabled",
+                "mem_efficient_sdp_enabled",
             },
         )
 
