@@ -144,6 +144,7 @@ class CpuCapabilityTests(unittest.TestCase):
                 "cpu",
                 "cuda",
                 "cudnn",
+                "cusparselt",
                 "kleidiai",
                 "mha",
                 "mkl",
