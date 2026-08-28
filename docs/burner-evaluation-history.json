@@ -7265,6 +7265,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1181",
+      "recordedAt": "2026-08-28T01:14:18.301Z",
+      "label": "PR #1181",
+      "kind": "leaf",
+      "prNumber": 1181,
+      "title": "Expose torch.backends.cpu.get_cpu_capability",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 99,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 81.7,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
