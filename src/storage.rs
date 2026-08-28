@@ -184,6 +184,12 @@ impl Storage {
         }
     }
 
+    pub(crate) fn with_values<R>(&self, read: impl FnOnce(&[f32]) -> R) -> R {
+        match &self.payload {
+            StoragePayload::CpuFloat32(data) => data.with_values(read),
+        }
+    }
+
     pub(crate) fn try_copy_values<E>(
         &self,
         copy: impl FnOnce(&[f32]) -> Result<Vec<f32>, E>,
@@ -340,6 +346,23 @@ mod tests {
             Storage::from_shared_gradient(values, DType::Float32, Device::Cpu).into_range(0, 2);
         assert_eq!(values.as_ptr(), pointer);
         assert_eq!(values, [8.0, 9.0]);
+    }
+
+    #[test]
+    fn shared_gradient_with_values_recovers_from_poison() {
+        let values = vec![1.0, 2.0, 3.0];
+        let pointer = values.as_ptr();
+        let storage = Storage::from_shared_gradient(values, DType::Float32, Device::Cpu);
+        poison_shared_gradient(&storage);
+
+        let sum = storage.with_values(|values| {
+            assert_eq!(values.as_ptr(), pointer);
+            values
+                .iter()
+                .copied()
+                .fold(0.0_f32, |total, value| total + value)
+        });
+        assert_eq!(sum.to_bits(), 6.0_f32.to_bits());
     }
 
     #[test]

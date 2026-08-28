@@ -3043,8 +3043,9 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        // Select the layout once so contiguous values stay on the slice
-        // iterator while arbitrary views retain the stride-aware iterator.
+        // Keep owned contiguous and small-rank view sums on their existing
+        // iterators. Contiguous storage that cannot be borrowed, such as live
+        // gradients, reads its range under one storage access.
         let total = match self.logical_values().inner {
             LogicalValuesInner::Contiguous(values) => {
                 values.fold(0.0_f32, |total, value| total + value)
@@ -3053,7 +3054,11 @@ impl Tensor {
                 values.fold(0.0_f32, |total, value| total + value)
             }
             inner @ LogicalValuesInner::Strided { .. } => {
-                LogicalValues { inner }.fold(0.0_f32, |total, value| total + value)
+                if self.is_contiguous() {
+                    self.sum_contiguous_storage()
+                } else {
+                    LogicalValues { inner }.fold(0.0_f32, |total, value| total + value)
+                }
             }
         };
         let mut output = Self::from_scalar(total, self.dtype(), self.device());
@@ -3067,6 +3072,25 @@ impl Tensor {
             }));
         }
         output
+    }
+
+    fn sum_contiguous_storage(&self) -> f32 {
+        debug_assert!(self.is_contiguous());
+        if self.elements == 0 {
+            return 0.0;
+        }
+        let end = self
+            .offset
+            .checked_add(self.elements)
+            .expect("validated contiguous tensor range must fit in usize");
+        self.storage.with_values(|values| {
+            values
+                .get(self.offset..end)
+                .expect("validated contiguous tensor range must address storage")
+                .iter()
+                .copied()
+                .fold(0.0_f32, |total, value| total + value)
+        })
     }
 
     /// Extracts the value of a one-element tensor.
@@ -5594,6 +5618,41 @@ mod tests {
         assert!(shared.is_contiguous());
         assert!(shared.contiguous_slice().is_none());
         assert_matches_logical_fold(&shared);
+    }
+
+    #[test]
+    fn sum_reads_contiguous_live_gradient_storage_after_accumulation() {
+        let leaf = Tensor::ones([4]).unwrap().with_requires_grad(true);
+        let first_weights = Tensor::from_vec(vec![1.0e20, -1.0e20, 3.0, -0.0], [4]).unwrap();
+        leaf.mul(&first_weights).unwrap().sum().backward().unwrap();
+
+        let live_gradient = leaf.live_grad().unwrap().unwrap();
+        assert!(live_gradient.is_contiguous());
+        assert!(live_gradient.contiguous_slice().is_none());
+        assert!(matches!(
+            live_gradient.logical_values().inner,
+            LogicalValuesInner::Strided { .. }
+        ));
+        assert_eq!(
+            live_gradient.sum().item().unwrap().to_bits(),
+            3.0_f32.to_bits()
+        );
+
+        let second_weights = Tensor::from_vec(vec![4.0, 5.0, 6.0, -0.0], [4]).unwrap();
+        leaf.mul(&second_weights).unwrap().sum().backward().unwrap();
+        assert_eq!(
+            live_gradient.sum().item().unwrap().to_bits(),
+            9.0_f32.to_bits()
+        );
+
+        let empty = Tensor::zeros([2, 0, 3]).unwrap().with_requires_grad(true);
+        empty.sum().backward().unwrap();
+        let empty_gradient = empty.live_grad().unwrap().unwrap();
+        assert!(empty_gradient.is_contiguous());
+        assert_eq!(
+            empty_gradient.sum().item().unwrap().to_bits(),
+            0.0_f32.to_bits()
+        );
     }
 
     #[test]
