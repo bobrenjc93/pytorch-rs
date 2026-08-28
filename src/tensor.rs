@@ -2289,6 +2289,19 @@ impl Tensor {
         values.get(self.offset..end)
     }
 
+    fn contiguous_storage_sum(&self) -> Option<f32> {
+        if let Some(values) = self.contiguous_slice() {
+            return Some(sequential_sum(values.iter().copied()));
+        }
+        if !self.is_contiguous() {
+            return None;
+        }
+        let end = self.offset.checked_add(self.elements)?;
+        self.storage.with_range(self.offset, end, |values| {
+            sequential_sum(values.iter().copied())
+        })
+    }
+
     fn dense_physical_slice(&self) -> Option<&[f32]> {
         // A non-overlapping dense view covers one contiguous physical interval
         // even when its logical dimension order is permuted.
@@ -3071,17 +3084,18 @@ impl Tensor {
 
     #[must_use]
     pub fn sum(&self) -> Self {
-        // Select the layout once so contiguous values stay on the slice
-        // iterator while arbitrary views retain the stride-aware iterator.
-        let total = match self.logical_values().inner {
-            LogicalValuesInner::Contiguous(values) => {
-                values.fold(0.0_f32, |total, value| total + value)
-            }
-            LogicalValuesInner::OwnedSmallRank(values) => {
-                values.fold(0.0_f32, |total, value| total + value)
-            }
-            inner @ LogicalValuesInner::Strided { .. } => {
-                LogicalValues { inner }.fold(0.0_f32, |total, value| total + value)
+        let total = if let Some(total) = self.contiguous_storage_sum() {
+            total
+        } else {
+            // Select the fallback layout once so optimized owned strided views
+            // stay on their fixed-rank iterator while arbitrary views retain
+            // the stride-aware iterator.
+            match self.logical_values().inner {
+                LogicalValuesInner::Contiguous(values) => sequential_sum(values),
+                LogicalValuesInner::OwnedSmallRank(values) => sequential_sum(values),
+                inner @ LogicalValuesInner::Strided { .. } => {
+                    sequential_sum(LogicalValues { inner })
+                }
             }
         };
         let mut output = Self::from_scalar(total, self.dtype(), self.device());
@@ -5373,6 +5387,12 @@ fn copied_storage(values: &[f32], elements: usize) -> Result<Vec<f32>, TensorErr
     Ok(data)
 }
 
+fn sequential_sum(values: impl IntoIterator<Item = f32>) -> f32 {
+    values
+        .into_iter()
+        .fold(0.0_f32, |total, value| total + value)
+}
+
 fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
     let maximum_elements = isize::MAX.unsigned_abs() / DType::Float32.element_size();
     if elements > maximum_elements {
@@ -5384,7 +5404,8 @@ fn validate_storage_capacity(elements: usize) -> Result<(), TensorError> {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
-    use std::sync::Arc;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
 
     use crate::storage::Storage;
 
@@ -5393,8 +5414,8 @@ mod tests {
         Device, F32_SIGN_MASK, GradFn, LogicalValuesInner, MemoryFormat,
         OwnedSmallRankLogicalValues, SavedTensor, StridedOffsetOdometer, Tensor, TensorError,
         contiguous_values_equal, logical_offset_for_linear_index,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
-        validate_view_bounds,
+        materialize_contiguous_trailing_broadcast, rsqrt_value, sequential_sum, sqrt_value,
+        try_result_vector, validate_view_bounds,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -5608,6 +5629,10 @@ mod tests {
         assert_eq!(offset.storage_offset(), 4);
         assert_eq!(offset.sum().item().unwrap().to_bits(), 3.0_f32.to_bits());
         assert_matches_logical_fold(&offset);
+        let shared_offset = shared_gradient_copy(&offset);
+        assert!(shared_offset.is_contiguous());
+        assert!(shared_offset.contiguous_slice().is_none());
+        assert_matches_logical_fold(&shared_offset);
 
         let noncontiguous =
             Tensor::from_vec(vec![1.0e20, 3.0, -1.0e20, -1.0e20, 4.0, 1.0e20], [2, 3])
@@ -5622,6 +5647,65 @@ mod tests {
         assert!(shared.is_contiguous());
         assert!(shared.contiguous_slice().is_none());
         assert_matches_logical_fold(&shared);
+    }
+
+    #[test]
+    fn contiguous_live_gradient_sum_preserves_bits_after_accumulation() {
+        let weights = Tensor::from_vec(vec![1.0e20, -1.0e20, 3.0, -0.0], [4]).unwrap();
+        let leaf = Tensor::ones([4]).unwrap().with_requires_grad(true);
+
+        leaf.mul(&weights).unwrap().sum().backward().unwrap();
+        let live_gradient = leaf.live_grad().unwrap().unwrap();
+        assert!(live_gradient.is_contiguous());
+        assert!(live_gradient.contiguous_slice().is_none());
+
+        let expected = sequential_sum(weights.as_slice().iter().copied());
+        assert_eq!(
+            live_gradient.sum().item().unwrap().to_bits(),
+            expected.to_bits()
+        );
+
+        leaf.mul(&weights).unwrap().sum().backward().unwrap();
+        let expected = sequential_sum(live_gradient.logical_values());
+        assert_eq!(
+            live_gradient.sum().item().unwrap().to_bits(),
+            expected.to_bits()
+        );
+        assert_eq!(expected.to_bits(), 6.0_f32.to_bits());
+    }
+
+    #[test]
+    fn contiguous_live_gradient_sum_is_thread_safe_while_accumulating() {
+        let elements = 1024_usize;
+        let leaf = Arc::new(Tensor::ones([elements]).unwrap().with_requires_grad(true));
+        leaf.sum().backward().unwrap();
+        let live_gradient = Arc::new(leaf.live_grad().unwrap().unwrap());
+        let barrier = Arc::new(Barrier::new(3));
+
+        let readers = (0..2)
+            .map(|_| {
+                let live_gradient = Arc::clone(&live_gradient);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    live_gradient.sum().item().unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+
+        barrier.wait();
+        leaf.sum().backward().unwrap();
+
+        for reader in readers {
+            let total = reader.join().unwrap();
+            assert!(
+                total.to_bits() == 1024.0_f32.to_bits() || total.to_bits() == 2048.0_f32.to_bits()
+            );
+        }
+        assert_eq!(
+            live_gradient.sum().item().unwrap().to_bits(),
+            2048.0_f32.to_bits()
+        );
     }
 
     #[test]
