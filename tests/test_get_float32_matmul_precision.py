@@ -2,6 +2,7 @@ import contextlib
 import copy
 import importlib
 import inspect
+import os
 import pickle
 import subprocess
 import sys
@@ -19,16 +20,28 @@ FUNCTION_DOC = """Returns the current value of float32 matrix multiplication pre
 
 
 class GetFloat32MatmulPrecisionTests(unittest.TestCase):
-    def test_returns_exact_highest_without_runtime_probes(self):
+    def setUp(self):
+        self.original_allow_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.set_float32_matmul_precision("highest")
+
+    def tearDown(self):
+        torch.backends.cuda.matmul.allow_tf32 = self.original_allow_tf32
+
+    def test_returns_exact_shared_precision_without_runtime_probes(self):
         function = torch.get_float32_matmul_precision
-        self.assertEqual(function.__code__.co_names, ())
+        self.assertEqual(
+            function.__code__.co_names,
+            ("_C", "_get_cublas_allow_tf32"),
+        )
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
 
-        for _ in range(4):
-            result = function()
-            self.assertIs(type(result), str)
-            self.assertEqual(result, "highest")
+        for allow_tf32, precision in ((False, "highest"), (True, "high")):
+            torch.backends.cuda.matmul.allow_tf32 = allow_tf32
+            for _ in range(4):
+                result = function()
+                self.assertIs(type(result), str)
+                self.assertEqual(result, precision)
 
     def test_query_preserves_native_matmul_and_grad_mode(self):
         left = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
@@ -42,21 +55,23 @@ class GetFloat32MatmulPrecisionTests(unittest.TestCase):
             return grad_before, precision, product.tolist(), grad_after
 
         expected_product = [[19.0, 22.0], [43.0, 50.0]]
-        self.assertEqual(
-            query_and_multiply(),
-            (True, "highest", expected_product, True),
-        )
-        with torch.no_grad():
+        for allow_tf32, precision in ((False, "highest"), (True, "high")):
+            torch.backends.cuda.matmul.allow_tf32 = allow_tf32
             self.assertEqual(
                 query_and_multiply(),
-                (False, "highest", expected_product, False),
+                (True, precision, expected_product, True),
             )
-        self.assertEqual(
-            query_and_multiply(),
-            (True, "highest", expected_product, True),
-        )
+            with torch.no_grad():
+                self.assertEqual(
+                    query_and_multiply(),
+                    (False, precision, expected_product, False),
+                )
+            self.assertEqual(
+                query_and_multiply(),
+                (True, precision, expected_product, True),
+            )
 
-    def test_highest_is_stable_across_threads_and_grad_modes(self):
+    def test_shared_precision_is_stable_across_threads_and_grad_modes(self):
         function = torch.get_float32_matmul_precision
         worker_count = 8
         barrier = threading.Barrier(worker_count)
@@ -83,31 +98,37 @@ class GetFloat32MatmulPrecisionTests(unittest.TestCase):
             except BaseException as error:
                 errors.append(error)
 
-        threads = [
-            threading.Thread(target=worker, args=(index,))
-            for index in range(worker_count)
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=10)
+        for allow_tf32, precision in ((False, "highest"), (True, "high")):
+            with self.subTest(allow_tf32=allow_tf32):
+                torch.backends.cuda.matmul.allow_tf32 = allow_tf32
+                results[:] = [None] * worker_count
+                errors.clear()
+                barrier = threading.Barrier(worker_count)
+                threads = [
+                    threading.Thread(target=worker, args=(index,))
+                    for index in range(worker_count)
+                ]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join(timeout=10)
 
-        self.assertFalse(any(thread.is_alive() for thread in threads))
-        self.assertEqual(errors, [])
-        for index, result in enumerate(results):
-            expected_grad_state = index % 2 == 0
-            self.assertEqual(
-                result,
-                (
-                    expected_grad_state,
-                    True,
-                    "highest",
-                    expected_grad_state,
-                    True,
-                    "highest",
-                    expected_grad_state,
-                ),
-            )
+                self.assertFalse(any(thread.is_alive() for thread in threads))
+                self.assertEqual(errors, [])
+                for index, result in enumerate(results):
+                    expected_grad_state = index % 2 == 0
+                    self.assertEqual(
+                        result,
+                        (
+                            expected_grad_state,
+                            True,
+                            precision,
+                            expected_grad_state,
+                            True,
+                            precision,
+                            expected_grad_state,
+                        ),
+                    )
 
     def test_signature_annotations_documentation_and_module_identity(self):
         package = importlib.import_module("torch_rs")
@@ -198,17 +219,23 @@ sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
 assert torch.get_float32_matmul_precision() == "highest"
+torch.backends.cuda.matmul.allow_tf32 = True
+assert torch.get_float32_matmul_precision() == "high"
 assert torch.set_float32_matmul_precision("highest") is None
+assert torch.backends.cuda.matmul.allow_tf32 is False
 assert torch.get_float32_matmul_precision() == "highest"
 assert "set_float32_matmul_precision" in torch.__all__
 assert not hasattr(torch._C, "_set_float32_matmul_precision")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
+        environment = os.environ.copy()
+        environment.pop("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE", None)
         completed = subprocess.run(
             [sys.executable, "-c", script],
             check=False,
             capture_output=True,
             text=True,
+            env=environment,
         )
         self.assertEqual(
             completed.returncode,

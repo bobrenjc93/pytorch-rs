@@ -2,6 +2,7 @@ import copy
 import importlib
 import inspect
 import json
+import os
 import pickle
 import re
 import subprocess
@@ -72,14 +73,19 @@ import torch_rs as torch
 cuda = torch.backends.cuda
 matmul = cuda.matmul
 initial = matmul.allow_tf32
+initial_precision = torch.get_float32_matmul_precision()
 matmul.allow_tf32 = True
 enabled = matmul.allow_tf32
+enabled_precision = torch.get_float32_matmul_precision()
 matmul.allow_tf32 = False
 print(json.dumps({
     "initial": initial,
     "initial_type": type(initial).__name__,
+    "initial_precision": initial_precision,
     "enabled": enabled,
+    "enabled_precision": enabled_precision,
     "restored": matmul.allow_tf32,
+    "restored_precision": torch.get_float32_matmul_precision(),
     "cuda_built": cuda.is_built(),
     "cuda_module": hasattr(torch, "cuda"),
     "cuda_tensor": hasattr(torch.Tensor, "cuda"),
@@ -87,11 +93,14 @@ print(json.dumps({
     "cublas_execution": hasattr(torch._C, "_cuda_getCurrentBlasHandle"),
 }))
 '''
+        environment = os.environ.copy()
+        environment.pop("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE", None)
         completed = subprocess.run(
             [sys.executable, "-c", script],
             check=False,
             capture_output=True,
             text=True,
+            env=environment,
         )
         self.assertEqual(
             completed.returncode,
@@ -103,8 +112,11 @@ print(json.dumps({
             {
                 "initial": False,
                 "initial_type": "bool",
+                "initial_precision": "highest",
                 "enabled": True,
+                "enabled_precision": "high",
                 "restored": False,
+                "restored_precision": "highest",
                 "cuda_built": False,
                 "cuda_module": False,
                 "cuda_tensor": False,
@@ -113,7 +125,7 @@ print(json.dumps({
             },
         )
 
-    def test_exact_bool_assignments_are_independent_preferences(self):
+    def test_exact_bool_assignments_are_independent_of_other_backend_preferences(self):
         cuda = self.cuda
         expected_other_states = self.states(cuda)[1:]
 
@@ -124,6 +136,10 @@ print(json.dumps({
                 cuda.matmul.allow_tf32 = allow_tf32
                 self.assertIs(cuda.matmul.allow_tf32, allow_tf32)
                 self.assertIs(torch._C._get_cublas_allow_tf32(), allow_tf32)
+                self.assertEqual(
+                    torch.get_float32_matmul_precision(),
+                    "high" if allow_tf32 else "highest",
+                )
                 self.assertEqual(self.states(cuda)[1:], expected_other_states)
                 self.assertIs(cuda.is_built(), False)
 
@@ -172,6 +188,10 @@ print(json.dumps({
                             self.states(self.cuda),
                             (state, *other_states),
                         )
+                        self.assertEqual(
+                            torch.get_float32_matmul_precision(),
+                            "high" if state else "highest",
+                        )
 
     def test_deletion_and_unknown_attributes_preserve_state(self):
         matmul = self.cuda.matmul
@@ -183,6 +203,7 @@ print(json.dumps({
         self.assertEqual(str(raised.exception), message)
         self.assertEqual(raised.exception.args, (message,))
         self.assertIs(matmul.allow_tf32, True)
+        self.assertEqual(torch.get_float32_matmul_precision(), "high")
 
         for name in ("unknown", "_unknown"):
             with self.subTest(name=name, operation="get"):
@@ -472,7 +493,10 @@ print(json.dumps({
             with self.subTest(allow_tf32=allow_tf32):
                 self.cuda.matmul.allow_tf32 = allow_tf32
                 self.assertEqual(torch.matmul(left, right).tolist(), expected)
-                self.assertEqual(torch.get_float32_matmul_precision(), "highest")
+                self.assertEqual(
+                    torch.get_float32_matmul_precision(),
+                    "high" if allow_tf32 else "highest",
+                )
                 self.assertIs(self.cuda.is_built(), False)
                 self.assertFalse(hasattr(torch, "cuda"))
                 self.assertFalse(hasattr(torch.Tensor, "cuda"))
@@ -511,6 +535,10 @@ assert type(matmul) is cuBLASModule
 assert matmul.allow_tf32 is False
 matmul.allow_tf32 = True
 assert matmul.allow_tf32 is torch._C._get_cublas_allow_tf32() is True
+assert torch.get_float32_matmul_precision() == "high"
+assert torch.set_float32_matmul_precision("highest") is None
+assert matmul.allow_tf32 is False
+assert torch.get_float32_matmul_precision() == "highest"
 matmul.allow_tf32 = False
 assert torch.backends.cuda.is_built() is False
 assert not hasattr(torch, "cuda")
@@ -519,17 +547,72 @@ assert not any(
     for name in sys.modules
 )
 '''
+        environment = os.environ.copy()
+        environment.pop("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE", None)
         completed = subprocess.run(
             [sys.executable, "-c", script],
             check=False,
             capture_output=True,
             text=True,
+            env=environment,
         )
         self.assertEqual(
             completed.returncode,
             0,
             msg=completed.stdout + completed.stderr,
         )
+
+    def test_environment_override_is_snapshotted_once_at_extension_import(self):
+        script = r'''
+import importlib
+import json
+import os
+
+import torch_rs as torch
+
+def state():
+    return [
+        torch.backends.cuda.matmul.allow_tf32,
+        torch.get_float32_matmul_precision(),
+    ]
+
+initial = state()
+os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = (
+    "0" if os.environ.get("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE") == "1" else "1"
+)
+importlib.reload(torch.backends.cuda)
+after_reload = state()
+torch.set_float32_matmul_precision("highest")
+after_highest = state()
+print(json.dumps([initial, after_reload, after_highest]))
+'''
+        for value, initial in (
+            (None, [False, "highest"]),
+            ("0", [False, "highest"]),
+            ("1", [True, "high"]),
+        ):
+            with self.subTest(value=value):
+                environment = os.environ.copy()
+                if value is None:
+                    environment.pop("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE", None)
+                else:
+                    environment["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = value
+                completed = subprocess.run(
+                    [sys.executable, "-c", script],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=completed.stdout + completed.stderr,
+                )
+                self.assertEqual(
+                    json.loads(completed.stdout),
+                    [initial, initial, [False, "highest"]],
+                )
 
 
 if __name__ == "__main__":

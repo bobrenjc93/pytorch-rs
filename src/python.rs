@@ -1,5 +1,6 @@
 use std::ffi::{CStr, c_char};
 use std::os::raw::c_long;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use pyo3::IntoPyObjectExt;
@@ -49,7 +50,11 @@ static CUDNN_BENCHMARK: AtomicBool = AtomicBool::new(false);
 static CUDNN_BENCHMARK_LIMIT: AtomicI32 = AtomicI32::new(10);
 static CUDNN_DETERMINISTIC: AtomicBool = AtomicBool::new(false);
 static CUDNN_ALLOW_TF32: AtomicBool = AtomicBool::new(true);
-static CUBLAS_ALLOW_TF32: AtomicBool = AtomicBool::new(false);
+static CUBLAS_ALLOW_TF32: LazyLock<AtomicBool> = LazyLock::new(|| {
+    AtomicBool::new(
+        std::env::var_os("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE").is_some_and(|value| value == "1"),
+    )
+});
 static MEM_EFFICIENT_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ALLOW_FP16_BF16_REDUCTION: AtomicBool = AtomicBool::new(false);
@@ -5379,6 +5384,10 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 fn add_cublas_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    // PyTorch snapshots this override when its global native context is
+    // initialized. Force the state during extension import so later
+    // environment changes and Python module reloads cannot alter it.
+    let _ = LazyLock::force(&CUBLAS_ALLOW_TF32);
     add_cublas_allow_tf32_setter(module)?;
     module.add_function(wrap_pyfunction!(get_cublas_allow_tf32_native, module)?)?;
     let exports = module.getattr("__all__")?;

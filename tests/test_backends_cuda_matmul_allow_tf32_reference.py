@@ -1,9 +1,12 @@
 import copy
 import importlib
 import inspect
+import json
+import os
 import pickle
 import pickletools
 import re
+import subprocess
 import sys
 import threading
 import types
@@ -213,6 +216,22 @@ class CudaMatmulAllowTf32ReferenceTests(unittest.TestCase):
         self.assertEqual(
             self.thread_contract(self.actual),
             self.thread_contract(self.expected),
+        )
+
+    def cross_api_contract(self, root):
+        matmul = root.backends.cuda.matmul
+        root.set_float32_matmul_precision("highest")
+        initial = (matmul.allow_tf32, root.get_float32_matmul_precision())
+        matmul.allow_tf32 = True
+        enabled = (matmul.allow_tf32, root.get_float32_matmul_precision())
+        result = root.set_float32_matmul_precision("highest")
+        disabled = (matmul.allow_tf32, root.get_float32_matmul_precision())
+        return initial, enabled, result is None, disabled
+
+    def test_shared_float32_matmul_precision_state_matches_pytorch_2_13(self):
+        self.assertEqual(
+            self.cross_api_contract(torch),
+            self.cross_api_contract(reference_torch),
         )
 
     def reload_contract(self, root, module):
@@ -486,6 +505,66 @@ class CudaMatmulAllowTf32ReferenceTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(self.actual.matmul, name))
                 self.assertTrue(hasattr(self.expected.matmul, name))
+
+    def test_environment_override_and_one_time_snapshot_match_pytorch_2_13(self):
+        script = r'''
+import importlib
+import json
+import os
+
+import torch_rs as actual
+import torch as expected
+
+def state(root):
+    return [
+        root.backends.cuda.matmul.allow_tf32,
+        root.get_float32_matmul_precision(),
+    ]
+
+initial = [state(actual), state(expected)]
+os.environ["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = (
+    "0" if os.environ.get("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE") == "1" else "1"
+)
+importlib.reload(actual.backends.cuda)
+importlib.reload(expected.backends.cuda)
+after_reload = [state(actual), state(expected)]
+actual.set_float32_matmul_precision("highest")
+expected.set_float32_matmul_precision("highest")
+after_highest = [state(actual), state(expected)]
+print(json.dumps([initial, after_reload, after_highest]))
+'''
+        for value, initial in (
+            (None, [False, "highest"]),
+            ("0", [False, "highest"]),
+            ("1", [True, "high"]),
+        ):
+            with self.subTest(value=value):
+                environment = os.environ.copy()
+                environment["CUDA_VISIBLE_DEVICES"] = "0"
+                if value is None:
+                    environment.pop("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE", None)
+                else:
+                    environment["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = value
+                completed = subprocess.run(
+                    [sys.executable, "-c", script],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    msg=completed.stdout + completed.stderr,
+                )
+                self.assertEqual(
+                    json.loads(completed.stdout),
+                    [
+                        [initial, initial],
+                        [initial, initial],
+                        [[False, "highest"], [False, "highest"]],
+                    ],
+                )
 
 
 if __name__ == "__main__":

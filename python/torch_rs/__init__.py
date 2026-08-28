@@ -163,7 +163,7 @@ def get_float32_matmul_precision() -> str:
     r"""Returns the current value of float32 matrix multiplication precision. Refer to
     :func:`torch.set_float32_matmul_precision` documentation for more details.
     """
-    return "highest"
+    return "high" if _C._get_cublas_allow_tf32() else "highest"
 
 
 def set_float32_matmul_precision(precision: str) -> None:
@@ -260,6 +260,7 @@ def set_float32_matmul_precision(precision: str) -> None:
         )
 
     if value == "highest":
+        _C._set_cublas_allow_tf32(False)
         return None
     raise NotImplementedError(
         "set_float32_matmul_precision(): precision "
