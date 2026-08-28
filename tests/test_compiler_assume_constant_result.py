@@ -190,6 +190,7 @@ class CompilerAssumeConstantResultTests(unittest.TestCase):
             [
                 "assume_constant_result",
                 "reset",
+                "allow_in_graph",
                 "disable",
                 "set_default_backend",
                 "get_default_backend",
@@ -274,7 +275,7 @@ class CompilerAssumeConstantResultTests(unittest.TestCase):
         self.assertFalse(hasattr(torch, "compile"))
         self.assertFalse(hasattr(torch, "export"))
         self.assertFalse(hasattr(torch.compiler, "compile"))
-        self.assertFalse(hasattr(torch.compiler, "allow_in_graph"))
+        self.assertTrue(callable(torch.compiler.allow_in_graph))
 
     def test_import_and_marking_do_not_import_pytorch(self):
         script = r"""

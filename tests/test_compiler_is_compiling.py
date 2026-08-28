@@ -157,6 +157,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
             [
                 "assume_constant_result",
                 "reset",
+                "allow_in_graph",
                 "disable",
                 "set_default_backend",
                 "get_default_backend",
@@ -178,6 +179,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
             {
                 "assume_constant_result",
                 "reset",
+                "allow_in_graph",
                 "disable",
                 "set_default_backend",
                 "get_default_backend",
@@ -264,6 +266,7 @@ class CompilerIsCompilingTests(unittest.TestCase):
             if name not in {
                 "assume_constant_result",
                 "reset",
+                "allow_in_graph",
                 "disable",
                 "set_default_backend",
                 "get_default_backend",

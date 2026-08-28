@@ -428,6 +428,7 @@ print(repr((handler_results, outer_result, final_result)))
         supported = {
             "assume_constant_result",
             "reset",
+            "allow_in_graph",
             "disable",
             "set_default_backend",
             "get_default_backend",
