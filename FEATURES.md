@@ -2,6 +2,10 @@
 
 Feature completeness is measured against stable public PyTorch Python concepts, with supported claims backed by executable side-by-side semantic tests. Documentation, Rust-only capabilities, and stubs do not count.
 
+For API-level behavior and explicit limitations, see the
+[supported-surface contract](docs/supported-surface.md). Performance claims are
+governed by [BENCHMARKING.md](BENCHMARKING.md).
+
 Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 | Area | Weight | Baseline |
