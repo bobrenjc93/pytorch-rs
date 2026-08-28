@@ -47,6 +47,7 @@ static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 static CUDNN_ENABLED: AtomicBool = AtomicBool::new(true);
 static CUDNN_BENCHMARK: AtomicBool = AtomicBool::new(false);
 static CUDNN_DETERMINISTIC: AtomicBool = AtomicBool::new(false);
+static CUDNN_ALLOW_TF32: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static NNPACK_ENABLED: AtomicBool = AtomicBool::new(true);
 static GUARD_COLLECTIVES_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -5122,6 +5123,75 @@ fn add_cudnn_deterministic_setter(module: &Bound<'_, PyModule>) -> PyResult<()> 
     module.add_function(function)
 }
 
+// PyTorch publishes this private setter as a module-bound METH_O built-in.
+// Keep validation separate from its CPython wrapper so assignment through the
+// proxy and direct native calls share one atomic state transition.
+fn set_cudnn_allow_tf32_native(object: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !object.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(object)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "set_allow_tf32_cublas expects a bool, but got {type_name}"
+        )));
+    }
+    CUDNN_ALLOW_TF32.store(object.is_truthy()?, Ordering::SeqCst);
+    Ok(())
+}
+
+#[allow(
+    unsafe_code,
+    reason = "the callback is entered through PyO3's panic-safe C trampoline"
+)]
+unsafe fn set_cudnn_allow_tf32_callback(
+    py: Python<'_>,
+    _module: *mut ffi::PyObject,
+    object: *mut ffi::PyObject,
+) -> PyResult<*mut ffi::PyObject> {
+    // SAFETY: CPython supplies a live borrowed object to a METH_O callback.
+    let object = unsafe { Bound::<PyAny>::from_borrowed_ptr(py, object) };
+    set_cudnn_allow_tf32_native(&object)?;
+    Ok(py.None().into_ptr())
+}
+
+#[pyfunction(
+    name = "_get_cudnn_allow_tf32",
+    signature = (),
+    text_signature = None
+)]
+#[pyo3(pass_module)]
+fn get_cudnn_allow_tf32_native(_module: &Bound<'_, PyModule>) -> bool {
+    CUDNN_ALLOW_TF32.load(Ordering::SeqCst)
+}
+
+#[allow(
+    unsafe_code,
+    reason = "PyCFunction_NewEx requires an audited stable-ABI raw-pointer call"
+)]
+fn add_cudnn_allow_tf32_setter(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
+    let mut definition = pyo3::impl_::pymethods::PyMethodDef::noargs(
+        c"_set_cudnn_allow_tf32",
+        pyo3::impl_::trampoline::get_trampoline_function!(
+            binaryfunc,
+            set_cudnn_allow_tf32_callback
+        ),
+        c"",
+    )
+    .into_raw();
+    definition.ml_flags = ffi::METH_O;
+    let definition = Box::leak(Box::new(definition));
+    let module_name = module.name()?;
+    // SAFETY: the leaked method definition, module, and module name all remain
+    // live for the duration required by the newly owned built-in function.
+    let function = unsafe {
+        Bound::<PyAny>::from_owned_ptr_or_err(
+            py,
+            ffi::PyCFunction_NewEx(definition, module.as_ptr(), module_name.as_ptr()),
+        )?
+        .cast_into::<PyCFunction>()?
+    };
+    module.add_function(function)
+}
+
 fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(set_cudnn_enabled_native, module)?)?;
     module.add_function(wrap_pyfunction!(get_cudnn_enabled_native, module)?)?;
@@ -5129,6 +5199,8 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(get_cudnn_benchmark_native, module)?)?;
     add_cudnn_deterministic_setter(module)?;
     module.add_function(wrap_pyfunction!(get_cudnn_deterministic_native, module)?)?;
+    add_cudnn_allow_tf32_setter(module)?;
+    module.add_function(wrap_pyfunction!(get_cudnn_allow_tf32_native, module)?)?;
     let exports = module.getattr("__all__")?;
     for name in [
         "_set_cudnn_enabled",
@@ -5137,6 +5209,8 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "_get_cudnn_benchmark",
         "_set_cudnn_deterministic",
         "_get_cudnn_deterministic",
+        "_set_cudnn_allow_tf32",
+        "_get_cudnn_allow_tf32",
     ] {
         exports.call_method1("remove", (name,))?;
     }
