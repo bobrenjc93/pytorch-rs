@@ -62,15 +62,26 @@ const BROADCAST_TENSORS_EXPANSION_ERROR: &str =
 // These are compile-time facts about the native Cargo build. Keep them native
 // so importing the Python package never probes the host or imports another
 // tensor runtime to infer capabilities.
-const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 8] = [
+const NATIVE_BUILD_CAPABILITIES: [(&str, bool); 9] = [
     ("_GLIBCXX_USE_CXX11_ABI", false),
     ("_has_cudnn", false),
     ("_has_cuda", false),
+    ("_has_cusparselt", false),
     ("_has_kleidiai", false),
     ("has_openmp", false),
     ("has_mkl", false),
     ("has_lapack", false),
     ("has_spectral", false),
+];
+const PRIVATE_NATIVE_EXPORTS: [&str; 8] = [
+    "_GLIBCXX_USE_CXX11_ABI",
+    "_get_cpu_capability",
+    "_has_cudnn",
+    "_has_cuda",
+    "_has_cusparselt",
+    "_has_kleidiai",
+    "_is_ck_sdpa_available",
+    "_is_flash_attention_available",
 ];
 const NATIVE_CPU_CAPABILITY: &str = "DEFAULT";
 const NATIVE_CK_SDPA_AVAILABLE: bool = false;
@@ -12087,15 +12098,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     // the extension's generated export list also prevents the package wildcard
     // import from copying them onto the public torch_rs module.
     let exports = module.getattr("__all__")?;
-    for name in [
-        "_GLIBCXX_USE_CXX11_ABI",
-        "_get_cpu_capability",
-        "_has_cudnn",
-        "_has_cuda",
-        "_has_kleidiai",
-        "_is_ck_sdpa_available",
-        "_is_flash_attention_available",
-    ] {
+    for name in PRIVATE_NATIVE_EXPORTS {
         exports.call_method1("remove", (name,))?;
     }
     module.add("Size", size_type_object(py)?.clone_ref(py))?;

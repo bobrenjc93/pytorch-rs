@@ -18,6 +18,7 @@ def __allow_nonbracketed_mutation():
 from . import cpu as cpu
 from . import cuda as cuda
 from . import cudnn as cudnn
+from . import cusparselt as cusparselt
 from . import kleidiai as kleidiai
 from . import mha as mha
 from . import mkl as mkl
