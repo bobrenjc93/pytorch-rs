@@ -203,12 +203,14 @@ class DistributedGetGlobalRankReferenceTests(unittest.TestCase):
         actual = actual_distributed.get_global_rank
         expected = expected_distributed.get_global_rank
         supported = {
+            "GroupMember",
             "destroy_process_group",
             "get_backend_config",
             "get_backend",
             "get_rank",
             "get_world_size",
             "get_pg_count",
+            "group",
             "is_gloo_available",
             "is_initialized",
             "is_mpi_available",
@@ -337,7 +339,6 @@ class DistributedGetGlobalRankReferenceTests(unittest.TestCase):
             expected_distributed.get_global_rank, expected_c10d.get_global_rank
         )
         for name in (
-            "GroupMember",
             "ProcessGroup",
             "all_reduce",
             "init_process_group",

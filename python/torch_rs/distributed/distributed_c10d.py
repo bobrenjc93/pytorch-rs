@@ -5,12 +5,14 @@ import os as _os
 from ..torch_rs import Tensor as _Tensor
 
 __all__ = [
+    "GroupMember",
     "destroy_process_group",
     "get_backend_config",
     "get_backend",
     "get_rank",
     "get_world_size",
     "get_pg_count",
+    "group",
     "is_gloo_available",
     "is_initialized",
     "is_mpi_available",
@@ -27,6 +29,41 @@ __all__ = [
 # Preserve PyTorch's annotation spelling without exporting unsupported types.
 _ProcessGroup = type("ProcessGroup", (), {"__module__": __name__})
 _Backend = type("Backend", (), {"__module__": __name__})
+_default_pg = None
+
+
+class _WorldMeta(type):
+    """
+    Meta class of ``group`` and ``GroupMember``.
+
+    Allows them to have the class property ``WORLD``.
+    """
+
+    @property
+    def WORLD(cls) -> _ProcessGroup | None:
+        return _default_pg
+
+    @WORLD.setter
+    def WORLD(cls, pg: _ProcessGroup | None):
+        global _default_pg
+        _default_pg = pg
+
+
+class GroupMember(metaclass=_WorldMeta):
+    """Group member class."""
+
+    NON_GROUP_MEMBER = -100
+
+
+class group(metaclass=_WorldMeta):
+    """Group class. Placeholder."""
+
+
+def _rank_not_in_group(group: _ProcessGroup | None) -> bool:
+    """Check if the current process's rank is not in a given group."""
+    if group is None:
+        return False
+    return group == GroupMember.NON_GROUP_MEMBER
 
 
 def destroy_process_group(group: _ProcessGroup | None = None):
@@ -42,9 +79,9 @@ def destroy_process_group(group: _ProcessGroup | None = None):
     if type(group) is _Tensor:
         if group.numel() != 1:
             bool(group)
-        if group.item() == -100:
+        if group.item() == GroupMember.NON_GROUP_MEMBER:
             return
-    elif group == -100:
+    elif group == GroupMember.NON_GROUP_MEMBER:
         return
     if group is None:
         raise AssertionError("Process group cannot be None")
@@ -65,6 +102,8 @@ def get_backend_config(group: _ProcessGroup | None = None) -> str:
         The backend configuration of the given process group as a lower case string.
 
     """
+    if _rank_not_in_group(group):
+        raise ValueError("Invalid process group specified")
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_backend_config() does not support "
@@ -89,6 +128,8 @@ def get_backend(group: _ProcessGroup | None = None) -> _Backend:
         The backend of the given process group as a lower case string.
 
     """
+    if _rank_not_in_group(group):
+        raise ValueError("Invalid process group specified")
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_backend() does not support non-None "
@@ -117,6 +158,8 @@ def get_rank(group: _ProcessGroup | None = None) -> int:
         -1, if not part of the group
 
     """
+    if _rank_not_in_group(group):
+        return -1
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_rank() does not support non-None "
@@ -143,7 +186,7 @@ def get_group_rank(group: _ProcessGroup, global_rank: int) -> int:
 
     N.B. calling this function on the default process group returns identity
     """
-    if group is None:
+    if group is GroupMember.WORLD:
         return global_rank
     if group not in {}:
         raise ValueError(
@@ -167,7 +210,7 @@ def get_global_rank(group: _ProcessGroup, group_rank: int) -> int:
 
     N.B. calling this function on the default process group returns identity
     """
-    if group is None:
+    if group is GroupMember.WORLD:
         return group_rank
     if group not in {}:
         raise ValueError(
@@ -208,6 +251,8 @@ def get_world_size(group: _ProcessGroup | None = None) -> int:
         -1, if not part of the group
 
     """
+    if _rank_not_in_group(group):
+        return -1
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_world_size() does not support non-None "

@@ -61,7 +61,7 @@ class DistributedGetGroupRankTests(unittest.TestCase):
             "torch_rs.distributed.distributed_c10d"
         )
 
-        for name in ("_world", "GroupMember", "ProcessGroup"):
+        for name in ("_world", "ProcessGroup"):
             self.assertFalse(hasattr(distributed_c10d, name))
         for name in (
             "_os",
@@ -249,12 +249,14 @@ class DistributedGetGroupRankTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -455,7 +457,6 @@ class DistributedGetGroupRankTests(unittest.TestCase):
         self.assertTrue(str(raised.exception).endswith(INVALID_GROUP_SUFFIX))
 
         for name in (
-            "GroupMember",
             "ProcessGroup",
             "_world",
             "all_reduce",

@@ -12,19 +12,21 @@ def is_available() -> bool:
     return False
 
 
+from .distributed_c10d import GroupMember as GroupMember
 from .distributed_c10d import destroy_process_group as destroy_process_group
 from .distributed_c10d import get_backend_config as get_backend_config
 from .distributed_c10d import get_backend as get_backend
-from .distributed_c10d import get_group_rank as get_group_rank
-from .distributed_c10d import get_global_rank as get_global_rank
-from .distributed_c10d import get_process_group_ranks as get_process_group_ranks
 from .distributed_c10d import get_rank as get_rank
 from .distributed_c10d import get_world_size as get_world_size
 from .distributed_c10d import get_pg_count as get_pg_count
-from .distributed_c10d import get_node_local_rank as get_node_local_rank
+from .distributed_c10d import group as group
 from .distributed_c10d import is_gloo_available as is_gloo_available
 from .distributed_c10d import is_initialized as is_initialized
 from .distributed_c10d import is_mpi_available as is_mpi_available
 from .distributed_c10d import is_nccl_available as is_nccl_available
 from .distributed_c10d import is_ucc_available as is_ucc_available
 from .distributed_c10d import is_xccl_available as is_xccl_available
+from .distributed_c10d import get_group_rank as get_group_rank
+from .distributed_c10d import get_global_rank as get_global_rank
+from .distributed_c10d import get_process_group_ranks as get_process_group_ranks
+from .distributed_c10d import get_node_local_rank as get_node_local_rank

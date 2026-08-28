@@ -67,7 +67,7 @@ class DistributedGetRankTests(unittest.TestCase):
         self.assertNotIn("is_initialized", function.__code__.co_names)
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
-        self.assertFalse(hasattr(distributed_c10d, "GroupMember"))
+        self.assertIs(distributed_c10d.GroupMember, torch.distributed.GroupMember)
         self.assertFalse(hasattr(distributed_c10d, "ProcessGroup"))
 
         environments = (
@@ -229,12 +229,14 @@ class DistributedGetRankTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -273,12 +275,14 @@ class DistributedGetRankTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",
@@ -385,7 +389,6 @@ class DistributedGetRankTests(unittest.TestCase):
         self.assertIs(distributed.is_initialized(), False)
         self.assertEqual(distributed.get_pg_count(), 0)
         for name in (
-            "GroupMember",
             "ProcessGroup",
             "all_reduce",
             "init_process_group",

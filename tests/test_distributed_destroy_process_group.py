@@ -60,7 +60,7 @@ class DistributedDestroyProcessGroupTests(unittest.TestCase):
             "torch_rs.distributed.distributed_c10d"
         )
 
-        for name in ("_world", "GroupMember", "ProcessGroup"):
+        for name in ("_world", "ProcessGroup"):
             self.assertFalse(hasattr(distributed_c10d, name))
         for name in ("_os", "environ", "is_initialized", "get_pg_count"):
             self.assertNotIn(name, function.__code__.co_names)
@@ -310,12 +310,14 @@ class DistributedDestroyProcessGroupTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -487,7 +489,6 @@ class DistributedDestroyProcessGroupTests(unittest.TestCase):
         self.assertIs(distributed.is_available(), False)
         self.assert_zero_process_group_state()
         for name in (
-            "GroupMember",
             "ProcessGroup",
             "all_reduce",
             "init_process_group",
