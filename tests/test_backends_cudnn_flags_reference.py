@@ -417,7 +417,7 @@ class CudnnFlagsReferenceTests(unittest.TestCase):
             {name for name in actual_wildcard if not name.startswith("__")},
             {name for name in expected_wildcard if not name.startswith("__")},
         )
-        self.assertFalse(hasattr(actual, "set_flags"))
+        self.assertTrue(hasattr(actual, "set_flags"))
         self.assertTrue(hasattr(expected, "set_flags"))
 
         self.assertIs(copy.copy(actual_function), actual_function)

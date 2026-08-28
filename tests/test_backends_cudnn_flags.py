@@ -333,13 +333,13 @@ class CudnnFlagsTests(unittest.TestCase):
                 "contextmanager",
                 "flags",
                 "is_available",
+                "set_flags",
                 "torch",
                 "version",
             },
         )
         self.assertIs(function, cudnn.m.flags)
-        self.assertFalse(hasattr(cudnn, "set_flags"))
-        self.assertNotIn("set_flags", vars(cudnn.m))
+        self.assertIs(cudnn.set_flags, cudnn.m.set_flags)
 
         self.assertIs(type(function), types.FunctionType)
         self.assertEqual(
@@ -376,7 +376,7 @@ class CudnnFlagsTests(unittest.TestCase):
         self.assertEqual(wrapped.__dict__, {})
         self.assertEqual(
             wrapped.__code__.co_names,
-            ("__allow_nonbracketed_mutation", "_set_flags"),
+            ("__allow_nonbracketed_mutation", "set_flags"),
         )
         self.assertEqual(wrapped.__code__.co_freevars, ())
         self.assertEqual(wrapped.__code__.co_cellvars, ())
@@ -394,8 +394,9 @@ class CudnnFlagsTests(unittest.TestCase):
             {"m"},
         )
         self.assertIs(child_wildcard["m"], cudnn.m)
-        with self.assertRaises(ImportError):
-            exec("from torch_rs.backends.cudnn import set_flags", {})
+        setter_import = {}
+        exec("from torch_rs.backends.cudnn import set_flags", setter_import)
+        self.assertIs(setter_import["set_flags"], cudnn.set_flags)
 
         self.assertIs(copy.copy(function), function)
         self.assertIs(copy.deepcopy(function), function)
@@ -466,7 +467,7 @@ class CudnnFlagsTests(unittest.TestCase):
             pickle.loads(pickle.dumps(cudnn.flags)),
             cudnn.flags,
         )
-        self.assertFalse(hasattr(cudnn, "set_flags"))
+        self.assertIs(cudnn.set_flags, reloaded.set_flags)
 
     def test_context_management_does_not_add_cudnn_execution(self):
         self.assertIs(self.cudnn.is_available(), False)

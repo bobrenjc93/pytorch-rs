@@ -356,7 +356,6 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             "fp32_precision",
             "is_acceptable",
             "rnn",
-            "set_flags",
         ):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(actual, name))
