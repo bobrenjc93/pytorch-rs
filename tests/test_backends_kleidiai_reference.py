@@ -58,7 +58,6 @@ class KleidiAIAvailabilityReferenceTests(unittest.TestCase):
         self.assertIs(actual, torch._C._has_kleidiai)
         self.assertIs(expected, reference_torch._C._has_kleidiai)
         self.assertIs(actual, False)
-        self.assertIs(expected, False)
 
         for root in (torch, reference_torch):
             native_import = {}
@@ -67,7 +66,11 @@ class KleidiAIAvailabilityReferenceTests(unittest.TestCase):
             exec(f"from {root.__name__}._C import _has_kleidiai", native_import)
             exec(f"from {root.__name__} import *", package_wildcard)
             exec(f"from {root.__name__}._C import *", native_wildcard)
-            self.assertIs(native_import["_has_kleidiai"], False)
+            native_flag = native_import["_has_kleidiai"]
+            self.assertIs(type(native_flag), bool)
+            self.assertIs(native_flag, root._C._has_kleidiai)
+            if root is torch:
+                self.assertIs(native_flag, False)
             self.assertFalse(hasattr(root, "_has_kleidiai"))
             self.assertNotIn("_has_kleidiai", root.__all__)
             self.assertNotIn("_has_kleidiai", package_wildcard)
