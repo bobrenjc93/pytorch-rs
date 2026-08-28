@@ -80,7 +80,8 @@ class DistributedGetBackendTests(unittest.TestCase):
         self.assertEqual(function.__code__.co_freevars, ())
         self.assertEqual(function.__code__.co_cellvars, ())
         self.assertFalse(hasattr(distributed_c10d, "Backend"))
-        self.assertFalse(hasattr(distributed_c10d, "GroupMember"))
+        self.assertIs(distributed_c10d.GroupMember.WORLD, None)
+        self.assertIs(distributed_c10d.group.WORLD, None)
         self.assertFalse(hasattr(distributed_c10d, "ProcessGroup"))
 
         environments = (
@@ -248,12 +249,14 @@ class DistributedGetBackendTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -292,12 +295,14 @@ class DistributedGetBackendTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",

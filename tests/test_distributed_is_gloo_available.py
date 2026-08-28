@@ -138,12 +138,14 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         self.assertEqual(
             distributed_c10d.__all__,
             [
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -183,12 +185,14 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
             },
             {
                 "distributed_c10d",
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",
@@ -215,12 +219,14 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         self.assertEqual(
             {name for name in owner_namespace if not name.startswith("__")},
             {
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -294,12 +300,14 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
             {name for name in vars(distributed) if not name.startswith("_")},
             {
                 "distributed_c10d",
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",
@@ -320,12 +328,14 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
                 if not name.startswith("_")
             },
             {
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -340,7 +350,6 @@ class DistributedIsGlooAvailableTests(unittest.TestCase):
         )
         for name in (
             "Backend",
-            "GroupMember",
             "ProcessGroup",
             "ProcessGroupGloo",
             "all_reduce",

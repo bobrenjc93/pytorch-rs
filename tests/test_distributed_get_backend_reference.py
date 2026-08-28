@@ -242,12 +242,14 @@ class DistributedGetBackendReferenceTests(unittest.TestCase):
         actual = actual_distributed.get_backend
         expected = expected_distributed.get_backend
         supported = {
+            "GroupMember",
             "destroy_process_group",
             "get_backend_config",
             "get_backend",
             "get_rank",
             "get_world_size",
             "get_pg_count",
+            "group",
             "is_gloo_available",
             "is_initialized",
             "is_mpi_available",
@@ -337,12 +339,14 @@ class DistributedGetBackendReferenceTests(unittest.TestCase):
             actual_public,
             {
                 "distributed_c10d",
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_available",
                 "is_gloo_available",
                 "is_initialized",
@@ -361,12 +365,14 @@ class DistributedGetBackendReferenceTests(unittest.TestCase):
                 name for name in vars(actual_c10d) if not name.startswith("_")
             },
             {
+                "GroupMember",
                 "destroy_process_group",
                 "get_backend_config",
                 "get_backend",
                 "get_rank",
                 "get_world_size",
                 "get_pg_count",
+                "group",
                 "is_gloo_available",
                 "is_initialized",
                 "is_mpi_available",
@@ -388,7 +394,6 @@ class DistributedGetBackendReferenceTests(unittest.TestCase):
 
         for name in (
             "Backend",
-            "GroupMember",
             "ProcessGroup",
             "all_reduce",
             "init_process_group",

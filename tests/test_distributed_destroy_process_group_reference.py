@@ -282,12 +282,14 @@ class DistributedDestroyProcessGroupReferenceTests(unittest.TestCase):
         actual = actual_distributed.destroy_process_group
         expected = expected_distributed.destroy_process_group
         supported = {
+            "GroupMember",
             "destroy_process_group",
             "get_backend_config",
             "get_backend",
             "get_rank",
             "get_world_size",
             "get_pg_count",
+            "group",
             "is_gloo_available",
             "is_initialized",
             "is_mpi_available",
@@ -426,7 +428,6 @@ class DistributedDestroyProcessGroupReferenceTests(unittest.TestCase):
                 self.assertFalse(hasattr(actual_distributed, name))
 
         for name in (
-            "GroupMember",
             "ProcessGroup",
             "all_reduce",
             "init_process_group",

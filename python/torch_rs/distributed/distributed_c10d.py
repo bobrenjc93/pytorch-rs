@@ -5,12 +5,14 @@ import os as _os
 from ..torch_rs import Tensor as _Tensor
 
 __all__ = [
+    "GroupMember",
     "destroy_process_group",
     "get_backend_config",
     "get_backend",
     "get_rank",
     "get_world_size",
     "get_pg_count",
+    "group",
     "is_gloo_available",
     "is_initialized",
     "is_mpi_available",
@@ -29,6 +31,61 @@ _ProcessGroup = type("ProcessGroup", (), {"__module__": __name__})
 _Backend = type("Backend", (), {"__module__": __name__})
 
 
+class _World:
+    """Container for the unsupported default process-group state."""
+
+    def __init__(self) -> None:
+        self._default_pg = None
+
+    @property
+    def default_pg(self) -> _ProcessGroup | None:
+        return self._default_pg
+
+    @default_pg.setter
+    def default_pg(self, value) -> None:
+        self._default_pg = value
+
+
+_world = _World()
+
+
+class _WorldMeta(type):
+    """
+    Meta class of ``group`` and ``GroupMember``.
+
+    Allows them to have the class property ``WORLD``.
+    """
+
+    @property
+    def WORLD(cls) -> _ProcessGroup | None:
+        return _world.default_pg
+
+    @WORLD.setter
+    def WORLD(cls, pg: _ProcessGroup | None):
+        _world.default_pg = pg
+
+
+class group(metaclass=_WorldMeta):
+    """Group class. Placeholder."""
+
+
+class GroupMember(metaclass=_WorldMeta):
+    """Group member class."""
+
+    NON_GROUP_MEMBER = -100
+
+
+def _rank_not_in_group(group: _ProcessGroup | None) -> bool:
+    """Check if the current process's rank is not in a given group."""
+    if group is None:
+        return False
+    if type(group) is _Tensor:
+        if group.numel() != 1:
+            bool(group)
+        return group.item() == GroupMember.NON_GROUP_MEMBER
+    return group == GroupMember.NON_GROUP_MEMBER
+
+
 def destroy_process_group(group: _ProcessGroup | None = None):
     """
     Destroy a given process group, and deinitialize the distributed package.
@@ -39,12 +96,7 @@ def destroy_process_group(group: _ProcessGroup | None = None):
                                         groups including the default one will
                                         be destroyed.
     """
-    if type(group) is _Tensor:
-        if group.numel() != 1:
-            bool(group)
-        if group.item() == -100:
-            return
-    elif group == -100:
+    if _rank_not_in_group(group):
         return
     if group is None:
         raise AssertionError("Process group cannot be None")
@@ -65,6 +117,8 @@ def get_backend_config(group: _ProcessGroup | None = None) -> str:
         The backend configuration of the given process group as a lower case string.
 
     """
+    if _rank_not_in_group(group):
+        raise ValueError("Invalid process group specified")
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_backend_config() does not support "
@@ -89,6 +143,8 @@ def get_backend(group: _ProcessGroup | None = None) -> _Backend:
         The backend of the given process group as a lower case string.
 
     """
+    if _rank_not_in_group(group):
+        raise ValueError("Invalid process group specified")
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_backend() does not support non-None "
@@ -117,6 +173,8 @@ def get_rank(group: _ProcessGroup | None = None) -> int:
         -1, if not part of the group
 
     """
+    if _rank_not_in_group(group):
+        return -1
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_rank() does not support non-None "
@@ -208,6 +266,8 @@ def get_world_size(group: _ProcessGroup | None = None) -> int:
         -1, if not part of the group
 
     """
+    if _rank_not_in_group(group):
+        return -1
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_world_size() does not support non-None "

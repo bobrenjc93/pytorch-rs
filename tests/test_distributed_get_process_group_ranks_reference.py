@@ -99,12 +99,14 @@ class DistributedGetProcessGroupRanksReferenceTests(unittest.TestCase):
         self.assertFalse(hasattr(actual_c10d, "ProcessGroup"))
 
         supported = {
+            "GroupMember",
             "destroy_process_group",
             "get_backend_config",
             "get_backend",
             "get_rank",
             "get_world_size",
             "get_pg_count",
+            "group",
             "is_gloo_available",
             "is_initialized",
             "is_mpi_available",
