@@ -185,10 +185,26 @@ class DistributedGroupMemberReferenceTests(unittest.TestCase):
             self.assertIs(namespace["group"], c10d.group)
 
     def test_mutated_world_state_matches_pytorch_2_13(self):
+        class DefaultGroupMarker:
+            def __eq__(self, other):
+                return isinstance(other, DefaultGroupMarker)
+
+            def __hash__(self):
+                return 117
+
+            def __repr__(self):
+                return "<default-group-marker>"
+
+            def rank(self):
+                return 19
+
+            def size(self):
+                return 23
+
         def mutated_state(module, owner_name):
             distributed = module.distributed
             owner = getattr(distributed, owner_name)
-            marker = object()
+            marker = DefaultGroupMarker()
             previous = owner.WORLD
             try:
                 owner.WORLD = marker
@@ -198,6 +214,29 @@ class DistributedGroupMemberReferenceTests(unittest.TestCase):
                     distributed.is_initialized(),
                     distributed.get_group_rank(marker, 7),
                     distributed.get_global_rank(marker, 11),
+                    self.outcome(distributed.destroy_process_group),
+                    self.outcome(lambda: distributed.destroy_process_group(None)),
+                    self.outcome(
+                        lambda: distributed.destroy_process_group(marker)
+                    ),
+                    self.outcome(distributed.get_backend_config),
+                    self.outcome(lambda: distributed.get_backend_config(None)),
+                    self.outcome(lambda: distributed.get_backend_config(marker)),
+                    self.outcome(distributed.get_backend),
+                    self.outcome(lambda: distributed.get_backend(None)),
+                    self.outcome(lambda: distributed.get_backend(marker)),
+                    self.outcome(distributed.get_rank),
+                    self.outcome(lambda: distributed.get_rank(None)),
+                    self.outcome(lambda: distributed.get_rank(marker)),
+                    self.outcome(distributed.get_world_size),
+                    self.outcome(lambda: distributed.get_world_size(None)),
+                    self.outcome(lambda: distributed.get_world_size(marker)),
+                    self.outcome(
+                        lambda: distributed.get_process_group_ranks(None)
+                    ),
+                    self.outcome(
+                        lambda: distributed.get_process_group_ranks(marker)
+                    ),
                 )
             finally:
                 owner.WORLD = previous

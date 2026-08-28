@@ -86,6 +86,16 @@ class DistributedGroupMemberTests(unittest.TestCase):
         world_meta = type(group_member)
         world_property = world_meta.__dict__["WORLD"]
 
+        class DefaultGroupMarker:
+            def __repr__(self):
+                return "<default-group-marker>"
+
+            def rank(self):
+                return 19
+
+            def size(self):
+                return 23
+
         self.assertIsInstance(world_property, property)
         self.assertIsNone(world_property.__doc__)
         self.assertEqual(world_property.fget.__name__, "WORLD")
@@ -102,7 +112,7 @@ class DistributedGroupMemberTests(unittest.TestCase):
         )
 
         first = object()
-        second = object()
+        second = DefaultGroupMarker()
         try:
             group_member.WORLD = first
             self.assertIs(group_member.WORLD, first)
@@ -116,6 +126,48 @@ class DistributedGroupMemberTests(unittest.TestCase):
             self.assertIs(torch.distributed.is_initialized(), True)
             self.assertEqual(torch.distributed.get_group_rank(second, 13), 13)
             self.assertEqual(torch.distributed.get_global_rank(second, 17), 17)
+            for call in (
+                torch.distributed.destroy_process_group,
+                lambda: torch.distributed.destroy_process_group(None),
+                lambda: torch.distributed.destroy_process_group(second),
+            ):
+                self.assert_error(ValueError, INVALID_GROUP_ERROR, call)
+            for call in (
+                torch.distributed.get_backend_config,
+                lambda: torch.distributed.get_backend_config(None),
+                lambda: torch.distributed.get_backend_config(second),
+            ):
+                self.assert_error(
+                    TypeError,
+                    "Invariant encountered: value was None when it should not be",
+                    call,
+                )
+            backend_error = (
+                "Process group <default-group-marker> is not initialized in the "
+                "world group map. Please initialize the group first."
+            )
+            for call in (
+                torch.distributed.get_backend,
+                lambda: torch.distributed.get_backend(None),
+                lambda: torch.distributed.get_backend(second),
+            ):
+                self.assert_error(ValueError, backend_error, call)
+            for call in (
+                torch.distributed.get_rank,
+                lambda: torch.distributed.get_rank(None),
+                lambda: torch.distributed.get_rank(second),
+            ):
+                self.assertEqual(call(), 19)
+            for call in (
+                torch.distributed.get_world_size,
+                lambda: torch.distributed.get_world_size(None),
+                lambda: torch.distributed.get_world_size(second),
+            ):
+                self.assertEqual(call(), 23)
+            for process_group in (None, second):
+                with self.assertRaises(KeyError) as raised:
+                    torch.distributed.get_process_group_ranks(process_group)
+                self.assertIs(raised.exception.args[0], second)
         finally:
             group_member.WORLD = None
         self.assertIs(group_member.WORLD, None)

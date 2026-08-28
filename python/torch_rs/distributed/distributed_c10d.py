@@ -86,6 +86,16 @@ def _rank_not_in_group(group: _ProcessGroup | None) -> bool:
     return group == GroupMember.NON_GROUP_MEMBER
 
 
+def _get_default_group() -> _ProcessGroup:
+    """Get the default process group created by init_process_group."""
+    if not is_initialized():
+        raise ValueError(
+            "Default process group has not been initialized, "
+            "please make sure to call init_process_group."
+        )
+    return GroupMember.WORLD
+
+
 def destroy_process_group(group: _ProcessGroup | None = None):
     """
     Destroy a given process group, and deinitialize the distributed package.
@@ -99,8 +109,12 @@ def destroy_process_group(group: _ProcessGroup | None = None):
     if _rank_not_in_group(group):
         return
     if group is None:
+        pg = GroupMember.WORLD
+    else:
+        pg = group
+    if pg is None:
         raise AssertionError("Process group cannot be None")
-    if {}.get(group, None) is None:
+    if {}.get(pg, None) is None:
         raise ValueError("Invalid process group specified")
 
 
@@ -117,8 +131,17 @@ def get_backend_config(group: _ProcessGroup | None = None) -> str:
         The backend configuration of the given process group as a lower case string.
 
     """
+    if group is None:
+        group = _get_default_group()
     if _rank_not_in_group(group):
         raise ValueError("Invalid process group specified")
+    if group is GroupMember.WORLD:
+        backend_config = {}.get(group)
+        if backend_config is None:
+            raise TypeError(
+                "Invariant encountered: value was None when it should not be"
+            )
+        return str(backend_config)
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_backend_config() does not support "
@@ -143,8 +166,16 @@ def get_backend(group: _ProcessGroup | None = None) -> _Backend:
         The backend of the given process group as a lower case string.
 
     """
+    if group is None:
+        group = _get_default_group()
     if _rank_not_in_group(group):
         raise ValueError("Invalid process group specified")
+    if group is GroupMember.WORLD:
+        if {}.get(group, None) is None:
+            raise ValueError(
+                f"Process group {group} is not initialized in the world group "
+                "map. Please initialize the group first."
+            )
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_backend() does not support non-None "
@@ -175,6 +206,10 @@ def get_rank(group: _ProcessGroup | None = None) -> int:
     """
     if _rank_not_in_group(group):
         return -1
+    if group is None:
+        group = _get_default_group()
+    if group is GroupMember.WORLD:
+        return group.rank()
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_rank() does not support non-None "
@@ -246,10 +281,7 @@ def get_process_group_ranks(group: _ProcessGroup | None) -> list[int]:
         List of global ranks ordered by group rank.
     """
     if not group:
-        raise ValueError(
-            "Default process group has not been initialized, please make sure to "
-            "call init_process_group."
-        )
+        group = _get_default_group()
     return list({}[group].keys())
 
 
@@ -268,6 +300,10 @@ def get_world_size(group: _ProcessGroup | None = None) -> int:
     """
     if _rank_not_in_group(group):
         return -1
+    if group is None:
+        group = _get_default_group()
+    if group is GroupMember.WORLD:
+        return group.size()
     if group is not None:
         raise NotImplementedError(
             "torch_rs.distributed.get_world_size() does not support non-None "

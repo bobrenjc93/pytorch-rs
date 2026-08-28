@@ -73,7 +73,6 @@ class DistributedGetBackendTests(unittest.TestCase):
                 "is_initialized",
                 "device",
                 "cuda",
-                "_get_default_group",
                 "_world",
             }.isdisjoint(function.__code__.co_names)
         )
