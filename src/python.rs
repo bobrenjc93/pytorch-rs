@@ -47,6 +47,7 @@ static WARN_ALWAYS_ENABLED: AtomicBool = AtomicBool::new(false);
 static CUDNN_ENABLED: AtomicBool = AtomicBool::new(true);
 static CUDNN_BENCHMARK: AtomicBool = AtomicBool::new(false);
 static CUDNN_DETERMINISTIC: AtomicBool = AtomicBool::new(false);
+static MATH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static NNPACK_ENABLED: AtomicBool = AtomicBool::new(true);
 static GUARD_COLLECTIVES_ENABLED: AtomicBool = AtomicBool::new(false);
 const BROADCAST_TENSORS_EXACT_TENSORS_ERROR: &str =
@@ -5139,6 +5140,32 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     ] {
         exports.call_method1("remove", (name,))?;
     }
+    Ok(())
+}
+
+#[pyfunction(name = "_set_sdp_use_math", signature = (enabled, /), text_signature = None)]
+fn set_sdp_use_math_native(enabled: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !enabled.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(enabled)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "set_sdp_use_math expects a bool, but got {type_name}"
+        )));
+    }
+    MATH_SDP_ENABLED.store(enabled.is_truthy()?, Ordering::SeqCst);
+    Ok(())
+}
+
+#[pyfunction(name = "_get_math_sdp_enabled", signature = (), text_signature = None)]
+fn get_math_sdp_enabled_native() -> bool {
+    MATH_SDP_ENABLED.load(Ordering::SeqCst)
+}
+
+fn add_math_sdp_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(set_sdp_use_math_native, module)?)?;
+    module.add_function(wrap_pyfunction!(get_math_sdp_enabled_native, module)?)?;
+    let exports = module.getattr("__all__")?;
+    exports.call_method1("remove", ("_set_sdp_use_math",))?;
+    exports.call_method1("remove", ("_get_math_sdp_enabled",))?;
     Ok(())
 }
 
@@ -11797,6 +11824,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_default_dtype_validator(module)?;
     add_warn_always_builtins(module)?;
     add_cudnn_builtins(module)?;
+    add_math_sdp_builtins(module)?;
     add_nnpack_builtins(module)?;
     add_compiler_state_builtins(module)?;
     module.add_class::<PyDevice>()?;
