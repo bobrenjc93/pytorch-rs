@@ -11,6 +11,7 @@ import threading
 import types
 import typing
 import unittest
+import warnings
 from collections import OrderedDict
 
 import torch_rs as torch
@@ -23,6 +24,7 @@ except ImportError:
 
 SUPPORTED = {
     "current_accelerator",
+    "current_device_idx",
     "current_device_index",
     "device_count",
     "empty_cache",
@@ -81,6 +83,23 @@ class AcceleratorReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
+    def pickle_outcome(self, function, protocol):
+        try:
+            payload = pickle.dumps(function, protocol=protocol)
+        except Exception as error:
+            return (
+                "raise",
+                type(error).__name__,
+                re.sub(r"0x[0-9a-fA-F]+", "0x...", str(error)).replace(
+                    "torch_rs", "torch"
+                ),
+            )
+        return (
+            "return",
+            pickle.loads(payload) is function,
+            self.pickle_shape(function, protocol),
+        )
+
     def normalize(self, value):
         return str(value).replace("torch_rs", "torch")
 
@@ -110,6 +129,7 @@ class AcceleratorReferenceTests(unittest.TestCase):
 
         for name in (
             "current_accelerator",
+            "current_device_idx",
             "current_device_index",
             "device_count",
             "empty_cache",
@@ -158,7 +178,25 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 self.assertEqual(actual.__doc__, expected.__doc__)
                 self.assertEqual(actual.__defaults__, expected.__defaults__)
                 self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)
-                self.assertEqual(actual.__dict__, expected.__dict__)
+                if name == "current_device_idx":
+                    self.assertEqual(
+                        set(actual.__dict__), {"__wrapped__", "__deprecated__"}
+                    )
+                    self.assertEqual(
+                        set(expected.__dict__),
+                        {"__wrapped__", "__deprecated__"},
+                    )
+                    self.assertIs(
+                        actual.__wrapped__, actual_module.current_device_index
+                    )
+                    self.assertIs(
+                        expected.__wrapped__, expected_module.current_device_index
+                    )
+                    self.assertEqual(
+                        actual.__deprecated__, expected.__deprecated__
+                    )
+                else:
+                    self.assertEqual(actual.__dict__, expected.__dict__)
                 self.assertEqual(
                     hasattr(actual, "__text_signature__"),
                     hasattr(expected, "__text_signature__"),
@@ -271,13 +309,9 @@ class AcceleratorReferenceTests(unittest.TestCase):
                 self.assertIs(copy.deepcopy(actual), actual)
                 self.assertIs(copy.deepcopy(expected), expected)
                 for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
-                    self.assertIs(pickle.loads(pickle.dumps(actual, protocol)), actual)
-                    self.assertIs(
-                        pickle.loads(pickle.dumps(expected, protocol)), expected
-                    )
                     self.assertEqual(
-                        self.pickle_shape(actual, protocol),
-                        self.pickle_shape(expected, protocol),
+                        self.pickle_outcome(actual, protocol),
+                        self.pickle_outcome(expected, protocol),
                     )
 
         for module in (torch, reference_torch):
@@ -285,6 +319,65 @@ class AcceleratorReferenceTests(unittest.TestCase):
             exec(f"from {module.__name__} import *", namespace)
             for name in ("accelerator", *SUPPORTED):
                 self.assertNotIn(name, namespace)
+
+    def test_current_device_idx_warning_and_delegation_match(self):
+        message = "Use `current_device_index` instead."
+
+        def warned_outcome(call):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                try:
+                    outcome = ("return", call())
+                except Exception as error:
+                    outcome = (
+                        "raise",
+                        type(error),
+                        str(error),
+                        error.args,
+                    )
+            return outcome, tuple(
+                (
+                    warning.category,
+                    str(warning.message),
+                    warning.filename,
+                )
+                for warning in caught
+            )
+
+        invalid_arguments = (
+            ((None,), {}),
+            ((None, None), {}),
+            ((), {"device": True}),
+        )
+        for module in (torch, reference_torch):
+            accelerator = module.accelerator
+            alias = accelerator.current_device_idx
+            canonical = accelerator.current_device_index
+
+            with self.subTest(module=module.__name__, call="valid"):
+                expected = self.call_outcome(canonical)
+                actual, emitted = warned_outcome(alias)
+                self.assertEqual(actual, expected)
+                self.assertEqual(
+                    emitted,
+                    ((FutureWarning, message, __file__),),
+                )
+
+            for args, kwargs in invalid_arguments:
+                with self.subTest(
+                    module=module.__name__, args=args, kwargs=kwargs
+                ):
+                    expected = self.call_outcome(
+                        lambda: canonical(*args, **kwargs)
+                    )
+                    actual, emitted = warned_outcome(
+                        lambda: alias(*args, **kwargs)
+                    )
+                    self.assertEqual(actual, expected)
+                    self.assertEqual(
+                        emitted,
+                        ((FutureWarning, message, __file__),),
+                    )
 
     def test_memory_queries_before_allocator_initialization_match(self):
         script = r'''
@@ -1484,6 +1577,12 @@ assert torch.version.cuda is None
                 old_functions[name] is not new_functions[name]
                 for name in sorted(ACCELERATOR_LOCAL)
             ),
+            old_functions["current_device_idx"].__wrapped__
+            is old_functions["current_device_index"],
+            new_functions["current_device_idx"].__wrapped__
+            is new_functions["current_device_index"],
+            old_functions["current_device_idx"].__wrapped__
+            is not new_functions["current_device_index"],
             tuple(
                 copy.copy(new_functions[name]) is new_functions[name]
                 for name in sorted(ACCELERATOR_LOCAL)
@@ -1493,8 +1592,9 @@ assert torch.version.cuda is None
                 for name in sorted(ACCELERATOR_LOCAL)
             ),
             tuple(
-                pickle.loads(pickle.dumps(new_functions[name]))
-                is new_functions[name]
+                self.pickle_outcome(
+                    new_functions[name], pickle.HIGHEST_PROTOCOL
+                )
                 for name in sorted(ACCELERATOR_LOCAL)
             ),
             tuple(stale_pickle_errors),
@@ -1655,10 +1755,10 @@ assert torch.version.cuda is None
         for name in sorted(SUPPORTED):
             for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
                 self.assertEqual(
-                    self.pickle_shape(
+                    self.pickle_outcome(
                         getattr(torch.accelerator, name), protocol
                     ),
-                    self.pickle_shape(
+                    self.pickle_outcome(
                         getattr(reference_torch.accelerator, name), protocol
                     ),
                 )

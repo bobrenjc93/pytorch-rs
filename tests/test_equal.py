@@ -85,6 +85,67 @@ class TensorEqualTests(unittest.TestCase):
             with self.subTest(left=left.tolist(), right=right.tolist()):
                 self.assert_equal_result(left, right, expected)
 
+    def test_matching_dense_strides_preserve_layout_and_edge_semantics(self):
+        offset_left = torch.tensor(
+            [
+                [[99.0, 98.0, 97.0, 96.0], [95.0, 94.0, 93.0, 92.0]],
+                [[0.0, -0.0, float("inf"), -float("inf")], [1.0, -1.0, 0.0, -0.0]],
+            ]
+        )[1].transpose(0, 1)
+        offset_right = torch.tensor(
+            [
+                [[91.0, 90.0, 89.0, 88.0], [87.0, 86.0, 85.0, 84.0]],
+                [[-0.0, 0.0, float("inf"), -float("inf")], [1.0, -1.0, -0.0, 0.0]],
+            ]
+        )[1].transpose(0, 1)
+        permuted_left = torch.tensor(
+            [
+                [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]],
+                [[6.0, 7.0, 8.0], [9.0, 10.0, 11.0]],
+            ]
+        ).permute(2, 0, 1)
+        permuted_right = permuted_left.clone()
+        channels_last_left = torch.tensor(
+            [
+                [[[0.0, 1.0], [2.0, 3.0]], [[4.0, 5.0], [6.0, 7.0]]],
+                [[[8.0, 9.0], [10.0, 11.0]], [[12.0, 13.0], [14.0, 15.0]]],
+            ]
+        ).contiguous(memory_format=torch.channels_last)
+        channels_last_right = channels_last_left.clone()
+        nan_left = torch.tensor([[1.0, float("nan")], [2.0, 3.0]]).transpose(0, 1)
+        nan_right = torch.tensor([[1.0, float("nan")], [2.0, 3.0]]).transpose(
+            0, 1
+        )
+
+        cases = (
+            (offset_left, offset_right, True),
+            (permuted_left, permuted_right, True),
+            (channels_last_left, channels_last_right, True),
+            (nan_left, nan_right, False),
+        )
+        for left, right, expected in cases:
+            with self.subTest(shape=left.shape, stride=left.stride()):
+                self.assertEqual(left.shape, right.shape)
+                self.assertEqual(left.stride(), right.stride())
+                self.assertFalse(left.is_contiguous())
+                self.assertFalse(right.is_contiguous())
+                self.assert_equal_result(left, right, expected)
+
+        left_leaf = torch.tensor([[0.0, 0.0], [0.0, 0.0]], requires_grad=True)
+        right_leaf = torch.tensor([[0.0, 0.0], [0.0, 0.0]], requires_grad=True)
+        unequal_leaf = torch.tensor([[0.0, 0.0], [0.0, 0.0]], requires_grad=True)
+        weights = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+        (left_leaf * weights).sum().backward()
+        (right_leaf * weights).sum().backward()
+        (unequal_leaf * torch.tensor([[1.0, 2.0], [3.0, 5.0]])).sum().backward()
+        left_grad = left_leaf.grad.transpose(0, 1)
+        right_grad = right_leaf.grad.transpose(0, 1)
+        unequal_grad = unequal_leaf.grad.transpose(0, 1)
+        self.assertEqual(left_grad.stride(), right_grad.stride())
+        self.assertFalse(left_grad.is_contiguous())
+        self.assert_equal_result(left_grad, right_grad, True)
+        self.assert_equal_result(left_grad, unequal_grad, False)
+
     def test_callable_metadata_and_unbound_call(self):
         tensor = torch.tensor([1.0])
         descriptor = inspect.getattr_static(torch.Tensor, "equal")
