@@ -248,7 +248,6 @@ class CudnnIsAvailableTests(unittest.TestCase):
             "benchmark_limit",
             "conv",
             "depthwise_kernel",
-            "deterministic",
             "flags",
             "fp32_precision",
             "is_acceptable",
@@ -260,10 +259,13 @@ class CudnnIsAvailableTests(unittest.TestCase):
 
         self.assertIs(type(cudnn.enabled), bool)
         self.assertIs(type(cudnn.benchmark), bool)
+        self.assertIs(type(cudnn.deterministic), bool)
         self.assertTrue(hasattr(torch._C, "_get_cudnn_enabled"))
         self.assertTrue(hasattr(torch._C, "_set_cudnn_enabled"))
         self.assertTrue(hasattr(torch._C, "_get_cudnn_benchmark"))
         self.assertTrue(hasattr(torch._C, "_set_cudnn_benchmark"))
+        self.assertTrue(hasattr(torch._C, "_get_cudnn_deterministic"))
+        self.assertTrue(hasattr(torch._C, "_set_cudnn_deterministic"))
         for name in ("_cudnn",):
             with self.subTest(native_name=name):
                 self.assertFalse(hasattr(torch._C, name))
@@ -311,16 +313,24 @@ assert is_available() is torch._C._has_cudnn is False
 assert version() is None
 assert cudnn.enabled is True
 assert cudnn.benchmark is False
+assert cudnn.deterministic is False
 cudnn.enabled = False
 assert cudnn.enabled is False
 assert cudnn.benchmark is False
+assert cudnn.deterministic is False
 cudnn.benchmark = True
 assert cudnn.enabled is False
 assert cudnn.benchmark is True
+assert cudnn.deterministic is False
+cudnn.deterministic = True
+assert cudnn.enabled is False
+assert cudnn.benchmark is True
+assert cudnn.deterministic is True
 assert is_available() is False
 assert version() is None
 cudnn.enabled = True
 cudnn.benchmark = False
+cudnn.deterministic = False
 assert not hasattr(torch, "_has_cudnn")
 assert not hasattr(torch, "cuda")
 assert not hasattr(cudnn, "flags")
