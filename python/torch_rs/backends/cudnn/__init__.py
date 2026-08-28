@@ -49,6 +49,10 @@ class CudnnModule(_types.ModuleType):
         torch._C._get_cudnn_deterministic,
         torch._C._set_cudnn_deterministic,
     )
+    allow_tf32 = _ContextProp(
+        torch._C._get_cudnn_allow_tf32,
+        torch._C._set_cudnn_allow_tf32,
+    )
 
     def __init__(self, module, name):
         super().__init__(name)
@@ -65,3 +69,4 @@ _sys.modules[__name__] = CudnnModule(_sys.modules[__name__], __name__)
 enabled: bool
 benchmark: bool
 deterministic: bool
+allow_tf32: bool
