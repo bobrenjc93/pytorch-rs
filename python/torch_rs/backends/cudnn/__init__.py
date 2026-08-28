@@ -1,10 +1,13 @@
 # mypy: allow-untyped-defs
 import sys as _sys
-import types as _types
 from contextlib import contextmanager
 
 import torch_rs as torch
-from torch_rs.backends import __allow_nonbracketed_mutation
+from torch_rs.backends import (
+    ContextProp as _ContextProp,
+    PropModule as _PropModule,
+    __allow_nonbracketed_mutation,
+)
 
 
 __cudnn_version: int | None = None
@@ -116,19 +119,7 @@ def flags(
             set_flags(*orig_flags)
 
 
-class _ContextProp:
-    def __init__(self, getter, setter):
-        self.getter = getter
-        self.setter = setter
-
-    def __get__(self, obj, objtype):
-        return self.getter()
-
-    def __set__(self, obj, value):
-        self.setter(value)
-
-
-class CudnnModule(_types.ModuleType):
+class CudnnModule(_PropModule):
     enabled = _ContextProp(
         torch._C._get_cudnn_enabled,
         torch._C._set_cudnn_enabled,
@@ -149,14 +140,6 @@ class CudnnModule(_types.ModuleType):
         torch._C._get_cudnn_allow_tf32,
         torch._C._set_cudnn_allow_tf32,
     )
-
-    def __init__(self, module, name):
-        super().__init__(name)
-        self.m = module
-
-    def __getattr__(self, attr):
-        return self.m.__getattribute__(attr)
-
 
 # Match PyTorch's module-proxy identity and reload behavior without exposing
 # any of its cuDNN execution surface.

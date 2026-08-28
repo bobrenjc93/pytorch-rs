@@ -173,6 +173,7 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
                     "cuda",
                     "cudnn",
                     "kleidiai",
+                    "m",
                     "mha",
                     "mkl",
                     "nnpack",
