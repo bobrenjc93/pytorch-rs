@@ -368,7 +368,10 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         self.assertIs(type(actual.benchmark), bool)
         self.assertIs(type(expected.benchmark), bool)
         self.assertIs(type(actual.benchmark_limit), int)
-        self.assertIs(type(expected.benchmark_limit), int)
+        if expected.is_available():
+            self.assertIs(type(expected.benchmark_limit), int)
+        else:
+            self.assertIs(expected.benchmark_limit, None)
         self.assertIs(type(actual.deterministic), bool)
         self.assertIs(type(expected.deterministic), bool)
         self.assertIs(type(actual.allow_tf32), bool)

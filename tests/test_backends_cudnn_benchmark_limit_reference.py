@@ -38,6 +38,11 @@ class CudnnBenchmarkLimitReferenceTests(unittest.TestCase):
                 "backends.cudnn.benchmark_limit differentials require pinned "
                 "PyTorch 2.13.0"
             )
+        if not reference_torch.backends.cudnn.is_available():
+            raise unittest.SkipTest(
+                "backends.cudnn.benchmark_limit differentials require a "
+                "cuDNN-enabled PyTorch build"
+            )
 
     def fresh_cudnn_module(self, root):
         module_name = f"{root.__name__}.backends.cudnn"
