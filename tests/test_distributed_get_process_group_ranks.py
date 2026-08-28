@@ -492,10 +492,17 @@ for group in (True, "group", (1,)):
         assert error.args == (group,)
     else:
         raise AssertionError("unregistered group did not raise")
+group = [1]
 try:
-    function([1])
+    {{}}[group]
 except TypeError as error:
-    assert str(error) == "unhashable type: 'list'"
+    expected_unhashable_error = type(error), str(error), error.args
+else:
+    raise AssertionError("dict lookup accepted an unhashable group")
+try:
+    function(group)
+except TypeError as error:
+    assert (type(error), str(error), error.args) == expected_unhashable_error
 else:
     raise AssertionError("unhashable group did not raise")
 assert torch.distributed.is_initialized() is False
