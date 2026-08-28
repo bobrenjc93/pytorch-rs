@@ -328,7 +328,7 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
         reference_torch.cuda.synchronize(device)
         self.assertEqual(result.cpu().tolist(), [[[[54.0, 63.0], [90.0, 99.0]]]])
 
-        self.assertFalse(hasattr(torch.backends.cudnn, "flags"))
+        self.assertTrue(hasattr(torch.backends.cudnn, "flags"))
         self.assertFalse(hasattr(torch, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "cuda"))
         self.assertFalse(hasattr(torch.Tensor, "to"))
@@ -353,7 +353,6 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
             "CUDNN_TENSOR_DTYPES",
             "conv",
             "depthwise_kernel",
-            "flags",
             "fp32_precision",
             "is_acceptable",
             "rnn",
