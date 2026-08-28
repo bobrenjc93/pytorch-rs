@@ -316,8 +316,46 @@ impl PartialEq for Tensor {
         self.shape == other.shape
             && self.dtype() == other.dtype()
             && self.device() == other.device()
-            && self.logical_values().eq(other.logical_values())
+            && match (self.contiguous_slice(), other.contiguous_slice()) {
+                (Some(left), Some(right)) => contiguous_values_equal(left, right),
+                (left, right) => self
+                    .logical_values_from_contiguous_slice(left)
+                    .eq(other.logical_values_from_contiguous_slice(right)),
+            }
     }
+}
+
+#[allow(clippy::float_cmp)]
+fn contiguous_values_equal(left: &[f32], right: &[f32]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    if !left.is_empty() && left[0] != right[0] {
+        return false;
+    }
+
+    // Compare a whole block before branching so LLVM can vectorize the exact
+    // floating-point comparisons while retaining early exit between blocks.
+    let mut left_chunks = left.chunks_exact(8);
+    let mut right_chunks = right.chunks_exact(8);
+    for (left, right) in left_chunks.by_ref().zip(right_chunks.by_ref()) {
+        if !((left[0] == right[0])
+            & (left[1] == right[1])
+            & (left[2] == right[2])
+            & (left[3] == right[3])
+            & (left[4] == right[4])
+            & (left[5] == right[5])
+            & (left[6] == right[6])
+            & (left[7] == right[7]))
+        {
+            return false;
+        }
+    }
+    left_chunks
+        .remainder()
+        .iter()
+        .zip(right_chunks.remainder())
+        .all(|(left, right)| left == right)
 }
 
 impl Tensor {
@@ -1256,7 +1294,14 @@ impl Tensor {
     /// Returns logical values in row-major index order.
     #[must_use]
     pub fn logical_values(&self) -> LogicalValues<'_> {
-        let inner = self.contiguous_slice().map_or_else(
+        self.logical_values_from_contiguous_slice(self.contiguous_slice())
+    }
+
+    fn logical_values_from_contiguous_slice<'a>(
+        &'a self,
+        values: Option<&'a [f32]>,
+    ) -> LogicalValues<'a> {
+        let inner = values.map_or_else(
             || LogicalValuesInner::Strided {
                 tensor: self,
                 next: 0,
@@ -5074,7 +5119,8 @@ mod tests {
     use super::{
         AutogradKind, CONTIGUOUS_MATMUL_MIN_RHS_ELEMENTS, CONTIGUOUS_MATMUL_ROW_BLOCK, DType,
         Device, F32_SIGN_MASK, GradFn, MemoryFormat, SavedTensor, Tensor, TensorError,
-        materialize_contiguous_trailing_broadcast, rsqrt_value, sqrt_value, try_result_vector,
+        contiguous_values_equal, materialize_contiguous_trailing_broadcast, rsqrt_value,
+        sqrt_value, try_result_vector,
     };
 
     fn shared_gradient_copy(tensor: &Tensor) -> Tensor {
@@ -5302,6 +5348,83 @@ mod tests {
         assert!(shared.is_contiguous());
         assert!(shared.contiguous_slice().is_none());
         assert_matches_logical_fold(&shared);
+    }
+
+    #[test]
+    fn equality_fast_path_matches_logical_iteration_semantics() {
+        for elements in 0..=17 {
+            let left = vec![1.0; elements];
+            let mut right = left.clone();
+            assert!(contiguous_values_equal(&left, &right));
+            for mismatch in 0..elements {
+                right[mismatch] = 2.0;
+                assert!(!contiguous_values_equal(&left, &right));
+                right[mismatch] = 1.0;
+            }
+        }
+
+        let assert_matches_fallback = |left: &Tensor, right: &Tensor, expected| {
+            assert!(left.contiguous_slice().is_some());
+            assert!(right.contiguous_slice().is_some());
+            assert_eq!(left == right, expected);
+            assert_eq!(
+                shared_gradient_copy(left) == shared_gradient_copy(right),
+                expected
+            );
+        };
+
+        let edge_bits = [
+            0x0000_0000,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x3f80_0000,
+            0xbf80_0000,
+        ];
+        let left = offset_contiguous_tensor(&edge_bits, &[2, 3]);
+        let right = offset_contiguous_tensor(
+            &[
+                0x8000_0000,
+                0x0000_0000,
+                0x7f80_0000,
+                0xff80_0000,
+                0x3f80_0000,
+                0xbf80_0000,
+            ],
+            &[2, 3],
+        );
+        assert_ne!(left.storage_offset(), 0);
+        assert_ne!(right.storage_offset(), 0);
+        assert_matches_fallback(&left, &right, true);
+
+        let unequal = offset_contiguous_tensor(
+            &[
+                0x0000_0000,
+                0x8000_0000,
+                0x7f80_0000,
+                0xff80_0000,
+                0x3f80_0000,
+                0x4000_0000,
+            ],
+            &[2, 3],
+        );
+        assert_matches_fallback(&left, &unequal, false);
+
+        let nan = offset_contiguous_tensor(&[0x7fc1_2345], &[1]);
+        assert_matches_fallback(&nan, &nan, false);
+
+        let empty_left = Tensor::zeros([2, 0, 3]).unwrap();
+        let empty_right = Tensor::ones([2, 0, 3]).unwrap();
+        assert_matches_fallback(&empty_left, &empty_right, true);
+        assert_ne!(empty_left, Tensor::zeros([0]).unwrap());
+
+        let strided = Tensor::from_vec(vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0], [3, 2])
+            .unwrap()
+            .transpose(0, 1)
+            .unwrap();
+        let contiguous = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
+        assert!(strided.contiguous_slice().is_none());
+        assert_eq!(strided, contiguous);
     }
 
     #[test]
