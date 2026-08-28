@@ -172,6 +172,7 @@ class CudnnIsAvailableReferenceTests(unittest.TestCase):
                     "cpu",
                     "cuda",
                     "cudnn",
+                    "cusparselt",
                     "kleidiai",
                     "m",
                     "mha",

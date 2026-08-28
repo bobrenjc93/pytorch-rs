@@ -15,6 +15,7 @@ BACKEND_MODULES = {
     "cpu",
     "cuda",
     "cudnn",
+    "cusparselt",
     "kleidiai",
     "mha",
     "mkl",
