@@ -7425,6 +7425,22 @@
         "eval_b4945d15": 99,
         "eval_c8a1bfb9": 98
       }
+    },
+    {
+      "key": "pr:1217",
+      "recordedAt": "2026-08-28T12:40:27.750Z",
+      "label": "PR #1217",
+      "kind": "leaf",
+      "prNumber": 1217,
+      "title": "Expose cuDNN set_flags for supported modes",
+      "scores": {
+        "eval_7af648fb": 100,
+        "eval_8417a4a8": 100,
+        "eval_63a24994": 79.5,
+        "eval_39340456": 82.8,
+        "eval_b4945d15": 99,
+        "eval_c8a1bfb9": 98
+      }
     }
   ]
 }
