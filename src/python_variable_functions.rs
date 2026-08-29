@@ -20,20 +20,20 @@ use crate::python::{
     atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
     ceil_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, is_conj_variable_function,
-    is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
-    movedim_variable_function, mul_variable_function, multiply_variable_function,
-    neg_variable_function, negative_variable_function, permute_variable_function,
-    positive_variable_function, promote_types_variable_function, ravel_variable_function,
-    reciprocal_variable_function, reshape_variable_function, resolve_conj_variable_function,
-    resolve_neg_variable_function, rsqrt_variable_function, scalar_tensor_variable_function,
-    select_variable_function, sigmoid_variable_function, sin_variable_function,
-    sqrt_variable_function, square_variable_function, sum_variable_function,
+    is_inference_variable_function, matmul_variable_function, mean_variable_function,
+    moveaxis_variable_function, movedim_variable_function, mul_variable_function,
+    multiply_variable_function, neg_variable_function, negative_variable_function,
+    permute_variable_function, positive_variable_function, promote_types_variable_function,
+    ravel_variable_function, reciprocal_variable_function, reshape_variable_function,
+    resolve_conj_variable_function, resolve_neg_variable_function, rsqrt_variable_function,
+    scalar_tensor_variable_function, select_variable_function, sigmoid_variable_function,
+    sin_variable_function, sqrt_variable_function, square_variable_function, sum_variable_function,
     tanh_variable_function, trunc_variable_function, unbind_variable_function,
 };
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 44] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 45] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -62,6 +62,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 44] = [
     "sigmoid",
     "square",
     "sum",
+    "mean",
     "tanh",
     "is_vulkan_available",
     "is_conj",
@@ -472,6 +473,85 @@ Example::
     tensor([-2.0755,  1.0226,  0.0831,  0.4806])
     >>> torch.square(a)
     tensor([ 4.3077,  1.0457,  0.0069,  0.2310])
+";
+
+const MEAN_DOC: &std::ffi::CStr = cr"
+mean(input, *, dtype=None) -> Tensor
+
+.. note::
+    If the `input` tensor is empty, ``torch.mean()`` returns ``nan``.
+    This behavior is consistent with NumPy and follows the definition
+    that the mean over an empty set is undefined.
+
+
+Returns the mean value of all elements in the :attr:`input` tensor. Input must be floating point or complex.
+
+Args:
+    input (Tensor):
+      the input tensor, either of floating point or complex dtype
+
+Keyword args:
+    dtype (:class:`torch.dtype`, optional): the desired data type of returned tensor.
+        If specified, the input tensor is casted to :attr:`dtype` before the operation
+        is performed. This is useful for preventing data type overflows. Default: None.
+
+Example::
+
+    >>> a = torch.randn(1, 3)
+    >>> a
+    tensor([[ 0.2294, -0.5481,  1.3288]])
+    >>> torch.mean(a)
+    tensor(0.3367)
+
+.. function:: mean(input, dim, keepdim=False, *, dtype=None, out=None) -> Tensor
+   :noindex:
+
+Returns the mean value of each row of the :attr:`input` tensor in the given
+dimension :attr:`dim`. If :attr:`dim` is a list of dimensions,
+reduce over all of them.
+
+
+If :attr:`keepdim` is ``True``, the output tensor is of the same size
+as :attr:`input` except in the dimension(s) :attr:`dim` where it is of size 1.
+Otherwise, :attr:`dim` is squeezed (see :func:`torch.squeeze`), resulting in the
+output tensor having 1 (or ``len(dim)``) fewer dimension(s).
+
+
+Args:
+    input (Tensor): the input tensor.
+    
+    dim (int or tuple of ints, optional): the dimension or dimensions to reduce.
+        If ``None``, all dimensions are reduced.
+
+    
+    keepdim (bool, optional): whether the output tensor has :attr:`dim` retained or not. Default: ``False``.
+
+
+Keyword args:
+    dtype (:class:`torch.dtype`, optional): the desired data type of returned tensor.
+        If specified, the input tensor is casted to :attr:`dtype` before the operation
+        is performed. This is useful for preventing data type overflows. Default: None.
+    out (Tensor, optional): the output tensor.
+
+.. seealso::
+
+    :func:`torch.nanmean` computes the mean value of `non-NaN` elements.
+
+Example::
+
+    >>> a = torch.randn(4, 4)
+    >>> a
+    tensor([[-0.3841,  0.6320,  0.4254, -0.7384],
+            [-0.9644,  1.0131, -0.6549, -1.4279],
+            [-0.2951, -1.3350, -0.7694,  0.5600],
+            [ 1.0842, -0.9580,  0.3623,  0.2343]])
+    >>> torch.mean(a, 1)
+    tensor([-0.0163, -0.5085, -0.4599,  0.1807])
+    >>> torch.mean(a, 1, True)
+    tensor([[-0.0163],
+            [-0.5085],
+            [-0.4599],
+            [ 0.1807]])
 ";
 
 const SUM_DOC: &std::ffi::CStr = c"
@@ -918,6 +998,7 @@ variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(sigmoid_callback, sigmoid_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
 variable_function_callback!(sum_callback, sum_variable_function);
+variable_function_callback!(mean_callback, mean_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
@@ -990,6 +1071,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"sigmoid", sigmoid_callback, SIGMOID_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
         variable_function_method!(c"sum", sum_callback, SUM_DOC),
+        variable_function_method!(c"mean", mean_callback, MEAN_DOC),
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
