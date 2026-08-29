@@ -15,10 +15,11 @@ use pyo3::types::{PyDict, PyModule, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, ffi};
 
 use crate::python::{
-    abs_variable_function, absolute_variable_function, adjoint_variable_function,
-    arange_variable_function, atleast_1d_variable_function, atleast_2d_variable_function,
-    atleast_3d_variable_function, broadcast_tensors_variable_function, can_cast_variable_function,
-    ceil_variable_function, detach_variable_function, exp_variable_function, fix_variable_function,
+    abs_variable_function, absolute_variable_function, add_variable_function,
+    adjoint_variable_function, arange_variable_function, atleast_1d_variable_function,
+    atleast_2d_variable_function, atleast_3d_variable_function,
+    broadcast_tensors_variable_function, can_cast_variable_function, ceil_variable_function,
+    detach_variable_function, exp_variable_function, fix_variable_function,
     floor_variable_function, get_device_variable_function, is_conj_variable_function,
     is_inference_variable_function, matmul_variable_function, moveaxis_variable_function,
     movedim_variable_function, mul_variable_function, multiply_variable_function,
@@ -33,7 +34,7 @@ use crate::python::{
 
 static VARIABLE_FUNCTIONS_CLASS: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
 
-const VARIABLE_FUNCTION_NAMES: [&str; 42] = [
+const VARIABLE_FUNCTION_NAMES: [&str; 43] = [
     "get_device",
     "scalar_tensor",
     "arange",
@@ -72,6 +73,7 @@ const VARIABLE_FUNCTION_NAMES: [&str; 42] = [
     "movedim",
     "moveaxis",
     "matmul",
+    "add",
     "mul",
     "multiply",
     "can_cast",
@@ -467,6 +469,50 @@ Example::
     tensor([ 0.7156, -0.6218,  0.8257,  0.2553])
 ";
 
+const ADD_DOC: &std::ffi::CStr = cr"
+add(input, other, *, alpha=1, out=None) -> Tensor
+
+Adds :attr:`other`, scaled by :attr:`alpha`, to :attr:`input`.
+
+.. math::
+    \text{{out}}_i = \text{{input}}_i + \text{{alpha}} \times \text{{other}}_i
+
+
+Supports :ref:`broadcasting to a common shape <broadcasting-semantics>`,
+:ref:`type promotion <type-promotion-doc>`, and integer, float, and complex inputs.
+
+Args:
+    input (Tensor): the input tensor.
+    other (Tensor or Number): the tensor or number to add to :attr:`input`.
+
+Keyword arguments:
+    alpha (Number): the multiplier for :attr:`other`.
+    out (Tensor, optional): the output tensor.
+
+Examples::
+
+    >>> a = torch.randn(4)
+    >>> a
+    tensor([ 0.0202,  1.0985,  1.3506, -0.6056])
+    >>> torch.add(a, 20)
+    tensor([ 20.0202,  21.0985,  21.3506,  19.3944])
+
+    >>> b = torch.randn(4)
+    >>> b
+    tensor([-0.9732, -0.3497,  0.6245,  0.4022])
+    >>> c = torch.randn(4, 1)
+    >>> c
+    tensor([[ 0.3743],
+            [-1.7724],
+            [-0.5811],
+            [-0.8017]])
+    >>> torch.add(b, c, alpha=10)
+    tensor([[  2.7695,   3.3930,   4.3672,   4.1450],
+            [-18.6971, -18.0736, -17.0994, -17.3216],
+            [ -6.7845,  -6.1610,  -5.1868,  -5.4090],
+            [ -8.9902,  -8.3667,  -7.3925,  -7.6147]])
+";
+
 const MUL_DOC: &std::ffi::CStr = cr"
 mul(input, other, *, out=None) -> Tensor
 
@@ -823,6 +869,7 @@ variable_function_callback!(sqrt_callback, sqrt_variable_function);
 variable_function_callback!(sigmoid_callback, sigmoid_variable_function);
 variable_function_callback!(square_callback, square_variable_function);
 variable_function_callback!(tanh_callback, tanh_variable_function);
+variable_function_callback!(add_callback, add_variable_function);
 variable_function_callback!(mul_callback, mul_variable_function);
 variable_function_callback!(multiply_callback, multiply_variable_function);
 variable_function_callback!(
@@ -893,6 +940,7 @@ fn create_variable_functions_class(py: Python<'_>) -> PyResult<Py<PyAny>> {
         variable_function_method!(c"sigmoid", sigmoid_callback, SIGMOID_DOC),
         variable_function_method!(c"square", square_callback, SQUARE_DOC),
         variable_function_method!(c"tanh", tanh_callback, TANH_DOC),
+        variable_function_method!(c"add", add_callback, ADD_DOC),
         variable_function_method!(c"mul", mul_callback, MUL_DOC),
         variable_function_method!(c"multiply", multiply_callback, MULTIPLY_DOC),
         variable_function_method!(c"is_vulkan_available", is_vulkan_available_callback, c""),
