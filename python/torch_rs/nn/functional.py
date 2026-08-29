@@ -190,6 +190,69 @@ def sigmoid(input):
     return input.sigmoid()
 
 
+def _torch_functional_type_name(value):
+    value_type = type(value)
+    module = value_type.__module__
+    name = value_type.__name__
+    if module == "numpy":
+        return f"numpy.{name}"
+    if module in ("torch_rs", "torch_rs.torch_rs") and name in (
+        "device",
+        "dtype",
+        "finfo",
+        "layout",
+        "memory_format",
+        "Size",
+    ):
+        return f"torch.{name}"
+    return name
+
+
+def _silu_tensor_type_error(input, operation):
+    type_name = _torch_functional_type_name(input)
+    raise TypeError(
+        f"{operation}(): argument 'input' (position 1) must be Tensor, not {type_name}"
+    )
+
+
+def _silu_impl(input, inplace):
+    inplace_enabled = bool(inplace)
+    operation = "silu_" if inplace_enabled else "silu"
+    if type(input) is not Tensor:
+        _silu_tensor_type_error(input, operation)
+    if inplace_enabled:
+        raise NotImplementedError(
+            "torch_rs.nn.functional.silu does not support inplace=True"
+        )
+    return input * input.sigmoid()
+
+
+def silu(input: Tensor, inplace: bool = False) -> Tensor:
+    r"""Apply the Sigmoid Linear Unit (SiLU) function, element-wise.
+
+    The SiLU function is also known as the swish function.
+
+    .. math::
+        \text{silu}(x) = x * \sigma(x), \text{where } \sigma(x) \text{ is the logistic sigmoid.}
+
+    .. note::
+        See `Gaussian Error Linear Units (GELUs) <https://arxiv.org/abs/1606.08415>`_
+        where the SiLU (Sigmoid Linear Unit) was originally coined, and see
+        `Sigmoid-Weighted Linear Units for Neural Network Function Approximation
+        in Reinforcement Learning <https://arxiv.org/abs/1702.03118>`_ and `Swish:
+        a Self-Gated Activation Function <https://arxiv.org/abs/1710.05941v1>`_
+        where the SiLU was experimented with later.
+
+    See :class:`~torch.nn.SiLU` for more details.
+    """
+    return _dispatch_unary_torch_function(
+        silu,
+        _silu_impl,
+        input,
+        {"inplace": inplace},
+    )
+
+
 def _softsign_impl(input):
     if isinstance(input, Tensor) and torch.is_grad_enabled() and input.requires_grad:
         raise RuntimeError("softsign(): autograd recording is not supported")
