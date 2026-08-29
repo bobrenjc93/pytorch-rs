@@ -12,7 +12,6 @@ use crate::storage::Storage;
 use crate::tensor_error::TensorError;
 
 const F32_SIGN_MASK: u32 = 0x8000_0000;
-#[cfg(feature = "python-bindings")]
 const MIN_CONCRETE_SYMINT: i64 = -(1_i64 << 62);
 const CONTIGUOUS_MATMUL_ROW_BLOCK: usize = 4;
 // Keep latency-sized products on the smaller single-row loop.
@@ -1774,42 +1773,39 @@ impl Tensor {
         }
     }
 
+    /// Inserts a singleton dimension without copying storage.
+    ///
+    /// Negative dimensions wrap from one past the end. Scalars accept
+    /// dimensions `0` and `-1`, matching `PyTorch`. The resulting size, stride,
+    /// storage offset, and autograd metadata are produced with the same native
+    /// view path used by public `None` indexing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for an out-of-range dimension, when signed stride
+    /// metadata overflows `PyTorch`'s concrete `SymInt` range, when a wrapped
+    /// stride becomes negative, or when view metadata allocation fails.
+    pub fn unsqueeze(&self, dimension: i64) -> Result<Self, TensorError> {
+        let axis = normalize_unsqueeze_dimension(dimension, self.shape.len())?;
+        self.unsqueeze_axis(axis)
+    }
+
     #[cfg(feature = "python-bindings")]
     pub(crate) fn unsqueeze_front(&self) -> Result<Self, TensorError> {
-        let mut shape = try_result_vector(self.shape.len() + 1, self.elements)?;
-        shape.push(1);
-        shape.extend_from_slice(&self.shape);
+        self.unsqueeze_axis(0)
+    }
 
-        let leading_stride = match (self.shape.first(), self.strides.first()) {
-            (Some(dimension), Some(stride)) => {
-                // PyTorch carries sizes and strides through signed 64-bit
-                // arithmetic here, including wrapping for zero-element views.
-                let leading_stride = signed_wrapping_stride_product_value(*stride, *dimension)?;
-                // Packed SymInt values below -2^62 identify symbolic nodes
-                // instead of concrete integers, even in an eager stride list.
-                if leading_stride < MIN_CONCRETE_SYMINT {
-                    return Err(TensorError::NonConcreteInteger);
-                }
-                if leading_stride < 0 {
-                    let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-                    strides.push(leading_stride);
-                    for &stride in &self.strides {
-                        strides.push(
-                            i64::try_from(stride)
-                                .map_err(|_| TensorError::StrideCalculationOverflow)?,
-                        );
-                    }
-                    return Err(TensorError::NegativeStrides { strides });
-                }
-                usize::try_from(leading_stride)
-                    .map_err(|_| TensorError::StrideCalculationOverflow)?
-            }
-            (None, None) => 1,
-            _ => unreachable!("validated tensor shape and stride ranks must match"),
-        };
+    fn unsqueeze_axis(&self, axis: usize) -> Result<Self, TensorError> {
+        debug_assert!(axis <= self.shape.len());
+        let mut shape = try_result_vector(self.shape.len() + 1, self.elements)?;
+        shape.extend_from_slice(&self.shape[..axis]);
+        shape.push(1);
+        shape.extend_from_slice(&self.shape[axis..]);
+
         let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-        strides.push(leading_stride);
-        strides.extend_from_slice(&self.strides);
+        strides.extend_from_slice(&self.strides[..axis]);
+        strides.push(self.unsqueezed_stride(axis)?);
+        strides.extend_from_slice(&self.strides[axis..]);
 
         self.finish_view_transform(
             Self {
@@ -1827,30 +1823,38 @@ impl Tensor {
         )
     }
 
+    fn unsqueezed_stride(&self, axis: usize) -> Result<usize, TensorError> {
+        if axis == self.shape.len() {
+            return Ok(1);
+        }
+        let signed_stride =
+            signed_wrapping_stride_product_value(self.strides[axis], self.shape[axis])?;
+        // Packed SymInt values below -2^62 identify symbolic nodes instead of
+        // concrete integers, even in an eager stride list.
+        if signed_stride < MIN_CONCRETE_SYMINT {
+            return Err(TensorError::NonConcreteInteger);
+        }
+        if signed_stride < 0 {
+            let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
+            for &stride in &self.strides[..axis] {
+                strides.push(
+                    i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?,
+                );
+            }
+            strides.push(signed_stride);
+            for &stride in &self.strides[axis..] {
+                strides.push(
+                    i64::try_from(stride).map_err(|_| TensorError::StrideCalculationOverflow)?,
+                );
+            }
+            return Err(TensorError::NegativeStrides { strides });
+        }
+        usize::try_from(signed_stride).map_err(|_| TensorError::StrideCalculationOverflow)
+    }
+
     #[cfg(feature = "python-bindings")]
     pub(crate) fn unsqueeze_back(&self) -> Result<Self, TensorError> {
-        let mut shape = try_result_vector(self.shape.len() + 1, self.elements)?;
-        shape.extend_from_slice(&self.shape);
-        shape.push(1);
-
-        let mut strides = try_result_vector(self.strides.len() + 1, self.elements)?;
-        strides.extend_from_slice(&self.strides);
-        strides.push(1);
-
-        self.finish_view_transform(
-            Self {
-                storage: Arc::clone(&self.storage),
-                shape,
-                strides,
-                offset: self.offset,
-                elements: self.elements,
-                output_nr: 0,
-                view_requires_grad: false,
-                autograd: None,
-            },
-            TransformMapping::Identity,
-            AutogradNode::Unsqueeze,
-        )
+        self.unsqueeze_axis(self.shape.len())
     }
 
     /// Removes every singleton dimension without copying storage.
@@ -4834,6 +4838,23 @@ fn normalize_transpose_dimension(dimension: i64, rank: usize) -> Result<usize, T
         dimension
     })
     .map_err(|_| TensorError::DimensionOutOfRange { dimension, rank })
+}
+
+fn normalize_unsqueeze_dimension(dimension: i64, rank: usize) -> Result<usize, TensorError> {
+    let effective_rank = rank
+        .checked_add(1)
+        .ok_or(TensorError::UnsqueezeDimensionOutOfRange { dimension, rank })?;
+    let signed_rank = i64::try_from(effective_rank)
+        .map_err(|_| TensorError::UnsqueezeDimensionOutOfRange { dimension, rank })?;
+    if dimension < -signed_rank || dimension >= signed_rank {
+        return Err(TensorError::UnsqueezeDimensionOutOfRange { dimension, rank });
+    }
+    usize::try_from(if dimension < 0 {
+        dimension + signed_rank
+    } else {
+        dimension
+    })
+    .map_err(|_| TensorError::UnsqueezeDimensionOutOfRange { dimension, rank })
 }
 
 fn dimension_for_error(dimension: usize) -> i64 {

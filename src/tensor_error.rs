@@ -42,6 +42,10 @@ pub enum TensorError {
         dimension: i64,
         rank: usize,
     },
+    UnsqueezeDimensionOutOfRange {
+        dimension: i64,
+        rank: usize,
+    },
     PermutationRankMismatch {
         dimensions: usize,
         rank: usize,
@@ -158,6 +162,9 @@ impl Display for TensorError {
             Self::DimensionOutOfRange { dimension, rank } => {
                 format_dimension_out_of_range(formatter, *dimension, *rank)
             }
+            Self::UnsqueezeDimensionOutOfRange { dimension, rank } => {
+                format_unsqueeze_dimension_out_of_range(formatter, *dimension, *rank)
+            }
             error @ (Self::PermutationRankMismatch { .. }
             | Self::PermutationDimensionOutOfRange { .. }
             | Self::DuplicatePermutationDimension { .. }
@@ -252,6 +259,19 @@ fn format_dimension_out_of_range(
     rank: usize,
 ) -> std::fmt::Result {
     let rank = rank.max(1);
+    write!(
+        formatter,
+        "Dimension out of range (expected to be in range of [-{rank}, {}], but got {dimension})",
+        rank - 1
+    )
+}
+
+fn format_unsqueeze_dimension_out_of_range(
+    formatter: &mut Formatter<'_>,
+    dimension: i64,
+    rank: usize,
+) -> std::fmt::Result {
+    let rank = rank.saturating_add(1);
     write!(
         formatter,
         "Dimension out of range (expected to be in range of [-{rank}, {}], but got {dimension})",

@@ -45,7 +45,10 @@ pub(crate) fn tensor_error(error: &TensorError) -> PyErr {
         | TensorError::SliceCannotApplyToScalar
         | TensorError::TooManyIndices { .. }
         | TensorError::IndexOutOfBounds { .. }
-        | TensorError::DimensionOutOfRange { .. } => PyIndexError::new_err(error.to_string()),
+        | TensorError::DimensionOutOfRange { .. }
+        | TensorError::UnsqueezeDimensionOutOfRange { .. } => {
+            PyIndexError::new_err(error.to_string())
+        }
     }
 }
 
