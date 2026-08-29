@@ -3379,7 +3379,9 @@ impl Tensor {
         #[allow(clippy::cast_precision_loss)]
         let divisor = self.elements as f32;
         let scale = 1.0_f32 / divisor;
-        let mut output = self.sum().div_scalar(divisor)?;
+        let total = pytorch_full_reduction_sum(self.logical_values(), self.elements);
+        let mut output =
+            Self::from_scalar(total, self.dtype(), self.device()).div_scalar(divisor)?;
         if self.requires_grad() && is_grad_enabled() {
             output.autograd = Some(Arc::new(AutogradMeta {
                 kind: AutogradKind::NonLeaf {
@@ -3907,6 +3909,146 @@ impl SavedTensor {
                 .expect("validated broadcast storage offset must fit in usize");
         }
         (logical_index, storage_offset)
+    }
+}
+
+const PYTORCH_REDUCTION_VECTOR_WIDTH: usize = 8;
+const PYTORCH_REDUCTION_ROWS: usize = 4;
+const PYTORCH_REDUCTION_CHUNK: usize = PYTORCH_REDUCTION_VECTOR_WIDTH * PYTORCH_REDUCTION_ROWS;
+
+// Mirrors PyTorch 2.13's native CPU float32 full-reduction order: four
+// 8-wide vector lanes, 512-element cascade segments, then scalar projection.
+fn pytorch_full_reduction_sum(values: impl IntoIterator<Item = f32>, elements: usize) -> f32 {
+    let mut values = values.into_iter();
+    if elements < PYTORCH_REDUCTION_VECTOR_WIDTH {
+        let total = pytorch_small_full_reduction_sum(&mut values, elements);
+        debug_assert!(values.next().is_none());
+        return total;
+    }
+
+    let chunks = elements / PYTORCH_REDUCTION_CHUNK;
+    let mut consumed_chunks = 0_usize;
+    let mut first_level = zero_reduction_vectors();
+    let mut second_level = zero_reduction_vectors();
+    let mut third_level = zero_reduction_vectors();
+
+    if elements > 95 {
+        let shift = cascade_segment_shift(chunks);
+        let segment_chunks = 1_usize << shift;
+        if chunks >= segment_chunks {
+            let first_level_mask = (segment_chunks - 1) << shift;
+            let second_level_mask = (segment_chunks - 1) << (shift * 2);
+            while consumed_chunks + segment_chunks <= chunks {
+                let segment = sum_next_reduction_chunks(&mut values, segment_chunks);
+                add_reduction_vectors(&mut first_level, &segment);
+                consumed_chunks += segment_chunks;
+                if consumed_chunks & first_level_mask == 0 {
+                    add_reduction_vectors(&mut second_level, &first_level);
+                    first_level = zero_reduction_vectors();
+                    if consumed_chunks & second_level_mask == 0 {
+                        add_reduction_vectors(&mut third_level, &second_level);
+                        second_level = zero_reduction_vectors();
+                    }
+                }
+            }
+        }
+    }
+
+    let mut vectors = sum_next_reduction_chunks(&mut values, chunks - consumed_chunks);
+    add_reduction_vectors(&mut vectors, &first_level);
+    add_reduction_vectors(&mut vectors, &second_level);
+    add_reduction_vectors(&mut vectors, &third_level);
+
+    let extra_vectors = elements / PYTORCH_REDUCTION_VECTOR_WIDTH - chunks * PYTORCH_REDUCTION_ROWS;
+    for _ in 0..extra_vectors {
+        for lane in &mut vectors[0] {
+            *lane += values
+                .next()
+                .expect("validated reduction vector must contain eight values");
+        }
+    }
+
+    let mut scalar_tail = 0.0_f32;
+    for _ in 0..elements % PYTORCH_REDUCTION_VECTOR_WIDTH {
+        scalar_tail += values
+            .next()
+            .expect("validated reduction tail must contain the declared values");
+    }
+    debug_assert!(values.next().is_none());
+
+    let mut lanes = [0.0_f32; PYTORCH_REDUCTION_VECTOR_WIDTH];
+    for (lane_index, lane) in lanes.iter_mut().enumerate() {
+        let mut total = vectors[0][lane_index] + vectors[1][lane_index];
+        total += vectors[2][lane_index];
+        total += vectors[3][lane_index];
+        *lane = total;
+    }
+
+    let mut total = lanes[0] + scalar_tail;
+    for lane in &lanes[1..] {
+        total += *lane;
+    }
+    total
+}
+
+fn pytorch_small_full_reduction_sum(
+    values: &mut impl Iterator<Item = f32>,
+    elements: usize,
+) -> f32 {
+    let mut lanes = [0.0_f32; PYTORCH_REDUCTION_ROWS];
+    let vectorized = elements / PYTORCH_REDUCTION_ROWS * PYTORCH_REDUCTION_ROWS;
+    for index in 0..elements {
+        let value = values
+            .next()
+            .expect("validated small reduction must contain the declared values");
+        if index < vectorized {
+            lanes[index % PYTORCH_REDUCTION_ROWS] += value;
+        } else {
+            lanes[0] += value;
+        }
+    }
+
+    let mut total = lanes[0];
+    for lane in &lanes[1..] {
+        total += *lane;
+    }
+    total
+}
+
+fn cascade_segment_shift(chunks: usize) -> usize {
+    let bit_width = usize::BITS as usize - chunks.saturating_sub(1).leading_zeros() as usize;
+    if bit_width <= 19 { 4 } else { bit_width / 4 }
+}
+
+fn zero_reduction_vectors() -> [[f32; PYTORCH_REDUCTION_VECTOR_WIDTH]; PYTORCH_REDUCTION_ROWS] {
+    [[0.0_f32; PYTORCH_REDUCTION_VECTOR_WIDTH]; PYTORCH_REDUCTION_ROWS]
+}
+
+fn sum_next_reduction_chunks(
+    values: &mut impl Iterator<Item = f32>,
+    chunks: usize,
+) -> [[f32; PYTORCH_REDUCTION_VECTOR_WIDTH]; PYTORCH_REDUCTION_ROWS] {
+    let mut vectors = zero_reduction_vectors();
+    for _ in 0..chunks {
+        for row in &mut vectors {
+            for lane in row {
+                *lane += values
+                    .next()
+                    .expect("validated reduction chunk must contain thirty-two values");
+            }
+        }
+    }
+    vectors
+}
+
+fn add_reduction_vectors(
+    destination: &mut [[f32; PYTORCH_REDUCTION_VECTOR_WIDTH]; PYTORCH_REDUCTION_ROWS],
+    source: &[[f32; PYTORCH_REDUCTION_VECTOR_WIDTH]; PYTORCH_REDUCTION_ROWS],
+) {
+    for (destination_row, source_row) in destination.iter_mut().zip(source) {
+        for (destination_lane, source_lane) in destination_row.iter_mut().zip(source_row) {
+            *destination_lane += *source_lane;
+        }
     }
 }
 
@@ -6011,7 +6153,7 @@ mod tests {
     }
 
     #[test]
-    fn mean_composes_sum_with_scalar_scaling_and_reusable_metadata_grad() {
+    fn mean_matches_pytorch_full_reduction_order_and_reusable_metadata_grad() {
         let bits = [
             0x8000_0000,
             0x0000_0000,
@@ -6035,6 +6177,11 @@ mod tests {
                     .index_integer(1)
                     .unwrap(),
                 0xffc0_0000,
+            ),
+            (
+                "finite cancellation",
+                Tensor::from_vec(vec![0.0, 0.0, 1.0, 3.0, 123_456_789.0], [5]).unwrap(),
+                0x4bbc_614f,
             ),
             (
                 "positive NaN",

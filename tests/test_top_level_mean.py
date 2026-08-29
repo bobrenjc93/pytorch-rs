@@ -52,6 +52,10 @@ class TopLevelMeanTests(unittest.TestCase):
             ("offset", noncontiguous[1]),
             ("noncontiguous", noncontiguous),
             (
+                "finite cancellation",
+                torch.tensor([0.0, 0.0, 1.0, 3.0, 123456789.0]),
+            ),
+            (
                 "NaN",
                 torch.tensor(
                     memoryview(

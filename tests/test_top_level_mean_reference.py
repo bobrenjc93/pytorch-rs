@@ -59,6 +59,12 @@ class TopLevelMeanReferenceTests(unittest.TestCase):
             ("offset", noncontiguous[1]),
             ("noncontiguous", noncontiguous),
             (
+                "finite cancellation",
+                module.tensor(
+                    [0.0, 0.0, 1.0, 3.0, 123456789.0], dtype=module.float32
+                ),
+            ),
+            (
                 "positive NaN",
                 module.tensor(
                     np.asarray([0x7FC1_2345, 0x3F80_0000], dtype=np.uint32).view(

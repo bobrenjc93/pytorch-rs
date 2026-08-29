@@ -68,6 +68,11 @@ class TensorMeanTests(unittest.TestCase):
                 noncontiguous,
                 np.float32(11.5).view(np.uint32).item(),
             ),
+            (
+                "finite cancellation",
+                torch.tensor([0.0, 0.0, 1.0, 3.0, 123456789.0]),
+                0x4BBC_614F,
+            ),
             ("positive NaN", bits_to_tensor([0x7FC1_2345, 0x3F80_0000], [2]), 0x7FC1_2345),
             ("negative NaN", bits_to_tensor([0xFFC5_4321, 0x3F80_0000], [2]), 0xFFC5_4321),
             ("infinity", torch.tensor([float("inf"), 1.0]), 0x7F80_0000),
