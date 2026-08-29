@@ -6,7 +6,13 @@ import functools as _functools
 import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
 import types as _types
+import typing as _typing
 from math import e, inf, nan, pi
+
+try:
+    from typing import TypeGuard as _TypeGuard
+except ImportError:
+    from typing_extensions import TypeGuard as _TypeGuard
 
 from . import torch_rs as _native
 from .torch_rs import *
@@ -33,6 +39,65 @@ newaxis = None
 # PyTorch exposes this private build probe through its immutable variable-
 # function owner, but not through ``torch._C`` or wildcard imports.
 _nnpack_available = _native._VariableFunctionsClass._nnpack_available
+
+
+def _storage_type_namespace(namespace):
+    namespace["__module__"] = "torch.storage"
+
+
+_is_storage_globals = {
+    "__name__": __name__,
+    "__builtins__": _builtins,
+    "_Any": _typing.Any,
+    "_TypeGuard": _TypeGuard,
+    "_storage_classes": (),
+    "TypedStorage": _types.new_class(
+        "TypedStorage",
+        (),
+        {},
+        _storage_type_namespace,
+    ),
+    "UntypedStorage": _types.new_class(
+        "UntypedStorage",
+        (),
+        {},
+        _storage_type_namespace,
+    ),
+}
+exec(
+    '''
+def is_storage(obj: _Any, /) -> _TypeGuard["TypedStorage | UntypedStorage"]:
+    r"""Returns True if `obj` is a PyTorch storage object.
+
+    Args:
+        obj (Object): Object to test
+    Example::
+
+        >>> import torch
+        >>> # UntypedStorage (recommended)
+        >>> tensor = torch.tensor([1, 2, 3])
+        >>> storage = tensor.untyped_storage()
+        >>> torch.is_storage(storage)
+        True
+        >>>
+        >>> # TypedStorage (legacy)
+        >>> typed_storage = torch.TypedStorage(5, dtype=torch.float32)
+        >>> torch.is_storage(typed_storage)
+        True
+        >>>
+        >>> # regular tensor (should return False)
+        >>> torch.is_storage(tensor)
+        False
+        >>>
+        >>> # non-storage object
+        >>> torch.is_storage([1, 2, 3])
+        False
+    """
+    return type(obj) in _storage_classes
+''',
+    _is_storage_globals,
+)
+is_storage = _is_storage_globals["is_storage"]
 
 
 # Keep the public answer as the immutable build-time fact. Like PyTorch's
@@ -420,6 +485,7 @@ __all__ = [
     "get_deterministic_debug_mode",
     "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
+    "is_storage",
     "get_default_device",
     "get_device_module",
     "get_float32_matmul_precision",
@@ -462,8 +528,12 @@ from .functional import broadcast_tensors as broadcast_tensors
 del (
     _copyreg,
     _functools,
+    _is_storage_globals,
     _multiprocessing_reduction,
     _native,
     _sys,
+    _storage_type_namespace,
     _types,
+    _typing,
+    _TypeGuard,
 )
