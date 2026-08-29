@@ -130,6 +130,10 @@ class SerializationSetDefaultLoadEndiannessTests(unittest.TestCase):
             "set_default_load_endianness",
             "get_default_mmap_options",
             "set_default_mmap_options",
+            "clear_safe_globals",
+            "get_safe_globals",
+            "add_safe_globals",
+            "safe_globals",
         ]
 
         self.assertEqual(serialization.__all__, exported_names)
@@ -301,7 +305,7 @@ class SerializationSetDefaultLoadEndiannessTests(unittest.TestCase):
             torch.serialization = original_module
 
     def test_save_and_load_remain_unsupported(self):
-        for name in ("save", "load"):
+        for name in ("save", "load", "get_unsafe_globals_in_checkpoint"):
             with self.subTest(name=name):
                 self.assertFalse(hasattr(self.serialization, name))
                 self.assertNotIn(name, self.serialization.__all__)
@@ -360,8 +364,10 @@ else:
     raise AssertionError("members from another module instance must be rejected")
 assert replacement.set_default_load_endianness(None) is None
 assert getter() is None
+assert replacement.get_safe_globals() == []
 assert not hasattr(replacement, "save")
 assert not hasattr(replacement, "load")
+assert not hasattr(replacement, "get_unsafe_globals_in_checkpoint")
 assert not any(name == "torch" or name.startswith("torch.") for name in sys.modules)
 """
         completed = subprocess.run(
