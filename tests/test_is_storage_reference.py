@@ -4,6 +4,7 @@ import inspect
 import pickle
 import re
 import types
+import typing
 import unittest
 
 import torch_rs as torch
@@ -140,6 +141,24 @@ class IsStorageReferenceTests(unittest.TestCase):
         self.assertEqual(actual.__doc__, expected.__doc__)
         self.assertEqual(actual.__annotations__, expected.__annotations__)
         self.assertEqual(inspect.get_annotations(actual), inspect.get_annotations(expected))
+        actual_hints = typing.get_type_hints(actual)
+        expected_hints = typing.get_type_hints(expected)
+        self.assertEqual(actual_hints.keys(), expected_hints.keys())
+        self.assertIs(actual_hints["obj"], expected_hints["obj"])
+        self.assertIs(
+            typing.get_origin(actual_hints["return"]),
+            typing.get_origin(expected_hints["return"]),
+        )
+        actual_union = typing.get_args(actual_hints["return"])[0]
+        expected_union = typing.get_args(expected_hints["return"])[0]
+        self.assertEqual(
+            {storage_type.__name__ for storage_type in typing.get_args(actual_union)},
+            {storage_type.__name__ for storage_type in typing.get_args(expected_union)},
+        )
+        self.assertEqual(
+            {storage_type.__module__ for storage_type in typing.get_args(actual_union)},
+            {storage_type.__module__ for storage_type in typing.get_args(expected_union)},
+        )
         self.assertEqual(inspect.signature(actual), inspect.signature(expected))
         self.assertEqual(actual.__defaults__, expected.__defaults__)
         self.assertEqual(actual.__kwdefaults__, expected.__kwdefaults__)

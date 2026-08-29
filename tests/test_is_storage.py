@@ -180,6 +180,18 @@ class IsStorageTests(unittest.TestCase):
             {"obj": typing.Any, "return": return_annotation},
         )
         self.assertEqual(inspect.get_annotations(function), function.__annotations__)
+        resolved_annotations = typing.get_type_hints(function)
+        self.assertIs(resolved_annotations["obj"], typing.Any)
+        self.assertIs(typing.get_origin(resolved_annotations["return"]), typing.TypeGuard)
+        (storage_union,) = typing.get_args(resolved_annotations["return"])
+        self.assertEqual(
+            {storage_type.__name__ for storage_type in typing.get_args(storage_union)},
+            {"TypedStorage", "UntypedStorage"},
+        )
+        self.assertEqual(
+            {storage_type.__module__ for storage_type in typing.get_args(storage_union)},
+            {"torch.storage"},
+        )
         self.assertEqual(inspect.signature(function), expected_signature)
         self.assertEqual(
             str(inspect.signature(function)),

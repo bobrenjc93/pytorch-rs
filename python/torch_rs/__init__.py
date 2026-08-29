@@ -6,11 +6,11 @@ import functools as _functools
 import multiprocessing.reduction as _multiprocessing_reduction
 import sys as _sys
 import types as _types
-import typing as _typing
 from math import e, inf, nan, pi
 
 from . import torch_rs as _native
 from .torch_rs import *
+from ._storage_boundary import is_storage as is_storage
 
 # PyTorch's built-in variable functions reduce through owners in ``torch._C``.
 # Expose the native extension under the equivalent package-local name so those
@@ -29,43 +29,6 @@ torch = _sys.modules[__name__]
 # Match PyTorch's NumPy-compatible spelling for inserting a singleton axis.
 # This remains a package-level alias; ``torch._C`` does not expose it.
 newaxis = None
-
-
-# Storage objects remain unsupported, so the public PyTorch-compatible boundary
-# predicate intentionally has no positive cases.
-_storage_classes = ()
-
-
-def is_storage(
-    obj: _typing.Any, /
-) -> _typing.TypeGuard["TypedStorage | UntypedStorage"]:
-    r"""Returns True if `obj` is a PyTorch storage object.
-
-    Args:
-        obj (Object): Object to test
-    Example::
-
-        >>> import torch
-        >>> # UntypedStorage (recommended)
-        >>> tensor = torch.tensor([1, 2, 3])
-        >>> storage = tensor.untyped_storage()
-        >>> torch.is_storage(storage)
-        True
-        >>>
-        >>> # TypedStorage (legacy)
-        >>> typed_storage = torch.TypedStorage(5, dtype=torch.float32)
-        >>> torch.is_storage(typed_storage)
-        True
-        >>>
-        >>> # regular tensor (should return False)
-        >>> torch.is_storage(tensor)
-        False
-        >>>
-        >>> # non-storage object
-        >>> torch.is_storage([1, 2, 3])
-        False
-    """
-    return type(obj) in _storage_classes
 
 
 # PyTorch exposes this private build probe through its immutable variable-
@@ -504,6 +467,5 @@ del (
     _multiprocessing_reduction,
     _native,
     _sys,
-    _typing,
     _types,
 )
