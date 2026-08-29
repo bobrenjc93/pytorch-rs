@@ -72,11 +72,11 @@ mod tensor;
 mod tensor_error;
 
 #[cfg(feature = "python-bindings")]
-pub(crate) use grad_mode::{enter_no_grad, exit_no_grad};
+pub(crate) use grad_mode::{GradModeToken, enter_enable_grad, enter_no_grad, try_exit_grad_mode};
 
 pub use device::Device;
 pub use dtype::{DType, FloatingPointInfo};
-pub use grad_mode::{NoGradGuard, is_grad_enabled, no_grad};
+pub use grad_mode::{EnableGradGuard, NoGradGuard, enable_grad, is_grad_enabled, no_grad};
 pub use memory_format::MemoryFormat;
 pub use tensor::{LogicalValues, Tensor};
 pub use tensor_error::TensorError;

@@ -1,4 +1,4 @@
-use pytorch_rs::{MemoryFormat, Tensor, TensorError, is_grad_enabled, no_grad};
+use pytorch_rs::{MemoryFormat, Tensor, TensorError, enable_grad, is_grad_enabled, no_grad};
 use std::{
     sync::{Arc, Barrier},
     thread,
@@ -4145,6 +4145,31 @@ fn no_grad_guards_remain_disabled_until_every_guard_is_dropped() {
 }
 
 #[test]
+fn enable_grad_reenables_recording_inside_no_grad_and_restores_state() {
+    let leaf = Tensor::from_vec(vec![2.0], [])
+        .unwrap()
+        .with_requires_grad(true);
+
+    {
+        let _disabled = no_grad();
+        assert!(!is_grad_enabled());
+        assert!(!leaf.mul_scalar(2.0).unwrap().requires_grad());
+
+        {
+            let _enabled = enable_grad();
+            assert!(is_grad_enabled());
+            assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
+        }
+
+        assert!(!is_grad_enabled());
+        assert!(!leaf.mul_scalar(2.0).unwrap().requires_grad());
+    }
+
+    assert!(is_grad_enabled());
+    assert!(leaf.mul_scalar(2.0).unwrap().requires_grad());
+}
+
+#[test]
 fn grad_enabled_state_is_nested_exception_safe_and_thread_local() {
     assert!(is_grad_enabled());
     {
@@ -4162,6 +4187,16 @@ fn grad_enabled_state_is_nested_exception_safe_and_thread_local() {
         let _guard = no_grad();
         assert!(!is_grad_enabled());
         panic!("restore grad mode");
+    });
+    assert!(unwind.is_err());
+    assert!(is_grad_enabled());
+
+    let unwind = std::panic::catch_unwind(|| {
+        let _disabled = no_grad();
+        assert!(!is_grad_enabled());
+        let _enabled = enable_grad();
+        assert!(is_grad_enabled());
+        panic!("restore nested grad mode");
     });
     assert!(unwind.is_err());
     assert!(is_grad_enabled());
