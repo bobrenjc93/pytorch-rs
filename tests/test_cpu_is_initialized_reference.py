@@ -166,6 +166,7 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
             "current_device",
             "current_stream",
             "stream",
+            "set_device",
             "device_count",
             "Stream",
             "StreamContext",
@@ -247,7 +248,7 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assert_error_matches(actual_call, expected_call)
 
-    def test_remaining_capabilities_and_device_mutation_are_unsupported(self):
+    def test_remaining_capabilities_and_other_apis_are_unsupported(self):
         actual_cpu = torch.cpu
         expected_cpu = reference_torch.cpu
         actual_public = {
@@ -263,6 +264,7 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
                 "current_device",
                 "current_stream",
                 "stream",
+                "set_device",
                 "device_count",
                 "Stream",
                 "StreamContext",
@@ -277,7 +279,6 @@ class CpuIsInitializedReferenceTests(unittest.TestCase):
             {
                 "amp",
                 "get_capabilities",
-                "set_device",
             }.issubset(unsupported)
         )
         for name in unsupported:

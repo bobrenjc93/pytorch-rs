@@ -317,6 +317,7 @@ class CpuStreamContextReferenceTests(unittest.TestCase):
             "current_device",
             "current_stream",
             "stream",
+            "set_device",
             "device_count",
             "Event",
             "is_available",
