@@ -50,6 +50,199 @@ def are_deterministic_algorithms_enabled() -> _builtins.bool:
     return False
 
 
+def _deterministic_bool_type_name(value):
+    value_type = _builtins.type(value)
+    if value_type is Tensor:
+        return "Tensor"
+    if value_type is dtype:
+        return "torch.dtype"
+    if value_type is device:
+        return "torch.device"
+    if value_type is memory_format:
+        return "torch.memory_format"
+    if value_type is layout:
+        return "torch.layout"
+    if value_type is Size:
+        return "torch.Size"
+    if value_type is finfo:
+        return "torch.finfo"
+    type_name = _builtins.object.__getattribute__(value_type, "__name__")
+    if _builtins.object.__getattribute__(value_type, "__module__") == "numpy":
+        return f"numpy.{type_name}"
+    return type_name
+
+
+def _deterministic_bool_value(value, name, position=""):
+    if _builtins.isinstance(value, _builtins.bool):
+        return value
+    if _builtins.isinstance(value, _builtins.int):
+        return _builtins.int.__ne__(value, 0)
+    raise TypeError(
+        "_set_deterministic_algorithms(): argument "
+        f"'{name}'{position} must be bool, not "
+        f"{_deterministic_bool_type_name(value)}"
+    )
+
+
+def use_deterministic_algorithms(
+    mode: _builtins.bool,
+    *,
+    warn_only: _builtins.bool = False,
+) -> None:
+    r"""Sets whether PyTorch operations must use "deterministic"
+    algorithms. That is, algorithms which, given the same input, and when
+    run on the same software and hardware, always produce the same output.
+    When enabled, operations will use deterministic algorithms when available,
+    and if only nondeterministic algorithms are available they will throw a
+    :class:`RuntimeError` when called.
+
+    .. note:: This setting alone is not always enough to make an application
+        reproducible. Refer to :ref:`reproducibility` for more information.
+
+    .. note:: :func:`torch.set_deterministic_debug_mode` offers an alternative
+        interface for this feature.
+
+    The following normally-nondeterministic operations will act
+    deterministically when ``mode=True``:
+
+        * :class:`torch.nn.Conv1d` when called on CUDA tensor
+        * :class:`torch.nn.Conv2d` when called on CUDA tensor
+        * :class:`torch.nn.Conv3d` when called on CUDA tensor
+        * :class:`torch.nn.ConvTranspose1d` when called on CUDA tensor
+        * :class:`torch.nn.ConvTranspose2d` when called on CUDA tensor
+        * :class:`torch.nn.ConvTranspose3d` when called on CUDA tensor
+        * :class:`torch.nn.ReplicationPad1d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.ReplicationPad2d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.ReplicationPad3d` when attempting to differentiate a CUDA tensor
+        * :func:`torch.bmm` when called on sparse-dense CUDA tensors
+        * :func:`torch.Tensor.__getitem__` when attempting to differentiate a CPU tensor
+          and the index is a list of tensors
+        * :func:`torch.Tensor.index_put` with ``accumulate=False``
+        * :func:`torch.Tensor.index_put` with ``accumulate=True`` when called on a CPU
+          tensor
+        * :func:`torch.Tensor.put_` with ``accumulate=True`` when called on a CPU
+          tensor
+        * :func:`torch.Tensor.scatter_add_` when called on a CUDA tensor
+        * :func:`torch.gather` when called on a CUDA tensor that requires grad
+        * :func:`torch.index_add` when called on CUDA tensor
+        * :func:`torch.index_select` when attempting to differentiate a CUDA tensor
+        * :func:`torch.repeat_interleave` when attempting to differentiate a CUDA tensor
+        * :func:`torch.Tensor.index_copy` when called on a CPU or CUDA tensor
+        * :func:`torch.Tensor.scatter` when `src` type is Tensor and called on CUDA tensor
+        * :func:`torch.Tensor.scatter_reduce` when ``reduce='sum'`` or ``reduce='mean'`` and called on CUDA tensor
+        * :class:`torch.nn.MaxPool3d` when attempting to differentiate a CUDA tensor
+
+    The following normally-nondeterministic operations will throw a
+    :class:`RuntimeError` when ``mode=True``:
+
+        * :class:`torch.nn.AvgPool3d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.AdaptiveAvgPool2d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.AdaptiveAvgPool3d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.AdaptiveMaxPool2d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.FractionalMaxPool2d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.FractionalMaxPool3d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.MaxUnpool1d`
+        * :class:`torch.nn.MaxUnpool2d`
+        * :class:`torch.nn.MaxUnpool3d`
+        * :func:`torch.nn.functional.interpolate` when attempting to differentiate a CUDA tensor
+          and one of the following modes is used:
+
+          - ``linear``
+          - ``bilinear``
+          - ``bicubic``
+          - ``trilinear``
+
+        * :class:`torch.nn.ReflectionPad1d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.ReflectionPad2d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.ReflectionPad3d` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.NLLLoss` when called on a CUDA tensor
+        * :class:`torch.nn.CTCLoss` when attempting to differentiate a CUDA tensor
+        * :class:`torch.nn.EmbeddingBag` when attempting to differentiate a CUDA tensor when
+          ``mode='max'``
+        * :func:`torch.Tensor.put_` when ``accumulate=False``
+        * :func:`torch.Tensor.put_` when ``accumulate=True`` and called on a CUDA tensor
+        * :func:`torch.histc` when called on a CUDA tensor
+        * :func:`torch.bincount` when called on a CUDA tensor and ``weights``
+          tensor is given
+        * :func:`torch.median` with indices output when called on a CUDA tensor
+        * :func:`torch.nn.functional.grid_sample` when attempting to differentiate a CUDA tensor
+        * :func:`torch.cumsum` when called on a CUDA tensor when dtype is floating point or complex
+        * :func:`torch.Tensor.scatter_reduce` when ``reduce='prod'`` and called on CUDA tensor
+        * :func:`torch.Tensor.resize_` when called with a quantized tensor
+
+    In addition, several operations fill uninitialized memory when this setting
+    is turned on and when
+    :attr:`torch.utils.deterministic.fill_uninitialized_memory` is turned on.
+    See the documentation for that attribute for more information.
+
+    Note that deterministic operations tend to have worse performance than
+    nondeterministic operations.
+
+
+    When this setting is turned on, the Inductor deterministic mode is also tuned on
+    automatically. In deterministic mode, Inductor would avoid doing on device benchmarking
+    that affect numerics. This includes:
+
+      - don't pad matmul input shapes. Without enabling deterministic mode, Inductor would do
+        benchmarking to check if padding matmul shape is beneficial.
+      - don't autotune templates. Inductor has templates for kernels like matmul/conv/attention.
+        Without enabling deterministic mode, Inductor would do autotuning to
+        pick the best configs for those templates and adopt it if it's faster
+        than the kernel in eager mode. In deterministic mode, we pick the eager kernel.
+      - don't autotune triton configs for reduction. Reduction numerics are
+        very sensitive to triton configs. In deterministic mode, Inductor
+        will use some heuristics to pick the most promising configs rather
+        than do autotuning.
+      - Skip autotuning for reduction in coordinate descent tuning.
+      - Don't benchmark for the computation/communication reordering pass
+      - Disable the feature that dynamically scale down RBLOCK triton config for higher
+        occupancy.
+
+
+    .. note::
+
+        This flag does not detect or prevent nondeterministic behavior caused
+        by calling an inplace operation on a tensor with an internal memory
+        overlap or by giving such a tensor as the :attr:`out` argument for an
+        operation. In these cases, multiple writes of different data may target
+        a single memory location, and the order of writes is not guaranteed.
+
+    Args:
+        mode (:class:`bool`): If True, makes potentially nondeterministic
+            operations switch to a deterministic algorithm or throw a runtime
+            error. If False, allows nondeterministic operations.
+
+    Keyword args:
+        warn_only (:class:`bool`, optional): If True, operations that do not
+            have a deterministic implementation will throw a warning instead of
+            an error. Default: ``False``
+
+    Example::
+
+        >>> # xdoctest: +SKIP
+        >>> torch.use_deterministic_algorithms(True)
+
+        # Backward mode nondeterministic error
+        >>> torch.nn.AvgPool3d(1)(torch.randn(3, 4, 5, 6, requires_grad=True).cuda()).sum().backward()
+        ...
+        RuntimeError: avg_pool3d_backward_cuda does not have a deterministic implementation...
+    """
+    requested_mode = _deterministic_bool_value(mode, "mode", " (position 1)")
+    requested_warn_only = _deterministic_bool_value(warn_only, "warn_only")
+
+    if requested_mode:
+        raise NotImplementedError(
+            "use_deterministic_algorithms(): mode "
+            f"{mode!r} is not supported; only False and 0 are implemented"
+        )
+    if requested_warn_only:
+        raise NotImplementedError(
+            "use_deterministic_algorithms(): warn_only "
+            f"{warn_only!r} is not supported; only False and 0 are implemented"
+        )
+    return None
+
+
 def get_deterministic_debug_mode() -> _builtins.int:
     r"""Returns the current value of the debug mode for deterministic
     operations. Refer to :func:`torch.set_deterministic_debug_mode`
@@ -420,6 +613,7 @@ __all__ = [
     "get_deterministic_debug_mode",
     "set_deterministic_debug_mode",
     "is_deterministic_algorithms_warn_only_enabled",
+    "use_deterministic_algorithms",
     "get_default_device",
     "get_device_module",
     "get_float32_matmul_precision",
