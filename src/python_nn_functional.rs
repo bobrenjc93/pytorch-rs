@@ -331,16 +331,16 @@ fn warn_mse_loss_broadcast(
     PyErr::warn(py, &py.get_type::<PyUserWarning>(), &message, 2)
 }
 
-fn linear_vector_bias_size_error(out_features: usize, bias_features: usize) -> PyErr {
+fn linear_bias_size_error(rows: usize, out_features: usize, bias_features: usize) -> PyErr {
     PyRuntimeError::new_err(format!(
-        "The expanded size of the tensor ({out_features}) must match the existing size ({bias_features}) at non-singleton dimension 1.  Target sizes: [1, {out_features}].  Tensor sizes: [{bias_features}]"
+        "The expanded size of the tensor ({out_features}) must match the existing size ({bias_features}) at non-singleton dimension 1.  Target sizes: [{rows}, {out_features}].  Tensor sizes: [{bias_features}]"
     ))
 }
 
 fn validate_linear_bias(input_rank: usize, bias: Option<&PyTensor>) -> PyResult<()> {
-    if bias.is_some() && input_rank != 1 {
+    if bias.is_some() && !matches!(input_rank, 1 | 2) {
         return Err(PyNotImplementedError::new_err(
-            "torch_rs.nn.functional.linear only supports bias for rank-1 input",
+            "torch_rs.nn.functional.linear only supports bias for rank-1 or rank-2 input",
         ));
     }
     if bias.is_some_and(|bias| bias.inner().shape().len() != 1) {
@@ -406,7 +406,14 @@ fn _nn_functional_linear(
                 )
             })
             .and_then(|output| output.squeeze_dim(0)),
-        2 => input.inner().matmul(&transposed_weight),
+        2 => bias.as_ref().map_or_else(
+            || input.inner().matmul(&transposed_weight),
+            |bias| {
+                input
+                    .inner()
+                    .matmul_with_row_bias(&transposed_weight, bias.inner())
+            },
+        ),
         3 => {
             let input_shape = input.inner().shape();
             let weight_shape = weight.inner().shape();
@@ -448,7 +455,13 @@ fn _nn_functional_linear(
                 .expect("only biased linear can report a bias shape mismatch")
                 .inner()
                 .shape()[0];
-            return Err(linear_vector_bias_size_error(
+            let target_rows = if input_rank == 1 {
+                1
+            } else {
+                input.inner().shape()[0]
+            };
+            return Err(linear_bias_size_error(
+                target_rows,
                 weight.inner().shape()[0],
                 bias_features,
             ));

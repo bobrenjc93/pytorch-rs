@@ -20,16 +20,17 @@ linear(input, weight, bias=None) -> Tensor
 
 Applies the rank-1, rank-2, or rank-3 transformation
 :math:`\mathrm{output} = \mathrm{input} \, \mathrm{weight}^{T}`, with an
-optional bias for rank-1 input.
+optional rank-1 bias for rank-1 or rank-2 input.
 
 The current native implementation requires exact ``torch_rs.Tensor`` operands
 with CPU ``float32`` storage and shape ``(in_features,)``,
 ``(rows, in_features)``, or ``(batch, sequence, in_features)`` for ``input``
-and ``(out_features, in_features)`` for ``weight``. For rank-2 and rank-3
-input, ``bias`` must be ``None``. For rank-1 input, ``bias`` may instead be an
-exact rank-1 tensor with shape ``(out_features,)``. The operation returns a
-fresh, independent row-major tensor with the corresponding final dimension
-replaced by ``out_features``.
+and ``(out_features, in_features)`` for ``weight``. For rank-1 or rank-2
+input, ``bias`` may instead be an exact rank-1 tensor with shape
+``(out_features,)`` or the PyTorch-compatible singleton shape ``(1,)``. For
+rank-3 input, ``bias`` must be ``None``. The operation returns a fresh,
+independent row-major tensor with the corresponding final dimension replaced by
+``out_features``.
 
 Tensor subclasses, active ``TorchFunctionMode`` contexts, and active autograd
 recording are not supported. Gradient-requiring input, weight, or supported
