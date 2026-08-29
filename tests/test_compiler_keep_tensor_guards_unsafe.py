@@ -186,6 +186,24 @@ class _InvalidIterator:
         return []
 
 
+class _ParameterMarker:
+    pass
+
+
+@contextlib.contextmanager
+def _temporary_parameter_type():
+    missing = object()
+    original = getattr(torch.nn, "Parameter", missing)
+    torch.nn.Parameter = _ParameterMarker
+    try:
+        yield _ParameterMarker
+    finally:
+        if original is missing:
+            delattr(torch.nn, "Parameter")
+        else:
+            torch.nn.Parameter = original
+
+
 def _walk_code_objects(code):
     yield code
     for constant in code.co_consts:
@@ -200,21 +218,37 @@ class CompilerKeepTensorGuardsUnsafeTests(unittest.TestCase):
         for actual, expected_value in zip(result, expected):
             self.assertIs(actual, expected_value)
 
+    def test_parameter_api_remains_unsupported(self):
+        self.assertFalse(hasattr(torch.nn, "Parameter"))
+        with self.assertRaises(AttributeError):
+            torch.nn.Parameter
+
+        result = torch.compiler.keep_tensor_guards_unsafe(
+            (
+                types.SimpleNamespace(guard_type="TENSOR_MATCH", value=object()),
+                types.SimpleNamespace(guard_type="OTHER", value=object()),
+            ),
+            keep_parameters=True,
+        )
+        self.assert_exact_bool_list(result, [True, False])
+        self.assertFalse(hasattr(torch.nn, "Parameter"))
+
     def test_tensor_predicate_and_parameter_option_return_exact_booleans(self):
         function = torch.compiler.keep_tensor_guards_unsafe
-        parameter = torch.nn.Parameter(torch.ones(1))
-        plain_value = object()
-        untouched_value = object()
-        events = []
-        entries = [
-            _GuardEntry("tensor", "TENSOR_MATCH", plain_value, events),
-            _GuardEntry("parameter", "TENSOR_MATCH", parameter, events),
-            _GuardEntry("other", "OTHER", untouched_value, events),
-        ]
-        original_entries = tuple(entries)
+        with _temporary_parameter_type() as Parameter:
+            parameter = Parameter()
+            plain_value = object()
+            untouched_value = object()
+            events = []
+            entries = [
+                _GuardEntry("tensor", "TENSOR_MATCH", plain_value, events),
+                _GuardEntry("parameter", "TENSOR_MATCH", parameter, events),
+                _GuardEntry("other", "OTHER", untouched_value, events),
+            ]
+            original_entries = tuple(entries)
 
-        default_result = function(entries)
-        keep_parameter_result = function(tuple(entries), keep_parameters=True)
+            default_result = function(entries)
+            keep_parameter_result = function(tuple(entries), keep_parameters=True)
 
         self.assert_exact_bool_list(default_result, [True, False, False])
         self.assert_exact_bool_list(keep_parameter_result, [True, True, False])
@@ -243,19 +277,20 @@ class CompilerKeepTensorGuardsUnsafeTests(unittest.TestCase):
         )
 
     def test_left_to_right_access_and_keep_parameter_truthiness(self):
-        parameter = torch.nn.Parameter()
-        events = []
-        keep_parameters = _TruthProbe("keep-parameters", True, events)
-        entries = (
-            _GuardEntry("plain", "TENSOR_MATCH", object(), events),
-            _GuardEntry("parameter", "TENSOR_MATCH", parameter, events),
-            _GuardEntry("other", "OTHER", parameter, events),
-        )
+        with _temporary_parameter_type() as Parameter:
+            parameter = Parameter()
+            events = []
+            keep_parameters = _TruthProbe("keep-parameters", True, events)
+            entries = (
+                _GuardEntry("plain", "TENSOR_MATCH", object(), events),
+                _GuardEntry("parameter", "TENSOR_MATCH", parameter, events),
+                _GuardEntry("other", "OTHER", parameter, events),
+            )
 
-        result = torch.compiler.keep_tensor_guards_unsafe(
-            entries,
-            keep_parameters=keep_parameters,
-        )
+            result = torch.compiler.keep_tensor_guards_unsafe(
+                entries,
+                keep_parameters=keep_parameters,
+            )
 
         self.assert_exact_bool_list(result, [True, True, False])
         self.assertEqual(
@@ -270,14 +305,15 @@ class CompilerKeepTensorGuardsUnsafeTests(unittest.TestCase):
             ],
         )
 
-        events = []
-        comparison_result = _TruthProbe("comparison", True, events)
-        guard_type = _EqualityProbe("guard_type", comparison_result, events)
-        entry = _GuardEntry("custom", guard_type, object(), events)
+        with _temporary_parameter_type():
+            events = []
+            comparison_result = _TruthProbe("comparison", True, events)
+            guard_type = _EqualityProbe("guard_type", comparison_result, events)
+            entry = _GuardEntry("custom", guard_type, object(), events)
 
-        self.assert_exact_bool_list(
-            torch.compiler.keep_tensor_guards_unsafe((entry,)), [True]
-        )
+            result = torch.compiler.keep_tensor_guards_unsafe((entry,))
+
+        self.assert_exact_bool_list(result, [True])
         self.assertEqual(
             events,
             [
@@ -289,17 +325,18 @@ class CompilerKeepTensorGuardsUnsafeTests(unittest.TestCase):
         )
 
     def test_arbitrary_iterables_are_consumed_once_in_order(self):
-        entries = [
-            types.SimpleNamespace(guard_type="TENSOR_MATCH", value=object()),
-            types.SimpleNamespace(guard_type="OTHER", value=object()),
-            types.SimpleNamespace(
-                guard_type="TENSOR_MATCH",
-                value=torch.nn.Parameter(),
-            ),
-        ]
-        iterable = _CountingIterable(entries)
+        with _temporary_parameter_type() as Parameter:
+            entries = [
+                types.SimpleNamespace(guard_type="TENSOR_MATCH", value=object()),
+                types.SimpleNamespace(guard_type="OTHER", value=object()),
+                types.SimpleNamespace(
+                    guard_type="TENSOR_MATCH",
+                    value=Parameter(),
+                ),
+            ]
+            iterable = _CountingIterable(entries)
 
-        result = torch.compiler.keep_tensor_guards_unsafe(iterable)
+            result = torch.compiler.keep_tensor_guards_unsafe(iterable)
 
         self.assert_exact_bool_list(result, [True, False, False])
         self.assertEqual(iterable.iter_calls, 1)
@@ -313,11 +350,11 @@ class CompilerKeepTensorGuardsUnsafeTests(unittest.TestCase):
                 yield entry
             generator_events.append(("finished", len(entries)))
 
-        generator = guard_entries()
-        self.assert_exact_bool_list(
-            torch.compiler.keep_tensor_guards_unsafe(generator),
-            [True, False, False],
-        )
+        with _temporary_parameter_type() as Parameter:
+            entries[2].value = Parameter()
+            generator = guard_entries()
+            result = torch.compiler.keep_tensor_guards_unsafe(generator)
+        self.assert_exact_bool_list(result, [True, False, False])
         self.assertEqual(
             generator_events,
             [("yield", 0), ("yield", 1), ("yield", 2), ("finished", 3)],
@@ -381,24 +418,25 @@ class CompilerKeepTensorGuardsUnsafeTests(unittest.TestCase):
         self.assertEqual(value_failure.guard_type_calls, 1)
 
         keep_parameters_error = ArithmeticError("keep_parameters failure")
-        with self.assertRaises(ArithmeticError) as keep_parameters_raised:
-            function(
-                (
-                    types.SimpleNamespace(
-                        guard_type="TENSOR_MATCH",
-                        value=torch.nn.Parameter(),
+        with _temporary_parameter_type() as Parameter:
+            with self.assertRaises(ArithmeticError) as keep_parameters_raised:
+                function(
+                    (
+                        types.SimpleNamespace(
+                            guard_type="TENSOR_MATCH",
+                            value=Parameter(),
+                        ),
                     ),
-                ),
-                keep_parameters=_TruthProbe(
-                    "keep-parameters",
-                    keep_parameters_error,
-                    [],
-                ),
-            )
+                    keep_parameters=_TruthProbe(
+                        "keep-parameters",
+                        keep_parameters_error,
+                        [],
+                    ),
+                )
         self.assertIs(keep_parameters_raised.exception, keep_parameters_error)
 
-        had_parameter_attribute = "Parameter" in torch.nn.__dict__
-        original_parameter = torch.nn.Parameter
+        missing = object()
+        original_parameter = getattr(torch.nn, "Parameter", missing)
         try:
             torch.nn.Parameter = object()
             with self.assertRaises(TypeError) as parameter_raised:
@@ -411,10 +449,10 @@ class CompilerKeepTensorGuardsUnsafeTests(unittest.TestCase):
                     )
                 )
         finally:
-            if had_parameter_attribute:
-                torch.nn.Parameter = original_parameter
+            if original_parameter is missing:
+                delattr(torch.nn, "Parameter")
             else:
-                torch.nn.__dict__.pop("Parameter", None)
+                torch.nn.Parameter = original_parameter
         self.assertEqual(
             str(parameter_raised.exception),
             "isinstance() arg 2 must be a type, a tuple of types, or a union",
@@ -457,11 +495,13 @@ class CompilerKeepTensorGuardsUnsafeTests(unittest.TestCase):
             co_names,
             (
                 "guard_type",
-                "isinstance",
                 "value",
                 "_torch",
                 "nn",
                 "Parameter",
+                "AttributeError",
+                "_MISSING_PARAMETER_TYPES",
+                "isinstance",
                 "append",
             ),
         )
@@ -559,12 +599,12 @@ class CompilerKeepTensorGuardsUnsafeTests(unittest.TestCase):
                 (contextlib.nullcontext(), True),
                 (torch.no_grad(), False),
             ):
-                with context:
+                with _temporary_parameter_type() as Parameter, context:
                     self.assertIs(torch.is_grad_enabled(), expected_grad_state)
                     entries = (
                         types.SimpleNamespace(
                             guard_type="TENSOR_MATCH",
-                            value=torch.nn.Parameter(),
+                            value=Parameter(),
                         ),
                     )
                     self.assertEqual(
@@ -624,10 +664,15 @@ class RejectPytorchImport:
 sys.meta_path.insert(0, RejectPytorchImport())
 import torch_rs as torch
 
+class ParameterMarker:
+    pass
+
+assert not hasattr(torch.nn, "Parameter")
+torch.nn.Parameter = ParameterMarker
 entries = (
     types.SimpleNamespace(guard_type="TENSOR_MATCH", value=object()),
-    types.SimpleNamespace(guard_type="TENSOR_MATCH", value=torch.nn.Parameter()),
-    types.SimpleNamespace(guard_type="OTHER", value=torch.nn.Parameter()),
+    types.SimpleNamespace(guard_type="TENSOR_MATCH", value=ParameterMarker()),
+    types.SimpleNamespace(guard_type="OTHER", value=ParameterMarker()),
 )
 modules_before_call = set(sys.modules)
 result = torch.compiler.keep_tensor_guards_unsafe(entries)

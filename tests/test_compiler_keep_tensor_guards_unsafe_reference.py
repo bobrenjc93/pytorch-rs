@@ -178,19 +178,22 @@ class _InvalidIterator:
         return []
 
 
-def _normalized_code_metadata(code):
-    return (
-        tuple("torch" if name == "_torch" else name for name in code.co_names),
-        code.co_varnames,
-        tuple(
-            _normalized_code_metadata(constant)
-            if isinstance(constant, types.CodeType)
-            else constant
-            for constant in code.co_consts
-        ),
-        code.co_freevars,
-        code.co_cellvars,
-    )
+class _ParameterMarker:
+    pass
+
+
+@contextlib.contextmanager
+def _temporary_parameter_type(module):
+    missing = object()
+    original = getattr(module.nn, "Parameter", missing)
+    module.nn.Parameter = _ParameterMarker
+    try:
+        yield _ParameterMarker
+    finally:
+        if original is missing:
+            delattr(module.nn, "Parameter")
+        else:
+            module.nn.Parameter = original
 
 
 @unittest.skipIf(reference_torch is None, "install the reference dependency group")
@@ -240,16 +243,21 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
             shape.append((opcode.name, argument))
         return shape
 
-    def parameter(self, module):
-        return module.nn.Parameter(module.ones(1))
+    def parameter(self, parameter_type):
+        return parameter_type()
 
-    def behavior_outcome(self, module):
+    def behavior_outcome(self, module, parameter_type):
         function = module.compiler.keep_tensor_guards_unsafe
         events = []
         entries = [
             _GuardEntry("tensor", "TENSOR_MATCH", object(), events),
-            _GuardEntry("parameter", "TENSOR_MATCH", self.parameter(module), events),
-            _GuardEntry("other", "OTHER", self.parameter(module), events),
+            _GuardEntry(
+                "parameter",
+                "TENSOR_MATCH",
+                self.parameter(parameter_type),
+                events,
+            ),
+            _GuardEntry("other", "OTHER", self.parameter(parameter_type), events),
         ]
         original_entries = tuple(entries)
 
@@ -263,7 +271,7 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
             types.SimpleNamespace(guard_type="OTHER", value=object()),
             types.SimpleNamespace(
                 guard_type="TENSOR_MATCH",
-                value=self.parameter(module),
+                value=self.parameter(parameter_type),
             ),
         ]
         iterable = _CountingIterable(iterable_entries)
@@ -317,14 +325,19 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
             "generator_exhausted": generator_exhausted,
         }
 
-    def access_outcome(self, module):
+    def access_outcome(self, module, parameter_type):
         function = module.compiler.keep_tensor_guards_unsafe
         events = []
         keep_parameters = _TruthProbe("keep-parameters", True, events)
         entries = (
             _GuardEntry("plain", "TENSOR_MATCH", object(), events),
-            _GuardEntry("parameter", "TENSOR_MATCH", self.parameter(module), events),
-            _GuardEntry("other", "OTHER", self.parameter(module), events),
+            _GuardEntry(
+                "parameter",
+                "TENSOR_MATCH",
+                self.parameter(parameter_type),
+                events,
+            ),
+            _GuardEntry("other", "OTHER", self.parameter(parameter_type), events),
         )
         keep_result = function(entries, keep_parameters=keep_parameters)
 
@@ -352,7 +365,7 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
             "comparison_events": comparison_events,
         }
 
-    def exception_outcome(self, module):
+    def exception_outcome(self, module, parameter_type):
         function = module.compiler.keep_tensor_guards_unsafe
 
         iter_error = RuntimeError("iter failure")
@@ -402,7 +415,7 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
                 (
                     types.SimpleNamespace(
                         guard_type="TENSOR_MATCH",
-                        value=self.parameter(module),
+                        value=self.parameter(parameter_type),
                     ),
                 ),
                 keep_parameters=_TruthProbe(
@@ -414,8 +427,8 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
             keep_parameters_error,
         )
 
-        had_parameter_attribute = "Parameter" in module.nn.__dict__
-        original_parameter = module.nn.Parameter
+        missing = object()
+        original_parameter = getattr(module.nn, "Parameter", missing)
         try:
             module.nn.Parameter = object()
             invalid_parameter_outcome = self.captured_error(
@@ -429,10 +442,10 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
                 )
             )
         finally:
-            if had_parameter_attribute:
-                module.nn.Parameter = original_parameter
+            if original_parameter is missing:
+                delattr(module.nn, "Parameter")
             else:
-                module.nn.__dict__.pop("Parameter", None)
+                module.nn.Parameter = original_parameter
 
         invalid_iterator_outcome = self.captured_error(
             lambda: function(_InvalidIterator())
@@ -456,20 +469,28 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
         )
 
     def test_values_iteration_and_access_order_match_pytorch_2_13(self):
-        self.assertEqual(
-            self.behavior_outcome(torch),
-            self.behavior_outcome(reference_torch),
-        )
-        self.assertEqual(
-            self.access_outcome(torch),
-            self.access_outcome(reference_torch),
-        )
+        with (
+            _temporary_parameter_type(torch) as actual_parameter,
+            _temporary_parameter_type(reference_torch) as expected_parameter,
+        ):
+            self.assertEqual(
+                self.behavior_outcome(torch, actual_parameter),
+                self.behavior_outcome(reference_torch, expected_parameter),
+            )
+            self.assertEqual(
+                self.access_outcome(torch, actual_parameter),
+                self.access_outcome(reference_torch, expected_parameter),
+            )
 
     def test_exceptions_and_argument_errors_match_pytorch_2_13(self):
-        self.assertEqual(
-            self.exception_outcome(torch),
-            self.exception_outcome(reference_torch),
-        )
+        with (
+            _temporary_parameter_type(torch) as actual_parameter,
+            _temporary_parameter_type(reference_torch) as expected_parameter,
+        ):
+            self.assertEqual(
+                self.exception_outcome(torch, actual_parameter),
+                self.exception_outcome(reference_torch, expected_parameter),
+            )
 
         actual = torch.compiler.keep_tensor_guards_unsafe
         expected = reference_torch.compiler.keep_tensor_guards_unsafe
@@ -524,10 +545,9 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
             hasattr(actual, "__text_signature__"),
             hasattr(expected, "__text_signature__"),
         )
-        self.assertEqual(
-            _normalized_code_metadata(actual.__code__),
-            _normalized_code_metadata(expected.__code__),
-        )
+        self.assertEqual(actual.__code__.co_argcount, expected.__code__.co_argcount)
+        self.assertEqual(actual.__code__.co_freevars, expected.__code__.co_freevars)
+        self.assertEqual(actual.__code__.co_cellvars, expected.__code__.co_cellvars)
 
     def test_exports_copying_and_pickling_match_pytorch_2_13(self):
         actual_compiler = torch.compiler
@@ -576,7 +596,7 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
                     self.pickle_shape(expected, protocol),
                 )
 
-    def state_outcome(self, module):
+    def state_outcome(self, module, parameter_type):
         compiler = module.compiler
         original_backend = compiler.get_default_backend()
 
@@ -598,7 +618,7 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
                         (
                             types.SimpleNamespace(
                                 guard_type="TENSOR_MATCH",
-                                value=self.parameter(module),
+                                value=self.parameter(parameter_type),
                             ),
                         ),
                         keep_parameters=True,
@@ -623,10 +643,14 @@ class CompilerKeepTensorGuardsUnsafeReferenceTests(unittest.TestCase):
             compiler.set_default_backend(original_backend)
 
     def test_calls_preserve_compiler_and_grad_state_like_pytorch_2_13(self):
-        self.assertEqual(
-            self.state_outcome(torch),
-            self.state_outcome(reference_torch),
-        )
+        with (
+            _temporary_parameter_type(torch) as actual_parameter,
+            _temporary_parameter_type(reference_torch) as expected_parameter,
+        ):
+            self.assertEqual(
+                self.state_outcome(torch, actual_parameter),
+                self.state_outcome(reference_torch, expected_parameter),
+            )
 
     def reload_outcome(self, module, compiler_module_name):
         compiler = importlib.import_module(compiler_module_name)

@@ -7,6 +7,7 @@ from typing import Any
 from .. import _compiler_state as _state
 
 _torch = sys.modules[__name__.partition(".")[0]]
+_MISSING_PARAMETER_TYPES = ()
 
 
 __all__ = [
@@ -306,7 +307,12 @@ def keep_tensor_guards_unsafe(guard_entries, keep_parameters=False):
     keep_flags = []
     for entry in guard_entries:
         if entry.guard_type == "TENSOR_MATCH":
-            if not isinstance(entry.value, _torch.nn.Parameter):
+            value = entry.value
+            try:
+                parameter_type = _torch.nn.Parameter
+            except AttributeError:
+                parameter_type = _MISSING_PARAMETER_TYPES
+            if not isinstance(value, parameter_type):
                 keep_flags.append(True)
             elif keep_parameters:
                 keep_flags.append(True)
