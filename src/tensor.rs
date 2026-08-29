@@ -83,6 +83,12 @@ enum GradFn {
         output_shape: Vec<usize>,
         output_elements: usize,
     },
+    Subtract {
+        left: SavedTensor,
+        right: SavedTensor,
+        output_shape: Vec<usize>,
+        output_elements: usize,
+    },
     MultiplyScalar {
         input: SavedTensor,
         scalar: Option<f32>,
@@ -134,7 +140,7 @@ impl SavedTensor {
 impl GradFn {
     fn take_parents(&mut self, pending: &mut Vec<Arc<AutogradMeta>>) {
         match self {
-            Self::Multiply { left, right, .. } => {
+            Self::Multiply { left, right, .. } | Self::Subtract { left, right, .. } => {
                 left.take_parent(pending);
                 right.take_parent(pending);
             }
@@ -174,6 +180,7 @@ impl GradFn {
                 }
             }
             Self::Negate { .. }
+            | Self::Subtract { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
             | Self::Transform { .. }
@@ -193,6 +200,7 @@ impl GradFn {
             Self::SavedInputUnary(node) => node.input.storage = None,
             Self::SavedOutputUnary(node) => node.output.storage = None,
             Self::Negate { .. }
+            | Self::Subtract { .. }
             | Self::ZeroVjp(_)
             | Self::Sum { .. }
             | Self::Transform { .. }
@@ -1055,6 +1063,7 @@ impl Tensor {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let node = match grad_fn.as_ref()? {
             GradFn::Multiply { .. } | GradFn::MultiplyScalar { .. } => AutogradNode::Multiply,
+            GradFn::Subtract { .. } => AutogradNode::Subtract,
             GradFn::Negate { node, .. } | GradFn::Transform { node, .. } => *node,
             GradFn::SavedInputUnary(node) => node.identity,
             GradFn::SavedOutputUnary(node) => node.identity,
@@ -2943,7 +2952,22 @@ impl Tensor {
     /// Returns an error when the shapes are not broadcastable or when result
     /// shape calculation or allocation fails.
     pub fn sub(&self, other: &Self) -> Result<Self, TensorError> {
-        self.zip_map(other, |left, right| left - right)
+        let mut output = self.zip_map(other, |left, right| left - right)?;
+        if (self.requires_grad() || other.requires_grad()) && is_grad_enabled() {
+            let output_shape = try_clone_result_shape(&output.shape, output.elements)?;
+            let grad_fn = GradFn::Subtract {
+                left: SavedTensor::try_from_tensor(self, false)?,
+                right: SavedTensor::try_from_tensor(other, false)?,
+                output_shape,
+                output_elements: output.elements,
+            };
+            output.autograd = Some(Arc::new(AutogradMeta {
+                kind: AutogradKind::NonLeaf {
+                    grad_fn: Mutex::new(Some(grad_fn)),
+                },
+            }));
+        }
+        Ok(output)
     }
 
     /// Computes a squared difference in one binary elementwise pass.
@@ -3925,7 +3949,8 @@ fn collect_topology(root: &Arc<AutogradMeta>) -> Result<Topology, TensorError> {
                 ));
                 if let Some(grad_fn) = &grad_fn {
                     match grad_fn {
-                        GradFn::Multiply { left, right, .. } => {
+                        GradFn::Multiply { left, right, .. }
+                        | GradFn::Subtract { left, right, .. } => {
                             push_saved_parent(&mut stack, right);
                             push_saved_parent(&mut stack, left);
                         }
@@ -4043,6 +4068,54 @@ fn apply_grad_fn(
                                 .value(left_offset)
                                 .expect("saved left operand offset must address storage"),
                     );
+                }
+            }
+            if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {
+                add_gradient(gradients, meta, left.output_nr, gradient.values);
+            }
+            if let (Some(meta), Some(gradient)) = (&right.autograd, right_gradient) {
+                add_gradient(gradients, meta, right.output_nr, gradient.values);
+            }
+        }
+        GradFn::Subtract {
+            left,
+            right,
+            output_shape,
+            output_elements,
+        } => {
+            debug_assert_eq!(*output_elements, upstream.len());
+            let mut left_gradient = if left.autograd.is_some() {
+                Some(GradientAccumulator::new(
+                    left.elements,
+                    left.elements == *output_elements,
+                )?)
+            } else {
+                None
+            };
+            let mut right_gradient = if right.autograd.is_some() {
+                Some(GradientAccumulator::new(
+                    right.elements,
+                    right.elements == *output_elements,
+                )?)
+            } else {
+                None
+            };
+            let mut coordinates = try_result_vector(output_shape.len(), *output_elements)?;
+            coordinates.resize(output_shape.len(), 0_usize);
+
+            for (output_index, &output_gradient) in upstream.iter().enumerate() {
+                let mut remaining = output_index;
+                for axis in (0..output_shape.len()).rev() {
+                    coordinates[axis] = remaining % output_shape[axis];
+                    remaining /= output_shape[axis];
+                }
+                let (left_index, _) = left.broadcast_position(output_shape, &coordinates);
+                let (right_index, _) = right.broadcast_position(output_shape, &coordinates);
+                if let Some(gradient) = &mut left_gradient {
+                    gradient.add(left_index, output_gradient);
+                }
+                if let Some(gradient) = &mut right_gradient {
+                    gradient.add(right_index, negate_value(output_gradient));
                 }
             }
             if let (Some(meta), Some(gradient)) = (&left.autograd, left_gradient) {

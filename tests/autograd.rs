@@ -4031,6 +4031,54 @@ fn real_scalar_subtraction_records_reusable_signed_gradients() {
 }
 
 #[test]
+fn tensor_subtraction_records_reusable_broadcast_gradients() {
+    let left = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let right = Tensor::from_vec(vec![10.0, 20.0, 30.0], [1, 3])
+        .unwrap()
+        .with_requires_grad(true);
+    let weights = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3]).unwrap();
+
+    let output = left.sub(&right).unwrap();
+    assert!(output.requires_grad());
+    assert_eq!(output.shape(), [2, 3]);
+    output.mul(&weights).unwrap().sum().backward().unwrap();
+    assert_eq!(
+        values(&left.grad().unwrap().unwrap()),
+        [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    );
+    assert_eq!(values(&right.grad().unwrap().unwrap()), [-5.0, -7.0, -9.0]);
+
+    let shared = Tensor::from_vec(vec![2.0, -3.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    shared.sub(&shared).unwrap().sum().backward().unwrap();
+    assert_eq!(values(&shared.grad().unwrap().unwrap()), [0.0, 0.0]);
+
+    let repeated_left = Tensor::from_vec(vec![2.0, 3.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let repeated_right = Tensor::from_vec(vec![5.0, 7.0], [2])
+        .unwrap()
+        .with_requires_grad(true);
+    let repeated_loss = repeated_left.sub(&repeated_right).unwrap().sum();
+    repeated_loss.backward().unwrap();
+    repeated_loss.backward().unwrap();
+    assert_eq!(values(&repeated_left.grad().unwrap().unwrap()), [2.0, 2.0]);
+    assert_eq!(
+        values(&repeated_right.grad().unwrap().unwrap()),
+        [-2.0, -2.0]
+    );
+
+    {
+        let _guard = no_grad();
+        assert!(!left.sub(&right).unwrap().requires_grad());
+    }
+    assert!(left.sub(&right).unwrap().requires_grad());
+}
+
+#[test]
 fn detach_and_nested_no_grad_are_graph_boundaries() {
     let x = Tensor::from_vec(vec![2.0], [])
         .unwrap()
