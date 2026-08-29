@@ -77,6 +77,14 @@ EXCLUDE_EXPERIMENTAL_BACKENDS = [
 ]
 
 
+def unhashable_list_error_message() -> str:
+    try:
+        set([[]])
+    except TypeError as error:
+        return str(error)
+    raise AssertionError("set([[]]) unexpectedly succeeded")
+
+
 class CompilerListBackendsTests(unittest.TestCase):
     def test_default_and_tag_filtered_backend_names(self):
         self.assertEqual(torch.compiler.list_backends(), DEFAULT_BACKENDS)
@@ -188,7 +196,7 @@ class CompilerListBackendsTests(unittest.TestCase):
             ),
             (lambda: function(1), "'int' object is not iterable"),
             (lambda: function(True), "'bool' object is not iterable"),
-            (lambda: function([[]]), "unhashable type: 'list'"),
+            (lambda: function([[]]), unhashable_list_error_message()),
         )
         for call, message in cases:
             with self.subTest(message=message):
