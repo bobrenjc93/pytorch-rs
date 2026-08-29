@@ -6,6 +6,11 @@ For API-level behavior and explicit limitations, see the
 [supported-surface contract](docs/supported-surface.md). Performance claims are
 governed by [BENCHMARKING.md](BENCHMARKING.md).
 
+CUDA backend preference coverage includes Flash, math, memory-efficient, and
+reduced-precision math SDP flags as independent process-global state. CUDA
+tensors, SDP execution, cuDNN SDP controls, and remaining SDPA controls stay
+unsupported.
+
 Fixed top-level weights prevent easy APIs from overwhelming core gaps:
 
 | Area | Weight | Baseline |

@@ -49,6 +49,7 @@ static CUDNN_BENCHMARK: AtomicBool = AtomicBool::new(false);
 static CUDNN_BENCHMARK_LIMIT: AtomicI32 = AtomicI32::new(10);
 static CUDNN_DETERMINISTIC: AtomicBool = AtomicBool::new(false);
 static CUDNN_ALLOW_TF32: AtomicBool = AtomicBool::new(true);
+static FLASH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MEM_EFFICIENT_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ENABLED: AtomicBool = AtomicBool::new(true);
 static MATH_SDP_ALLOW_FP16_BF16_REDUCTION: AtomicBool = AtomicBool::new(false);
@@ -93,6 +94,34 @@ fn is_ck_sdpa_available_native() -> bool {
 )]
 fn is_flash_attention_available_native() -> bool {
     NATIVE_FLASH_ATTENTION_AVAILABLE
+}
+
+fn add_native_build_metadata(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    for (name, enabled) in NATIVE_BUILD_CAPABILITIES {
+        module.add(name, enabled)?;
+    }
+    module.add_function(wrap_pyfunction!(get_cpu_capability_native, module)?)?;
+    module.add_function(wrap_pyfunction!(is_ck_sdpa_available_native, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        is_flash_attention_available_native,
+        module
+    )?)?;
+    // PyTorch keeps these private build capabilities on torch._C. Removing them from
+    // the extension's generated export list also prevents the package wildcard
+    // import from copying them onto the public torch_rs module.
+    let exports = module.getattr("__all__")?;
+    for name in [
+        "_GLIBCXX_USE_CXX11_ABI",
+        "_get_cpu_capability",
+        "_has_cudnn",
+        "_has_cuda",
+        "_has_kleidiai",
+        "_is_ck_sdpa_available",
+        "_is_flash_attention_available",
+    ] {
+        exports.call_method1("remove", (name,))?;
+    }
+    Ok(())
 }
 
 const IS_TENSOR_SOURCE: &CStr = cr#"
@@ -5307,6 +5336,32 @@ fn add_cudnn_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
     ] {
         exports.call_method1("remove", (name,))?;
     }
+    Ok(())
+}
+
+#[pyfunction(name = "_set_sdp_use_flash", signature = (enabled, /), text_signature = None)]
+fn set_sdp_use_flash_native(enabled: &Bound<'_, PyAny>) -> PyResult<()> {
+    if !enabled.is_exact_instance_of::<PyBool>() {
+        let type_name = python_type_name(enabled)?;
+        return Err(PyRuntimeError::new_err(format!(
+            "set_sdp_use_math expects a bool, but got {type_name}"
+        )));
+    }
+    FLASH_SDP_ENABLED.store(enabled.is_truthy()?, Ordering::SeqCst);
+    Ok(())
+}
+
+#[pyfunction(name = "_get_flash_sdp_enabled", signature = (), text_signature = None)]
+fn get_flash_sdp_enabled_native() -> bool {
+    FLASH_SDP_ENABLED.load(Ordering::SeqCst)
+}
+
+fn add_flash_sdp_builtins(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(set_sdp_use_flash_native, module)?)?;
+    module.add_function(wrap_pyfunction!(get_flash_sdp_enabled_native, module)?)?;
+    let exports = module.getattr("__all__")?;
+    exports.call_method1("remove", ("_set_sdp_use_flash",))?;
+    exports.call_method1("remove", ("_get_flash_sdp_enabled",))?;
     Ok(())
 }
 
@@ -12074,30 +12129,7 @@ fn nested_list(py: Python<'_>, data: &[f32], shape: &[usize]) -> PyResult<Py<PyA
 fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     cpython_compat::initialize_torch_function_descriptor_caller(py)?;
-    for (name, enabled) in NATIVE_BUILD_CAPABILITIES {
-        module.add(name, enabled)?;
-    }
-    module.add_function(wrap_pyfunction!(get_cpu_capability_native, module)?)?;
-    module.add_function(wrap_pyfunction!(is_ck_sdpa_available_native, module)?)?;
-    module.add_function(wrap_pyfunction!(
-        is_flash_attention_available_native,
-        module
-    )?)?;
-    // PyTorch keeps these private build capabilities on torch._C. Removing them from
-    // the extension's generated export list also prevents the package wildcard
-    // import from copying them onto the public torch_rs module.
-    let exports = module.getattr("__all__")?;
-    for name in [
-        "_GLIBCXX_USE_CXX11_ABI",
-        "_get_cpu_capability",
-        "_has_cudnn",
-        "_has_cuda",
-        "_has_kleidiai",
-        "_is_ck_sdpa_available",
-        "_is_flash_attention_available",
-    ] {
-        exports.call_method1("remove", (name,))?;
-    }
+    add_native_build_metadata(module)?;
     module.add("Size", size_type_object(py)?.clone_ref(py))?;
     module.add_class::<PyTensor>()?;
     let tensor_type = py.get_type::<PyTensor>();
@@ -12118,6 +12150,7 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     add_default_dtype_validator(module)?;
     add_warn_always_builtins(module)?;
     add_cudnn_builtins(module)?;
+    add_flash_sdp_builtins(module)?;
     add_mem_efficient_sdp_builtins(module)?;
     add_math_sdp_builtins(module)?;
     add_math_sdp_reduction_builtins(module)?;

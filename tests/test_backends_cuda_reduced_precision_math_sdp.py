@@ -282,6 +282,8 @@ print(json.dumps({
             [
                 "is_built",
                 "is_ck_sdpa_available",
+                "enable_flash_sdp",
+                "flash_sdp_enabled",
                 "enable_mem_efficient_sdp",
                 "mem_efficient_sdp_enabled",
                 "math_sdp_enabled",
@@ -295,8 +297,10 @@ print(json.dumps({
             {name for name in vars(cuda) if not name.startswith("_")},
             {
                 "allow_fp16_bf16_reduction_math_sdp",
+                "enable_flash_sdp",
                 "enable_math_sdp",
                 "enable_mem_efficient_sdp",
+                "flash_sdp_enabled",
                 "fp16_bf16_reduction_math_sdp_allowed",
                 "is_built",
                 "is_ck_sdpa_available",
