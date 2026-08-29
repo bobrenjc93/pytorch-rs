@@ -1,8 +1,19 @@
 import gc
+import inspect
+import pickle
+import types
 import unittest
 
 import numpy as np
 import torch_rs as torch
+
+
+FUNCTION_DOC = """
+unsqueeze(input, dim) -> Tensor
+
+Returns a new tensor with a dimension of size one inserted at the
+specified position.
+"""
 
 
 class UnsqueezeTests(unittest.TestCase):
@@ -125,17 +136,174 @@ class UnsqueezeTests(unittest.TestCase):
             "unsqueeze(): argument 'input' (position 1) must be Tensor, not numpy.ndarray",
         )
 
-        class Override:
-            @classmethod
-            def __torch_function__(cls, func, types, args=(), kwargs=None):
-                return "unsupported"
-
-        with self.assertRaisesRegex(TypeError, "must be Tensor, not Override"):
-            torch.unsqueeze(Override(), 0)
-
         self.assertFalse(hasattr(torch.Tensor, "unsqueeze_"))
         with self.assertRaises(AttributeError):
             source.unsqueeze_(0)
+
+    def test_top_level_torch_function_modes_receive_original_calls_and_forward(self):
+        tensor = torch.zeros((2, 3))
+        marker = object()
+
+        class RecordingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, result):
+                self.result = result
+                self.calls = []
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                self.calls.append((func, types, args, kwargs))
+                return self.result
+
+        cases = (
+            (lambda: torch.unsqueeze(tensor, 1), (tensor, 1), None),
+            (lambda: torch.unsqueeze(tensor, 99), (tensor, 99), None),
+            (lambda: torch.unsqueeze(tensor, 2**100), (tensor, 2**100), None),
+            (
+                lambda: torch.unsqueeze(input=tensor, dim=1),
+                (),
+                {"input": tensor, "dim": 1},
+            ),
+            (
+                lambda: torch.unsqueeze(input=tensor, axis=-1),
+                (),
+                {"input": tensor, "axis": -1},
+            ),
+        )
+        for call, expected_args, expected_kwargs in cases:
+            mode = RecordingMode(marker)
+            with self.subTest(expected_args=expected_args, kwargs=expected_kwargs):
+                with mode:
+                    result = call()
+            self.assertIs(result, marker)
+            self.assertEqual(len(mode.calls), 1)
+            function, dispatch_types, args, kwargs = mode.calls[0]
+            self.assertIs(function, torch.unsqueeze)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, expected_args)
+            self.assertEqual(kwargs, expected_kwargs)
+
+        invalid = RecordingMode(marker)
+        with invalid, self.assertRaises(TypeError):
+            torch.unsqueeze(tensor, None)
+        self.assertEqual(invalid.calls, [])
+
+        order = []
+
+        class ForwardingMode(torch.overrides.TorchFunctionMode):
+            def __init__(self, label):
+                self.label = label
+
+            def __torch_function__(self, func, types, args=(), kwargs=None):
+                order.append((self.label, func, types, args, kwargs))
+                return func(*args, **(kwargs or {}))
+
+        with ForwardingMode("lower"):
+            with ForwardingMode("upper"):
+                forwarded = torch.unsqueeze(input=tensor, dim=1)
+        self.assertEqual(forwarded.shape, (2, 1, 3))
+        self.assertEqual(forwarded.stride(), (3, 3, 1))
+        self.assertEqual(forwarded.data_ptr(), tensor.data_ptr())
+        self.assertEqual([entry[0] for entry in order], ["upper", "lower"])
+        for _, function, dispatch_types, args, kwargs in order:
+            self.assertIs(function, torch.unsqueeze)
+            self.assertEqual(dispatch_types, ())
+            self.assertEqual(args, ())
+            self.assertEqual(kwargs, {"input": tensor, "dim": 1})
+
+        declining = RecordingMode(NotImplemented)
+        with declining, self.assertRaisesRegex(
+            TypeError,
+            "^Multiple dispatch failed for 'torch\\.unsqueeze'; all "
+            "__torch_function__ handlers returned NotImplemented:",
+        ):
+            torch.unsqueeze(tensor, 1)
+        self.assertEqual(len(declining.calls), 1)
+        self.assertEqual(len(torch.overrides._get_current_function_mode_stack()), 0)
+
+    def test_top_level_tensor_like_overrides_use_public_function(self):
+        marker = object()
+        calls = []
+
+        class Override:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                calls.append((func, types, args, kwargs))
+                return marker
+
+        value = Override()
+        cases = (
+            (lambda: torch.unsqueeze(value, 0), (value, 0), None),
+            (lambda: torch.unsqueeze(value, 99), (value, 99), None),
+            (lambda: torch.unsqueeze(value, 2**100), (value, 2**100), None),
+            (
+                lambda: torch.unsqueeze(input=value, dim=0),
+                (),
+                {"input": value, "dim": 0},
+            ),
+            (
+                lambda: torch.unsqueeze(input=value, axis=0),
+                (),
+                {"input": value, "axis": 0},
+            ),
+        )
+        for call, expected_args, expected_kwargs in cases:
+            self.assertIs(call(), marker)
+            function, dispatch_types, args, kwargs = calls[-1]
+            self.assertIs(function, torch.unsqueeze)
+            self.assertEqual(dispatch_types, (Override,))
+            self.assertEqual(args, expected_args)
+            self.assertEqual(kwargs, expected_kwargs)
+
+        call_count = len(calls)
+        with self.assertRaises(TypeError):
+            torch.unsqueeze(value, None)
+        self.assertEqual(len(calls), call_count)
+
+        class DecliningOverride:
+            @classmethod
+            def __torch_function__(cls, func, types, args=(), kwargs=None):
+                return NotImplemented
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "^Multiple dispatch failed for 'torch\\.unsqueeze'; all "
+            "__torch_function__ handlers returned NotImplemented:",
+        ):
+            torch.unsqueeze(DecliningOverride(), 0)
+
+    def test_top_level_callable_metadata_documentation_and_exports(self):
+        function = torch.unsqueeze
+        self.assertIs(type(function), types.BuiltinFunctionType)
+        self.assertEqual(function.__name__, "unsqueeze")
+        self.assertEqual(function.__qualname__, "_VariableFunctionsClass.unsqueeze")
+        self.assertEqual(function.__module__, "torch")
+        self.assertEqual(function.__doc__, FUNCTION_DOC)
+        self.assertIsNone(function.__text_signature__)
+        self.assertRegex(
+            repr(function),
+            r"^<built-in method unsqueeze of type object at 0x[0-9a-f]+>$",
+        )
+        with self.assertRaises(ValueError):
+            inspect.signature(function)
+
+        owner = function.__reduce__()[1][0]
+        self.assertEqual(owner.__name__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__qualname__, "_VariableFunctionsClass")
+        self.assertEqual(owner.__module__, "torch_rs._C")
+        self.assertIs(owner, torch._C._VariableFunctionsClass)
+        self.assertIs(owner.unsqueeze, function)
+        for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+            with self.subTest(protocol=protocol):
+                self.assertIs(
+                    pickle.loads(pickle.dumps(function, protocol=protocol)),
+                    function,
+                )
+
+        self.assertEqual(torch.__all__.count("unsqueeze"), 1)
+        self.assertNotIn("_VariableFunctionsClass", torch.__all__)
+        self.assertFalse(hasattr(torch, "_VariableFunctionsClass"))
+        wildcard_namespace = {}
+        exec("from torch_rs import *", wildcard_namespace)
+        self.assertIs(wildcard_namespace["unsqueeze"], function)
 
 
 if __name__ == "__main__":

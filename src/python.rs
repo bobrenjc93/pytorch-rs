@@ -2003,6 +2003,18 @@ pub(crate) fn select_variable_function(
     dispatch_top_level_select(py, &input, &dimension, &index, args, kwargs)
 }
 
+pub(crate) fn unsqueeze_variable_function(
+    py: Python<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    let (input, dimension, keyword_error) = bind_top_level_unsqueeze_arguments(args, kwargs)?;
+    if let Some(keyword_error) = keyword_error {
+        return Err(keyword_error);
+    }
+    dispatch_top_level_unsqueeze(py, &input, &dimension, args, kwargs)
+}
+
 pub(crate) fn permute_variable_function(
     py: Python<'_>,
     args: &Bound<'_, PyTuple>,
@@ -2903,6 +2915,84 @@ fn dispatch_top_level_select(
             select_first_dimension(py, tensor, dimension, index, "torch.select")
         }
     }
+}
+
+fn dispatch_top_level_unsqueeze(
+    py: Python<'_>,
+    input: &BoundTensorOrTorchFunction<'_>,
+    dimension: &ParsedCallArgument<'_>,
+    args: &Bound<'_, PyTuple>,
+    kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<Py<PyAny>> {
+    if torch_function_mode_stack::is_empty()
+        && let BoundTensorOrTorchFunction::Tensor(tensor) = input
+    {
+        let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+        return unsqueeze_tensor(py, tensor, dimension);
+    }
+
+    let function = variable_function(py, "unsqueeze")?;
+    let types = match input {
+        BoundTensorOrTorchFunction::Tensor(_) => PyTuple::empty(py),
+        BoundTensorOrTorchFunction::Override(probed) => {
+            PyTuple::new(py, [probed.dispatch_type.clone()])?
+        }
+    };
+
+    // Generated bindings validate the dimension type before dispatch, but keep
+    // integer conversion and range checks deferred until every torch-function
+    // handler has had the opportunity to replace the otherwise valid call.
+    let active_mode = torch_function_mode_stack::pop();
+    if let Some(mode) = active_mode.get() {
+        validate_torch_function_mode_handler(mode.bind(py))?;
+        let handler = mode.bind(py).getattr("__torch_function__")?;
+        let result = call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+        if !is_not_implemented(py, &result) {
+            return Ok(result);
+        }
+    }
+
+    match input {
+        BoundTensorOrTorchFunction::Override(probed) => {
+            let handler = resolve_torch_function_override(py, probed)?;
+            let result =
+                call_torch_function_handler(py, &handler, &function, &types, args, kwargs)?;
+            if !is_not_implemented(py, &result) {
+                return Ok(result);
+            }
+            Err(torch_function_dispatch_error(
+                py,
+                "torch.unsqueeze",
+                active_mode.get(),
+                Some(probed.dispatch_type.as_unbound()),
+            )?)
+        }
+        BoundTensorOrTorchFunction::Tensor(tensor) => {
+            if active_mode.get().is_some() {
+                return Err(torch_function_dispatch_error(
+                    py,
+                    "torch.unsqueeze",
+                    active_mode.get(),
+                    None,
+                )?);
+            }
+            let dimension = extract_dimension_swap_dimension(&dimension.value)?;
+            unsqueeze_tensor(py, tensor, dimension)
+        }
+    }
+}
+
+fn unsqueeze_tensor(
+    py: Python<'_>,
+    tensor: &Bound<'_, PyTensor>,
+    dimension: i64,
+) -> PyResult<Py<PyAny>> {
+    let tensor = tensor.try_borrow()?;
+    let inner = tensor
+        .inner
+        .unsqueeze(dimension)
+        .map_err(|error| tensor_error(&error))?;
+    Ok(Py::new(py, PyTensor::new(inner))?.into_any())
 }
 
 pub(crate) fn dispatch_tensorbase_method_mode(
@@ -4972,22 +5062,6 @@ fn squeeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyR
     };
     let input = input.try_borrow()?;
     apply_squeeze(&input.inner, dimension)
-        .map(PyTensor::new)
-        .map_err(|error| tensor_error(&error))
-}
-
-#[pyfunction(signature = (*args, **kwargs), text_signature = None)]
-fn unsqueeze(args: &Bound<'_, PyTuple>, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<PyTensor> {
-    let (input, dimension, keyword_error) = bind_top_level_unsqueeze_arguments(args, kwargs)?;
-    let input = parse_exact_tensor_argument("unsqueeze", "input", &input)?;
-    let dimension = parse_unsqueeze_dimension(&dimension)?;
-    if let Some(keyword_error) = keyword_error {
-        return Err(keyword_error);
-    }
-    let input = input.try_borrow()?;
-    input
-        .inner
-        .unsqueeze(dimension)
         .map(PyTensor::new)
         .map_err(|error| tensor_error(&error))
 }
@@ -7595,7 +7669,7 @@ fn bind_top_level_unsqueeze_arguments<'py>(
     positional: &Bound<'py, PyTuple>,
     keywords: Option<&Bound<'py, PyDict>>,
 ) -> PyResult<(
-    ParsedCallArgument<'py>,
+    BoundTensorOrTorchFunction<'py>,
     ParsedCallArgument<'py>,
     Option<PyErr>,
 )> {
@@ -7673,10 +7747,11 @@ fn bind_top_level_unsqueeze_arguments<'py>(
             unsqueeze_missing_arguments(&["input", "dim"])
         });
     };
-    parse_exact_tensor_argument("unsqueeze", "input", &input)?;
+    let input = parse_exact_tensor_or_torch_function_argument("unsqueeze", "input", &input)?;
     let Some(dimension) = dimension else {
         return Err(unsqueeze_missing_arguments(&["dim"]));
     };
+    validate_dimension_swap_dimension("unsqueeze", "dim", dimension.position, &dimension.value)?;
     Ok((input, dimension, keyword_error))
 }
 
@@ -9722,6 +9797,23 @@ fn parse_exact_tensor_argument<'a, 'py>(
         )));
     }
     Ok(value.value.cast::<PyTensor>()?)
+}
+
+fn parse_exact_tensor_or_torch_function_argument<'py>(
+    function: &str,
+    argument: &str,
+    value: &ParsedCallArgument<'py>,
+) -> PyResult<BoundTensorOrTorchFunction<'py>> {
+    if value.value.is_exact_instance_of::<PyTensor>() {
+        return Ok(BoundTensorOrTorchFunction::Tensor(
+            value.value.cast::<PyTensor>()?.clone(),
+        ));
+    }
+    if let Some(probed) = probe_torch_function_override(&value.value) {
+        return Ok(BoundTensorOrTorchFunction::Override(probed));
+    }
+    parse_exact_tensor_argument(function, argument, value)
+        .map(|tensor| BoundTensorOrTorchFunction::Tensor(tensor.clone()))
 }
 
 fn parse_tensor_or_torch_function_argument<'py>(
@@ -12477,7 +12569,6 @@ fn torch_rs(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(transpose, module)?)?;
     module.add_function(wrap_pyfunction!(swapdims, module)?)?;
     module.add_function(wrap_pyfunction!(swapaxes, module)?)?;
-    module.add_function(wrap_pyfunction!(unsqueeze, module)?)?;
     module.add_function(wrap_pyfunction!(squeeze, module)?)?;
     module.add_function(wrap_pyfunction!(flatten, module)?)?;
     add_tensor_queries(module)?;
